@@ -1,0 +1,21 @@
+# ===========================================================================
+# Cut Release — caller stub. Copy to .github/workflows/cut-release.yml.
+# Manual trigger only. Promotes the current draft release to a pre-release,
+# which fires the release event that the CD workflow listens for.
+# ===========================================================================
+name: Cut Release
+
+on:
+  workflow_dispatch: {}
+
+jobs:
+  cut-release:
+    uses: velotechsystems/infra-ci-cd/.github/workflows/cut-release.yml@v1
+    with:
+      runner_label: ${{ vars.RUNNER_LABEL }}
+    # Pass org/repo secrets (RELEASE_APP_ID / RELEASE_APP_PRIVATE_KEY) through to
+    # the reusable engine so it can publish the release with a GitHub App token
+    # instead of GITHUB_TOKEN — otherwise the release:published event is
+    # suppressed and cd-prod never auto-triggers. Falls back to GITHUB_TOKEN when
+    # the App secrets are absent, so this is safe before the App is wired.
+    secrets: inherit

@@ -1,0 +1,21 @@
+version: 2
+# Single Next.js app: one package.json at the repo root and GitHub Actions
+# workflows under .github/workflows. (No Dockerfile yet — add a `docker`
+# ecosystem here once VX/Phase-5 introduces one.)
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      npm-minor-patch:
+        update-types: [minor, patch]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions-minor-patch:
+        update-types: [minor, patch]

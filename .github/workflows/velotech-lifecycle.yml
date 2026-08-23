@@ -1,0 +1,37 @@
+# ===========================================================================
+# Velotech Lifecycle — caller stub.
+# Copy to .github/workflows/velotech-lifecycle.yml.
+# Drives the spec ↔ plan ↔ build state machine on issues.
+# ===========================================================================
+name: Velotech Lifecycle
+
+on:
+  issues:
+    types: [opened, labeled]
+  issue_comment:
+    types: [created]
+  workflow_dispatch:
+    inputs:
+      issue_number:
+        description: 'Issue number to (re)evaluate'
+        required: true
+        type: string
+
+permissions:
+  issues: write
+  contents: read
+  actions: write
+
+concurrency:
+  group: velotech-lifecycle-${{ github.event.issue.number || github.event.inputs.issue_number }}
+  cancel-in-progress: false
+
+jobs:
+  lifecycle:
+    uses: velotechsystems/infra-ci-cd/.github/workflows/velotech-lifecycle.yml@v1
+    with:
+      runner_label: ${{ vars.RUNNER_LABEL }}
+      ai_model: ${{ vars.AI_LIFECYCLE_MODEL || 'claude-sonnet-4-5-20250929' }}
+      claude_code_version: ${{ vars.CLAUDE_CODE_VERSION || 'latest' }}
+      issue_number: ${{ github.event.inputs.issue_number || '' }}
+    secrets: inherit

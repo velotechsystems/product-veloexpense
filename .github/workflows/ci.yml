@@ -1,0 +1,110 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  quality:
+    name: Typecheck, build, RLS gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      AUTH_SECRET: ci-test-only-not-a-real-secret
+      # App connects as the NON-superuser role (RLS must apply); admin resets state.
+      ADMIN_DATABASE_URL: postgres://postgres:velo@localhost:5432/veloexpense
+      DATABASE_URL: postgres://veloapp:velo@localhost:5432/veloexpense
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: velo
+          POSTGRES_DB: veloexpense
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      # When @velotech/* packages are added (VX0-7+), configure the private
+      # registry auth here before install, e.g.:
+      #   - run: |
+      #       echo "@velotech:registry=https://npm.pkg.github.com" >> .npmrc
+      #       echo "//npm.pkg.github.com/:_authToken=${{ secrets.VELOTECH_NPM_TOKEN }}" >> .npmrc
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+
+      # Build first: Next 16 generates .next/types/** (e.g. LayoutProps) that the
+      # standalone `tsc --noEmit` typecheck depends on.
+      - name: Build
+        run: npm run build
+
+      - name: Type check
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Apply migrations
+        run: |
+          for f in prisma/migrations/*/migration.sql; do
+            echo "applying $f"
+            psql "$ADMIN_DATABASE_URL" -v ON_ERROR_STOP=1 -f "$f"
+          done
+
+      - name: Create non-superuser app role
+        run: |
+          psql "$ADMIN_DATABASE_URL" -v ON_ERROR_STOP=1 <<'SQL'
+          DO $$ BEGIN
+            IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='veloapp') THEN
+              CREATE ROLE veloapp LOGIN PASSWORD 'velo';
+            END IF;
+          END $$;
+          GRANT CONNECT ON DATABASE veloexpense TO veloapp;
+          GRANT USAGE ON SCHEMA public TO veloapp;
+          GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO veloapp;
+          GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO veloapp;
+          ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO veloapp;
+          SQL
+
+      - name: RLS coverage guard (every tenant table must ENABLE+FORCE RLS)
+        run: |
+          MISSING=$(psql "$ADMIN_DATABASE_URL" -tAc "
+            SELECT string_agg(c.relname, ', ')
+            FROM pg_class c
+            JOIN pg_namespace n ON n.oid = c.relnamespace
+            WHERE n.nspname = 'public' AND c.relkind = 'r'
+              AND EXISTS (SELECT 1 FROM pg_attribute a
+                          WHERE a.attrelid = c.oid AND a.attname = 'organization_id'
+                            AND NOT a.attisdropped)
+              AND (NOT c.relrowsecurity OR NOT c.relforcerowsecurity);")
+          if [ -n "$MISSING" ]; then
+            echo "::error::Tables with organization_id but missing ENABLE/FORCE RLS: $MISSING"
+            exit 1
+          fi
+          echo "RLS coverage OK — all tenant tables have ENABLE+FORCE RLS."
+
+      - name: RLS isolation gate + unit tests
+        run: npm test
+
+      - name: Audit (non-blocking)
+        run: npm audit --audit-level=high
+        continue-on-error: true

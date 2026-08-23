@@ -1,0 +1,50 @@
+# Who the AI model needs to tag for open questions during spec and plan phases.
+# The TPM agent reads this file to route questions to the right people.
+#
+# IMPORTANT: keep every `needs:*` label (see scripts/sync-labels.sh) aligned
+# with a routing key here. The label `needs:foo` resolves to `routing.foo`.
+
+routing:
+  # Role-based routing — used when the question is about a domain, not a specific person.
+  # The keys below mirror the `needs:*` label suffixes 1:1.
+
+  security:
+    team: '@Velotechsys'
+    description: 'Data privacy, authentication, vulnerabilities, threat, exploit, OWASP'
+
+  frontend:
+    team: '@Velotechsys'
+    description: 'UI/UX implementation, React, Flutter, ARIA, WCAG, accessibility, components, modules'
+
+  backend:
+    team: '@Velotechsys'
+    description: 'Backend implementation, Java, Node.JS, Python, Go, packages, libraries'
+
+  architecture:
+    team: '@Velotechsys'
+    description: 'System design, scalability, resilience, high availability, fault tolerance, feasibility, technical tradeoffs'
+
+  devops:
+    team: '@Velotechsys'
+    description: 'DevOps, Infrastructure, SRE, CI/CD, Terraform, AWS, CDK, deployment, monitoring'
+
+  legal:
+    team: '@Velotechsys'
+    description: 'Regulatory, license, contracts, terms of service, privacy policy'
+
+  compliance:
+    team: '@Velotechsys'
+    description: 'SOC2, HIPAA, PCI-DSS, GDPR, audit controls, retention, data residency'
+
+  qa:
+    team: '@Velotechsys'
+    description: 'Test strategy, edge cases, regression, E2E, Integration, Smoke test'
+
+  # Extra routing keys (no matching needs:* label — used for context-only questions).
+
+  finance:
+    team: '@Velotechsys'
+    description: 'Budget, billing, cost, accounting implications'
+
+# Default TPM — tagged for prioritization and scope decisions
+tpm: '@Velotechsys'
