@@ -6,13 +6,23 @@
  * Proves: (1) a tenant sees only its own rows, (2) WITH CHECK rejects a
  * cross-tenant write, (3) an unset context sees nothing.
  */
-import { describe, it, expect, beforeAll } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { Pool } from 'pg';
 import { withOrg, withoutOrg } from '@/lib/tenant/context';
+
+// Admin (superuser) connection for setup/teardown only. veloapp deliberately
+// cannot TRUNCATE (RLS/privilege), so reset state via ADMIN_DATABASE_URL
+// (falls back to DATABASE_URL for local convenience).
+const admin = new Pool({
+  connectionString: process.env.ADMIN_DATABASE_URL ?? process.env.DATABASE_URL,
+});
 
 let orgA: string;
 let orgB: string;
 
 beforeAll(async () => {
+  // idempotent: wipe prior test data so reruns don't collide on unique slugs
+  await admin.query('TRUNCATE app_user, organization CASCADE');
   await withoutOrg(async (tx) => {
     const a = await tx.query(
       "INSERT INTO organization (slug, name) VALUES ('org-a','Org A') RETURNING id",
@@ -29,6 +39,10 @@ beforeAll(async () => {
   await withOrg(orgB, (tx) =>
     tx.query("INSERT INTO app_user (organization_id, email) VALUES ($1,'b@x.com')", [orgB]),
   );
+});
+
+afterAll(async () => {
+  await admin.end();
 });
 
 describe('RLS tenant isolation', () => {

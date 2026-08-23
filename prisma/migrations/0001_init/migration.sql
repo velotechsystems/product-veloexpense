@@ -42,6 +42,9 @@ CREATE INDEX app_user_org_id_idx ON app_user (organization_id);
 
 ALTER TABLE app_user ENABLE ROW LEVEL SECURITY;
 ALTER TABLE app_user FORCE  ROW LEVEL SECURITY;   -- applies even to the table owner
+-- NULLIF(...,'') is required: once app.current_org has been set on a pooled
+-- connection, Postgres returns '' (not NULL) for it afterward, and ''::uuid
+-- errors. NULLIF maps ''/unset -> NULL, which matches no rows (safe default).
 CREATE POLICY tenant_isolation ON app_user
-    USING      (organization_id = current_setting('app.current_org', true)::uuid)
-    WITH CHECK (organization_id = current_setting('app.current_org', true)::uuid);
+    USING      (organization_id = NULLIF(current_setting('app.current_org', true), '')::uuid)
+    WITH CHECK (organization_id = NULLIF(current_setting('app.current_org', true), '')::uuid);
