@@ -1,0 +1,69 @@
+name-template: 'Release v$RESOLVED_VERSION'
+tag-template: 'v$RESOLVED_VERSION'
+template: |
+  $CHANGES
+
+include-pre-releases: true
+filter-by-commitish: true
+sort-by: 'merged_at'
+sort-direction: 'descending'
+exclude-labels:
+  - 'skip:changelog'
+
+category-template: '## $TITLE'
+categories:
+  - title: 'Breaking Changes'
+    labels:
+      - 'type:breaking-change'
+  - title: 'Features'
+    labels:
+      - 'type:feature'
+  - title: 'Enhancements'
+    labels:
+      - 'type:enhancement'
+  - title: 'Bug Fixes'
+    labels:
+      - 'type:bug'
+  - title: 'Infrastructure'
+    labels:
+      - 'type:infrastructure'
+  - title: 'Documentation'
+    labels:
+      - 'type:documentation'
+  - title: 'Dependencies'
+    labels:
+      - 'type:dependencies'
+      - 'dependencies'
+  - title: 'Internal'
+    labels:
+      - 'type:internal'
+  - title: 'Other'
+    labels: []
+
+no-changes-template: '* No changes'
+change-template: '* [#$NUMBER] $TITLE - @$AUTHOR'
+change-title-escapes: '\<*_&'
+
+version-resolver:
+  major:
+    labels:
+      - 'release:major'
+      - 'type:breaking-change'
+  minor:
+    labels:
+      - 'release:minor'
+      - 'type:feature'
+  patch:
+    labels:
+      - 'release:patch'
+      - 'type:bug'
+      - 'type:enhancement'
+      - 'type:infrastructure'
+      - 'type:documentation'
+      - 'type:dependencies'
+      - 'type:internal'
+  default: 'patch'
+
+replacers:
+  - search: '/CVE-(\d{4})-(\d+)/g'
+    replace: '[CVE-$1-$2](https://www.cve.org/CVERecord?id=CVE-$1-$2)'

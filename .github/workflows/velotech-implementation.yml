@@ -1,0 +1,47 @@
+# ===========================================================================
+# Velotech Implementation — caller stub.
+# Copy to .github/workflows/velotech-implementation.yml.
+# Dispatched by the lifecycle workflow when /velotech-build fires on a
+# plan:approved issue. Not triggered directly by user actions.
+# ===========================================================================
+name: Velotech Implementation
+
+on:
+  workflow_dispatch:
+    inputs:
+      issue_number:
+        description: 'Issue number to build'
+        required: true
+        type: string
+      build_actor:
+        description: 'GitHub login who triggered the build'
+        required: false
+        default: ''
+        type: string
+      triggering_comment_id:
+        description: 'ID of the /velotech-build comment that fired this run'
+        required: false
+        default: ''
+        type: string
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+  actions: write
+
+concurrency:
+  group: velotech-implementation-${{ github.event.inputs.issue_number }}
+  cancel-in-progress: false
+
+jobs:
+  implement:
+    uses: velotechsystems/infra-ci-cd/.github/workflows/velotech-implementation.yml@v1
+    with:
+      runner_label: ${{ vars.RUNNER_LABEL }}
+      ai_model: ${{ vars.AI_LIFECYCLE_MODEL || 'claude-sonnet-4-5-20250929' }}
+      claude_code_version: ${{ vars.CLAUDE_CODE_VERSION || 'latest' }}
+      issue_number: ${{ github.event.inputs.issue_number }}
+      build_actor: ${{ github.event.inputs.build_actor }}
+      triggering_comment_id: ${{ github.event.inputs.triggering_comment_id }}
+    secrets: inherit
