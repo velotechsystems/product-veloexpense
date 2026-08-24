@@ -39,6 +39,14 @@ beforeAll(async () => {
   await withOrg(orgB, (tx) =>
     tx.query("INSERT INTO app_user (organization_id, email) VALUES ($1,'b@x.com')", [orgB]),
   );
+  // VX1-1: a reference table (expense_category) per org, to prove the new
+  // tenant tables are isolated too.
+  await withOrg(orgA, (tx) =>
+    tx.query("INSERT INTO expense_category (organization_id, code, label) VALUES ($1,'meals','Meals A')", [orgA]),
+  );
+  await withOrg(orgB, (tx) =>
+    tx.query("INSERT INTO expense_category (organization_id, code, label) VALUES ($1,'meals','Meals B')", [orgB]),
+  );
 });
 
 afterAll(async () => {
@@ -62,5 +70,12 @@ describe('RLS tenant isolation', () => {
   it('unset context sees zero rows', async () => {
     const rows = await withoutOrg((tx) => tx.query('SELECT * FROM app_user'));
     expect(rows.rows).toHaveLength(0);
+  });
+
+  it('reference tables are tenant-isolated (expense_category)', async () => {
+    const a = await withOrg(orgA, (tx) => tx.query('SELECT label FROM expense_category'));
+    expect(a.rows.map((r) => r.label)).toEqual(['Meals A']);
+    const none = await withoutOrg((tx) => tx.query('SELECT * FROM expense_category'));
+    expect(none.rows).toHaveLength(0);
   });
 });
