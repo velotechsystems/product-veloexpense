@@ -1,7 +1,6 @@
-/* VeloExpense — Velotech shared design tokens (uncomment after `npm i @velotech/ui`).
-   Bring in the --vl-* palette + the shadcn radix-nova theme mapping. */
-/* @import "@velotech/ui/tokens/velotech-tokens.css"; */
-/* @import "@velotech/ui/tokens/tailwind-v4.css"; */
+/* VeloExpense — Velotech shared design tokens, vendored from lib-ui-kit. */
+@import "./velotech-tokens.css";
+@import "./tailwind-v4.css";
 
 @import "tailwindcss";
 
