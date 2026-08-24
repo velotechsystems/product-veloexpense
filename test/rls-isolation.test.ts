@@ -47,6 +47,21 @@ beforeAll(async () => {
   await withOrg(orgB, (tx) =>
     tx.query("INSERT INTO expense_category (organization_id, code, label) VALUES ($1,'meals','Meals B')", [orgB]),
   );
+  // VX1-3: an expense report per org (submitter resolved within the org via subquery).
+  await withOrg(orgA, (tx) =>
+    tx.query(
+      `INSERT INTO expense_report (organization_id, title, currency_code, submitter_id)
+         SELECT $1, 'Report A', 'CAD', id FROM app_user WHERE organization_id = $1 LIMIT 1`,
+      [orgA],
+    ),
+  );
+  await withOrg(orgB, (tx) =>
+    tx.query(
+      `INSERT INTO expense_report (organization_id, title, currency_code, submitter_id)
+         SELECT $1, 'Report B', 'CAD', id FROM app_user WHERE organization_id = $1 LIMIT 1`,
+      [orgB],
+    ),
+  );
 });
 
 afterAll(async () => {
@@ -76,6 +91,13 @@ describe('RLS tenant isolation', () => {
     const a = await withOrg(orgA, (tx) => tx.query('SELECT label FROM expense_category'));
     expect(a.rows.map((r) => r.label)).toEqual(['Meals A']);
     const none = await withoutOrg((tx) => tx.query('SELECT * FROM expense_category'));
+    expect(none.rows).toHaveLength(0);
+  });
+
+  it('expense reports are tenant-isolated', async () => {
+    const a = await withOrg(orgA, (tx) => tx.query('SELECT title FROM expense_report'));
+    expect(a.rows.map((r) => r.title)).toEqual(['Report A']);
+    const none = await withoutOrg((tx) => tx.query('SELECT * FROM expense_report'));
     expect(none.rows).toHaveLength(0);
   });
 });
