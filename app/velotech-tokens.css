@@ -1,0 +1,133 @@
+/*
+ * VeloTech shared design tokens — the single source of truth for brand colour,
+ * type, radius, and the shadcn/ui theme mapping across every VeloTech product.
+ *
+ * PORTABLE BY DESIGN: this file is nothing but CSS custom properties, so it
+ * works identically under Tailwind v3, Tailwind v4, and plain static HTML. A
+ * product imports this one file and gets the whole brand contract.
+ *
+ * Two layers live here:
+ *   1. Brand primitives  (--vl-*)        — the raw palette / type / radius.
+ *   2. shadcn/ui mapping (--primary …)   — references the primitives above, so
+ *                                           changing a --vl-* value moves both
+ *                                           the legacy `vl-` UI and shadcn
+ *                                           components together.
+ *
+ * The `--vl-` prefix is the VeloTech brand prefix (it predates the rename from
+ * VeloLedger). Kept as-is so VeloLedger's existing ~1,500-line token sheet and
+ * its `vl-` classes consume this file unchanged.
+ *
+ * Tailwind v4 consumers ALSO import ./tailwind-v4.css for the @theme / variant
+ * glue. v3 and static consumers need only this file.
+ */
+
+:root {
+  /* ---- Brand (sky) ---- */
+  --vl-brand: #0284c7; /* sky-600 — primary */
+  --vl-brand-50: #f0f9ff;
+  --vl-brand-100: #e0f2fe;
+  --vl-brand-200: #bae6fd;
+  --vl-brand-400: #38bdf8;
+  --vl-brand-600: #0369a1;
+  --vl-brand-700: #075985;
+  --vl-brand-900: #082f49;
+
+  /* ---- Ink (text + neutral surfaces) ---- */
+  --vl-ink-900: #0f172a;
+  --vl-ink-700: #334155;
+  --vl-ink-500: #64748b;
+  --vl-ink-300: #cbd5e1;
+  --vl-ink-200: #e2e8f0;
+  --vl-ink-100: #f1f5f9;
+  --vl-ink-50: #f7fafc;
+  --vl-white: #ffffff;
+
+  /* ---- Status ---- */
+  --vl-success: #0a7a33;
+  --vl-warn: #b45309;
+  --vl-danger: #b00020;
+
+  /* ---- Type ---- */
+  /* Products may prepend their own webfont via --vl-font-inter (or override
+     --vl-font-sans entirely); the system stack below is the portable default. */
+  --vl-font-sans:
+    var(--vl-font-inter, ""), -apple-system, BlinkMacSystemFont, "Segoe UI",
+    "Helvetica Neue", Arial, sans-serif;
+  --vl-font-mono:
+    "SFMono-Regular", Menlo, Consolas, "Liberation Mono", monospace;
+
+  /* ---- Radius ---- */
+  --vl-radius-sm: 4px;
+  --vl-radius-md: 6px;
+  --vl-radius-lg: 10px;
+  --vl-radius-xl: 14px;
+
+  /* ====================================================================
+   * shadcn/ui theme mapping — references the --vl-* primitives above.
+   * Single source of truth: change a --vl-* value and both the legacy vl-
+   * UI and the shadcn components follow. Dark mode is inherited for free
+   * because the --vl-* primitives flip under the @media block below.
+   * ==================================================================== */
+  --font-sans: var(--vl-font-sans);
+
+  --background: var(--vl-white);
+  --foreground: var(--vl-ink-900);
+  --card: var(--vl-white);
+  --card-foreground: var(--vl-ink-900);
+  --popover: var(--vl-white);
+  --popover-foreground: var(--vl-ink-900);
+
+  --primary: var(--vl-brand);
+  --primary-foreground: var(--vl-white);
+  --secondary: var(--vl-ink-100);
+  --secondary-foreground: var(--vl-ink-900);
+  --muted: var(--vl-ink-100);
+  --muted-foreground: var(--vl-ink-500);
+  --accent: var(--vl-brand-50);
+  --accent-foreground: var(--vl-brand-700);
+  --destructive: var(--vl-danger);
+
+  --border: var(--vl-ink-200);
+  --input: var(--vl-ink-200);
+  --ring: var(--vl-brand);
+  --radius: var(--vl-radius-md);
+
+  --chart-1: var(--vl-brand-400);
+  --chart-2: var(--vl-brand);
+  --chart-3: var(--vl-brand-600);
+  --chart-4: var(--vl-brand-700);
+  --chart-5: var(--vl-brand-900);
+
+  --sidebar: var(--vl-white);
+  --sidebar-foreground: var(--vl-ink-900);
+  --sidebar-primary: var(--vl-brand);
+  --sidebar-primary-foreground: var(--vl-white);
+  --sidebar-accent: var(--vl-brand-50);
+  --sidebar-accent-foreground: var(--vl-brand-700);
+  --sidebar-border: var(--vl-ink-200);
+  --sidebar-ring: var(--vl-brand);
+}
+
+/*
+ * Dark mode — flips only the brand PRIMITIVES; every shadcn var above
+ * recomputes automatically because each references a --vl-* token. Gated on
+ * :root:not([data-theme='light']) so a product can force light with a
+ * data-theme attribute.
+ */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --vl-ink-900: #f1f5f9;
+    --vl-ink-700: #cbd5e1;
+    --vl-ink-500: #94a3b8;
+    --vl-ink-300: #475569;
+    --vl-ink-200: #334155;
+    --vl-ink-100: #1e293b;
+    --vl-ink-50: #0f172a;
+
+    --vl-brand-50: #0b2236;
+    --vl-brand-100: #0c2e4a;
+    --vl-brand-200: #0a3b63;
+
+    --vl-success: #22c55e;
+  }
+}
