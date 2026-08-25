@@ -23,20 +23,12 @@ import type { QueryRunner } from '@/lib/db/client';
 import type { Storage } from '@/lib/storage';
 import { getStorage } from '@/lib/storage';
 import * as expenses from '@/lib/expenses/service';
+// Shared with the browser via lib/receipts/constants (this module imports pg).
+import { ALLOWED_CONTENT_TYPES, MAX_RECEIPT_BYTES } from './constants';
+
+export { ALLOWED_CONTENT_TYPES, MAX_RECEIPT_BYTES };
 
 const ORG = "current_setting('app.current_org', true)::uuid";
-
-/** What a receipt may be. Keep in step with the UI's file picker accept list. */
-export const ALLOWED_CONTENT_TYPES = [
-  'image/jpeg',
-  'image/png',
-  'image/webp',
-  'image/heic',
-  'image/heif',
-  'application/pdf',
-] as const;
-
-export const MAX_RECEIPT_BYTES = 20 * 1024 * 1024; // 20 MB
 
 export type ReceiptStatus = 'PENDING' | 'STORED';
 
