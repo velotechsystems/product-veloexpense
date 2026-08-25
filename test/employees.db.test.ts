@@ -1,0 +1,192 @@
+/**
+ * VX1-2 — employees & org service DB test. Exercises lib/employees/service
+ * directly over a tenant transaction (withOrg), so no auth session is needed.
+ *
+ * Covers the directory read path, manager-chain resolution, the cycle and
+ * cross-tenant guards, and the deactivation rules. Tenant isolation of app_user
+ * itself is proven by test/rls-isolation.test.ts (no new tenant table lands in
+ * this ticket — 0004 only adds columns/constraints to app_user).
+ */
+import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { Pool } from 'pg';
+import { withOrg } from '@/lib/tenant/context';
+import * as svc from '@/lib/employees/service';
+
+const admin = new Pool({ connectionString: process.env.ADMIN_DATABASE_URL ?? process.env.DATABASE_URL });
+
+let orgA: string;
+let orgB: string;
+let deptId: string;
+let ceo: svc.EmployeeRow;
+let manager: svc.EmployeeRow;
+let report: svc.EmployeeRow;
+let otherOrgEmployeeId: string;
+
+beforeAll(async () => {
+  await admin.query('TRUNCATE app_user, organization CASCADE');
+  const a = await admin.query("INSERT INTO organization (slug, name) VALUES ('vx12-acme','Acme') RETURNING id");
+  const b = await admin.query("INSERT INTO organization (slug, name) VALUES ('vx12-globex','Globex') RETURNING id");
+  orgA = a.rows[0].id;
+  orgB = b.rows[0].id;
+
+  await withOrg(orgA, async (tx) => {
+    const d = await tx.query(
+      "INSERT INTO department (organization_id, name) VALUES ($1,'Finance') RETURNING id",
+      [orgA],
+    );
+    deptId = d.rows[0].id;
+
+    ceo = await svc.createEmployee(tx, {
+      email: 'ceo@acme.test',
+      displayName: 'Casey CEO',
+      title: 'Chief Executive',
+      role: 'ADMIN',
+    });
+    manager = await svc.createEmployee(tx, {
+      email: 'manager@acme.test',
+      displayName: 'Morgan Manager',
+      title: 'Finance Manager',
+      role: 'MANAGER',
+      managerId: ceo.id,
+      departmentId: deptId,
+    });
+    report = await svc.createEmployee(tx, {
+      email: 'employee@acme.test',
+      displayName: 'Robin Report',
+      title: 'Analyst',
+      managerId: manager.id,
+      departmentId: deptId,
+    });
+  });
+
+  await withOrg(orgB, async (tx) => {
+    const other = await svc.createEmployee(tx, { email: 'someone@globex.test', displayName: 'Other Org' });
+    otherOrgEmployeeId = other.id;
+  });
+});
+
+afterAll(async () => {
+  await admin.end();
+});
+
+describe('employee directory', () => {
+  it('lists employees in the tenant with their joined org data', async () => {
+    const { employees, total } = await withOrg(orgA, (tx) => svc.listEmployees(tx));
+    expect(total).toBe(3);
+    expect(employees.map((e) => e.email)).toEqual([
+      'ceo@acme.test',
+      'manager@acme.test',
+      'employee@acme.test',
+    ]);
+    const robin = employees.find((e) => e.email === 'employee@acme.test')!;
+    expect(robin.manager_name).toBe('Morgan Manager');
+    expect(robin.department_name).toBe('Finance');
+    expect(robin.role).toBe('EMPLOYEE');
+  });
+
+  it('searches by name, email and title', async () => {
+    const byName = await withOrg(orgA, (tx) => svc.listEmployees(tx, { search: 'morgan' }));
+    expect(byName.employees.map((e) => e.email)).toEqual(['manager@acme.test']);
+    const byTitle = await withOrg(orgA, (tx) => svc.listEmployees(tx, { search: 'analyst' }));
+    expect(byTitle.employees.map((e) => e.email)).toEqual(['employee@acme.test']);
+  });
+
+  it('another tenant sees only its own employees', async () => {
+    const { employees, total } = await withOrg(orgB, (tx) => svc.listEmployees(tx));
+    expect(total).toBe(1);
+    expect(employees[0].email).toBe('someone@globex.test');
+  });
+
+  it('the same email may exist in two different tenants', async () => {
+    const created = await withOrg(orgB, (tx) => svc.createEmployee(tx, { email: 'ceo@acme.test' }));
+    expect(created.email).toBe('ceo@acme.test');
+    await withOrg(orgB, (tx) => tx.query('DELETE FROM app_user WHERE id = $1', [created.id]));
+  });
+
+  it('rejects a duplicate email inside one tenant', async () => {
+    await expect(
+      withOrg(orgA, (tx) => svc.createEmployee(tx, { email: 'CEO@acme.test' })),
+    ).rejects.toMatchObject({ code: 'EMAIL_TAKEN' });
+  });
+});
+
+describe('reporting structure', () => {
+  it('resolves direct reports', async () => {
+    const reports = await withOrg(orgA, (tx) => svc.getDirectReports(tx, manager.id));
+    expect(reports.map((r) => r.email)).toEqual(['employee@acme.test']);
+  });
+
+  it('resolves the manager chain nearest-first', async () => {
+    const chain = await withOrg(orgA, (tx) => svc.getManagerChain(tx, report.id));
+    expect(chain.map((c) => c.email)).toEqual(['manager@acme.test', 'ceo@acme.test']);
+    expect(chain.map((c) => c.depth)).toEqual([1, 2]);
+  });
+
+  it('rejects a manager from another tenant', async () => {
+    await expect(
+      withOrg(orgA, (tx) => svc.updateEmployee(tx, report.id, { managerId: otherOrgEmployeeId })),
+    ).rejects.toMatchObject({ code: 'MANAGER_NOT_FOUND' });
+  });
+
+  it('rejects a manager assignment that would create a cycle', async () => {
+    await expect(
+      withOrg(orgA, (tx) => svc.updateEmployee(tx, ceo.id, { managerId: report.id })),
+    ).rejects.toMatchObject({ code: 'MANAGER_CYCLE' });
+  });
+
+  it('clears a manager when the patch sets it to null', async () => {
+    const cleared = await withOrg(orgA, async (tx) => {
+      const updated = await svc.updateEmployee(tx, report.id, { managerId: null });
+      await svc.updateEmployee(tx, report.id, { managerId: manager.id }); // restore
+      return updated;
+    });
+    expect(cleared.manager_id).toBeNull();
+  });
+});
+
+describe('deactivation', () => {
+  it('refuses to deactivate an employee who still has direct reports', async () => {
+    await expect(
+      withOrg(orgA, (tx) => svc.deactivateEmployee(tx, manager.id)),
+    ).rejects.toMatchObject({ code: 'HAS_DIRECT_REPORTS' });
+  });
+
+  it('refuses to let an admin deactivate themselves', async () => {
+    await expect(
+      withOrg(orgA, (tx) => svc.deactivateEmployee(tx, ceo.id, { actingEmployeeId: ceo.id })),
+    ).rejects.toMatchObject({ code: 'SELF_DEACTIVATE' });
+  });
+
+  it('deactivates and reassigns reports, then hides the row from the directory', async () => {
+    const result = await withOrg(orgA, async (tx) => {
+      const deactivated = await svc.deactivateEmployee(tx, manager.id, {
+        actingEmployeeId: ceo.id,
+        reassignReportsTo: ceo.id,
+      });
+      const reassigned = await svc.getEmployee(tx, report.id);
+      const visible = await svc.listEmployees(tx);
+      const withDeactivated = await svc.listEmployees(tx, { includeDeactivated: true });
+      return {
+        status: deactivated.employee_status,
+        deletedAt: deactivated.deleted_at,
+        newManagerId: reassigned!.manager_id,
+        visible: visible.employees.map((e) => e.email),
+        all: withDeactivated.total,
+      };
+    });
+
+    expect(result.status).toBe('DEACTIVATED');
+    expect(result.deletedAt).not.toBeNull();
+    expect(result.newManagerId).toBe(ceo.id);
+    expect(result.visible).toEqual(['ceo@acme.test', 'employee@acme.test']);
+    expect(result.all).toBe(3);
+  });
+
+  it('reactivating through update clears the soft-delete stamp', async () => {
+    const reactivated = await withOrg(orgA, (tx) =>
+      svc.updateEmployee(tx, manager.id, { employeeStatus: 'ACTIVE' }),
+    );
+    expect(reactivated.employee_status).toBe('ACTIVE');
+    expect(reactivated.deleted_at).toBeNull();
+  });
+});
