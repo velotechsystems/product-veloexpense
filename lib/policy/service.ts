@@ -298,7 +298,7 @@ export async function listViolations(tx: QueryRunner, reportId: string): Promise
     `${SELECT_VIOLATION}
       WHERE v.report_id = $1
       ORDER BY CASE v.severity WHEN 'BLOCK' THEN 0 WHEN 'WARNING' THEN 1 ELSE 2 END,
-               v.created_at`,
+               v.rule_code, v.finding_key, v.created_at, v.id`,
     [reportId],
   );
   return r.rows as ViolationRow[];

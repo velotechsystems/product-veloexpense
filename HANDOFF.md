@@ -1,6 +1,6 @@
 # VeloExpense — Build Handoff (context for a fresh thread)
 
-_Last updated: 2026-08-26 (through VX1-7). Paste this whole file into the new thread as context._
+_Last updated: 2026-08-26 (through VX1-8). Paste this whole file into the new thread as context._
 
 ## 0. What VeloExpense is
 The commercial, **multi-tenant** SaaS expense product, built for third-party SMB
@@ -44,16 +44,18 @@ Two separate codebases:
   - `lib/receipts/service.ts` + `lib/storage/` + `app/receipts/actions.ts` — VX1-5; the storage seam. `lib/receipts/constants.ts` holds what the browser may import (the service pulls in `pg`).
   - `app/expenses/{page,layout,ui}.tsx`, `app/expenses/new/`, `app/expenses/[reportId]/` — VX1-6; the workbench, and the pattern for a user-facing (not admin) surface.
   - `lib/money.ts` — the ONLY place minor units convert. String/bigint math, never float.
+  - `lib/expenses/lifecycle.ts` — VX1-8; submit/recall/history. Its OWN module because `lib/policy/service.ts` already imports `lib/expenses/service.ts`, and submitting needs both — putting it in either would make them import each other.
   - `lib/policy/rules.ts` + `lib/policy/service.ts` — VX1-7; rule TYPES in code, rule INSTANCES in `expense_policy`. `rules.ts` is PURE (no DB) and is where a new rule kind is added. `app/admin/expense-policies/` is the config surface, `app/expenses/[reportId]/policy-panel.tsx` the employee-facing one.
   - `test/rls-isolation.test.ts` — the RLS gate; extend it for each new tenant table.
   - `scripts/seed.mjs` — `npm run seed` (demo + blank tenants, synthetic data; demo has admin/manager/employee with a wired reporting line).
-- Migrations are plain SQL under `prisma/migrations/NNNN_name/migration.sql`, applied with `psql -f` (no Prisma migrate wired yet). Current: `0001_init`, `0002_reference_and_employees`, `0003_expense_reports`, `0004_employee_roles`, `0005_receipt_upload_state`, `0006_policy_engine`.
+- Migrations are plain SQL under `prisma/migrations/NNNN_name/migration.sql`, applied with `psql -f` (no Prisma migrate wired yet). Current: `0001_init`, `0002_reference_and_employees`, `0003_expense_reports`, `0004_employee_roles`, `0005_receipt_upload_state`, `0006_policy_engine`, `0007_report_lifecycle`.
 - **Gotchas learned the hard way:**
   - `vitest.config.ts` sets **`fileParallelism: false`** — the DB suites share one Postgres and each `TRUNCATE`s in `beforeAll`. Parallel files race (duplicate slugs, FK violations). Do not remove while the suites share a database; give each new suite its own org slugs too.
   - `npx shadcn add` guesses a **`src/` layout** (the repo has `src/auth-kit/`), but `tsconfig` maps `@/*` → `./*`. After every add: `mv src/components/ui components/ui` and `mv src/lib/utils.ts lib/utils.ts`. lib-ui-kit ships no table/select/badge — those are hand-rolled against the vendored tokens in `app/expenses/ui.tsx`.
   - Authorization is read from `app_user.role` **inside the tenant transaction**, never from the session token.
   - A `<form>` may not be a child of `<tr>`. Editable table rows use the HTML `form="id"` attribute with the `<form>` elements rendered after the table — one form per row, still no client JS.
   - eslint's `react-hooks/immutability` rule rejects `window.location.href = url` in a client component; use `window.location.assign(url)`.
+  - **`now()` is the TRANSACTION start time.** Two audit rows written in one transaction share it, and ordering by it comes back arbitrary. `expense_report_event.created_at` defaults to `clock_timestamp()` for that reason; `policy_violation` (already merged with `now()`) is ordered by its identity columns in `listViolations` instead. A test caught this, not a review.
 
 ## 3. Local dev environment
 ```bash
@@ -124,9 +126,16 @@ VX0-1 scaffold · VX0-2..6 tenancy spine + RLS isolation gate (green) · VX0-7 S
   - **The starter set lives only in `DEFAULT_POLICIES`** (rules.ts), applied by "Restore starter rules" on the admin page. `scripts/seed.mjs` deliberately seeds no policies, so there is no second copy to drift. A fresh tenant therefore has NO rules until someone restores them.
   - `ValidationSummary.blocking` is the flag VX1-8's submit gate reads.
 
+- VX1-8 ✅ merged (PR#18 — confirm the number when the PR opens): submit + state gate. Migration `0007` adds `expense_report_event` (FORCE RLS, in the isolation test). `lib/expenses/lifecycle.ts` (submit / recall / history / readiness) · `app/expenses/[reportId]/lifecycle-bar.tsx` · `test/lifecycle.db.test.ts`. **Decisions:**
+  - **The policy engine RE-RUNS inside the submit transaction** rather than trusting the findings the last save stored. Otherwise a rule an admin added thirty seconds ago would not apply — the exact hole an employee would learn to exploit. There is a test for it.
+  - **BLOCK refuses, WARNING does not.** Module 9 is explicit that warnings propagate to the approver; the employee may acknowledge them with a justification instead. The refusal carries the blocking findings on the error so the UI can list them.
+  - **An empty report cannot be submitted** (no line items = nothing to reimburse). Not in the ticket; it is obviously right and cheap.
+  - **Recall covers SUBMITTED and RETURNED → DRAFT** and clears `submitted_at`, because that column means "currently submitted at". The audit trail is what remembers it once was.
+  - **The submit button is always live on a DRAFT** and the SERVER refuses with a reason. A disabled button with no explanation is the worst version of this interaction, and the authoritative check has to be server-side regardless.
+  - The audit row snapshots the total and the violation counts the gate saw, so a later rule edit cannot rewrite the history of why a submit was allowed.
+
 **Phase 1 remaining tickets** (see `…/ExpenseOS/Specifications_and_Planning/VeloExpense-Phase-1-Tickets.docx`):
-- VX1-8 Submit + state gate (DRAFT→SUBMITTED, block on BLOCK violations, justify soft warnings, recall, audit row).
-- VX1-9 Phase-1 isolation + Playwright e2e in CI.
+- VX1-9 Phase-1 isolation + Playwright e2e in CI. **This is the last Phase-1 ticket.**
 
 ## 6. Planning docs (in the ExpenseOS Google-Drive folder, `Specifications_and_Planning/`)
 - `VeloExpense-Port-and-Build-Plan.docx` (7-phase plan + ExpenseOS→VeloExpense sync strategy)
@@ -135,25 +144,26 @@ VX0-1 scaffold · VX0-2..6 tenancy spine + RLS isolation gate (green) · VX0-7 S
 - ExpenseOS status/dashboard docs + the live Cowork artifact `expenseos-dev-dashboard` (weekly refresh).
 
 ## 7. Immediate next action for the new thread
-1. **VX1-8 (submit + state gate)** is the next ticket and most of its floor exists:
-   `assertDraft()` already makes anything past DRAFT read-only, and
-   `policy.validateReport()` returns `blocking` for the gate. What is left: the
-   DRAFT→SUBMITTED transition (set `submitted_at`), refuse it while
-   `blocking` is true, recall back to DRAFT, and a minimal audit row per
-   transition (a new tenant table → **RLS + isolation-test entry required**).
-2. **Click the loop through in a browser** — still not done. VX1-6 and VX1-7 are
-   verified by typecheck, lint, the 72-test suite and `next build`, but nothing
-   has been exercised in a real browser. Needs: MinIO up with `STORAGE_*` in
-   `.env.local` (there are none today) and the bucket CORS rule allowing `PUT`
+1. **VX1-9 closes Phase 1.** Two halves: (a) extend the RLS harness — it now covers
+   app_user, expense_category, expense_report, expense_policy, policy_violation
+   and expense_report_event, so what is left is expense / expense_line_item /
+   receipt; (b) a Playwright happy path (login → create → add line + receipt →
+   submit) wired into CI. Note the e2e needs a signed-in session, and SSO is
+   invite-only — decide early whether CI gets a test-only credentials path or
+   the e2e stubs the session cookie.
+2. **Nothing has been clicked in a browser yet** — three tickets of UI now
+   (VX1-6, VX1-7, VX1-8), all verified only by typecheck, lint, the 88-test
+   suite and `next build`. To click through: MinIO up with `STORAGE_*` in
+   `.env.local` (there are none today) and a bucket CORS rule allowing `PUT`
    from the app origin; an `app_user` row in the demo tenant matching a real
-   Google/Entra identity, `role='ADMIN'` for the admin surfaces; then
-   "Restore starter rules" on `/admin/expense-policies` before any violation
-   will appear. Worth a close look: editable table rows use the HTML
-   `form="id"` attribute, which compiles and lints but has not been clicked.
-3. Dependabot has open PRs for **vitest 4** and **typescript 7** — both are major
-   bumps across all six test suites. Take them deliberately, not alongside a
-   feature branch. Vitest 4 still honours `fileParallelism`, so the race fix
-   survives.
+   Google/Entra identity, `role='ADMIN'`; then "Restore starter rules" on
+   `/admin/expense-policies`, or nothing will ever flag. Worth a close look:
+   editable table rows use the HTML `form="id"` attribute, which compiles and
+   lints but has not been clicked. Doing this BEFORE writing the Playwright
+   spec will save writing the spec twice.
+3. Dependabot has open PRs for **vitest 4** and **typescript 7** — major bumps
+   across all seven test suites. Take them deliberately, not alongside a feature
+   branch. Vitest 4 still honours `fileParallelism`, so the race fix survives.
 4. When porting any ExpenseOS behavior: read the relevant ExpenseOS router/model
    as the spec, then re-implement tenant-scoped (server action + lib module +
    RLS + isolation test). Keep the graph approval engine and VCC/Travel OFF for

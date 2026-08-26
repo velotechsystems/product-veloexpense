@@ -26,6 +26,8 @@ import { Input } from '@/components/ui/input';
 import { formatMinor, minorToDecimalString } from '@/lib/money';
 import {
   addExpenseFromForm,
+  getReportHistory,
+  getSubmitReadiness,
   getValidation,
   addLineItemFromForm,
   deleteReportFromForm,
@@ -51,6 +53,7 @@ import {
 } from '../ui';
 import { ReceiptDrawer, type ReceiptSummary } from './receipt-drawer';
 import { PolicyPanel } from './policy-panel';
+import { LifecycleBar, ReportHistory } from './lifecycle-bar';
 
 export const dynamic = 'force-dynamic';
 
@@ -70,6 +73,8 @@ export default async function ReportWorkbenchPage({
   const { report, expenses, uncodedExpenseCount } = workbench;
   const { categories, currencies, businessUnits } = await getWorkbenchOptions();
   const validation = await getValidation(reportId);
+  const readiness = await getSubmitReadiness(reportId);
+  const history = await getReportHistory(reportId);
   const editable = report.status === 'DRAFT';
   const minorUnit: number = report.minor_unit;
   const inbox: ReceiptSummary[] = editable ? await listUnattachedReceipts() : [];
@@ -106,8 +111,11 @@ export default async function ReportWorkbenchPage({
       {!editable ? (
         <p className="rounded-lg border border-border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
           This report is {report.status} and can no longer be edited.
+          {readiness.canRecall ? ' Recall it to a draft to make changes.' : ''}
         </p>
       ) : null}
+
+      <LifecycleBar reportId={report.id} status={report.status} readiness={readiness} />
 
       <PolicyPanel reportId={report.id} summary={validation} editable={editable} />
 
@@ -502,6 +510,8 @@ export default async function ReportWorkbenchPage({
           </form>
         </section>
       ) : null}
+
+      <ReportHistory events={history} />
 
       {editable ? (
         <form action={deleteReportFromForm} className="pt-2">
