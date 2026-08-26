@@ -29,7 +29,9 @@ export function LifecycleBar({
       <div className="flex flex-col gap-1">
         <div className="flex items-center gap-2">
           <span className="text-sm font-medium">Status</span>
-          <StatusBadge status={status} />
+          <span data-testid="report-status">
+            <StatusBadge status={status} />
+          </span>
         </div>
         {readiness.reasons.length > 0 ? (
           <p className="text-xs text-muted-foreground">

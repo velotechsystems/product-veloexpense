@@ -10,7 +10,10 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "seed": "node scripts/seed.mjs"
+    "seed": "node scripts/seed.mjs",
+    "e2e": "npm run build && playwright test",
+    "e2e:ui": "playwright test --ui",
+    "start:standalone": "cp -r public .next/standalone/public 2>/dev/null; cp -r .next/static .next/standalone/.next/static && node .next/standalone/server.js"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1117.0",
@@ -26,6 +29,7 @@
     "tailwind-merge": "^3.6.0"
   },
   "devDependencies": {
+    "@playwright/test": "^1.50.0",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
     "@types/pg": "^8.11.10",
@@ -33,6 +37,7 @@
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "16.3.2",
+    "s3rver": "^3.7.1",
     "tailwindcss": "^4",
     "typescript": "^5",
     "vitest": "^2.1.8"

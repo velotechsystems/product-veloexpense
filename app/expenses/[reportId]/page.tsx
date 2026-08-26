@@ -95,7 +95,9 @@ export default async function ReportWorkbenchPage({
             <StatusBadge status={report.status} />
           </div>
           <div className="text-right">
-            <div className="text-2xl font-semibold tabular-nums">{money(report.total_minor)}</div>
+            <div className="text-2xl font-semibold tabular-nums" data-testid="report-total">
+              {money(report.total_minor)}
+            </div>
             <div className="font-mono text-xs text-muted-foreground">{report.number ?? '—'}</div>
           </div>
         </div>

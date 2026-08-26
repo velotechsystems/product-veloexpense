@@ -56,7 +56,7 @@ export function PolicyPanel({
       </header>
 
       {violations.length === 0 ? (
-        <p className="text-sm text-muted-foreground">
+        <p className="text-sm text-muted-foreground" data-testid="policy-clean">
           No policy violations. Rules run on every save.
         </p>
       ) : null}
@@ -72,6 +72,8 @@ export function PolicyPanel({
           {open.map((violation) => (
             <li
               key={violation.id}
+              data-testid="policy-violation"
+              data-severity={violation.severity}
               className="flex flex-col gap-2 rounded-lg border border-border px-3 py-2"
             >
               <div className="flex items-start gap-2">

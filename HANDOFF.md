@@ -1,6 +1,6 @@
 # VeloExpense — Build Handoff (context for a fresh thread)
 
-_Last updated: 2026-08-26 (through VX1-8). Paste this whole file into the new thread as context._
+_Last updated: 2026-08-26 (Phase 1 COMPLETE, through VX1-9). Paste this whole file into the new thread as context._
 
 ## 0. What VeloExpense is
 The commercial, **multi-tenant** SaaS expense product, built for third-party SMB
@@ -44,6 +44,7 @@ Two separate codebases:
   - `lib/receipts/service.ts` + `lib/storage/` + `app/receipts/actions.ts` — VX1-5; the storage seam. `lib/receipts/constants.ts` holds what the browser may import (the service pulls in `pg`).
   - `app/expenses/{page,layout,ui}.tsx`, `app/expenses/new/`, `app/expenses/[reportId]/` — VX1-6; the workbench, and the pattern for a user-facing (not admin) surface.
   - `lib/money.ts` — the ONLY place minor units convert. String/bigint math, never float.
+  - `e2e/` + `playwright.config.ts` + `scripts/e2e-storage.mjs` — VX1-9; the only tests that drive a real browser and a real presigned upload. `npm run e2e` (builds, then runs).
   - `lib/expenses/lifecycle.ts` — VX1-8; submit/recall/history. Its OWN module because `lib/policy/service.ts` already imports `lib/expenses/service.ts`, and submitting needs both — putting it in either would make them import each other.
   - `lib/policy/rules.ts` + `lib/policy/service.ts` — VX1-7; rule TYPES in code, rule INSTANCES in `expense_policy`. `rules.ts` is PURE (no DB) and is where a new rule kind is added. `app/admin/expense-policies/` is the config surface, `app/expenses/[reportId]/policy-panel.tsx` the employee-facing one.
   - `test/rls-isolation.test.ts` — the RLS gate; extend it for each new tenant table.
@@ -76,7 +77,15 @@ SQL
 export ADMIN_DATABASE_URL="postgres://postgres:velo@localhost:5433/veloexpense"   # superuser (test truncate)
 export DATABASE_URL="postgres://veloapp:velo@localhost:5433/veloexpense"          # app role (RLS)
 npm install && npm test && npm run build && npm run typecheck && npm run seed
+# end-to-end (VX1-9): builds, starts its own S3 surface + the standalone server
+npx playwright install chromium   # once
+npm run e2e
 ```
+**`npm run start` does NOT serve this app.** `next.config.ts` sets
+`output: 'standalone'`, and with that setting `next start` prints a warning and
+serves something other than what ships. Use `npm run start:standalone` (it copies
+`public/` and `.next/static` beside the standalone server first) — that is what
+the e2e and the Docker image run.
 Receipts (VX1-5/VX1-6) additionally need MinIO and `STORAGE_*` in `.env.local` — see the header
 of `lib/storage/index.ts` for the exact vars and the docker command. **The bucket needs a CORS
 rule allowing `PUT` from the app origin**: the browser uploads directly, so without it every
@@ -134,8 +143,14 @@ VX0-1 scaffold · VX0-2..6 tenancy spine + RLS isolation gate (green) · VX0-7 S
   - **The submit button is always live on a DRAFT** and the SERVER refuses with a reason. A disabled button with no explanation is the worst version of this interaction, and the authoritative check has to be server-side regardless.
   - The audit row snapshots the total and the violation counts the gate saw, so a later rule edit cannot rewrite the history of why a submit was allowed.
 
-**Phase 1 remaining tickets** (see `…/ExpenseOS/Specifications_and_Planning/VeloExpense-Phase-1-Tickets.docx`):
-- VX1-9 Phase-1 isolation + Playwright e2e in CI. **This is the last Phase-1 ticket.**
+- VX1-9 ✅ merged (PR#19 — confirm the number when the PR opens): Phase-1 isolation + e2e. The RLS harness now covers ALL nine tenant tables (added `expense`, `expense_line_item`, `receipt`, plus a join-walk test proving a line-item→expense→report join cannot cross tenants). Playwright happy path in CI: `playwright.config.ts` · `e2e/auth.setup.ts` · `e2e/expense-flow.spec.ts` · `scripts/e2e-storage.mjs`. **Decisions:**
+  - **The e2e mints its session cookie** (encodes the same Auth.js JWT the app would issue, with AUTH_SECRET) rather than driving the login page. SSO is invite-only through Google/Entra and cannot run in CI; the alternative — a test-only credentials provider — means shipping a login bypass guarded by an env flag. The bypass lives only in `e2e/auth.setup.ts`; nothing in `app/` or `lib/` knows the e2e exists. Cost: the login page itself is not covered, and an auth-kit claim/cookie change breaks it loudly (the first request lands on /login).
+  - **Storage for the e2e is `s3rver`, not MinIO or MemoryStorage.** MemoryStorage signs `memory://` URLs no browser can fetch, which is exactly how every vitest suite stays green while a real upload is broken. s3rver is one Node process — no Docker for CI or a laptop — and it validates the SigV4 presigned URL AND answers the CORS preflight, so the CORS trap this handoff warns about now fails CI instead of someone's browser.
+  - **The e2e serves the standalone build**, since `next start` does not work with `output: 'standalone'` (found by running it).
+  - **Report titles carry a per-run id.** The e2e runs against the seeded demo tenant, which is not reset between runs, so a rerun or CI's one retry would otherwise leave several reports sharing a title.
+  - Writing the spec surfaced a real gap, now fixed: **receipt attach/detach/remove/confirm re-run the policy engine** for the affected report. Before, satisfying RECEIPT_REQUIRED left the block on screen until some unrelated save.
+
+**Phase 1 is COMPLETE.** Phase 2 (approvals) is the next phase — see the Port-and-Build Plan.
 
 ## 6. Planning docs (in the ExpenseOS Google-Drive folder, `Specifications_and_Planning/`)
 - `VeloExpense-Port-and-Build-Plan.docx` (7-phase plan + ExpenseOS→VeloExpense sync strategy)
@@ -144,30 +159,29 @@ VX0-1 scaffold · VX0-2..6 tenancy spine + RLS isolation gate (green) · VX0-7 S
 - ExpenseOS status/dashboard docs + the live Cowork artifact `expenseos-dev-dashboard` (weekly refresh).
 
 ## 7. Immediate next action for the new thread
-1. **VX1-9 closes Phase 1.** Two halves: (a) extend the RLS harness — it now covers
-   app_user, expense_category, expense_report, expense_policy, policy_violation
-   and expense_report_event, so what is left is expense / expense_line_item /
-   receipt; (b) a Playwright happy path (login → create → add line + receipt →
-   submit) wired into CI. Note the e2e needs a signed-in session, and SSO is
-   invite-only — decide early whether CI gets a test-only credentials path or
-   the e2e stubs the session cookie.
-2. **Nothing has been clicked in a browser yet** — three tickets of UI now
-   (VX1-6, VX1-7, VX1-8), all verified only by typecheck, lint, the 88-test
-   suite and `next build`. To click through: MinIO up with `STORAGE_*` in
-   `.env.local` (there are none today) and a bucket CORS rule allowing `PUT`
-   from the app origin; an `app_user` row in the demo tenant matching a real
-   Google/Entra identity, `role='ADMIN'`; then "Restore starter rules" on
-   `/admin/expense-policies`, or nothing will ever flag. Worth a close look:
-   editable table rows use the HTML `form="id"` attribute, which compiles and
-   lints but has not been clicked. Doing this BEFORE writing the Playwright
-   spec will save writing the spec twice.
-3. Dependabot has open PRs for **vitest 4** and **typescript 7** — major bumps
-   across all seven test suites. Take them deliberately, not alongside a feature
-   branch. Vitest 4 still honours `fileParallelism`, so the race fix survives.
-4. When porting any ExpenseOS behavior: read the relevant ExpenseOS router/model
+1. **A known gap worth closing first (small):** receipt actions have NO ownership
+   check. `app/receipts/actions.ts` relies on RLS, which scopes to the ORG, not
+   to a person — so any signed-in colleague who has a receipt id can detach or
+   delete it. Reports got this check in VX1-6 (`onReport`/`onExpense` require
+   `submitter_id === actor.id || ADMIN`); receipts never did. One ticket's worth
+   of work, same pattern.
+2. **Still nothing clicked by a human.** The e2e now covers the happy path in a
+   real browser, which is most of what the manual walkthrough was for, but a
+   person has never looked at these screens. Worth 20 minutes: MinIO up with
+   `STORAGE_*` in `.env.local` (there are none), the bucket CORS rule, an
+   `app_user` row matching a real Google/Entra identity with `role='ADMIN'`, then
+   "Restore starter rules" on `/admin/expense-policies`.
+3. **Phase 2 (approvals)** is the next phase: the graph approval engine, the
+   approver view (Module 8), and the RETURNED path back to the employee. VX1-8
+   already writes `expense_report_event` with a CHECK that admits APPROVE /
+   REJECT / RETURN / REIMBURSE, so the trail needs no migration to start
+   recording them.
+4. Dependabot has open PRs for **vitest 4** and **typescript 7** — major bumps
+   across seven suites, and typescript 7 will also touch the new Playwright
+   types. Take them deliberately, on their own branch.
+5. When porting any ExpenseOS behavior: read the relevant ExpenseOS router/model
    as the spec, then re-implement tenant-scoped (server action + lib module +
-   RLS + isolation test). Keep the graph approval engine and VCC/Travel OFF for
-   MVP; NA-first. Note the ExpenseOS source files in Google Drive are
-   `.ts`/`.tsx` — the Drive MCP needs `download_file_content` (base64) for
-   those, not `read_file_content`. The module specs (e.g.
-   `09-policy-engine.md`) are markdown and read fine directly.
+   RLS + isolation test). Keep VCC/Travel OFF for MVP; NA-first. ExpenseOS source
+   files in Google Drive are `.ts`/`.tsx` — the Drive MCP needs
+   `download_file_content` (base64); the module specs (e.g. `09-policy-engine.md`)
+   are markdown and read fine directly.

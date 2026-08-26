@@ -94,6 +94,28 @@ beforeAll(async () => {
            FROM app_user WHERE organization_id = $1 LIMIT 1`,
         [org, report, `Event ${label}`],
       );
+      // VX1-9: the rest of the report tree from migration 0003 — expense,
+      // expense_line_item and receipt. They were covered only transitively
+      // (through expense_report) until now; the guard counts tables, not trees.
+      const expense = await tx.query(
+        `INSERT INTO expense (organization_id, report_id, merchant, currency_code)
+         VALUES ($1, $2, $3, 'CAD') RETURNING id`,
+        [org, report, `Merchant ${label}`],
+      );
+      await tx.query(
+        `INSERT INTO expense_line_item
+           (organization_id, expense_id, category_id, amount_minor, description)
+         SELECT $1, $2, id, 1000, $3 FROM expense_category WHERE organization_id = $1 LIMIT 1`,
+        [org, expense.rows[0].id, `Line ${label}`],
+      );
+      await tx.query(
+        `INSERT INTO receipt
+           (organization_id, expense_id, s3_key, filename, content_type, size_bytes,
+            status, uploaded_by_id)
+         SELECT $1, $2, $3, $4, 'application/pdf', 10, 'STORED', id
+           FROM app_user WHERE organization_id = $1 LIMIT 1`,
+        [org, expense.rows[0].id, `org/${org}/receipts/x/${label}.pdf`, `receipt-${label}.pdf`],
+      );
     });
   }
 });
@@ -157,6 +179,43 @@ describe('RLS tenant isolation', () => {
     expect(a.rows.map((r) => r.note)).toEqual(['Event A']);
     const none = await withoutOrg((tx) => tx.query('SELECT * FROM expense_report_event'));
     expect(none.rows).toHaveLength(0);
+  });
+
+  it('expenses, line items and receipts are tenant-isolated', async () => {
+    const a = await withOrg(orgA, async (tx) => ({
+      expenses: (await tx.query('SELECT merchant FROM expense')).rows.map((r) => r.merchant),
+      lines: (await tx.query('SELECT description FROM expense_line_item')).rows.map(
+        (r) => r.description,
+      ),
+      receipts: (await tx.query('SELECT filename FROM receipt')).rows.map((r) => r.filename),
+    }));
+    expect(a).toEqual({
+      expenses: ['Merchant A'],
+      lines: ['Line A'],
+      receipts: ['receipt-A.pdf'],
+    });
+
+    const none = await withoutOrg(async (tx) => ({
+      expenses: (await tx.query('SELECT * FROM expense')).rows.length,
+      lines: (await tx.query('SELECT * FROM expense_line_item')).rows.length,
+      receipts: (await tx.query('SELECT * FROM receipt')).rows.length,
+    }));
+    expect(none).toEqual({ expenses: 0, lines: 0, receipts: 0 });
+  });
+
+  it('a joined read cannot walk from one tenant to another', async () => {
+    // The join is the shape that leaks in a poorly-scoped ORM: line item ->
+    // expense -> report. Every hop is independently RLS-scoped, so org A's
+    // context sees exactly its own chain and nothing of B's.
+    const rows = await withOrg(orgA, (tx) =>
+      tx.query(
+        `SELECT r.title, e.merchant, li.description
+           FROM expense_line_item li
+           JOIN expense e ON e.id = li.expense_id
+           JOIN expense_report r ON r.id = e.report_id`,
+      ),
+    );
+    expect(rows.rows).toEqual([{ title: 'Report A', merchant: 'Merchant A', description: 'Line A' }]);
   });
 
   it('WITH CHECK rejects a cross-tenant violation insert', async () => {
