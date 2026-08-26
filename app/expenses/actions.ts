@@ -31,6 +31,7 @@ import { withCurrentOrg } from '@/lib/tenant/request';
 import type { QueryRunner } from '@/lib/db/client';
 import * as svc from '@/lib/expenses/service';
 import * as policy from '@/lib/policy/service';
+import * as lifecycle from '@/lib/expenses/lifecycle';
 import { getEmployeeByEmail, listBusinessUnits, type EmployeeRow } from '@/lib/employees/service';
 import { parseAmountToMinor } from '@/lib/money';
 
@@ -131,6 +132,16 @@ export async function getValidation(reportId: string) {
 /** Force a re-run, for the workbench's "re-check" affordance. */
 export async function revalidateReport(reportId: string) {
   return onReport(reportId, (tx) => policy.validateReport(tx, reportId));
+}
+
+/** The transition trail (VX1-8). */
+export async function getReportHistory(reportId: string) {
+  return onReport(reportId, (tx) => lifecycle.listEvents(tx, reportId));
+}
+
+/** Whether the submit button should be live, and why not if it should not. */
+export async function getSubmitReadiness(reportId: string) {
+  return onReport(reportId, (tx) => lifecycle.getSubmitReadiness(tx, reportId));
 }
 
 /** Everything the workbench pickers need, in one round trip. */
@@ -390,6 +401,32 @@ export async function clearAcknowledgementFromForm(form: FormData) {
 export async function revalidateFromForm(form: FormData) {
   const reportId = required(form, 'reportId');
   const failure = await guard(`/expenses/${reportId}`, () => revalidateReport(reportId).then(() => {}));
+  if (failure) redirect(failure);
+  refreshReport(reportId);
+}
+
+/* ── lifecycle (VX1-8) ─────────────────────────────────────────────────────── */
+
+export async function submitReport(reportId: string) {
+  return onReport(reportId, (tx, actor) => lifecycle.submitReport(tx, reportId, actor.id));
+}
+
+export async function recallReport(reportId: string, note?: string | null) {
+  return onReport(reportId, (tx, actor) => lifecycle.recallReport(tx, reportId, actor.id, note));
+}
+
+export async function submitReportFromForm(form: FormData) {
+  const reportId = required(form, 'reportId');
+  const failure = await guard(`/expenses/${reportId}`, () => submitReport(reportId).then(() => {}));
+  if (failure) redirect(failure);
+  refreshReport(reportId);
+}
+
+export async function recallReportFromForm(form: FormData) {
+  const reportId = required(form, 'reportId');
+  const failure = await guard(`/expenses/${reportId}`, () =>
+    recallReport(reportId, text(form, 'note')).then(() => {}),
+  );
   if (failure) redirect(failure);
   refreshReport(reportId);
 }

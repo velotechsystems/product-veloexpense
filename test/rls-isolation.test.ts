@@ -85,6 +85,15 @@ beforeAll(async () => {
          VALUES ($1, $2, $3, 'PER_TRANSACTION_LIMIT', 'WARNING', $4)`,
         [org, report, rule.rows[0].id, `Violation ${label}`],
       );
+      // VX1-8: a transition event (migration 0007). An audit trail that leaked
+      // across tenants would expose who submitted what, and when.
+      await tx.query(
+        `INSERT INTO expense_report_event
+           (organization_id, report_id, action, from_status, to_status, actor_id, note)
+         SELECT $1, $2, 'SUBMIT', 'DRAFT', 'SUBMITTED', id, $3
+           FROM app_user WHERE organization_id = $1 LIMIT 1`,
+        [org, report, `Event ${label}`],
+      );
     });
   }
 });
@@ -140,6 +149,13 @@ describe('RLS tenant isolation', () => {
     const a = await withOrg(orgA, (tx) => tx.query('SELECT message FROM policy_violation'));
     expect(a.rows.map((r) => r.message)).toEqual(['Violation A']);
     const none = await withoutOrg((tx) => tx.query('SELECT * FROM policy_violation'));
+    expect(none.rows).toHaveLength(0);
+  });
+
+  it('report events are tenant-isolated (expense_report_event)', async () => {
+    const a = await withOrg(orgA, (tx) => tx.query('SELECT note FROM expense_report_event'));
+    expect(a.rows.map((r) => r.note)).toEqual(['Event A']);
+    const none = await withoutOrg((tx) => tx.query('SELECT * FROM expense_report_event'));
     expect(none.rows).toHaveLength(0);
   });
 
