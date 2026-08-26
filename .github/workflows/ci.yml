@@ -105,6 +105,30 @@ jobs:
       - name: RLS isolation gate + unit tests
         run: npm test
 
+      # The DB suites TRUNCATE, so the demo tenant has to be (re)seeded after
+      # them — the e2e signs in as its seeded admin (e2e/auth.setup.ts).
+      - name: Seed the demo tenant
+        run: npm run seed
+
+      - name: Install Playwright browser
+        run: npx playwright install --with-deps chromium
+
+      # Starts its own app + S3 surface (playwright.config.ts). It serves the
+      # STANDALONE output the build above produced — the same artifact the
+      # Docker image runs.
+      - name: End-to-end happy path (Playwright)
+        run: npx playwright test
+
+      - name: Upload Playwright report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 7
+
       - name: Audit (non-blocking)
         run: npm audit --audit-level=high
         continue-on-error: true

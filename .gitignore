@@ -40,3 +40,10 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 .vx0-7-staged/
+
+# e2e (VX1-9)
+/e2e/.auth/
+/playwright-report/
+/test-results/
+/.e2e-storage/
+/blob-report/
