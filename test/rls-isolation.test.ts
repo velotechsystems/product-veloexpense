@@ -48,20 +48,45 @@ beforeAll(async () => {
     tx.query("INSERT INTO expense_category (organization_id, code, label) VALUES ($1,'meals','Meals B')", [orgB]),
   );
   // VX1-3: an expense report per org (submitter resolved within the org via subquery).
-  await withOrg(orgA, (tx) =>
+  const reportA = await withOrg(orgA, (tx) =>
     tx.query(
       `INSERT INTO expense_report (organization_id, title, currency_code, submitter_id)
-         SELECT $1, 'Report A', 'CAD', id FROM app_user WHERE organization_id = $1 LIMIT 1`,
+         SELECT $1, 'Report A', 'CAD', id FROM app_user WHERE organization_id = $1 LIMIT 1
+       RETURNING id`,
       [orgA],
     ),
   );
-  await withOrg(orgB, (tx) =>
+  const reportB = await withOrg(orgB, (tx) =>
     tx.query(
       `INSERT INTO expense_report (organization_id, title, currency_code, submitter_id)
-         SELECT $1, 'Report B', 'CAD', id FROM app_user WHERE organization_id = $1 LIMIT 1`,
+         SELECT $1, 'Report B', 'CAD', id FROM app_user WHERE organization_id = $1 LIMIT 1
+       RETURNING id`,
       [orgB],
     ),
   );
+  // VX1-7: a policy rule and a raised violation per org — the two tables added
+  // by migration 0006. CI's RLS-coverage guard requires every tenant table to
+  // appear here, and a violation carries the message text of a finding, which
+  // is exactly the sort of row that must never cross a tenant boundary.
+  for (const [org, report, label] of [
+    [orgA, reportA.rows[0].id, 'A'],
+    [orgB, reportB.rows[0].id, 'B'],
+  ] as const) {
+    await withOrg(org, async (tx) => {
+      const rule = await tx.query(
+        `INSERT INTO expense_policy (organization_id, kind, severity, params)
+         VALUES ($1, 'PER_TRANSACTION_LIMIT', 'WARNING', '{"thresholdMinor": 5000}'::jsonb)
+         RETURNING id`,
+        [org],
+      );
+      await tx.query(
+        `INSERT INTO policy_violation
+           (organization_id, report_id, policy_id, rule_code, severity, message)
+         VALUES ($1, $2, $3, 'PER_TRANSACTION_LIMIT', 'WARNING', $4)`,
+        [org, report, rule.rows[0].id, `Violation ${label}`],
+      );
+    });
+  }
 });
 
 afterAll(async () => {
@@ -99,5 +124,35 @@ describe('RLS tenant isolation', () => {
     expect(a.rows.map((r) => r.title)).toEqual(['Report A']);
     const none = await withoutOrg((tx) => tx.query('SELECT * FROM expense_report'));
     expect(none.rows).toHaveLength(0);
+  });
+
+  it('policy rules are tenant-isolated (expense_policy)', async () => {
+    const a = await withOrg(orgA, (tx) => tx.query('SELECT id FROM expense_policy'));
+    expect(a.rows).toHaveLength(1);
+    const b = await withOrg(orgB, (tx) => tx.query('SELECT id FROM expense_policy'));
+    expect(b.rows).toHaveLength(1);
+    expect(a.rows[0].id).not.toBe(b.rows[0].id);
+    const none = await withoutOrg((tx) => tx.query('SELECT * FROM expense_policy'));
+    expect(none.rows).toHaveLength(0);
+  });
+
+  it('policy violations are tenant-isolated (policy_violation)', async () => {
+    const a = await withOrg(orgA, (tx) => tx.query('SELECT message FROM policy_violation'));
+    expect(a.rows.map((r) => r.message)).toEqual(['Violation A']);
+    const none = await withoutOrg((tx) => tx.query('SELECT * FROM policy_violation'));
+    expect(none.rows).toHaveLength(0);
+  });
+
+  it('WITH CHECK rejects a cross-tenant violation insert', async () => {
+    await expect(
+      withOrg(orgA, (tx) =>
+        tx.query(
+          `INSERT INTO policy_violation (organization_id, report_id, rule_code, severity, message)
+             SELECT $1, id, 'CATEGORY_ACTIVE', 'BLOCK', 'leaked'
+               FROM expense_report LIMIT 1`,
+          [orgB],
+        ),
+      ),
+    ).rejects.toThrow();
   });
 });

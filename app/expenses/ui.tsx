@@ -38,6 +38,24 @@ export function StatusBadge({ status }: { status: ReportStatus }) {
   );
 }
 
+const SEVERITY_TONE: Record<string, string> = {
+  BLOCK: 'border-destructive/40 bg-destructive/10 text-destructive',
+  WARNING: 'border-border bg-muted/60 text-foreground',
+  INFO: 'border-border text-muted-foreground',
+};
+
+export function SeverityBadge({ severity }: { severity: string }) {
+  return (
+    <span
+      className={`inline-flex shrink-0 items-center rounded-full border px-2 py-0.5 text-xs font-medium ${
+        SEVERITY_TONE[severity] ?? SEVERITY_TONE.INFO
+      }`}
+    >
+      {severity}
+    </span>
+  );
+}
+
 /** Validation failures come back as ?error=… so a plain form post can show them. */
 export function ErrorBanner({ message }: { message?: string }) {
   if (!message) return null;
