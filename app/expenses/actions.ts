@@ -13,6 +13,11 @@
  * hold ADMIN. Approvals, and a manager's view of their reports, arrive with the
  * approval engine in Phase 2; MANAGER gets no extra reach here yet.
  *
+ * VX1-7: every write re-runs the policy engine INSIDE the same transaction
+ * (`policy.validateReport`), so a report's violations can never be stale
+ * relative to its line items — a report that saves is a report that has just
+ * been validated. Reads do not re-run it; they read the stored findings.
+ *
  * The *FromForm entry points exist because the workbench pages are server
  * components posting plain <form action={serverAction}>. They take FormData,
  * parse typed values out of it, and on a validation failure redirect back with
@@ -25,6 +30,7 @@ import { auth } from '@/auth';
 import { withCurrentOrg } from '@/lib/tenant/request';
 import type { QueryRunner } from '@/lib/db/client';
 import * as svc from '@/lib/expenses/service';
+import * as policy from '@/lib/policy/service';
 import { getEmployeeByEmail, listBusinessUnits, type EmployeeRow } from '@/lib/employees/service';
 import { parseAmountToMinor } from '@/lib/money';
 
@@ -117,6 +123,16 @@ export async function getReportWorkbench(reportId: string) {
   return onReport(reportId, (tx) => svc.getReportWorkbench(tx, reportId));
 }
 
+/** The stored findings for a report — no re-run; saves do that. */
+export async function getValidation(reportId: string) {
+  return onReport(reportId, (tx) => policy.getValidation(tx, reportId));
+}
+
+/** Force a re-run, for the workbench's "re-check" affordance. */
+export async function revalidateReport(reportId: string) {
+  return onReport(reportId, (tx) => policy.validateReport(tx, reportId));
+}
+
 /** Everything the workbench pickers need, in one round trip. */
 export async function getWorkbenchOptions() {
   return asActor(async (tx, actor) => ({
@@ -134,7 +150,11 @@ export async function createReport(input: svc.NewReport) {
 }
 
 export async function updateReport(reportId: string, patch: svc.ReportPatch) {
-  return onReport(reportId, (tx) => svc.updateReport(tx, reportId, patch));
+  return onReport(reportId, async (tx) => {
+    const updated = await svc.updateReport(tx, reportId, patch);
+    await policy.validateReport(tx, reportId);
+    return updated;
+  });
 }
 
 export async function deleteReport(reportId: string) {
@@ -142,27 +162,51 @@ export async function deleteReport(reportId: string) {
 }
 
 export async function addExpense(reportId: string, input: svc.NewExpense) {
-  return onReport(reportId, (tx) => svc.addExpense(tx, reportId, input));
+  return onReport(reportId, async (tx) => {
+    const created = await svc.addExpense(tx, reportId, input);
+    await policy.validateReport(tx, reportId);
+    return created;
+  });
 }
 
 export async function updateExpense(expenseId: string, patch: svc.ExpensePatch) {
-  return onExpense(expenseId, (tx) => svc.updateExpense(tx, expenseId, patch));
+  return onExpense(expenseId, async (tx, _actor, reportId) => {
+    const updated = await svc.updateExpense(tx, expenseId, patch);
+    await policy.validateReport(tx, reportId);
+    return updated;
+  });
 }
 
 export async function removeExpense(expenseId: string) {
-  return onExpense(expenseId, (tx) => svc.removeExpense(tx, expenseId));
+  return onExpense(expenseId, async (tx, _actor, reportId) => {
+    await svc.removeExpense(tx, expenseId);
+    await policy.validateReport(tx, reportId);
+    return reportId;
+  });
 }
 
 export async function addLineItem(expenseId: string, input: svc.NewLineItem) {
-  return onExpense(expenseId, (tx) => svc.addLineItem(tx, expenseId, input));
+  return onExpense(expenseId, async (tx, _actor, reportId) => {
+    const created = await svc.addLineItem(tx, expenseId, input);
+    await policy.validateReport(tx, reportId);
+    return created;
+  });
 }
 
 export async function updateLineItem(lineItemId: string, patch: svc.LineItemPatch) {
-  return onLineItem(lineItemId, (tx) => svc.updateLineItem(tx, lineItemId, patch));
+  return onLineItem(lineItemId, async (tx, _actor, reportId) => {
+    const updated = await svc.updateLineItem(tx, lineItemId, patch);
+    await policy.validateReport(tx, reportId);
+    return updated;
+  });
 }
 
 export async function removeLineItem(lineItemId: string) {
-  return onLineItem(lineItemId, (tx) => svc.removeLineItem(tx, lineItemId));
+  return onLineItem(lineItemId, async (tx, _actor, reportId) => {
+    await svc.removeLineItem(tx, lineItemId);
+    await policy.validateReport(tx, reportId);
+    return reportId;
+  });
 }
 
 /* ── form entry points ─────────────────────────────────────────────────────── */
@@ -313,6 +357,39 @@ export async function removeLineItemFromForm(form: FormData) {
   const failure = await guard(`/expenses/${reportId}`, () =>
     removeLineItem(lineItemId).then(() => {}),
   );
+  if (failure) redirect(failure);
+  refreshReport(reportId);
+}
+
+/* ── policy violations (VX1-7) ─────────────────────────────────────────────── */
+
+export async function acknowledgeViolationFromForm(form: FormData) {
+  const reportId = required(form, 'reportId');
+  const violationId = required(form, 'violationId');
+  const failure = await guard(`/expenses/${reportId}`, () =>
+    onReport(reportId, (tx, actor) =>
+      policy
+        .acknowledgeViolation(tx, violationId, actor.id, form.get('note')?.toString() ?? '')
+        .then(() => {}),
+    ),
+  );
+  if (failure) redirect(failure);
+  refreshReport(reportId);
+}
+
+export async function clearAcknowledgementFromForm(form: FormData) {
+  const reportId = required(form, 'reportId');
+  const violationId = required(form, 'violationId');
+  const failure = await guard(`/expenses/${reportId}`, () =>
+    onReport(reportId, (tx) => policy.clearAcknowledgement(tx, violationId)),
+  );
+  if (failure) redirect(failure);
+  refreshReport(reportId);
+}
+
+export async function revalidateFromForm(form: FormData) {
+  const reportId = required(form, 'reportId');
+  const failure = await guard(`/expenses/${reportId}`, () => revalidateReport(reportId).then(() => {}));
   if (failure) redirect(failure);
   refreshReport(reportId);
 }
