@@ -116,6 +116,44 @@ beforeAll(async () => {
            FROM app_user WHERE organization_id = $1 LIMIT 1`,
         [org, expense.rows[0].id, `org/${org}/receipts/x/${label}.pdf`, `receipt-${label}.pdf`],
       );
+      // VX2-1: the approval schema from migration 0008 — approval_policy,
+      // approval_request, approval_task, delegation. A leaked ladder would tell
+      // one tenant another's spending thresholds; a leaked request or task would
+      // expose who approves whose money, and a leaked delegation who is away.
+      const owner = label === 'A' ? 'a@x.com' : 'b@x.com';
+      const approver = await tx.query(
+        `INSERT INTO app_user (organization_id, email, display_name, role)
+         VALUES ($1, $2, $3, 'MANAGER') RETURNING id`,
+        [org, `approver-${label.toLowerCase()}@x.com`, `Approver ${label}`],
+      );
+      await tx.query(
+        `INSERT INTO approval_policy
+           (organization_id, name, sequence, threshold_minor, approver_kind, manager_level)
+         VALUES ($1, $2, 1, 0, 'MANAGER', 1)`,
+        [org, `Ladder ${label}`],
+      );
+      const request = await tx.query(
+        `INSERT INTO approval_request
+           (organization_id, report_id, policy_snapshot, total_steps,
+            subject_total_minor, subject_currency_code, opened_by_id)
+         SELECT $1, $2, $3::jsonb, 1, 1000, 'CAD', id
+           FROM app_user WHERE organization_id = $1 AND email = $4
+         RETURNING id`,
+        [org, report, JSON.stringify([{ step: 1, name: `Ladder ${label}` }]), owner],
+      );
+      await tx.query(
+        `INSERT INTO approval_task
+           (organization_id, request_id, step, assignee_id, note)
+         VALUES ($1, $2, 1, $3, $4)`,
+        [org, request.rows[0].id, approver.rows[0].id, `Task ${label}`],
+      );
+      await tx.query(
+        `INSERT INTO delegation
+           (organization_id, from_user_id, to_user_id, starts_on, created_by_id, note)
+         SELECT $1, $2, id, DATE '2026-09-01', $2, $3
+           FROM app_user WHERE organization_id = $1 AND email = $4`,
+        [org, approver.rows[0].id, `Delegation ${label}`, owner],
+      );
     });
   }
 });
@@ -126,8 +164,11 @@ afterAll(async () => {
 
 describe('RLS tenant isolation', () => {
   it('a tenant sees only its own rows', async () => {
+    // Two users per org since VX2-1: the submitter, and the approver a
+    // delegation needs a second person for. Sorted because the guarantee is
+    // WHICH rows are visible, not what order an unordered SELECT returns them in.
     const rows = await withOrg(orgA, (tx) => tx.query('SELECT email FROM app_user'));
-    expect(rows.rows.map((r) => r.email)).toEqual(['a@x.com']);
+    expect(rows.rows.map((r) => r.email).sort()).toEqual(['a@x.com', 'approver-a@x.com']);
   });
 
   it('WITH CHECK rejects a cross-tenant insert', async () => {
@@ -216,6 +257,63 @@ describe('RLS tenant isolation', () => {
       ),
     );
     expect(rows.rows).toEqual([{ title: 'Report A', merchant: 'Merchant A', description: 'Line A' }]);
+  });
+
+  it('approval ladders, runs, tasks and delegations are tenant-isolated', async () => {
+    const a = await withOrg(orgA, async (tx) => ({
+      ladder: (await tx.query('SELECT name FROM approval_policy')).rows.map((r) => r.name),
+      requests: (await tx.query('SELECT id FROM approval_request')).rows.length,
+      tasks: (await tx.query('SELECT note FROM approval_task')).rows.map((r) => r.note),
+      delegations: (await tx.query('SELECT note FROM delegation')).rows.map((r) => r.note),
+    }));
+    expect(a).toEqual({
+      ladder: ['Ladder A'],
+      requests: 1,
+      tasks: ['Task A'],
+      delegations: ['Delegation A'],
+    });
+
+    const none = await withoutOrg(async (tx) => ({
+      ladder: (await tx.query('SELECT * FROM approval_policy')).rows.length,
+      requests: (await tx.query('SELECT * FROM approval_request')).rows.length,
+      tasks: (await tx.query('SELECT * FROM approval_task')).rows.length,
+      delegations: (await tx.query('SELECT * FROM delegation')).rows.length,
+    }));
+    expect(none).toEqual({ ladder: 0, requests: 0, tasks: 0, delegations: 0 });
+  });
+
+  it('an approval task cannot be joined back to another tenant report', async () => {
+    // The Phase-2 shape of the join-walk test above: task -> request -> report.
+    // Every hop is independently RLS-scoped, so org A sees its own chain only.
+    const rows = await withOrg(orgA, (tx) =>
+      tx.query(
+        `SELECT r.title, t.note
+           FROM approval_task t
+           JOIN approval_request q ON q.id = t.request_id
+           JOIN expense_report r ON r.id = q.report_id`,
+      ),
+    );
+    expect(rows.rows).toEqual([{ title: 'Report A', note: 'Task A' }]);
+  });
+
+  it('WITH CHECK rejects a cross-tenant approval request', async () => {
+    // The row bodies come from what org A can actually SEE, and only the
+    // organization_id is org B's. Selecting org B's rows instead would prove
+    // nothing: RLS hides them, the SELECT returns nothing, and the INSERT
+    // succeeds vacuously without ever reaching WITH CHECK.
+    await expect(
+      withOrg(orgA, (tx) =>
+        tx.query(
+          `INSERT INTO approval_request
+             (organization_id, report_id, policy_snapshot, total_steps,
+              subject_total_minor, subject_currency_code, opened_by_id)
+           SELECT $1, r.id, '[]'::jsonb, 1, 1000, 'CAD', u.id
+             FROM expense_report r, app_user u
+            LIMIT 1`,
+          [orgB],
+        ),
+      ),
+    ).rejects.toThrow();
   });
 
   it('WITH CHECK rejects a cross-tenant violation insert', async () => {
