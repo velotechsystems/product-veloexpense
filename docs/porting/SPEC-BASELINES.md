@@ -1,0 +1,161 @@
+# ExpenseOS spec baselines
+
+VeloExpense re-implements ExpenseOS behavior; it does not merge ExpenseOS code. The Port & Build
+Plan §6 makes that survivable with two mechanisms, and this file is the index for both:
+
+1. **A baseline tag per module**, in the **ExpenseOS** repo (`github.com/carmigo/ExpenseOS`),
+   naming the commit that module was ported from.
+2. **A delta re-diff**, so catching later ExpenseOS changes is mechanical:
+
+   ```bash
+   # from an ExpenseOS checkout
+   git fetch origin
+   git diff veloexpense-spec/<module>-<stamp>..origin/main -- <that module's paths>
+   ```
+
+   Fold in what changed, then move the tag forward. In the plan's words, this "turns *did we miss
+   a change?* into a mechanical re-diff, not a memory exercise."
+
+The tags live in a **different repository** from this one, which is exactly why this file exists:
+without an index inside `product-veloexpense`, the mapping is invisible from where the work
+happens. Create the tags with `./tag-spec-baselines.sh`, run from an ExpenseOS checkout, and paste
+its output table below.
+
+## Read this before trusting a delta diff
+
+**Everything through VX2-1 was ported from the module DOCS (`NN-module.md`), not from ExpenseOS
+source.** That was a mistake — it cost VX2-1 a full rewrite (PR #22 shipped a schema VeloLedger had
+already deprecated; PR #23 replaced it) and it is the reason these baselines are being backfilled
+rather than recorded as each ticket landed.
+
+The consequence for anyone running a delta diff: the output will contain **two different kinds of
+change mixed together** —
+
+- genuine ExpenseOS commits since the baseline (what the mechanism is for), and
+- behavior that was **never ported in the first place**, because it was in the source and not in the
+  summary.
+
+So a large diff on `expense-reports` or `policy-engine` is not evidence that ExpenseOS moved fast.
+Treat the first re-sync of each module as a gap audit, not a catch-up. Modules tagged for tickets
+that have not started yet (`audit`, `notifications`) are clean baselines and carry no such caveat.
+
+## Why one shared baseline, and why it is deliberately early
+
+A per-module sha cannot be reconstructed after the fact. `fb1cead` is the commit the Port & Build
+Plan names as the basis of its ExpenseOS functionality audit (2026-08-22); Phase 1 was built
+2026-08-24..26, against module docs claiming "verified against code 2026-08-14". So `fb1cead` sits
+at or before every port so far.
+
+That direction of error is the safe one. An **early** baseline makes the delta diff show some
+changes that were already incorporated — noise, and cheap to dismiss. A **late** baseline hides
+changes that were never ported — a silent gap, and expensive. From here each module's tag moves
+forward independently as it is re-synced, so the shared baseline is a starting point only.
+
+## Baselines
+
+Fill this in from `tag-spec-baselines.sh` output — it resolves real ExpenseOS paths from
+`git ls-files`, so the paths recorded here come from the repo rather than from a guess.
+
+| Module | Ported by | Baseline tag (`fb1cead9`, 2026-08-21) | ExpenseOS paths |
+| --- | --- | --- | --- |
+| `reference-data` | VX1-1 (PR #10) | `veloexpense-spec/reference-data-20260827` | `apps/web/src/server/routers/businessUnits.ts`<br>`apps/web/src/server/routers/departments.ts`<br>`apps/web/src/server/routers/expenseCategories.ts`<br>`apps/web/src/server/routers/legalEntities.ts` |
+| `employees-org` | VX1-2 (PR #13) | `veloexpense-spec/employees-org-20260827` | `apps/web/src/server/routers/adminLookup.ts`<br>`apps/web/src/server/routers/roles.ts`<br>`apps/web/src/server/routers/users.ts` |
+| `expense-reports` | VX1-3 (#11), VX1-4 (#12), VX1-8 (#18) | `veloexpense-spec/expense-reports-20260827` | `apps/web/src/server/routers/expenses.ts` |
+| `receipts` | VX1-5 (#14), VX1-6 (#15), VX1-10 (#20) | `veloexpense-spec/receipts-20260827` | `apps/web/src/server/routers/expenses.ts` |
+| `policy-engine` | VX1-7 (PR #17) | `veloexpense-spec/policy-engine-20260827` | `apps/web/src/server/routers/policies.ts` |
+| `approvals` | VX2-1 (PR #22, #23) | `veloexpense-spec/approvals-20260827` | `apps/web/src/server/routers/approvalWorkflows.ts`<br>`apps/web/src/server/routers/delegations.ts`<br>`apps/web/src/server/routers/expenseApprovals.ts` |
+
+Tagged and pushed 2026-08-27 from the `~/ExpenseOS` clone. ExpenseOS is a monorepo: the tRPC
+routers live under `apps/web/src/server/routers/`, and shared logic lives in `packages/*`
+(`@expenseos/audit`, `@expenseos/rbac`, `@expenseos/db`, …).
+
+> **⚠ THESE PATHS ARE ROUTERS ONLY, AND THAT MAKES THE DELTA DIFF INCOMPLETE.**
+> A router is the API surface; the behavior it calls lives in `packages/*` and the Prisma schema.
+> A change to, say, the policy rule engine inside a package would **not** appear in a diff of
+> `policies.ts`. The tags themselves are correct — a tag is just a commit — but the path list each
+> module diffs against still needs widening to include its packages and the schema. Do that before
+> relying on a delta diff to mean "nothing changed".
+
+**Not baselined yet, on purpose:** `audit` (VX2-6) and `notifications` (VX2-7/VX2-8). Tagging them
+at `fb1cead` would claim we ported from a commit nobody has read. They get a baseline at whatever
+`origin/main` is when their ticket lands. This matters especially for `notifications`: a **654-file
+update landed on ExpenseOS `main`** recently (travel build-out, NetSuite posting, **notification
+template-key changes**), so porting those from August would port a shape that has since moved.
+
+Deliberately absent: `virtualCards*`, `travelRequests`, `netsuiteSync`, `budgets`, `analytics`,
+`fraudFlags`, `controlEvaluation`. VCC and Travel are off for the MVP; NetSuite becomes one
+optional adapter in Phase 3; Budgets and Analytics are Phase 4; fraud detection and control
+evaluation are Phase 4 by decision. Nothing has been ported from them, so nothing needs a baseline
+until it is.
+
+## Known ExpenseOS defects — do NOT port these forward
+
+**The premise of porting has one exception: ExpenseOS's open bugs.** A GA-readiness audit of
+ExpenseOS (2026-08-27, in that repo's `Testing_QA/`) found **P0/P1 defects that are live in
+ExpenseOS today**, and three of them sit in modules on the baseline list above:
+
+| Area | Defect (per the 2026-08-27 GA audit) | Affects our module |
+| --- | --- | --- |
+| Date picker | _details needed from the GA report_ | `expense-reports` |
+| Totals | CAD excluded from report totals | `expense-reports` |
+| Approvals | approval defaults wrong | `approvals`, `policy-engine` |
+
+**So for those three modules, port the FIXES, not the baseline.** A faithful port from `fb1cead`
+carries the defects into VeloExpense. Before porting further into `expense-reports`, `approvals` or
+`policy-engine`, read the GA report's P0/P1 entries and record here which behavior is deliberately
+NOT being copied.
+
+### And the reverse — where VeloExpense is already ahead
+
+Porting is not blanket-superior, and the 2026-08-25 audit's prior findings show several places where
+a VeloExpense decision already avoids an ExpenseOS bug. Worth knowing so a "faithful port" does not
+*regress* us:
+
+- ExpenseOS's amount field mangles typed input (`125.50` → `125.500.00`). VeloExpense's
+  `parseAmountToMinor` rejects extra decimals rather than rounding or mangling (VX1-6).
+- In ExpenseOS a **$0.00 empty report and a blank-title report can be submitted and approved**.
+  VX1-8 refuses to submit an empty report, and a title is required at creation.
+- A terminated ExpenseOS employee still shows 10 direct reports. VX1-2's deactivate refuses while
+  direct reports remain unless `reassignReportsTo` is given.
+- ExpenseOS's Policy Rules/Violations screens render raw enum codes and raw i18n keys
+  (`receiptThresholdBlock`). `lib/policy/rules.ts` carries real labels and descriptions.
+- ExpenseOS notifications don't mark read (the bell count sticks) — relevant to VX2-7.
+
+The rule this implies: **port the behavior, not the bug.** When ExpenseOS source and a known defect
+disagree, the defect wins the argument about what NOT to copy, and the divergence gets recorded here
+rather than discovered later.
+
+## Where the ExpenseOS source actually is
+
+Two routes, and the second is the one a Cowork session can use:
+
+- **The repo**, `github.com/carmigo/ExpenseOS` — pull as gh user `johnrim-lab`, *not* `Velotechsys`
+  (see project memory on the two accounts). Required for tagging and for `git diff`.
+  **There appear to be TWO checkouts:** `~/ExpenseOS`, and the Google-Drive folder
+  `.../Claude CoWork Folders - RIM/PeopleOS HRIS System/ExpenseOS`, which the GA-audit handoff
+  states *is* a clone of `carmigo/ExpenseOS` (remote `origin`, branch `main`). Tags created in one
+  do not exist in the other until pushed, so **push them** —
+  `git push origin 'refs/tags/veloexpense-spec/*'`, narrower than `--tags`, which would push every
+  stray local tag in that clone up to the shared repo.
+- **The Google Drive sync**, under "PeopleOS HRIS System/ExpenseOS". A Cowork session can read
+  these directly. **`read_file_content` works on ExpenseOS `.ts` files** — an earlier note in
+  `HANDOFF.md` claimed they needed `download_file_content` (base64), which is wrong and is a large
+  part of why source felt expensive to reach and the docs got used instead.
+
+  Drive flattens the tree, so a filename is not a path and two products' files can share a name.
+  One `audit.ts` in that corpus is **VeloPulse HRIS's**, not ExpenseOS's — it references SIN
+  handling and matches `product-velopulse-hris`'s `audit_event` migration. Confirm provenance from
+  file content, never from the title.
+
+## Rule for every future ported module
+
+1. Read the ExpenseOS **source** for the module, not only its `NN-module.md` doc. A doc saying
+   "built, and far beyond this document" (Module 8 said exactly that) is a warning, not a licence.
+2. Check `product-veloledger` and `product-velopulse-hris` for an in-house pattern — the
+   Differences Chart names VeloLedger as the structural reference for several dimensions. Read the
+   *latest* migration on a topic; later ones supersede earlier ones.
+3. Port it. State in the migration or module header which ExpenseOS behavior is kept, which is
+   dropped, and which plan-mandated difference forces a change.
+4. **Tag the baseline in the same session**, while the sha is still known:
+   `git tag -a veloexpense-spec/<module>-YYYYMMDD <sha>` in the ExpenseOS repo, `git push origin --tags`,
+   and add the row to the table above.

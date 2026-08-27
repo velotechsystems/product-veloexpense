@@ -403,9 +403,18 @@ approvals, notifications or audit entries.
 4. Dependabot has open PRs for **vitest 4** and **typescript 7** — major bumps
    across TEN suites now, and typescript 7 also touches the Playwright types.
    Take them deliberately, on their own branch.
-5. When porting any ExpenseOS behavior: read the relevant ExpenseOS router/model
-   as the spec, then re-implement tenant-scoped (server action + lib module +
-   RLS + isolation test). Keep VCC/Travel OFF for MVP; NA-first. ExpenseOS source
-   files in Google Drive are `.ts`/`.tsx` — the Drive MCP needs
-   `download_file_content` (base64); the module specs (e.g. `09-policy-engine.md`)
-   are markdown and read fine directly.
+5. **Porting discipline — read `docs/porting/SPEC-BASELINES.md` first.** Port from
+   ExpenseOS **SOURCE**, not from the `NN-module.md` summaries. Everything through
+   VX2-1 was designed from the docs instead, which cost VX2-1 a full rewrite, and
+   that file records the baselines, the gap-audit caveat, and the per-module rule.
+   Then re-implement tenant-scoped (server action + lib module + RLS + isolation
+   test), and check `product-veloledger` / `product-velopulse-hris` for an
+   in-house pattern before designing a schema. Keep VCC/Travel OFF for MVP;
+   NA-first.
+   **CORRECTION to what this file used to say:** `read_file_content` works fine on
+   ExpenseOS `.ts`/`.tsx` files in Drive. The old claim that they need
+   `download_file_content` (base64) is wrong, and it is a large part of why the
+   source felt expensive to reach and the docs got used instead. Beware that Drive
+   flattens the tree and several products are synced into it — one `audit.ts` in
+   that corpus is VeloPulse HRIS's, not ExpenseOS's. Confirm provenance from
+   content, never from the filename.
