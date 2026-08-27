@@ -21,6 +21,7 @@
  * stay strings until lib/money.ts formats them.
  */
 import type { QueryRunner } from '@/lib/db/client';
+import type { Actor } from '@/lib/auth/actor';
 
 const ORG = "current_setting('app.current_org', true)::uuid";
 
@@ -259,6 +260,44 @@ async function assertCategory(tx: QueryRunner, categoryId: string) {
   if (r.rows.length === 0) {
     throw new ExpenseError('category not found in this organization', 'CATEGORY_NOT_FOUND');
   }
+}
+
+/* ── access ────────────────────────────────────────────────────────────────── */
+
+/** The three facts every access decision about a report needs. */
+export interface ReportAccess {
+  id: string;
+  number: string | null;
+  submitter_id: string;
+  status: ReportStatus;
+}
+
+export async function getReportAccess(
+  tx: QueryRunner,
+  reportId: string,
+): Promise<ReportAccess | null> {
+  const r = await tx.query(
+    'SELECT id, number, submitter_id, status FROM expense_report WHERE id = $1',
+    [reportId],
+  );
+  return (r.rows[0] as ReportAccess) ?? null;
+}
+
+/**
+ * RLS scopes rows to the ORG; these scope them to a PERSON. Without the second
+ * check any colleague who guessed an id could read or edit someone's report.
+ *
+ * MANAGER deliberately gets nothing extra yet — a manager's reach over their
+ * reports' expenses arrives with the Phase-2 approval engine, and inventing it
+ * early would mean guessing at rules that ticket will actually specify.
+ */
+export function canViewReport(actor: Actor, access: ReportAccess): boolean {
+  return actor.role === 'ADMIN' || actor.id === access.submitter_id;
+}
+
+/** Editing additionally requires the report to still be a draft. */
+export function canEditReport(actor: Actor, access: ReportAccess): boolean {
+  return canViewReport(actor, access) && access.status === 'DRAFT';
 }
 
 /* ── reports ───────────────────────────────────────────────────────────────── */

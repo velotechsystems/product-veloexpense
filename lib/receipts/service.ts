@@ -23,6 +23,7 @@ import type { QueryRunner } from '@/lib/db/client';
 import type { Storage } from '@/lib/storage';
 import { getStorage } from '@/lib/storage';
 import * as expenses from '@/lib/expenses/service';
+import type { Actor } from '@/lib/auth/actor';
 // Shared with the browser via lib/receipts/constants (this module imports pg).
 import { ALLOWED_CONTENT_TYPES, MAX_RECEIPT_BYTES } from './constants';
 
@@ -56,7 +57,9 @@ export class ReceiptError extends Error {
       | 'NOT_STORED'
       | 'EXPENSE_NOT_FOUND'
       | 'UPLOADER_NOT_FOUND'
-      | 'NO_RECEIPTS',
+      | 'NO_RECEIPTS'
+      | 'FORBIDDEN'
+      | 'REPORT_NOT_EDITABLE',
   ) {
     super(message);
     this.name = 'ReceiptError';
@@ -97,6 +100,67 @@ async function resolveUploader(tx: QueryRunner, uploaderEmail: string): Promise<
     throw new ReceiptError('uploader not found in this organization', 'UPLOADER_NOT_FOUND');
   }
   return r.rows[0].id as string;
+}
+
+/* ── access ────────────────────────────────────────────────────────────────── */
+
+/**
+ * Everything an access decision about a receipt depends on, in one row.
+ *
+ * A receipt has TWO possible owners: the person who uploaded it, and — once it
+ * is attached — the submitter of the report it now belongs to. Both need
+ * access, because the receipt-first flow lets one person upload into their
+ * inbox and the report is what someone else may later be reviewing.
+ */
+export interface ReceiptOwnership {
+  receiptId: string;
+  uploaderId: string;
+  expenseId: string | null;
+  reportId: string | null;
+  reportSubmitterId: string | null;
+  reportStatus: expenses.ReportStatus | null;
+}
+
+export async function getReceiptOwnership(
+  tx: QueryRunner,
+  receiptId: string,
+): Promise<ReceiptOwnership | null> {
+  const r = await tx.query(
+    `SELECT rc.id            AS "receiptId",
+            rc.uploaded_by_id AS "uploaderId",
+            rc.expense_id     AS "expenseId",
+            e.report_id       AS "reportId",
+            rep.submitter_id  AS "reportSubmitterId",
+            rep.status        AS "reportStatus"
+       FROM receipt rc
+       LEFT JOIN expense e ON e.id = rc.expense_id
+       LEFT JOIN expense_report rep ON rep.id = e.report_id
+      WHERE rc.id = $1`,
+    [receiptId],
+  );
+  return (r.rows[0] as ReceiptOwnership) ?? null;
+}
+
+/**
+ * RLS scopes receipts to the ORG, which is NOT the same as scoping them to a
+ * person: before this check, any signed-in colleague holding a receipt id could
+ * download, detach or delete it. This is the receipt-side equivalent of
+ * canViewReport / canEditReport.
+ */
+export function canViewReceipt(actor: Actor, ownership: ReceiptOwnership): boolean {
+  if (actor.role === 'ADMIN') return true;
+  if (actor.id === ownership.uploaderId) return true;
+  return ownership.reportSubmitterId !== null && actor.id === ownership.reportSubmitterId;
+}
+
+/**
+ * Changing a receipt additionally requires that its report — if it has one —
+ * still be a draft. A submitted report is frozen, and a frozen report whose
+ * receipts can still be deleted is not actually frozen.
+ */
+export function canModifyReceipt(actor: Actor, ownership: ReceiptOwnership): boolean {
+  if (!canViewReceipt(actor, ownership)) return false;
+  return ownership.reportStatus === null || ownership.reportStatus === 'DRAFT';
 }
 
 /* ── upload ────────────────────────────────────────────────────────────────── */

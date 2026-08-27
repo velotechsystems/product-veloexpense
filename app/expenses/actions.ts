@@ -32,7 +32,8 @@ import type { QueryRunner } from '@/lib/db/client';
 import * as svc from '@/lib/expenses/service';
 import * as policy from '@/lib/policy/service';
 import * as lifecycle from '@/lib/expenses/lifecycle';
-import { getEmployeeByEmail, listBusinessUnits, type EmployeeRow } from '@/lib/employees/service';
+import { listBusinessUnits, type EmployeeRow } from '@/lib/employees/service';
+import { requireActor, ForbiddenError } from '@/lib/auth/actor';
 import { parseAmountToMinor } from '@/lib/money';
 
 async function sessionEmail(): Promise<string> {
@@ -45,16 +46,17 @@ async function sessionEmail(): Promise<string> {
 /** Runs fn as the signed-in employee of this tenant. */
 async function asActor<T>(fn: (tx: QueryRunner, actor: EmployeeRow) => Promise<T>): Promise<T> {
   const email = await sessionEmail();
-  return withCurrentOrg(async (tx) => {
-    const actor = await getEmployeeByEmail(tx, email);
-    if (!actor) throw new Error('forbidden: no employee record in this organization');
-    if (actor.deleted_at !== null) throw new Error('forbidden: this account is deactivated');
-    return fn(tx, actor);
-  });
+  return withCurrentOrg(async (tx) => fn(tx, await requireActor(tx, email)));
 }
 
-function canReach(actor: EmployeeRow, submitterId: string) {
-  return actor.role === 'ADMIN' || actor.id === submitterId;
+/** VX1-10: the rule lives in lib/expenses/service so receipts share it. */
+async function reachableReport(tx: QueryRunner, actor: EmployeeRow, reportId: string) {
+  const access = await svc.getReportAccess(tx, reportId);
+  if (!access) throw new svc.ExpenseError('report not found', 'NOT_FOUND');
+  if (!svc.canViewReport(actor, access)) {
+    throw new ForbiddenError('forbidden: this report belongs to someone else');
+  }
+  return access;
 }
 
 /** Runs fn against a report the actor is allowed to see/edit, or throws. */
@@ -63,11 +65,7 @@ async function onReport<T>(
   fn: (tx: QueryRunner, actor: EmployeeRow) => Promise<T>,
 ): Promise<T> {
   return asActor(async (tx, actor) => {
-    const r = await tx.query('SELECT submitter_id FROM expense_report WHERE id = $1', [reportId]);
-    if (r.rows.length === 0) throw new svc.ExpenseError('report not found', 'NOT_FOUND');
-    if (!canReach(actor, r.rows[0].submitter_id)) {
-      throw new Error('forbidden: this report belongs to someone else');
-    }
+    await reachableReport(tx, actor, reportId);
     return fn(tx, actor);
   });
 }
@@ -78,10 +76,7 @@ async function onExpense<T>(
 ): Promise<T> {
   return asActor(async (tx, actor) => {
     const reportId = await svc.reportIdForExpense(tx, expenseId);
-    const r = await tx.query('SELECT submitter_id FROM expense_report WHERE id = $1', [reportId]);
-    if (!canReach(actor, r.rows[0].submitter_id)) {
-      throw new Error('forbidden: this report belongs to someone else');
-    }
+    await reachableReport(tx, actor, reportId);
     return fn(tx, actor, reportId);
   });
 }
@@ -92,10 +87,7 @@ async function onLineItem<T>(
 ): Promise<T> {
   return asActor(async (tx, actor) => {
     const reportId = await svc.reportIdForLineItem(tx, lineItemId);
-    const r = await tx.query('SELECT submitter_id FROM expense_report WHERE id = $1', [reportId]);
-    if (!canReach(actor, r.rows[0].submitter_id)) {
-      throw new Error('forbidden: this report belongs to someone else');
-    }
+    await reachableReport(tx, actor, reportId);
     return fn(tx, actor, reportId);
   });
 }

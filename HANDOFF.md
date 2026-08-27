@@ -1,6 +1,6 @@
 # VeloExpense — Build Handoff (context for a fresh thread)
 
-_Last updated: 2026-08-26 (Phase 1 COMPLETE, through VX1-9). Paste this whole file into the new thread as context._
+_Last updated: 2026-08-26 (Phase 1 COMPLETE, through VX1-10). Paste this whole file into the new thread as context._
 
 ## 0. What VeloExpense is
 The commercial, **multi-tenant** SaaS expense product, built for third-party SMB
@@ -36,6 +36,7 @@ Two separate codebases:
 - `tsconfig` target is **ES2022** (needed for BigInt literals).
 - Key files:
   - `lib/db/client.ts` — pg pool + `transaction()`.
+  - `lib/auth/actor.ts` — `requireActor(tx, email)`: the acting employee, read from the DB inside the tenant transaction (never from the session token, which outlives a demotion).
   - `lib/tenant/context.ts` — `withOrg(orgId, fn)` sets `app.current_org` LOCAL; `withoutOrg(fn)` = service-role escape hatch.
   - `lib/tenant/request.ts` — `withCurrentOrg(fn)` bridges auth session → `withOrg`.
   - `proxy.ts` — Next 16 edge middleware (note: Next 16 renamed `middleware`→**`proxy`**; export a `proxy` function).
@@ -150,6 +151,13 @@ VX0-1 scaffold · VX0-2..6 tenancy spine + RLS isolation gate (green) · VX0-7 S
   - **Report titles carry a per-run id.** The e2e runs against the seeded demo tenant, which is not reset between runs, so a rerun or CI's one retry would otherwise leave several reports sharing a title.
   - Writing the spec surfaced a real gap, now fixed: **receipt attach/detach/remove/confirm re-run the policy engine** for the affected report. Before, satisfying RECEIPT_REQUIRED left the block on screen until some unrelated save.
 
+- VX1-10 ✅ merged (PR#20 — confirm the number when the PR opens): receipt authorization. No migration. `lib/auth/actor.ts` (new) · access predicates in `lib/expenses/service.ts` and `lib/receipts/service.ts` · every action in `app/receipts/actions.ts` gated · `test/access.db.test.ts`. **What was wrong:** receipt actions relied on RLS alone, so any signed-in colleague holding a receipt id could download, detach or delete it, and receipts could be added to or removed from a SUBMITTED report that was supposed to be frozen. **Decisions:**
+  - **A receipt has two legitimate owners** — the uploader, and the submitter of the report it is attached to. The receipt-first flow depends on both: one person can upload into their inbox and attach it to a report someone else owns.
+  - **`canModifyReceipt` inherits the report's draft gate.** A frozen report whose receipts can still be deleted is not frozen. An unattached (inbox) receipt has no report, so nothing freezes it.
+  - **MANAGER still gets nothing extra.** Its reach belongs to the Phase-2 approval engine, and inventing it early means guessing at rules that ticket will specify.
+  - The predicates are PURE and the ownership lookup is one SQL read, so the truth table is unit-tested rather than asserted by reading action code. `test/access.db.test.ts` also asserts the row IS visible under RLS — that is what made the hole invisible.
+  - `app/expenses/actions.ts` was refactored onto the same shared predicate, so reports and receipts cannot drift apart.
+
 **Phase 1 is COMPLETE.** Phase 2 (approvals) is the next phase — see the Port-and-Build Plan.
 
 ## 6. Planning docs (in the ExpenseOS Google-Drive folder, `Specifications_and_Planning/`)
@@ -159,27 +167,24 @@ VX0-1 scaffold · VX0-2..6 tenancy spine + RLS isolation gate (green) · VX0-7 S
 - ExpenseOS status/dashboard docs + the live Cowork artifact `expenseos-dev-dashboard` (weekly refresh).
 
 ## 7. Immediate next action for the new thread
-1. **A known gap worth closing first (small):** receipt actions have NO ownership
-   check. `app/receipts/actions.ts` relies on RLS, which scopes to the ORG, not
-   to a person — so any signed-in colleague who has a receipt id can detach or
-   delete it. Reports got this check in VX1-6 (`onReport`/`onExpense` require
-   `submitter_id === actor.id || ADMIN`); receipts never did. One ticket's worth
-   of work, same pattern.
-2. **Still nothing clicked by a human.** The e2e now covers the happy path in a
-   real browser, which is most of what the manual walkthrough was for, but a
-   person has never looked at these screens. Worth 20 minutes: MinIO up with
-   `STORAGE_*` in `.env.local` (there are none), the bucket CORS rule, an
-   `app_user` row matching a real Google/Entra identity with `role='ADMIN'`, then
-   "Restore starter rules" on `/admin/expense-policies`.
-3. **Phase 2 (approvals)** is the next phase: the graph approval engine, the
-   approver view (Module 8), and the RETURNED path back to the employee. VX1-8
-   already writes `expense_report_event` with a CHECK that admits APPROVE /
-   REJECT / RETURN / REIMBURSE, so the trail needs no migration to start
-   recording them.
-4. Dependabot has open PRs for **vitest 4** and **typescript 7** — major bumps
-   across seven suites, and typescript 7 will also touch the new Playwright
-   types. Take them deliberately, on their own branch.
-5. When porting any ExpenseOS behavior: read the relevant ExpenseOS router/model
+1. **Nothing here has been clicked by a human.** The Playwright happy path covers
+   the main flow in a real browser, which is most of what a manual walkthrough
+   was for, but nobody has looked at these screens. Worth 20 minutes before
+   Phase 2 builds on top: MinIO up with `STORAGE_*` in `.env.local` (there are
+   none today) and the bucket CORS rule; an `app_user` row in the demo tenant
+   matching a real Google/Entra identity with `role='ADMIN'`; then "Restore
+   starter rules" on `/admin/expense-policies`, or nothing will ever flag.
+2. **Phase 2 (approvals)** is the next phase: the graph approval engine, the
+   approver view (Module 8), and the RETURNED path back to the employee.
+   Groundwork already in place — `expense_report_event` has a CHECK admitting
+   APPROVE / REJECT / RETURN / REIMBURSE so the trail needs no migration, and
+   MANAGER is deliberately unprivileged in `canViewReport` / `canViewReceipt`,
+   which is the seam that ticket opens. Read the Port-and-Build Plan and the
+   Module 8 spec before drafting the ticket board.
+3. Dependabot has open PRs for **vitest 4** and **typescript 7** — major bumps
+   across eight suites, and typescript 7 also touches the Playwright types. Take
+   them deliberately, on their own branch.
+4. When porting any ExpenseOS behavior: read the relevant ExpenseOS router/model
    as the spec, then re-implement tenant-scoped (server action + lib module +
    RLS + isolation test). Keep VCC/Travel OFF for MVP; NA-first. ExpenseOS source
    files in Google Drive are `.ts`/`.tsx` — the Drive MCP needs
