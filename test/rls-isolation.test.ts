@@ -126,11 +126,16 @@ beforeAll(async () => {
          VALUES ($1, $2, $3, 'MANAGER') RETURNING id`,
         [org, `approver-${label.toLowerCase()}@x.com`, `Approver ${label}`],
       );
-      await tx.query(
-        `INSERT INTO approval_policy
-           (organization_id, name, sequence, threshold_minor, approver_kind, manager_level)
-         VALUES ($1, $2, 1, 0, 'MANAGER', 1)`,
+      const rung = await tx.query(
+        `INSERT INTO approval_policy (organization_id, name, sequence, threshold_minor)
+         VALUES ($1, $2, 1, 0) RETURNING id`,
         [org, `Ladder ${label}`],
+      );
+      await tx.query(
+        `INSERT INTO approval_policy_approver
+           (organization_id, policy_id, position, approver_kind, manager_level, display_name)
+         VALUES ($1, $2, 1, 'MANAGER', 1, $3)`,
+        [org, rung.rows[0].id, `Signer ${label}`],
       );
       const request = await tx.query(
         `INSERT INTO approval_request
@@ -259,15 +264,19 @@ describe('RLS tenant isolation', () => {
     expect(rows.rows).toEqual([{ title: 'Report A', merchant: 'Merchant A', description: 'Line A' }]);
   });
 
-  it('approval ladders, runs, tasks and delegations are tenant-isolated', async () => {
+  it('approval ladders, signers, runs, tasks and delegations are tenant-isolated', async () => {
     const a = await withOrg(orgA, async (tx) => ({
       ladder: (await tx.query('SELECT name FROM approval_policy')).rows.map((r) => r.name),
+      signers: (await tx.query('SELECT display_name FROM approval_policy_approver')).rows.map(
+        (r) => r.display_name,
+      ),
       requests: (await tx.query('SELECT id FROM approval_request')).rows.length,
       tasks: (await tx.query('SELECT note FROM approval_task')).rows.map((r) => r.note),
       delegations: (await tx.query('SELECT note FROM delegation')).rows.map((r) => r.note),
     }));
     expect(a).toEqual({
       ladder: ['Ladder A'],
+      signers: ['Signer A'],
       requests: 1,
       tasks: ['Task A'],
       delegations: ['Delegation A'],
@@ -275,11 +284,12 @@ describe('RLS tenant isolation', () => {
 
     const none = await withoutOrg(async (tx) => ({
       ladder: (await tx.query('SELECT * FROM approval_policy')).rows.length,
+      signers: (await tx.query('SELECT * FROM approval_policy_approver')).rows.length,
       requests: (await tx.query('SELECT * FROM approval_request')).rows.length,
       tasks: (await tx.query('SELECT * FROM approval_task')).rows.length,
       delegations: (await tx.query('SELECT * FROM delegation')).rows.length,
     }));
-    expect(none).toEqual({ ladder: 0, requests: 0, tasks: 0, delegations: 0 });
+    expect(none).toEqual({ ladder: 0, signers: 0, requests: 0, tasks: 0, delegations: 0 });
   });
 
   it('an approval task cannot be joined back to another tenant report', async () => {
@@ -294,6 +304,17 @@ describe('RLS tenant isolation', () => {
       ),
     );
     expect(rows.rows).toEqual([{ title: 'Report A', note: 'Task A' }]);
+  });
+
+  it('an approval signer cannot be joined to another tenant ladder', async () => {
+    const rows = await withOrg(orgA, (tx) =>
+      tx.query(
+        `SELECT p.name, ap.display_name
+           FROM approval_policy_approver ap
+           JOIN approval_policy p ON p.id = ap.policy_id`,
+      ),
+    );
+    expect(rows.rows).toEqual([{ name: 'Ladder A', display_name: 'Signer A' }]);
   });
 
   it('WITH CHECK rejects a cross-tenant approval request', async () => {

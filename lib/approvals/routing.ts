@@ -14,7 +14,7 @@
  * only ever sees `ResolvedAssignment[]`.
  */
 import type { QueryRunner } from '@/lib/db/client';
-import type { RungPlan, TaskResolution } from '@/lib/approvals/tiers';
+import type { StepPlan, TaskResolution } from '@/lib/approvals/tiers';
 
 /** What the resolver is routing. */
 export interface RoutingSubject {
@@ -41,7 +41,15 @@ export type RoutingErrorCode =
   | 'NO_ELIGIBLE_APPROVER'
   | 'SELF_APPROVAL'
   | 'CHAIN_EXHAUSTED'
-  | 'UNRESOLVABLE_RUNG';
+  | 'UNRESOLVABLE_RUNG'
+  /**
+   * An EMAIL approver was configured, and there is no way for an external party
+   * to act on a task yet — the approve-link token surface is VX2-8 (VeloLedger
+   * 0067 is the reference). Storing the config is allowed; routing onto it is
+   * not, because the alternative is a task that can never be decided and a
+   * report stuck in SUBMITTED forever. Remove this code when VX2-8 lands.
+   */
+  | 'EMAIL_APPROVER_UNSUPPORTED';
 
 /**
  * Routing fails CLOSED. Every one of these codes means "this report does not
@@ -67,6 +75,6 @@ export interface ApprovalRouter {
   resolve(
     tx: QueryRunner,
     subject: RoutingSubject,
-    plan: RungPlan[],
+    plan: StepPlan[],
   ): Promise<ResolvedAssignment[]>;
 }

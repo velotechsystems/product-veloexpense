@@ -20,7 +20,8 @@ Two separate codebases:
   ```
   - `NULLIF(...,'')` is REQUIRED (pooled connections return '' not NULL; `''::uuid` errors). Proven by the isolation test.
   - The app connects as a **non-superuser** role (`veloapp`) — superusers bypass RLS even with FORCE.
-  - **Global tables = reference data only** (currency, chart-of-accounts templates, country). Everything else is tenant-scoped.
+  - **Global tables = reference data only.** Today that is `organization` and `currency`, and
+    nothing else — see the correction in §6. Everything else is tenant-scoped.
   - **RLS scopes rows to the ORG, not to a PERSON.** Anything employee-owned needs a second
     ownership check in the action layer, or a colleague who guesses an id can read/edit it
     (see VX1-6's `onReport` helper).
@@ -162,58 +163,100 @@ VX0-1 scaffold · VX0-2..6 tenancy spine + RLS isolation gate (green) · VX0-7 S
 **Phase 1 is COMPLETE** (PRs #10–#20).
 
 **Phase 2 (approvals, notifications, audit) — IN PROGRESS:**
-- VX2-1 ✅ approval schema + tiers. Migration `0008` adds FOUR tenant tables —
-  `approval_policy`, `approval_request`, `approval_task`, `delegation` — all FORCE RLS and all in
-  `test/rls-isolation.test.ts` (16 tenant tables under the guard now). `lib/approvals/tiers.ts`
-  (pure) · `lib/approvals/service.ts` · `lib/approvals/routing.ts` (types only) ·
-  `test/approval-tiers.test.ts` + `test/approvals.db.test.ts`. 155 vitest tests across 10 files,
-  all green. **No engine, no UI** — opening and moving a run is VX2-3, after VX2-6's audit log.
+- VX2-1 ✅ merged in TWO passes — **PR #22 shipped the first shape, PR #23 reconciled it against
+  VeloLedger.** If you are reading `git log` and find two versions of `0008`, that is why; the file
+  on `main` after #23 is the only one that was ever correct. **Migration `0008` was REWRITTEN IN
+  PLACE rather than amended by an `0009`** — migrations here are plain SQL applied with `psql` and
+  carry no checksums, so nothing detects the change: any database that applied the PR-#22 version
+  of `0008` (a local dev DB, most likely) **must be dropped and re-migrated**. CI is unaffected, it
+  builds a fresh database every run. In-place was the right call with no deployed tenants and one
+  developer; once a tenant exists this stops being acceptable and a corrective migration is the
+  only safe route.
+
+  Migration `0008` adds FIVE tenant tables —
+  `approval_policy`, `approval_policy_approver`, `approval_request`, `approval_task`,
+  `delegation` — all FORCE RLS and all in `test/rls-isolation.test.ts` (17 tenant tables under
+  the guard now). `lib/approvals/tiers.ts` (pure) · `lib/approvals/service.ts` ·
+  `lib/approvals/routing.ts` (types only) · `test/approval-tiers.test.ts` +
+  `test/approvals.db.test.ts`. 183 vitest tests across 10 files, all green. **No engine, no UI**
+  — opening and moving a run is VX2-3, after VX2-6's audit log.
+
+  **WHY THERE WERE TWO PASSES — the process lesson, not just a schema note.** The first shape was
+  designed from the ExpenseOS Module 8 spec plus this repo's own conventions, and it reached
+  one-approver-per-rung. It was already merged before anyone checked `product-veloledger`, which
+  the Differences Chart names as the reference for exactly this feature — and which had shipped
+  that same design in `0037` and **replaced it in `0066`**. Check the monorepo for an in-house
+  pattern BEFORE designing a schema, not after merging one.
+
+  **RECONCILED AGAINST VELOLEDGER, not ExpenseOS.** The Differences Chart specifies "simple
+  tiered/threshold default for SMBs (cf. VeloLedger AP bill-approval tiers)", so
+  `product-veloledger` is the named in-house reference. What it actually shipped:
+  `0037_bill_approval` (one threshold + a set of approvers) → `0038_bill_approval_steps`
+  (cumulative multi-step) → **`0066_bill_approval_tiers`, which REPLACED the cumulative step
+  model** with mutually exclusive value ranges, each tier owning an ORDERED list of approvers who
+  may be external email addresses → `0067_bill_approval_token` (the emailed approve-link).
+  - **ADOPTED:** the rung → ordered-approvers decomposition (a rung is NOT one approver),
+    external EMAIL approvers, `position` ordering. VeloLedger learned in 0066 that
+    one-approver-per-rung does not survive a real approval matrix; no reason to relearn it.
+  - **NOT ADOPTED — mutually exclusive value RANGES.** VeloLedger approves a bill, which has no
+    manager chain behind it. An expense ladder is inherently cumulative ("the manager always
+    signs, and finance as well past $5k"), ranges force the lower approvers to be repeated in
+    every higher band, and the VX2-1 ticket specifies ordered tiers on `threshold_minor`.
+  - **NOT ADOPTED YET — `bill_approval_token`.** That is VX2-8. **Consequence, and it matters:
+    an EMAIL approver is storable but NOT actionable, so VX2-2's resolver must REFUSE a rung
+    carrying one** (`RoutingErrorCode.EMAIL_APPROVER_UNSUPPORTED`) rather than create a task
+    nobody can decide. Delete that code when VX2-8 lands.
+
   **Decisions:**
-  - **The ladder is CUMULATIVE, not banded.** A rung says "at this threshold, one more approval,
-    from this kind of approver"; a report collects EVERY enabled rung it reaches, in `sequence`
-    order. A $200 report needs one sign-off, a $6,000 report needs three. `(min, max)` bands were
-    rejected: they need an exclusion constraint to stop two overlapping, still leave gaps a report
-    can fall through, and cannot express "and also" without repeating the lower approver inside
-    every higher band.
-  - **`sequence` is separate from `threshold_minor`** so an admin can reorder who signs off first
-    without renumbering money. Ordering is by `sequence`; applicability is by threshold.
-  - **A disabled rung is skipped without shifting the rest of the ladder.** Switching a rung off is
-    how an admin temporarily removes an approval level, and they expect the others to stay put.
-  - **An unconfigured tenant gets an IMPLICIT direct-manager rung** (`IMPLICIT_RUNG`). This is the
-    one place approvals deliberately depart from VX1-7's precedent: a fresh tenant with no policy
-    RULES is benign (nothing flags), but a fresh tenant with no approval rungs is not — with no
-    fallback, either every report auto-approves (fails OPEN, which the ticket forbids) or nothing
-    can be submitted until an admin configures a ladder (the exact onboarding friction the Port &
-    Build Plan's risk register warns about). An implicit rung still puts a human in the path.
-  - **A ladder longer than 5 applicable rungs is REFUSED, not truncated** — truncating drops the
-    TOP rungs, i.e. the finance sign-off on the largest reports.
+  - **The ladder is CUMULATIVE and each rung's approvers FLATTEN into numbered steps.** A report
+    collects every enabled rung whose threshold it meets in `sequence` order; each rung's
+    approvers emit one step each in `position` order. `step` is global to the report, `position`
+    is within the rung — conflating them is how "approval 2 of 3" starts lying.
+  - **`sequence` is separate from `threshold_minor`** so an admin can reorder who signs first
+    without renumbering money. Ordering is by sequence; applicability is by threshold.
+  - **A disabled rung is skipped without shifting the rest of the ladder.**
+  - **An unconfigured tenant gets an IMPLICIT direct-manager step** (`IMPLICIT_STEP`). The one
+    place approvals departs from VX1-7's precedent: no policy RULES is benign (nothing flags),
+    but no approval rungs is not — either every report auto-approves (fails OPEN, forbidden) or
+    nothing can be submitted until an admin configures a ladder (the onboarding friction the
+    risk register warns about). An implicit step still puts a human in the path.
+  - **A rung with NO approver is refused, not skipped** (`RUNG_WITHOUT_APPROVER`), and a plan
+    needing more than 5 FLATTENED steps is refused, not truncated — truncating drops the tail,
+    i.e. the finance sign-off on the largest reports.
+  - **`approver_role` has NO CHECK constraint**, deliberately. The Differences Chart requires
+    "per-tenant custom roles with tenant-scoped permissions", so the EMPLOYEE|MANAGER|ADMIN
+    triple will stop being the vocabulary and a CHECK would mean a migration that day. Validated
+    against `APPROVER_ROLES` in `tiers.ts` instead — the same reasoning that keeps
+    `expense_policy.kind` out of a CHECK (VX1-7). **That makes the service the only gate**, and
+    there are tests on both sides: the service rejects `'CFO'`, the database accepts it.
+  - **`approval_policy_approver.approver_user_id` is `ON DELETE RESTRICT`**, not SET NULL: an
+    approver named in a live ladder must not vanish and silently shorten every future approval.
+    Module 12's audit-actor lesson, applied pre-emptively. Employees are soft-deleted anyway.
+  - **`approval_task.assignee_id` is NULLABLE**, with `assignee_email` beside it and a CHECK that
+    one of the two is present. This is the direct cost of external approvers — VeloLedger hit the
+    same wall and solved it the same way in 0066. `listTasks` LEFT JOINs the assignee; an inner
+    join would silently drop an external approver's step from the timeline.
   - **Receipt-view acknowledgement is captured at decision time**, per-rung
-    (`approval_policy.require_receipt_view_ack`, default ON) with
-    `approval_task.receipt_view_acknowledged_at` **and `receipts_present_at_decision`**. This is
-    the thing ExpenseOS wishes it had: Module 12's `APPROVED_WITHOUT_RECEIPT` control had to
-    approximate "the approver never looked at a receipt" as "the report has no receipt on file".
-    The board said decide it before VX2-4; it is cheapest at schema time, so it landed here.
-  - **`policy_snapshot` on the run is authoritative, `tier_id` is a convenience join.** Same
-    reasoning as `expense_report_event.context` (0007): an admin retuning the ladder must not be
-    able to rewrite why THIS report needed three approvals. A RETURN + resubmit opens a NEW run
-    rather than re-banding the old one, or an employee returned at three sign-offs could trim a
-    line and resubmit into one.
-  - **One RUNNING run per report is a partial unique index**, not an engine check — two
-    simultaneous submits cannot both open a run, and the second fails loudly.
-  - **One task per `(request_id, step)`.** The simplified ladder is strictly sequential and
-    single-approver. A parallel/quorum rung is the ONLY thing that would need to relax this (to a
-    partial unique on PENDING) and is the only place a graph tier touches these tables.
-  - **`delegation` ships in VX2-1** (the ticket's four tables) but nothing reads it: VX2-2 resolves
-    against it, VX2-5 gives it CRUD. `scope` exists from the start because ExpenseOS's prototype
-    stored it and no handler ever read it — its own Module 8 doc lists that as a gap.
+    (`require_receipt_view_ack`, default ON) with `receipt_view_acknowledged_at` **and
+    `receipts_present_at_decision`**. Module 12's `APPROVED_WITHOUT_RECEIPT` control had to
+    approximate "the approver never looked" as "the report has no receipt on file"; the count
+    makes the honest control possible and costs one integer now.
+  - **`policy_snapshot` on the run is authoritative; the `approval_policy` rows are a convenience
+    join.** Same reasoning as `expense_report_event.context` (0007). A RETURN + resubmit opens a
+    NEW run rather than re-banding the old one, or an employee returned at three sign-offs could
+    trim a line and resubmit into one.
+  - **One RUNNING run per report is a partial unique index**, not an engine check. **One task per
+    `(request_id, step)`**; a quorum rung is the only thing that would relax it.
+  - **`updatePolicy` replaces the approver set WHOLESALE when the patch names it**, and leaves it
+    untouched when it does not. Patching an ordered list element-by-element cannot distinguish
+    "delete position 2" from "I only mentioned position 1".
   - **Overlapping live delegations from one person are NOT constrained in the schema.** The
     constraint needs `EXCLUDE USING gist` over `(from_user_id WITH =, daterange WITH &&)`, hence
-    the `btree_gist` extension — a new deployment dependency for CI, the Docker image and every
-    laptop, to prevent a conflict the resolver can settle. **VX2-2 must pick the most recently
-    created live delegation and have a test for that tie.**
-  - `approval_task.resolved_via` pre-admits `DELEGATION` and `REASSIGNED`, and
-    `approval_task_status` pre-admits `SKIPPED`, so VX2-4 and VX2-5 need no migration — the same
-    trick 0007 played with the transition actions.
+    `btree_gist` — a new deployment dependency for CI, the Docker image and every laptop, to
+    prevent a conflict the resolver can settle. **VX2-2 must pick the most recently created live
+    delegation and have a test for that tie.**
+  - `resolved_via` pre-admits `DELEGATION`/`REASSIGNED`/`EMAIL` and `approval_task_status`
+    pre-admits `SKIPPED`, so VX2-4/VX2-5 need no migration — the trick 0007 played.
   - **`test/rls-isolation.test.ts`'s "a tenant sees only its own rows" changed**: each org now has
     TWO users (a delegation needs a second person), so the assertion sorts and expects both. Same
     guarantee, wider fixture.
@@ -282,6 +325,51 @@ integrity verification + a retention flag (7-year floor) and a purge job with a 
 VX2-7 is `activity` + `notification` with a per-user preference map (type × channel) and template
 resolution exact → any-subject → shipped catalog string. VX2-8 absorbs VX0-8. Also deferred, on
 purpose: per-legal-entity template scope, French template localisation, digest scheduling.
+
+### Plan-fidelity corrections (found 2026-08-27 reading the Plan + Differences Chart)
+
+Both source documents were re-read end to end against the code. Three things had drifted; the
+first is a factual error this file used to assert.
+
+1. **Chart-of-accounts templates DO NOT EXIST, and §1 used to claim they did.** The Plan puts
+   "global reference tables (CoA templates, country/currency)" in Phase 0 and "selectable starter
+   chart-of-accounts templates (global templates → per-tenant instances)" in Phase 1; the
+   Differences Chart lists it as a required dimension. **Reality: the only global tables are
+   `organization` and `currency`.** There is no CoA template table and no `country` table; the
+   only GL hook anywhere is a bare `expense_category.gl_account text`. Both phases are marked
+   complete and neither delivered it. This blocks nothing today, but **Phase 3's VeloLedger
+   adapter has to "pull chart of accounts"** and Module 12's `GL_MAPPING_GAP` control needs a
+   mapping to check, so it needs a ticket before Phase 3. No ticket cut yet — deliberate, John's
+   call on 2026-08-27.
+2. **lib-ui-kit adoption is thin, and the Plan's risk register names this exact risk** ("port
+   screens onto lib-ui-kit as each module lands; don't dual-maintain ExpenseOS primitives"; the
+   Chart marks the UI decision `[DECIDED]`). The registry at `~/code/velotechsystems/lib-ui-kit`
+   ships EIGHT ui primitives — button, input, **textarea, popover, dialog, command, sonner,
+   input-group** — plus confirm-dialog, account-select and toast. VeloExpense has pulled **two**
+   (button, input). Everything else — table, select, badge, cards, empty rows — is hand-rolled in
+   `app/expenses/ui.tsx`, which has quietly become a second primitive library. Note the registry
+   genuinely has no table/select/badge, so the honest fix is to CONTRIBUTE those upstream, not to
+   grow `ui.tsx`. See the proposed ticket below.
+3. **Zero spec-baseline tags.** Plan §6 asks for `git tag veloexpense-spec/<module>-YYYYMMDD
+   <sha>` per ported module plus a per-module delta log, so catching later ExpenseOS changes is
+   "a mechanical re-diff, not a memory exercise". `git tag -l` returns nothing after ten Phase-1
+   tickets. This cannot be reconstructed later — you would be guessing which sha each module was
+   read at — and it gets more expensive every ticket. **John action; this session has no git.**
+
+Also worth knowing: **per-tenant custom roles** are a required dimension in the Differences Chart
+("role builder already exists") but appear in NO phase of the Plan. VX2-1's `approver_role` is
+built for it (no CHECK constraint), but the requirement itself is unassigned.
+
+### Proposed, not yet on the board
+
+- **VX2-11 (proposed) — lib-ui-kit catch-up, ~1–2d.** Pull the six unused registry components
+  (`npx shadcn add https://velotechsystems.github.io/lib-ui-kit/r/<name>.json`, then the
+  `src/` → root move the repo's tsconfig requires); replace the hand-rolled `selectClass` /
+  `textareaClass` in `app/expenses/ui.tsx` with the registry `textarea` and a real select;
+  contribute `table`, `select` and `badge` UP to `lib-ui-kit` rather than keeping them local.
+  **Do this BEFORE VX2-4**, which is four days of new screens and will otherwise double down on
+  `ui.tsx`. Acceptance: `components/ui/` holds every primitive the app uses, `app/expenses/ui.tsx`
+  contains only VeloExpense-specific composites, and lib-ui-kit has a PR for the three additions.
 
 **Exit criteria:** a full submit → approve → reimburse round trip driven from an approver inbox
 AND from an emailed or Teams action, every transition notified and recorded in a tenant-isolated

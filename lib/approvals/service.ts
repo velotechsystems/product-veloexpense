@@ -3,33 +3,32 @@
  * and reading a run back.
  *
  * Follows the lib/expenses + lib/policy pattern: pure functions over a tenant
- * `QueryRunner`, called inside a `withOrg` / `withCurrentOrg` transaction, with
- * `app.current_org` already set. Every statement here relies on RLS for tenant
- * scoping and never filters on organization_id itself — except on INSERT, where
- * the column has to be written and comes from the session variable so it cannot
- * disagree with the policy that is about to check it.
+ * `QueryRunner`, called inside a `withOrg` / `withCurrentOrg` transaction with
+ * `app.current_org` already set. Nothing here filters on organization_id — RLS
+ * does that — except on INSERT, where the column has to be written and comes
+ * from the session variable so it cannot disagree with the policy about to check
+ * it.
  *
  * NOT HERE, on purpose. There is no `openRequest` and no `decide`: opening runs
  * and moving them is VX2-3's engine, and it lands only after VX2-6's audit log
- * exists so that every transition it performs is written to the trail from the
- * engine's first commit. Resolving a rung to a person is VX2-2 (see
- * lib/approvals/routing.ts). Delegation CRUD is VX2-5. This ticket is the
- * schema, the ladder, and the reads the three of them need.
+ * exists so that every transition is written to the trail from the engine's first
+ * commit. Resolving a rung's approvers to actual people is VX2-2 (see
+ * lib/approvals/routing.ts). Delegation CRUD is VX2-5. This ticket is the schema,
+ * the ladder, and the reads the three of them need.
  */
 import type { QueryRunner } from '@/lib/db/client';
 import { toBigInt } from '@/lib/money';
-import type { EmployeeRole } from '@/lib/employees/service';
 import {
   ApprovalConfigError,
   DEFAULT_LADDER,
-  planApproval,
   assertPolicyInput,
+  planApproval,
   type ApprovalPolicyPatch,
   type ApprovalPolicyRow,
-  type ApproverKind,
   type NewApprovalPolicy,
+  type NewApprover,
   type RequestStatus,
-  type RungPlan,
+  type StepPlan,
   type TaskResolution,
   type TaskStatus,
 } from '@/lib/approvals/tiers';
@@ -43,12 +42,35 @@ export * from '@/lib/approvals/tiers';
  */
 const ORG = "current_setting('app.current_org', true)::uuid";
 
-const POLICY_COLUMNS = `
-  p.id, p.name, p.sequence, p.threshold_minor, p.approver_kind, p.manager_level,
-  p.approver_role, p.approver_user_id, p.require_receipt_view_ack, p.enabled,
-  p.created_at, p.updated_at,
-  u.email        AS approver_user_email,
-  u.display_name AS approver_user_name`;
+/**
+ * One round trip for the whole ladder. The approvers come back as an ordered
+ * JSON array per rung rather than as a second query plus a stitch in TypeScript —
+ * RLS applies inside the lateral exactly as it does outside, so the isolation
+ * guarantee is unchanged.
+ */
+const LADDER_QUERY = `
+  SELECT p.id, p.name, p.sequence, p.threshold_minor, p.require_receipt_view_ack,
+         p.enabled, p.created_at, p.updated_at,
+         COALESCE(a.approvers, '[]'::json) AS approvers
+    FROM approval_policy p
+    LEFT JOIN LATERAL (
+      SELECT json_agg(json_build_object(
+               'id',                  ap.id,
+               'policy_id',           ap.policy_id,
+               'position',            ap.position,
+               'approver_kind',       ap.approver_kind,
+               'manager_level',       ap.manager_level,
+               'approver_role',       ap.approver_role,
+               'approver_user_id',    ap.approver_user_id,
+               'external_email',      ap.external_email,
+               'display_name',        ap.display_name,
+               'approver_user_email', u.email,
+               'approver_user_name',  u.display_name
+             ) ORDER BY ap.position) AS approvers
+        FROM approval_policy_approver ap
+        LEFT JOIN app_user u ON u.id = ap.approver_user_id
+       WHERE ap.policy_id = p.id
+    ) a ON true`;
 
 function isUniqueViolation(err: unknown): boolean {
   return (err as { code?: string } | null)?.code === '23505';
@@ -59,12 +81,7 @@ function isUniqueViolation(err: unknown): boolean {
 /** The whole ladder, in rung order. Disabled rungs included — an admin editing
  *  the ladder has to be able to see the rung they switched off. */
 export async function listPolicies(tx: QueryRunner): Promise<ApprovalPolicyRow[]> {
-  const r = await tx.query(
-    `SELECT ${POLICY_COLUMNS}
-       FROM approval_policy p
-       LEFT JOIN app_user u ON u.id = p.approver_user_id
-      ORDER BY p.sequence`,
-  );
+  const r = await tx.query(`${LADDER_QUERY} ORDER BY p.sequence`);
   return r.rows as ApprovalPolicyRow[];
 }
 
@@ -72,20 +89,14 @@ export async function getPolicy(
   tx: QueryRunner,
   policyId: string,
 ): Promise<ApprovalPolicyRow | null> {
-  const r = await tx.query(
-    `SELECT ${POLICY_COLUMNS}
-       FROM approval_policy p
-       LEFT JOIN app_user u ON u.id = p.approver_user_id
-      WHERE p.id = $1`,
-    [policyId],
-  );
+  const r = await tx.query(`${LADDER_QUERY} WHERE p.id = $1`, [policyId]);
   return (r.rows[0] as ApprovalPolicyRow) ?? null;
 }
 
 /**
  * A named approver must resolve inside the tenant. RLS already makes a user in
- * another org invisible, so a plain SELECT is the whole check — it returns no
- * row and we reject. Same shape as assertManagerInOrg in lib/employees/service.
+ * another org invisible, so a plain SELECT is the whole check — it returns no row
+ * and we reject. Same shape as assertManagerInOrg in lib/employees/service.
  */
 async function assertApproverInOrg(tx: QueryRunner, userId: string) {
   const r = await tx.query('SELECT id FROM app_user WHERE id = $1 AND deleted_at IS NULL', [
@@ -99,34 +110,49 @@ async function assertApproverInOrg(tx: QueryRunner, userId: string) {
   }
 }
 
+async function insertApprovers(tx: QueryRunner, policyId: string, approvers: NewApprover[]) {
+  for (const a of approvers) {
+    if (a.approverUserId) await assertApproverInOrg(tx, a.approverUserId);
+    await tx.query(
+      `INSERT INTO approval_policy_approver
+         (organization_id, policy_id, position, approver_kind, manager_level,
+          approver_role, approver_user_id, external_email, display_name)
+       VALUES (${ORG}, $1, $2, $3, $4, $5, $6, $7, $8)`,
+      [
+        policyId,
+        a.position,
+        a.approverKind,
+        a.managerLevel ?? null,
+        a.approverRole ?? null,
+        a.approverUserId ?? null,
+        a.externalEmail?.trim() ?? null,
+        a.displayName?.trim() ?? null,
+      ],
+    );
+  }
+}
+
 export async function createPolicy(
   tx: QueryRunner,
   input: NewApprovalPolicy,
 ): Promise<ApprovalPolicyRow> {
   assertPolicyInput(input);
-  if (input.approverUserId) await assertApproverInOrg(tx, input.approverUserId);
-
+  let policyId: string;
   try {
     const r = await tx.query(
       `INSERT INTO approval_policy
-         (organization_id, name, sequence, threshold_minor, approver_kind,
-          manager_level, approver_role, approver_user_id,
-          require_receipt_view_ack, enabled)
-       VALUES (${ORG}, $1, $2, $3, $4, $5, $6, $7, $8, $9)
+         (organization_id, name, sequence, threshold_minor, require_receipt_view_ack, enabled)
+       VALUES (${ORG}, $1, $2, $3, $4, $5)
        RETURNING id`,
       [
         input.name.trim(),
         input.sequence,
         (input.thresholdMinor === undefined ? 0n : toBigInt(input.thresholdMinor)).toString(),
-        input.approverKind,
-        input.managerLevel ?? null,
-        input.approverRole ?? null,
-        input.approverUserId ?? null,
         input.requireReceiptViewAck ?? true,
         input.enabled ?? true,
       ],
     );
-    return (await getPolicy(tx, r.rows[0].id))!;
+    policyId = r.rows[0].id;
   } catch (err) {
     if (isUniqueViolation(err)) {
       throw new ApprovalConfigError(
@@ -136,19 +162,21 @@ export async function createPolicy(
     }
     throw err;
   }
+  await insertApprovers(tx, policyId, input.approvers);
+  return (await getPolicy(tx, policyId))!;
 }
 
 /**
- * Patch-with-nulls, not COALESCE: an absent key leaves the column alone, an
- * explicit null clears it. Under COALESCE, clearing a field from a form is
- * impossible (VX1-6's lesson, applied to updateReport and updateEmployee).
+ * Patch-with-nulls on the rung's own fields, not COALESCE: an absent key leaves
+ * the column alone, an explicit null clears it. Under COALESCE, clearing a field
+ * from a form is impossible (VX1-6's lesson, applied to updateReport and
+ * updateEmployee).
  *
- * The approver columns are the exception and are ALWAYS written together, from
- * the merged row: changing a rung from ROLE to MANAGER has to null
- * approver_role in the same statement that sets manager_level, or the
- * approval_policy_approver_complete CHECK rejects the write. Merging first also
- * means the TypeScript validation sees the row as it will end up rather than
- * only the part that changed.
+ * `approvers` is the exception and is REPLACED WHOLESALE when present. Patching
+ * an ordered list element-by-element is ambiguous — is a missing position a
+ * deletion or an omission? — and an approval ladder is exactly the wrong place to
+ * guess. Absent key = approvers untouched; present = this is now the complete,
+ * ordered set.
  */
 export async function updatePolicy(
   tx: QueryRunner,
@@ -158,33 +186,33 @@ export async function updatePolicy(
   const current = await getPolicy(tx, policyId);
   if (!current) throw new ApprovalConfigError('approval rung not found', 'NOT_FOUND');
 
-  const kind: ApproverKind =
-    patch.approverKind !== undefined ? patch.approverKind : current.approver_kind;
-
-  // When the kind changes, the companion columns come from the patch alone: the
-  // old row's manager_level is meaningless on a rung that now names a person.
-  const kindChanged = kind !== current.approver_kind;
-  const pick = <T>(patched: T | null | undefined, existing: T | null): T | null =>
-    patched !== undefined ? patched : kindChanged ? null : existing;
-
   const merged: NewApprovalPolicy = {
     name: patch.name !== undefined ? patch.name : current.name,
     sequence: patch.sequence !== undefined ? patch.sequence : current.sequence,
     thresholdMinor:
       patch.thresholdMinor !== undefined ? patch.thresholdMinor : current.threshold_minor,
-    approverKind: kind,
-    managerLevel: pick(patch.managerLevel, current.manager_level),
-    approverRole: pick(patch.approverRole, current.approver_role) as EmployeeRole | null,
-    approverUserId: pick(patch.approverUserId, current.approver_user_id),
     requireReceiptViewAck:
       patch.requireReceiptViewAck !== undefined
         ? patch.requireReceiptViewAck
         : current.require_receipt_view_ack,
     enabled: patch.enabled !== undefined ? patch.enabled : current.enabled,
+    // Validate against what the rung will ACTUALLY have afterwards, so a patch
+    // that only changes the name is not rejected for the existing approvers, and
+    // a patch that empties the approvers IS.
+    approvers:
+      patch.approvers !== undefined
+        ? patch.approvers
+        : current.approvers.map((a) => ({
+            position: a.position,
+            approverKind: a.approver_kind,
+            managerLevel: a.manager_level,
+            approverRole: a.approver_role,
+            approverUserId: a.approver_user_id,
+            externalEmail: a.external_email,
+            displayName: a.display_name,
+          })),
   };
-
   assertPolicyInput(merged);
-  if (merged.approverUserId) await assertApproverInOrg(tx, merged.approverUserId);
 
   try {
     await tx.query(
@@ -192,12 +220,8 @@ export async function updatePolicy(
           SET name = $2,
               sequence = $3,
               threshold_minor = $4,
-              approver_kind = $5,
-              manager_level = $6,
-              approver_role = $7,
-              approver_user_id = $8,
-              require_receipt_view_ack = $9,
-              enabled = $10,
+              require_receipt_view_ack = $5,
+              enabled = $6,
               updated_at = now()
         WHERE id = $1`,
       [
@@ -205,10 +229,6 @@ export async function updatePolicy(
         merged.name.trim(),
         merged.sequence,
         toBigInt(merged.thresholdMinor ?? 0).toString(),
-        merged.approverKind,
-        merged.managerLevel ?? null,
-        merged.approverRole ?? null,
-        merged.approverUserId ?? null,
         merged.requireReceiptViewAck ?? true,
         merged.enabled ?? true,
       ],
@@ -222,17 +242,24 @@ export async function updatePolicy(
     }
     throw err;
   }
+
+  if (patch.approvers !== undefined) {
+    await tx.query('DELETE FROM approval_policy_approver WHERE policy_id = $1', [policyId]);
+    await insertApprovers(tx, policyId, patch.approvers);
+  }
   return (await getPolicy(tx, policyId))!;
 }
 
 export async function deletePolicy(tx: QueryRunner, policyId: string): Promise<void> {
+  // approval_policy_approver cascades; a run's policy_snapshot is unaffected,
+  // which is the point of snapshotting it.
   const r = await tx.query('DELETE FROM approval_policy WHERE id = $1', [policyId]);
   if (r.rowCount === 0) throw new ApprovalConfigError('approval rung not found', 'NOT_FOUND');
 }
 
 /**
  * Restore the starter ladder, skipping any rung position already taken. Returns
- * how many were inserted, so the caller can say "added 2" rather than guessing.
+ * how many were inserted so the caller can say "added 2" rather than guessing.
  *
  * Idempotent by `sequence`, matching ensureDefaultPolicies in lib/policy: this is
  * a "give me a sensible starting point" button, not a reset — it must never
@@ -257,8 +284,8 @@ export interface ApprovalPlan {
   submitterId: string;
   totalMinor: string;
   currencyCode: string;
-  plan: RungPlan[];
-  /** True when no rung was configured and IMPLICIT_RUNG was used. */
+  plan: StepPlan[];
+  /** True when no rung applied and IMPLICIT_STEP was used. */
   implicit: boolean;
 }
 
@@ -300,7 +327,7 @@ export async function planApprovalForReport(
 export interface ApprovalRequestRow {
   id: string;
   report_id: string;
-  policy_snapshot: RungPlan[];
+  policy_snapshot: StepPlan[];
   status: RequestStatus;
   current_step: number;
   total_steps: number;
@@ -317,14 +344,16 @@ export interface ApprovalTaskRow {
   id: string;
   request_id: string;
   step: number;
-  assignee_id: string;
+  /** Null for an external approver, who has no app_user row. */
+  assignee_id: string | null;
+  assignee_email: string | null;
   assignee_name: string | null;
-  assignee_email: string;
   resolved_via: TaskResolution;
   delegated_from_id: string | null;
   escalation_level: number;
   status: TaskStatus;
   decided_by_id: string | null;
+  decided_by_email: string | null;
   decided_by_name: string | null;
   decided_at: Date | null;
   note: string | null;
@@ -365,19 +394,26 @@ export async function getReportApproval(
   return { request, tasks: await listTasks(tx, request.id) };
 }
 
-/** A run's steps in ladder order. `step` is unique per run, so this is total. */
-export async function listTasks(
-  tx: QueryRunner,
-  requestId: string,
-): Promise<ApprovalTaskRow[]> {
+/**
+ * A run's steps in ladder order. `step` is unique per run, so this is a total
+ * order and needs no timestamp tie-break.
+ *
+ * LEFT JOIN on the assignee, not JOIN: an external email approver has no
+ * app_user row, and an inner join would silently drop their task from the
+ * timeline — the worst possible failure for an approval nobody can see.
+ */
+export async function listTasks(tx: QueryRunner, requestId: string): Promise<ApprovalTaskRow[]> {
   const r = await tx.query(
     `SELECT t.id, t.request_id, t.step, t.assignee_id,
-            a.display_name AS assignee_name, a.email AS assignee_email,
+            COALESCE(a.email, t.assignee_email) AS assignee_email,
+            COALESCE(a.display_name, t.assignee_email) AS assignee_name,
             t.resolved_via, t.delegated_from_id, t.escalation_level, t.status,
-            t.decided_by_id, d.display_name AS decided_by_name, t.decided_at, t.note,
+            t.decided_by_id, t.decided_by_email,
+            COALESCE(d.display_name, t.decided_by_email) AS decided_by_name,
+            t.decided_at, t.note,
             t.receipt_view_acknowledged_at, t.receipts_present_at_decision, t.created_at
        FROM approval_task t
-       JOIN app_user a ON a.id = t.assignee_id
+       LEFT JOIN app_user a ON a.id = t.assignee_id
        LEFT JOIN app_user d ON d.id = t.decided_by_id
       WHERE t.request_id = $1
       ORDER BY t.step`,
