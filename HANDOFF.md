@@ -1,6 +1,6 @@
 # VeloExpense — Build Handoff (context for a fresh thread)
 
-_Last updated: 2026-08-26 (Phase 1 COMPLETE, through VX1-10). Paste this whole file into the new thread as context._
+_Last updated: 2026-08-27 (Phase 1 COMPLETE through VX1-10; Phase 2 board drafted). Paste this whole file into the new thread as context._
 
 ## 0. What VeloExpense is
 The commercial, **multi-tenant** SaaS expense product, built for third-party SMB
@@ -158,12 +158,49 @@ VX0-1 scaffold · VX0-2..6 tenancy spine + RLS isolation gate (green) · VX0-7 S
   - The predicates are PURE and the ownership lookup is one SQL read, so the truth table is unit-tested rather than asserted by reading action code. `test/access.db.test.ts` also asserts the row IS visible under RLS — that is what made the hole invisible.
   - `app/expenses/actions.ts` was refactored onto the same shared predicate, so reports and receipts cannot drift apart.
 
-**Phase 1 is COMPLETE.** Phase 2 (approvals) is the next phase — see the Port-and-Build Plan.
+**Phase 1 is COMPLETE** (PRs #10–#20). Phase 2 is approvals, notifications and audit — the
+ticket board is drafted; see §6.
+
+**Phase 2 board — 10 tickets, ~26 dev-days** (ExpenseOS Modules 8, 11, 12). Build order:
+VX2-1 approval schema + tiers → VX2-6 tenant-scoped audit log → VX2-2 routing resolver →
+VX2-3 approval engine + transitions → VX2-5 delegations ∥ VX2-4 approver inbox + decision UI →
+VX2-7 notification core → VX2-8 delivery worker (email / Teams / Slack) → VX2-9 reimbursement →
+VX2-10 Phase-2 isolation + e2e. The load-bearing decisions, so they are not relitigated if the
+board is out of reach:
+- **Audit lands BEFORE the engine.** VX2-3 writes into the trail from its first commit; bolting
+  an audit log onto transitions that already exist is the retrofit antipattern the plan calls
+  out for RLS, and it leaves a hole where the early history should be.
+- **Simplified tiered approvals; the ExpenseOS graph engine stays out of the default path** —
+  the Port & Build Plan's risk register is explicit that it is SMB onboarding friction. Keep the
+  resolver behind one interface (VX2-2) so an advanced tier can slot in later.
+- **Per-line rejection is out.** ExpenseOS decided against it and never built it, though its
+  Module 8 use cases still describe it.
+- **Freeze the audit hash payload once, at VX2-6.** Two lessons ExpenseOS paid for: an actor
+  column inside the hash with `onDelete: SetNull` means one hard user delete permanently and
+  unrepairably breaks verification of every row that user wrote; and concurrent appends must be
+  serialized or two rows fork the chain and read as tampering forever.
+- **Decide receipt-view acknowledgement BEFORE building VX2-4.** Nothing in ExpenseOS records
+  that an approver opened a receipt, which forced Module 12's control to approximate it as
+  "approved with no receipt on file". Nearly free to capture at decision time, expensive after.
+- **MANAGER is deliberately unprivileged today** — `canViewReport` / `canEditReport` and
+  `canViewReceipt` / `canModifyReceipt` grant a manager nothing beyond their own reports. VX2-4
+  is where that opens, and it must open THROUGH those predicates, not around them.
+- `expense_report_event` needs no migration: its CHECK already admits APPROVE / REJECT / RETURN
+  / REIMBURSE. VX0-8 (worker + per-job tenant context) folds into VX2-8.
+- Fraud detection and control evaluation (Module 12, slices 2–3) are deferred to Phase 4 — both
+  are retrospective and need approval history before they mean anything.
 
 ## 6. Planning docs (in the ExpenseOS Google-Drive folder, `Specifications_and_Planning/`)
 - `VeloExpense-Port-and-Build-Plan.docx` (7-phase plan + ExpenseOS→VeloExpense sync strategy)
 - `ExpenseOS-vs-VeloExpense-Differences-Chart-rev2.docx`
 - `VeloExpense-Phase-0-*.docx`, `VeloExpense-Phase-1-Tickets.docx`
+- `VeloExpense-Phase-2-Tickets.docx` — **check it is actually in the folder.** It was drafted
+  2026-08-27 and handed to John in chat, but the Drive API upload truncated the binary (a
+  13.5 KB .docx arrived as 10.8 KB, missing its ZIP central directory) and the corrupt copy was
+  trashed. Writing a file into that Drive folder from a Cowork session does not work: the
+  CloudStorage path is not grantable via `device_request_folder_access` either. Deliver
+  Drive-bound documents with `SendUserFile` and let John file them, or ask him to connect the
+  synced folder with the desktop folder picker first. §5 carries the board's decisions either way.
 - ExpenseOS status/dashboard docs + the live Cowork artifact `expenseos-dev-dashboard` (weekly refresh).
 
 ## 7. Immediate next action for the new thread
