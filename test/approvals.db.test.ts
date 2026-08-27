@@ -1,16 +1,17 @@
 /**
  * VX2-1 — approvals schema + ladder, against a real Postgres.
  *
- * Own org slug ('approvals-co') because the DB suites share one database and
- * each TRUNCATEs (vitest.config.ts, fileParallelism: false).
+ * Own org slug ('approvals-co') because the DB suites share one database and each
+ * TRUNCATEs (vitest.config.ts, fileParallelism: false).
  *
  * TWO kinds of test here, deliberately:
- *  1. the ladder through the service (CRUD, patch semantics, planning), and
+ *  1. the ladder through the service (CRUD, approver ordering, replacement
+ *     semantics, planning), and
  *  2. the CONSTRAINTS through raw SQL. VX2-1's acceptance is "migrates clean",
- *     and the guarantees this ticket actually ships are CHECK constraints and
- *     unique indexes — they have to be exercised as the database enforces them,
- *     not as the service politely avoids them, because VX2-3's engine and a
- *     future graph tier will write these rows through different code.
+ *     and the guarantees this ticket ships are CHECK constraints and unique
+ *     indexes — they have to be exercised as the database enforces them, not as
+ *     the service politely avoids them, because VX2-3's engine and any future
+ *     graph tier will write these rows through different code.
  */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { Pool } from 'pg';
@@ -46,7 +47,7 @@ async function draft(amountMinor = 1000) {
   });
 }
 
-/** Open a run + its first task by raw SQL — VX2-3 owns the real thing. */
+/** Open a run by raw SQL — VX2-3 owns the real thing. */
 async function openRun(
   reportId: string,
   over: { status?: string; totalSteps?: number; currentStep?: number } = {},
@@ -54,8 +55,8 @@ async function openRun(
   const status = over.status ?? 'RUNNING';
   // approval_request_closed_consistent: a running run has no closing time and a
   // closed one must have one. Computed here rather than in SQL because reusing
-  // one placeholder as both the enum and a text comparison makes Postgres
-  // refuse to deduce its type (42P08).
+  // one placeholder as both the enum and a text comparison makes Postgres refuse
+  // to deduce its type (42P08).
   const closedAt = status === 'RUNNING' ? null : new Date();
   return withOrg(orgId, async (tx) => {
     const q = await tx.query(
@@ -73,6 +74,16 @@ async function openRun(
 
 async function clearLadder() {
   await withOrg(orgId, (tx) => tx.query('DELETE FROM approval_policy'));
+}
+
+/** The simplest valid rung: one direct-manager approver. */
+function managerRung(sequence: number, over: Record<string, unknown> = {}) {
+  return {
+    name: `Rung ${sequence}`,
+    sequence,
+    approvers: [{ position: 1, approverKind: 'MANAGER' as const, managerLevel: 1 }],
+    ...over,
+  };
 }
 
 beforeAll(async () => {
@@ -109,44 +120,86 @@ afterAll(async () => {
 /* ── the ladder, through the service ───────────────────────────────────────── */
 
 describe('ladder CRUD', () => {
-  it('restores the starter ladder, and is idempotent', async () => {
+  it('restores the starter ladder with its approvers, and is idempotent', async () => {
     await clearLadder();
-    const first = await withOrg(orgId, (tx) => approvals.ensureDefaultLadder(tx));
-    expect(first).toBe(3);
+    expect(await withOrg(orgId, (tx) => approvals.ensureDefaultLadder(tx))).toBe(3);
     // A second press must not duplicate or overwrite a tuned ladder.
-    const second = await withOrg(orgId, (tx) => approvals.ensureDefaultLadder(tx));
-    expect(second).toBe(0);
+    expect(await withOrg(orgId, (tx) => approvals.ensureDefaultLadder(tx))).toBe(0);
 
     const rungs = await withOrg(orgId, (tx) => approvals.listPolicies(tx));
-    expect(rungs.map((r) => [r.sequence, r.threshold_minor, r.approver_kind])).toEqual([
+    expect(
+      rungs.map((r) => [r.sequence, r.threshold_minor, r.approvers[0].approver_kind]),
+    ).toEqual([
       [1, '0', 'MANAGER'],
       [2, '100000', 'MANAGER'],
       [3, '500000', 'ROLE'],
     ]);
     // bigint columns come back as STRINGS. If this ever reads as a number,
-    // something has widened the column type and cents are at risk.
+    // something has widened the column and cents are at risk.
     expect(typeof rungs[1].threshold_minor).toBe('string');
+    expect(rungs[2].approvers[0].approver_role).toBe('ADMIN');
   });
 
-  it('refuses a second rung at the same position', async () => {
+  it('returns a rung approvers in position order, with the joined employee', async () => {
     await clearLadder();
-    await withOrg(orgId, (tx) =>
+    const created = await withOrg(orgId, (tx) =>
       approvals.createPolicy(tx, {
-        name: 'One',
+        name: 'Two signers',
         sequence: 1,
-        approverKind: 'MANAGER',
-        managerLevel: 1,
+        approvers: [
+          { position: 2, approverKind: 'USER', approverUserId: managerId },
+          { position: 1, approverKind: 'MANAGER', managerLevel: 1 },
+        ],
       }),
     );
+    expect(created.approvers.map((a) => [a.position, a.approver_kind])).toEqual([
+      [1, 'MANAGER'],
+      [2, 'USER'],
+    ]);
+    expect(created.approvers[1].approver_user_email).toBe('m@approvals.test');
+    expect(created.approvers[1].approver_user_name).toBe('M');
+  });
+
+  it('stores an external email approver', async () => {
+    await clearLadder();
+    const created = await withOrg(orgId, (tx) =>
+      approvals.createPolicy(tx, {
+        name: 'Client sign-off',
+        sequence: 1,
+        approvers: [
+          {
+            position: 1,
+            approverKind: 'EMAIL',
+            externalEmail: 'cfo@client.example',
+            displayName: 'Client CFO',
+          },
+        ],
+      }),
+    );
+    expect(created.approvers[0]).toMatchObject({
+      approver_kind: 'EMAIL',
+      external_email: 'cfo@client.example',
+      display_name: 'Client CFO',
+      approver_user_id: null,
+    });
+    // Storable, but VX2-2 must refuse to ROUTE onto it until VX2-8 ships the
+    // approve-link token — otherwise the task can never be decided.
+  });
+
+  it('refuses a rung with no approver', async () => {
+    await clearLadder();
     await expect(
       withOrg(orgId, (tx) =>
-        approvals.createPolicy(tx, {
-          name: 'Also one',
-          sequence: 1,
-          approverKind: 'MANAGER',
-          managerLevel: 1,
-        }),
+        approvals.createPolicy(tx, { name: 'Nobody', sequence: 1, approvers: [] }),
       ),
+    ).rejects.toMatchObject({ code: 'NO_APPROVERS' });
+  });
+
+  it('refuses a second rung at the same ladder position', async () => {
+    await clearLadder();
+    await withOrg(orgId, (tx) => approvals.createPolicy(tx, managerRung(1)));
+    await expect(
+      withOrg(orgId, (tx) => approvals.createPolicy(tx, managerRung(1, { name: 'Also one' }))),
     ).rejects.toMatchObject({ code: 'SEQUENCE_TAKEN' });
   });
 
@@ -157,77 +210,104 @@ describe('ladder CRUD', () => {
         approvals.createPolicy(tx, {
           name: 'Named',
           sequence: 1,
-          approverKind: 'USER',
-          approverUserId: '00000000-0000-0000-0000-0000000000ff',
+          approvers: [
+            {
+              position: 1,
+              approverKind: 'USER',
+              approverUserId: '00000000-0000-0000-0000-0000000000ff',
+            },
+          ],
         }),
       ),
     ).rejects.toMatchObject({ code: 'INVALID_APPROVER' });
   });
 
-  it('switching the approver kind clears the companion columns', async () => {
+  it('refuses an unknown role, which the DB does not constrain', async () => {
     await clearLadder();
-    const created = await withOrg(orgId, (tx) =>
-      approvals.createPolicy(tx, {
-        name: 'Second level',
-        sequence: 1,
-        approverKind: 'MANAGER',
-        managerLevel: 2,
-      }),
-    );
-    expect(created.manager_level).toBe(2);
-
-    // ROLE without nulling manager_level would violate
-    // approval_policy_approver_complete — the merge is what prevents that.
-    const updated = await withOrg(orgId, (tx) =>
-      approvals.updatePolicy(tx, created.id, { approverKind: 'ROLE', approverRole: 'ADMIN' }),
-    );
-    expect(updated.manager_level).toBeNull();
-    expect(updated.approver_role).toBe('ADMIN');
-
-    const back = await withOrg(orgId, (tx) =>
-      approvals.updatePolicy(tx, created.id, { approverKind: 'USER', approverUserId: managerId }),
-    );
-    expect(back.approver_role).toBeNull();
-    expect(back.approver_user_id).toBe(managerId);
-    expect(back.approver_user_email).toBe('m@approvals.test');
+    // approval_policy_approver.approver_role has no CHECK, so per-tenant custom
+    // roles can land without a migration — which makes the service the only gate.
+    await expect(
+      withOrg(orgId, (tx) =>
+        approvals.createPolicy(tx, {
+          name: 'CFO',
+          sequence: 1,
+          approvers: [{ position: 1, approverKind: 'ROLE', approverRole: 'CFO' as never }],
+        }),
+      ),
+    ).rejects.toMatchObject({ code: 'INVALID_ROLE' });
   });
 
-  it('leaves untouched fields alone (patch, not replace)', async () => {
+  it('replaces the approver set wholesale when the patch names it', async () => {
     await clearLadder();
     const created = await withOrg(orgId, (tx) =>
       approvals.createPolicy(tx, {
-        name: 'Manager',
-        sequence: 4,
-        thresholdMinor: '25000',
-        approverKind: 'MANAGER',
-        managerLevel: 1,
-        requireReceiptViewAck: false,
+        name: 'Rung',
+        sequence: 1,
+        approvers: [
+          { position: 1, approverKind: 'MANAGER', managerLevel: 1 },
+          { position: 2, approverKind: 'MANAGER', managerLevel: 2 },
+        ],
       }),
+    );
+    expect(created.approvers).toHaveLength(2);
+
+    const updated = await withOrg(orgId, (tx) =>
+      approvals.updatePolicy(tx, created.id, {
+        approvers: [{ position: 1, approverKind: 'ROLE', approverRole: 'ADMIN' }],
+      }),
+    );
+    // Wholesale, not merged: patching an ordered list element-by-element cannot
+    // distinguish "delete position 2" from "I only mentioned position 1".
+    expect(updated.approvers).toHaveLength(1);
+    expect(updated.approvers[0].approver_kind).toBe('ROLE');
+  });
+
+  it('leaves the approvers alone when the patch does not name them', async () => {
+    await clearLadder();
+    const created = await withOrg(orgId, (tx) =>
+      approvals.createPolicy(tx, managerRung(4, { thresholdMinor: '25000', requireReceiptViewAck: false })),
     );
     const updated = await withOrg(orgId, (tx) =>
       approvals.updatePolicy(tx, created.id, { enabled: false }),
     );
     expect(updated).toMatchObject({
-      name: 'Manager',
+      name: 'Rung 4',
       sequence: 4,
       threshold_minor: '25000',
-      manager_level: 1,
       require_receipt_view_ack: false,
       enabled: false,
     });
+    expect(updated.approvers).toHaveLength(1);
+    expect(updated.approvers[0].manager_level).toBe(1);
+  });
+
+  it('refuses a patch that would empty the approvers', async () => {
+    await clearLadder();
+    const created = await withOrg(orgId, (tx) => approvals.createPolicy(tx, managerRung(1)));
+    await expect(
+      withOrg(orgId, (tx) => approvals.updatePolicy(tx, created.id, { approvers: [] })),
+    ).rejects.toMatchObject({ code: 'NO_APPROVERS' });
+  });
+
+  it('deleting a rung takes its approvers with it', async () => {
+    await clearLadder();
+    const created = await withOrg(orgId, (tx) => approvals.createPolicy(tx, managerRung(1)));
+    await withOrg(orgId, (tx) => approvals.deletePolicy(tx, created.id));
+    const left = await withOrg(orgId, (tx) =>
+      tx.query('SELECT count(*)::int AS n FROM approval_policy_approver'),
+    );
+    expect(left.rows[0].n).toBe(0);
   });
 
   it('reports a missing rung rather than silently succeeding', async () => {
     await expect(
-      withOrg(orgId, (tx) =>
-        approvals.deletePolicy(tx, '00000000-0000-0000-0000-0000000000aa'),
-      ),
+      withOrg(orgId, (tx) => approvals.deletePolicy(tx, '00000000-0000-0000-0000-0000000000aa')),
     ).rejects.toBeInstanceOf(ApprovalConfigError);
   });
 });
 
 describe('planApprovalForReport', () => {
-  it('bands on the report total as stored, not on what a caller passes', async () => {
+  it('bands on the report total as stored and flattens the approvers', async () => {
     await clearLadder();
     await withOrg(orgId, (tx) => approvals.ensureDefaultLadder(tx));
     const { reportId } = await draft(600000); // 6,000.00 -> all three rungs
@@ -250,15 +330,14 @@ describe('planApprovalForReport', () => {
         name: 'Finance',
         sequence: 1,
         thresholdMinor: '500000',
-        approverKind: 'ROLE',
-        approverRole: 'ADMIN',
+        approvers: [{ position: 1, approverKind: 'ROLE', approverRole: 'ADMIN' }],
       });
       return approvals.planApprovalForReport(tx, reportId);
     });
-    expect(planned.plan.map((s) => s.name)).toEqual(['Finance']);
+    expect(planned.plan.map((s) => s.policyName)).toEqual(['Finance']);
   });
 
-  it('falls back to the implicit direct-manager rung for an unconfigured tenant', async () => {
+  it('falls back to the implicit direct-manager step for an unconfigured tenant', async () => {
     await clearLadder();
     const { reportId } = await draft(750000);
     const planned = await withOrg(orgId, (tx) => approvals.planApprovalForReport(tx, reportId));
@@ -286,13 +365,124 @@ describe('countStoredReceipts', () => {
       ),
     );
     // A PENDING receipt is an upload intent whose bytes may never have arrived
-    // (VX1-5's two-phase upload) — it is not evidence an approver could look at.
-    const count = await withOrg(orgId, (tx) => approvals.countStoredReceipts(tx, reportId));
-    expect(count).toBe(1);
+    // (VX1-5's two-phase upload) — not evidence an approver could look at.
+    expect(await withOrg(orgId, (tx) => approvals.countStoredReceipts(tx, reportId))).toBe(1);
   });
 });
 
 /* ── the constraints, as the database enforces them ────────────────────────── */
+
+describe('approval_policy_approver constraints', () => {
+  async function insertApprover(over: Record<string, unknown> = {}) {
+    await clearLadder();
+    const rung = await withOrg(orgId, (tx) => approvals.createPolicy(tx, managerRung(1)));
+    const row = {
+      position: 2,
+      approver_kind: 'MANAGER',
+      manager_level: 1,
+      approver_role: null,
+      approver_user_id: null,
+      external_email: null,
+      ...over,
+    };
+    return withOrg(orgId, (tx) =>
+      tx.query(
+        `INSERT INTO approval_policy_approver
+           (organization_id, policy_id, position, approver_kind, manager_level,
+            approver_role, approver_user_id, external_email)
+         VALUES (current_setting('app.current_org', true)::uuid, $1, $2, $3, $4, $5, $6, $7)`,
+        [
+          rung.id,
+          row.position,
+          row.approver_kind,
+          row.manager_level,
+          row.approver_role,
+          row.approver_user_id,
+          row.external_email,
+        ],
+      ),
+    );
+  }
+
+  it('accepts a well-formed approver', async () => {
+    await expect(insertApprover()).resolves.toBeTruthy();
+  });
+
+  it('refuses an approver naming two things at once', async () => {
+    await expect(
+      insertApprover({ approver_kind: 'ROLE', approver_role: 'ADMIN', manager_level: 1 }),
+    ).rejects.toThrow();
+    await expect(
+      insertApprover({ approver_kind: 'EMAIL', external_email: 'a@b.co', manager_level: 1 }),
+    ).rejects.toThrow();
+  });
+
+  it('refuses each kind missing its companion', async () => {
+    await expect(insertApprover({ manager_level: null })).rejects.toThrow();
+    await expect(
+      insertApprover({ approver_kind: 'ROLE', manager_level: null }),
+    ).rejects.toThrow();
+    await expect(
+      insertApprover({ approver_kind: 'USER', manager_level: null }),
+    ).rejects.toThrow();
+    await expect(
+      insertApprover({ approver_kind: 'EMAIL', manager_level: null }),
+    ).rejects.toThrow();
+  });
+
+  it('accepts ANY role string — the vocabulary is code, not a CHECK', async () => {
+    // The deliberate counterpart to the service-level rejection above: the
+    // database must not block a role the tenant invents once per-tenant custom
+    // roles land, or that feature needs a migration.
+    await expect(
+      insertApprover({ approver_kind: 'ROLE', manager_level: null, approver_role: 'CFO' }),
+    ).resolves.toBeTruthy();
+  });
+
+  it('refuses an unknown kind, position 0, and a level of 6', async () => {
+    await expect(insertApprover({ approver_kind: 'VIBES' })).rejects.toThrow();
+    await expect(insertApprover({ position: 0 })).rejects.toThrow();
+    await expect(insertApprover({ manager_level: 6 })).rejects.toThrow();
+  });
+
+  it('refuses an obviously non-email external address', async () => {
+    await expect(
+      insertApprover({ approver_kind: 'EMAIL', manager_level: null, external_email: 'nope' }),
+    ).rejects.toThrow();
+  });
+
+  it('allows only one approver per position of a rung', async () => {
+    await clearLadder();
+    const rung = await withOrg(orgId, (tx) => approvals.createPolicy(tx, managerRung(1)));
+    // Position 1 is already taken by managerRung's own approver.
+    await expect(
+      withOrg(orgId, (tx) =>
+        tx.query(
+          `INSERT INTO approval_policy_approver
+             (organization_id, policy_id, position, approver_kind, manager_level)
+           VALUES (current_setting('app.current_org', true)::uuid, $1, 1, 'MANAGER', 2)`,
+          [rung.id],
+        ),
+      ),
+    ).rejects.toThrow();
+  });
+
+  it('refuses to hard-delete an employee named in a live ladder', async () => {
+    await clearLadder();
+    await withOrg(orgId, (tx) =>
+      approvals.createPolicy(tx, {
+        name: 'Named',
+        sequence: 1,
+        approvers: [{ position: 1, approverKind: 'USER', approverUserId: managerId }],
+      }),
+    );
+    // ON DELETE RESTRICT. SET NULL would let an approver vanish and silently
+    // shorten every future approval — Module 12's audit-actor lesson, applied.
+    await expect(
+      withOrg(orgId, (tx) => tx.query('DELETE FROM app_user WHERE id = $1', [managerId])),
+    ).rejects.toThrow();
+  });
+});
 
 describe('approval_request constraints', () => {
   it('allows only ONE running run per report', async () => {
@@ -351,11 +541,13 @@ describe('approval_task constraints', () => {
     const row = {
       step: 1,
       assignee_id: managerId,
+      assignee_email: null,
       resolved_via: 'MANAGER_CHAIN',
       delegated_from_id: null,
       escalation_level: 0,
       status: 'PENDING',
       decided_by_id: null,
+      decided_by_email: null,
       decided_at: null,
       receipt_view_acknowledged_at: null,
       ...over,
@@ -363,20 +555,23 @@ describe('approval_task constraints', () => {
     return withOrg(orgId, (tx) =>
       tx.query(
         `INSERT INTO approval_task
-           (organization_id, request_id, step, assignee_id, resolved_via, delegated_from_id,
-            escalation_level, status, decided_by_id, decided_at, receipt_view_acknowledged_at)
+           (organization_id, request_id, step, assignee_id, assignee_email, resolved_via,
+            delegated_from_id, escalation_level, status, decided_by_id, decided_by_email,
+            decided_at, receipt_view_acknowledged_at)
          VALUES (current_setting('app.current_org', true)::uuid, $1, $2, $3, $4, $5, $6, $7, $8,
-                 $9, $10)
+                 $9, $10, $11, $12)
          RETURNING id`,
         [
           requestId,
           row.step,
           row.assignee_id,
+          row.assignee_email,
           row.resolved_via,
           row.delegated_from_id,
           row.escalation_level,
           row.status,
           row.decided_by_id,
+          row.decided_by_email,
           row.decided_at,
           row.receipt_view_acknowledged_at,
         ],
@@ -388,9 +583,23 @@ describe('approval_task constraints', () => {
     await expect(insertTask()).resolves.toBeTruthy();
   });
 
+  it('accepts an EXTERNAL assignee with no app_user row', async () => {
+    // The cost of adopting VeloLedger 0066's email approvers, and the reason
+    // assignee_id is nullable.
+    await expect(
+      insertTask({ assignee_id: null, assignee_email: 'cfo@client.example', resolved_via: 'EMAIL' }),
+    ).resolves.toBeTruthy();
+  });
+
+  it('refuses a task with NO assignee at all', async () => {
+    // Nullable assignee_id must not become "a task nobody owns".
+    await expect(insertTask({ assignee_id: null, assignee_email: null })).rejects.toThrow();
+  });
+
   it('refuses a pending task that carries a decision', async () => {
     await expect(insertTask({ decided_at: new Date() })).rejects.toThrow();
     await expect(insertTask({ decided_by_id: managerId })).rejects.toThrow();
+    await expect(insertTask({ decided_by_email: 'cfo@client.example' })).rejects.toThrow();
   });
 
   it('refuses a real decision missing its actor or its timestamp', async () => {
@@ -402,12 +611,23 @@ describe('approval_task constraints', () => {
     ).rejects.toThrow();
   });
 
+  it('accepts a decision recorded against an external email actor', async () => {
+    await expect(
+      insertTask({
+        assignee_id: null,
+        assignee_email: 'cfo@client.example',
+        resolved_via: 'EMAIL',
+        status: 'APPROVED',
+        decided_by_email: 'cfo@client.example',
+        decided_at: new Date(),
+      }),
+    ).resolves.toBeTruthy();
+  });
+
   it('accepts a system outcome with a timestamp and no actor', async () => {
     // A recall voids the pending tasks; a rung the resolver cannot fill is
     // skipped. Neither has a person behind it, but both happened at a time.
-    await expect(
-      insertTask({ status: 'CANCELLED', decided_at: new Date() }),
-    ).resolves.toBeTruthy();
+    await expect(insertTask({ status: 'CANCELLED', decided_at: new Date() })).resolves.toBeTruthy();
     await expect(insertTask({ status: 'SKIPPED', decided_at: new Date() })).resolves.toBeTruthy();
   });
 
@@ -415,9 +635,9 @@ describe('approval_task constraints', () => {
     await expect(insertTask({ receipt_view_acknowledged_at: new Date() })).rejects.toThrow();
   });
 
-  it('keeps the acknowledgement and the receipt count on a decided task', async () => {
+  it('reads back the acknowledgement, receipt count and external approver', async () => {
     const { reportId } = await draft();
-    const requestId = await openRun(reportId, { totalSteps: 1 });
+    const requestId = await openRun(reportId, { totalSteps: 2, currentStep: 2 });
     await withOrg(orgId, (tx) =>
       tx.query(
         `INSERT INTO approval_task
@@ -428,8 +648,18 @@ describe('approval_task constraints', () => {
         [requestId, managerId],
       ),
     );
+    await withOrg(orgId, (tx) =>
+      tx.query(
+        `INSERT INTO approval_task
+           (organization_id, request_id, step, assignee_email, resolved_via)
+         VALUES (current_setting('app.current_org', true)::uuid, $1, 2, 'cfo@client.example', 'EMAIL')`,
+        [requestId],
+      ),
+    );
+
     const read = await withOrg(orgId, (tx) => approvals.getReportApproval(tx, reportId));
-    expect(read?.tasks).toHaveLength(1);
+    expect(read?.request.total_steps).toBe(2);
+    expect(read?.tasks).toHaveLength(2);
     expect(read?.tasks[0]).toMatchObject({
       step: 1,
       assignee_email: 'm@approvals.test',
@@ -442,6 +672,16 @@ describe('approval_task constraints', () => {
       resolved_via: 'MANAGER_CHAIN',
     });
     expect(read?.tasks[0].receipt_view_acknowledged_at).not.toBeNull();
+    // The external step must survive the read. An inner join on the assignee
+    // would drop it — the worst failure mode for an approval nobody can see.
+    expect(read?.tasks[1]).toMatchObject({
+      step: 2,
+      assignee_id: null,
+      assignee_email: 'cfo@client.example',
+      assignee_name: 'cfo@client.example',
+      resolved_via: 'EMAIL',
+      status: 'PENDING',
+    });
   });
 
   it('refuses a DELEGATION task with no source approver', async () => {
@@ -473,36 +713,21 @@ describe('approval_task constraints', () => {
 });
 
 describe('approval_policy constraints', () => {
-  it('refuses a rung that names both a role and a person', async () => {
+  it('refuses a blank name and an out-of-range sequence', async () => {
     await clearLadder();
     await expect(
       withOrg(orgId, (tx) =>
         tx.query(
-          `INSERT INTO approval_policy
-             (organization_id, name, sequence, approver_kind, approver_role, approver_user_id)
-           VALUES (current_setting('app.current_org', true)::uuid, 'Both', 1, 'ROLE', 'ADMIN', $1)`,
-          [managerId],
-        ),
-      ),
-    ).rejects.toThrow();
-  });
-
-  it('refuses a manager rung with no level, and a blank name', async () => {
-    await clearLadder();
-    await expect(
-      withOrg(orgId, (tx) =>
-        tx.query(
-          `INSERT INTO approval_policy (organization_id, name, sequence, approver_kind)
-           VALUES (current_setting('app.current_org', true)::uuid, 'No level', 1, 'MANAGER')`,
+          `INSERT INTO approval_policy (organization_id, name, sequence)
+           VALUES (current_setting('app.current_org', true)::uuid, '  ', 1)`,
         ),
       ),
     ).rejects.toThrow();
     await expect(
       withOrg(orgId, (tx) =>
         tx.query(
-          `INSERT INTO approval_policy
-             (organization_id, name, sequence, approver_kind, manager_level)
-           VALUES (current_setting('app.current_org', true)::uuid, '  ', 1, 'MANAGER', 1)`,
+          `INSERT INTO approval_policy (organization_id, name, sequence)
+           VALUES (current_setting('app.current_org', true)::uuid, 'Eleven', 11)`,
         ),
       ),
     ).rejects.toThrow();
