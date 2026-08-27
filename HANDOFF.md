@@ -1,6 +1,6 @@
 # VeloExpense — Build Handoff (context for a fresh thread)
 
-_Last updated: 2026-08-26 (Phase 1 COMPLETE, through VX1-10). Paste this whole file into the new thread as context._
+_Last updated: 2026-08-27 (Phase 1 COMPLETE through VX1-10; Phase 2 IN PROGRESS from VX2-1). Paste this whole file into the new thread as context._
 
 ## 0. What VeloExpense is
 The commercial, **multi-tenant** SaaS expense product, built for third-party SMB
@@ -47,10 +47,11 @@ Two separate codebases:
   - `lib/money.ts` — the ONLY place minor units convert. String/bigint math, never float.
   - `e2e/` + `playwright.config.ts` + `scripts/e2e-storage.mjs` — VX1-9; the only tests that drive a real browser and a real presigned upload. `npm run e2e` (builds, then runs).
   - `lib/expenses/lifecycle.ts` — VX1-8; submit/recall/history. Its OWN module because `lib/policy/service.ts` already imports `lib/expenses/service.ts`, and submitting needs both — putting it in either would make them import each other.
+  - `lib/approvals/tiers.ts` + `lib/approvals/service.ts` + `lib/approvals/routing.ts` — VX2-1. `tiers.ts` is PURE (the ladder, the starter set, `planApproval`); `service.ts` is the rung CRUD plus the reads VX2-2/2-3/2-4 need; `routing.ts` is TYPES ONLY — the seam VX2-2 implements and where an advanced graph tier would slot in.
   - `lib/policy/rules.ts` + `lib/policy/service.ts` — VX1-7; rule TYPES in code, rule INSTANCES in `expense_policy`. `rules.ts` is PURE (no DB) and is where a new rule kind is added. `app/admin/expense-policies/` is the config surface, `app/expenses/[reportId]/policy-panel.tsx` the employee-facing one.
   - `test/rls-isolation.test.ts` — the RLS gate; extend it for each new tenant table.
   - `scripts/seed.mjs` — `npm run seed` (demo + blank tenants, synthetic data; demo has admin/manager/employee with a wired reporting line).
-- Migrations are plain SQL under `prisma/migrations/NNNN_name/migration.sql`, applied with `psql -f` (no Prisma migrate wired yet). Current: `0001_init`, `0002_reference_and_employees`, `0003_expense_reports`, `0004_employee_roles`, `0005_receipt_upload_state`, `0006_policy_engine`, `0007_report_lifecycle`.
+- Migrations are plain SQL under `prisma/migrations/NNNN_name/migration.sql`, applied with `psql -f` (no Prisma migrate wired yet). Current: `0001_init`, `0002_reference_and_employees`, `0003_expense_reports`, `0004_employee_roles`, `0005_receipt_upload_state`, `0006_policy_engine`, `0007_report_lifecycle`, `0008_approval_schema`.
 - **Gotchas learned the hard way:**
   - `vitest.config.ts` sets **`fileParallelism: false`** — the DB suites share one Postgres and each `TRUNCATE`s in `beforeAll`. Parallel files race (duplicate slugs, FK violations). Do not remove while the suites share a database; give each new suite its own org slugs too.
   - `npx shadcn add` guesses a **`src/` layout** (the repo has `src/auth-kit/`), but `tsconfig` maps `@/*` → `./*`. After every add: `mv src/components/ui components/ui` and `mv src/lib/utils.ts lib/utils.ts`. lib-ui-kit ships no table/select/badge — those are hand-rolled against the vendored tokens in `app/expenses/ui.tsx`.
@@ -158,12 +159,134 @@ VX0-1 scaffold · VX0-2..6 tenancy spine + RLS isolation gate (green) · VX0-7 S
   - The predicates are PURE and the ownership lookup is one SQL read, so the truth table is unit-tested rather than asserted by reading action code. `test/access.db.test.ts` also asserts the row IS visible under RLS — that is what made the hole invisible.
   - `app/expenses/actions.ts` was refactored onto the same shared predicate, so reports and receipts cannot drift apart.
 
-**Phase 1 is COMPLETE.** Phase 2 (approvals) is the next phase — see the Port-and-Build Plan.
+**Phase 1 is COMPLETE** (PRs #10–#20).
+
+**Phase 2 (approvals, notifications, audit) — IN PROGRESS:**
+- VX2-1 ✅ approval schema + tiers. Migration `0008` adds FOUR tenant tables —
+  `approval_policy`, `approval_request`, `approval_task`, `delegation` — all FORCE RLS and all in
+  `test/rls-isolation.test.ts` (16 tenant tables under the guard now). `lib/approvals/tiers.ts`
+  (pure) · `lib/approvals/service.ts` · `lib/approvals/routing.ts` (types only) ·
+  `test/approval-tiers.test.ts` + `test/approvals.db.test.ts`. 155 vitest tests across 10 files,
+  all green. **No engine, no UI** — opening and moving a run is VX2-3, after VX2-6's audit log.
+  **Decisions:**
+  - **The ladder is CUMULATIVE, not banded.** A rung says "at this threshold, one more approval,
+    from this kind of approver"; a report collects EVERY enabled rung it reaches, in `sequence`
+    order. A $200 report needs one sign-off, a $6,000 report needs three. `(min, max)` bands were
+    rejected: they need an exclusion constraint to stop two overlapping, still leave gaps a report
+    can fall through, and cannot express "and also" without repeating the lower approver inside
+    every higher band.
+  - **`sequence` is separate from `threshold_minor`** so an admin can reorder who signs off first
+    without renumbering money. Ordering is by `sequence`; applicability is by threshold.
+  - **A disabled rung is skipped without shifting the rest of the ladder.** Switching a rung off is
+    how an admin temporarily removes an approval level, and they expect the others to stay put.
+  - **An unconfigured tenant gets an IMPLICIT direct-manager rung** (`IMPLICIT_RUNG`). This is the
+    one place approvals deliberately depart from VX1-7's precedent: a fresh tenant with no policy
+    RULES is benign (nothing flags), but a fresh tenant with no approval rungs is not — with no
+    fallback, either every report auto-approves (fails OPEN, which the ticket forbids) or nothing
+    can be submitted until an admin configures a ladder (the exact onboarding friction the Port &
+    Build Plan's risk register warns about). An implicit rung still puts a human in the path.
+  - **A ladder longer than 5 applicable rungs is REFUSED, not truncated** — truncating drops the
+    TOP rungs, i.e. the finance sign-off on the largest reports.
+  - **Receipt-view acknowledgement is captured at decision time**, per-rung
+    (`approval_policy.require_receipt_view_ack`, default ON) with
+    `approval_task.receipt_view_acknowledged_at` **and `receipts_present_at_decision`**. This is
+    the thing ExpenseOS wishes it had: Module 12's `APPROVED_WITHOUT_RECEIPT` control had to
+    approximate "the approver never looked at a receipt" as "the report has no receipt on file".
+    The board said decide it before VX2-4; it is cheapest at schema time, so it landed here.
+  - **`policy_snapshot` on the run is authoritative, `tier_id` is a convenience join.** Same
+    reasoning as `expense_report_event.context` (0007): an admin retuning the ladder must not be
+    able to rewrite why THIS report needed three approvals. A RETURN + resubmit opens a NEW run
+    rather than re-banding the old one, or an employee returned at three sign-offs could trim a
+    line and resubmit into one.
+  - **One RUNNING run per report is a partial unique index**, not an engine check — two
+    simultaneous submits cannot both open a run, and the second fails loudly.
+  - **One task per `(request_id, step)`.** The simplified ladder is strictly sequential and
+    single-approver. A parallel/quorum rung is the ONLY thing that would need to relax this (to a
+    partial unique on PENDING) and is the only place a graph tier touches these tables.
+  - **`delegation` ships in VX2-1** (the ticket's four tables) but nothing reads it: VX2-2 resolves
+    against it, VX2-5 gives it CRUD. `scope` exists from the start because ExpenseOS's prototype
+    stored it and no handler ever read it — its own Module 8 doc lists that as a gap.
+  - **Overlapping live delegations from one person are NOT constrained in the schema.** The
+    constraint needs `EXCLUDE USING gist` over `(from_user_id WITH =, daterange WITH &&)`, hence
+    the `btree_gist` extension — a new deployment dependency for CI, the Docker image and every
+    laptop, to prevent a conflict the resolver can settle. **VX2-2 must pick the most recently
+    created live delegation and have a test for that tie.**
+  - `approval_task.resolved_via` pre-admits `DELEGATION` and `REASSIGNED`, and
+    `approval_task_status` pre-admits `SKIPPED`, so VX2-4 and VX2-5 need no migration — the same
+    trick 0007 played with the transition actions.
+  - **`test/rls-isolation.test.ts`'s "a tenant sees only its own rows" changed**: each org now has
+    TWO users (a delegation needs a second person), so the assertion sorts and expects both. Same
+    guarantee, wider fixture.
+
+Phase 2's board is in §6.
+
+**Phase 2 board — 10 tickets, ~26 dev-days** (ExpenseOS Modules 8, 11, 12). Build order:
+VX2-1 approval schema + tiers → VX2-6 tenant-scoped audit log → VX2-2 routing resolver →
+VX2-3 approval engine + transitions → VX2-5 delegations ∥ VX2-4 approver inbox + decision UI →
+VX2-7 notification core → VX2-8 delivery worker (email / Teams / Slack) → VX2-9 reimbursement →
+VX2-10 Phase-2 isolation + e2e. The load-bearing decisions, so they are not relitigated if the
+board is out of reach:
+- **Audit lands BEFORE the engine.** VX2-3 writes into the trail from its first commit; bolting
+  an audit log onto transitions that already exist is the retrofit antipattern the plan calls
+  out for RLS, and it leaves a hole where the early history should be.
+- **Simplified tiered approvals; the ExpenseOS graph engine stays out of the default path** —
+  the Port & Build Plan's risk register is explicit that it is SMB onboarding friction. Keep the
+  resolver behind one interface (VX2-2) so an advanced tier can slot in later.
+- **Per-line rejection is out.** ExpenseOS decided against it and never built it, though its
+  Module 8 use cases still describe it.
+- **Freeze the audit hash payload once, at VX2-6.** Two lessons ExpenseOS paid for: an actor
+  column inside the hash with `onDelete: SetNull` means one hard user delete permanently and
+  unrepairably breaks verification of every row that user wrote; and concurrent appends must be
+  serialized or two rows fork the chain and read as tampering forever.
+- **Decide receipt-view acknowledgement BEFORE building VX2-4.** Nothing in ExpenseOS records
+  that an approver opened a receipt, which forced Module 12's control to approximate it as
+  "approved with no receipt on file". Nearly free to capture at decision time, expensive after.
+- **MANAGER is deliberately unprivileged today** — `canViewReport` / `canEditReport` and
+  `canViewReceipt` / `canModifyReceipt` grant a manager nothing beyond their own reports. VX2-4
+  is where that opens, and it must open THROUGH those predicates, not around them.
+- `expense_report_event` needs no migration: its CHECK already admits APPROVE / REJECT / RETURN
+  / REIMBURSE. VX0-8 (worker + per-job tenant context) folds into VX2-8.
+- Fraud detection and control evaluation (Module 12, slices 2–3) are deferred to Phase 4 — both
+  are retrospective and need approval history before they mean anything.
 
 ## 6. Planning docs (in the ExpenseOS Google-Drive folder, `Specifications_and_Planning/`)
 - `VeloExpense-Port-and-Build-Plan.docx` (7-phase plan + ExpenseOS→VeloExpense sync strategy)
 - `ExpenseOS-vs-VeloExpense-Differences-Chart-rev2.docx`
 - `VeloExpense-Phase-0-*.docx`, `VeloExpense-Phase-1-Tickets.docx`
+- `VeloExpense-Phase-2-Tickets.docx` — **NOT in the Drive folder** (checked 2026-08-27: the
+  newest file there is `VeloExpense-Phase-1-Tickets.docx`, and a Drive-wide title search finds no
+  Phase-2 document). It exists only as the .docx John holds locally and re-attached in chat. The
+  Drive API upload truncated the binary once (13.5 KB arrived as 10.8 KB, missing its ZIP central
+  directory) and the corrupt copy was trashed; the CloudStorage path is not grantable via
+  `device_request_folder_access` either, so a Cowork session cannot write it. **Because it has now
+  gone missing twice, the board is transcribed below — do not treat the .docx as the only copy.**
+
+### Phase 2 board, transcribed (build order; ~26 dev-days)
+
+| ID | Title | Acceptance | ~d |
+| --- | --- | --- | --- |
+| VX2-1 | Approval schema + tiers | Migrates clean; the four new tables are in the isolation test; the RLS-coverage guard passes | 2 |
+| VX2-6 | Tenant-scoped audit log | Every state change writes one entry; verification detects a tampered row; a purge leaves the surviving chain verifiable | 3 |
+| VX2-2 | Routing resolver | Unit truth table over chain, absence, delegation, self-approval, depth bound; no eligible approver fails CLOSED | 2 |
+| VX2-3 | Approval engine + transitions | Submit → approve round-trips; reject and return behave; a decision and its audit row are atomic (both or neither) | 3 |
+| VX2-5 | Delegations | A delegated approver receives the task; the scope filter is honoured; an expired delegation is ignored | 2 |
+| VX2-4 | Approver inbox + decision UI | A manager approves a direct report's report in the browser; sees no one else's queue; self-approval refused server-side | 4 |
+| VX2-7 | Notification core (in-app) | A decision notifies the submitter in-app; preferences suppress it; an empty template table still renders shipped copy | 3 |
+| VX2-8 | Delivery worker (email/Teams/Slack) | An approval email arrives with working actions; a failed send retries and shows in the admin queue; every job sets `app.current_org` | 4 |
+| VX2-9 | Reimbursement transition | Submit → approve → reimburse completes, every step audited; refuses a report that is not APPROVED | 1 |
+| VX2-10 | Phase-2 isolation + e2e | Isolation and e2e green in CI; RLS-coverage guard still passes; chain verification runs on every build | 2 |
+
+Scope notes worth keeping: VX2-6 is `audit_entry` + `withAudit()` (business change and audit row
+in ONE transaction, serialized per tenant) + an admin trail with server-side filters + windowed
+integrity verification + a retention flag (7-year floor) and a purge job with a chain watermark.
+VX2-7 is `activity` + `notification` with a per-user preference map (type × channel) and template
+resolution exact → any-subject → shipped catalog string. VX2-8 absorbs VX0-8. Also deferred, on
+purpose: per-legal-entity template scope, French template localisation, digest scheduling.
+
+**Exit criteria:** a full submit → approve → reimburse round trip driven from an approver inbox
+AND from an emailed or Teams action, every transition notified and recorded in a tenant-isolated
+audit trail whose chain verifies in CI, with two tenants side by side seeing none of each other's
+approvals, notifications or audit entries.
 - ExpenseOS status/dashboard docs + the live Cowork artifact `expenseos-dev-dashboard` (weekly refresh).
 
 ## 7. Immediate next action for the new thread
@@ -174,17 +297,25 @@ VX0-1 scaffold · VX0-2..6 tenancy spine + RLS isolation gate (green) · VX0-7 S
    none today) and the bucket CORS rule; an `app_user` row in the demo tenant
    matching a real Google/Entra identity with `role='ADMIN'`; then "Restore
    starter rules" on `/admin/expense-policies`, or nothing will ever flag.
-2. **Phase 2 (approvals)** is the next phase: the graph approval engine, the
-   approver view (Module 8), and the RETURNED path back to the employee.
-   Groundwork already in place — `expense_report_event` has a CHECK admitting
-   APPROVE / REJECT / RETURN / REIMBURSE so the trail needs no migration, and
-   MANAGER is deliberately unprivileged in `canViewReport` / `canViewReceipt`,
-   which is the seam that ticket opens. Read the Port-and-Build Plan and the
-   Module 8 spec before drafting the ticket board.
-3. Dependabot has open PRs for **vitest 4** and **typescript 7** — major bumps
-   across eight suites, and typescript 7 also touches the Playwright types. Take
-   them deliberately, on their own branch.
-4. When porting any ExpenseOS behavior: read the relevant ExpenseOS router/model
+2. **VX2-6 next** — the tenant-scoped audit log, which lands BEFORE the engine so
+   VX2-3 writes into the trail from its first commit. Freeze the hash payload
+   once: whatever identifies the actor must never be nullable-on-delete (use
+   `ON DELETE RESTRICT`, as `expense_report_event.actor_id` already does), and
+   concurrent appends must be serialized per tenant or two rows fork the chain
+   and read as tampering forever. Note `audit_entry` does NOT replace
+   `expense_report_event`: that one is the report's user-facing timeline
+   (from/to status), the audit log is the hash-chained compliance record across
+   every entity type. Then VX2-2's resolver — and it owns the overlapping-
+   delegation tie-break the 0008 comments leave to it.
+3. **Still no admin surface for the approval ladder.** The board never assigns
+   one (VX1-7 shipped `/admin/expense-policies` with the engine; VX2-1 is
+   schema-only at 2 days). `ensureDefaultLadder` and the rung CRUD exist and are
+   tested, so a page over them is small — decide whether it rides with VX2-4 or
+   takes its own ticket, but a tenant cannot tune the ladder until it exists.
+4. Dependabot has open PRs for **vitest 4** and **typescript 7** — major bumps
+   across TEN suites now, and typescript 7 also touches the Playwright types.
+   Take them deliberately, on their own branch.
+5. When porting any ExpenseOS behavior: read the relevant ExpenseOS router/model
    as the spec, then re-implement tenant-scoped (server action + lib module +
    RLS + isolation test). Keep VCC/Travel OFF for MVP; NA-first. ExpenseOS source
    files in Google Drive are `.ts`/`.tsx` — the Drive MCP needs
