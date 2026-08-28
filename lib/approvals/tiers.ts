@@ -56,7 +56,28 @@ export type ApproverKind = (typeof APPROVER_KINDS)[number];
  * stays free of anything that drags `pg` in (lib/receipts/constants.ts's lesson).
  * When roles become tenant data, this becomes a lookup and nothing else moves.
  */
-export const APPROVER_ROLES: readonly EmployeeRole[] = ['EMPLOYEE', 'MANAGER', 'ADMIN'];
+/**
+ * Which employee roles may be named as a ROLE approver.
+ *
+ * Written as a Record over `EmployeeRole` rather than a bare array, so it is
+ * EXHAUSTIVE BY CONSTRUCTION: adding a member to `EmployeeRole` breaks the build
+ * here until somebody decides whether it may approve. A bare array compiles
+ * fine while silently omitting the new role, `isApproverRole` returns false for
+ * it, and no test fails — every approvals test uses this copy.
+ *
+ * The duplication itself is deliberate and stays: importing the VALUE
+ * `EMPLOYEE_ROLES` from lib/employees/service would drag `pg` into a module that
+ * must stay pure, whereas `import type` is erased at build. ExpenseOS has the
+ * same duplication in `engine.ts` (APPROVE_PERMISSION, copied out of their rbac
+ * package) and pins it with a test asserting the literal strings still exist;
+ * a mapped type is the same guard moved from CI to `tsc`. See GAP-AUDIT AP-19.
+ */
+const APPROVER_ROLE_SET: Record<EmployeeRole, true> = {
+  EMPLOYEE: true,
+  MANAGER: true,
+  ADMIN: true,
+};
+export const APPROVER_ROLES = Object.keys(APPROVER_ROLE_SET) as readonly EmployeeRole[];
 
 export const REQUEST_STATUSES = [
   'RUNNING',
@@ -228,8 +249,11 @@ export class ApprovalConfigError extends Error {
  * implicit direct-manager step still puts a human in the path, so it fails closed
  * while working out of the box.
  *
- * If the submitter has no manager, this step is unresolvable and VX2-2 fails the
- * routing rather than skipping it.
+ * If the submitter has no manager, this step does NOT fail the routing. That was
+ * the plan when VX2-1 shipped; reading ExpenseOS source changed it. On their dev
+ * data 11% of active users had no manager at all, and refusing the submit would
+ * strand a ninth of a tenant. VX2-2 resolves it to a tenant ADMIN instead
+ * (resolved_via = 'ADMIN_FALLBACK'). See GAP-AUDIT AP-5 and AP-18.
  */
 export const IMPLICIT_STEP: Omit<StepPlan, 'step'> = {
   policyId: null,

@@ -17,7 +17,7 @@ audit opened and a later reader will otherwise re-open. John decided all three.
 
 | # | Question | Decision | Cost accepted |
 |---|---|---|---|
-| **AP-7** | Can an unassigned-but-claimable task exist? | **No — keep `approval_task_assignee_present`.** Ship `ADMIN_FALLBACK` for the unresolvable case. No migration for this. | A tenant cannot configure "any member of Finance approves this". Tracked as a known missing capability, like PE-2; revisit after VX2-2 ships. |
+| **AP-7** | Can an unassigned-but-claimable task exist? | **REVERSED, same day — yes.** First decided "no, keep the CHECK"; reopened on the discovery below and settled as **option (ii)**: `0009` relaxes the CHECK and adds `approval_task.claim_role`. | ~1 day on VX2-2, and the pending-task query stops being `assignee_id = $1`. |
 | **AP-10** | `manager_level = 3` on a two-deep chain? | **Degrade to the most senior ancestor found**, as ExpenseOS does, and record the shortfall on the task. `CHAIN_EXHAUSTED` is reserved for no-manager-at-all, where AP-5's fallback takes over. | A policy can be satisfied non-literally. Visible in `escalation_level`, so it is auditable rather than silent. |
 | **AP-14** | Break-glass for a sole-approver tenant? | **Yes — per-tenant, audited, and only when the resolver can prove no other eligible approver exists.** | A deliberate, narrow exception to the AP-13 hard block. Every use is a row in the VX2-6 audit chain under its own action, so it is trivially reportable. |
 
@@ -40,9 +40,15 @@ constrained, cannot be grepped, and cannot be found by someone auditing what tur
 `DEFAULT false` means every existing tenant is unaffected, which is the correct direction for a flag
 that relaxes a guard.
 
-Not decided, and not blocking VX2-2: whether the `role` fallback (AP-7 option (ii)) becomes its own
-ticket, and VX2-6's two open inputs (UUIDv7 vs `bigserial` for the chain key; whether per-tenant
-audit **export** is in scope).
+Not decided, and not blocking VX2-2: the per-approver **authored** fallback of AP-5
+(`fallback_kind` / `fallback_user_id` / `fallback_role` on `approval_policy_approver`, per AP-11's
+column shape) — `ADMIN_FALLBACK` covers the unconfigured tenant, so an admin authoring their own
+fallback is a later ticket. Also open: VX2-6's two inputs (UUIDv7 vs `bigserial` for the chain key;
+whether per-tenant audit **export** is in scope).
+
+Note AP-7's reversal does **not** revive AP-5's authored fallback. They are different features:
+`claim_role` is how a ROLE approver the admin *already configured* routes, while AP-5's fallback is
+what happens when a MANAGER approver resolves to nobody. Only the first is in VX2-2.
 
 ---
 
@@ -480,9 +486,31 @@ nobody's queue. But it forces the choice, so make it deliberately:
 tracked as a known missing capability the way PE-2 is. (iii) only with the admin surface attached.
 This one is John's call — it changes migration order.
 
-> **DECIDED 2026-08-28: (i).** The CHECK stays; `ADMIN_FALLBACK` covers the unresolvable case; the
-> `role` fallback is a known missing capability, not a bug. VX2-2 needs no migration on this
-> account. Revisit after it ships — a tenant asking for "anyone in Finance" is the trigger.
+> **DECIDED 2026-08-28: (i)** — and then **REVERSED to (ii) the same day.** Recorded in both
+> directions on purpose, because the reversal is the useful part.
+>
+> (i) won on two premises I supplied, and both turned out to be false:
+>
+> 1. *"The `role` fallback is out of MVP."* It is not. `DEFAULT_LADDER`'s third rung — "Finance
+>    sign-off", every report at or above $5,000 — is `approverKind: 'ROLE'` with
+>    `approverRole: 'ADMIN'`. A ROLE approver is not an optional thing a tenant might configure;
+>    it is the **starter ladder every tenant gets**. Under (i) the router would have had to name one
+>    person for that rung on every report over $5k, which is exactly the arbitrary pick
+>    `resolveApprover`'s comment warns against — "a flip that is invisible in the editor".
+> 2. *"(i) needs no migration."* By the time the decision was live, VX2-2 already carried `0009` for
+>    AP-14's break-glass column. The marginal cost of (ii) was therefore one more column on a
+>    migration being written anyway, not a new migration — which was the whole reason (i) looked
+>    cheaper.
+>
+> Found by reading `DEFAULT_LADDER` before writing the resolver, not by reasoning about it. The
+> lesson is the same one that cost VX2-1 a rewrite: check the shipped code, including our own.
+>
+> **Settled: (ii).** `0009` drops `approval_task_assignee_present`, adds `claim_role`, and replaces
+> the old constraint with `num_nonnulls(assignee_id, assignee_email, claim_role) = 1` — three
+> ownership shapes, exactly one per task. A claimed task is **not** rewritten to `assignee_id`; the
+> pool stays the owner and the decision is recorded in `decided_by_id`, so "who could have decided
+> this" stays answerable after the fact. `resolved_via = 'ROLE'` is tied to `claim_role IS NOT NULL`
+> in both directions so the two cannot drift.
 
 ### AP-8 · `defaultOnExpire` — the expiry policy table, portable when TTL lands
 
