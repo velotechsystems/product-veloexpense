@@ -377,15 +377,25 @@ audit trail whose chain verifies in CI, with two tenants side by side seeing non
 approvals, notifications or audit entries.
 - ExpenseOS status/dashboard docs + the live Cowork artifact `expenseos-dev-dashboard` (weekly refresh).
 
-## 7. Immediate next action for the new thread
-1. **Nothing here has been clicked by a human.** The Playwright happy path covers
+## 7. Immediate next action for the new thread1. **KNOWN DEFECT IN SHIPPED CODE — `docs/porting/GAP-AUDIT.md`, finding PE-1.** Policy thresholds
+   are currency-blind: `expense_policy.params.thresholdMinor` is a bare bigint compared straight
+   against `amount_minor`, while `expense_report.currency_code` is per REPORT and a threshold is per
+   TENANT. So a tenant with one USD report and one CAD report compares both against the same number
+   — `500000` means $5,000 USD on one and about $3,650 USD on the other. VeloExpense ships CAD and
+   USD, so this is live, not theoretical. **Needs a ticket** (policy currency + convert before
+   comparing, adopting ExpenseOS's degrade-to-INFO-on-missing-rate rather than its silent fallback —
+   see PE-7). Other open findings there: MO-2 (no `allocate` helper, so any future money split will
+   lose or duplicate cents), PE-3, PE-4.
+
+
+2. **Nothing here has been clicked by a human.** The Playwright happy path covers
    the main flow in a real browser, which is most of what a manual walkthrough
    was for, but nobody has looked at these screens. Worth 20 minutes before
    Phase 2 builds on top: MinIO up with `STORAGE_*` in `.env.local` (there are
    none today) and the bucket CORS rule; an `app_user` row in the demo tenant
    matching a real Google/Entra identity with `role='ADMIN'`; then "Restore
    starter rules" on `/admin/expense-policies`, or nothing will ever flag.
-2. **VX2-6 next** — the tenant-scoped audit log, which lands BEFORE the engine so
+3. **VX2-6 next** — the tenant-scoped audit log, which lands BEFORE the engine so
    VX2-3 writes into the trail from its first commit. Freeze the hash payload
    once: whatever identifies the actor must never be nullable-on-delete (use
    `ON DELETE RESTRICT`, as `expense_report_event.actor_id` already does), and
@@ -395,14 +405,11 @@ approvals, notifications or audit entries.
    (from/to status), the audit log is the hash-chained compliance record across
    every entity type. Then VX2-2's resolver — and it owns the overlapping-
    delegation tie-break the 0008 comments leave to it.
-3. **Still no admin surface for the approval ladder.** The board never assigns
+4. **Still no admin surface for the approval ladder.** The board never assigns
    one (VX1-7 shipped `/admin/expense-policies` with the engine; VX2-1 is
    schema-only at 2 days). `ensureDefaultLadder` and the rung CRUD exist and are
    tested, so a page over them is small — decide whether it rides with VX2-4 or
    takes its own ticket, but a tenant cannot tune the ladder until it exists.
-4. Dependabot has open PRs for **vitest 4** and **typescript 7** — major bumps
-   across TEN suites now, and typescript 7 also touches the Playwright types.
-   Take them deliberately, on their own branch.
 5. **Porting discipline — read `docs/porting/SPEC-BASELINES.md` first.** Port from
    ExpenseOS **SOURCE**, not from the `NN-module.md` summaries. Everything through
    VX2-1 was designed from the docs instead, which cost VX2-1 a full rewrite, and
@@ -418,3 +425,7 @@ approvals, notifications or audit entries.
    flattens the tree and several products are synced into it — one `audit.ts` in
    that corpus is VeloPulse HRIS's, not ExpenseOS's. Confirm provenance from
    content, never from the filename.
+
+6. Dependabot has open PRs for **vitest 4** and **typescript 7** — major bumps
+   across TEN suites now, and typescript 7 also touches the Playwright types.
+   Take them deliberately, on their own branch.
