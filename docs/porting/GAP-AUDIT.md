@@ -40,6 +40,14 @@ constrained, cannot be grepped, and cannot be found by someone auditing what tur
 `DEFAULT false` means every existing tenant is unaffected, which is the correct direction for a flag
 that relaxes a guard.
 
+**VX2-6's two inputs, decided 2026-08-28:** per-tenant audit **export** is OUT of scope (exporting
+a hash-chained log usefully means exporting the verification proof too, and what an auditor should
+receive is a decision nobody has made — a CSV dump now becomes the de facto format by accident; it
+belongs with the Phase 4 controls work). `audit_entry` lives in **`public`** like every other table,
+diverging from VeloLedger's dedicated `audit` schema, because CI's RLS-coverage guard, the isolation
+test and `veloapp`'s grants all assume `public` — and a table the guard cannot see is precisely the
+table you do not want unprotected. The chain-key question turned out not to need asking: see AU-2.
+
 Not decided, and not blocking VX2-2: the per-approver **authored** fallback of AP-5
 (`fallback_kind` / `fallback_user_id` / `fallback_role` on `approval_policy_approver`, per AP-11's
 column shape) — `ADMIN_FALLBACK` covers the unconfigured tenant, so an admin authoring their own
@@ -932,6 +940,171 @@ export const APPROVER_ROLES = Object.keys(APPROVER_ROLE_SET) as readonly Employe
 build in this file until somebody decides whether it may approve. Same trick AP-12 asks for on every
 predicate over `approver_kind`. Still type-only, still no `pg`. Small, in shipped code, and it
 belongs with VX2-2 — which is about to add a third copy in the resolver.
+
+---
+
+## audit (VX2-6, next) — `packages/audit/src` — PARTIAL, ~80% read
+
+Source read: `canonical.ts` (1.2 KB), `chain.ts` (2.5 KB), `verify.ts` (4.3 KB) in full.
+**Not yet read:** `writer.ts` (3.0 KB), `types.ts`. Reconciled against the two in-house references,
+whose DDL was read directly from the sibling repos rather than recalled: VeloLedger
+`audit.audit_event` (`prisma/migrations/0001_init`) and VeloPulse HRIS `audit_event`
+(`0001_init_hris_schema`).
+
+### AU-1 · ExpenseOS's chain is GLOBAL and tenant-blind — three changes, none optional ⚠
+
+The single most important finding for VX2-6, and it is not a defect in ExpenseOS: they are one
+enterprise on one database, so a single chain is correct there. It is wrong for a pooled
+multi-tenant database in three separate places, and all three are easy to port verbatim by
+accident.
+
+**1. One advisory lock for the whole database.**
+
+```ts
+const AUDIT_CHAIN_LOCK_KEY = 0x41554454; // 'AUDT'
+await tx.$executeRaw`SELECT pg_advisory_xact_lock(${AUDIT_CHAIN_LOCK_KEY})`;
+```
+
+Every appender in the system serializes on that one key. Ported as-is, tenant A's write throughput
+becomes coupled to every other tenant's audit traffic — a noisy-neighbour problem on the hot path of
+every state change. Use the two-argument form keyed per tenant:
+
+```sql
+SELECT pg_advisory_xact_lock(1096041044, hashtext(<org id>::text))  -- 1096041044 = 0x41554454
+```
+
+`0x41554454` fits in int4 (1096041044 < 2^31-1) and `hashtext` returns int4, so the two-key form
+takes it directly. Two organizations whose ids collide in `hashtext` would serialize together, which
+costs a little contention and breaks nothing — it is not a correctness risk, only a performance one.
+
+**2. The head read has no tenant predicate.**
+
+```sql
+SELECT "entryHash" FROM "Audit" ORDER BY "id" DESC LIMIT 1 FOR UPDATE
+```
+
+So tenant B's row becomes `prev_hash` for tenant A's next row, and the chains interleave. Under RLS
+that is not merely untidy, it is **unverifiable**: verifying tenant A's chain would require reading
+tenant B's rows, which the policy forbids — so verification would only work as a superuser, which
+defeats the point of having a tenant-scoped audit log. The head read must be
+`WHERE organization_id = <org> ORDER BY sequence DESC LIMIT 1`, and RLS supplies the predicate
+anyway, which is a nice property: get the query wrong and RLS still scopes it.
+
+Keep `FOR UPDATE` alongside the advisory lock, and keep ExpenseOS's comment explaining why the lock
+is the thing doing the work — it is the best line in the package:
+
+> "`SELECT ... FOR UPDATE` alone cannot do this: on an empty table it locks zero rows, so concurrent
+> first appenders both read `prevHash = null` and fork the genesis."
+
+Per-tenant, "an empty table" becomes "this tenant's first ever audit row", which is a state every
+tenant passes through on its first day. So the genesis race is not a theoretical edge here — it is
+reachable during onboarding, for every customer.
+
+**3. `organization_id` is not in the hash payload.** Their nine fields are `occurredAt`, `actorId`,
+`actorName`, `action`, `entityType`, `entityId`, `details`, `ipAddress`, `prevHash` — no tenant.
+In a pooled database that means a row's tenant attribution is **outside** the integrity guarantee: an
+`UPDATE audit_entry SET organization_id = <other tenant>` would move a row between tenants' histories
+without breaking any hash. Add `organizationId` to the payload. It costs nothing and it is the one
+field a multi-tenant audit log cannot afford to leave unprotected.
+
+### AU-2 · UUIDv7 vs `bigserial` — settled on evidence, and the reason is not the dependency
+
+The open question was whether the chain key should be a UUIDv7 (as ExpenseOS uses) or VeloLedger's
+`uuid` + `sequence bigserial`. Reading `verify.ts` answers it:
+
+> "Walks Audit rows ordered by id (= UUIDv7 timestamp)"
+
+ExpenseOS needs v7 **because it has no sequence column** — the id is doing double duty as the chain's
+order. VeloLedger already separates the two:
+
+```sql
+id        uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+sequence  bigserial NOT NULL UNIQUE,
+```
+
+Take VeloLedger's shape. The cheap reason is that it needs no new dependency — `uuid` is not in
+VeloExpense's `package.json` (checked), `gen_random_uuid()` is built in, and `lib/receipts/service.ts`
+already uses `randomUUID` (v4).
+
+The better reason is correctness. A UUIDv7 is minted by the **application** from its own clock, so
+two appends in the same millisecond, or two app instances with skewed clocks, can order rows
+differently from the order they were actually appended in — while the hash chain records the true
+append order. The advisory lock keeps the *head read* correct, but the *verifier* walks by id, so id
+and chain can disagree and the disagreement reads as tampering. A `bigserial` is assigned by the
+database inside the same serialized transaction and cannot disagree.
+
+### AU-3 · The frozen payload — what goes in, and the one field I would add
+
+HANDOFF says freeze this once, so here is the proposed payload, with ExpenseOS's exclusions kept and
+their reasons:
+
+| field | in hash? | why |
+|---|---|---|
+| `organization_id` | **YES — added** | AU-1.3. Not in theirs; unprotected tenant attribution is not acceptable here. |
+| `occurred_at` | yes | Use `clock_timestamp()`, not `now()` — `now()` is transaction-start, so several audit rows in one transaction would share a timestamp. Existing VeloExpense convention. |
+| `actor_id` | yes | `ON DELETE RESTRICT`. HANDOFF already records the lesson: an actor column inside the hash with `SET NULL` means one hard delete permanently breaks verification of every row that actor wrote. |
+| `actor_name` | yes | Denormalized and frozen at write time on purpose, so a later rename does not alter history. |
+| `actor_role` | **YES — added** | Theirs excludes it, with a comment inviting exactly this: *"actorRole is intentionally NOT in the hash… If you need actorRole integrity, surface a follow-up."* "Under what authority was this done" is a question an auditor asks, and after AP-13 — a privileged user approving their own report — it is the specific question. Cheap now, impossible later. |
+| `action`, `entity_type`, `entity_id` | yes | The what and the on-what. |
+| `details` (jsonb) | yes | See AU-5 for the BigInt trap. |
+| `ip_address` | yes | `inet`, following VeloLedger. |
+| `prev_hash` | yes | The chain itself. |
+| `id`, `sequence` | no | Self-referential — a row cannot hash its own identity. |
+| `request_id`, `user_agent` | no | Operational. Theirs excludes them; no reason to differ. |
+| `expires_at` | no | Mutated by retention, so hashing it would make a retention pass look like tampering. |
+
+### AU-4 · The purge watermark — port this, it is the non-obvious part
+
+`verify.ts` takes a `seedPrevHash` for a reason worth quoting, because nobody designs this until it
+bites:
+
+> "Needed after a retention purge: the deleted head means the oldest surviving row's `prevHash`
+> references a row that no longer exists, which is indistinguishable from tampering. The caller
+> supplies the purge watermark here so the gap reconciles instead of reading as a break."
+
+For us the watermark has to be **per tenant** — one tenant's purge must not require another's
+verification to be seeded. That means storing it, not passing it: a small `audit_chain_state` row per
+organization holding the last purged entry's hash, or the same two columns on `organization`. Either
+way it is part of VX2-6, not a later retention ticket, because the *verifier's* contract depends on
+it existing.
+
+Window semantics to keep as-is: when a window starts mid-chain, read the row immediately before it to
+seed `expectedPrev`, so a windowed verify still proves integrity **at the window boundary** rather
+than just within it.
+
+### AU-5 · `canonical()` throws on BigInt — and VeloExpense's money is bigint
+
+Their canonicalizer sorts object keys, drops `undefined`, preserves `null`, serializes `Date` as
+ISO-8601, and:
+
+```ts
+if (typeof value === 'bigint') {
+  throw new TypeError('canonical(): BigInt values are not supported in audit payloads');
+}
+```
+
+Port that throw exactly. It matters more for us than for them: VeloExpense money is minor units in
+`bigint` columns, and `lib/money.ts` is deliberately string/bigint with no float anywhere. A caller
+writing `details: { totalMinor: BigInt(x) }` would throw **at audit-write time**, which means inside
+the transaction that was recording a state change — so a sloppy detail payload fails the business
+operation, not just the log line.
+
+The rule for VX2-6's writer, and it needs to be in the function's doc comment: **amounts go into
+`details` as strings.** `pg` already returns `bigint` columns as strings, so the natural path is
+correct and only an explicit `BigInt()` breaks it. A test asserting the throw is worth more than the
+comment.
+
+### AU-6 · What the verifier cannot tell you, and must not claim to
+
+`sequence bigserial` produces **gaps** — a rolled-back transaction consumes a sequence value and
+never fills it. So a gap is normal, and a gap is also what a deleted row leaves behind. The two are
+indistinguishable by sequence alone.
+
+That is fine, because deletion is caught by the hash: the next surviving row's `prev_hash` no longer
+matches. But it means the verifier must **never** treat sequence contiguity as a signal, and an admin
+reading "sequence 41 is missing" must not be told that is tampering. VeloLedger's
+`sequence bigserial NOT NULL UNIQUE` has the same property. Worth a comment in the migration, because
+"the numbers should be consecutive" is the first thing anyone assumes on seeing the column.
 
 ---
 
