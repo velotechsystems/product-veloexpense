@@ -10,6 +10,42 @@ port" does not regress us.
 
 ---
 
+## Decisions taken (2026-08-28) — the three that were blocking VX2-2
+
+Recorded here rather than only in the findings below, because each one closes a question that the
+audit opened and a later reader will otherwise re-open. John decided all three.
+
+| # | Question | Decision | Cost accepted |
+|---|---|---|---|
+| **AP-7** | Can an unassigned-but-claimable task exist? | **No — keep `approval_task_assignee_present`.** Ship `ADMIN_FALLBACK` for the unresolvable case. No migration for this. | A tenant cannot configure "any member of Finance approves this". Tracked as a known missing capability, like PE-2; revisit after VX2-2 ships. |
+| **AP-10** | `manager_level = 3` on a two-deep chain? | **Degrade to the most senior ancestor found**, as ExpenseOS does, and record the shortfall on the task. `CHAIN_EXHAUSTED` is reserved for no-manager-at-all, where AP-5's fallback takes over. | A policy can be satisfied non-literally. Visible in `escalation_level`, so it is auditable rather than silent. |
+| **AP-14** | Break-glass for a sole-approver tenant? | **Yes — per-tenant, audited, and only when the resolver can prove no other eligible approver exists.** | A deliberate, narrow exception to the AP-13 hard block. Every use is a row in the VX2-6 audit chain under its own action, so it is trivially reportable. |
+
+**Consequence: VX2-2 now carries a small migration `0009`.** One column, for AP-14:
+
+```sql
+ALTER TABLE organization
+    ADD COLUMN allow_sole_approver_self_approval boolean NOT NULL DEFAULT false;
+```
+
+**Correction to AP-14 as first written:** it proposed this flag on `approval_policy`. That is wrong.
+`approval_policy` is one row **per rung** — it carries `sequence` and `threshold_minor` — so a flag
+there would be per-rung, and a tenant with four rungs could set it on three of them, which is
+meaningless. It belongs on `organization`, which is the tenant row.
+
+It should be a real column and **not** a key in `organization.settings jsonb`, even though that
+column exists and would need no migration. The whole argument in AP-11 for VeloExpense's column
+model over ExpenseOS's JSON graph is that a security-relevant setting in a blob cannot be
+constrained, cannot be grepped, and cannot be found by someone auditing what turns a control off.
+`DEFAULT false` means every existing tenant is unaffected, which is the correct direction for a flag
+that relaxes a guard.
+
+Not decided, and not blocking VX2-2: whether the `role` fallback (AP-7 option (ii)) becomes its own
+ticket, and VX2-6's two open inputs (UUIDv7 vs `bigserial` for the chain key; whether per-tenant
+audit **export** is in scope).
+
+---
+
 ## policy-engine (VX1-7, VX1-8) — PARTIAL, ~45% read
 
 Source read: `packages/predicate/src/engine.ts` (11.4 KB), `validate.ts` (18.6 KB), `facts.ts`
@@ -366,6 +402,15 @@ it' passes just as happily on a build where EVERYONE can decide it."* The negati
    prevents the trivial cycle but **not** a longer one, so bound the recursion by depth).
    *Flagging this outside VX2-2's stated scope, as agreed — it should be its own ticket, not folded
    into the resolver PR silently.*
+
+   **Implementation note — we already have most of this.** `lib/employees/service.ts` declares
+   `MAX_CHAIN_DEPTH = 20` (the same value ExpenseOS uses) and around line 183 walks the manager
+   chain **upward** in a recursive CTE that carries `ARRAY[u.id] AS path` and extends it with
+   `c.path || m.id` — a path-based cycle guard, not just a depth bound. AP-6 rule 2 does not need a
+   new downward walk: "does the actor report up to the submitter" is that same upward walk started
+   from the actor, asking whether the submitter appears in it. Bounded and cycle-safe already.
+   Note the existing direct-reports query near line 168 is `WHERE u.manager_id = $1` — one level
+   only — so that is *not* the thing to reuse; the transitive answer is the CTE.
 3. **Not a non-ACTIVE person**, in the pool or as a role holder. VeloExpense's equivalent is
    `employee_status IN ('ON_LEAVE','DEACTIVATED')` — note ExpenseOS tests `TERMINATED`, and our
    three-value CHECK has no terminal state at all, only `DEACTIVATED`. Same effect, worth knowing.
@@ -390,7 +435,7 @@ nothing looking wrong afterwards. VeloExpense's `approver_kind` CHECK is the sam
 enumeration. Any eligibility predicate we write over it must be exhaustive by construction
 (a switch with a `never` default), not a list of the kinds we happened to think of.
 
-### AP-7 · `approval_task_assignee_present` forbids the shape the `role` fallback needs
+### AP-7 · `approval_task_assignee_present` forbids the shape the `role` fallback needs — **DECIDED: (i)**
 
 Concrete, and it lands before VX2-2 rather than during it. `0008` has:
 
@@ -424,6 +469,10 @@ nobody's queue. But it forces the choice, so make it deliberately:
 **My recommendation: (i) now, (ii) as its own ticket after VX2-2 ships**, with `role` fallback
 tracked as a known missing capability the way PE-2 is. (iii) only with the admin surface attached.
 This one is John's call — it changes migration order.
+
+> **DECIDED 2026-08-28: (i).** The CHECK stays; `ADMIN_FALLBACK` covers the unresolvable case; the
+> `role` fallback is a known missing capability, not a bug. VX2-2 needs no migration on this
+> account. Revisit after it ships — a tenant asking for "anyone in Finance" is the trigger.
 
 ### AP-8 · `defaultOnExpire` — the expiry policy table, portable when TTL lands
 
@@ -479,7 +528,7 @@ three signatories is a common finance control, so expect this as a request. It i
 not in MVP — it is a known missing capability, and the day it is wanted it is a new model, not a
 patch to `planApproval`.
 
-### AP-10 · `manager_level` counts hops; `managerChain` targets a job level — and VX2-2 must decide what a short chain means ⚠
+### AP-10 · `manager_level` counts hops; `managerChain` targets a job level — **DECIDED: degrade**
 
 A quiet but real divergence, and the second decision VX2-2 cannot avoid.
 
@@ -512,6 +561,10 @@ a migration.
 genuine no-manager-at-all case (where AP-5's fallback takes over), and record the shortfall on the
 task so an admin can see the policy was not literally satisfied. Failing a submit because the
 company is flat is not a control, it is an outage.
+
+> **DECIDED 2026-08-28: port the degrade.** `escalation_level` carries the shortfall, so no
+> migration. The hop-count-vs-job-level divergence itself stays as written — a note for the
+> Differences Chart, not a change to `0008`.
 
 ### AP-11 · Where the column model is already ahead — two structural wins, worth not losing
 
@@ -625,7 +678,7 @@ would have caught this.
 Their seeded ladder, quoted in passing and useful as a sanity check on our `DEFAULT_LADDER`:
 manager under $5k, Director under $25k, VP under $100k, C-level above.
 
-### AP-14 · Their accepted cost is **not acceptable for VeloExpense** — the SMB collision ⚠ decision
+### AP-14 · Their accepted cost is **not acceptable for VeloExpense** — the SMB collision — **DECIDED: (a)**
 
 The fix records its own downside honestly, which is what makes it usable:
 
@@ -666,6 +719,11 @@ product call, not a technical one:
 **Recommendation: (a).** Note it interacts with AP-7 — if the `role` fallback lands (option (ii)
 there), a tenant can name "any Finance member", which reduces how often (a) fires but does not
 remove the one-person case.
+
+> **DECIDED 2026-08-28: (a).** See the decisions table at the top of this file for the exact column,
+> and for the correction to where it lives — this section originally said `approval_policy`, which
+> is per-**rung**, not per-tenant. The flag goes on `organization`, as a real column rather than a
+> key in `settings jsonb`. This is the one migration VX2-2 carries.
 
 ### AP-15 · The read-side predicate and the write-side guard must be the **same function**
 
