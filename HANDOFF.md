@@ -271,8 +271,8 @@ VX0-1 scaffold · VX0-2..6 tenancy spine + RLS isolation gate (green) · VX0-7 S
 Phase 2's board is in §6.
 
 **Phase 2 board — 10 tickets, ~26 dev-days** (ExpenseOS Modules 8, 11, 12). Build order:
-VX2-1 approval schema + tiers ✅ → VX2-6 tenant-scoped audit log → VX2-2 routing resolver ✅
-(taken EARLY, out of board order — see below) → VX2-3 approval engine + transitions → VX2-5 delegations ∥ VX2-4 approver inbox + decision UI →
+VX2-1 approval schema + tiers ✅ → VX2-6 tenant-scoped audit log ✅ → VX2-2 routing resolver ✅
+(taken EARLY, out of board order — see below) → **VX2-3 approval engine + transitions ← NEXT** → VX2-5 delegations ∥ VX2-4 approver inbox + decision UI →
 VX2-7 notification core → VX2-8 delivery worker (email / Teams / Slack) → VX2-9 reimbursement →
 VX2-10 Phase-2 isolation + e2e. The load-bearing decisions, so they are not relitigated if the
 board is out of reach:
@@ -321,6 +321,46 @@ than designed, and each traceable to a defect they measured:
   resolver arbitrarily naming one holder.
 Plus the AP-14 break-glass (`organization.allow_sole_approver_self_approval`, OFF by default),
 without which a sole-admin SMB tenant's reports are undecidable by anyone.
+
+**What VX2-6 shipped** — `0010`, `lib/audit/{canonical,chain,service,verify}.ts`,
+`test/audit.db.test.ts` (27 tests) and `test/audit-canonical.test.ts` (6). Ported from ExpenseOS
+`packages/audit/src` read in full, with the three multi-tenancy corrections that a verbatim port
+gets wrong (GAP-AUDIT AU-1): the advisory lock is keyed PER TENANT rather than one key for the
+database, the head read carries a tenant predicate — without which chains interleave and RLS makes
+verification impossible — and `organization_id` is IN the hash payload, so a row's tenant
+attribution cannot be changed without breaking it.
+- **The payload is frozen**, and the in/out table lives in `0010`'s header next to the columns it
+  excludes, because the risk is not somebody changing it deliberately, it is somebody adding a
+  column and hashing it because that seemed thorough. Two additions to ExpenseOS's nine:
+  `organization_id`, and `actor_role` (theirs excludes it with a comment inviting the change).
+- **The chain cannot fork structurally**, not just by discipline: a unique index on
+  `(organization_id, prev_hash)` plus a partial unique index giving one genesis row per tenant.
+  ExpenseOS relies on the advisory lock alone, which any path that forgets it defeats silently.
+- **Append-only is a TRIGGER, with one explicit door** (`app.audit_purge = 'on'`) for retention.
+  There is deliberately no REVOKE beside it: `veloapp` does not exist when migrations run, and CI's
+  role setup re-grants everything afterwards. The trigger holds even against a superuser.
+- **Three round trips per entry** — lock, head read, insert — and they cannot be collapsed. The
+  hash is computed in JS from the head hash, so the insert cannot precede the read; and the read
+  cannot share a statement with the lock, because Postgres does not guarantee a select-list function
+  is evaluated before a subquery's row lock, which would reopen the genesis race.
+- **The writer inserts `occurred_at` explicitly** rather than letting the column default fill it:
+  the hash covers it, so the value hashed and the value stored must be the same one. A
+  `DEFAULT clock_timestamp()` would produce a second, later instant and every row would fail
+  verification immediately.
+- **Sequence gaps are normal and the verifier must never check contiguity** — a rolled-back append
+  consumes a value. Deletion is caught by the hash instead. There is a test pinning this so nobody
+  "fixes" it into a bug.
+- **Decided:** per-tenant audit EXPORT is out of scope (exporting a hash chain usefully means
+  exporting the proof, and the format would otherwise be set by accident — it belongs with the
+  Phase 4 controls work); `audit_entry` lives in `public` like every other table, diverging from
+  VeloLedger's dedicated `audit` schema, because CI's RLS-coverage guard and `veloapp`'s grants
+  assume `public` and a table the guard cannot see is the one you least want unprotected.
+
+**RETENTION IS NOT BUILT.** The plan's Phase 2 bullet says "audit log + retention", and what
+shipped is the log plus the two things retention will need: the `app.audit_purge` escape hatch and
+the per-tenant watermark (`organization.audit_purged_through_sequence` / `_head_hash`, which the
+verifier already reads so a purge reconciles instead of reading as tampering). The purge job itself
+needs a ticket — it has no home on the board today.
 
 **Two things VX2-2 did NOT close, both recorded rather than forgotten:**
 - **Segregation of duties on the claim pool.** `canDecide` does not exclude the submitter's own
@@ -437,12 +477,20 @@ approvals, notifications or audit entries.
    none today) and the bucket CORS rule; an `app_user` row in the demo tenant
    matching a real Google/Entra identity with `role='ADMIN'`; then "Restore
    starter rules" on `/admin/expense-policies`, or nothing will ever flag.
-3. **VX2-6 next** (VX2-2 is done — see §5) — the tenant-scoped audit log, which lands BEFORE the engine so
-   VX2-3 writes into the trail from its first commit. Freeze the hash payload
-   once: whatever identifies the actor must never be nullable-on-delete (use
-   `ON DELETE RESTRICT`, as `expense_report_event.actor_id` already does), and
-   concurrent appends must be serialized per tenant or two rows fork the chain
-   and read as tampering forever. Note `audit_entry` does NOT replace
+3. **VX2-3 next** (VX2-1, VX2-2 and VX2-6 are all done — see §5) — the approval
+   engine and transitions. It is the first consumer of everything Phase 2 has
+   built, and three constraints already decided constrain it:
+   **(a)** it writes into the audit trail from its first commit — that is why
+   VX2-6 went first, and `lib/audit/service.ts`'s `append` must be called in the
+   SAME transaction as the state change, never after it;
+   **(b)** `approval_request_one_running_idx` means a returned or rejected report
+   cannot be resubmitted until the previous run is closed, so VX2-3 owns
+   cancelling the remaining PENDING tasks of a request — `approval_task_status`
+   admits `CANCELLED` with a timestamp and no actor for exactly this;
+   **(c)** RETURNED and REJECTED are different outcomes (GAP-AUDIT AP-12):
+   RETURNED sends the report back to the submitter as a draft and the run ends,
+   REJECTED is terminal.
+   Note `audit_entry` does NOT replace
    `expense_report_event`: that one is the report's user-facing timeline
    (from/to status), the audit log is the hash-chained compliance record across
    every entity type. Then VX2-2's resolver. The overlapping-delegation tie-break
