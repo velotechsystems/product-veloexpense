@@ -264,8 +264,8 @@ VX0-1 scaffold · VX0-2..6 tenancy spine + RLS isolation gate (green) · VX0-7 S
 Phase 2's board is in §6.
 
 **Phase 2 board — 10 tickets, ~26 dev-days** (ExpenseOS Modules 8, 11, 12). Build order:
-VX2-1 approval schema + tiers → VX2-6 tenant-scoped audit log → VX2-2 routing resolver →
-VX2-3 approval engine + transitions → VX2-5 delegations ∥ VX2-4 approver inbox + decision UI →
+VX2-1 approval schema + tiers ✅ → VX2-6 tenant-scoped audit log → VX2-2 routing resolver ✅
+(taken EARLY, out of board order — see below) → VX2-3 approval engine + transitions → VX2-5 delegations ∥ VX2-4 approver inbox + decision UI →
 VX2-7 notification core → VX2-8 delivery worker (email / Teams / Slack) → VX2-9 reimbursement →
 VX2-10 Phase-2 isolation + e2e. The load-bearing decisions, so they are not relitigated if the
 board is out of reach:
@@ -291,6 +291,39 @@ board is out of reach:
   / REIMBURSE. VX0-8 (worker + per-job tenant context) folds into VX2-8.
 - Fraud detection and control evaluation (Module 12, slices 2–3) are deferred to Phase 4 — both
   are retrospective and need approval history before they mean anything.
+
+**VX2-2 shipped ahead of VX2-6, deliberately.** The board puts audit first so VX2-3 writes into
+the trail from its first commit, and that still holds — VX2-3 has not started. VX2-2 jumped the
+queue because auditing ExpenseOS source for VX2-6 surfaced a live SOX-grade defect in their
+approval path (GAP-AUDIT AP-13) whose fix changed VX2-2's design, and it was cheaper to build the
+resolver while that reading was fresh than to re-read it later. VX2-6's two open inputs (UUIDv7 vs
+`bigserial`; whether per-tenant audit export is in scope) are unchanged and still unanswered.
+
+**What VX2-2 shipped** — `0009`, `lib/approvals/resolver.ts`, `lib/approvals/eligibility.ts`,
+`test/routing.db.test.ts` (32 tests). Five behaviours, each ported from ExpenseOS source rather
+than designed, and each traceable to a defect they measured:
+- the self-approval refusal runs FIRST in the decision guard, ahead of the admin override and
+  ahead of the assignee path;
+- that guard is enforced at DECISION time, not only at routing time, because VX2-4 and VX2-5 can
+  move a task onto the submitter after clean routing;
+- an unresolvable MANAGER approver goes to `ADMIN_FALLBACK` — 11% of ExpenseOS's active users had
+  no manager, so refusing the submit would strand a ninth of a tenant;
+- a manager chain shorter than `manager_level` degrades to the most senior person found and
+  records the shortfall in `escalation_level`;
+- a ROLE rung becomes an unassigned claim pool (`approval_task.claim_role`) rather than the
+  resolver arbitrarily naming one holder.
+Plus the AP-14 break-glass (`organization.allow_sole_approver_self_approval`, OFF by default),
+without which a sole-admin SMB tenant's reports are undecidable by anyone.
+
+**Two things VX2-2 did NOT close, both recorded rather than forgotten:**
+- **Segregation of duties on the claim pool.** `canDecide` does not exclude the submitter's own
+  subordinates from a ROLE pool. ExpenseOS does not either, and diverging would create a fresh
+  dead end (in a small tenant the only other ADMIN may report to the submitter). The RESOLVER does
+  exclude them where it picks a person itself. Closing the pool case needs a design that says what
+  happens to the stranded task — its own ticket.
+- **No TTL.** AP-8's expiry policy table is ported into the audit as a spec and nothing implements
+  it. Every "assign it anyway and let expiry escalate" branch of ExpenseOS was replaced with
+  something terminal because of this.
 
 ## 6. Planning docs (in the ExpenseOS Google-Drive folder, `Specifications_and_Planning/`)
 - `VeloExpense-Port-and-Build-Plan.docx` (7-phase plan + ExpenseOS→VeloExpense sync strategy)
@@ -397,7 +430,7 @@ approvals, notifications or audit entries.
    none today) and the bucket CORS rule; an `app_user` row in the demo tenant
    matching a real Google/Entra identity with `role='ADMIN'`; then "Restore
    starter rules" on `/admin/expense-policies`, or nothing will ever flag.
-3. **VX2-6 next** — the tenant-scoped audit log, which lands BEFORE the engine so
+3. **VX2-6 next** (VX2-2 is done — see §5) — the tenant-scoped audit log, which lands BEFORE the engine so
    VX2-3 writes into the trail from its first commit. Freeze the hash payload
    once: whatever identifies the actor must never be nullable-on-delete (use
    `ON DELETE RESTRICT`, as `expense_report_event.actor_id` already does), and
@@ -452,6 +485,14 @@ approvals, notifications or audit entries.
    that corpus is VeloPulse HRIS's, not ExpenseOS's. Confirm provenance from
    content, never from the filename.
 
-6. Dependabot has open PRs for **vitest 4** and **typescript 7** — major bumps
+6. **Local-dev credentials are committed in this file.** §3's setup block carries both
+   connection strings inline, including the `postgres` superuser. Low severity for a throwaway
+   container on localhost:5433, and it is genuinely convenient — but it is the first file a new
+   contributor reads, so the habit propagates, and it matters the moment either password is
+   reused somewhere that is not disposable. Cheap fix: move the two `export` lines to an
+   untracked `.env.dev-admin` (or a direnv `.envrc`) and leave placeholders here.
+   NOT a blocker; flagged because nobody had.
+
+7. Dependabot has open PRs for **vitest 4** and **typescript 7** — major bumps
    across TEN suites now, and typescript 7 also touches the Playwright types.
    Take them deliberately, on their own branch.
