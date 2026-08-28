@@ -45,9 +45,21 @@ beforeAll(async () => {
   );
   orgId = o.rows[0].id;
   await withOrg(orgId, async (tx) => {
-    const u = await tx.query(
-      "INSERT INTO app_user (organization_id, email, display_name) VALUES ($1,'l@lifecycle.test','L') RETURNING id",
+    // A MANAGER above the submitter, added when VX2-3 made submit open an
+    // approval run: submitting now routes the ladder, and a tenant whose only
+    // employee has neither a manager nor an active administrator has nobody to
+    // approve anything — which the resolver refuses, correctly. A one-person
+    // tenant was never a realistic fixture; it just went unnoticed while submit
+    // did not care who would approve.
+    const m = await tx.query(
+      `INSERT INTO app_user (organization_id, email, display_name, role)
+       VALUES ($1,'mgr@lifecycle.test','Mgr','MANAGER') RETURNING id`,
       [orgId],
+    );
+    const u = await tx.query(
+      `INSERT INTO app_user (organization_id, email, display_name, manager_id)
+       VALUES ($1,'l@lifecycle.test','L',$2) RETURNING id`,
+      [orgId, m.rows[0].id],
     );
     userId = u.rows[0].id;
     const c = await tx.query(

@@ -2,7 +2,7 @@
  * VX0-9 — seed a demo tenant + a blank tenant. Synthetic data only (no real
  * customer/EINC data). Idempotent: safe to re-run.
  *
- *   demo  (slug 'demo')  → 3 fictional users
+ *   demo  (slug 'demo')  → 4 fictional users
  *   blank (slug 'blank') → 0 users (a clean tenant for from-scratch testing)
  *
  * Uses DATABASE_URL (the veloapp non-superuser role). Organization has no RLS;
@@ -82,6 +82,25 @@ async function seedReportingLine(orgId) {
               updated_at = now()
         WHERE email = 'employee@demo.test'`,
     );
+    // employee → manager → admin → owner. Three levels, so manager_level 2 and 3
+    // mean something in a demo, and every user except the owner has an approver.
+    await client.query(
+      `UPDATE app_user
+          SET manager_id = (SELECT id FROM app_user WHERE email = 'owner@demo.test'),
+              updated_at = now()
+        WHERE email = 'admin@demo.test'`,
+    );
+    // The owner is still the top of the chain, and the only other ADMIN reports
+    // to them — so without this the owner cannot submit an expense at all. That
+    // is the AP-14 dead end, and in a DEMO tenant it reads as a broken product
+    // rather than as the control it is. Enabled here deliberately, per-tenant,
+    // and OFF by default everywhere else (see migration 0009).
+    await client.query(
+      `UPDATE organization
+          SET allow_sole_approver_self_approval = true, updated_at = now()
+        WHERE id = $1`,
+      [orgId],
+    );
     await client.query('COMMIT');
   } catch (err) {
     await client.query('ROLLBACK');
@@ -143,12 +162,25 @@ async function main() {
   }
 
   await seedReferenceData(demoId);
+  // FOUR users, not three. `owner@demo.test` was added when VX2-3 made a submit
+  // open an approval run: submitting routes the ladder, and admin@demo.test —
+  // who the e2e signs in as — was the TOP of the reporting line, so their own
+  // reports had nobody to approve them. The e2e failed on it, correctly.
+  //
+  // This is GAP-AUDIT AP-14 arriving in practice rather than in theory: the
+  // person at the top of the chain cannot approve their own spend, and in a
+  // one-admin tenant there is nobody else. A demo tenant needs someone above
+  // the controller for the same reason a real company does.
+  await seedUser(demoId, 'owner@demo.test', 'Demo Owner', { role: 'ADMIN', title: 'Owner' });
   await seedUser(demoId, 'admin@demo.test', 'Demo Admin', { role: 'ADMIN', title: 'Controller' });
   await seedUser(demoId, 'manager@demo.test', 'Demo Manager', { role: 'MANAGER', title: 'Finance Manager' });
   await seedUser(demoId, 'employee@demo.test', 'Demo Employee', { role: 'EMPLOYEE', title: 'Analyst' });
   await seedReportingLine(demoId);
 
-  console.log('Seeded: demo (reference data + 3 users: admin/manager/employee, reporting line wired), blank (0 users).');
+  console.log(
+    'Seeded: demo (reference data + 4 users: owner/admin/manager/employee, reporting line wired,' +
+      ' sole-approver self-approval enabled), blank (0 users).',
+  );
   await pool.end();
 }
 
