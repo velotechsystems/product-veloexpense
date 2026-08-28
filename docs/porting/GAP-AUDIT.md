@@ -213,7 +213,7 @@ style anyway.
 
 ---
 
-## approvals (VX2-1 shipped; VX2-2 next) — `packages/approvals/src` — PARTIAL, ~45% read
+## approvals (VX2-1 shipped; VX2-2 next) — `packages/approvals/src` — PARTIAL, ~50% read
 
 Source read: `delegation.test.ts` (5.0 KB) — the `resolveAssignment` contract;
 `noManagerFallback.db.test.ts` (27 KB) — the no-eligible-approver behaviour, which *is* VX2-2's
@@ -224,6 +224,8 @@ acceptance criteria; `expire.test.ts` (1.4 KB) — the expiry-outcome policy tab
 `resolveManagerChain` / `isEligible` / `canDecide` actually live), `engine.db.test.ts` (51.7 KB),
 `graph.ts` (5.9 KB, not a port target), `schema.ts` (11 KB),
 `backfillApprovalFallback.db.test.ts` (21.2 KB — only matters if AP-7 goes to option (ii)).
+The `fix/self-approval-guard` diff is read in full (`engine.ts` +100, `engine.db.test.ts` +108,
+`reportApproval.ts` +13).
 
 ### AP-1 · `resolveAssignment` — the contract, which IS VX2-2's spec
 
@@ -581,6 +583,113 @@ eligibility predicate AP-6 produces. **Four copies.** Every predicate over it mu
 construction — a `switch` with a `default: never` — so adding a kind breaks the build in all four
 places instead of silently short-circuiting in one of them.
 
+### AP-13 · The self-approval guard is a SOX-grade P0, and the fix is an **ordering** rule ⚠ changes VX2-2's spec
+
+`fix/self-approval-guard` read. It is the most important thing this audit has surfaced, and it is
+not the check itself — we already have `SELF_APPROVAL` declared — it is *where the check sits*.
+
+`canDecide` opened with `if (isAdmin) return true`. The self-approval block sat about thirty lines
+below it. So the rule was unreachable for precisely the people best able to break it:
+
+> "a System Administrator submitted a report, opened it, and was offered Approve — which succeeded
+> and was recorded as a real approval — while the workflow assigned the decision to their direct
+> manager and their own approvals inbox showed nothing to do (GA readiness report F15 / F20,
+> blocker B3). A privileged user approving their own expenses outside the assigned route is a
+> standard SOX audit exception."
+
+The fix moves the requester check **first**, ahead of every grant below it — admin, assignee,
+delegatee and the pool fallthrough alike. Three parts of that are worth porting exactly:
+
+- **Ahead of the *assignee* path, not only the pool.** Their reasoning: "a workflow that resolves
+  the approver relative to the requester can legitimately land the task on the requester themselves
+  (their own manager, a same-job-level pool), and 'the graph named me' is not a reason to let
+  somebody sign off their own money." **This is the part that changes our design.** VeloExpense's
+  `SELF_APPROVAL` is currently a `RoutingErrorCode` — a *routing-time* refusal. Routing-time alone
+  is insufficient: VX2-4 (reassign) and VX2-5 (delegation) can both move a task onto the submitter
+  *after* it was routed cleanly. So the guard has to exist twice, and the **decision-time** one is
+  the authoritative copy. VX2-2 must ship a decision-time `assertCanDecide` with the requester
+  check as its first statement, not merely refuse at routing.
+- **The admin override survives for everyone else's subject.** "It is load-bearing: it is how a
+  stuck queue gets unwedged. What is removed is the ability to use it on your own."
+- **Order the queries accordingly.** The guard needs the requester before it can refuse, so the
+  cheap `isAdmin` short-circuit cannot come first. Their `canDecide` now loads the task, then the
+  requester, then decides. Two reads before any grant — fine, and worth the comment saying why.
+
+And a testing lesson that generalizes past this ticket, from their own post-mortem: *"the
+self-approval rule above was tested only with `isAdmin: false`, while `canDecide` opened with
+`if (isAdmin) return true` — so the rule was never reachable for the people best able to break
+it."* A guard exercised only on the unprivileged path is an untested guard. **Every VX2-2 guard test
+must run twice, once with the caller's admin role set.** That is a cheap rule and it is exactly what
+would have caught this.
+
+Their seeded ladder, quoted in passing and useful as a sanity check on our `DEFAULT_LADDER`:
+manager under $5k, Director under $25k, VP under $100k, C-level above.
+
+### AP-14 · Their accepted cost is **not acceptable for VeloExpense** — the SMB collision ⚠ decision
+
+The fix records its own downside honestly, which is what makes it usable:
+
+> "KNOWN CONSEQUENCE, recorded rather than discovered later: a subject whose only possible approver
+> is also its requester — the person at the top of the chain, or a one-admin org — can no longer be
+> decided by that person at all. It parks until somebody else decides it. That is the accepted cost
+> of the hard block; a break-glass override with an audited reason was considered and deliberately
+> not taken."
+
+For ExpenseOS that reasoning holds: it is one large enterprise, so "somebody else" always exists.
+**For VeloExpense it does not.** We are selling to SMBs. A two-person company where the owner
+submits expenses and is the only admin is not an edge case, it is a plausible first customer. Under
+the combination of
+
+- AP-5's recommendation (`ADMIN_FALLBACK` when the chain resolves to nobody), and
+- AP-13's hard self-approval block ahead of the admin grant,
+
+that tenant's reports are **unapprovable**. Not stuck-and-escalating: structurally undecidable, by
+anyone, forever. Two rules that are each correct compose into a dead end, and it only appears in
+tenants small enough that the sole admin is also the sole submitter.
+
+So VeloExpense has to take the option ExpenseOS declined, in one of these shapes — and this is a
+product call, not a technical one:
+
+- **(a) Break-glass self-approval, per tenant, audited.** An `approval_policy` flag
+  (`allow_self_approval_when_sole_approver bool NOT NULL DEFAULT false`), permitted *only* when the
+  resolver can prove no other eligible approver exists, and every use written to the VX2-6 audit
+  chain with its own action so it is trivially reportable. Recommended: it is the honest version of
+  what a one-person company is going to do anyway, and it makes the exception *visible* instead of
+  making the product unusable.
+- **(b) Require a second approver at onboarding.** Refuse to activate expense approvals until the
+  tenant names someone other than the owner. Clean model, worst onboarding friction, and it fails
+  at exactly the wrong moment — the tenant is trying to start using the product.
+- **(c) Auto-approve when the submitter is the sole possible approver.** Simplest to build, and
+  wrong: it silently converts "nobody can approve this" into "approved", which is the fail-open
+  outcome every other rule in this codebase is written to avoid. Recorded to be rejected explicitly.
+
+**Recommendation: (a).** Note it interacts with AP-7 — if the `role` fallback lands (option (ii)
+there), a tenant can name "any Finance member", which reduces how often (a) fires but does not
+remove the one-person case.
+
+### AP-15 · The read-side predicate and the write-side guard must be the **same function**
+
+The same branch fixes a second, quieter bug worth generalizing. `callerCanDecideReport` — the
+predicate the *page* uses to decide whether to render an Approve button — opened with
+`if (isAdmin) return true`, while the mutation behind the button asked the engine. Once the engine
+started refusing a requester their own subject, the two disagreed:
+
+> "a role-based yes here would render an Approve button that fails when pressed. One question, one
+> answer, both surfaces."
+
+The original short-circuit had a justification that had quietly become false — "an admin viewing a
+DRAFT report has no task to find, and a lookup-based answer would deny them" — except
+`callerCanReadReport` already short-circuits on `isAdmin` on its own line, so admin *read* access
+never depended on it. A stale rationale outliving the condition it described, which is its own
+lesson about comments.
+
+For VeloExpense this is a naming-and-structure rule for VX2-2 and VX2-4: the server action's guard
+and whatever the page calls to decide what to render must be the **same exported function** from
+`lib/approvals/`, not two predicates that happen to agree today. Our architecture makes this easy —
+server actions and `lib/<domain>/` modules, no tRPC layer in between — so there is no excuse for
+two copies. `assertCanDecide` (throws, for the action) wrapping `canDecide` (boolean, for the page)
+is the shape.
+
 ---
 
 ## The GA audit's P0/P1s — one now traced to source
@@ -592,10 +701,10 @@ ExpenseOS `origin` carries fix branches whose names map onto the GA audit findin
 - **CAD-exclusion-from-totals → traced.** See PE-7. Mechanism confirmed by reading
   `validate.ts` + `facts.ts` on the version Drive holds. The *fix* diff has not been read, so port
   the fix rather than assuming PE-7's remedy matches theirs.
-- **approval defaults → `fix/self-approval-guard`, NOT read.** Bears directly on VX2-2's resolver
-  and VX2-1's `DEFAULT_LADDER`. Self-approval refusal is already in
-  `lib/approvals/routing.ts`'s error codes as `SELF_APPROVAL`, but nothing implements it yet.
-  **Read this branch before VX2-2.**
+- **approval defaults → `fix/self-approval-guard`, READ.** See AP-13, AP-14, AP-15. It turned out
+  to be three findings, not one: a SOX-grade privileged self-approval (their F15 / F20, blocker
+  B3), a read-side/write-side authorization disagreement, and the F42 simulator gap. The guard
+  itself is portable; its *accepted consequence* is not, and AP-14 is the decision that follows.
 - **date picker → `fix/date-input-clickable`, NOT read.** UI; bears on VX2-4 at most.
 
 Two of these are already dodged in VeloExpense — see PE-5 and the "already ahead" list in
