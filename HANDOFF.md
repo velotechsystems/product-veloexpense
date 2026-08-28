@@ -377,7 +377,9 @@ audit trail whose chain verifies in CI, with two tenants side by side seeing non
 approvals, notifications or audit entries.
 - ExpenseOS status/dashboard docs + the live Cowork artifact `expenseos-dev-dashboard` (weekly refresh).
 
-## 7. Immediate next action for the new thread1. **KNOWN DEFECT IN SHIPPED CODE — `docs/porting/GAP-AUDIT.md`, finding PE-1.** Policy thresholds
+## 7. Immediate next action for the new thread
+
+1. **KNOWN DEFECT IN SHIPPED CODE — `docs/porting/GAP-AUDIT.md`, finding PE-1.** Policy thresholds
    are currency-blind: `expense_policy.params.thresholdMinor` is a bare bigint compared straight
    against `amount_minor`, while `expense_report.currency_code` is per REPORT and a threshold is per
    TENANT. So a tenant with one USD report and one CAD report compares both against the same number
@@ -405,6 +407,27 @@ approvals, notifications or audit entries.
    (from/to status), the audit log is the hash-chained compliance record across
    every entity type. Then VX2-2's resolver — and it owns the overlapping-
    delegation tie-break the 0008 comments leave to it.
+
+   **VX2-2's spec is now settled** — see the decisions table at the top of
+   `docs/porting/GAP-AUDIT.md`, and AP-1, AP-5, AP-6, AP-10, AP-13. The five things
+   that are NOT negotiable, because each traces to a measured ExpenseOS defect:
+   (a) the self-approval check runs FIRST in the decision guard, ahead of the admin
+   grant AND ahead of the assignee path — a privileged user approving their own
+   report is a standard SOX exception and it shipped in ExpenseOS because the check
+   sat thirty lines below `if (isAdmin) return true`; (b) the guard is enforced at
+   DECISION time, not only at routing time, because VX2-4 and VX2-5 can move a task
+   onto the submitter after clean routing; (c) an unresolvable MANAGER approver
+   falls back to `ADMIN_FALLBACK` rather than parking or failing the submit — on
+   ExpenseOS's dev data 11% of users had no manager; (d) a manager chain shorter
+   than `manager_level` degrades to the most senior person found and records the
+   shortfall in `escalation_level`; (e) the actor's own subordinates are refused
+   transitively, using the existing cycle-guarded upward CTE in
+   `lib/employees/service.ts` asked in the opposite direction. VX2-2 carries ONE
+   migration, `0009`: `organization.allow_sole_approver_self_approval boolean NOT
+   NULL DEFAULT false`, the audited break-glass without which a sole-admin SMB
+   tenant's reports are undecidable by anyone. And every guard test runs twice,
+   once with the caller's admin role set — a guard exercised only on the
+   unprivileged path is how ExpenseOS's shipped.
 4. **Still no admin surface for the approval ladder.** The board never assigns
    one (VX1-7 shipped `/admin/expense-policies` with the engine; VX2-1 is
    schema-only at 2 days). `ensureDefaultLadder` and the rung CRUD exist and are
