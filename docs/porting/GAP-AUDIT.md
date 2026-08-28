@@ -213,13 +213,17 @@ style anyway.
 
 ---
 
-## approvals (VX2-1 shipped; VX2-2 next) — `packages/approvals/src` — PARTIAL, ~30% read
+## approvals (VX2-1 shipped; VX2-2 next) — `packages/approvals/src` — PARTIAL, ~45% read
 
 Source read: `delegation.test.ts` (5.0 KB) — the `resolveAssignment` contract;
 `noManagerFallback.db.test.ts` (27 KB) — the no-eligible-approver behaviour, which *is* VX2-2's
 acceptance criteria; `expire.test.ts` (1.4 KB) — the expiry-outcome policy table.
-**Not yet read:** `engine.ts` (62.5 KB), `engine-core.ts` (14.8 KB), `graph.ts` (5.9 KB),
-`schema.ts` (11 KB), `schema.approverFallback.test.ts`.
+`engine-core.ts` (14.8 KB) — the pure interpreter, read and ruled OUT as a port target (AP-9);
+`schema.approverFallback.test.ts` (3.7 KB) — the fallback's shape rules (AP-11).
+**Not yet read:** `engine.ts` (62.5 KB — the DB layer, and where `resolveApprover` /
+`resolveManagerChain` / `isEligible` / `canDecide` actually live), `engine.db.test.ts` (51.7 KB),
+`graph.ts` (5.9 KB, not a port target), `schema.ts` (11 KB),
+`backfillApprovalFallback.db.test.ts` (21.2 KB — only matters if AP-7 goes to option (ii)).
 
 ### AP-1 · `resolveAssignment` — the contract, which IS VX2-2's spec
 
@@ -444,6 +448,138 @@ Two notes for the TTL ticket, both confirmed against `0008`:
   straight through to REJECT — conflating 'your approver ignored this' with 'we never found you an
   approver', and punishing the claimant for the second." And when the requester has no manager
   either, `REJECT` is correct and must stay correct, "or a lapsed claim would hang forever."
+
+### AP-9 · The workflow model diverges by design — `engine-core.ts` and `graph.ts` are **not** port targets
+
+Worth stating plainly so a later "faithful port" pass does not try. `engine-core.ts` is a
+BPMN-lite **token interpreter over a directed graph**: tokens flow from a `start` node toward a
+terminal; `if` / `switch` nodes route on a predicate; `parallel` forks one token per branch and the
+branches re-synchronize at their convergence node under a join policy; `notify` / `action` nodes
+fire side effects and pass through; `callWorkflow` is a stub. Approval nodes "park" their token and
+emit a `createTask` effect. It is pure (no DB, no I/O) and it is good code.
+
+VeloExpense's VX2-1 model is a **linear cumulative rung ladder**: `planApproval` filters rungs by
+threshold, sorts by `sequence`, flattens approvers by `position`, and produces numbered steps that
+are decided one at a time. There is no graph, no token, no branch, no join. That is the Plan's
+simplification and it is the right one for MVP — a graph editor is a product, not a ticket.
+
+So: **do not port** `engine-core.ts`, `graph.ts`, the token model, or the join policies. What IS
+portable out of `packages/approvals` is everything that keys off an *approver*, not off the graph
+shape — the fallback (AP-5), the eligibility rules (AP-6), the expiry table (AP-8), and the
+manager-chain resolution (AP-10). Those transfer cleanly because they never touch the topology.
+
+**The capability we are giving up, recorded like PE-2:** ExpenseOS's `parallel` node supports three
+join policies — `all`, `any`, and `quorum(k)` — so "any two of these three VPs" is expressible, and
+a branch failure is *tolerated* until the policy becomes arithmetically impossible (`all` → one
+reject; `any` → all reject; `quorum` → fewer than `k` branches can still approve). VeloExpense's
+ladder cannot express any of that: every step is sequential and every step is mandatory. Two of
+three signatories is a common finance control, so expect this as a request. It is not a defect and
+not in MVP — it is a known missing capability, and the day it is wanted it is a new model, not a
+patch to `planApproval`.
+
+### AP-10 · `manager_level` counts hops; `managerChain` targets a job level — and VX2-2 must decide what a short chain means ⚠
+
+A quiet but real divergence, and the second decision VX2-2 cannot avoid.
+
+- **ExpenseOS** `managerChain` carries `minJobLevelId`: climb until you reach somebody at or above
+  a named **job level**. Crucially, `resolveManagerChain` "returns the most senior ancestor it
+  found and null only when there is no manager at all" — so a chain that never reaches the target
+  level **still resolves**, to the most senior person available. It degrades, it does not fail.
+- **VeloExpense** `approval_policy_approver.manager_level` is a **hop count**, `BETWEEN 1 AND 5`:
+  1 = direct manager, 2 = their manager, and so on.
+
+Two consequences.
+
+**A hop count does not mean the same thing in two orgs.** Level 2 in a three-deep company is nearly
+the top; level 2 in an eight-deep company is middle management. The same authored policy therefore
+encodes a different seniority per tenant, which for a multi-tenant product is a worse property than
+it is for ExpenseOS's single org. Not worth changing now — job levels are their own reference table
+and out of MVP — but it belongs in the Differences Chart as a deliberate simplification with a
+known cost, not as an equivalent feature.
+
+**And the decision: what does `manager_level = 3` do when the submitter's chain is two deep?**
+`routing.ts` already declares `CHAIN_EXHAUSTED`, which implies we fail closed. That means a tenant
+with a shallow org chart cannot submit anything over the level-3 threshold at all — the same shape
+of outage as AP-5's, arriving through a different door. ExpenseOS's answer is to **take the most
+senior person found** and record how far it got. We already have the column for the second half:
+`approval_task.escalation_level` is documented as "how many extra links up the chain the resolver
+had to walk past absent approvers", which generalizes to "how far the resolver fell short" without
+a migration.
+
+**Recommendation:** port their degrade-to-most-senior behaviour, reserve `CHAIN_EXHAUSTED` for the
+genuine no-manager-at-all case (where AP-5's fallback takes over), and record the shortfall on the
+task so an admin can see the policy was not literally satisfied. Failing a submit because the
+company is flat is not a control, it is an outage.
+
+### AP-11 · Where the column model is already ahead — two structural wins, worth not losing
+
+`schema.approverFallback.test.ts` exists to police states that **cannot be represented** in
+VeloExpense's schema. That is the payoff of the Plan's choice to put approver config in columns
+rather than ExpenseOS's JSON `graph` column, and it should be recorded before somebody "simplifies"
+`0008` toward a JSONB blob.
+
+- **The half-configured approver.** Their test: *"the editor writes `{ kind: 'user', userId: '' }`
+  the moment somebody picks 'a specific person' and before they say who, and that half-state must
+  fail validation — publishing it would produce a node that claims to route somewhere and assigns
+  to a user id that cannot exist."* `0008`'s `approval_policy_approver_complete` already forbids
+  this, and is *stricter* than their zod: it requires the companion column the kind needs **and**
+  asserts every other companion column is NULL, so a `USER` approver cannot carry a stale
+  `approver_role` left behind by someone changing the kind in a form. Their zod checks presence,
+  not absence.
+- **"A fallback belongs only on the relative kinds."** They enforce this by relying on zod objects
+  being non-strict and asserting the fallback does not *survive* the parse — a strip, not a
+  refusal, because their schema cannot say "this key is invalid on this variant". In a column model
+  it is one line: `CHECK (fallback_kind IS NULL OR approver_kind = 'MANAGER')`. A refusal beats a
+  silent strip, because a silent strip means an admin can save a fallback, see it accepted, and
+  never learn it was discarded.
+
+So when the fallback lands (AP-5), the shape is `fallback_kind text` + `fallback_user_id uuid
+REFERENCES app_user(id) ON DELETE RESTRICT` + `fallback_role text`, plus a
+`approval_policy_approver_fallback_complete` CHECK in the same style as the existing one, plus the
+relative-kinds CHECK above. `NOT NULL` is wrong on all three — the fallback is optional, and their
+test *"keeps the fallback OPTIONAL"* exists because every workflow authored before the feature had
+to keep parsing. Same for us: every policy row in every tenant predates it.
+
+One thing to copy exactly: their fallback kind vocabulary refuses `requester` and `manager`, which
+exist in the sibling `notifyTargetSchema`. The reason is worth the comment — *"`manager` is what
+just failed, `requester` is self-approval."* Both would be accepted by a careless
+`fallback_kind IN (...)` list copied from somewhere else, and both are nonsense with teeth.
+
+### AP-12 · Rejection semantics, for VX2-3 — and the duplicated-enumeration lesson
+
+`applyRejection` is not portable as written (it routes tokens), but the *policy* inside it is the
+question VX2-3 has to answer, so record it now:
+
+- A node with a **wired `reject` exit** routes down it and the instance keeps RUNNING — the author
+  chose an explicit rejection path (send it back for revision, route to a second reviewer).
+- With **no wired exit**, the default applies: the instance is REJECTED — *unless* the token is
+  inside a parallel, where it is a tolerated branch failure.
+
+VeloExpense has no authored graph, so "wired exit" has no analogue; but `approval_task_status`
+admits `RETURNED` alongside `REJECTED`, which is the same distinction expressed as an outcome
+instead of an edge: **RETURNED sends it back to the submitter as a draft and the run ends;
+REJECTED is terminal.** What `0008` does not settle is what happens to the *other* tasks of a
+multi-step request when step 2 of 3 is rejected or returned. `approval_task_status` admits
+`CANCELLED` with `decided_at NOT NULL` and no actor, described as "the tasks voided when a
+submitter recalls" — which is exactly the mechanism needed here too. VX2-3 should cancel the
+remaining PENDING tasks of the request, and the `approval_request_one_running_idx` unique index
+means it must, or a returned report cannot be resubmitted.
+
+**And the lesson, which is the most reusable thing in this file.** AP-6 closed a bug where
+`isRelativeApprover` enumerated node types and accepted only `'approval'`, missing `'acknowledge'`.
+`engine-core.ts` gets the same concept right, once, as a shared constant:
+
+```ts
+const APPROVAL_TYPES = new Set(['approval', 'acknowledge']);
+```
+
+The bug was not ignorance — it was the same set written down twice in two files and then drifting.
+VeloExpense has exactly this hazard: `approver_kind` is enumerated in `0008`'s CHECK, in
+`APPROVER_ROLES` in `lib/approvals/tiers.ts` (declared locally on purpose, to keep `pg` out of a
+pure module), and it will be enumerated again in VX2-2's resolver and once more in whatever
+eligibility predicate AP-6 produces. **Four copies.** Every predicate over it must be exhaustive by
+construction — a `switch` with a `default: never` — so adding a kind breaks the build in all four
+places instead of silently short-circuiting in one of them.
 
 ---
 
