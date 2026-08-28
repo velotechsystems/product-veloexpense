@@ -159,6 +159,30 @@ beforeAll(async () => {
            FROM app_user WHERE organization_id = $1 AND email = $4`,
         [org, approver.rows[0].id, `Delegation ${label}`, owner],
       );
+      // VX2-6: the audit log from migration 0010. The most sensitive table in
+      // the schema — it records who did what to whose money, and one leaked
+      // entry hands another tenant an actor name, an action and a timestamp.
+      // The genesis row of each tenant's chain, so prev_hash is NULL and the
+      // one-genesis-per-tenant index is exercised by having two tenants each
+      // carry one.
+      await tx.query(
+        `INSERT INTO audit_entry
+           (organization_id, actor_id, actor_name, actor_role, action,
+            entity_type, entity_id, details, prev_hash, entry_hash)
+         VALUES ($1, $2, $3, 'ADMIN', 'REPORT_SUBMITTED', 'expense_report', $4,
+                 $5::jsonb, NULL, $6)`,
+        [
+          org,
+          approver.rows[0].id,
+          `Actor ${label}`,
+          report,
+          JSON.stringify({ totalMinor: '1000' }),
+          // A 64-char lowercase-hex string, as audit_entry_hash_shape requires.
+          // Not a real hash — this suite tests RLS, not the chain (see
+          // test/audit.db.test.ts for that).
+          (label === 'A' ? 'a' : 'b').repeat(64),
+        ],
+      );
     });
   }
 });
@@ -273,6 +297,7 @@ describe('RLS tenant isolation', () => {
       requests: (await tx.query('SELECT id FROM approval_request')).rows.length,
       tasks: (await tx.query('SELECT note FROM approval_task')).rows.map((r) => r.note),
       delegations: (await tx.query('SELECT note FROM delegation')).rows.map((r) => r.note),
+      audit: (await tx.query('SELECT actor_name FROM audit_entry')).rows.map((r) => r.actor_name),
     }));
     expect(a).toEqual({
       ladder: ['Ladder A'],
@@ -280,6 +305,7 @@ describe('RLS tenant isolation', () => {
       requests: 1,
       tasks: ['Task A'],
       delegations: ['Delegation A'],
+      audit: ['Actor A'],
     });
 
     const none = await withoutOrg(async (tx) => ({
@@ -288,8 +314,16 @@ describe('RLS tenant isolation', () => {
       requests: (await tx.query('SELECT * FROM approval_request')).rows.length,
       tasks: (await tx.query('SELECT * FROM approval_task')).rows.length,
       delegations: (await tx.query('SELECT * FROM delegation')).rows.length,
+      audit: (await tx.query('SELECT * FROM audit_entry')).rows.length,
     }));
-    expect(none).toEqual({ ladder: 0, signers: 0, requests: 0, tasks: 0, delegations: 0 });
+    expect(none).toEqual({
+      ladder: 0,
+      signers: 0,
+      requests: 0,
+      tasks: 0,
+      delegations: 0,
+      audit: 0,
+    });
   });
 
   it('an approval task cannot be joined back to another tenant report', async () => {

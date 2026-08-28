@@ -75,6 +75,13 @@ GRANT USAGE ON SCHEMA public TO veloapp;
 GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO veloapp;
 GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO veloapp;
 ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO veloapp;
+-- SEQUENCES too, or the FIRST migration that adds a serial/bigserial column after
+-- this setup ran leaves veloapp unable to INSERT into that table: "permission denied
+-- for sequence <name>". Found the hard way by 0010's audit_entry.sequence, which is
+-- the first sequence-backed column in the schema. CI is NOT affected — it grants
+-- ON ALL SEQUENCES after applying migrations, so the sequence already exists — which
+-- is exactly why this can only ever break on a developer's machine.
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE, SELECT ON SEQUENCES TO veloapp;
 SQL
 # env for tests / app
 export ADMIN_DATABASE_URL="postgres://postgres:velo@localhost:5433/veloexpense"   # superuser (test truncate)
