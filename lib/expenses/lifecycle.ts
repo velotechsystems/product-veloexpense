@@ -22,6 +22,7 @@
  */
 import type { QueryRunner } from '@/lib/db/client';
 import * as policy from '@/lib/policy/service';
+import * as engine from '@/lib/approvals/engine';
 import type { ReportStatus } from '@/lib/expenses/service';
 
 const ORG = "current_setting('app.current_org', true)::uuid";
@@ -104,6 +105,13 @@ async function recordEvent(
 export interface SubmitResult {
   report: { id: string; number: string | null; status: ReportStatus; submitted_at: Date };
   validation: policy.ValidationSummary;
+  /**
+   * The approval run opened for this submission (VX2-3). Always present: a
+   * SUBMITTED report with no run is the fail-open state — it looks pending
+   * forever and is indistinguishable, from the outside, from one waiting on a
+   * busy manager.
+   */
+  approval: { requestId: string; totalSteps: number; taskId: string };
 }
 
 /** DRAFT → SUBMITTED. Throws LifecycleError with the blocking findings attached. */
@@ -171,7 +179,20 @@ export async function submitReport(
     },
   });
 
-  return { report: updated.rows[0], validation };
+  /**
+   * Open the approval run in THIS transaction.
+   *
+   * Coupled rather than left to the caller on purpose. `openRun` routes every
+   * step all-or-nothing, so an unroutable ladder refuses the submit HERE, while
+   * the employee is at their screen and can be told — instead of days later when
+   * an approver clicks and the report has nowhere to go. The cost is that a
+   * tenant with no manager chain AND no active administrator cannot submit at
+   * all; that is the correct direction to fail, and it is why every tenant is
+   * seeded with an admin.
+   */
+  const approval = await engine.openRun(tx, reportId, actorId);
+
+  return { report: updated.rows[0], validation, approval };
 }
 
 /**
@@ -200,6 +221,14 @@ export async function recallReport(
     [reportId],
   );
 
+  // Cancel the approval run, or the next submit cannot open one —
+  // approval_request_one_running_idx allows exactly one RUNNING request per
+  // report. Recalling and resubmitting deliberately opens a NEW run rather than
+  // resuming the old one: 0008's reasoning is that a report's total can move
+  // while it is back in DRAFT, so re-banding an existing run would let an
+  // employee returned at three sign-offs trim a line and resubmit into one.
+  const cancelled = await engine.cancelRunForReport(tx, reportId, actorId);
+
   await recordEvent(tx, {
     reportId,
     action: 'RECALL',
@@ -207,6 +236,9 @@ export async function recallReport(
     toStatus: 'DRAFT',
     actorId,
     note: note ?? null,
+    context: cancelled
+      ? { cancelledRequestId: cancelled.requestId, cancelledTasks: cancelled.cancelledTasks }
+      : {},
   });
 
   return updated.rows[0];
