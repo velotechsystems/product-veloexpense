@@ -16,7 +16,12 @@ import type { QueryRunner } from '@/lib/db/client';
 const ORG = "current_setting('app.current_org', true)::uuid";
 
 /** Max levels walked when resolving a manager chain (also the cycle backstop). */
-const MAX_CHAIN_DEPTH = 20;
+/**
+ * How far any manager-chain walk may climb. Exported because VX2-2's resolver
+ * needs the SAME bound — a second copy is how the four-copies drift in
+ * GAP-AUDIT AP-12 starts. ExpenseOS uses 20 here too, independently.
+ */
+export const MAX_CHAIN_DEPTH = 20;
 
 export type EmployeeRole = 'EMPLOYEE' | 'MANAGER' | 'ADMIN';
 export type EmployeeStatus = 'ACTIVE' | 'ON_LEAVE' | 'DEACTIVATED';
