@@ -249,7 +249,7 @@ style anyway.
 
 ---
 
-## approvals (VX2-1 shipped; VX2-2 next) — `packages/approvals/src` — PARTIAL, ~50% read
+## approvals (VX2-1 shipped; VX2-2 next) — `packages/approvals/src` — PARTIAL, ~70% read
 
 Source read: `delegation.test.ts` (5.0 KB) — the `resolveAssignment` contract;
 `noManagerFallback.db.test.ts` (27 KB) — the no-eligible-approver behaviour, which *is* VX2-2's
@@ -410,7 +410,17 @@ it' passes just as happily on a build where EVERYONE can decide it."* The negati
    new downward walk: "does the actor report up to the submitter" is that same upward walk started
    from the actor, asking whether the submitter appears in it. Bounded and cycle-safe already.
    Note the existing direct-reports query near line 168 is `WHERE u.manager_id = $1` — one level
-   only — so that is *not* the thing to reuse; the transitive answer is the CTE.
+   only — so that is *not* the thing to reuse; the transitive answer is the CTE. ExpenseOS's
+   `reportsUpTo` is the same idea written as a per-hop loop bounded by `MAX_CHAIN_DEPTH`; one CTE
+   beats twenty round trips, so port the behaviour, not the implementation.
+
+   **One more piece of their reasoning, worth recording because the tempting fix is worse.** They
+   considered narrowing the pool org-relatively instead — same legal entity, at-or-above the
+   requester's job level — and rejected it: *"every such rule is empty for exactly the person this
+   exists for — nobody outranks the CEO — so it would restore the auto-reject under a more
+   respectable name."* Any seniority-based narrowing is vacuous for the manager-less requester who
+   is the whole reason the path exists. The real close is for the tenant to author a fallback; the
+   pool is what an unconfigured tenant gets.
 3. **Not a non-ACTIVE person**, in the pool or as a role holder. VeloExpense's equivalent is
    `employee_status IN ('ON_LEAVE','DEACTIVATED')` — note ExpenseOS tests `TERMINATED`, and our
    three-value CHECK has no terminal state at all, only `DEACTIVATED`. Same effect, worth knowing.
@@ -747,6 +757,153 @@ and whatever the page calls to decide what to render must be the **same exported
 server actions and `lib/<domain>/` modules, no tRPC layer in between — so there is no excuse for
 two copies. `assertCanDecide` (throws, for the action) wrapping `canDecide` (boolean, for the page)
 is the shape.
+
+### AP-16 · `resolveAssignment` in full — three rules the tests did not show
+
+`engine.ts` read directly (from Drive, at the spec baseline — so `canDecide` there is the PRE-fix
+ordering; compose it with the `fix/self-approval-guard` diff in AP-13 to get today's behaviour).
+The function itself is ten lines, and AP-1's derived contract was right, but three rules only exist
+in the code:
+
+```ts
+export async function resolveAssignment(db, baseAssigneeId, subjectType) {
+  if (!baseAssigneeId) return null;
+  const afterLeave = await skipOnLeave(db, baseAssigneeId);
+  const delegatee  = await activeDelegateeFor(db, afterLeave, subjectType);
+  return delegatee ? skipOnLeave(db, delegatee) : afterLeave;
+}
+```
+
+- **One delegation hop, never a chain.** Their comment says so outright: "One delegation hop — no
+  chains-of-delegations." A delegates to B, B delegates to C, and a task of A's goes to **B**, not
+  C. Worth pinning in VX2-5, because the recursive reading is the intuitive one and it is a loop
+  waiting to happen (A→B, B→A).
+- **The overlapping-delegation tie-break is `ORDER BY created_at DESC`.** `activeDelegateeFor`
+  documents it as "picks the most recently created when several overlap". **This answers the open
+  question `HANDOFF` §7 records as VX2-2's to own** — 0008's comments leave the tie-break undecided,
+  and ExpenseOS has already decided it. Most-recently-created wins: the newest instruction is the
+  one the delegator meant.
+- **On-leave skipping runs on BOTH sides of the delegation.** `skipOnLeave` is applied to the base
+  assignee *and* again to the delegatee — so delegating to somebody who is themselves away still
+  lands on a present person.
+
+`skipOnLeave`'s own unavailability test is worth copying but not copying *literally*:
+
+```ts
+const unavailable =
+  u.deletedAt != null || u.employeeStatus === 'ON_LEAVE' || u.employeeStatus === 'TERMINATED';
+```
+
+That is an **allow-list by omission** — a status added to the enum later is treated as available by
+default. VeloExpense should invert it: `deleted_at IS NOT NULL OR employee_status <> 'ACTIVE'`, so a
+new status is unavailable until somebody decides otherwise. Same fail-closed direction as everything
+else in `routing.ts`. Our enum is `ACTIVE | ON_LEAVE | DEACTIVATED`, so the two forms agree *today*;
+they stop agreeing the day a `TERMINATED` or `SUSPENDED` is added, which is exactly when nobody will
+be looking at this function.
+
+### AP-17 · The AP-10 degrade, confirmed in code — plus a lesson about nullable classifications
+
+`resolveManagerChain` is the degrade AP-10 decided to port, and it is unambiguous: `mostSenior`
+tracks the last manager found, the loop returns early only when a manager's job level clears the
+bar, and the function returns `mostSenior` when it never does. `null` comes back only when the
+requester has no manager at all — which is the case AP-5's fallback owns.
+
+The header carries a *previous* bug and it generalizes past this ticket:
+
+> "Because job levels are optional on `User`, one unclassified employee anywhere in a chain was
+> enough to strand every tiered approval above the direct-manager tier."
+
+The walk used to stop at an employee whose classification was missing. The fix is the shape of the
+comparison — `if (mgr?.jobLevel && mgr.jobLevel.sortOrder >= minSort) return mgr.id;` — so an
+unclassified manager simply fails to satisfy and the walk **continues past them** rather than
+aborting. The rule: **a nullable column consulted inside a chain walk must never terminate the
+walk.** VeloExpense's walk consults `employee_status`, which is `NOT NULL DEFAULT 'ACTIVE'`, so we
+are safe today; the hazard arrives the moment VX2-2's resolver reads anything optional (a job level,
+a department, a delegation row) inside the loop.
+
+### AP-18 · **The three decisions did not close AP-2** ⚠ — a chain that is entirely on leave
+
+Flagging this because it would otherwise be discovered while writing VX2-2, and it is the same
+failure class the other decisions were made to prevent.
+
+The decisions cover two of three ways a MANAGER approver fails to produce a usable person:
+
+| the chain is… | decided answer |
+|---|---|
+| absent entirely (no `manager_id`) | `ADMIN_FALLBACK` — AP-5 |
+| shorter than `manager_level` | degrade to the most senior found — AP-10 |
+| present, long enough, and **every person in it is ON_LEAVE / DEACTIVATED** | **still undecided** |
+
+ExpenseOS's answer to the third row is in `skipOnLeave`, and it is explicit about relying on
+something we do not have:
+
+```ts
+if (!u.managerId) return cursor; // top of chain — leave it (TTL escalation covers)
+```
+
+It assigns the task to the on-leave person and lets expiry escalate. VeloExpense has no TTL
+(AP-2, AP-8), so porting that line produces a task assigned to somebody on leave that never
+escalates and never expires — a report stuck in SUBMITTED indefinitely, which is the outcome AP-13
+and AP-14 were both decided to avoid.
+
+**Proceeding on this assumption unless told otherwise:** treat "walked the whole chain, found
+nobody ACTIVE" the same as "no chain at all" and route to `ADMIN_FALLBACK`, recording the hops
+walked in `escalation_level`. It reuses a decision already taken, needs no migration, keeps a human
+in the path, and is the only one of the three rows that would otherwise fail silently rather than
+loudly. The alternative worth naming: assign to the on-leave person anyway *and* make the TTL a
+Phase-2 ticket rather than a Phase-3 one — correct, but it puts task expiry, a sweep job and a
+worker on VX2-2's critical path.
+
+### AP-19 · A live gap in our own shipped VX2-1, and ExpenseOS's fix for it
+
+`APPROVE_PERMISSION` in `engine.ts` is a literal-string copy of values owned by their `rbac`
+package, for the same reason our `APPROVER_ROLES` is declared locally in `lib/approvals/tiers.ts` —
+to keep a heavy dependency out of a module that must stay pure. Their comment names the risk and
+then closes it:
+
+> "Duplicated from `@expenseos/rbac`'s registry as literal strings because this package deliberately
+> does not depend on rbac. A rename there would silently disable the fallback here — so
+> `systemRoles.test.ts` asserts these exact strings still exist, and a rename breaks that test
+> instead of quietly re-stranding everyone with no manager."
+
+**We have the same duplication. Our exposure is narrower than theirs, and it is not zero.**
+Checked rather than assumed, because the obvious version of this finding is wrong:
+
+```
+lib/employees/service.ts:21  export type EmployeeRole = 'EMPLOYEE' | 'MANAGER' | 'ADMIN';
+lib/employees/service.ts:24  export const EMPLOYEE_ROLES: EmployeeRole[] = ['EMPLOYEE','MANAGER','ADMIN'];
+lib/approvals/tiers.ts:33    import type { EmployeeRole } from '@/lib/employees/service';
+lib/approvals/tiers.ts:59    export const APPROVER_ROLES: readonly EmployeeRole[] = ['EMPLOYEE','MANAGER','ADMIN'];
+```
+
+`tiers.ts` imports the **type** (a type-only import, erased at build, so no `pg` at runtime — the
+right call) and duplicates only the **array**. So:
+
+- **Renaming** a role is caught by the compiler, in both files. Not a risk. ExpenseOS's exposure is
+  worse than ours here because their copy is bare strings with no shared type at all, which is why
+  they needed a test.
+- **Adding** a role is the live gap. A new member of `EmployeeRole` obliges whoever adds it to
+  update `EMPLOYEE_ROLES` — which sits two lines below the type, so they will — while
+  `APPROVER_ROLES` in another file silently omits it. The new role then cannot be named as an
+  approver anywhere, `isApproverRole` returns false for it, and **no test fails**, because every
+  approvals test uses the local copy.
+
+Addition is the likely path, not the hypothetical one: `0008`'s own comment on `approver_role` says
+the vocabulary "is going to stop being the fixed EMPLOYEE|MANAGER|ADMIN triple" once per-tenant
+custom roles land.
+
+**And we can do better than their test.** A test catches this at CI; a mapped type catches it at
+`tsc`:
+
+```ts
+const APPROVER_ROLE_SET: Record<EmployeeRole, true> = { EMPLOYEE: true, MANAGER: true, ADMIN: true };
+export const APPROVER_ROLES = Object.keys(APPROVER_ROLE_SET) as readonly EmployeeRole[];
+```
+
+`Record<EmployeeRole, true>` is exhaustive by construction, so adding a role to the union breaks the
+build in this file until somebody decides whether it may approve. Same trick AP-12 asks for on every
+predicate over `approver_kind`. Still type-only, still no `pg`. Small, in shipped code, and it
+belongs with VX2-2 — which is about to add a third copy in the resolver.
 
 ---
 

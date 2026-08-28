@@ -405,8 +405,11 @@ approvals, notifications or audit entries.
    and read as tampering forever. Note `audit_entry` does NOT replace
    `expense_report_event`: that one is the report's user-facing timeline
    (from/to status), the audit log is the hash-chained compliance record across
-   every entity type. Then VX2-2's resolver — and it owns the overlapping-
-   delegation tie-break the 0008 comments leave to it.
+   every entity type. Then VX2-2's resolver. The overlapping-delegation tie-break
+   that 0008's comments leave to it is now ANSWERED from source, not invented:
+   ExpenseOS orders by `created_at DESC` — the most recently created delegation
+   wins (GAP-AUDIT AP-16, which also pins the one-hop rule: A→B, B→C means a
+   task of A's goes to B, never C).
 
    **VX2-2's spec is now settled** — see the decisions table at the top of
    `docs/porting/GAP-AUDIT.md`, and AP-1, AP-5, AP-6, AP-10, AP-13. The five things
