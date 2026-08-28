@@ -1,7 +1,7 @@
 /**
- * VX2-1 — the routing SEAM.
+ * VX2-1 — the routing SEAM. VX2-2 fills it in (`lib/approvals/resolver.ts`).
  *
- * Types only. VX2-2 implements `ApprovalRouter` here as the tiered resolver
+ * Types only. VX2-2 implements `ApprovalRouter` as the tiered resolver
  * (walk the manager chain past ON_LEAVE / DEACTIVATED, bounded depth; an active
  * delegation wins ahead of the chain; self-approval refused unconditionally; an
  * unresolvable rung escalates rather than auto-approving).
@@ -15,6 +15,7 @@
  */
 import type { QueryRunner } from '@/lib/db/client';
 import type { StepPlan, TaskResolution } from '@/lib/approvals/tiers';
+import type { EmployeeRole } from '@/lib/employees/service';
 
 /** What the resolver is routing. */
 export interface RoutingSubject {
@@ -26,14 +27,51 @@ export interface RoutingSubject {
   onDate: Date;
 }
 
+/**
+ * WHO owns a task, as a discriminated union rather than three nullable fields.
+ *
+ * This mirrors `approval_task_owner_exclusive` — `num_nonnulls(assignee_id,
+ * assignee_email, claim_role) = 1` — in the type system, so the illegal states
+ * the CHECK rejects cannot be constructed in the first place and the INSERT
+ * cannot disagree with the constraint. Same argument GAP-AUDIT AP-11 makes for
+ * VeloExpense's column model over ExpenseOS's JSON graph, applied one layer up.
+ *
+ * VX2-1 declared this as a bare `assigneeId: string`. That could not express a
+ * role-claimable task, which `0009` introduced once `DEFAULT_LADDER`'s
+ * "Finance sign-off" rung turned out to need one (GAP-AUDIT AP-7).
+ */
+export type ResolvedOwner =
+  /** An internal named approver: the common case. */
+  | { kind: 'USER'; assigneeId: string }
+  /** An external approver. Storable now, actionable at VX2-8. */
+  | { kind: 'EMAIL'; assigneeEmail: string }
+  /**
+   * A role pool: unassigned on purpose, claimable by active holders of this
+   * role. Deliberately NOT resolved to a person here — picking one would make
+   * the same authored ladder behave differently the day somebody else is given
+   * the role, which is invisible to whoever wrote the ladder.
+   */
+  | { kind: 'ROLE'; claimRole: EmployeeRole };
+
 /** One filled step: who decides, how we got to them, and how far we walked. */
 export interface ResolvedAssignment {
   step: number;
-  assigneeId: string;
+  owner: ResolvedOwner;
   resolvedVia: TaskResolution;
   /** Set only when resolvedVia is 'DELEGATION' (approval_task CHECK). */
   delegatedFromId: string | null;
-  /** Extra links walked past absent approvers. 0 = the intended approver. */
+  /**
+   * Links between the person the policy pointed at and the person who got it.
+   * 0 = the intended approver.
+   *
+   * `0008` documented this narrowly as "extra links walked past absent
+   * approvers". GAP-AUDIT AP-10 generalized it, because the resolver can also
+   * land SHORT of the intended approver: a rung naming `manager_level = 3` in a
+   * two-deep org degrades to the most senior person found rather than failing
+   * the submit. Both are a distance from the intended approver, so both are
+   * recorded here; the direction is recoverable by walking the submitter's
+   * chain to the assignee, and it is the non-zero-ness an admin acts on.
+   */
   escalationLevel: number;
 }
 
