@@ -83,6 +83,7 @@ jobs:
           GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO veloapp;
           GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO veloapp;
           ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO veloapp;
+          ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE, SELECT ON SEQUENCES TO veloapp;
           SQL
 
       - name: RLS coverage guard (every tenant table must ENABLE+FORCE RLS)
