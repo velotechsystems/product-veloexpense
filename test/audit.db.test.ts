@@ -20,6 +20,9 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { Pool } from 'pg';
 import { withOrg } from '@/lib/tenant/context';
+import { transaction } from '@/lib/db/client';
+import { append, AuditError } from '@/lib/audit/service';
+import { verifyChain } from '@/lib/audit/verify';
 
 const ADMIN_URL = process.env.ADMIN_DATABASE_URL ?? process.env.DATABASE_URL;
 if (!ADMIN_URL) {
@@ -36,8 +39,13 @@ let actorId: string;
 
 const H = (c: string) => c.repeat(64);
 
-/** Append one entry by raw SQL. `prevHash` null = a genesis row. */
-async function append(
+/**
+ * Append one entry by RAW SQL, bypassing lib/audit entirely. Named apart from
+ * the service's `append` on purpose: the constraint tests below have to reach
+ * the database directly, because what they assert is what Postgres refuses — not
+ * what the writer politely avoids.
+ */
+async function insertRaw(
   org: string,
   prevHash: string | null,
   entryHash: string,
@@ -119,7 +127,7 @@ afterAll(async () => {
 describe('append-only', () => {
   it('refuses an UPDATE and a DELETE', async () => {
     await clearChain();
-    const row = await append(orgId, null, H('a'));
+    const row = await insertRaw(orgId, null, H('a'));
     await expect(
       withOrg(orgId, (tx) =>
         tx.query('UPDATE audit_entry SET action = $2 WHERE id = $1', [row.id, 'TAMPERED']),
@@ -139,7 +147,7 @@ describe('append-only', () => {
     // The one door, and it has to be opened deliberately. A purge is an
     // auditable act; it must not be reachable by a stray UPDATE.
     await clearChain();
-    const row = await append(orgId, null, H('a'));
+    const row = await insertRaw(orgId, null, H('a'));
     await withOrg(orgId, async (tx) => {
       await tx.query("SELECT set_config('app.audit_purge', 'on', true)");
       await tx.query('DELETE FROM audit_entry WHERE id = $1', [row.id]);
@@ -153,7 +161,7 @@ describe('append-only', () => {
     // the next request on a pooled connection. Asserted because the whole
     // guarantee rests on it.
     await clearChain();
-    const row = await append(orgId, null, H('a'));
+    const row = await insertRaw(orgId, null, H('a'));
     await withOrg(orgId, async (tx) => {
       await tx.query("SELECT set_config('app.audit_purge', 'on', true)");
     });
@@ -168,8 +176,8 @@ describe('append-only', () => {
 describe('fork resistance', () => {
   it('allows exactly one genesis row per tenant', async () => {
     await clearChain();
-    await append(orgId, null, H('a'));
-    await expect(append(orgId, null, H('b'))).rejects.toThrow(/audit_entry_one_genesis_idx/);
+    await insertRaw(orgId, null, H('a'));
+    await expect(insertRaw(orgId, null, H('b'))).rejects.toThrow(/audit_entry_one_genesis_idx/);
   });
 
   it('refuses two rows claiming the same predecessor', async () => {
@@ -177,9 +185,9 @@ describe('fork resistance', () => {
     // which is application discipline; the index makes it impossible even for a
     // code path that forgot the lock.
     await clearChain();
-    await append(orgId, null, H('a'));
-    await append(orgId, H('a'), H('b'));
-    await expect(append(orgId, H('a'), H('c'))).rejects.toThrow(/audit_entry_no_fork_idx/);
+    await insertRaw(orgId, null, H('a'));
+    await insertRaw(orgId, H('a'), H('b'));
+    await expect(insertRaw(orgId, H('a'), H('c'))).rejects.toThrow(/audit_entry_no_fork_idx/);
   });
 
   it('scopes both rules PER TENANT, not globally', async () => {
@@ -188,10 +196,10 @@ describe('fork resistance', () => {
     // the first. Two tenants each get a genesis row, and each may reference the
     // same hash value as its predecessor.
     await clearChain();
-    await append(orgId, null, H('a'));
-    await append(otherOrgId, null, H('a'));
-    await append(orgId, H('a'), H('b'));
-    await expect(append(otherOrgId, H('a'), H('b'))).resolves.toBeTruthy();
+    await insertRaw(orgId, null, H('a'));
+    await insertRaw(otherOrgId, null, H('a'));
+    await insertRaw(orgId, H('a'), H('b'));
+    await expect(insertRaw(otherOrgId, H('a'), H('b'))).resolves.toBeTruthy();
   });
 });
 
@@ -200,15 +208,15 @@ describe('fork resistance', () => {
 describe('constraints', () => {
   it('requires a 64-char lowercase-hex entry hash', async () => {
     await clearChain();
-    await expect(append(orgId, null, 'not-a-hash')).rejects.toThrow(/audit_entry_hash_shape/);
-    await expect(append(orgId, null, H('A'))).rejects.toThrow(/audit_entry_hash_shape/);
-    await expect(append(orgId, null, 'a'.repeat(63))).rejects.toThrow(/audit_entry_hash_shape/);
+    await expect(insertRaw(orgId, null, 'not-a-hash')).rejects.toThrow(/audit_entry_hash_shape/);
+    await expect(insertRaw(orgId, null, H('A'))).rejects.toThrow(/audit_entry_hash_shape/);
+    await expect(insertRaw(orgId, null, 'a'.repeat(63))).rejects.toThrow(/audit_entry_hash_shape/);
   });
 
   it('refuses an actor that is both internal and external', async () => {
     await clearChain();
     await expect(
-      append(orgId, null, H('a'), { actorEmail: 'ext@vendor.test' }),
+      insertRaw(orgId, null, H('a'), { actorEmail: 'ext@vendor.test' }),
     ).rejects.toThrow(/audit_entry_actor_exclusive/);
   });
 
@@ -216,7 +224,7 @@ describe('constraints', () => {
     // VX2-8's approve-link needs this: an external approver decides, and the
     // audit has to record who without inventing a user.
     await clearChain();
-    const row = await append(orgId, null, H('a'), {
+    const row = await insertRaw(orgId, null, H('a'), {
       actorId: null,
       actorEmail: 'ext@vendor.test',
       actorName: 'ext@vendor.test',
@@ -228,22 +236,22 @@ describe('constraints', () => {
   it('requires an entity reference to be both columns or neither', async () => {
     await clearChain();
     await expect(
-      append(orgId, null, H('a'), { entityId: null }),
+      insertRaw(orgId, null, H('a'), { entityId: null }),
     ).rejects.toThrow(/audit_entry_entity_complete/);
     await expect(
-      append(orgId, null, H('b'), { entityType: null }),
+      insertRaw(orgId, null, H('b'), { entityType: null }),
     ).rejects.toThrow(/audit_entry_entity_complete/);
     await expect(
-      append(orgId, null, H('c'), { entityType: null, entityId: null }),
+      insertRaw(orgId, null, H('c'), { entityType: null, entityId: null }),
     ).resolves.toBeTruthy();
   });
 
   it('refuses a blank actor name or action', async () => {
     await clearChain();
-    await expect(append(orgId, null, H('a'), { actorName: '   ' })).rejects.toThrow(
+    await expect(insertRaw(orgId, null, H('a'), { actorName: '   ' })).rejects.toThrow(
       /audit_entry_actor_name_present/,
     );
-    await expect(append(orgId, null, H('b'), { action: '' })).rejects.toThrow(
+    await expect(insertRaw(orgId, null, H('b'), { action: '' })).rejects.toThrow(
       /audit_entry_action_present/,
     );
   });
@@ -253,7 +261,7 @@ describe('constraints', () => {
     // INSIDE the hash, so SET NULL would permanently break verification of every
     // row that actor wrote. Employees are soft-deleted in normal operation.
     await clearChain();
-    await append(orgId, null, H('a'));
+    await insertRaw(orgId, null, H('a'));
     await expect(admin.query('DELETE FROM app_user WHERE id = $1', [actorId])).rejects.toThrow(
       /audit_entry_actor_id_fkey|violates foreign key/,
     );
@@ -306,10 +314,10 @@ describe('sequence and time semantics', () => {
      * that a missing number is tampering. See GAP-AUDIT AU-6.
      */
     await clearChain();
-    const first = await append(orgId, null, H('a'));
+    const first = await insertRaw(orgId, null, H('a'));
     // A failing append still consumes a sequence value.
-    await expect(append(orgId, H('a'), 'not-a-hash')).rejects.toThrow();
-    const second = await append(orgId, H('a'), H('b'));
+    await expect(insertRaw(orgId, H('a'), 'not-a-hash')).rejects.toThrow();
+    const second = await insertRaw(orgId, H('a'), H('b'));
     expect(Number(second.sequence)).toBeGreaterThan(Number(first.sequence) + 1);
   });
 
@@ -361,5 +369,250 @@ describe('sequence and time semantics', () => {
     // And the trap that avoids: now() did not advance across the same span, so a
     // now() default would have collapsed both rows onto one instant.
     expect(out.before.getTime()).toBe(out.after.getTime());
+  });
+});
+
+/* ── the writer and the verifier ──────────────────────────────────────────── */
+
+const ADA = { id: '', name: 'Ada Admin', role: 'ADMIN' };
+
+/** Run one statement with the append-only hatch open — i.e. simulate exactly the
+ *  thing the chain exists to detect: somebody with database access editing or
+ *  removing a row by hand. */
+async function tamper(sql: string, params: unknown[] = []) {
+  await withOrg(orgId, async (tx) => {
+    await tx.query("SELECT set_config('app.audit_purge', 'on', true)");
+    await tx.query(sql, params);
+  });
+}
+
+describe('append', () => {
+  it('writes a genesis row and then links to it', async () => {
+    await clearChain();
+    const first = await withOrg(orgId, (tx) =>
+      append(tx, { ...ADA, id: actorId }, { action: 'REPORT_SUBMITTED' }),
+    );
+    expect(first.prevHash).toBeNull();
+    const second = await withOrg(orgId, (tx) =>
+      append(tx, { ...ADA, id: actorId }, { action: 'REPORT_APPROVED' }),
+    );
+    expect(second.prevHash).toBe(first.entryHash);
+    const v = await withOrg(orgId, (tx) => verifyChain(tx));
+    expect(v).toMatchObject({ ok: true, scanned: 2 });
+  });
+
+  it('starts a SEPARATE chain for a second tenant', async () => {
+    /**
+     * THE multi-tenancy test, and the one a verbatim port of ExpenseOS fails.
+     * Their head read is `ORDER BY id DESC LIMIT 1` with no tenant predicate, so
+     * tenant B's first entry would chain onto tenant A's head — and then
+     * verifying either tenant would require reading the other's rows, which RLS
+     * forbids. See GAP-AUDIT AU-1.
+     */
+    await clearChain();
+    await withOrg(orgId, (tx) => append(tx, { ...ADA, id: actorId }, { action: 'A_ONE' }));
+    await withOrg(orgId, (tx) => append(tx, { ...ADA, id: actorId }, { action: 'A_TWO' }));
+    const b = await withOrg(otherOrgId, (tx) =>
+      append(tx, { id: null, email: 'ext@vendor.test', name: 'Ext', role: 'EXTERNAL' }, {
+        action: 'B_ONE',
+      }),
+    );
+    // B's first row is a GENESIS row, not a link onto A's head.
+    expect(b.prevHash).toBeNull();
+    // Both chains verify on their own, seeing only their own rows.
+    expect(await withOrg(orgId, (tx) => verifyChain(tx))).toMatchObject({ ok: true, scanned: 2 });
+    expect(await withOrg(otherOrgId, (tx) => verifyChain(tx))).toMatchObject({
+      ok: true,
+      scanned: 1,
+    });
+  });
+
+  it('round-trips details, ip and an external actor through the hash', async () => {
+    // Verification recomputes from what the database returns, so every column in
+    // the payload has to survive the round trip byte-identically — a jsonb key
+    // reorder, an inet normalization or a timestamp truncation would all show up
+    // here as an entry-hash mismatch.
+    await clearChain();
+    await withOrg(orgId, (tx) =>
+      append(
+        tx,
+        { id: null, email: 'ext@vendor.test', name: 'External Signer', role: 'EXTERNAL' },
+        {
+          action: 'REPORT_APPROVED',
+          entityType: 'expense_report',
+          entityId: '00000000-0000-4000-8000-00000000000a',
+          // Keys deliberately out of alphabetical order, and an amount as a
+          // STRING as AU-5 requires.
+          details: { totalMinor: '123456', currency: 'CAD', nested: { b: 1, a: [2, 3] } },
+          ipAddress: '203.0.113.42',
+          requestId: '00000000-0000-4000-8000-00000000000b',
+          userAgent: 'vitest',
+        },
+      ),
+    );
+    expect(await withOrg(orgId, (tx) => verifyChain(tx))).toMatchObject({ ok: true, scanned: 1 });
+  });
+
+  it('refuses a BigInt in details, inside the transaction', async () => {
+    await clearChain();
+    await expect(
+      withOrg(orgId, (tx) =>
+        append(tx, { ...ADA, id: actorId }, {
+          action: 'X',
+          details: { totalMinor: 100000n } as unknown as Record<string, unknown>,
+        }),
+      ),
+    ).rejects.toThrow(/BigInt/);
+    // Nothing was written — the throw happened before the INSERT.
+    const left = await withOrg(orgId, (tx) => tx.query('SELECT 1 FROM audit_entry'));
+    expect(left.rows).toHaveLength(0);
+  });
+
+  it('rejects a malformed actor or entity reference with a sentence', async () => {
+    await clearChain();
+    const bad = (actor: Parameters<typeof append>[1], input: Parameters<typeof append>[2]) =>
+      withOrg(orgId, (tx) => append(tx, actor, input));
+    await expect(
+      bad({ id: actorId, email: 'both@x.test', name: 'N', role: 'ADMIN' }, { action: 'X' }),
+    ).rejects.toBeInstanceOf(AuditError);
+    await expect(bad({ id: null, name: 'N', role: 'ADMIN' }, { action: 'X' })).rejects.toBeInstanceOf(
+      AuditError,
+    );
+    await expect(bad({ ...ADA, id: actorId }, { action: '  ' })).rejects.toBeInstanceOf(AuditError);
+    await expect(
+      bad({ ...ADA, id: actorId }, { action: 'X', entityType: 'expense_report' }),
+    ).rejects.toBeInstanceOf(AuditError);
+  });
+
+  it('refuses to write outside a tenant context', async () => {
+    // An audit append with no app.current_org is a caller bug. Saying so beats
+    // an RLS policy violation, which is what would happen otherwise.
+    await expect(
+      transaction((tx) => append(tx, { ...ADA, id: actorId }, { action: 'X' })),
+    ).rejects.toThrow(/no tenant context/);
+  });
+});
+
+describe('verifyChain', () => {
+  it('detects an edited row and names it', async () => {
+    await clearChain();
+    await withOrg(orgId, (tx) => append(tx, { ...ADA, id: actorId }, { action: 'ONE' }));
+    const target = await withOrg(orgId, (tx) =>
+      append(tx, { ...ADA, id: actorId }, { action: 'TWO' }),
+    );
+    await withOrg(orgId, (tx) => append(tx, { ...ADA, id: actorId }, { action: 'THREE' }));
+
+    await tamper('UPDATE audit_entry SET action = $2 WHERE id = $1', [target.id, 'TAMPERED']);
+
+    const v = await withOrg(orgId, (tx) => verifyChain(tx));
+    expect(v.ok).toBe(false);
+    if (v.ok) throw new Error('unreachable');
+    expect(v.reason).toBe('entry-hash-mismatch');
+    // Diagnostics have to identify the row, or an admin cannot act on them.
+    expect(v.at.id).toBe(target.id);
+    expect(v.at.recomputedEntry).not.toBe(v.at.storedEntry);
+    // …and it stopped AT the bad row rather than plowing on.
+    expect(v.scanned).toBe(1);
+  });
+
+  it('detects a removed middle row', async () => {
+    // The chain's whole job. Sequence contiguity would NOT catch this reliably —
+    // gaps are normal — so the prev_hash link is what does the work.
+    await clearChain();
+    await withOrg(orgId, (tx) => append(tx, { ...ADA, id: actorId }, { action: 'ONE' }));
+    const middle = await withOrg(orgId, (tx) =>
+      append(tx, { ...ADA, id: actorId }, { action: 'TWO' }),
+    );
+    await withOrg(orgId, (tx) => append(tx, { ...ADA, id: actorId }, { action: 'THREE' }));
+
+    await tamper('DELETE FROM audit_entry WHERE id = $1', [middle.id]);
+
+    const v = await withOrg(orgId, (tx) => verifyChain(tx));
+    expect(v).toMatchObject({ ok: false, reason: 'prev-hash-mismatch', scanned: 1 });
+  });
+
+  it('reconciles a retention purge through the stored watermark', async () => {
+    /**
+     * GAP-AUDIT AU-4. After a purge the oldest surviving row's prev_hash points
+     * at a row that no longer exists, which is indistinguishable from tampering.
+     * ExpenseOS passes the watermark per call because its chain is global; ours
+     * is stored per tenant, so verification needs no special argument.
+     */
+    await clearChain();
+    const one = await withOrg(orgId, (tx) =>
+      append(tx, { ...ADA, id: actorId }, { action: 'ONE' }),
+    );
+    await withOrg(orgId, (tx) => append(tx, { ...ADA, id: actorId }, { action: 'TWO' }));
+
+    await tamper('DELETE FROM audit_entry WHERE id = $1', [one.id]);
+
+    // Without the watermark this reads as tampering — correctly, because from
+    // the verifier's side it is exactly what tampering looks like.
+    expect(await withOrg(orgId, (tx) => verifyChain(tx))).toMatchObject({
+      ok: false,
+      reason: 'prev-hash-mismatch',
+    });
+
+    await admin.query(
+      `UPDATE organization
+          SET audit_purged_through_sequence = $2, audit_purged_head_hash = $3
+        WHERE id = $1`,
+      [orgId, one.sequence, one.entryHash],
+    );
+    expect(await withOrg(orgId, (tx) => verifyChain(tx))).toMatchObject({ ok: true, scanned: 1 });
+
+    await admin.query(
+      `UPDATE organization
+          SET audit_purged_through_sequence = NULL, audit_purged_head_hash = NULL
+        WHERE id = $1`,
+      [orgId],
+    );
+  });
+
+  it('proves integrity AT a window boundary, not just inside it', async () => {
+    // A window starting mid-chain reads the row before it to seed the expected
+    // prev_hash. Without that, a verify of rows 2..3 would happily accept a
+    // forged row 2.
+    await clearChain();
+    await withOrg(orgId, (tx) => append(tx, { ...ADA, id: actorId }, { action: 'ONE' }));
+    const two = await withOrg(orgId, (tx) =>
+      append(tx, { ...ADA, id: actorId }, { action: 'TWO' }),
+    );
+    const three = await withOrg(orgId, (tx) =>
+      append(tx, { ...ADA, id: actorId }, { action: 'THREE' }),
+    );
+
+    expect(
+      await withOrg(orgId, (tx) => verifyChain(tx, { fromSequence: two.sequence })),
+    ).toMatchObject({ ok: true, scanned: 2, firstSequence: two.sequence });
+
+    await tamper('UPDATE audit_entry SET action = $2 WHERE id = $1', [two.id, 'FORGED']);
+    // The window still catches it, because the seed came from row one.
+    expect(
+      await withOrg(orgId, (tx) => verifyChain(tx, { fromSequence: two.sequence })),
+    ).toMatchObject({ ok: false, reason: 'entry-hash-mismatch' });
+    expect(three.prevHash).toBe(two.entryHash);
+  });
+
+  it('walks a chain longer than one batch', async () => {
+    // The paging cursor is off-by-one bait: a batch boundary that re-reads or
+    // skips a row would either double-count or break the prev_hash link.
+    await clearChain();
+    for (let i = 0; i < 7; i += 1) {
+      await withOrg(orgId, (tx) => append(tx, { ...ADA, id: actorId }, { action: `E${i}` }));
+    }
+    expect(await withOrg(orgId, (tx) => verifyChain(tx, { batchSize: 2 }))).toMatchObject({
+      ok: true,
+      scanned: 7,
+    });
+  });
+
+  it('is ok on an empty chain', async () => {
+    await clearChain();
+    expect(await withOrg(orgId, (tx) => verifyChain(tx))).toMatchObject({
+      ok: true,
+      scanned: 0,
+      firstSequence: null,
+    });
   });
 });
