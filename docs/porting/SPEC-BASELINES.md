@@ -69,12 +69,77 @@ Tagged and pushed 2026-08-27 from the `~/ExpenseOS` clone. ExpenseOS is a monore
 routers live under `apps/web/src/server/routers/`, and shared logic lives in `packages/*`
 (`@expenseos/audit`, `@expenseos/rbac`, `@expenseos/db`, …).
 
-> **⚠ THESE PATHS ARE ROUTERS ONLY, AND THAT MAKES THE DELTA DIFF INCOMPLETE.**
-> A router is the API surface; the behavior it calls lives in `packages/*` and the Prisma schema.
-> A change to, say, the policy rule engine inside a package would **not** appear in a diff of
-> `policies.ts`. The tags themselves are correct — a tag is just a commit — but the path list each
-> module diffs against still needs widening to include its packages and the schema. Do that before
-> relying on a delta diff to mean "nothing changed".
+### Full diff paths per module
+
+ExpenseOS is a pnpm-style monorepo: `apps/web/src/server/routers/*.ts` is the API surface, the
+behavior lives in `packages/*/src`, and the schema is `packages/db/prisma/schema.prisma`. A router
+diff alone misses the logic, so each module's re-sync command below covers its routers **and** its
+packages **and** the schema. Brace expansion is the shell's, not git's — paste these into zsh/bash
+as written.
+
+```bash
+# reference-data
+git diff veloexpense-spec/reference-data-20260827..origin/main -- \
+  apps/web/src/server/routers/{businessUnits,departments,expenseCategories,legalEntities}.ts \
+  packages/db/prisma/schema.prisma
+
+# employees-org      (packages/rbac = the permission registry + role builder)
+git diff veloexpense-spec/employees-org-20260827..origin/main -- \
+  apps/web/src/server/routers/{users,roles,adminLookup}.ts \
+  packages/rbac/src packages/db/prisma/schema.prisma
+
+# expense-reports    (money + expense-lines are where the arithmetic lives)
+git diff veloexpense-spec/expense-reports-20260827..origin/main -- \
+  apps/web/src/server/routers/expenses.ts \
+  packages/expense-lines/src packages/money/src packages/db/prisma/schema.prisma
+
+# receipts           (storage = presigned upload; receipt-extraction = OCR, not ported)
+git diff veloexpense-spec/receipts-20260827..origin/main -- \
+  apps/web/src/server/routers/expenses.ts \
+  packages/storage/src packages/receipt-extraction/src packages/db/prisma/schema.prisma
+
+# policy-engine      (predicate = the matchCondition DSL VX1-7 deliberately trimmed)
+git diff veloexpense-spec/policy-engine-20260827..origin/main -- \
+  apps/web/src/server/routers/policies.ts \
+  packages/predicate/src packages/db/prisma/schema.prisma
+
+# approvals          (packages/approvals = the ~5,400-LOC graph engine)
+git diff veloexpense-spec/approvals-20260827..origin/main -- \
+  apps/web/src/server/routers/{expenseApprovals,approvalWorkflows,delegations}.ts \
+  packages/approvals/src packages/db/prisma/schema.prisma
+```
+
+When `audit` and `notifications` get baselined, their paths are:
+
+```bash
+# audit         apps/web/src/server/routers/audit.ts packages/audit/src packages/jobs/src
+# notifications apps/web/src/server/routers/{notifications,notificationTemplates}.ts \
+#               packages/notifications/src packages/jobs/src
+```
+
+### The 25 packages, and which matter to us
+
+`api-scopes` `approvals` `assistant` `audit` `db` `design-system` `expense-lines` `fraud` `i18n`
+`integrations-google` `integrations-netsuite` `jobs` `mcp-server` `money` `notifications`
+`platform` `predicate` `rbac` `receipt-extraction` `storage` `tax` `travel-lines` `travel-search`
+
+Direct counterparts to VeloExpense code, and therefore **the highest-value gap-audit targets**:
+
+| ExpenseOS package | VeloExpense counterpart | Note |
+| --- | --- | --- |
+| `packages/money/src` | `lib/money.ts` (80 lines, hand-rolled) | Money math is where edge cases hide, and the GA audit's **CAD-exclusion-from-totals** defect most likely lives here or in `expense-lines`. Audit this first. |
+| `packages/expense-lines/src` | `lib/expenses/service.ts` line-item paths | Line totals, tax, mileage. |
+| `packages/storage/src` | `lib/storage/` | Presigned upload seam — ours was written independently. |
+| `packages/approvals/src` | `lib/approvals/` | **The graph engine. Never read before VX2-1 was designed** — this is the package whose existence the Differences Chart summarises as "~5,400-LOC graph engine". Read it before VX2-2/VX2-3 even though the graph itself stays out of the default path: the resolver, absence-walking and delegation semantics are in here. |
+| `packages/predicate/src` | *(none — trimmed)* | The `matchCondition` DSL. VX1-7 deliberately shipped without it; if a predicate DSL is ever wanted, port rather than invent. |
+| `packages/rbac/src` | `app_user.role` + pure predicates | ExpenseOS has a role builder + permission registry. The Differences Chart requires per-tenant custom roles, which is why `approval_policy_approver.approver_role` has no CHECK constraint. |
+| `packages/audit/src` | VX2-6 (not yet written) | Read: `chain.ts`, `writer.ts`, `verify.ts`, `canonical.ts`, `types.ts`. |
+| `packages/notifications/src`, `packages/jobs/src` | VX2-7 / VX2-8 | `jobs` also holds `audit-purge`, `notification-dispatch`, `channels`. |
+| `packages/design-system/src` | `lib-ui-kit` + `app/expenses/ui.tsx` | ExpenseOS's own primitives — the ones the plan says to retire in favour of lib-ui-kit. Do **not** port from here. |
+
+Out of MVP scope, nothing ported, no baseline needed: `travel-lines`, `travel-search`, `tax`,
+`fraud`, `integrations-netsuite`, `integrations-google`, `assistant`, `mcp-server`, `i18n`,
+`api-scopes`, `platform`.
 
 **Not baselined yet, on purpose:** `audit` (VX2-6) and `notifications` (VX2-7/VX2-8). Tagging them
 at `fb1cead` would claim we ported from a commit nobody has read. They get a baseline at whatever
