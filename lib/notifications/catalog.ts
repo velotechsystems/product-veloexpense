@@ -1,0 +1,452 @@
+/**
+ * VX2-7 — the notification catalog: what can be notified about, what the
+ * sentence says, and which stored template (if any) overrides it.
+ *
+ * PURE. No `pg`, no imports from `lib/db` — the same rule `lib/policy/rules.ts`
+ * and `lib/approvals/approver-token.ts` follow, so the truth table can be
+ * unit-tested without a database and so a server component can import the
+ * taxonomy without dragging a connection pool into the bundle.
+ *
+ * Ported from ExpenseOS `packages/notifications/src/{activity,templates,
+ * templateKeys}.ts` and `apps/worker/src/channels.ts`. Findings: GAP-AUDIT
+ * NT-3 through NT-10.
+ *
+ * ── The one design decision to understand ───────────────────────────────────
+ *
+ * A template is identified by a stable KEY, not by the coordinates the
+ * dispatcher happens to arrive with. The Phase-2 board asked for
+ * "exact -> any-subject -> shipped catalog string"; that middle rung is not a
+ * feature, it is what a nullable `subject_type` KEY COLUMN looks like from the
+ * outside, and ExpenseOS deleted it after writing down why:
+ *
+ *   "Templates used to be keyed on (channel, eventType, subjectType, locale).
+ *    That was not an identity, it was a set of coordinates … A flat catalog
+ *    entry produced a row whose subject was NULL and therefore rendered as
+ *    'Any'; a nested block produced one whose subject was its block name.
+ *    Nothing chose that mix — it fell out of the JSON."
+ *
+ * So `(event_type, subject_type) -> key` is a LOOKUP TABLE here, deliberately
+ * not a naming rule. ExpenseOS's reason, which is the good one: one key
+ * legitimately serves several coordinate pairs, and "a rule producing
+ * `virtual_credit_cards.request_issued` for one of them would be a rule quietly
+ * inventing a second template."
+ */
+
+/* ── the taxonomy ──────────────────────────────────────────────────────────── */
+
+/**
+ * What a notification can be ABOUT. Polymorphic, because VX2-8's approve-links
+ * and any later travel or card subject route through the same machinery.
+ * 'EXPENSE_REPORT' is the only value today and VCC/Travel are off for MVP.
+ */
+export const SUBJECT_TYPES = ['EXPENSE_REPORT'] as const;
+export type SubjectType = (typeof SUBJECT_TYPES)[number];
+
+/**
+ * What HAPPENED. Five events, and the list is exactly what VX2-7 emits — no
+ * more. `REIMBURSED` belongs to VX2-9 and is deliberately absent: an event type
+ * nothing emits is a template nobody can test and a preference row nobody can
+ * explain.
+ *
+ * Notably NOT here, and this is a choice rather than an omission: `SUBMITTED`.
+ * ExpenseOS has it, addressed to watchers of a card request. Here the person who
+ * clicked Submit does not need telling that they clicked Submit, and the
+ * approver learns about it through TASK_ASSIGNED, which is the event that
+ * actually concerns them.
+ */
+export const EVENT_TYPES = [
+  /** A task was routed to you (or to a role pool you hold). */
+  'TASK_ASSIGNED',
+  /** The report cleared its LAST step. Addressed to the submitter. */
+  'APPROVED',
+  'REJECTED',
+  'RETURNED',
+  /** The submitter withdrew a submitted report before a decision. Addressed to
+   *  the approvers whose pending tasks were just cancelled — "you no longer
+   *  need to look at this" is a notification, and its absence is why a recalled
+   *  report sits in a queue looking live. */
+  'RECALLED',
+] as const;
+export type EventType = (typeof EVENT_TYPES)[number];
+
+/**
+ * Where a notification can go. IN_APP is the always-on core channel and the only
+ * one VX2-7 delivers; EMAIL and SLACK arrive with VX2-8's worker and read the
+ * same rows.
+ */
+export const CHANNELS = ['IN_APP', 'EMAIL', 'SLACK'] as const;
+export type Channel = (typeof CHANNELS)[number];
+
+export function isEventType(value: string): value is EventType {
+  return (EVENT_TYPES as readonly string[]).includes(value);
+}
+export function isChannel(value: string): value is Channel {
+  return (CHANNELS as readonly string[]).includes(value);
+}
+
+/* ── channel defaults ─────────────────────────────────────────────────────── */
+
+/**
+ * What a channel does when the user has expressed no opinion.
+ *
+ * The asymmetry is ExpenseOS's and it is right: email is opt-OUT, Slack is
+ * opt-IN. An unasked-for email is an annoyance; an unasked-for DM is an
+ * intrusion. IN_APP defaults on for everything, because a bell that is silent
+ * until configured is a product that appears not to work.
+ *
+ * ExpenseOS's one per-type exception is `COMMENT`, which defaults to in-app only
+ * "(no email noise / storms)". VeloExpense has no COMMENT event yet, so the
+ * table below is uniform — the exception is recorded here rather than in a
+ * comment somewhere else, so that adding comments later has an obvious home.
+ */
+const CHANNEL_DEFAULTS: Record<Channel, boolean> = {
+  IN_APP: true,
+  EMAIL: true,
+  SLACK: false,
+};
+
+/** One user's overrides, as `${eventType}:${channel}` -> enabled. */
+export type PreferenceMap = ReadonlyMap<string, boolean>;
+
+export function preferenceKey(eventType: string, channel: Channel): string {
+  return `${eventType}:${channel}`;
+}
+
+/**
+ * Whether `channel` is on for `eventType`: the user's override wins, else the
+ * default.
+ *
+ * THE STORED MAP HOLDS ONLY OVERRIDES, and that property is load-bearing rather
+ * than an optimisation (GAP-AUDIT NT-3). ExpenseOS reads
+ * `prefs[type]?.email ?? def.email` for exactly this reason: adding an event
+ * type then needs no backfill, no migration, and no rewrite of anybody's stored
+ * preferences. A representation that stored every type x channel explicitly
+ * would need a data migration per new event.
+ */
+export function channelEnabled(
+  eventType: string,
+  channel: Channel,
+  overrides: PreferenceMap,
+): boolean {
+  const override = overrides.get(preferenceKey(eventType, channel));
+  return override ?? CHANNEL_DEFAULTS[channel];
+}
+
+/** All three answers at once, for the fan-out. */
+export function resolveChannels(
+  eventType: string,
+  overrides: PreferenceMap,
+): Record<Channel, boolean> {
+  return {
+    IN_APP: channelEnabled(eventType, 'IN_APP', overrides),
+    EMAIL: channelEnabled(eventType, 'EMAIL', overrides),
+    SLACK: channelEnabled(eventType, 'SLACK', overrides),
+  };
+}
+
+/** The default, for a UI that wants to show what "no opinion" means. */
+export function channelDefault(channel: Channel): boolean {
+  return CHANNEL_DEFAULTS[channel];
+}
+
+/* ── template keys ────────────────────────────────────────────────────────── */
+
+/**
+ * Shape of a template key: `<owner>.<name>`, both snake_case. Ported verbatim
+ * from ExpenseOS, and `0011` carries the same expression as a CHECK constraint —
+ * so the database refuses a malformed key and this file refuses an unowned one.
+ *
+ * REJECTS: kebab-case, more than one dot, uppercase, a leading digit or
+ * underscore in either half, a trailing underscore or dot, doubled underscores,
+ * spaces, and an empty half.
+ */
+export const TEMPLATE_KEY_PATTERN =
+  /^[a-z][a-z0-9]*(?:_[a-z0-9]+)*\.[a-z][a-z0-9]*(?:_[a-z0-9]+)*$/;
+
+/**
+ * Owners a key may claim.
+ *
+ * One entry today, which makes the closed list look like ceremony. It is not:
+ * ExpenseOS's reason is prospective and it is the reason to establish the
+ * convention while there is one owner rather than after there are four — "so two
+ * features cannot both invent `request_submitted` and collide, and so a key says
+ * which part of the product is responsible for the sentence."
+ *
+ * The list lives here and NOT in `0011`'s CHECK constraint on purpose: adding a
+ * module must not need a migration.
+ */
+export const TEMPLATE_KEY_OWNERS = ['expense_management'] as const;
+export type TemplateKeyOwner = (typeof TEMPLATE_KEY_OWNERS)[number];
+
+/** True when `key` is well-formed AND owned by a known part of the product. */
+export function isTemplateKey(key: string): boolean {
+  if (!TEMPLATE_KEY_PATTERN.test(key)) return false;
+  const owner = key.slice(0, key.indexOf('.'));
+  return (TEMPLATE_KEY_OWNERS as readonly string[]).includes(owner);
+}
+
+/** Locale-keyed text. EN-only today; French is on the board's deferred list. */
+export type LocaleMap = Partial<Record<'en' | 'fr-CA', string>>;
+export const DEFAULT_LOCALE = 'en' as const;
+
+export interface TemplateKeyDef {
+  key: string;
+  /** Shown in the admin list. */
+  name: string;
+  /** One line: when does this fire, and who receives it. */
+  description: string;
+  /**
+   * The runtime `(eventType, subjectType)` pairs that render with this key. Many
+   * pairs may share one key; one pair never has two — enforced at module load
+   * below.
+   */
+  events: readonly (readonly [EventType, SubjectType])[];
+  /**
+   * The copy the product ships, and the fallback whenever no stored template
+   * answers. Locale-keyed for the same reason the column is (see `0011`).
+   *
+   * ExpenseOS reads this from an i18n catalog and keeps `legacyEvent` /
+   * `legacySubject` on each entry to find the right path. VeloExpense has no
+   * catalog and no legacy table, so the copy lives here — one place, no path to
+   * derive, and nothing to drift.
+   */
+  shipped: LocaleMap;
+}
+
+/**
+ * Every message the product ships.
+ *
+ * The placeholders available to a template are exactly `RESERVED_PLACEHOLDERS`
+ * plus whatever scalars the emitting call puts in the activity payload. An
+ * unknown placeholder renders VERBATIM rather than blank — see
+ * `applyPlaceholders`.
+ */
+export const TEMPLATE_KEYS: readonly TemplateKeyDef[] = [
+  {
+    key: 'expense_management.report_awaiting_approval',
+    name: 'Report awaiting your approval',
+    description: 'An approval step on an expense report was routed to the recipient.',
+    events: [['TASK_ASSIGNED', 'EXPENSE_REPORT']],
+    shipped: { en: '{actor} needs your approval on {report} ({total}).' },
+  },
+  {
+    key: 'expense_management.report_approved',
+    name: 'Report approved',
+    description: 'An expense report cleared its last approval step. Sent to the submitter.',
+    events: [['APPROVED', 'EXPENSE_REPORT']],
+    shipped: { en: '{actor} approved {report}. It is ready for reimbursement.' },
+  },
+  {
+    key: 'expense_management.report_rejected',
+    name: 'Report rejected',
+    description: 'An approver rejected an expense report. Sent to the submitter.',
+    events: [['REJECTED', 'EXPENSE_REPORT']],
+    shipped: { en: '{actor} rejected {report}.' },
+  },
+  {
+    key: 'expense_management.report_returned',
+    name: 'Report returned for changes',
+    description: 'An approver sent an expense report back to the submitter to amend.',
+    events: [['RETURNED', 'EXPENSE_REPORT']],
+    shipped: { en: '{actor} returned {report} for changes.' },
+  },
+  {
+    key: 'expense_management.report_recalled',
+    name: 'Report withdrawn',
+    description:
+      'A submitter withdrew a report before it was decided. Sent to the approvers whose ' +
+      'pending tasks were cancelled.',
+    events: [['RECALLED', 'EXPENSE_REPORT']],
+    shipped: { en: '{actor} withdrew {report}. It no longer needs your approval.' },
+  },
+];
+
+export const TEMPLATE_KEY_BY_KEY: ReadonlyMap<string, TemplateKeyDef> = new Map(
+  TEMPLATE_KEYS.map((d) => [d.key, d]),
+);
+
+/**
+ * `${eventType} ${subjectType}` -> key. Built once at module load.
+ *
+ * The throw is ExpenseOS's and it is worth keeping: "Two keys claiming one
+ * activity is unresolvable at runtime — whichever won would depend on array
+ * order, which is not a decision anybody made." It fires at import, so a bad
+ * registry fails the build's first test rather than one delivery in production.
+ */
+const EVENT_KEY_MAP: ReadonlyMap<string, string> = (() => {
+  const map = new Map<string, string>();
+  for (const def of TEMPLATE_KEYS) {
+    if (!isTemplateKey(def.key)) {
+      throw new Error(`[notifications] "${def.key}" is not a valid template key`);
+    }
+    for (const [eventType, subjectType] of def.events) {
+      const pair = `${eventType} ${subjectType}`;
+      const existing = map.get(pair);
+      if (existing && existing !== def.key) {
+        throw new Error(
+          `[notifications] (${eventType}, ${subjectType}) is claimed by both ` +
+            `"${existing}" and "${def.key}"`,
+        );
+      }
+      map.set(pair, def.key);
+    }
+  }
+  return map;
+})();
+
+/**
+ * The template key for one activity, or null when nothing has copy for it.
+ *
+ * NULL IS NOT AN ERROR. It means "render the shipped string", and it is
+ * deliberately possible: there is no compile-time exhaustiveness guard forcing
+ * every event type into the registry, which is a considered non-divergence
+ * rather than an oversight (GAP-AUDIT NT-8). AP-19 went the other way — a
+ * `Record<EmployeeRole, true>` over approver roles — and the difference is what a
+ * miss costs. An unmapped approver role is a rung that routes nowhere. An
+ * unmapped event degrades to a working notification with shipped wording, so
+ * requiring authored copy before an event can exist would make the taxonomy
+ * expensive to grow for no safety gained.
+ */
+export function templateKeyFor(eventType: string, subjectType: string | null): string | null {
+  if (!subjectType) return null;
+  return EVENT_KEY_MAP.get(`${eventType} ${subjectType}`) ?? null;
+}
+
+/** Every mapped pair, for tests and for the admin list. */
+export function mappedEventPairs(): { eventType: string; subjectType: string; key: string }[] {
+  return [...EVENT_KEY_MAP.entries()].map(([pair, key]) => {
+    const [eventType, subjectType] = pair.split(' ') as [string, string];
+    return { eventType, subjectType, key };
+  });
+}
+
+/* ── rendering ────────────────────────────────────────────────────────────── */
+
+/**
+ * Placeholder names the notification MACHINERY supplies, as opposed to the ones
+ * an emitting call puts in the payload.
+ *
+ * The distinction is not pedantry — it is which names are safe. These are applied
+ * AFTER the payload, so a payload key cannot shadow them (ExpenseOS's rule, and
+ * there is a test for it). Without the ordering, an activity payload carrying
+ * `actor` could make a template say whatever it liked about who did something.
+ */
+export const RESERVED_PLACEHOLDERS = ['actor'] as const;
+export type ReservedPlaceholder = (typeof RESERVED_PLACEHOLDERS)[number];
+
+/**
+ * Names every EXPENSE_REPORT event's payload is expected to carry.
+ *
+ * A CONVENTION, not a guarantee: they come from the payload like any other
+ * scalar, so they are shadowable and an emitter that forgets one leaves
+ * `{total}` visible in the sentence. That is the intended failure — see
+ * `applyPlaceholders` on why an unknown placeholder renders verbatim. One place
+ * fills them (`reportPayload` in `service.ts`) so a new caller cannot invent a
+ * fourth spelling of "the report's title".
+ */
+export const REPORT_PLACEHOLDERS = ['report', 'number', 'total'] as const;
+
+export type PlaceholderValues = Readonly<Record<string, string | number>>;
+
+/**
+ * Replace `{name}` with `values[name]`; leave an unknown placeholder IN PLACE.
+ *
+ * Two rules, both ported verbatim with their reasons:
+ *
+ * 1. Substitution is deliberately dumb. Named `{placeholder}` replacement and
+ *    nothing else — "No expressions, no property access, no conditionals. A
+ *    template editor that evaluates expressions against the notification context
+ *    is an injection surface and a support burden, and the need it serves is
+ *    rewording sentences."
+ * 2. An unknown placeholder is left verbatim rather than blanked — "`{amont}` in
+ *    the output is a visible typo somebody fixes, whereas an empty gap reads as
+ *    a product bug and hides the cause."
+ */
+export function applyPlaceholders(source: string, values: PlaceholderValues): string {
+  return source.replace(/\{(\w+)\}/g, (whole, key: string) =>
+    key in values ? String(values[key]) : whole,
+  );
+}
+
+/**
+ * Only SCALAR payload entries become placeholder values.
+ *
+ * ExpenseOS's reason, and the failure it prevents: "Scalar payload entries
+ * become placeholders, so a template can say 'report {number} is missing
+ * {missing} receipt(s)' without this handler knowing anything about receipts.
+ * Non-scalars (arrays like ADJUSTED's `fields`) are dropped rather than
+ * stringified as '[object Object]'."
+ *
+ * `null`, `undefined` and booleans are dropped too. A booleaned sentence reads
+ * as "your report was true", and a dropped placeholder renders as `{flag}`,
+ * which is at least visibly wrong.
+ */
+export function placeholderValuesFrom(payload: unknown): Record<string, string | number> {
+  const out: Record<string, string | number> = {};
+  if (payload === null || typeof payload !== 'object' || Array.isArray(payload)) return out;
+  for (const [k, v] of Object.entries(payload as Record<string, unknown>)) {
+    if (typeof v === 'string' || typeof v === 'number') out[k] = v;
+  }
+  return out;
+}
+
+/** Read one locale out of a locale-keyed map, falling back to `en`. */
+export function localized(map: unknown, locale: string = DEFAULT_LOCALE): string | null {
+  if (map === null || typeof map !== 'object' || Array.isArray(map)) return null;
+  const m = map as Record<string, unknown>;
+  const exact = m[locale];
+  if (typeof exact === 'string' && exact.length > 0) return exact;
+  const fallback = m[DEFAULT_LOCALE];
+  return typeof fallback === 'string' && fallback.length > 0 ? fallback : null;
+}
+
+/** One version's locale-keyed columns, as stored. */
+export interface TemplateContent {
+  subject?: unknown;
+  body: unknown;
+}
+
+/**
+ * Render stored template content in one locale — PURE, and the only place the
+ * locale maps are unwrapped.
+ *
+ * It takes CONTENT rather than a key, and that split is ported even though VX2-7
+ * ships no draft/preview (GAP-AUDIT NT-7). ExpenseOS's reason: "preview has to
+ * render a version that is not published, and delivery must never render one
+ * that is. Keeping the rendering identical while the SELECTION differs is the
+ * whole point of the split."
+ *
+ * Returns null when the content carries no text for the locale or its fallback,
+ * so the caller drops to the shipped string instead of sending an empty message.
+ * A half-authored template is a MISS, not an empty body.
+ */
+export function renderContent(
+  content: TemplateContent,
+  locale: string,
+  values: PlaceholderValues = {},
+): { subject: string | null; body: string } | null {
+  const body = localized(content.body, locale);
+  if (body === null) return null;
+  const subject = localized(content.subject, locale);
+  return {
+    subject: subject === null ? null : applyPlaceholders(subject, values),
+    body: applyPlaceholders(body, values),
+  };
+}
+
+/**
+ * The shipped sentence for an event, with no database involved.
+ *
+ * Last resort is the event type itself, as ExpenseOS's `renderMessage` does
+ * (`?? type`): an event with no registry entry renders as `TASK_ASSIGNED`, which
+ * is ugly and unmistakably a missing-copy bug rather than a blank row.
+ */
+export function shippedBody(
+  eventType: string,
+  subjectType: string | null,
+  locale: string = DEFAULT_LOCALE,
+): string {
+  const key = templateKeyFor(eventType, subjectType);
+  const def = key ? TEMPLATE_KEY_BY_KEY.get(key) : undefined;
+  return (def && localized(def.shipped, locale)) || eventType;
+}

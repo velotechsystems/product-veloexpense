@@ -183,6 +183,38 @@ beforeAll(async () => {
           (label === 'A' ? 'a' : 'b').repeat(64),
         ],
       );
+      // VX2-7: the notification core from migration 0011 — activity,
+      // notification, notification_preference, notification_template.
+      //
+      // `activity.subject_id` is the reason this block matters more than a
+      // box-tick. It is a polymorphic uuid with NO foreign key — it cannot have
+      // one — so unlike every other tenant table here there is no FK acting as a
+      // second line of defence, and RLS is the whole guard (GAP-AUDIT NT-1).
+      const activity = await tx.query(
+        `INSERT INTO activity
+           (organization_id, subject_type, subject_id, event_type, actor_id, payload)
+         VALUES ($1, 'EXPENSE_REPORT', $2, 'APPROVED', $3, $4::jsonb)
+         RETURNING id`,
+        [org, report, approver.rows[0].id, JSON.stringify({ report: `Report ${label}` })],
+      );
+      await tx.query(
+        `INSERT INTO notification (organization_id, activity_id, recipient_id)
+         SELECT $1, $2, id FROM app_user WHERE organization_id = $1 AND email = $3`,
+        [org, activity.rows[0].id, owner],
+      );
+      await tx.query(
+        `INSERT INTO notification_preference
+           (organization_id, user_id, event_type, channel, enabled)
+         SELECT $1, id, 'APPROVED', 'IN_APP', false
+           FROM app_user WHERE organization_id = $1 AND email = $2`,
+        [org, owner],
+      );
+      await tx.query(
+        `INSERT INTO notification_template
+           (organization_id, template_key, channel, body)
+         VALUES ($1, 'expense_management.report_approved', 'IN_APP', $2::jsonb)`,
+        [org, JSON.stringify({ en: `Wording ${label}` })],
+      );
     });
   }
 });
@@ -324,6 +356,70 @@ describe('RLS tenant isolation', () => {
       delegations: 0,
       audit: 0,
     });
+  });
+
+  it('activities, notifications, preferences and template wording are tenant-isolated', async () => {
+    const a = await withOrg(orgA, async (tx) => ({
+      activities: (await tx.query("SELECT payload->>'report' AS r FROM activity")).rows.map(
+        (r) => r.r,
+      ),
+      notifications: (await tx.query('SELECT id FROM notification')).rows.length,
+      preferences: (await tx.query('SELECT event_type FROM notification_preference')).rows.map(
+        (r) => r.event_type,
+      ),
+      // The one that would be most embarrassing to leak: a tenant's own words.
+      wording: (await tx.query("SELECT body->>'en' AS w FROM notification_template")).rows.map(
+        (r) => r.w,
+      ),
+    }));
+    expect(a).toEqual({
+      activities: ['Report A'],
+      notifications: 1,
+      preferences: ['APPROVED'],
+      wording: ['Wording A'],
+    });
+
+    const none = await withoutOrg(async (tx) => ({
+      activities: (await tx.query('SELECT * FROM activity')).rows.length,
+      notifications: (await tx.query('SELECT * FROM notification')).rows.length,
+      preferences: (await tx.query('SELECT * FROM notification_preference')).rows.length,
+      wording: (await tx.query('SELECT * FROM notification_template')).rows.length,
+    }));
+    expect(none).toEqual({ activities: 0, notifications: 0, preferences: 0, wording: 0 });
+  });
+
+  it('a notification cannot be joined back to another tenant report', async () => {
+    // THE test NT-1 asks for, and the reason it is separate from the block
+    // above: `activity.subject_id` is a bare uuid with no FK, so this walk —
+    // notification -> activity -> (subject_id) -> expense_report — is the exact
+    // shape a leaked report id would exploit. The join predicate is
+    // `r.id = a.subject_id` with nothing structural forcing the two rows into
+    // the same tenant; only the policy on `expense_report` does.
+    const rows = await withOrg(orgA, (tx) =>
+      tx.query(
+        `SELECT r.title, a.event_type
+           FROM notification n
+           JOIN activity a ON a.id = n.activity_id
+           JOIN expense_report r ON r.id = a.subject_id`,
+      ),
+    );
+    expect(rows.rows).toEqual([{ title: 'Report A', event_type: 'APPROVED' }]);
+
+    // And the direct attempt: org A asking for org B's report by its real id,
+    // through the un-FK'd column. Zero rows, not an error — RLS filters, it does
+    // not raise.
+    //
+    // The id is fetched on the ADMIN connection, not through `withoutOrg`:
+    // `withoutOrg` still connects as `veloapp`, which is subject to FORCE RLS,
+    // so with no org set it would return zero rows and this lookup would throw
+    // on `rows[0]` — proving RLS works and testing nothing about the attack.
+    const reportBId = (
+      await admin.query("SELECT id FROM expense_report WHERE title = 'Report B'")
+    ).rows[0].id as string;
+    const crossed = await withOrg(orgA, (tx) =>
+      tx.query('SELECT id FROM activity WHERE subject_id = $1', [reportBId]),
+    );
+    expect(crossed.rows).toHaveLength(0);
   });
 
   it('an approval task cannot be joined back to another tenant report', async () => {

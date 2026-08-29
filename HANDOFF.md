@@ -478,13 +478,101 @@ Phase 2's approval half is now complete and reachable by a person.
   whose report is already sitting in their queue hands over the ability to approve it. The code was
   already correct; the guarantee was untested on the one path this ticket opens.
 
-**STILL NO ADMIN NAVIGATION, AND `/` IS THE CREATE-NEXT-APP TEMPLATE.** Every screen is reachable
-only by typing its URL, and `app/page.tsx` has never been replaced — it still carries the Next.js
-starter's Vercel links. The two admin surfaces now cross-link each other as a stopgap. This is the
-concrete form of §7's "nobody has clicked these screens", and it wants a small ticket of its own: an
-admin nav plus a landing page. Not folded in here.
+**What VX2-7 shipped** — migration `0011` (four tenant tables), `lib/notifications/catalog.ts`,
+`lib/notifications/service.ts`, `app/notifications/`, `app/notifications/preferences/`,
+`app/admin/notification-templates/`, `test/notification-catalog.test.ts`,
+`test/notifications.db.test.ts`, plus notification wiring inside `lib/approvals/engine.ts` and four
+new cases in `test/rls-isolation.test.ts`. A decision now reaches the submitter, a submit reaches the
+approver, and a recall tells the approvers whose queue just lost an item.
 
-**VX2-4 SHOULD COME BEFORE VX2-5**, which is a change from the board order. Everything the engine
+Read `docs/porting/GAP-AUDIT.md` NT-1..NT-16 before touching any of it. The three decisions that
+shaped the ticket are in that file's "Decisions taken (2026-08-29)" table; the four below are the
+ones a later reader will otherwise undo.
+
+- **THE BOARD ASKED FOR A DESIGN EXPENSEOS HAD ALREADY DELETED, and this time it was caught before
+  the migration.** The Phase-2 scope note says "template resolution exact → any-subject → shipped
+  catalog string". That middle rung is not a feature — it is what a nullable `subject_type` KEY
+  COLUMN looks like from outside, and their postmortem is explicit: *"That was not an identity, it
+  was a set of coordinates … A flat catalog entry produced a row whose subject was NULL and therefore
+  rendered as 'Any' … Nothing chose that mix — it fell out of the JSON."* So a template is one row
+  per (`template_key`, `channel`), and `(event_type, subject_type) → key` is a lookup table in
+  `catalog.ts` with a module-load collision guard. **This is the VX2-1 failure mode, and the reason
+  it did not cost a rewrite this time is that the audit ran before the schema.**
+- **A PREFERENCE CAN SUPPRESS AN IN-APP NOTIFICATION, WHICH EXPENSEOS CANNOT DO — and the mechanism
+  matters more than the feature.** The row is written whenever ANY channel wants it, and the BELL
+  filters on the IN_APP preference at READ time. Suppressing the row instead would make IN_APP a
+  master switch: mute the bell and you silently mute the email VX2-8 sends from the same row. That
+  trap is why `listInbox` / `unreadCount` / `markAllRead` all carry the same `NOT EXISTS` predicate
+  and why `notifyRecipients` writes a row unless ALL THREE channels are off. **VX2-8 must not "fix"
+  this by moving the check into the fan-out.** Consequence, tested: un-muting brings the history
+  back, because nothing was thrown away.
+- **`fromTemplate` is the field that makes the ticket's own acceptance criterion testable**, and it
+  is there because ExpenseOS's version of that test did not work. Their comment: a test named
+  *"falls back to default copy when the catalog has no digest strings"* *"asserted on the fallback
+  copy while never once reaching it … passed only because those strings happen to be
+  character-identical to the code's fallbacks. Rewriting the fallback in source left all 20 tests
+  green. The test named a behaviour it could not observe."* When the shipped string and the stored
+  template are equal, asserting the OUTPUT cannot tell you which path produced it. There is a test
+  here that stores the shipped string verbatim as a template and asserts the two paths differ.
+  **Assert the path, not the sentence** — the lesson generalises well past templates.
+- **ONE THING WAS FOUND BY CHECKING RATHER THAN ASSUMING, and it would have been a runtime 22P02:**
+  `audit_entry.entity_id` is typed `uuid` (`0010`), and a template's identity is its KEY — text. With
+  `audit_entry_entity_complete` making it both columns or neither, the template audit entries carry
+  no entity reference at all and put the key in `details`. The row id would have been the wrong
+  answer anyway: a reset DELETES the row and leaves nothing to point at, while the key survives.
+
+Smaller things, each with a reason worth not losing:
+
+- **`activity.subject_id` is a polymorphic uuid with NO FOREIGN KEY**, because it cannot have one.
+  Every other tenant table in this schema has an FK acting as a second line behind RLS; this one does
+  not, so RLS is the whole guard. `test/rls-isolation.test.ts` therefore gained a join-walk case
+  (notification → activity → `subject_id` → expense_report) AND a direct attempt at another tenant's
+  real report id through that column. Both are in the suite because the table's exposure is not the
+  same as the table's policy.
+- **The stored preference map holds only OVERRIDES.** Absent = the code default, so adding an event
+  type needs no backfill and nobody is pinned to today's default. That is why the preferences screen
+  has THREE radio buttons per cell and not a checkbox: a checkbox would save "on" for everybody who
+  had merely never expressed an opinion, and the property would be gone on the first save.
+- **EMAIL and SLACK are shown on the preferences screen and DISABLED**, with the reason on screen.
+  Nothing delivers on them until VX2-8, and a live toggle for a channel that cannot deliver is
+  exactly the dead control NT-2 found in ExpenseOS — whose schema documents an `inApp` preference key
+  that no code has ever read.
+- **A fresh tenant has ZERO template rows and every message still renders.** Same shape as VX1-7's
+  `DEFAULT_POLICIES` and for the same reason — "there is no second copy to drift". It also makes the
+  acceptance criterion the NORMAL path rather than an edge case. Clearing a box on the admin screen
+  DELETES the row, so "reset to shipped" and "shipped" are one state, not two that render the same.
+- **A notification is written IN THE SAME TRANSACTION as the decision that caused it**, so a
+  notification that cannot be written fails the decision. Same coupling VX2-3 chose for the audit
+  row. The alternative is catching and carrying on, which loses notifications silently — and NT-11 is
+  a record of what silent non-delivery costs ("un-diagnosable across several UAT rounds: no error, no
+  log, no delivery"). A deliberate trade, not an oversight.
+- **The actor is never notified about their own action**, filtered in one place rather than by each
+  caller assembling a list that happens to exclude them. It is also what stops an admin
+  self-approving under the AP-14 break-glass and receiving a bell about it.
+- **Substitution is four rules and all four are ported with their reasons** (NT-6): named
+  `{placeholder}` only and never an expression language; an unknown placeholder renders VERBATIM
+  (`{amont}` is a visible typo, an empty gap reads as a product bug); only SCALAR payload entries
+  become values (arrays are dropped rather than stringified as "[object Object]"); and `actor` is
+  applied LAST so a payload key cannot shadow it. There is a test for each, including an end-to-end
+  one with a payload carrying `actor: 'AN IMPOSTOR'`.
+- **`SUBMITTED` and `REIMBURSED` are deliberately NOT event types.** The person who clicked Submit
+  does not need telling that they clicked it, and `REIMBURSED` belongs to VX2-9 — an event type
+  nothing emits is a preference row nobody can explain and a template nobody can test. There is a
+  test asserting the list is exactly five, so adding one is a decision rather than a drift.
+- **No `emailed_at`, no version table, no digest.** All three are ExpenseOS features whose reasons do
+  not exist yet: `emailed_at` serves only the deferred digest, and a nullable timestamp nothing sets
+  is indistinguishable from a bug. The pure `renderContent(content, values)` split IS ported, so a
+  version table is additive rather than a rewrite.
+
+**STILL NO ADMIN NAVIGATION, AND `/` IS STILL THE CREATE-NEXT-APP TEMPLATE.** This ticket adds three
+more URL-only screens and — worse — an unread COUNT with nowhere to display it. A notification bell
+is the first thing in this product that genuinely needs a global nav rather than merely wanting one:
+`unreadCount` exists, is indexed for it, and no page outside `/notifications` can show it. The
+cross-links now form a ring (`/approvals` ↔ `/notifications` ↔ preferences ↔ the ladder ↔ the
+wording page). That is a stopgap and it is getting thin.
+
+**HISTORICAL, kept because the reasoning still applies to the tickets left: VX2-4 CAME BEFORE
+VX2-5**, a change from the board order. Both shipped (PRs #42 and #43). Everything the engine
 does is currently unreachable by a human: there is no screen on which to approve anything, so the
 whole of Phase 2 so far is exercised only by tests. VX2-5's delegation schema and resolver support
 already shipped inside VX2-1 and VX2-2, so it is the smaller and later-costing of the two. VX2-4 is
@@ -613,8 +701,19 @@ approvals, notifications or audit entries.
    none today) and the bucket CORS rule; an `app_user` row in the demo tenant
    matching a real Google/Entra identity with `role='ADMIN'`; then "Restore
    starter rules" on `/admin/expense-policies`, or nothing will ever flag.
-3. **VX2-7 next — notification core** (VX2-1, VX2-2, VX2-3, VX2-4, VX2-4a, VX2-5
-   and VX2-6 are all done — see §5). The approval half of Phase 2 is complete and
+3. **VX2-8 next — delivery worker (email / Teams / Slack)** (VX2-1..VX2-7 are
+   all done — see §5). It absorbs VX0-8's per-job tenant context and ships the
+   approve-link token that finally makes EMAIL approvers routable (see the note
+   at the top of `app/admin/approval-ladder/actions.ts`, which hides them until
+   then). Read GAP-AUDIT **NT-11, NT-12 and NT-14 first** — they are three
+   measured ExpenseOS incidents recorded specifically for this ticket: the
+   silent integration gates ("no error, no log, no delivery"), the Slack id
+   cache whose negative was cached for a week and whose positive was never
+   re-checked at all, and `appOrigin()` reading the wrong environment variable
+   so that every deployed notification went out with no link and no buttons.
+   **And do NOT move VX2-7's IN_APP preference check out of `listInbox` into the
+   fan-out** — §5 explains why that would silently mute email.
+   Then VX2-9 reimbursement and VX2-10 Phase-2 isolation + e2e. The approval half of Phase 2 is complete and
    a person can submit, route, delegate, cover and decide end to end. What remains
    on the board: VX2-7 notification core · VX2-8 delivery worker (which absorbs
    VX0-8's per-job tenant context and ships the approve-link token that finally

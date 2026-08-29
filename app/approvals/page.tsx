@@ -45,6 +45,9 @@ export default async function ApprovalsPage({
         <div className="flex items-center gap-3">
           {/* Reachable from the inbox because that is where somebody realises
               they are about to be away. No admin nav anywhere yet — HANDOFF §7. */}
+          <Link href="/notifications" className="text-sm underline underline-offset-4">
+            Notifications
+          </Link>
           <Link
             href="/approvals/delegations"
             className="text-sm underline underline-offset-4"
