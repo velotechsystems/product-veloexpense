@@ -47,8 +47,16 @@ describe('the taxonomy', () => {
     for (const c of CHANNELS) expect(isChannel(c)).toBe(true);
     // The controls. Without them the two guards above pass on a build where
     // everything is a valid event type.
+    //
+    // `REIMBURSED` used to be here, as a second example of a plausible-looking
+    // event type the product does not have — and VX2-9 gave it one. Two
+    // assertions in this file disagreed about the taxonomy as a result, which is
+    // the cost of using a not-yet-real value as a negative control: it stops
+    // being a control the moment somebody implements it. `SUBMITTED` is the
+    // durable choice, because it is deliberately absent rather than merely
+    // unbuilt (the person who clicked Submit does not need telling).
     expect(isEventType('SUBMITTED')).toBe(false);
-    expect(isEventType('REIMBURSED')).toBe(false);
+    expect(isEventType('DEADLINE_NEAR')).toBe(false);
     expect(isChannel('SMS')).toBe(false);
     expect(isChannel('in_app')).toBe(false);
   });

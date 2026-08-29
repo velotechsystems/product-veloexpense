@@ -73,10 +73,14 @@ async function approved(amountMinor = 125000, title = 'Zurich', submitterEmail =
   });
   const who = submitterEmail === SUBMITTER ? submitter : finance;
   const { approval } = await withOrg(orgId, (tx) => lifecycle.submitReport(tx, reportId, who));
+  // The approver is ALWAYS `manager`, whoever submitted: both `submitter` and
+  // `finance` have `manager` as their manager_id, and the default ladder routes
+  // to the submitter's direct manager. The first version of this helper picked
+  // the approver with a ternary and named `submitter` when finance submitted,
+  // which is nobody's approver — so the two self-payment tests failed inside the
+  // FIXTURE with NOT_AN_APPROVER and never reached their assertions.
   await withOrg(orgId, (tx) =>
-    decide(tx, approval.taskId, submitterEmail === SUBMITTER ? manager : submitter, 'APPROVED', {
-      receiptViewAcknowledged: true,
-    }),
+    decide(tx, approval.taskId, manager, 'APPROVED', { receiptViewAcknowledged: true }),
   );
   return reportId;
 }
@@ -355,6 +359,13 @@ describe('self-payment', () => {
 
     // The control: somebody else can pay it perfectly well, so the refusal above
     // is the self-check and not a broken fixture.
+    //
+    // `manager` is a MANAGER, not an ADMIN, and `reimburseReport` permits them —
+    // deliberately. The lib's only authorization rule is the self-payment
+    // refusal; the ADMIN gate lives in `app/admin/reimbursements/actions.ts`,
+    // the same split `decide` uses (its `isAdmin` is a context flag, not a
+    // lookup). Asserting it here rather than leaving it implicit, because a
+    // reader could otherwise take this line as evidence the lib checks roles.
     await withOrg(orgId, (tx) => lifecycle.reimburseReport(tx, own, manager));
     expect((await reportRow(own)).status).toBe('REIMBURSED');
   });
