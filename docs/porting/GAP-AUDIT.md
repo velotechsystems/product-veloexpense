@@ -75,6 +75,22 @@ lives in code; a template row exists only where a tenant has overridden it. This
 VX2-7's acceptance criterion ("an empty template table still renders shipped copy") the *normal*
 path rather than an edge case.
 
+## Decisions taken (2026-08-29, later) — the three that were blocking VX2-8
+
+| # | Question | Decision | Cost accepted |
+|---|---|---|---|
+| **NT-19** | What carries a delivery job? VeloExpense has no queue, no worker and no Redis. | **A Postgres outbox plus a poller.** `FOR UPDATE SKIP LOCKED`, `attempts` / `next_attempt_at` / `last_error`, and the admin queue is that table with a policy on it. NOT BullMQ/Redis. | We write the backoff, the claim, the visibility timeout and the dead-letter ourselves — the parts BullMQ gives away. Accepted on the precedent VX1-9 set choosing `s3rver` over MinIO: "one Node process — no Docker for CI or a laptop." |
+| **NT-20/21** | The board says "email/Teams/Slack". | **EMAIL ONLY.** Slack and Teams become their own tickets. Email is a strict prerequisite for Slack anyway — ExpenseOS's Slack buttons fall back to the same confirm page the email links to — so nothing is stranded. | The board title is not delivered literally, and `/admin/approval-ladder` keeps hiding EMAIL approvers only until THIS ticket lands, not until Slack does. Teams has no source to port and would also need a migration to widen `notification_preference_channel_check`. |
+| **NT-17** | How long does an approve-link live, with no task TTL to read? | **A fixed five business days**, the number ExpenseOS uses, with a comment recording that it becomes the task's own TTL if AP-8 ever ships. | A link outlives a short holiday and dies before a forwarded mailbox becomes a credential store. It is a constant rather than a policy, so a tenant cannot shorten it. |
+
+**Consequence: VX2-8 carries migration `0012`** — `notification_delivery` (the outbox) and
+`action_token`, both with `organization_id` and `FORCE ROW LEVEL SECURITY`, both in the isolation
+test. And it introduces **the second and third `withoutOrg` reads in the product**: the poller
+finding work across tenants, and the approve-link handler resolving a bare token to its tenant
+before any session exists. Both must take NOTHING from the row they find except the organization id
+— that constraint is the whole reason those two reads are safe, and it is easy to widen by accident.
+
+
 **Consequence: VX2-7 carries migration `0011`.** Four tables — `activity`, `notification`,
 `notification_preference`, `notification_template` — all with `organization_id`, all `FORCE ROW
 LEVEL SECURITY`, all in the isolation test (NT-1 explains why RLS is the only guard `activity` gets:
@@ -1574,6 +1590,151 @@ One decision follows from the table: **a decision on a report now writes four th
 transaction** — the status transition, the audit entry, the activity, and N notifications. All four
 or none, in the same `tx` the engine already opens. That is not a new pattern (VX2-3 already couples
 the decision and its audit row) but it is the largest single transaction in the product so far.
+
+### NT-17 · The approve-link token — portable almost verbatim, and the one line to keep is the disclaimer
+
+`packages/notifications/src/actionTokens.ts`, read in full. 32 random bytes base64url, only the
+sha256 persisted, bound to `(taskId, action, recipientId)` with an `expiresAt`, and consumed by a
+CONDITIONAL write:
+
+```ts
+export async function consumeActionToken(db: Db, id: string): Promise<boolean> {
+  const res = await db.actionToken.updateMany({
+    where: { id, consumedAt: null },
+    data: { consumedAt: new Date() },
+  });
+  return res.count === 1;
+}
+```
+
+> `/** Mark a token consumed (single-use). Returns true only for the call that`
+> ` * actually consumed it — the conditional write guards against double-submit. */`
+
+That is the same shape as VX2-3's atomic claim (`WHERE id = $1 AND status = 'PENDING'`, then
+`rowCount !== 1`), which is a good sign: two independent single-use guarantees in this codebase now
+have one idiom.
+
+The load-bearing sentence is the file header's, and it is what makes the whole feature safe:
+
+> `* The token only authenticates the actor and binds one action to one task; the caller still`
+> `* re-runs canDecide + the atomic claim, so it never bypasses authorization.`
+
+So an approve-link is an AUTHENTICATION mechanism, not an authorization one. VX2-8 must route the
+click through `assertCanDecide` and `engine.decide` exactly as the browser does — the token replaces
+the session, and nothing else. A token that carried its own permission would be a way to approve a
+report after being removed as its approver.
+
+Two things do NOT port:
+
+1. **`ActionToken` is tenant-blind**, like every other table in this module (NT-1). It needs
+   `organization_id` + FORCE RLS. Note the consequence for the click handler: the request arrives
+   with a bare token and NO session, so there is no org to set — the lookup has to happen with the
+   service role (`withoutOrg`) to find the token's tenant, and everything after it inside
+   `withOrg(that tenant)`. **That is the only place in this product where a `withoutOrg` read is
+   driven by an untrusted value**, so the token hash has to be the whole lookup key and the row's
+   `organization_id` the only thing taken from it.
+2. **The expiry has nowhere to come from.** ExpenseOS computes
+   `tk.expiresAt ?? addBusinessDays(new Date(), DEFAULT_TTL_BUSINESS_DAYS)` and its dispatcher notes
+   "tokens live five business days". VeloExpense has **no task TTL** — AP-8's expiry policy is
+   ported as a spec and nothing implements it, which is recorded in HANDOFF §5 as one of the two
+   things VX2-2 did not close. So the token lifetime is a VX2-8 input with no source answer:
+   a fixed window is the only option available, and five business days is the number ExpenseOS
+   chose.
+
+### NT-18 · Email transport is PLATFORM-level and env-configured — which answers a question I was going to ask
+
+`packages/notifications/src/email.ts`, read in full. There is no per-tenant SMTP anywhere:
+
+> `* SMTP_HOST set → real send via nodemailer SMTP (SMTP_PORT / SMTP_SECURE /`
+> `* SMTP_USER / SMTP_PASS, SMTP_FROM or EMAIL_FROM sender).`
+> `* SMTP_HOST unset → log to console (EMAIL_TRANSPORT=console forces this), so`
+> `* flows stay testable without a mail server.`
+
+The `integration` table that `notification-dispatch.ts` consults supplies exactly two things: an
+active/inactive GATE, and a `fromOverride`. The transport itself is process configuration. So the
+per-tenant part of email in ExpenseOS is *the from address*, and everything else is the platform's.
+
+That maps cleanly onto VeloExpense, which has no module/integration system at all: the gate becomes
+"is SMTP configured", and per-tenant customisation is deferred with nothing lost. **The console
+transport is the part worth copying deliberately** — it is what lets an e2e assert on a rendered
+email without a mail server, which is the same argument VX1-9 made for choosing `s3rver` over MinIO
+("one Node process — no Docker for CI or a laptop").
+
+Three details to port with it:
+
+- **The console path NEVER throws; SMTP errors propagate.** Deliberate asymmetry: a developer
+  without a mail server must not see failures, and a real send that failed must not be swallowed.
+- **`verifyEmailTransport()`** exists for an admin "Test connection" button, and returns a
+  `{ ok, message }` rather than throwing. NT-11's silent-gate incidents are the reason a product
+  needs this at all: the operator has to be able to ask whether email works and get a sentence back.
+- **`Auto-Submitted: auto-replied` (RFC 3834)**, with the best comment in the file:
+  > `* Added for `Auto-Submitted: auto-replied` (RFC 3834): a machine-generated reply has to say`
+  > `* so, or a well-behaved out-of-office responder answers it and the two of them keep going.`
+
+  Free to add and impossible to discover from first principles.
+
+### NT-19 · VeloExpense has no queue, no worker and no Redis — and the plan does not say to add one ⚠ blocking
+
+ExpenseOS's dispatch is a BullMQ job (`enqueue('notification.dispatch', …)`) consumed by a separate
+`apps/worker` process against Redis. VeloExpense has none of those three, and VX2-8's acceptance
+criterion needs durable job state regardless of how it is stored:
+
+> An approval email arrives with working actions; a failed send retries and shows in the **admin
+> queue**; every job sets `app.current_org`.
+
+Three substrates, and the choice is architectural rather than a matter of taste:
+
+**(a) BullMQ + Redis + a worker process.** Ports ExpenseOS's shape, and gets retry, backoff and
+dead-lettering for free. Costs a new deployment dependency in the Docker image, in CI and on every
+laptop — and the admin queue screen then reads Redis, so an admin surface depends on a second
+datastore whose contents are not RLS-scoped and not backed up with the database.
+
+**(b) A Postgres outbox table plus a poller.** `SELECT … FOR UPDATE SKIP LOCKED`, an `attempts`
+counter, `next_attempt_at`, `last_error`. No new infrastructure; the admin queue is a table with a
+policy on it; per-job tenant context (the VX0-8 requirement) is a column the worker wraps in
+`withOrg`. Costs: we write the backoff, the claim, the visibility timeout and the dead-letter
+ourselves — the parts BullMQ gives away.
+
+**(c) Send inline from the request.** Fails the acceptance criterion twice (no retry, no queue) and
+couples an approval transaction to an SMTP timeout. Not viable; recorded so it is visibly rejected
+rather than silently unconsidered.
+
+**Recommendation: (b).** Not because outboxes are fashionable, but because this codebase has already
+made this exact call once and written down why. VX1-9 chose `s3rver` over MinIO for the e2e —
+"one Node process — no Docker for CI or a laptop" — and the same sentence applies to Redis. The
+retry/admin-queue requirement is satisfied by columns that the admin screen reads directly, and a
+tenant's undelivered mail being subject to the same RLS as everything else is a property worth
+having rather than an accident to work around.
+
+One design point that follows and needs stating: the worker must read across tenants to find work
+(`withoutOrg`) and then do each job inside `withOrg(row.organization_id)`. That is the second place
+in the product where a `withoutOrg` read exists, and like NT-17's it must take nothing from the row
+except the tenant id.
+
+### NT-20 · "Teams" is on the board and has no source to port
+
+The board's VX2-8 title is "Delivery worker (email/Teams/Slack)". ExpenseOS ships **email and
+Slack**; there is no Microsoft Teams code anywhere in the notification package or the worker, and
+`NotificationChannel` is `IN_APP | EMAIL | SLACK`. So Teams is not a port, it is new work against a
+third API — and VX2-7's `notification_preference.channel` CHECK constrains the column to those three
+values, which means adding Teams is a migration as well.
+
+Recorded rather than quietly dropped, because "the board said Teams" is exactly the kind of thing a
+later reader finds and treats as a missing feature rather than a scope decision.
+
+### NT-21 · Slack is the larger half of VX2-8, and its cost is not the code
+
+`apps/worker/src/notification-dispatch.ts` (read in full, NT-11/NT-12) plus
+`packages/notifications/src/slack.ts` (13 KB, **not yet read**) plus an interactions endpoint, a
+signing-secret verification path, a `users.lookupByEmail` cache with two TTLs and three repair paths,
+and a per-subject DM thread root. The code is portable; what it drags in is a Slack app
+registration, a bot token and a signing secret per deployment, and an inbound HTTP endpoint that
+must verify request signatures.
+
+Worth noting what Slack buys that email does not: ExpenseOS's Slack path has INTERACTIVE buttons
+when a signing secret is present ("decide in Slack via the interactions endpoint") and falls back to
+URL buttons pointing at the same confirm page as the email when it is not. So the email path is a
+strict prerequisite for the Slack path, and shipping email alone leaves nothing stranded.
 
 ## Not yet audited
 

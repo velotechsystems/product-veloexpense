@@ -30,6 +30,7 @@
  */
 import type { QueryRunner } from '@/lib/db/client';
 import { formatMinor } from '@/lib/money';
+import { enqueueDelivery } from '@/lib/notifications/outbox';
 import {
   applyPlaceholders,
   CHANNELS,
@@ -203,7 +204,29 @@ export async function notifyRecipients(
        RETURNING id`,
       [activityId, recipientId],
     );
-    if (ins.rowCount === 1) written.push(recipientId);
+    if (ins.rowCount !== 1) continue;
+    written.push(recipientId);
+
+    // VX2-8. IN_APP needs no job — the row above IS the delivery, which is what
+    // "the always-on channel" means and why `0012` refuses an IN_APP delivery row
+    // with a CHECK constraint. The external channels get one each, in the SAME
+    // transaction as the notification: an outbox row written separately could be
+    // lost if the transaction that caused it rolled back, and one written first
+    // could describe a notification that never existed.
+    //
+    // The poller re-reads nothing about preferences. This is the decision point,
+    // and it is here rather than in the worker because the preference the user
+    // held when the thing happened is the one that should govern — not whichever
+    // one they hold four hours later when a retry finally succeeds.
+    // EMAIL ONLY, and SLACK is deliberately absent rather than listed and
+    // skipped. There is no Slack transport (NT-20/21 — its own ticket), so
+    // enqueuing one would create a job nothing can do: it would sit PENDING, get
+    // claimed by the poller, and be handed to a function whose only output is an
+    // email. Adding the channel here is one line on the day the transport exists;
+    // adding it now is a queue full of work that gets sent down the wrong pipe.
+    // `drainOutbox` refuses a non-EMAIL channel anyway, in case a row appears by
+    // some other route.
+    if (channels.EMAIL) await enqueueDelivery(tx, ins.rows[0].id as string, 'EMAIL');
   }
   return written;
 }

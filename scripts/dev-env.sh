@@ -48,4 +48,18 @@ case "${AUTH_SECRET:-}" in
     ;;
 esac
 
+# VX2-8. Both have documented off states, so these are conveniences rather than
+# requirements — but without APP_URL every notification email goes out with no
+# links at all, which is the exact ExpenseOS failure GAP-AUDIT NT-14 records, and
+# it is silent. Default them for local work and leave the deployed values to the
+# deployment.
+: "${APP_URL:=http://localhost:3000}"
+export APP_URL
+: "${WORKER_SECRET:=dev-only-not-a-secret}"
+export WORKER_SECRET
+# SMTP_HOST is deliberately NOT defaulted: unset means the console transport, so
+# mail is written to the server log and nothing leaves the machine. That is the
+# right local default and setting it by accident is not.
+
 echo "dev-env ready: $(printf '%s' "$DATABASE_URL" | sed -E 's#(://[^:]*:)[^@]*(@)#\1***\2#')"
+echo "dev-env   mail: ${SMTP_HOST:+SMTP $SMTP_HOST}${SMTP_HOST:-console transport (nothing sent)}"

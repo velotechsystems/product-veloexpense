@@ -26,7 +26,54 @@ export async function withOrg<T>(orgId: string, fn: (tx: QueryRunner) => Promise
 /**
  * Service-role escape hatch — NO org filter. Use ONLY for migrations,
  * cross-tenant admin, and platform analytics. Never in a tenant request path.
+ *
+ * NOTE WHAT THIS DOES NOT DO, because the name invites the wrong assumption: it
+ * does NOT see across tenants. It still connects as `veloapp`, which is subject
+ * to FORCE RLS, so with `app.current_org` unset every policy body reads
+ * `organization_id = NULL` and returns NULL — and an unset context therefore
+ * sees ZERO rows on every tenant table. That is the guarantee described above,
+ * and `test/rls-isolation.test.ts` asserts it. `withoutOrg` is only useful for
+ * tables that have no tenant column at all (`organization` itself) or through a
+ * connection that bypasses RLS (the ADMIN url, tests and migrations only).
+ *
+ * For a genuine cross-tenant read from the application, see `withPlatformRead`.
  */
 export async function withoutOrg<T>(fn: (tx: QueryRunner) => Promise<T>): Promise<T> {
   return transaction(fn);
+}
+
+/**
+ * VX2-8 — a READ-ONLY, cross-tenant look at the two tables that grant it.
+ *
+ * Some work genuinely has no tenant to be in. A delivery poller has to find work
+ * in ANY organization, and an approve-link click arrives with a bare token and no
+ * session at all, so neither knows which organization to set before reading.
+ * `withoutOrg` cannot help them (see above): under FORCE RLS an unset context
+ * sees nothing.
+ *
+ * So `0012` gives `notification_delivery` and `action_token` a second policy
+ * gated on `app.platform_task`, in the same spirit as `0010`'s single
+ * `app.audit_purge` hatch. FOUR things keep this from being a hole, and all four
+ * matter:
+ *
+ *   1. ONLY TWO TABLES HAVE THE POLICY. This flag does nothing anywhere else in
+ *      the schema — it is not a master key, and adding it to a third table is a
+ *      migration somebody has to write and review.
+ *   2. `FOR SELECT` ONLY. Every write still needs a real `app.current_org`, so a
+ *      platform task can FIND a row and never change one.
+ *   3. THE POLICY BODIES ARE NARROWED. The poller sees only due work; the token
+ *      handler sees only unconsumed, unexpired tokens. An expired token is not
+ *      hidden by an `if` — it is a row that is not there.
+ *   4. TRANSACTION-LOCAL, like `withOrg`, so it cannot outlive the work or leak
+ *      onto a pooled connection.
+ *
+ * THE RULE FOR CALLERS, and it is the reason the above adds up to safe: take
+ * NOTHING from a row you found this way except its `organization_id`, then do the
+ * real work inside `withOrg(that id)`. Two callers exist. Keep it that way.
+ */
+export async function withPlatformRead<T>(fn: (tx: QueryRunner) => Promise<T>): Promise<T> {
+  return transaction(async (tx) => {
+    await tx.query("SELECT set_config('app.platform_task', 'on', true)");
+    return fn(tx);
+  });
 }
