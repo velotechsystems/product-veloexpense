@@ -28,7 +28,7 @@
 import { withOrg, withPlatformRead } from '@/lib/tenant/context';
 import type { QueryRunner } from '@/lib/db/client';
 import { formatMinor } from '@/lib/money';
-import { placeholderValuesFrom, type Channel } from '@/lib/notifications/catalog';
+import { placeholderValuesFrom } from '@/lib/notifications/catalog';
 import { renderMessage } from '@/lib/notifications/service';
 import {
   appOrigin,

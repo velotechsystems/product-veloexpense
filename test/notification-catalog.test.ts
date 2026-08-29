@@ -47,17 +47,26 @@ describe('the taxonomy', () => {
     for (const c of CHANNELS) expect(isChannel(c)).toBe(true);
     // The controls. Without them the two guards above pass on a build where
     // everything is a valid event type.
+    //
+    // `REIMBURSED` used to be here, as a second example of a plausible-looking
+    // event type the product does not have — and VX2-9 gave it one. Two
+    // assertions in this file disagreed about the taxonomy as a result, which is
+    // the cost of using a not-yet-real value as a negative control: it stops
+    // being a control the moment somebody implements it. `SUBMITTED` is the
+    // durable choice, because it is deliberately absent rather than merely
+    // unbuilt (the person who clicked Submit does not need telling).
     expect(isEventType('SUBMITTED')).toBe(false);
-    expect(isEventType('REIMBURSED')).toBe(false);
+    expect(isEventType('DEADLINE_NEAR')).toBe(false);
     expect(isChannel('SMS')).toBe(false);
     expect(isChannel('in_app')).toBe(false);
   });
 
   it('does not ship an event type nothing emits', () => {
-    // REIMBURSED belongs to VX2-9 and SUBMITTED is a deliberate omission (the
-    // person who clicked Submit does not need telling). Both would be harmless
-    // to add and that is exactly why the absence needs asserting: an event type
-    // with no emitter is a preference row nobody can explain and a template
+    // SUBMITTED is a deliberate omission (the person who clicked Submit does not
+    // need telling). REIMBURSED was one too, until VX2-9 gave it an emitter —
+    // and this assertion is what made adding it a visible decision rather than a
+    // drift, which is the whole reason a list this obvious is pinned. An event
+    // type with no emitter is a preference row nobody can explain and a template
     // nobody can test.
     expect([...EVENT_TYPES]).toEqual([
       'TASK_ASSIGNED',
@@ -65,6 +74,7 @@ describe('the taxonomy', () => {
       'REJECTED',
       'RETURNED',
       'RECALLED',
+      'REIMBURSED',
     ]);
   });
 });
