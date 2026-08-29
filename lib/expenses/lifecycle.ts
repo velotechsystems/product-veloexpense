@@ -24,6 +24,8 @@ import type { QueryRunner } from '@/lib/db/client';
 import * as policy from '@/lib/policy/service';
 import * as engine from '@/lib/approvals/engine';
 import type { ReportStatus } from '@/lib/expenses/service';
+import { append as auditAppend } from '@/lib/audit/service';
+import { notify, reportPayload } from '@/lib/notifications/service';
 
 const ORG = "current_setting('app.current_org', true)::uuid";
 
@@ -242,6 +244,235 @@ export async function recallReport(
   });
 
   return updated.rows[0];
+}
+
+/* ── reimbursement ─────────────────────────────────────────────────────────── */
+
+export interface ReimburseInput {
+  /** The AP run, cheque number or EFT batch. Optional — see `0013`. */
+  reference?: string | null;
+  note?: string | null;
+}
+
+export interface ReimburseResult {
+  id: string;
+  number: string | null;
+  status: ReportStatus;
+  reimbursed_at: Date;
+}
+
+/**
+ * VX2-9 — APPROVED → REIMBURSED. The last transition a report has.
+ *
+ * Ported from ExpenseOS `markReimbursed` (GAP-AUDIT RB-1..RB-8) with three
+ * deliberate changes, each of which closes something their version leaves open.
+ *
+ * ── 1. THE CLAIM IS ATOMIC, because theirs is not (RB-2) ────────────────────
+ *
+ * ExpenseOS reads the status in one query and then writes with `where: { id }` —
+ * the update does not re-assert what the read checked. So two concurrent calls
+ * (a double-click, or two clerks working the same list) both pass the guard and
+ * both write, producing two audit rows and two notifications for ONE payment, on
+ * the single transition in this product that means money left the building.
+ *
+ * The read below exists only to produce a good error message. The UPDATE's
+ * `AND status = 'APPROVED'` is the guard, and `rowCount !== 1` is how we know.
+ * That is the same idiom as VX2-3's decision claim, VX2-8's `consumeActionToken`
+ * and VX2-8's `claimDelivery` — the fourth appearance of this shape in the port,
+ * and the fourth time the answer is a conditional write rather than a lock.
+ *
+ * Note what falls out of it for free: because APPROVED is the only permitted
+ * source status, "you cannot pay it twice" and "you cannot pay an unapproved
+ * report" are ONE guard.
+ *
+ * ── 2. YOU MAY NOT PAY YOURSELF (RB-3) ─────────────────────────────────────
+ *
+ * ExpenseOS has no self-payment check at all: `markReimbursed` is gated on a
+ * static permission and nothing else. That is hard to defend in a codebase whose
+ * `canDecide` ordering exists because self-APPROVAL is a SOX-grade control
+ * (AP-13) — approval is an opinion that money should move, payment asserts that
+ * it did.
+ *
+ * The exception is AP-14's existing break-glass, reused rather than duplicated,
+ * because the forcing case is identical: a tenant where the admin who submits is
+ * the only person who can act. `0013` widens that column's COMMENT to say so.
+ *
+ * ── 3. THE NOTIFICATION IS IN THIS TRANSACTION (RB-7) ──────────────────────
+ *
+ * Theirs fires after the commit, un-awaited, with no catch — so a failed
+ * notification is lost silently. VX2-7 chose the opposite and the reasoning is in
+ * `notifyTaskOwner`: NT-11 is a record of what silent non-delivery costs.
+ *
+ * ── What this deliberately does NOT check ──────────────────────────────────
+ *
+ * Whether receipts exist, whether policy violations were resolved, whether the
+ * total is non-zero. All three were questions for the submit gate and the
+ * approval gate; asking them again at payment time would refuse a report somebody
+ * has already approved, which is the wrong place to relitigate it. Ported as-is,
+ * and RB-8 records that their version makes the same choice.
+ */
+export async function reimburseReport(
+  tx: QueryRunner,
+  reportId: string,
+  actorId: string,
+  input: ReimburseInput = {},
+): Promise<ReimburseResult> {
+  const r = await tx.query(
+    `SELECT rep.id, rep.number, rep.title, rep.status, rep.submitter_id,
+            rep.total_minor, rep.currency_code,
+            org.allow_sole_approver_self_approval AS break_glass
+       FROM expense_report rep
+       JOIN organization org ON org.id = rep.organization_id
+      WHERE rep.id = $1`,
+    [reportId],
+  );
+  if (r.rows.length === 0) throw new LifecycleError('report not found', 'NOT_FOUND');
+  const report = r.rows[0];
+
+  if (report.status !== 'APPROVED') {
+    throw new LifecycleError(
+      // Their sentence, near enough verbatim, plus the current status — which
+      // theirs omits and which is the first thing anybody asks.
+      `report ${report.number ?? reportId} is ${report.status}; only an approved report can be marked reimbursed`,
+      'WRONG_STATUS',
+    );
+  }
+
+  // The self-payment refusal, before anything is written.
+  if (report.submitter_id === actorId && report.break_glass !== true) {
+    throw new LifecycleError(
+      `you cannot mark your own report reimbursed — ask somebody else in finance to release the payment`,
+      'FORBIDDEN',
+    );
+  }
+
+  const reference = input.reference?.trim() || null;
+
+  // THE guard. See note 1 above.
+  const claimed = await tx.query(
+    `UPDATE expense_report
+        SET status = 'REIMBURSED',
+            reimbursed_at = clock_timestamp(),
+            reimbursed_by_id = $2,
+            reimbursement_reference = $3,
+            updated_at = now()
+      WHERE id = $1 AND status = 'APPROVED'
+      RETURNING id, number, status, reimbursed_at`,
+    [reportId, actorId, reference],
+  );
+  if (claimed.rowCount !== 1) {
+    throw new LifecycleError(
+      `report ${report.number ?? reportId} was reimbursed by somebody else a moment ago`,
+      'WRONG_STATUS',
+    );
+  }
+
+  await recordEvent(tx, {
+    reportId,
+    action: 'REIMBURSE',
+    fromStatus: 'APPROVED',
+    toStatus: 'REIMBURSED',
+    actorId,
+    note: input.note ?? null,
+    context: {
+      reference,
+      // Strings, not BigInt — the canonicalizer throws on BigInt (AU-5), and
+      // this context is JSON.stringify'd on the way in.
+      totalMinor: String(report.total_minor),
+      currencyCode: report.currency_code,
+      selfReimbursedUnderBreakGlass: report.submitter_id === actorId,
+    },
+  });
+
+  // The hash chain as well as the timeline. This is the only transition in the
+  // product that asserts money moved, so it belongs in the tamper-evident record
+  // and not only in the report's own history — and `details` carries the
+  // reference, which is the thing an auditor reconciles against. ExpenseOS passes
+  // `details: {}` here (RB-1) while passing real details from its neighbouring
+  // mutations, which is what made the emptiness worth diverging from.
+  const actor = await tx.query(
+    `SELECT COALESCE(display_name, email) AS name, email, role FROM app_user WHERE id = $1`,
+    [actorId],
+  );
+  if (actor.rows.length === 0) {
+    throw new LifecycleError('the acting user is not in this organization', 'FORBIDDEN');
+  }
+  await auditAppend(
+    tx,
+    { id: actorId, name: actor.rows[0].name as string, role: actor.rows[0].role as string },
+    {
+      action: 'REPORT_REIMBURSED',
+      entityType: 'expense_report',
+      entityId: reportId,
+      details: {
+        reportNumber: report.number ?? null,
+        reference,
+        totalMinor: String(report.total_minor),
+        currencyCode: report.currency_code,
+        selfReimbursedUnderBreakGlass: report.submitter_id === actorId,
+      },
+    },
+  );
+
+  // The submitter is told. `notifyRecipients` drops the actor, so an admin who
+  // paid their own report under the break-glass gets no bell about it.
+  await notify(
+    tx,
+    {
+      subjectType: 'EXPENSE_REPORT',
+      subjectId: reportId,
+      eventType: 'REIMBURSED',
+      actorId,
+      payload: {
+        ...reportPayload({
+          title: report.title as string,
+          number: report.number as string | null,
+          totalMinor: String(report.total_minor),
+          currencyCode: report.currency_code as string,
+        }),
+        reference: reference ?? '',
+      },
+    },
+    [report.submitter_id as string],
+  );
+
+  return claimed.rows[0] as ReimburseResult;
+}
+
+/**
+ * Approved and waiting to be paid — the AP screen's only query.
+ *
+ * Reads the partial index `0013` adds. Oldest first, deliberately: the queue an
+ * AP clerk works is a queue, and the report that has been waiting longest is the
+ * one somebody is chasing.
+ */
+export interface PayableReport {
+  id: string;
+  number: string | null;
+  title: string;
+  total_minor: string;
+  currency_code: string;
+  submitter_id: string;
+  submitter_name: string;
+  approved_at: Date | null;
+}
+
+export async function listPayableReports(
+  tx: QueryRunner,
+  limit = 100,
+): Promise<PayableReport[]> {
+  const r = await tx.query(
+    `SELECT rep.id, rep.number, rep.title, rep.total_minor, rep.currency_code,
+            rep.submitter_id, rep.approved_at,
+            COALESCE(sub.display_name, sub.email) AS submitter_name
+       FROM expense_report rep
+       JOIN app_user sub ON sub.id = rep.submitter_id
+      WHERE rep.status = 'APPROVED'
+      ORDER BY rep.approved_at NULLS FIRST
+      LIMIT $1`,
+    [Math.min(Math.max(limit, 1), 500)],
+  );
+  return r.rows as PayableReport[];
 }
 
 export async function listEvents(tx: QueryRunner, reportId: string): Promise<ReportEvent[]> {

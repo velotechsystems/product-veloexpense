@@ -90,6 +90,21 @@ finding work across tenants, and the approve-link handler resolving a bare token
 before any session exists. Both must take NOTHING from the row they find except the organization id
 — that constraint is the whole reason those two reads are safe, and it is easy to widen by accident.
 
+## Decisions taken (2026-08-29, VX2-9) — the two that were blocking reimbursement
+
+| # | Question | Decision | Cost accepted |
+|---|---|---|---|
+| **RB-3** | May somebody mark their OWN report reimbursed? ExpenseOS allows it — no self-payment check at all, in a codebase that treats self-APPROVAL as a SOX-grade control. | **No.** Refused, with AP-14's existing break-glass (`allow_sole_approver_self_approval`) as the audited exception — the forcing case is identical, a tenant where the admin who submits is the only person who can act. | That column's NAME now under-describes what it governs. `0013` widens its COMMENT rather than adding `allow_self_reimbursement`, because one flag with a stale name beats two flags where the second is never set. |
+| **RB-1** | What does a reimbursement record? Theirs writes one column and passes `details: {}` to its own audit call. | **Date, actor and an optional reference.** `0013` adds `reimbursed_at`, `reimbursed_by_id`, `reimbursement_reference` to `expense_report`. | Three columns and a migration on a ticket the board sized at one day. Bought because `approved_at` already exists (the asymmetry would read as a bug) and because RB-6 establishes the status is bookkeeping-free — without a reference it asserts a payment and offers nothing to check it against. |
+
+**Not a decision, but the thing that made this audit worth doing: RB-2 is a live double-payment race
+in their code** — the status is read outside the transaction and the UPDATE re-asserts only the id,
+so two concurrent calls both write, producing two audit rows and two notifications for one payment.
+It is the FOURTH appearance of this shape in the port and VeloExpense already answers it three times
+(VX2-3's decision claim, VX2-8's token consume, VX2-8's delivery claim), so the fix is the house
+idiom rather than an invention.
+
+
 
 **Consequence: VX2-7 carries migration `0011`.** Four tables — `activity`, `notification`,
 `notification_preference`, `notification_template` — all with `organization_id`, all `FORCE ROW
@@ -1735,6 +1750,231 @@ Worth noting what Slack buys that email does not: ExpenseOS's Slack path has INT
 when a signing secret is present ("decide in Slack via the interactions endpoint") and falls back to
 URL buttons pointing at the same confirm page as the email when it is not. So the email path is a
 strict prerequisite for the Slack path, and shipping email alone leaves nothing stranded.
+
+## expense-reports · the reimbursement transition (VX2-9) — `apps/web/src/server/routers/expenseApprovals.ts`, read in full 2026-08-29
+
+One procedure, `markReimbursed`, is the only path to `REIMBURSED` in that router. Its siblings, for
+orientation: `myTasks`, `myDecided`, `myTeam`, `report`, `expenses`, `chaseReceipts`, `decide`,
+`decideBulk`, `reassign`, `returnForEdit`, `setFxOverride`.
+
+### RB-1 · Their reimbursement records NOTHING, and the audit row is empty too — DIVERGING
+
+```ts
+      return withAudit(
+        ctx.db,
+        {
+          action: auditActions.report.reimburse,
+          entityType: 'ExpenseReport',
+          entityId: report.id,
+          actor: actorOf(ctx),
+          details: {},
+        },
+        (tx) =>
+          tx.expenseReport.update({
+            where: { id: report.id },
+            data: { status: ExpenseReportStatus.REIMBURSED },
+            select: { id: true, status: true },
+          }),
+      )
+```
+
+One column written, and `details: {}`. The emptiness is the striking part rather than an oversight
+of mine in reading it: the SAME FILE passes `details: { taskId, note }` from `decide` and
+`details: { rate, fromCurrency }` from `setFxOverride`. So somebody thought about the payload on the
+neighbouring mutations and had nothing to put in this one, because there is nothing to put — no
+`reimbursedAt`, no `reimbursedById`, no payment reference, no method, no batch, no amount snapshot.
+Contrast their own `fxRateOverrideAt` / `fxRateOverrideById`, which that file does write.
+
+The only record of who paid and when is the audit row's actor and timestamp.
+
+**DECIDED: diverge.** `0013` adds `reimbursed_at`, `reimbursed_by_id` and an optional
+`reimbursement_reference` to `expense_report`. Three reasons, in order of weight:
+
+1. `approved_at` already exists on that table. A payment with no timestamp beside an approval with
+   one is an asymmetry somebody will read as a bug, and "when was this paid" should not require
+   walking a hash chain.
+2. The reference is the only field that connects the flag to the money. RB-6 below establishes that
+   `REIMBURSED` is bookkeeping-free — nothing is posted, nothing reconciles — so without a reference
+   the status asserts a payment happened and offers nothing to check it against.
+3. It is three columns on an existing table, so there is no new RLS surface and the coverage guard
+   is unaffected.
+
+### RB-2 · The double-payment race is a REAL DEFECT in their code, and this codebase already has the fix idiom ⚠
+
+The read is outside the transaction and the write does not re-assert what the read checked:
+
+```ts
+      const report = await ctx.db.expenseReport.findUnique({
+        where: { id: input.reportId },
+        select: { id: true, status: true },
+      });
+      if (!report) throw new TRPCError({ code: 'NOT_FOUND' });
+      if (report.status !== ExpenseReportStatus.APPROVED) { … }
+      return withAudit(…, (tx) =>
+          tx.expenseReport.update({
+            where: { id: report.id },              // <- id ONLY
+            data: { status: ExpenseReportStatus.REIMBURSED },
+```
+
+So two concurrent calls — a double-click, or two AP clerks working the same list — both pass the
+guard and both write. The result is one payment with two `report.reimburse` audit rows and two
+notifications, on the one transition in the product that means money left the building. There is no
+version column, no idempotency key, and no `updateMany` with a status predicate.
+
+**This is the fourth appearance of the same problem in this port, and VeloExpense already has the
+answer three times over:** VX2-3's decision claim (`WHERE id = $1 AND status = 'PENDING'`, then
+`rowCount !== 1`), VX2-8's `consumeActionToken`, and VX2-8's `claimDelivery`. So `reimburseReport`
+uses the identical shape — `UPDATE … WHERE id = $1 AND status = 'APPROVED'` and a rowCount check —
+and the read above it exists only to produce a good error message, exactly as `decide`'s does.
+
+### RB-3 · No self-payment check anywhere — DIVERGING, with the AP-14 exception ⚠
+
+Authorization is a single static permission and nothing else:
+
+```ts
+  markReimbursed: withPermission(P.expense.report.reimburse)
+```
+
+No eligibility check, no ownership check, no entity scoping — and, notably, **no check that the
+actor is not the submitter.** So an AP user can mark their own report paid, in a codebase whose own
+header calls self-approval a control worth building the `canDecide` ordering around (AP-13).
+
+The asymmetry is hard to defend on their side: approval is an opinion about whether money *should*
+move, payment is the assertion that it *did*. If the first is worth a SOX-grade guard, the second is
+worth at least the same.
+
+**DECIDED: refuse self-reimbursement, with AP-14's existing break-glass.**
+`allow_sole_approver_self_approval` gates it, because the case that forces an exception is identical
+— a tenant where the admin who submits is the only person who can act — and a second flag nobody
+remembers to set is worse than one flag with a widened meaning. `0013` therefore also updates that
+column's COMMENT rather than adding `allow_self_reimbursement`; the cost accepted is that the
+column's NAME now under-describes it, which a comment can fix and a forgotten flag cannot.
+
+Recorded because a later reader will find the flag's name and think it is being misused.
+
+### RB-4 · Holding the reimburse permission also grants blanket READ of every report
+
+Not a defect, but a coupling worth seeing before it is copied:
+
+```ts
+  if (perms.includes(P.expense.report.readAll) || perms.includes(P.expense.report.reimburse)) {
+    return true;
+  }
+```
+
+and again, as a hard gate on the cross-report expense list:
+
+```ts
+      if (
+        !perms.includes(P.expense.report.readAll) &&
+        !perms.includes(P.expense.report.reimburse)
+      ) {
+        throw new TRPCError({ code: 'FORBIDDEN' });
+      }
+```
+
+Defensible — you cannot pay what you cannot read — but it means "let this person mark payments" and
+"let this person read every expense in the company" are one grant.
+
+**Moot in VeloExpense today and worth writing down anyway.** There is no finance role: roles are
+EMPLOYEE | MANAGER | ADMIN, so reimbursement is ADMIN-only and an ADMIN already reads widely. The
+coupling becomes a real decision on the day per-tenant RBAC lands — which is already on the
+unticketed list — and at that point an AP role that can pay but not browse is the thing to design
+deliberately rather than inherit.
+
+### RB-5 · `REIMBURSED` is terminal with no undo — and `setFxOverride` walks straight through it
+
+There is no `unmarkReimbursed`, no reversal, no correction path. `REIMBURSED` is terminal as far as
+that router is concerned.
+
+Worse, one mutation ignores status entirely. `setFxOverride` carries **no status guard whatsoever**,
+so it can restamp FX and recompute the total of an already-reimbursed report — changing the amount
+after the payment it describes. Their own comment on that function is about a different failure and
+is worth reading anyway, because it is the same class of thinking:
+
+> `* It is a BULK WRITER, not a second conversion path: the rate is stamped onto`
+> `* every expense on the report in that currency as a MANUAL snapshot, and the`
+> `* roll-up reads the expenses. That matters because the expense's snapshot is`
+> `* what gets posted to NetSuite — a report-level rate the expenses didn't know`
+> `* about would have produced a report total its own line items contradict.`
+
+**VeloExpense is already ahead here, structurally rather than by vigilance.** `assertDraft()` is the
+single write gate (VX1-6) and every report/expense/line mutation calls it, so a report past DRAFT is
+read-only at the data layer — a post-payment total change is not something we have to remember not
+to do. And VeloExpense has no FX override at all; PE-1 is the currency gap and it is still open.
+
+**The missing undo is a genuine gap and it is NOT closed by VX2-9.** A mis-clicked reimbursement has
+no route back except SQL, on a status that also freezes the report. Recorded as unticketed work
+rather than folded in: reversing a payment flag is a control question (who may, and what does the
+audit trail say) and not a one-line status write.
+
+### RB-6 · Reimbursement does not touch the ledger — the GL hand-off is at APPROVAL
+
+`postApprovedReport` is imported once and called only from `decide` and `decideBulk`:
+
+```ts
+      // An approved report is a liability, so NetSuite gets it now rather than
+      // when somebody remembers (rule 7). A no-op unless this decision was the
+      // terminal one.
+      postApprovedReport(ctx.db, res.subjectId);
+```
+
+`markReimbursed` calls no accounting or export function, writes no journal reference, and records
+nothing a ledger could reconcile a payment against. So in their design `REIMBURSED` is a
+bookkeeping-free flag asserting that AP paid out-of-band.
+
+Two consequences, both useful:
+
+- **VX2-9 stays a one-day ticket honestly**, rather than by leaving something out. There is no GL
+  work to defer because there is none on this path.
+- **Phase 3's accounting adapter hooks APPROVAL, not payment**, and the reason is in that comment —
+  an approved report is already a liability. Worth having in writing before the adapter is designed,
+  since "post it when we pay it" is the intuitive and wrong answer.
+
+### RB-7 · Their notification is fired outside the transaction and not awaited
+
+```ts
+      ).then((updated) => {
+        notifyReportReimbursed(ctx.db, report.id, ctx.rbac.id);
+        return updated;
+      });
+```
+
+Un-awaited, after the commit, with no catch — so a failed notification is lost silently and the
+caller cannot know. Also worth noting: `markReimbursed` does not call `executeWorkflowEffects`,
+unlike `decide` and `decideBulk`, so no workflow effects fire on payment.
+
+VeloExpense already diverges here and should keep diverging: VX2-7 puts the notification INSIDE the
+transaction that caused it, on the reasoning recorded in `notifyTaskOwner` — the alternative loses
+notifications silently, and NT-11 is a record of what silent non-delivery costs. So the REIMBURSED
+notification is written in the same transaction as the status change, all-or-nothing.
+
+`REIMBURSED` also needs adding to `lib/notifications/catalog.ts` with a template key and shipped
+copy. VX2-7 deliberately left it out — "an event type nothing emits is a preference row nobody can
+explain and a template nobody can test" — and there is a test asserting the taxonomy is exactly five
+events, so adding the sixth is a visible decision rather than a drift.
+
+### RB-8 · What their guard refuses, ported verbatim including the sentence
+
+```ts
+      if (report.status !== ExpenseReportStatus.APPROVED) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'Only approved reports can be marked reimbursed.',
+        });
+      }
+```
+
+Note what it does NOT check, all of which is deliberate on their side and should stay that way:
+whether the report has any expenses, whether receipts exist, whether policy violations are resolved
+(`report.violations` is loaded by the read query and never consulted), or whether the total is
+non-zero. Those were all questions for the submit gate (VX1-8) and the approval gate; asking them
+again at payment time would refuse a report somebody has already approved, which is the wrong place
+to relitigate it.
+
+The one addition: because `APPROVED` is the only permitted source status, an already-`REIMBURSED`
+report falls into the same branch — so "cannot pay it twice" and "cannot pay an unapproved report"
+are one guard, and RB-2's atomic claim is what makes that guard actually hold.
 
 ## Not yet audited
 

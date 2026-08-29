@@ -43,10 +43,10 @@ export const SUBJECT_TYPES = ['EXPENSE_REPORT'] as const;
 export type SubjectType = (typeof SUBJECT_TYPES)[number];
 
 /**
- * What HAPPENED. Five events, and the list is exactly what VX2-7 emits — no
- * more. `REIMBURSED` belongs to VX2-9 and is deliberately absent: an event type
- * nothing emits is a template nobody can test and a preference row nobody can
- * explain.
+ * What HAPPENED. Six events, and the list is exactly what the product emits — no
+ * more. `REIMBURSED` arrived with VX2-9, which is when something started emitting
+ * it; VX2-7 left it out deliberately, because an event type nothing emits is a
+ * template nobody can test and a preference row nobody can explain.
  *
  * Notably NOT here, and this is a choice rather than an omission: `SUBMITTED`.
  * ExpenseOS has it, addressed to watchers of a card request. Here the person who
@@ -66,6 +66,17 @@ export const EVENT_TYPES = [
    *  need to look at this" is a notification, and its absence is why a recalled
    *  report sits in a queue looking live. */
   'RECALLED',
+  /**
+   * Finance marked an approved report paid. Addressed to the submitter, and it
+   * is the one notification in the product that is about money having actually
+   * moved rather than about somebody's opinion of whether it should.
+   *
+   * It is also the last thing that happens to a report, so it is the message a
+   * submitter is most likely to go looking for and least likely to have been
+   * told about any other way — nothing else in the product surfaces "you have
+   * been paid".
+   */
+  'REIMBURSED',
 ] as const;
 export type EventType = (typeof EVENT_TYPES)[number];
 
@@ -249,6 +260,20 @@ export const TEMPLATE_KEYS: readonly TemplateKeyDef[] = [
     description: 'An approver sent an expense report back to the submitter to amend.',
     events: [['RETURNED', 'EXPENSE_REPORT']],
     shipped: { en: '{actor} returned {report} for changes.' },
+  },
+  {
+    key: 'expense_management.report_reimbursed',
+    name: 'Report reimbursed',
+    description:
+      'Finance marked an approved report paid. Sent to the submitter, with the payment ' +
+      'reference when one was recorded.',
+    events: [['REIMBURSED', 'EXPENSE_REPORT']],
+    // `{reference}` is NOT one of the report placeholders and is supplied by the
+    // reimbursement payload, which means it can be absent — the reference is
+    // optional at payment time (0013). An absent placeholder renders VERBATIM as
+    // `{reference}`, which would be worse than saying nothing, so the shipped
+    // copy does not use it and a tenant that always records one can add it.
+    shipped: { en: '{report} has been reimbursed. {total} is on its way to you.' },
   },
   {
     key: 'expense_management.report_recalled',

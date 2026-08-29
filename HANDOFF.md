@@ -715,6 +715,92 @@ worth knowing: the polling interval IS the delivery latency, and the admin butto
 drains ACROSS TENANTS (the poller has no tenant), which is defensible while this is
 one deployment per customer set and is the first thing to revisit if that changes.
 
+**What VX2-9 shipped** — migration `0013` (three columns, no new table),
+`lifecycle.reimburseReport` + `lifecycle.listPayableReports`, a sixth event type in
+`lib/notifications/catalog.ts`, `app/admin/reimbursements/`, and
+`test/reimbursement.db.test.ts`. **Phase 2's exit criterion is met: a report now
+goes submit → route → notify → decide → reimburse, end to end, in a browser.**
+
+Read GAP-AUDIT RB-1..RB-8 before touching it. Four things a later reader will
+otherwise undo:
+
+- **THE DOUBLE-PAYMENT RACE IS REAL IN THEIR CODE AND FIXED IN OURS.** ExpenseOS
+  reads the status in one query and writes with `where: { id }` — the update never
+  re-asserts what the read checked — so two concurrent calls both commit,
+  producing two audit rows and two notifications for ONE payment, on the single
+  transition in this product that means money left the building. Ours is
+  `UPDATE … WHERE id = $1 AND status = 'APPROVED'` with a `rowCount !== 1` check,
+  and the read above it exists only for the error message. **This is the fourth
+  appearance of that shape in the port** — VX2-3's decision claim, VX2-8's
+  `consumeActionToken`, VX2-8's `claimDelivery` — and the fourth time the answer is
+  a conditional write rather than a lock. There is a test that runs two real
+  overlapping transactions and asserts exactly one payment happens.
+- **YOU MAY NOT PAY YOUR OWN REPORT**, and ExpenseOS has no such check anywhere on
+  that path — a static permission is the whole authorization. That is hard to
+  defend in a codebase whose `canDecide` ordering exists because self-APPROVAL is a
+  SOX-grade control (AP-13): approval is an opinion that money *should* move,
+  payment asserts that it *did*. The exception is **AP-14's existing break-glass,
+  reused rather than duplicated**, because the forcing case is identical — a tenant
+  where the admin who submits is the only person who can act. `0013` widens that
+  column's COMMENT to say it now governs payment too. Its NAME under-describes it,
+  and that was the accepted cost: one flag with a stale name beats two flags where
+  the second is never set. The audit row records
+  `selfReimbursedUnderBreakGlass`, so "who paid their own claim" is a query.
+- **A REIMBURSEMENT RECORDS DATE, ACTOR AND AN OPTIONAL REFERENCE.** Theirs writes
+  one column and passes `details: {}` to its own audit call — while the same file
+  passes real details from `decide` and `setFxOverride`, so the emptiness was
+  considered rather than forgotten. Diverged because `approved_at` already existed
+  (the asymmetry reads as a bug), and because the reference is the only thing
+  connecting the flag to the money. Two CHECK constraints hold it together: the
+  timestamp and actor move as a pair, and `(status = 'REIMBURSED') = (reimbursed_at
+  IS NOT NULL)` — so a bug that stamped the columns without moving the status
+  cannot leave a report that has been paid and still looks payable.
+- **THE LEDGER HAND-OFF IS AT APPROVAL, NOT PAYMENT**, and this is the finding
+  Phase 3 needs. ExpenseOS calls `postApprovedReport` only from `decide` /
+  `decideBulk`, with the reason in the comment: *"An approved report is a
+  liability, so NetSuite gets it now rather than when somebody remembers."*
+  `markReimbursed` touches no accounting function at all. So `REIMBURSED` is a
+  bookkeeping-free flag asserting AP paid out-of-band — which is why VX2-9 is
+  honestly a one-day ticket rather than one with something left out, and why the
+  accounting adapter must hook approval. "Post it when we pay it" is the intuitive
+  and wrong answer.
+
+Smaller, each with a reason:
+
+- **The sixth event type was a deliberate addition, and a test made it visible.**
+  `test/notification-catalog.test.ts` pins the taxonomy to an exact list, so adding
+  `REIMBURSED` failed that test until the list was updated on purpose. That is
+  exactly what the pin is for — VX2-7 left the event out because "an event type
+  nothing emits is a preference row nobody can explain", and VX2-9 is when
+  something started emitting it.
+- **The shipped copy deliberately does NOT use `{reference}`.** The reference is
+  optional at payment time, and an absent placeholder renders VERBATIM (NT-6 rule
+  2) — so a tenant that never records one would send "`{reference}`" to every
+  claimant. A tenant that always records one can add it to their own wording.
+- **The notification is inside the transaction**, where theirs is fired after the
+  commit and un-awaited with no catch. Same choice VX2-7 made and for the reason in
+  `notifyTaskOwner`: NT-11 is a record of what silent non-delivery costs.
+- **The AP screen says "this does not pay anybody" in those words.** "Mark
+  reimbursed" invites the reading that pressing it moves money, and the only thing
+  worse than a queue nobody works is a queue somebody works believing it does more
+  than it does. It also declines to sum a mixed-currency list — PE-1 is a live
+  reminder of what happens when a figure quietly assumes one currency.
+- **Payment is refused only on status.** Not on receipts, not on unresolved
+  violations, not on a zero total. Those were questions for the submit gate (VX1-8)
+  and the approval gate; asking them again at payment time would refuse a report
+  somebody has already approved. Ported as-is — RB-8 records that theirs makes the
+  same choice.
+- **`assertDraft()` already froze the report**, so VeloExpense is structurally
+  ahead of a live defect on their side: their `setFxOverride` carries NO status
+  guard and can recompute the total of an already-reimbursed report, changing the
+  amount after the payment it describes.
+
+**THERE IS NO UNDO, and VX2-9 does not add one.** `REIMBURSED` is terminal and it
+also freezes the report, so a mis-clicked payment has no route back except SQL.
+ExpenseOS has no reversal either. This is a real gap and it is deliberately
+unticketed here rather than folded in: reversing a payment flag is a control
+question — who may, and what the audit trail says about it — not a status write.
+
 **STILL NO ADMIN NAVIGATION, AND `/` IS STILL THE CREATE-NEXT-APP TEMPLATE.** This ticket adds three
 more URL-only screens and — worse — an unread COUNT with nowhere to display it. A notification bell
 is the first thing in this product that genuinely needs a global nav rather than merely wanting one:
@@ -852,32 +938,34 @@ approvals, notifications or audit entries.
    none today) and the bucket CORS rule; an `app_user` row in the demo tenant
    matching a real Google/Entra identity with `role='ADMIN'`; then "Restore
    starter rules" on `/admin/expense-policies`, or nothing will ever flag.
-3. **VX2-9 next — reimbursement transition** (VX2-1..VX2-8 are all done — see
-   §5). One dev-day on the board and the smallest thing left: APPROVED →
-   REIMBURSED, every step audited, and a refusal for a report that is not
-   APPROVED. It also finally completes the plan's Phase-2 exit criterion, which is
-   a full submit → approve → reimburse round trip. Then VX2-10, Phase-2 isolation
-   + e2e.
+3. **VX2-10 next — Phase-2 isolation + e2e, and it is the LAST ticket on the
+   board** (VX2-1..VX2-9 are all done — see §5). Acceptance: isolation and e2e
+   green in CI, the RLS-coverage guard still passing, and chain verification
+   running on every build.
 
-   **Two things VX2-9 should pick up while it is in there**, because they are
-   cheap in that ticket and awkward in any other: a `REIMBURSED` event type in
-   `lib/notifications/catalog.ts` with its template key and shipped copy (VX2-7
-   deliberately omitted it — an event nothing emits is a preference row nobody can
-   explain), and `consumeTaskTokens` on the reimbursement transition if any live
-   approve-link could still point at the report.
-
-   **VX2-10 has one hard input: a REAL SMTP SINK.** Everything VX2-8 tests goes
-   through the in-memory transport, which proves composition and not delivery —
-   the same trap VX1-9 recorded for MemoryStorage ("exactly how every vitest suite
-   stays green while a real upload is broken"). An in-process SMTP server is the
-   `s3rver`-shaped answer, and without it the e2e cannot assert that an approver
+   **It has one hard input: a REAL SMTP SINK.** Everything VX2-8 tests goes
+   through the in-memory transport, which proves the message was COMPOSED and
+   nothing about whether SMTP works — the same trap VX1-9 recorded for
+   MemoryStorage ("exactly how every vitest suite stays green while a real upload
+   is broken"). An in-process SMTP server is the `s3rver`-shaped answer, and
+   without it the e2e cannot assert the thing VX2-8 exists to do: that an approver
    receives a link and can click it.
 
-   **Slack and Teams are now unticketed work** — see GAP-AUDIT NT-20/21. Teams has
-   no ExpenseOS source at all and would also need a migration to widen
-   `notification_preference_channel_check`; Slack is a real port but drags in an
-   app registration, a bot token, a signing secret and an inbound endpoint that
-   verifies request signatures.
+   **The e2e should now walk the whole criterion** — submit → approve → reimburse
+   — because that is what Phase 2 was for, and VX2-9 made it reachable. Note the
+   seeded tenant already has four users in a reporting line and break-glass on
+   (§7 item 6), so the submit-and-approve half works; the reimburse half needs an
+   ADMIN who is not the submitter, which `owner@demo.test` already is.
+
+   **Also for VX2-10:** the isolation suite now covers 22 tenant tables and the
+   `app.platform_task` hatch, and `chain verification runs on every build` is not
+   yet true — `verifyChain` is exercised by `test/audit.db.test.ts` and by VX2-9's
+   suite, but nothing runs it as its own CI step over the whole seeded database.
+
+   **After Phase 2, the board is empty and Phase 3 has no tickets** (§6 says so).
+   The known blocker is unchanged and now overdue: the accounting adapter needs
+   chart-of-accounts template tables that were supposed to land in Phase 1 and
+   never did. RB-6 adds a second input — the adapter hooks APPROVAL, not payment.
 
 4. **DONE — the approval-ladder admin surface shipped as VX2-4a**, its own
    ticket rather than riding with VX2-4. See §5. What remains unbuilt around it
