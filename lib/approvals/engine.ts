@@ -35,6 +35,7 @@ import { assertCanDecide } from '@/lib/approvals/eligibility';
 import { tieredRouter } from '@/lib/approvals/resolver';
 import { RoutingError, type ResolvedAssignment } from '@/lib/approvals/routing';
 import { planApprovalForReport, countStoredReceipts } from '@/lib/approvals/service';
+import { notify, reportPayload } from '@/lib/notifications/service';
 import type { StepPlan } from '@/lib/approvals/tiers';
 
 /** The tenant predicate for an INSERT. Declared locally because every
@@ -95,7 +96,7 @@ export async function openRun(
   openedById: string,
 ): Promise<OpenRunResult> {
   const r = await tx.query(
-    `SELECT id, number, status, submitter_id, total_minor, currency_code
+    `SELECT id, number, title, status, submitter_id, total_minor, currency_code
        FROM expense_report WHERE id = $1`,
     [reportId],
   );
@@ -169,6 +170,21 @@ export async function openRun(
     },
   });
 
+  // VX2-7. In the SAME transaction as the submit, deliberately — see
+  // `notifyTaskOwner`.
+  await notifyTaskOwner(tx, taskId, {
+    reportId,
+    title: report.title as string,
+    number: report.number as string | null,
+    totalMinor: String(report.total_minor),
+    currencyCode: report.currency_code as string,
+    // The SUBMITTER is the actor of a TASK_ASSIGNED, not the person who opened
+    // the run — they are the same today (submit opens the run) and will stop
+    // being so the moment anything else can open one. The sentence says
+    // "{actor} needs your approval", and that is the submitter.
+    actorId: report.submitter_id as string,
+  });
+
   return { requestId, totalSteps: plan.length, taskId };
 }
 
@@ -213,7 +229,8 @@ export async function decide(
     `SELECT t.id, t.step, t.status, t.assignee_id, t.claim_role,
             q.id  AS request_id, q.status AS request_status,
             q.current_step, q.total_steps, q.policy_snapshot, q.report_id,
-            rep.number AS report_number, rep.status AS report_status
+            rep.number AS report_number, rep.status AS report_status,
+            rep.title AS report_title, rep.submitter_id, rep.total_minor, rep.currency_code
        FROM approval_task    t
        JOIN approval_request q   ON q.id = t.request_id
        JOIN expense_report   rep ON rep.id = q.report_id
@@ -309,6 +326,17 @@ export async function decide(
       entityId: taskId,
       details: auditDetails,
     });
+    // VX2-7. The SUBMITTER is not told that step 1 of 3 passed — ExpenseOS does
+    // not either, and a bell per rung on a three-rung ladder is how somebody
+    // learns to ignore the bell. They hear from us when the run ENDS.
+    await notifyTaskOwner(tx, nextTaskId, {
+      reportId: task.report_id as string,
+      title: task.report_title as string,
+      number: task.report_number as string | null,
+      totalMinor: String(task.total_minor),
+      currencyCode: task.currency_code as string,
+      actorId: task.submitter_id as string,
+    });
     return {
       decision,
       requestStatus: 'RUNNING',
@@ -393,6 +421,30 @@ export async function decide(
     details: { ...auditDetails, cancelledTasks: cancelled.rowCount ?? 0 },
   });
 
+  // VX2-7 — the acceptance criterion: "a decision notifies the submitter
+  // in-app". `notifyRecipients` drops the actor, so an admin who approved their
+  // own report under the AP-14 break-glass gets no bell telling them what they
+  // just did.
+  await notify(
+    tx,
+    {
+      subjectType: 'EXPENSE_REPORT',
+      subjectId: task.report_id as string,
+      eventType: decision,
+      actorId,
+      payload: {
+        ...reportPayload({
+          title: task.report_title as string,
+          number: task.report_number as string | null,
+          totalMinor: String(task.total_minor),
+          currencyCode: task.currency_code as string,
+        }),
+        note: input.note ?? '',
+      },
+    },
+    [task.submitter_id as string],
+  );
+
   return { decision, requestStatus, reportStatus, nextTaskId: null };
 }
 
@@ -431,6 +483,18 @@ export async function cancelRunForReport(
   if (open.rows.length === 0) return null;
   const requestId = open.rows[0].id as string;
 
+  // BEFORE the UPDATE, because after it there are no PENDING tasks left to ask
+  // about. These are the people whose queue is about to lose an item without
+  // anybody deciding anything, which is precisely the case that needs telling.
+  const pending = await tx.query(
+    `SELECT id FROM approval_task WHERE request_id = $1 AND status = 'PENDING'`,
+    [requestId],
+  );
+  const strandedOwners: string[] = [];
+  for (const row of pending.rows) {
+    strandedOwners.push(...(await taskRecipients(tx, row.id as string)));
+  }
+
   const cancelled = await tx.query(
     `UPDATE approval_task
         SET status = 'CANCELLED', decided_at = clock_timestamp()
@@ -457,10 +521,120 @@ export async function cancelRunForReport(
     },
   });
 
+  // VX2-7. A recalled report that stays in an approver's inbox looking live is
+  // the mirror image of the dead end `cancelRunForReport` exists to fix: the
+  // work is gone and only the queue disagrees.
+  if (strandedOwners.length > 0) {
+    const rep = await tx.query(
+      `SELECT title, number, total_minor, currency_code, submitter_id
+         FROM expense_report WHERE id = $1`,
+      [reportId],
+    );
+    if (rep.rows.length > 0) {
+      const r = rep.rows[0];
+      await notify(
+        tx,
+        {
+          subjectType: 'EXPENSE_REPORT',
+          subjectId: reportId,
+          eventType: 'RECALLED',
+          // The submitter withdrew it. `actorId` is the person who called
+          // recall, which the lifecycle gate has already proved is the owner or
+          // an admin.
+          actorId,
+          payload: reportPayload({
+            title: r.title as string,
+            number: r.number as string | null,
+            totalMinor: String(r.total_minor),
+            currencyCode: r.currency_code as string,
+          }),
+        },
+        strandedOwners,
+      );
+    }
+  }
+
   return { requestId, cancelledTasks: cancelled.rowCount ?? 0 };
 }
 
 /* ── internals ─────────────────────────────────────────────────────────────── */
+
+/**
+ * Who should be told about one task: its assignee, or every ACTIVE holder of its
+ * claim role.
+ *
+ * Telling the whole pool is what a pool means — nobody is assigned from it, so a
+ * task nobody is told about is a task nobody claims. It is also the one place in
+ * VX2-7 that fans out to more than one person, which is why the preference read
+ * is batched (`preferencesForMany`).
+ *
+ * An EMAIL approver gets nothing and returns empty: they have no `app_user` row
+ * to hang an inbox on, and reaching them is the approve-link token VX2-8 ships.
+ * The resolver refuses to route onto one today, so this branch is unreachable —
+ * it is written down rather than left as a crash for when that changes.
+ *
+ * NOT included: an active delegatee of the assignee. That is correct rather than
+ * an omission. The resolver already redirects a task to a delegatee AT ROUTING
+ * TIME, so `assignee_id` IS the delegatee whenever a delegation existed when the
+ * task was made; and where the delegation came later, VX2-5's own page promises
+ * the delegator keeps their queue.
+ */
+async function taskRecipients(tx: QueryRunner, taskId: string): Promise<string[]> {
+  const r = await tx.query(
+    `SELECT assignee_id, claim_role FROM approval_task WHERE id = $1`,
+    [taskId],
+  );
+  if (r.rows.length === 0) return [];
+  const assigneeId = r.rows[0].assignee_id as string | null;
+  if (assigneeId !== null) return [assigneeId];
+  const claimRole = r.rows[0].claim_role as string | null;
+  if (claimRole === null) return [];
+  const holders = await tx.query(
+    `SELECT id FROM app_user
+      WHERE role = $1 AND deleted_at IS NULL AND employee_status = 'ACTIVE'`,
+    [claimRole],
+  );
+  return holders.rows.map((h) => h.id as string);
+}
+
+/**
+ * Tell a task's owner it is theirs.
+ *
+ * IN THE SAME TRANSACTION as the decision or the submit that caused it, so a
+ * notification that cannot be written fails the thing that caused it. That is
+ * the same coupling VX2-3 chose for the audit row, and the reasoning transfers:
+ * the alternative is catching the error and carrying on, which loses the
+ * notification silently — and GAP-AUDIT NT-11 is a record of what silent
+ * non-delivery costs ("un-diagnosable across several UAT rounds: no error, no
+ * log, no delivery"). A rolled-back approval is loud. This is a deliberate
+ * trade, not an oversight.
+ */
+async function notifyTaskOwner(
+  tx: QueryRunner,
+  taskId: string,
+  subject: {
+    reportId: string;
+    title: string;
+    number: string | null;
+    totalMinor: string;
+    currencyCode: string;
+    actorId: string;
+  },
+): Promise<void> {
+  const recipients = await taskRecipients(tx, taskId);
+  if (recipients.length === 0) return;
+  await notify(
+    tx,
+    {
+      subjectType: 'EXPENSE_REPORT',
+      subjectId: subject.reportId,
+      eventType: 'TASK_ASSIGNED',
+      actorId: subject.actorId,
+      payload: reportPayload(subject),
+    },
+    recipients,
+  );
+}
 
 /**
  * Route and create the task for one step, at the moment it becomes current.

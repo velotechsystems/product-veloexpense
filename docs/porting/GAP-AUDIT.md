@@ -60,6 +60,29 @@ what happens when a MANAGER approver resolves to nobody. Only the first is in VX
 
 ---
 
+## Decisions taken (2026-08-29) — the three that were blocking VX2-7
+
+| # | Question | Decision | Cost accepted |
+|---|---|---|---|
+| **NT-4** | Template identity: the board's coordinates, or the source's key? | **Key.** One row per (`key`, `channel`), locale-keyed JSON body/subject, and an explicit `(event_type, subject_type) → key` table in code with a module-load collision guard. **Diverges from the Phase-2 board note**, which describes the design ExpenseOS's own postmortem deletes. | The board's "any-subject" rung disappears — it only ever existed because `subjectType` was a nullable key column. A small registry file to write and keep honest. |
+| **NT-2** | Can a preference suppress an IN-APP notification? | **Yes, fully.** The preference is consulted at FAN-OUT (`notifyRecipients`), which is a different place in the flow from ExpenseOS, where in-app is unconditional and prefs gate only email/Slack. Their schema already documents an `inApp` key that no code reads; this makes it real rather than shipping the dead toggle. | Somebody can mute their own inbox and miss a returned report. Mitigated by auditing preference CHANGES on the VX2-6 chain, so "I was never told" is answerable; the suppression itself writes nothing. |
+| **NT-7** | How much of the draft/published version machinery ships now? | **None of it.** Body and subject live directly on the `(key, channel)` row. The pure `render(content, values)` split IS ported, so a version table is additive later. | No draft, no preview, no revert, no per-reword history. Unticketed follow-up, recorded in HANDOFF §7. |
+
+**Decided without asking, on existing precedent:** a fresh tenant gets **zero** template rows.
+VX1-7 already settled this shape — the starter policy set lives only in `DEFAULT_POLICIES` and
+`scripts/seed.mjs` deliberately seeds none, "so there is no second copy to drift". Shipped copy
+lives in code; a template row exists only where a tenant has overridden it. This is also what makes
+VX2-7's acceptance criterion ("an empty template table still renders shipped copy") the *normal*
+path rather than an edge case.
+
+**Consequence: VX2-7 carries migration `0011`.** Four tables — `activity`, `notification`,
+`notification_preference`, `notification_template` — all with `organization_id`, all `FORCE ROW
+LEVEL SECURITY`, all in the isolation test (NT-1 explains why RLS is the only guard `activity` gets:
+`subject_id` is polymorphic and can carry no FK). **No `emailed_at`** — see NT-15.
+
+---
+
+
 ## policy-engine (VX1-7, VX1-8) — PARTIAL, ~45% read
 
 Source read: `packages/predicate/src/engine.ts` (11.4 KB), `validate.ts` (18.6 KB), `facts.ts`
@@ -1127,6 +1150,431 @@ Two of these are already dodged in VeloExpense — see PE-5 and the "already ahe
 `SPEC-BASELINES.md`: `fix/bound-money-inputs` (our `parseAmountToMinor` rejects extra decimals) and
 `fix/refuse-zero-total-submit` (VX1-8 refuses an empty report).
 
+## notifications (VX2-7 next, VX2-8 after) — `packages/notifications/src` + `apps/worker/src` — PARTIAL, ~75% read
+
+Read from ExpenseOS SOURCE (not the module doc), 2026-08-29:
+`packages/notifications/src/{activity,templates,templateKeys}.ts`, `apps/worker/src/{notification-dispatch,channels}.ts`,
+and the `Activity` / `Notification` / `NotificationTemplate` / `NotificationTemplateVersion` /
+`ReplyThread` models plus the notification fields of `User` from `packages/db/prisma/schema.prisma`.
+
+Not yet read: `subjectLinks.ts`, `commentThreads.ts`, `replyThreads.ts`, `actionTokens.ts`,
+`email.ts`, `slack.ts`, the digest job, and `NotificationPreferences.tsx` (the last refused on mime
+type and was not chased — it is a VX2-7 input and should be read before the preferences UI is
+built). Everything below is VX2-7 unless marked VX2-8.
+
+### NT-1 · The whole module is tenant-blind, and the loose subject id makes RLS non-optional ⚠
+
+AU-1 found three specific places where the audit chain was tenant-blind. Here there is nothing to
+enumerate: **no notification table carries a tenant at all**, and the schema says so on purpose.
+A case-insensitive search for `organizationId|tenantId|orgId|workspaceId|model Organization|model
+Tenant` across all 4,329 lines of `schema.prisma` returns exactly one hit, and it is a comment:
+
+> `/// The configured/active state of a Module. Single-tenant: one installation`
+> `/// per Module (unique). A future tenant model adds `tenantId` here only.`
+
+So `activity`, `notification` and the template tables all need `organization_id` + `ENABLE`/`FORCE
+ROW LEVEL SECURITY` and a row in the isolation test. That much is the standing house rule and needs
+no argument. What DOES need saying is why RLS is the only guard available on `activity`:
+
+```prisma
+model Activity {
+  subjectType String
+  subjectId   String   @db.Uuid   // loose — no FK
+```
+
+`Activity.subjectId` is a bare uuid with no foreign key, and `ReplyThread` is the same
+(`/// Loose ids (no FK): the inbound path re-validates the subject + recipient`). That is forced by
+the polymorphism — a column cannot reference four different subject tables — so **there is no FK to
+fall back on if the tenant predicate is missing.** A subject id is a value a caller supplies. In a
+pooled database, a leaked or guessed report id would read another tenant's activity stream, and
+nothing in the schema would stop it. Every other tenant table in VeloExpense has a real FK as a
+second line; this one will not.
+
+Two consequences to build in:
+
+1. `organization_id` on `activity` and `notification`, FORCE RLS on both, and the read path must
+   never take a `subjectId` without also being inside `withOrg`. That is already how every
+   `lib/<domain>` module works, so this is a "do not make an exception here" note, not new work.
+2. The isolation test needs a **join-walk case** for this table specifically — notification →
+   activity → a subject id belonging to another tenant — the same shape VX1-9 added for
+   line-item → expense → report. Without it, RLS on the two tables is asserted and the thing the
+   tables are actually exposed to is not.
+
+### NT-2 · The preference map promises an in-app switch that nothing reads — and VX2-7's acceptance requires one ⚠
+
+Three places describe the preference map, and they do not agree.
+
+The schema comment says in-app is part of it:
+
+> `// Notification delivery. slackUserId is cached from the Slack integration`
+> `// (users.lookupByEmail). notificationPreferences is a per-type × per-channel`
+> `// override map { [activityType]: { inApp?, email?, slack? } }; code applies`
+> `// sensible defaults when a key is absent.`
+
+The type says it is not:
+
+```ts
+export type PrefMap = Record<string, { email?: boolean; slack?: boolean } | undefined>;
+```
+
+And `channels.ts`'s header says why:
+
+> `* Per-recipient channel selection for notification dispatch. Pure (no DB) so it`
+> `* can be unit-tested in isolation. In-app delivery is unconditional and handled`
+> `* elsewhere; this decides only the external channels (email / Slack).`
+
+"Handled elsewhere" is `notifyRecipients`, which writes one `Notification` per recipient and **never
+looks at preferences at all**. Meanwhile `NotificationChannel` is `IN_APP | EMAIL | SLACK`, so
+IN_APP exists as a template channel but not as a preference. Whether the preferences SCREEN offers
+an in-app toggle is the one thing not yet read (`NotificationPreferences.tsx`); if it does, it is a
+shipped dead control.
+
+**This collides with VX2-7's acceptance criterion, which is "a decision notifies the submitter
+in-app; preferences suppress it."** Their arrangement cannot satisfy the second clause. Suppressing
+in-app means the preference is consulted at FAN-OUT time, in `notifyRecipients`, not at dispatch
+time — a different place in the flow from where ExpenseOS put it. **Blocking decision (D2).**
+
+### NT-3 · The channel defaults, portable verbatim
+
+```ts
+function defaultChannels(type: string): { email: boolean; slack: boolean } {
+  if (type === 'COMMENT') return { email: false, slack: false };
+  return { email: true, slack: false };
+}
+```
+
+> `/** Per-activity-type defaults when the user hasn't overridden: comments stay`
+> ` * in-app only (no email noise / storms); everything else emails. Slack is`
+> ` * always opt-in. */`
+
+Two things to keep beyond the values. First, **email is opt-OUT and Slack is opt-IN** — asymmetric
+on purpose, because an unasked-for email is an annoyance and an unasked-for DM is an intrusion.
+Second, and structurally more important: **the stored map holds only OVERRIDES**, and an absent key
+falls to the code default:
+
+```ts
+email: prefs[type]?.email ?? def.email,
+```
+
+So adding an event type needs no backfill and no migration, and a tenant's stored preferences never
+have to be rewritten when the taxonomy grows. Port that shape exactly; a map that stores every
+type × channel explicitly would need a data migration per new event.
+
+### NT-4 · The board's template-resolution ladder is the design ExpenseOS **deleted** ⚠ changes VX2-7's spec
+
+The Phase-2 board's scope note for VX2-7 says:
+
+> template resolution exact → any-subject → shipped catalog string
+
+That middle rung — "any-subject" — is not a feature. It is an artefact of keying a template on its
+coordinates, and ExpenseOS has already removed it. Their own postmortem, verbatim from
+`templateKeys.ts`:
+
+> `* Templates used to be keyed on `(channel, eventType, subjectType, locale)`.`
+> `* That was not an identity, it was a set of coordinates, and the table was the`
+> `* cross-product of whatever shape `packages/i18n/.../notifications.json``
+> `* happened to have. A flat catalog entry produced a row whose subject was NULL`
+> `* and therefore rendered as "Any"; a nested block produced one whose subject was`
+> `* its block name. Nothing chose that mix — it fell out of the JSON. Two locales`
+> `* then doubled every row, so one sentence lived in two records that could drift`
+> `* apart with nobody able to see it.`
+
+and from the `NotificationTemplate` model:
+
+> `///   * `locale` in the key meant EN and FR-CA were SEPARATE ROWS. One sentence,`
+> `///     two records, two version histories, and no way to see that an admin had`
+> `///     reworded the English and left the French saying the old thing.`
+> `///   * `subjectType` was nullable, so the list showed a mix of "Any",`
+> `///     "TRAVEL_REQUEST" and "Expense report" with nothing having chosen that`
+> `///     mix …`
+> `///   * neither field is stable. Renaming an activity type orphans its wording.`
+
+The replacement is **one row per (`key`, `channel`) carrying every locale in Json columns**, with
+`(eventType, subjectType) → key` moved out of the schema and into an explicit, tested table in code.
+
+**This is VX2-1 happening again** — the plan describing a shape the source has since replaced — with
+the difference that this time it was caught before the migration rather than after the PR.
+**Blocking decision (D1).** Note that one of their three reasons (locale doubling) does not apply to
+VeloExpense today, since French is explicitly deferred; the other two do.
+
+`templateKeyFor` is a lookup, and the file is explicit that this is not a naming rule:
+
+> `* It is deliberately NOT derived`
+> `* from a naming rule: the same key legitimately serves several activities (a`
+> `* card is "issued" whether the event hangs on the card or on the request that`
+> `* asked for it), and a rule producing `virtual_credit_cards.request_issued` for`
+> `* one of them would be a rule quietly inventing a second template.`
+
+Key format, and the reason the owner prefix is a closed list rather than free text:
+
+```ts
+export const TEMPLATE_KEY_PATTERN =
+  /^[a-z][a-z0-9]*(?:_[a-z0-9]+)*\.[a-z][a-z0-9]*(?:_[a-z0-9]+)*$/;
+```
+
+> `* The prefix is scoped to real owners rather than left free-form so two features`
+> `* cannot both invent `request_submitted` and collide, and so a key says which`
+> `* part of the product is responsible for the sentence.`
+
+36 registry entries covering 46 `(eventType, subjectType)` pairs and 20 distinct event types.
+
+### NT-5 · `fromTemplate` is the field that makes VX2-7's acceptance test honest — and their own suite got exactly this test wrong ⚠
+
+`renderTemplate` returns:
+
+```ts
+export interface ResolvedTemplate {
+  subject: string | null;
+  body: string;
+  blocks: unknown;
+  /** True when a stored template supplied the text (vs the catalog fallback). */
+  fromTemplate: boolean;
+}
+```
+
+VX2-7's acceptance criterion is *"an empty template table still renders shipped copy."* ExpenseOS
+wrote that test and it did not work. From `resetCatalogCache`'s doc comment:
+
+> `* That is not hypothetical. "falls back to default copy when the catalog has no digest`
+> `* strings" asserted on the fallback copy while never once reaching it: the real catalog was`
+> `* served, and the assertion passed only because those strings happen to be character-`
+> `* identical to the code's fallbacks. Rewriting the fallback in source left all 20 tests`
+> `* green. The test named a behaviour it could not observe.`
+
+Their cause was a module-level catalog cache that the first test in the file fixed for every later
+one. Ours would not be that — VeloExpense has no i18n catalog to memoise — but the failure MODE
+transfers exactly: **when the fallback string and the template string are equal, asserting on the
+output cannot distinguish which path produced it.** So VeloExpense's version of that test asserts
+`fromTemplate === false`, and the fallback fixture uses copy that is deliberately *not* a substring
+of any template. Assert the path, not the sentence.
+
+Two smaller lessons in the same comment, both worth adopting: a module-level cache needs an exported
+reset **or it should not be module-level in a file under test**, and a once-per-process warning latch
+has the identical problem (`resetSlackWarnings` exists for exactly that reason — "a suite written
+without this has one real assertion and a row of companions that pass because nothing was logged AND
+because nothing could have been").
+
+### NT-6 · Substitution — four rules, port all four
+
+```ts
+export function applyPlaceholders(
+  source: string,
+  values: Readonly<Record<string, string | number>>,
+): string {
+  return source.replace(/\{(\w+)\}/g, (whole, key: string) =>
+    key in values ? String(values[key]) : whole,
+  );
+}
+```
+
+1. **Named `{placeholder}` replacement and nothing else.**
+   > `* Substitution is deliberately dumb: named `{placeholder}` replacement against a`
+   > `* supplied value map, nothing else. No expressions, no property access, no`
+   > `* conditionals. A template editor that evaluates expressions against the`
+   > `* notification context is an injection surface and a support burden, and the`
+   > `* need it serves is rewording sentences.`
+2. **An unknown placeholder is left VERBATIM, not blanked.**
+   > `* An unknown placeholder is left verbatim rather than blanked — `{amont}` in the`
+   > `* output is a visible typo somebody fixes, whereas an empty gap reads as a`
+   > `* product bug and hides the cause.`
+3. **Only SCALAR payload entries become values.** From the dispatcher:
+   > `// Scalar payload entries become placeholders, so a template can say`
+   > `// "report {number} is missing {missing} receipt(s)" without this handler`
+   > `// knowing anything about receipts. Non-scalars (arrays like ADJUSTED's`
+   > `// `fields`) are dropped rather than stringified as "[object Object]".`
+4. **Reserved names are assigned LAST so a payload key cannot shadow them** —
+   `{ ...payloadValues, actor, link, cta }`, with the comment saying exactly that. Worth a test: a
+   payload carrying `actor` must not win.
+
+### NT-7 · `renderVersion` takes CONTENT, not a template id — keep the split even without preview
+
+> `* Shared by delivery and by the admin PREVIEW, which is why it takes content`
+> `* rather than a template id: preview has to render a version that is not`
+> `* published, and delivery must never render one that is. Keeping the rendering`
+> `* identical while the SELECTION differs is the whole point of the split.`
+
+Also: it returns **null** when the version carries no text for the locale or its fallback, "so the
+caller can drop to the catalog instead of sending an empty message". A half-authored template is a
+miss, not an empty body. Port the signature even if VX2-7 ships no preview and no version table
+(D4) — a pure `render(content, values)` is what makes both additive later.
+
+### NT-8 · The registry has a COLLISION guard and no EXHAUSTIVENESS guard — and here that is right
+
+At module load:
+
+```ts
+      // Two keys claiming one activity is unresolvable at runtime — whichever
+      // won would depend on array order, which is not a decision anybody made.
+      if (existing && existing !== def.key) {
+        throw new Error(...);
+      }
+```
+
+But `eventType` and `subjectType` are plain `string` everywhere, there is no `Record<EventType, …>`,
+and adding an event type is therefore **silently unmapped rather than a type error**.
+
+That is the same shape as AP-19, where I chose the compile-time guard over ExpenseOS's test-based
+mitigation. **Here I would not**, and the reason is the consequence of a miss. In AP-19 an unmapped
+role meant a rung that routes nowhere. Here:
+
+> `* A pair with no entry resolves to `null`, and `renderTemplate` then falls back`
+> `* to the i18n catalog exactly as it did before templates existed. That is the`
+> `* behaviour for events nobody has written copy for yet, and it is why adding an`
+> `* activity type cannot break delivery.`
+
+An unmapped event degrades to shipped copy, which is a working notification. Forcing every new event
+type to have authored copy before it can be added would make the taxonomy expensive to grow for no
+safety gain. **Keep their behaviour; the collision guard ports, the exhaustiveness guard does not.**
+Recorded as a considered non-divergence so a later reader does not "fix" it.
+
+### NT-9 · A frozen legacy copy gap, and the rule worth stealing from it
+
+> `* Note where one key serves more than one subject. Card limit-increase requests`
+> `* have never had copy of their own — they have always rendered the card-request`
+> `* sentences, because the old resolver fell through to the NULL-subject row. That`
+> `* is preserved here verbatim rather than quietly changed; it is a copy gap to`
+> `* close with words, not with a schema migration.`
+
+VeloExpense has no legacy table and so nothing to freeze. The transferable rule is the one to keep:
+**an accidental fallthrough gets written down explicitly rather than silently corrected**, because
+correcting user-visible copy under cover of a structural migration means nobody reviews the change
+as a copy change. It applies directly to VX2-8's EMAIL approvers, which VX2-4a currently hides.
+
+### NT-10 · `Activity.type` and `Activity.subjectType` are bare strings, deliberately
+
+The schema comment on `Activity.type` lists the values in prose and constrains nothing, and the
+sibling model does the opposite:
+
+> the sibling `ApprovalInstance.subjectType` *does* use an `ApprovalSubjectType` enum — `Activity`
+> deliberately does not.
+
+Same reasoning, and the same house pattern, as `expense_policy.kind` in VX1-7: adding an event type
+must not need a migration, so the taxonomy lives in code and the column is text. Consistent with
+what VeloExpense already does; port as-is.
+
+### NT-11 · Two measured "silent gate" incidents, and the observability rule they imply
+
+Email:
+
+> `// The recipient wants email and the activity qualifies, but the `email``
+> `// integration isn't installed/active — so nothing sends. Silence here`
+> `// is what made "notifications aren't going to email" un-diagnosable`
+> `// across several UAT rounds: no error, no log, no delivery.`
+
+Slack, in the same handler:
+
+> `// The identical hole as the email gate three lines up, whose own comment`
+> `// records what it cost … What the warning has to carry is WHICH of the`
+> `// failures it is: "nobody installed Slack", "somebody installed it and left the`
+> `// bot token blank", and "this process cannot decrypt the config because`
+> `// PG_CRYPTO_KEY is missing from the worker" all used to arrive as the same`
+> `// absence of a message.`
+
+And why the latch is per-reason rather than once:
+
+> `* Per reason, not once outright, because the reasons are fixed in sequence — an`
+> `* operator pastes a bot token, restarts nothing, and the next thing they need to be`
+> `* told is that the signing secret is still missing. One latch would have swallowed that.`
+
+Mostly VX2-8. The part that lands on VX2-7 is the rule underneath: **every place a notification is
+deliberately not created must be observable.** VX2-7 adds exactly one such place — a preference
+suppressing in-app (D2) — and that one is self-explanatory from the preferences screen, so it needs
+no log. The rule is recorded here so VX2-8 does not have to rediscover it.
+
+### NT-12 · The Slack id cache — two TTLs and three repair paths (VX2-8)
+
+Recorded now because it is the most expensive thing in the module to get wrong and it will be read
+in a later thread.
+
+```ts
+const POSITIVE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+const NEGATIVE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+```
+
+> `* · a **negative** was cached for a week, so correcting somebody's Slack email left`
+> `* them unreachable until it lapsed;`
+> `* · a **positive** was never re-checked at all (`if (cached) return cached`), so a`
+> `* person who moved to a different Slack account was unreachable *forever*.`
+
+And the third failure, separate from both: an **inconclusive** answer (rate limit, revoked token,
+missing scope, a 502) written down as "no such Slack user" —
+
+> `// Writing that down as "this person has no Slack account" is exactly the mistake the`
+> `// old `string | null` return made, and it cost a week of silence per occurrence.`
+
+The design rule, in their words: *"A cache whose only correction is waiting is the thing being fixed
+here."* Three repair paths, not one — TTL lapse, Slack refusing the id on send (which is the only
+PROOF the id is dead), and a manual clear from the profile screen.
+
+### NT-13 · Fan-out semantics, port verbatim
+
+```ts
+export async function notifyRecipients(db, activityId, recipientIds): Promise<void> {
+  const unique = [...new Set(recipientIds)].filter(Boolean);
+  if (unique.length === 0) return;
+  const created = await db.notification.createManyAndReturn({ ... });
+  await Promise.all(created.map((n) =>
+    enqueue('notification.dispatch', { notificationId: n.id }).catch((e) =>
+      console.warn('[notifications] enqueue dispatch failed', n.id, e))));
+}
+```
+
+- **De-dupe recipient ids**, and no-op on an empty set. The submitter is frequently also an
+  approver's delegate or the actor; a fan-out that double-writes puts two identical rows in one bell.
+- **Enqueue failure is non-fatal**, with the reason stated: *"the in-app rows are already written"*.
+  In-app is the channel that must not depend on a queue being up. VeloExpense has no queue until
+  VX2-8, which makes this free now and is the right ordering — the always-on channel lands first.
+- **`recordActivity` and `notifyRecipients` are two calls**, not one. A caller can record an event
+  without telling anybody, which is what makes the stream usable as a timeline as well as a mailbox.
+
+### NT-14 · `appOrigin()` is read at CALL time, from three variables (VX2-8)
+
+> `* · the deployed task definition sets `AUTH_URL`, not `APP_URL` … so `APP_URL` was empty in`
+> `* dev and prod — and an empty origin makes `deepLink()` AND `issueActions()` return null.`
+> `* Every notification email in a deployed environment therefore went out with no link and no`
+> `* approve/reject buttons, which is indistinguishable from "this notification was never meant`
+> `* to be actionable".`
+> `* · module load happens on import … Today `main.ts` imports that first so local dev works,`
+> `* but the guarantee is an import ORDER — one re-sort away from silently emptying every link.`
+
+Both halves transfer to VeloExpense, which reads `AUTH_URL` in `auth.ts` and has no `APP_URL`.
+
+### NT-15 · The digest is deferred, so `emailedAt` must not ship
+
+`Notification.emailedAt` exists only to serve the digest:
+
+> `/// When the email pipeline finalized this row (sent immediately, or resolved`
+> `/// by the periodic email digest). Null = still pending a digest. Only digest-`
+> `/// eligible types ever sit pending; immediate types are excluded by type.`
+
+Digest scheduling is on the board's own deferred list. So VX2-7 ships **no** `emailed_at` column: a
+nullable timestamp nothing ever sets is indistinguishable from a bug, and the digest will need its
+own migration anyway. `DIGEST_TYPES` (`COMMENT`, `ADJUSTED`, `CARD_STATUS`) is recorded here so the
+list does not have to be re-derived.
+
+### NT-16 · Where the three streams sit, because there are now three
+
+VeloExpense will carry `expense_report_event` (VX1-8), `audit_entry` (VX2-6) and `activity`
+(VX2-7). Three overlapping logs is a smell, so the boundary is worth stating once rather than
+being rediscovered:
+
+| Table | Grain | Answers | Tamper-evident |
+| --- | --- | --- | --- |
+| `expense_report_event` | one status TRANSITION of one report | "what happened to this report, in order" — the user-facing timeline | no |
+| `audit_entry` | any control-relevant change to any entity | "prove nobody edited the record" | yes, hash-chained |
+| `activity` | one NOTIFIABLE event on a subject, with render params | "who needs telling, and what does the sentence say" | no |
+
+The question worth asking is whether `activity` earns its place or whether the fan-out could hang
+off `expense_report_event`. **It earns it, and not on taste:** `TASK_ASSIGNED`, `DEADLINE_NEAR` and
+`RECEIPT_REMINDER` are not status transitions of a report, so `expense_report_event` is the wrong
+grain for three of the events VX2-7 has to deliver. Hanging notifications off it would work for
+Phase 2's happy path and then need unpicking at the first reminder.
+
+One decision follows from the table: **a decision on a report now writes four things in one
+transaction** — the status transition, the audit entry, the activity, and N notifications. All four
+or none, in the same `tx` the engine already opens. That is not a new pattern (VX2-3 already couples
+the decision and its audit row) but it is the largest single transaction in the product so far.
+
 ## Not yet audited
 
 `expense-reports` (`packages/expense-lines`, `packages/money` — **do `money` first**, it is where
@@ -1135,6 +1583,7 @@ arithmetic edge cases hide and the likeliest home of the CAD defect), `receipts`
 the rest of `packages/approvals` (`engine.ts`, `engine-core.ts`, `graph.ts`, `schema.ts`,
 `schema.approverFallback.test.ts` — the two test files this section was blocked on are now read),
 and the rest of `packages/money` (`money.ts`, `currencies.ts`, `dinero.ts`, `format.ts`).
+Also still unread inside `notifications`, and named in the NT section's header: `subjectLinks.ts`, `commentThreads.ts`, `replyThreads.ts`, `actionTokens.ts`, `email.ts`, `slack.ts`, the digest job, and `NotificationPreferences.tsx` — the last of which is a VX2-7 input, not a VX2-8 one, and should be read before the preferences screen is built.
 
 **Still needed from outside Drive:** `git diff origin/main...origin/fix/self-approval-guard`. It is
 the last unread input to VX2-2 — `SELF_APPROVAL` is declared in `routing.ts` with nothing behind it,
