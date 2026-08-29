@@ -273,7 +273,8 @@ Phase 2's board is in §6.
 **Phase 2 board — 10 tickets, ~26 dev-days** (ExpenseOS Modules 8, 11, 12). Build order:
 VX2-1 approval schema + tiers ✅ → VX2-6 tenant-scoped audit log ✅ → VX2-2 routing resolver ✅
 (taken EARLY, out of board order — see below) → VX2-3 approval engine + transitions ✅ →
-**VX2-4 approver inbox + decision UI ← NEXT, ahead of VX2-5 (see below)** → VX2-5 delegations ∥ VX2-4 approver inbox + decision UI →
+VX2-4 approver inbox + decision UI ✅ (+ VX2-4a ladder admin ✅) →
+**VX2-5 delegations ← NEXT** → VX2-5 delegations ∥ VX2-4 approver inbox + decision UI →
 VX2-7 notification core → VX2-8 delivery worker (email / Teams / Slack) → VX2-9 reimbursement →
 VX2-10 Phase-2 isolation + e2e. The load-bearing decisions, so they are not relitigated if the
 board is out of reach:
@@ -396,6 +397,33 @@ since VX2-1 asking whether it rode with VX2-4 or took its own ticket) —
 - **Update replaces the rung's approver set wholesale**, which is `updatePolicy`'s documented
   behaviour — hence every approver of a rung being a select inside one form, and "set it to none and
   save" being how one is removed. No separate delete action to fall out of step.
+
+**What VX2-4 shipped** — `lib/approvals/inbox.ts`, `app/approvals/`,
+`app/expenses/[reportId]/approval-panel.tsx`, `test/approval-inbox.db.test.ts` (13 tests). A human
+can now approve a report. The submit → approve round trip is reachable end to end by a person.
+- **The inbox is defined by a SQL candidate query; `canDecide` only ever REMOVES from it.** That
+  keeps the inbox and the decide path from disagreeing (AP-15) and gives the right answer for an
+  admin: `canDecide` grants an admin any task, so filtering a broad query on permission alone would
+  put every pending approval in the tenant in their inbox. An inbox means "waiting on ME" —
+  assigned, delegated, or a role pool I hold; an admin reaches the rest from the report.
+  COST: one `canDecide` per candidate, so ~60 round trips for an inbox of 20. If that ever matters,
+  make `canDecide` batchable — do NOT reimplement it in SQL.
+- **TWO access gates now, and they must stay separate.** `reachableReport` (ownership) for every
+  WRITE, unchanged; `readableReport` (ownership OR approval interest) for reads only. Widening the
+  single gate would have opened an edit hole: a recalled report is DRAFT again while its cancelled
+  tasks remain, so a former approver would have been able to edit somebody else's draft.
+- **Read access survives the decision.** "Has a pending task" would mean an approver approves and
+  immediately cannot open what they approved, so cannot answer a question about their own decision a
+  week later. Any task on any run of the report — assigned, decided, or a role pool they hold.
+- **`canViewReport` is untouched.** MANAGER's reach opened THROUGH the existing predicate as an
+  additional narrower grant, as this file required, not by editing it.
+- **Deciding happens on the REPORT, not in the inbox.** No approve buttons in the list: an approver
+  who has not opened the report has not seen what they are approving, and one-click approval from a
+  list is how a rubber stamp gets built by accident.
+- **`coveringFor` and `delegatedFrom` are different facts**, separated by a failing test.
+  `delegated_from_id` is only set when the RESOLVER rerouted a task at creation time; the common
+  case is a delegation created after submission, where the task stays assigned to the delegator and
+  the delegatee is *covering for* them.
 
 **STILL NO ADMIN NAVIGATION, AND `/` IS THE CREATE-NEXT-APP TEMPLATE.** Every screen is reachable
 only by typing its URL, and `app/page.tsx` has never been replaced — it still carries the Next.js
@@ -532,21 +560,22 @@ approvals, notifications or audit entries.
    none today) and the bucket CORS rule; an `app_user` row in the demo tenant
    matching a real Google/Entra identity with `role='ADMIN'`; then "Restore
    starter rules" on `/admin/expense-policies`, or nothing will ever flag.
-3. **VX2-4 next — the INBOX half** (VX2-1, VX2-2, VX2-3, VX2-6 and VX2-4a's
-   ladder page are done — see §5). Still ahead of VX2-5, because a decision can
-   now be configured but not made: there is no screen on which to approve
-   anything. What it has to respect:
-   **(a)** render from `canDecide` and gate on `assertCanDecide` — the SAME pair,
-   never a second predicate. ExpenseOS shipped an Approve button that failed when
-   pressed precisely because the page and the mutation asked different questions;
-   **(b)** the inbox has THREE sources, not one: tasks assigned to you, tasks
-   assigned to someone who delegated to you, and tasks with a `claim_role` you
-   hold. The third is unassigned by design — do not "fix" it by picking a person;
-   **(c)** the receipt-view acknowledgement is a required input on an approval
-   when the step demands it (default ON), and refusing or returning does not need
-   it — neither claims the evidence was reviewed;
-   **(d)** MANAGER's reach opens here, and it opens through the existing access
-   predicates rather than around them.
+3. **VX2-5 next — delegations** (VX2-1, VX2-2, VX2-3, VX2-4, VX2-4a and VX2-6
+   are done — see §5). The smallest ticket left in Phase 2: the schema, the
+   resolver support and the decision-time honouring all shipped inside VX2-1 and
+   VX2-2, so what remains is a surface for creating and revoking one. What it has
+   to respect:
+   **(a)** ONE hop, never a chain — A→B and B→C means a task of A's goes to B,
+   not C (GAP-AUDIT AP-16). The recursive reading is intuitive and is also an
+   infinite loop waiting to happen (A→B, B→A);
+   **(b)** overlapping delegations break by `created_at DESC` — the newest
+   instruction is the one the delegator meant. Ported, not invented;
+   **(c)** a delegation does NOT take the task out of the delegator's inbox.
+   Covering for somebody is not taking their queue away;
+   **(d)** dates are inclusive on both ends, in the tenant's working timezone —
+   0008 chose dates over timestamps deliberately, because "I am away these days"
+   is not an instant and a half-open range invites an off-by-one at exactly the
+   moment somebody is away and cannot fix it.
    Note `audit_entry` does NOT replace
    `expense_report_event`: that one is the report's user-facing timeline
    (from/to status), the audit log is the hash-chained compliance record across

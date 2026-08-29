@@ -34,6 +34,7 @@ import * as policy from '@/lib/policy/service';
 import * as lifecycle from '@/lib/expenses/lifecycle';
 import { listBusinessUnits, type EmployeeRow } from '@/lib/employees/service';
 import { requireActor, ForbiddenError } from '@/lib/auth/actor';
+import { canReadReport, decidableTaskForReport } from '@/lib/approvals/inbox';
 import { parseAmountToMinor } from '@/lib/money';
 
 async function sessionEmail(): Promise<string> {
@@ -57,6 +58,37 @@ async function reachableReport(tx: QueryRunner, actor: EmployeeRow, reportId: st
     throw new ForbiddenError('forbidden: this report belongs to someone else');
   }
   return access;
+}
+
+/**
+ * VX2-4: READABLE is wider than reachable — ownership OR an approval interest.
+ *
+ * Kept as a SEPARATE gate rather than widening `reachableReport`, and the reason
+ * is a hole I nearly shipped. A recalled report goes back to DRAFT while its
+ * cancelled tasks remain, so a former approver still has an approval interest in
+ * it — and if the write actions used this gate, that approver could EDIT someone
+ * else's draft. Every write stays on `reachableReport` (ownership); only reads
+ * use this one.
+ */
+async function readableReport(tx: QueryRunner, actor: EmployeeRow, reportId: string) {
+  const access = await svc.getReportAccess(tx, reportId);
+  if (!access) throw new svc.ExpenseError('report not found', 'NOT_FOUND');
+  if (!(await canReadReport(tx, actor, access))) {
+    throw new ForbiddenError('forbidden: this report belongs to someone else');
+  }
+  return access;
+}
+
+/** Runs fn against a report the actor may READ — as its owner, an admin, or an
+ *  approver of it. Reads only. */
+async function onReportRead<T>(
+  reportId: string,
+  fn: (tx: QueryRunner, actor: EmployeeRow) => Promise<T>,
+): Promise<T> {
+  return asActor(async (tx, actor) => {
+    await readableReport(tx, actor, reportId);
+    return fn(tx, actor);
+  });
 }
 
 /** Runs fn against a report the actor is allowed to see/edit, or throws. */
@@ -109,16 +141,16 @@ export async function listReports(filter: svc.ReportListFilter = {}) {
 }
 
 export async function getReport(reportId: string) {
-  return onReport(reportId, (tx) => svc.getReport(tx, reportId));
+  return onReportRead(reportId, (tx) => svc.getReport(tx, reportId));
 }
 
 export async function getReportWorkbench(reportId: string) {
-  return onReport(reportId, (tx) => svc.getReportWorkbench(tx, reportId));
+  return onReportRead(reportId, (tx) => svc.getReportWorkbench(tx, reportId));
 }
 
 /** The stored findings for a report — no re-run; saves do that. */
 export async function getValidation(reportId: string) {
-  return onReport(reportId, (tx) => policy.getValidation(tx, reportId));
+  return onReportRead(reportId, (tx) => policy.getValidation(tx, reportId));
 }
 
 /** Force a re-run, for the workbench's "re-check" affordance. */
@@ -128,10 +160,25 @@ export async function revalidateReport(reportId: string) {
 
 /** The transition trail (VX1-8). */
 export async function getReportHistory(reportId: string) {
-  return onReport(reportId, (tx) => lifecycle.listEvents(tx, reportId));
+  return onReportRead(reportId, (tx) => lifecycle.listEvents(tx, reportId));
 }
 
 /** Whether the submit button should be live, and why not if it should not. */
+/**
+ * The task on this report the signed-in person may decide, or null.
+ *
+ * The page renders its decision panel from this and the action re-resolves it —
+ * one question, one answer (GAP-AUDIT AP-15). ExpenseOS rendered an Approve
+ * button from a role check while the mutation asked the engine, and shipped a
+ * button that failed when pressed.
+ */
+export async function getDecidableTask(reportId: string) {
+  return asActor(async (tx, actor) => {
+    await readableReport(tx, actor, reportId);
+    return decidableTaskForReport(tx, reportId, actor.id, { isAdmin: actor.role === 'ADMIN' });
+  });
+}
+
 export async function getSubmitReadiness(reportId: string) {
   return onReport(reportId, (tx) => lifecycle.getSubmitReadiness(tx, reportId));
 }
