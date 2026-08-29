@@ -665,6 +665,46 @@ describe('canDecide', () => {
     });
   });
 
+  it('refuses a delegatee who is the submitter of the report', async () => {
+    // The hole VX2-5 opens, closed here.
+    //
+    // The RESOLVER already routes around a delegation whose delegatee is the
+    // submitter — `skipAbsent` refuses to land on them and walks on, so no task
+    // is ever CREATED with `resolved_via: 'DELEGATION'` pointing at the person
+    // who filed the claim. That made this case unreachable in practice, which is
+    // why it had no test.
+    //
+    // It stops being unreachable the moment a delegation can be created AFTER
+    // the task exists, which is exactly what /approvals/delegations is for: the
+    // task is parked on the manager, the manager then hands their approvals to
+    // somebody, and that somebody happens to be the person whose report is
+    // sitting in the queue. The resolver never sees it.
+    //
+    // So the guarantee this asserts is the ORDERING inside `evaluate`: the
+    // self-approval refusal runs ahead of the delegatee grant, not only ahead of
+    // the assignee path and the pool. That ordering is the security property
+    // (AP-13) and it was previously asserted on every path except this one.
+    await setBreakGlass(false);
+    const mgr = await mkUser('mgr', { role: 'MANAGER' });
+    const sub = await mkUser('sub', { managerId: mgr.id });
+    const taskId = await mkTask(sub.email, sub.id, { assigneeId: mgr.id });
+    await mkDelegation(mgr.id, sub.id, { startsOn: '2026-06-01', endsOn: '2026-06-30' });
+    const onDate = new Date('2026-06-15');
+    await withOrg(orgId, async (tx) => {
+      expect(await canDecide(tx, taskId, sub.id, { onDate })).toBe(false);
+      // And not rescued by the admin override either — same reason as the
+      // submitter-as-admin case above.
+      expect(await canDecide(tx, taskId, sub.id, { onDate, isAdmin: true })).toBe(false);
+    });
+    // The control: the same delegation DOES grant somebody who is not the
+    // submitter, so the refusal above is the self-check and not a broken fixture.
+    const cover = await mkUser('cover2', { role: 'MANAGER' });
+    await mkDelegation(mgr.id, cover.id, { startsOn: '2026-06-01', endsOn: '2026-06-30' });
+    await withOrg(orgId, async (tx) => {
+      expect(await canDecide(tx, taskId, cover.id, { onDate })).toBe(true);
+    });
+  });
+
   it('lets an active holder of the claim role decide, and nobody else', async () => {
     const mgr = await mkUser('mgr', { role: 'MANAGER' });
     const sub = await mkUser('sub', { managerId: mgr.id });

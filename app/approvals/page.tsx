@@ -42,9 +42,19 @@ export default async function ApprovalsPage({
               : `${tasks.length} waiting on you${actor.role === 'ADMIN' ? ' — other people’s approvals are on their reports, not here' : ''}`}
           </p>
         </div>
-        <Link href="/expenses" className="text-sm underline underline-offset-4">
-          My expenses
-        </Link>
+        <div className="flex items-center gap-3">
+          {/* Reachable from the inbox because that is where somebody realises
+              they are about to be away. No admin nav anywhere yet — HANDOFF §7. */}
+          <Link
+            href="/approvals/delegations"
+            className="text-sm underline underline-offset-4"
+          >
+            Delegations
+          </Link>
+          <Link href="/expenses" className="text-sm underline underline-offset-4">
+            My expenses
+          </Link>
+        </div>
       </header>
 
       <ErrorBanner message={error} />
@@ -117,7 +127,11 @@ export default async function ApprovalsPage({
 
       <p className="text-xs text-muted-foreground">
         Open a report to approve, return or reject it — the decision lives with the thing you are
-        deciding on.
+        deciding on. Going away?{' '}
+        <Link href="/approvals/delegations" className="underline underline-offset-4">
+          Arrange cover
+        </Link>{' '}
+        — you keep your queue, your stand-in gains the ability to decide.
       </p>
     </div>
   );

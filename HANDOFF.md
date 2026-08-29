@@ -425,6 +425,59 @@ can now approve a report. The submit → approve round trip is reachable end to 
   case is a delegation created after submission, where the task stays assigned to the delegator and
   the delegatee is *covering for* them.
 
+**What VX2-5 shipped** — `lib/approvals/delegations.ts`, `app/approvals/delegations/`,
+`test/delegations.db.test.ts` (29 tests). **No migration**: `0008` shipped the table, VX2-2's
+resolver already reroutes at routing time and VX2-4's `canDecide` already lets a delegatee act on a
+task parked before the delegation existed. What was missing was a way to create one without SQL.
+Phase 2's approval half is now complete and reachable by a person.
+- **Arranging cover is SELF-SERVICE, not an admin errand.** The person who knows they are away is
+  the person who can say so. Making it an admin request is how AP-5's incident happens — claims
+  invisible in every queue, auto-rejected five business days later, 80 of 703 users affected.
+  An ADMIN may additionally name a *different* delegator, and that check lives in
+  `createDelegation`, not in the action: the page and the mutation ask the same function, so they
+  cannot disagree (the AP-15 arrangement, same as `assertCanDecide`).
+- **The page states the two things a delegation does NOT do**, because both surprise people and
+  neither is discoverable: it does not take the work out of your own inbox (property (c)), and it
+  does not chain (property (a), AP-16).
+- **The one-hop truncation is DETECTED and named, not just documented.** If your stand-in has their
+  own stand-in, the page says so — both names — on the row and again as a notice at creation.
+  Computed for every listed row rather than only at create time, because the onward delegation is
+  usually created *afterwards* (Alice arranges cover Monday, Bob goes away Wednesday), which is
+  precisely the case a create-time-only warning would never catch.
+- **`starts_on::text` / `ends_on::text`, deliberately.** `node-postgres` maps a `date` column to a
+  JS `Date` at LOCAL midnight, so a delegation starting 2026-06-01 comes back as May 31st for
+  anyone west of UTC and the UI shows the wrong day. These are calendar dates, not instants — the
+  same reasoning `0008` gives for choosing `date` over `timestamptz` — and text is the only
+  representation that survives the round trip. There is a test asserting the exact string, because
+  a `Date`-typed assertion passes while the screen is wrong. `type="date"` submits 'YYYY-MM-DD',
+  so there is no timezone anywhere in the path.
+- **Overlaps are ACCEPTED, not refused.** 0008 leaves the tie-break to the resolver and VX2-2
+  settles it by `created_at DESC` (property (b)); refusing an overlap here would refuse something
+  the rest of the system already handles correctly. `onwardDelegation` uses the same ordering, so
+  the warning names the person who would actually receive the work.
+- **Revoked, never deleted.** `delegation_revocation_complete` requires both `revoked_at` and
+  `revoked_by_id`, so the row can answer "who took my cover away, and when" — a deleted row cannot.
+  Revoke is permitted to the delegator, whoever created it, and any admin; the button is rendered
+  under exactly that condition, so it never appears where it would fail.
+- **The delegatee is NOT allowed to revoke.** They are the obvious fourth candidate and they are
+  excluded on purpose: declining cover is a conversation, not a database write, and letting them do
+  it would let somebody silently drop a queue that is not theirs.
+- **A non-ACTIVE delegatee is refused at creation.** Handing your approvals to somebody on leave or
+  gone is a queue that goes nowhere — the resolver would skip up *their* manager chain, which is not
+  what anybody meant by "cover for me".
+- **Both ends of a delegation are audited** (`DELEGATION_CREATED`, `DELEGATION_REVOKED`), on the
+  hash chain rather than as loose rows, and each flags whether an admin acted on somebody else's
+  behalf. A delegation moves who may approve money; that is a control change.
+- **ONE TEST WAS ADDED OUTSIDE THIS TICKET'S FILES, deliberately and not silently.**
+  `test/routing.db.test.ts` gained *"refuses a delegatee who is the submitter of the report"*.
+  `evaluate`'s self-approval refusal already ran ahead of the delegatee grant, and every other path
+  into that guard had a test — assignee, admin override, claim pool — but the DELEGATEE path did
+  not, because the resolver routes around a delegation whose delegatee is the submitter and so no
+  such task could be created. **VX2-5 is what makes it reachable:** a delegation created AFTER the
+  task exists never passes through the resolver, so a manager who hands their approvals to somebody
+  whose report is already sitting in their queue hands over the ability to approve it. The code was
+  already correct; the guarantee was untested on the one path this ticket opens.
+
 **STILL NO ADMIN NAVIGATION, AND `/` IS THE CREATE-NEXT-APP TEMPLATE.** Every screen is reachable
 only by typing its URL, and `app/page.tsx` has never been replaced — it still carries the Next.js
 starter's Vercel links. The two admin surfaces now cross-link each other as a stopgap. This is the
@@ -560,11 +613,17 @@ approvals, notifications or audit entries.
    none today) and the bucket CORS rule; an `app_user` row in the demo tenant
    matching a real Google/Entra identity with `role='ADMIN'`; then "Restore
    starter rules" on `/admin/expense-policies`, or nothing will ever flag.
-3. **VX2-5 next — delegations** (VX2-1, VX2-2, VX2-3, VX2-4, VX2-4a and VX2-6
-   are done — see §5). The smallest ticket left in Phase 2: the schema, the
-   resolver support and the decision-time honouring all shipped inside VX2-1 and
-   VX2-2, so what remains is a surface for creating and revoking one. What it has
-   to respect:
+3. **VX2-7 next — notification core** (VX2-1, VX2-2, VX2-3, VX2-4, VX2-4a, VX2-5
+   and VX2-6 are all done — see §5). The approval half of Phase 2 is complete and
+   a person can submit, route, delegate, cover and decide end to end. What remains
+   on the board: VX2-7 notification core · VX2-8 delivery worker (which absorbs
+   VX0-8's per-job tenant context and ships the approve-link token that finally
+   makes EMAIL approvers routable — see the note in
+   `app/admin/approval-ladder/actions.ts`) · VX2-9 reimbursement · VX2-10 Phase-2
+   isolation + e2e.
+
+   **VX2-5 SHIPPED — the four properties below are now enforced and tested**, kept
+   here because everything downstream still depends on them:
    **(a)** ONE hop, never a chain — A→B and B→C means a task of A's goes to B,
    not C (GAP-AUDIT AP-16). The recursive reading is intuitive and is also an
    infinite loop waiting to happen (A→B, B→A);
