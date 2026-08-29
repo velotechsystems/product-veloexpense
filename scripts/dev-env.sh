@@ -1,20 +1,51 @@
-# Source me: `. scripts/dev-env.sh`
+# Source me FROM THE REPO ROOT:  . scripts/dev-env.sh
 #
-# Puts the whole local environment into the current shell. Every DB suite needs
-# ADMIN_DATABASE_URL, the e2e ALSO needs AUTH_SECRET, and a fresh terminal has
-# neither — which has now cost three round trips of "database johnrim does not
-# exist" and "AUTH_SECRET must be set", each of which reads like a broken setup
+# Puts the local environment into the current shell. Every DB suite needs
+# ADMIN_DATABASE_URL, the e2e also needs AUTH_SECRET, and a fresh terminal has
+# neither — which reads as a broken setup ("database johnrim does not exist")
 # rather than a missing export.
 #
-# .env.local carries everything the app needs. ADMIN_DATABASE_URL is deliberately
-# NOT in it — it is a superuser, and the app must never be able to read it — so it
-# comes from HANDOFF.md's setup block. See HANDOFF §7 on moving both out of a
-# tracked file; until that happens, this is where the knowledge lives.
-set -a
-. "$(dirname "${BASH_SOURCE[0]:-$0}")/../.env.local"
-set +a
-eval "$(grep -E '^export ADMIN_DATABASE_URL=' "$(dirname "${BASH_SOURCE[0]:-$0}")/../HANDOFF.md")"
-: "${DATABASE_URL:?DATABASE_URL missing from .env.local}"
-: "${ADMIN_DATABASE_URL:?ADMIN_DATABASE_URL not found in HANDOFF.md}"
-: "${AUTH_SECRET:?AUTH_SECRET missing from .env.local}"
-echo "dev env ready: $(echo "$DATABASE_URL" | sed -E 's#(://[^:]*:)[^@]*(@)#\1***\2#')"
+# Values are read LITERALLY rather than dot-sourced. `. .env.local` looks
+# equivalent and is not: the shell parses each line, so a value containing < or >
+# is a redirection and the whole file dies with "parse error near '\n'". Which is
+# exactly what happens today, because AUTH_SECRET is still a placeholder.
+#
+# ADMIN_DATABASE_URL is deliberately NOT in .env.local — it is a superuser, and
+# the app must never be able to read it — so it comes from HANDOFF.md's setup
+# block. See HANDOFF §7 on moving both out of a tracked file.
+if [ ! -f .env.local ] || [ ! -f HANDOFF.md ]; then
+  echo "dev-env: source me from the repo root (.env.local and HANDOFF.md not found here)" >&2
+  return 1 2>/dev/null || exit 1
+fi
+
+while IFS= read -r __line || [ -n "$__line" ]; do
+  case "$__line" in '' | '#'*) continue ;; esac
+  __key=${__line%%=*}
+  __val=${__line#*=}
+  # Only plain variable names; anything else is a comment or a continuation.
+  case "$__key" in '' | *[!A-Za-z0-9_]*) continue ;; esac
+  # Strip one layer of surrounding quotes if present.
+  case "$__val" in
+    \"*\") __val=${__val#\"}; __val=${__val%\"} ;;
+    \'*\') __val=${__val#\'}; __val=${__val%\'} ;;
+  esac
+  export "$__key=$__val"
+done < .env.local
+unset __line __key __val
+
+eval "$(grep -E '^export ADMIN_DATABASE_URL=' HANDOFF.md)"
+
+: "${DATABASE_URL:?dev-env: DATABASE_URL missing from .env.local}"
+: "${ADMIN_DATABASE_URL:?dev-env: ADMIN_DATABASE_URL not found in HANDOFF.md}"
+
+# A warning, not a failure: the vitest suites do not need AUTH_SECRET, only the
+# Playwright e2e does (e2e/auth.setup.ts mints the session cookie with it).
+case "${AUTH_SECRET:-}" in
+  '' | *'<'* | *'>'*)
+    echo "dev-env: WARNING — AUTH_SECRET in .env.local is unset or still a placeholder." >&2
+    echo "dev-env:   npm test / build / typecheck are fine; 'npm run e2e' will fail." >&2
+    echo "dev-env:   Generate one:  openssl rand -base64 32" >&2
+    ;;
+esac
+
+echo "dev-env ready: $(printf '%s' "$DATABASE_URL" | sed -E 's#(://[^:]*:)[^@]*(@)#\1***\2#')"
