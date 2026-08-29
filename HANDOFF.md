@@ -272,7 +272,8 @@ Phase 2's board is in §6.
 
 **Phase 2 board — 10 tickets, ~26 dev-days** (ExpenseOS Modules 8, 11, 12). Build order:
 VX2-1 approval schema + tiers ✅ → VX2-6 tenant-scoped audit log ✅ → VX2-2 routing resolver ✅
-(taken EARLY, out of board order — see below) → **VX2-3 approval engine + transitions ← NEXT** → VX2-5 delegations ∥ VX2-4 approver inbox + decision UI →
+(taken EARLY, out of board order — see below) → VX2-3 approval engine + transitions ✅ →
+**VX2-4 approver inbox + decision UI ← NEXT, ahead of VX2-5 (see below)** → VX2-5 delegations ∥ VX2-4 approver inbox + decision UI →
 VX2-7 notification core → VX2-8 delivery worker (email / Teams / Slack) → VX2-9 reimbursement →
 VX2-10 Phase-2 isolation + e2e. The load-bearing decisions, so they are not relitigated if the
 board is out of reach:
@@ -355,6 +356,35 @@ attribution cannot be changed without breaking it.
   Phase 4 controls work); `audit_entry` lives in `public` like every other table, diverging from
   VeloLedger's dedicated `audit` schema, because CI's RLS-coverage guard and `veloapp`'s grants
   assume `public` and a table the guard cannot see is the one you least want unprotected.
+
+**What VX2-3 shipped** — `lib/approvals/engine.ts`, the `submitReport` / `recallReport` wiring,
+`test/approval-engine.db.test.ts` (17 tests). A report can now go submit → approve end to end.
+- **A submit OPENS the run, in the same transaction.** Coupled rather than left to the caller: a
+  SUBMITTED report with no run is the fail-open state, indistinguishable from one waiting on a busy
+  manager. The consequence is real and bit twice — a submit now FAILS when the ladder cannot be
+  routed, so a tenant with no manager chain and no second administrator cannot submit at all.
+- **A decision is claimed with a conditional write** (`AND status = 'PENDING'`, `rowCount === 1`),
+  ported from ExpenseOS. Two decisions racing — a double-click, or assignee and admin — would
+  otherwise both advance the run, materialize step N+1 twice and clobber the final status.
+- **Authorization lives INSIDE `decide`** via `assertCanDecide`, not in the caller. ExpenseOS leaves
+  it to the caller and that is exactly how their read-side and write-side predicates drifted (AP-15).
+- **Recall CANCELS the run.** This was missing and the suite caught it: recall took the report to
+  DRAFT and left the run RUNNING, so `approval_request_one_running_idx` meant the employee could
+  never resubmit. `CANCELLED` is the right status and 0008 said so before the function existed.
+- **Later steps are RE-ROUTED when they materialize**, not replayed from the open-time assignment, so
+  an approver who went on leave in between is skipped. `openRun` routing every step up front is
+  validation: it catches an unroutable step 3 at submit time, while the employee is there to be told.
+- **Remaining PENDING tasks become CANCELLED, not ExpenseOS's SKIPPED** — 0008 gave SKIPPED the
+  meaning "a step the resolver could not fill", and conflating them makes "how often could we not
+  find an approver" unanswerable.
+
+**VX2-4 SHOULD COME BEFORE VX2-5**, which is a change from the board order. Everything the engine
+does is currently unreachable by a human: there is no screen on which to approve anything, so the
+whole of Phase 2 so far is exercised only by tests. VX2-5's delegation schema and resolver support
+already shipped inside VX2-1 and VX2-2, so it is the smaller and later-costing of the two. VX2-4 is
+also where MANAGER's reach finally opens, and it must open THROUGH the existing access predicates —
+`canDecide` / `assertCanDecide` are the pair to render from and to gate on, never a second predicate
+that happens to agree.
 
 **RETENTION IS NOT BUILT.** The plan's Phase 2 bullet says "audit log + retention", and what
 shipped is the log plus the two things retention will need: the `app.audit_purge` escape hatch and
@@ -477,19 +507,20 @@ approvals, notifications or audit entries.
    none today) and the bucket CORS rule; an `app_user` row in the demo tenant
    matching a real Google/Entra identity with `role='ADMIN'`; then "Restore
    starter rules" on `/admin/expense-policies`, or nothing will ever flag.
-3. **VX2-3 next** (VX2-1, VX2-2 and VX2-6 are all done — see §5) — the approval
-   engine and transitions. It is the first consumer of everything Phase 2 has
-   built, and three constraints already decided constrain it:
-   **(a)** it writes into the audit trail from its first commit — that is why
-   VX2-6 went first, and `lib/audit/service.ts`'s `append` must be called in the
-   SAME transaction as the state change, never after it;
-   **(b)** `approval_request_one_running_idx` means a returned or rejected report
-   cannot be resubmitted until the previous run is closed, so VX2-3 owns
-   cancelling the remaining PENDING tasks of a request — `approval_task_status`
-   admits `CANCELLED` with a timestamp and no actor for exactly this;
-   **(c)** RETURNED and REJECTED are different outcomes (GAP-AUDIT AP-12):
-   RETURNED sends the report back to the submitter as a draft and the run ends,
-   REJECTED is terminal.
+3. **VX2-4 next** (VX2-1, VX2-2, VX2-3 and VX2-6 are all done — see §5) — the
+   approver inbox and decision UI, taken ahead of VX2-5 because nothing the
+   engine does can currently be reached by a person. What it has to respect:
+   **(a)** render from `canDecide` and gate on `assertCanDecide` — the SAME pair,
+   never a second predicate. ExpenseOS shipped an Approve button that failed when
+   pressed precisely because the page and the mutation asked different questions;
+   **(b)** the inbox has THREE sources, not one: tasks assigned to you, tasks
+   assigned to someone who delegated to you, and tasks with a `claim_role` you
+   hold. The third is unassigned by design — do not "fix" it by picking a person;
+   **(c)** the receipt-view acknowledgement is a required input on an approval
+   when the step demands it (default ON), and refusing or returning does not need
+   it — neither claims the evidence was reviewed;
+   **(d)** MANAGER's reach opens here, and it opens through the existing access
+   predicates rather than around them.
    Note `audit_entry` does NOT replace
    `expense_report_event`: that one is the report's user-facing timeline
    (from/to status), the audit log is the hash-chained compliance record across
@@ -540,7 +571,16 @@ approvals, notifications or audit entries.
    that corpus is VeloPulse HRIS's, not ExpenseOS's. Confirm provenance from
    content, never from the filename.
 
-6. **Local-dev credentials are committed in this file.** §3's setup block carries both
+6. **A tenant now needs TWO people who can approve each other's spend**, or the
+   AP-14 break-glass flag. This arrived as a real failure, not a theory: the e2e
+   signs in as `admin@demo.test`, who was the top of the seeded reporting line,
+   and once submit began routing the ladder that user could not submit at all.
+   The seed now has four users (`owner → admin → manager → employee`) and sets
+   `allow_sole_approver_self_approval` for the demo tenant only. **Phase 5's
+   self-serve onboarding has to satisfy this** — provisioning a one-person tenant
+   produces a product that cannot submit an expense. No ticket exists.
+
+7. **Local-dev credentials are committed in this file.** §3's setup block carries both
    connection strings inline, including the `postgres` superuser. Low severity for a throwaway
    container on localhost:5433, and it is genuinely convenient — but it is the first file a new
    contributor reads, so the habit propagates, and it matters the moment either password is
@@ -548,6 +588,6 @@ approvals, notifications or audit entries.
    untracked `.env.dev-admin` (or a direnv `.envrc`) and leave placeholders here.
    NOT a blocker; flagged because nobody had.
 
-7. Dependabot has open PRs for **vitest 4** and **typescript 7** — major bumps
+8. Dependabot has open PRs for **vitest 4** and **typescript 7** — major bumps
    across TEN suites now, and typescript 7 also touches the Playwright types.
    Take them deliberately, on their own branch.
