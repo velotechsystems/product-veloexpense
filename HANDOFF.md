@@ -188,7 +188,7 @@ VX0-1 scaffold · VX0-2..6 tenancy spine + RLS isolation gate (green) · VX0-7 S
 
 **Phase 1 is COMPLETE** (PRs #10–#20).
 
-**Phase 2 (approvals, notifications, audit) — IN PROGRESS:**
+**Phase 2 (approvals, notifications, audit) — COMPLETE (PRs #22–#47):**
 - VX2-1 ✅ merged in TWO passes — **PR #22 shipped the first shape, PR #23 reconciled it against
   VeloLedger.** If you are reading `git log` and find two versions of `0008`, that is why; the file
   on `main` after #23 is the only one that was ever correct. **Migration `0008` was REWRITTEN IN
@@ -801,6 +801,92 @@ ExpenseOS has no reversal either. This is a real gap and it is deliberately
 unticketed here rather than folded in: reversing a payment flag is a control
 question — who may, and what the audit trail says about it — not a status write.
 
+**What VX2-10 shipped** — `scripts/e2e-mail.mjs`, `e2e/approval-flow.spec.ts`, a second
+session in `e2e/auth.setup.ts`, `test/chain-verify.check.ts` with its own
+`vitest.chain.config.ts`, two new CI steps, and `smtp-server` as a devDependency.
+
+**PHASE 2 IS COMPLETE.** Eleven tickets (VX2-1..VX2-10 plus VX2-4a), migrations `0008`
+through `0013`, and the plan's exit criterion — a full submit → approve → reimburse
+round trip — is now not merely true but PROVEN in CI, in a browser, through a real
+mail server.
+
+- **THE E2E SENDS REAL MAIL, and that is the whole point of the ticket.** Every VX2-8
+  test runs on the in-memory transport, which proves a message was composed and
+  nothing about whether mail works. VX1-9 had already written down what that costs:
+  *"MemoryStorage signs `memory://` URLs no browser can fetch, which is why the
+  vitest suites can be green while a real upload is broken."* The specific failure
+  only a real server can catch: **quoted-printable breaking an approve token across
+  two lines.** nodemailer encodes long lines, an approve link is a long line, and the
+  result would be every approve link in production dead while 24 tests stayed green.
+  `scripts/e2e-mail.mjs` decodes QP for exactly that reason, and the comment there
+  says so — if you ever wonder why a test sink parses MIME at all, that is why.
+- **THE APPROVER DECIDES WITH NO SESSION.** The spec opens the emailed link in a
+  browser context with `storageState: { cookies: [], origins: [] }` — an empty one,
+  not the default project state — because a person who never signs in is the entire
+  feature. A spec that reused the signed-in context would pass on a build where the
+  token did nothing.
+- **NOTHING HAPPENS ON THE GET, asserted rather than asserted-in-a-comment.** The
+  spec loads the approve page, checks the report is STILL `SUBMITTED`, and only then
+  presses the button. Mail scanners and security gateways prefetch links; this is the
+  guard on the property most likely to be "simplified" later.
+- **THE DRAIN GOES THROUGH THE ROUTE, not the library.** It is the only place the
+  bearer-secret gate is exercised, and the gate is fail-closed — so a broken
+  `WORKER_SECRET` wiring would otherwise surface as "no mail ever arrives" with
+  nothing pointing at why. There is also a test that posts with no secret and with a
+  wrong one, and expects 404 both times.
+- **REIMBURSEMENT IS DONE AS THE APPROVER, NOT THE SUBMITTER**, and that needed a
+  second minted session. The demo tenant has the AP-14 break-glass ON, so paying as
+  the submitter would have exercised the EXCEPTION and quietly stopped testing the
+  control (RB-3). `owner@demo.test` is both the submitter's manager and an ADMIN, so
+  they are the approver and the person who can pay.
+- **CHAIN VERIFICATION NOW ACTUALLY RUNS ON EVERY BUILD**, and before this it did
+  not. What ran was `verifyChain` over rows the audit suite wrote itself — which
+  proves the verifier works and says nothing about whether the PRODUCT writes a
+  verifiable chain. `test/chain-verify.check.ts` runs after the seed and the e2e,
+  per tenant, over rows the app wrote through its real paths. The failure it exists
+  to catch is a caller handing `append()` a payload the canonicalizer treats
+  differently — a BigInt, a key order, a Date rendered two ways — which no unit test
+  written beside that caller would notice, because it would hash and verify
+  consistently within itself.
+  - **It is `.check.ts`, not `.test.ts`, and excluded from `npm test`.** Two reasons,
+    the first of which is not obvious: `test/rls-isolation.test.ts` inserts audit rows
+    with DELIBERATELY fake hashes (`'a'.repeat(64)`, with a comment saying it tests RLS
+    and not the chain), so a real verification running after it would fail on correct
+    code. And it is only worth anything after the seed and the e2e, which `npm test`
+    precedes.
+  - It also asserts the chain CONTAINS `APPROVAL_RUN_OPENED`, `REPORT_APPROVED` and
+    `REPORT_REIMBURSED` — because a verifier that scanned zero rows would otherwise
+    pass, and a regression that stopped auditing decisions would produce a smaller,
+    still-valid chain.
+- **A SECOND RLS GUARD: every tenant table must APPEAR IN the isolation suite.** The
+  existing guard proves each has a policy; this one greps the suite for each table
+  name. They are different claims and the second is the one that rots — a table added
+  with correct RLS and no test is asserted by nobody, and the first guard would stay
+  green forever.
+
+Smaller:
+
+- **The e2e's amount is £18.50, under the $25 receipt threshold**, deliberately: this
+  spec is about approvals and `expense-flow.spec.ts` owns the policy gate. A useful
+  side effect is that it exercises the *no receipts attached* warning on the approve
+  page, where the default rung still asks the approver to confirm they reviewed them.
+- **The spec asserts BOTH links are present** (approve and reject, in that order), so
+  a change to the order in `dispatch.ts` fails here rather than silently rejecting
+  things somebody meant to approve.
+- **`Auto-Submitted: auto-generated` is asserted on the wire**, not just in the unit
+  test — it is the header that stops an out-of-office responder and the app arguing
+  with each other indefinitely (NT-18).
+- **The mail sink logs SMTP errors rather than throwing.** A dead sink turns one
+  informative failure into every later test timing out on a port that stopped
+  answering.
+
+**WHAT THE E2E STILL DOES NOT COVER**, so nobody reads "e2e green" as more than it is:
+the login page (SSO cannot run in CI — VX1-9's trade, unchanged), delegation and the
+approver inbox in a browser, the notification preferences screen, the template wording
+screen, and Slack anything. The first is deliberate; the rest are simply untested by a
+browser and would be the obvious content of a Phase-2 follow-up e2e if one is ever
+wanted.
+
 **STILL NO ADMIN NAVIGATION, AND `/` IS STILL THE CREATE-NEXT-APP TEMPLATE.** This ticket adds three
 more URL-only screens and — worse — an unread COUNT with nowhere to display it. A notification bell
 is the first thing in this product that genuinely needs a global nav rather than merely wanting one:
@@ -938,34 +1024,44 @@ approvals, notifications or audit entries.
    none today) and the bucket CORS rule; an `app_user` row in the demo tenant
    matching a real Google/Entra identity with `role='ADMIN'`; then "Restore
    starter rules" on `/admin/expense-policies`, or nothing will ever flag.
-3. **VX2-10 next — Phase-2 isolation + e2e, and it is the LAST ticket on the
-   board** (VX2-1..VX2-9 are all done — see §5). Acceptance: isolation and e2e
-   green in CI, the RLS-coverage guard still passing, and chain verification
-   running on every build.
+3. **THE BOARD IS EMPTY. Phase 3 has no tickets, and that is the next piece of
+   work — writing them, not writing code.** §6 records that the Phase-2 document
+   went missing twice and had to be transcribed; there is no Phase-3 document at
+   all, and the Port & Build Plan defers sizing until its open inputs are
+   confirmed. So the honest next action is a planning pass, and it has three
+   known inputs already in hand:
 
-   **It has one hard input: a REAL SMTP SINK.** Everything VX2-8 tests goes
-   through the in-memory transport, which proves the message was COMPOSED and
-   nothing about whether SMTP works — the same trap VX1-9 recorded for
-   MemoryStorage ("exactly how every vitest suite stays green while a real upload
-   is broken"). An in-process SMTP server is the `s3rver`-shaped answer, and
-   without it the e2e cannot assert the thing VX2-8 exists to do: that an approver
-   receives a link and can click it.
+   **(a) THE CHART-OF-ACCOUNTS TABLES ARE STILL MISSING, and they were a PHASE 1
+   deliverable.** §5's Phase-1 exit note says so: the plan asked for starter CoA
+   templates in that phase and they were never built. Phase 3's accounting
+   adapter cannot pull a chart of accounts that does not exist, so this is not a
+   Phase-3 task that happens to be first — it is Phase-1 debt that blocks the
+   phase from starting.
 
-   **The e2e should now walk the whole criterion** — submit → approve → reimburse
-   — because that is what Phase 2 was for, and VX2-9 made it reachable. Note the
-   seeded tenant already has four users in a reporting line and break-glass on
-   (§7 item 6), so the submit-and-approve half works; the reimburse half needs an
-   ADMIN who is not the submitter, which `owner@demo.test` already is.
+   **(b) THE ADAPTER HOOKS APPROVAL, NOT PAYMENT** (GAP-AUDIT RB-6). ExpenseOS
+   calls `postApprovedReport` only from `decide`, with the reason in the comment:
+   "An approved report is a liability, so NetSuite gets it now rather than when
+   somebody remembers." `markReimbursed` touches no accounting function at all.
+   "Post it when we pay it" is the intuitive and wrong answer, and it is the kind
+   of thing that is expensive to discover after the adapter is built.
 
-   **Also for VX2-10:** the isolation suite now covers 22 tenant tables and the
-   `app.platform_task` hatch, and `chain verification runs on every build` is not
-   yet true — `verifyChain` is exercised by `test/audit.db.test.ts` and by VX2-9's
-   suite, but nothing runs it as its own CI step over the whole seeded database.
+   **(c) PE-1 IS STILL THE ONLY LIVE DEFECT and it is a currency defect**, which
+   makes it Phase-3-adjacent: policy thresholds are compared against amounts in
+   whatever currency the report happens to be in. An accounting integration that
+   posts amounts is not a thing to build on top of a currency bug.
 
-   **After Phase 2, the board is empty and Phase 3 has no tickets** (§6 says so).
-   The known blocker is unchanged and now overdue: the accounting adapter needs
-   chart-of-accounts template tables that were supposed to land in Phase 1 and
-   never did. RB-6 adds a second input — the adapter hooks APPROVAL, not payment.
+   **The unticketed list is now 19 items long** (see the tracker), and several
+   have graduated from "nice to have" to "blocking something": CoA templates,
+   PE-1, per-tenant RBAC (RB-4 — "may release payments" and "may read every
+   expense in the company" are currently one grant), an admin navigation and a
+   landing page, the audit retention purge, and a reversal path for a
+   mis-clicked reimbursement (RB-5 — terminal, no undo, and it freezes the
+   report).
+
+   **Slack and Teams are unticketed too** (NT-20/21). Teams has no ExpenseOS
+   source at all; Slack is a real port that drags in an app registration, a bot
+   token, a signing secret and an inbound endpoint that verifies request
+   signatures.
 
 4. **DONE — the approval-ladder admin surface shipped as VX2-4a**, its own
    ticket rather than riding with VX2-4. See §5. What remains unbuilt around it

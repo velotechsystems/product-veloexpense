@@ -103,6 +103,30 @@ jobs:
           fi
           echo "RLS coverage OK — all tenant tables have ENABLE+FORCE RLS."
 
+      # VX2-10. The guard above proves every tenant table has a POLICY. This one
+      # proves the isolation SUITE actually names it — which is a different
+      # claim, and the one that rots. A table added with correct RLS and no test
+      # is asserted by nobody, and the guard above would stay green forever.
+      - name: RLS isolation coverage (every tenant table must appear in the suite)
+        run: |
+          TABLES=$(psql "$ADMIN_DATABASE_URL" -tAc "
+            SELECT c.relname
+            FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+            WHERE n.nspname = 'public' AND c.relkind = 'r'
+              AND EXISTS (SELECT 1 FROM pg_attribute a
+                          WHERE a.attrelid = c.oid AND a.attname = 'organization_id'
+                            AND NOT a.attisdropped)
+            ORDER BY c.relname;")
+          UNTESTED=""
+          for t in $TABLES; do
+            grep -q "\b$t\b" test/rls-isolation.test.ts || UNTESTED="$UNTESTED $t"
+          done
+          if [ -n "$UNTESTED" ]; then
+            echo "::error::Tenant tables absent from test/rls-isolation.test.ts:$UNTESTED"
+            exit 1
+          fi
+          echo "Isolation coverage OK — every tenant table is named in the suite."
+
       - name: RLS isolation gate + unit tests
         run: npm test
 
@@ -119,6 +143,18 @@ jobs:
       # Docker image runs.
       - name: End-to-end happy path (Playwright)
         run: npx playwright test
+
+      # VX2-10. The board asks for "chain verification runs on every build", and
+      # until now it did not: `verifyChain` is exercised by test/audit.db.test.ts
+      # and by VX2-9's suite, over rows those suites wrote themselves. This runs
+      # it over EVERY tenant in the database as it stands after the seed and the
+      # e2e — so it covers rows written by the app through its real paths, which
+      # is the only version of this check that could ever catch a real regression.
+      #
+      # Per tenant, deliberately: the chain is per-tenant (GAP-AUDIT AU-1), and a
+      # global walk would interleave two chains and fail on a correct database.
+      - name: Audit chain verification (every tenant, after the e2e)
+        run: npx vitest run --config vitest.chain.config.ts
 
       - name: Upload Playwright report on failure
         if: failure()

@@ -25,16 +25,27 @@ import { Pool } from 'pg';
 import { encode } from 'next-auth/jwt';
 
 const STATE_PATH = path.join('e2e', '.auth', 'state.json');
+/**
+ * VX2-10: a SECOND session, for the approver.
+ *
+ * `approval-flow.spec.ts` needs two signed-in people, and not for convenience —
+ * reimbursement refuses your own report (GAP-AUDIT RB-3), and the demo tenant has
+ * the break-glass ON. So paying as the submitter would exercise the EXCEPTION and
+ * quietly stop testing the control. `owner@demo.test` is the submitter's manager
+ * and also an ADMIN, so they are both the approver and the person who can pay.
+ */
+const APPROVER_STATE_PATH = path.join('e2e', '.auth', 'approver.json');
 
 /** The seeded admin of the demo tenant (scripts/seed.mjs). */
 const E2E_EMAIL = 'admin@demo.test';
+const E2E_APPROVER_EMAIL = 'owner@demo.test';
 const E2E_ORG_SLUG = 'demo';
 
 // Auth.js v5 derives the JWE salt from the cookie name; on http it is the
 // unprefixed one, which is also what proxy.ts checks for.
 const COOKIE_NAME = 'authjs.session-token';
 
-setup('mint a session cookie for the demo admin', async () => {
+async function mintSession(email: string, statePath: string) {
   const secret = process.env.AUTH_SECRET;
   expect(secret, 'AUTH_SECRET must be set for the e2e run').toBeTruthy();
 
@@ -47,11 +58,11 @@ setup('mint a session cookie for the demo admin', async () => {
       `SELECT u.id, u.organization_id, u.display_name
          FROM app_user u JOIN organization o ON o.id = u.organization_id
         WHERE o.slug = $1 AND lower(u.email) = lower($2)`,
-      [E2E_ORG_SLUG, E2E_EMAIL],
+      [E2E_ORG_SLUG, email],
     );
     expect(
       result.rows.length,
-      `${E2E_EMAIL} is missing from the '${E2E_ORG_SLUG}' tenant — run \`npm run seed\` first`,
+      `${email} is missing from the '${E2E_ORG_SLUG}' tenant — run \`npm run seed\` first`,
     ).toBe(1);
     user = result.rows[0];
   } finally {
@@ -61,8 +72,8 @@ setup('mint a session cookie for the demo admin', async () => {
   const maxAge = 60 * 60; // an hour is plenty for one CI run
   const token = await encode({
     token: {
-      name: user.display_name ?? 'Demo Admin',
-      email: E2E_EMAIL,
+      name: user.display_name ?? email,
+      email,
       sub: user.id,
       orgId: user.organization_id,
       role: 'ADMIN',
@@ -73,9 +84,9 @@ setup('mint a session cookie for the demo admin', async () => {
     maxAge,
   });
 
-  await mkdir(path.dirname(STATE_PATH), { recursive: true });
+  await mkdir(path.dirname(statePath), { recursive: true });
   await writeFile(
-    STATE_PATH,
+    statePath,
     JSON.stringify(
       {
         cookies: [
@@ -96,4 +107,12 @@ setup('mint a session cookie for the demo admin', async () => {
       2,
     ),
   );
+}
+
+setup('mint a session cookie for the demo admin', async () => {
+  await mintSession(E2E_EMAIL, STATE_PATH);
+});
+
+setup('mint a session cookie for the approver', async () => {
+  await mintSession(E2E_APPROVER_EMAIL, APPROVER_STATE_PATH);
 });

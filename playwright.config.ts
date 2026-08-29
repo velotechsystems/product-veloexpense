@@ -1,10 +1,17 @@
 /**
  * VX1-9 — Playwright config for the Phase-1 happy path.
  *
- * Two web servers, both started by Playwright so `npm run e2e` is the whole
+ * THREE web servers, all started by Playwright so `npm run e2e` is the whole
  * command on a laptop and in CI:
  *   - scripts/e2e-storage.mjs — an S3 surface for the presigned receipt upload
- *   - the built Next app, pointed at that storage and at the test database
+ *   - scripts/e2e-mail.mjs    — a real SMTP server, added by VX2-10 (see below)
+ *   - the built Next app, pointed at both and at the test database
+ *
+ * WHY A REAL MAIL SERVER (VX2-10). Every VX2-8 unit test runs on the in-memory
+ * transport, which proves a message was composed and nothing about whether mail
+ * works — the same trap VX1-9 recorded for MemoryStorage, and the only thing
+ * that can catch quoted-printable breaking an approve token across two lines.
+ * `smtp-server` is one Node process, same argument as s3rver over MinIO.
  *
  * The app runs the STANDALONE build — `npm run start:standalone`, not
  * `npm run start`. next.config.ts sets `output: 'standalone'` (the Docker
@@ -22,6 +29,11 @@ import { defineConfig, devices } from '@playwright/test';
 const PORT = Number(process.env.E2E_PORT ?? 3000);
 const BASE_URL = `http://localhost:${PORT}`;
 const STORAGE_PORT = Number(process.env.E2E_STORAGE_PORT ?? 9000);
+const SMTP_PORT = Number(process.env.E2E_SMTP_PORT ?? 2525);
+// Playwright waits on a PORT for readiness and cannot probe SMTP, so the sink
+// also serves its captured inbox over HTTP — which is how the spec reads it.
+const MAIL_HTTP_PORT = Number(process.env.E2E_MAIL_HTTP_PORT ?? 2526);
+const WORKER_SECRET = process.env.WORKER_SECRET ?? 'e2e-worker-secret';
 
 const APP_ENV = {
   AUTH_SECRET: process.env.AUTH_SECRET ?? 'e2e-test-only-not-a-real-secret',
@@ -36,6 +48,17 @@ const APP_ENV = {
   // so the presigned signature verifies.
   STORAGE_ACCESS_KEY_ID: 'S3RVER',
   STORAGE_SECRET_ACCESS_KEY: 'S3RVER',
+
+  // VX2-8's three settings, all of which have an off state that would make the
+  // e2e pass while proving less:
+  //   APP_URL        unset -> mail goes out with NO links at all (NT-14)
+  //   SMTP_HOST      unset -> the console transport, so nothing is sent
+  //   WORKER_SECRET  unset -> the drain route refuses everything, fail-closed
+  APP_URL: BASE_URL,
+  SMTP_HOST: '127.0.0.1',
+  SMTP_PORT: String(SMTP_PORT),
+  SMTP_FROM: 'veloexpense@e2e.test',
+  WORKER_SECRET,
 };
 
 export default defineConfig({
@@ -69,6 +92,18 @@ export default defineConfig({
     {
       command: 'node scripts/e2e-storage.mjs',
       port: STORAGE_PORT,
+      reuseExistingServer: !process.env.CI,
+      stdout: 'pipe',
+      stderr: 'pipe',
+    },
+    {
+      command: 'node scripts/e2e-mail.mjs',
+      // The HTTP control port, not the SMTP one — see the note above.
+      port: MAIL_HTTP_PORT,
+      env: {
+        E2E_SMTP_PORT: String(SMTP_PORT),
+        E2E_MAIL_HTTP_PORT: String(MAIL_HTTP_PORT),
+      },
       reuseExistingServer: !process.env.CI,
       stdout: 'pipe',
       stderr: 'pipe',
