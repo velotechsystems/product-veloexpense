@@ -83,6 +83,25 @@ ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE O
 -- is exactly why this can only ever break on a developer's machine.
 ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE, SELECT ON SEQUENCES TO veloapp;
 SQL
+# VX2-8 env (all optional; each has a documented off state)
+#   APP_URL          the origin every emailed link is built on. WITHOUT IT the mail
+#                    still sends and carries no links at all — read GAP-AUDIT NT-14
+#                    before deciding that is acceptable in a deployed environment.
+#                    Falls back to AUTH_URL then NEXTAUTH_URL, so one variable can
+#                    configure both auth and links.
+#   SMTP_HOST        set it and mail is really sent (SMTP_PORT / SMTP_SECURE /
+#                    SMTP_USER / SMTP_PASS, SMTP_FROM or EMAIL_FROM as sender).
+#                    UNSET means the console transport: messages are written to the
+#                    server log and nothing leaves the machine, which is the
+#                    intended local default. EMAIL_TRANSPORT=console forces it even
+#                    with SMTP_HOST set.
+#   WORKER_SECRET    the bearer token for POST /api/internal/notifications/drain.
+#                    UNSET means that route refuses everything (404) and the queue
+#                    only moves via the admin screen's "Send waiting mail now".
+#                    Fail-closed on purpose.
+export APP_URL=http://localhost:3000
+export WORKER_SECRET=dev-only-not-a-secret
+
 # env for tests / app
 export ADMIN_DATABASE_URL="postgres://postgres:velo@localhost:5433/veloexpense"   # superuser (test truncate)
 export DATABASE_URL="postgres://veloapp:velo@localhost:5433/veloexpense"          # app role (RLS)
@@ -564,6 +583,138 @@ Smaller things, each with a reason worth not losing:
   is indistinguishable from a bug. The pure `renderContent(content, values)` split IS ported, so a
   version table is additive rather than a rewrite.
 
+**What VX2-8 shipped** — migration `0012` (two tenant tables),
+`lib/notifications/{email,action-tokens,outbox,dispatch,approve}.ts`, a new
+`withPlatformRead` in `lib/tenant/context.ts`, `app/approve/`,
+`app/admin/notification-delivery/`, `app/api/internal/notifications/drain/`,
+`test/delivery.db.test.ts`, four more cases in `test/rls-isolation.test.ts`, and
+`nodemailer` as a dependency. An approver can now decide from an email without
+signing in, and an admin can see whether the mail went out and why not.
+
+**EMAIL ONLY.** Slack and Teams are their own tickets — see GAP-AUDIT NT-20/21 and
+the decision table. ExpenseOS has no Teams code at all, so the board's title was
+never costed; Slack is real but it is the larger half and email is a strict
+prerequisite for it (their Slack buttons fall back to the same confirm page the
+email links to).
+
+- **THE QUEUE IS POSTGRES, NOT REDIS**, and this is the largest architectural
+  divergence in Phase 2. ExpenseOS enqueues a BullMQ job consumed by a separate
+  `apps/worker` process. Redis would be a new dependency of the image, of CI and of
+  every laptop, and the admin queue screen would then read a datastore that is
+  neither RLS-scoped nor backed up with the database. The precedent is VX1-9
+  choosing `s3rver` over MinIO: "one Node process — no Docker for CI or a laptop."
+  The cost is the four things BullMQ gives away, all written by hand in
+  `outbox.ts`: the claim, the backoff, the visibility timeout and the dead letter.
+- **`withoutOrg` DOES NOT SEE ACROSS TENANTS, and believing it does was the trap
+  this ticket walked into.** It still connects as `veloapp` under FORCE RLS, so an
+  unset `app.current_org` makes every policy body `organization_id = NULL`, which
+  is NULL, which is not true — an unset context sees ZERO rows on every tenant
+  table. That is a guarantee this schema has and the isolation suite asserts. A
+  poller and an approve-link click both genuinely have no tenant, so `0012` gives
+  its two tables a SECOND policy gated on `app.platform_task`, reached only through
+  the new `withPlatformRead`. FOUR things keep it from being a hole, and a later
+  reader should not relax any of them:
+  **(a)** only two tables have the policy — it is not a master key, and adding a
+  third is a migration somebody writes on purpose;
+  **(b)** `FOR SELECT` only, so a platform task can FIND a row and never change
+  one — it must switch into the tenant to act;
+  **(c)** the policy bodies are NARROWED — the poller sees only due work, the token
+  handler only unconsumed, unexpired tokens;
+  **(d)** transaction-local, like `withOrg`.
+  There is a test for each, including one proving the flag does nothing on
+  `expense_report`, `audit_entry`, `app_user` or `notification`.
+- **THE NARROWING TURNS A CHECK INTO A ROW THAT ISN'T THERE, which is better than
+  a check.** ExpenseOS rejects a used or expired token with an `if`:
+  `if (!row || row.consumedAt || row.expiresAt.getTime() < Date.now()) return null;`
+  Here the `platform_read` policy excludes both cases, so the token's tenant cannot
+  even be resolved — the guard cannot be forgotten, reordered, or defeated by a
+  clock the application reads instead of the database. The application `if` is
+  ported anyway: two independent guards is the right number for a credential, and
+  the second one covers the tenant-scoped read, where `tenant_isolation` is the
+  policy in force and carries no expiry predicate.
+- **A TOKEN AUTHENTICATES; IT DOES NOT AUTHORIZE.** ExpenseOS's header is the whole
+  safety argument — "the caller still re-runs canDecide + the atomic claim, so it
+  never bypasses authorization" — so the click goes through `engine.decide`, which
+  opens with `assertCanDecide`, exactly as the browser does. And explicitly NOT
+  with `isAdmin: true`: an admin clicking their own emailed link gets the authority
+  the ladder gave them, and the override stays something done deliberately from
+  the report by somebody signed in. The case that makes this matter is a link that
+  has sat in a mailbox for four days, which is precisely when the approver may have
+  been removed from the ladder or deactivated.
+- **NOTHING HAPPENS ON A GET**, and of everything in this ticket this is the
+  property most likely to be "simplified" later by someone who has not been bitten
+  by it. Mail clients, link scanners and corporate security gateways prefetch links
+  in mail — a GET that approved would be approved by Outlook on the recipient's
+  behalf. `/approve` renders a question with the facts on it (who submitted, how
+  much, which step, how many receipts); the decision is a POST.
+- **THE CATCH IS OUTSIDE `withOrg`, deliberately.** `decideFromToken` consumes the
+  token and then decides, in ONE transaction. Catching the engine's error inside
+  would COMMIT the consume — burning a single-use credential on a decision that did
+  not happen, so a recipient who forgot to tick the receipt box would find their
+  link dead. Letting it escape rolls the consume back and the link still works.
+- **`SENT` MEANS THE TRANSPORT ACCEPTED IT**, not that it arrived, and the admin
+  screen says so in those words. A queue that says "sent" gets read as "delivered"
+  and then the next question has nowhere to go. The screen also separates DEAD ("we
+  tried and could not") from CANCELLED ("there was never anything to send"), because
+  collapsing them puts "this is fine" and "somebody look at this" in one bucket.
+- **The error text is stored and displayed VERBATIM.** NT-11 records two ExpenseOS
+  incidents where a non-delivery produced "no error, no log, no delivery" and was
+  "un-diagnosable across several UAT rounds". An SMTP rejection carries the reason —
+  a bad address, a refused sender, a rate limit — and paraphrasing it is how
+  "delivery failed" becomes all anybody can find out.
+- **`appOrigin()` reads at CALL time from three variables**, ported from NT-14's
+  incident: their deployment set `AUTH_URL` and the code read `APP_URL`, so "every
+  notification email in a deployed environment went out with no link and no
+  approve/reject buttons, which is indistinguishable from 'this notification was
+  never meant to be actionable'." VeloExpense reads `AUTH_URL` in `auth.ts` and had
+  no `APP_URL`, so it would have walked into exactly this. There is a test that
+  unsets all three and asserts the mail still sends, carries no links, and mints no
+  tokens for a link nobody can follow.
+- **`Auto-Submitted: auto-generated` (RFC 3834)** on every message. Free, and
+  impossible to derive from first principles — ExpenseOS's comment is the reason: "a
+  machine-generated reply has to say so, or a well-behaved out-of-office responder
+  answers it and the two of them keep going."
+- **A retry re-mints and retires the previous links.** They cannot be reused —
+  only the hash is stored, so the raw value is unrecoverable by design — and leaving
+  them live would accumulate one credential pair per attempt for one task. Cost,
+  stated because it is real: if an earlier attempt did reach the recipient, its
+  buttons now fail and they land on a page that says so.
+- **An admin retry resets `attempts` to 0 and KEEPS `last_error`.** Without the
+  reset a DEAD row dies again on the next poll and the button appears to do nothing;
+  keeping the error means the screen can still say what went wrong while the new
+  attempt is in flight. So `attempts` means "attempts since the last manual retry",
+  and the column is documented that way rather than pretending to be a lifetime
+  count.
+- **The drain route is fail-closed and returns 404, not 401.** With `WORKER_SECRET`
+  unset it refuses rather than running open — an unconfigured deployment should have
+  a queue that does not move, not an endpoint anybody can post to. 404 because an
+  endpoint that says "wrong password" confirms it exists.
+- **`drainOutbox` is the same function the route, the admin button and the tests
+  call.** VX1-9's lesson was that a path only tests exercise proves nothing about
+  what ships.
+- **One unreachable branch is marked as such:** `prepareEmail`'s "recipient has no
+  email address" cannot fire, because `app_user.email` is `text NOT NULL` (`0001`).
+  It is kept because that non-nullability is an accident of the SSO model rather
+  than a decision about notifications, and there is deliberately no test — no
+  fixture can produce it.
+
+**THE MEMORY TRANSPORT PROVES COMPOSITION, NOT DELIVERY**, and VX1-9 already paid
+for this lesson: "MemoryStorage signs `memory://` URLs no browser can fetch, which
+is exactly how every vitest suite stays green while a real upload is broken."
+Everything in `test/delivery.db.test.ts` proves the message was composed and the
+outbox behaved. Nothing in it proves SMTP works. **VX2-10 needs a real sink** — an
+in-process SMTP server is the `s3rver`-shaped answer, and it is the only way the
+e2e can assert that an approver receives a link and can click it.
+
+**THE SCHEDULER LIVES OUTSIDE THE CODEBASE.** Nothing calls
+`/api/internal/notifications/drain` yet — a cron entry, an ECS scheduled task or a
+platform cron has to, and until it does the queue only moves when an admin presses
+"Send waiting mail now". That button exists precisely because a queue that depends
+on an unconfigured external thing looks broken on the day it ships. Two consequences
+worth knowing: the polling interval IS the delivery latency, and the admin button
+drains ACROSS TENANTS (the poller has no tenant), which is defensible while this is
+one deployment per customer set and is the first thing to revisit if that changes.
+
 **STILL NO ADMIN NAVIGATION, AND `/` IS STILL THE CREATE-NEXT-APP TEMPLATE.** This ticket adds three
 more URL-only screens and — worse — an unread COUNT with nowhere to display it. A notification bell
 is the first thing in this product that genuinely needs a global nav rather than merely wanting one:
@@ -701,68 +852,33 @@ approvals, notifications or audit entries.
    none today) and the bucket CORS rule; an `app_user` row in the demo tenant
    matching a real Google/Entra identity with `role='ADMIN'`; then "Restore
    starter rules" on `/admin/expense-policies`, or nothing will ever flag.
-3. **VX2-8 next — delivery worker (email / Teams / Slack)** (VX2-1..VX2-7 are
-   all done — see §5). It absorbs VX0-8's per-job tenant context and ships the
-   approve-link token that finally makes EMAIL approvers routable (see the note
-   at the top of `app/admin/approval-ladder/actions.ts`, which hides them until
-   then). Read GAP-AUDIT **NT-11, NT-12 and NT-14 first** — they are three
-   measured ExpenseOS incidents recorded specifically for this ticket: the
-   silent integration gates ("no error, no log, no delivery"), the Slack id
-   cache whose negative was cached for a week and whose positive was never
-   re-checked at all, and `appOrigin()` reading the wrong environment variable
-   so that every deployed notification went out with no link and no buttons.
-   **And do NOT move VX2-7's IN_APP preference check out of `listInbox` into the
-   fan-out** — §5 explains why that would silently mute email.
-   Then VX2-9 reimbursement and VX2-10 Phase-2 isolation + e2e. The approval half of Phase 2 is complete and
-   a person can submit, route, delegate, cover and decide end to end. What remains
-   on the board: VX2-7 notification core · VX2-8 delivery worker (which absorbs
-   VX0-8's per-job tenant context and ships the approve-link token that finally
-   makes EMAIL approvers routable — see the note in
-   `app/admin/approval-ladder/actions.ts`) · VX2-9 reimbursement · VX2-10 Phase-2
-   isolation + e2e.
+3. **VX2-9 next — reimbursement transition** (VX2-1..VX2-8 are all done — see
+   §5). One dev-day on the board and the smallest thing left: APPROVED →
+   REIMBURSED, every step audited, and a refusal for a report that is not
+   APPROVED. It also finally completes the plan's Phase-2 exit criterion, which is
+   a full submit → approve → reimburse round trip. Then VX2-10, Phase-2 isolation
+   + e2e.
 
-   **VX2-5 SHIPPED — the four properties below are now enforced and tested**, kept
-   here because everything downstream still depends on them:
-   **(a)** ONE hop, never a chain — A→B and B→C means a task of A's goes to B,
-   not C (GAP-AUDIT AP-16). The recursive reading is intuitive and is also an
-   infinite loop waiting to happen (A→B, B→A);
-   **(b)** overlapping delegations break by `created_at DESC` — the newest
-   instruction is the one the delegator meant. Ported, not invented;
-   **(c)** a delegation does NOT take the task out of the delegator's inbox.
-   Covering for somebody is not taking their queue away;
-   **(d)** dates are inclusive on both ends, in the tenant's working timezone —
-   0008 chose dates over timestamps deliberately, because "I am away these days"
-   is not an instant and a half-open range invites an off-by-one at exactly the
-   moment somebody is away and cannot fix it.
-   Note `audit_entry` does NOT replace
-   `expense_report_event`: that one is the report's user-facing timeline
-   (from/to status), the audit log is the hash-chained compliance record across
-   every entity type. Then VX2-2's resolver. The overlapping-delegation tie-break
-   that 0008's comments leave to it is now ANSWERED from source, not invented:
-   ExpenseOS orders by `created_at DESC` — the most recently created delegation
-   wins (GAP-AUDIT AP-16, which also pins the one-hop rule: A→B, B→C means a
-   task of A's goes to B, never C).
+   **Two things VX2-9 should pick up while it is in there**, because they are
+   cheap in that ticket and awkward in any other: a `REIMBURSED` event type in
+   `lib/notifications/catalog.ts` with its template key and shipped copy (VX2-7
+   deliberately omitted it — an event nothing emits is a preference row nobody can
+   explain), and `consumeTaskTokens` on the reimbursement transition if any live
+   approve-link could still point at the report.
 
-   **VX2-2's spec is now settled** — see the decisions table at the top of
-   `docs/porting/GAP-AUDIT.md`, and AP-1, AP-5, AP-6, AP-10, AP-13. The five things
-   that are NOT negotiable, because each traces to a measured ExpenseOS defect:
-   (a) the self-approval check runs FIRST in the decision guard, ahead of the admin
-   grant AND ahead of the assignee path — a privileged user approving their own
-   report is a standard SOX exception and it shipped in ExpenseOS because the check
-   sat thirty lines below `if (isAdmin) return true`; (b) the guard is enforced at
-   DECISION time, not only at routing time, because VX2-4 and VX2-5 can move a task
-   onto the submitter after clean routing; (c) an unresolvable MANAGER approver
-   falls back to `ADMIN_FALLBACK` rather than parking or failing the submit — on
-   ExpenseOS's dev data 11% of users had no manager; (d) a manager chain shorter
-   than `manager_level` degrades to the most senior person found and records the
-   shortfall in `escalation_level`; (e) the actor's own subordinates are refused
-   transitively, using the existing cycle-guarded upward CTE in
-   `lib/employees/service.ts` asked in the opposite direction. VX2-2 carries ONE
-   migration, `0009`: `organization.allow_sole_approver_self_approval boolean NOT
-   NULL DEFAULT false`, the audited break-glass without which a sole-admin SMB
-   tenant's reports are undecidable by anyone. And every guard test runs twice,
-   once with the caller's admin role set — a guard exercised only on the
-   unprivileged path is how ExpenseOS's shipped.
+   **VX2-10 has one hard input: a REAL SMTP SINK.** Everything VX2-8 tests goes
+   through the in-memory transport, which proves composition and not delivery —
+   the same trap VX1-9 recorded for MemoryStorage ("exactly how every vitest suite
+   stays green while a real upload is broken"). An in-process SMTP server is the
+   `s3rver`-shaped answer, and without it the e2e cannot assert that an approver
+   receives a link and can click it.
+
+   **Slack and Teams are now unticketed work** — see GAP-AUDIT NT-20/21. Teams has
+   no ExpenseOS source at all and would also need a migration to widen
+   `notification_preference_channel_check`; Slack is a real port but drags in an
+   app registration, a bot token, a signing secret and an inbound endpoint that
+   verifies request signatures.
+
 4. **DONE — the approval-ladder admin surface shipped as VX2-4a**, its own
    ticket rather than riding with VX2-4. See §5. What remains unbuilt around it
    is navigation, not configuration.

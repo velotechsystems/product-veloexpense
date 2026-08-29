@@ -8,7 +8,7 @@
  */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { Pool } from 'pg';
-import { withOrg, withoutOrg } from '@/lib/tenant/context';
+import { withOrg, withoutOrg, withPlatformRead } from '@/lib/tenant/context';
 
 // Admin (superuser) connection for setup/teardown only. veloapp deliberately
 // cannot TRUNCATE (RLS/privilege), so reset state via ADMIN_DATABASE_URL
@@ -215,6 +215,35 @@ beforeAll(async () => {
          VALUES ($1, 'expense_management.report_approved', 'IN_APP', $2::jsonb)`,
         [org, JSON.stringify({ en: `Wording ${label}` })],
       );
+      // VX2-8: the outbox and the approve-link tokens from migration 0012.
+      // Both carry a SECOND policy gated on `app.platform_task`, so this block
+      // has to prove two things rather than one — that a tenant sees only its
+      // own, AND that the hatch is as narrow as it claims. See the
+      // `platform_task` cases below.
+      const notif = await tx.query(
+        `SELECT id FROM notification WHERE organization_id = $1 LIMIT 1`,
+        [org],
+      );
+      const delivery = await tx.query(
+        `INSERT INTO notification_delivery
+           (organization_id, notification_id, channel, last_error)
+         VALUES ($1, $2, 'EMAIL', $3)
+         RETURNING id`,
+        [org, notif.rows[0].id, `Error ${label}`],
+      );
+      await tx.query(
+        `INSERT INTO action_token
+           (organization_id, token_hash, task_id, action, recipient_id, expires_at, delivery_id)
+         SELECT $1, $2, t.id, 'APPROVE', $3, now() + interval '5 days', $4
+           FROM approval_task t WHERE t.organization_id = $1 LIMIT 1`,
+        [
+          org,
+          // A 64-char lowercase-hex string, as action_token_hash_shape requires.
+          (label === 'A' ? 'c' : 'd').repeat(64),
+          approver.rows[0].id,
+          delivery.rows[0].id,
+        ],
+      );
     });
   }
 });
@@ -386,6 +415,88 @@ describe('RLS tenant isolation', () => {
       wording: (await tx.query('SELECT * FROM notification_template')).rows.length,
     }));
     expect(none).toEqual({ activities: 0, notifications: 0, preferences: 0, wording: 0 });
+  });
+
+  it('deliveries and approve-link tokens are tenant-isolated', async () => {
+    const a = await withOrg(orgA, async (tx) => ({
+      // The failure reason is the sensitive part: an SMTP rejection names an
+      // address, and this table is the one place it is stored verbatim.
+      deliveries: (await tx.query('SELECT last_error FROM notification_delivery')).rows.map(
+        (r) => r.last_error,
+      ),
+      // The most sensitive row in the schema after audit_entry: a live token hash
+      // is one half of a credential that decides money.
+      tokens: (await tx.query('SELECT token_hash FROM action_token')).rows.map((r) =>
+        (r.token_hash as string).slice(0, 1),
+      ),
+    }));
+    expect(a).toEqual({ deliveries: ['Error A'], tokens: ['c'] });
+
+    const none = await withoutOrg(async (tx) => ({
+      deliveries: (await tx.query('SELECT * FROM notification_delivery')).rows.length,
+      tokens: (await tx.query('SELECT * FROM action_token')).rows.length,
+    }));
+    expect(none).toEqual({ deliveries: 0, tokens: 0 });
+  });
+
+  it('the platform_task hatch is narrow: due work and live tokens, read-only', async () => {
+    // `0012` gives these two tables a SECOND policy so a poller and an
+    // approve-link click can work without a tenant. A hatch that turned out to be
+    // a master key would be the worst defect in this schema, so it gets its own
+    // test rather than riding on the block above.
+    // `withPlatformRead` itself, not a hand-rolled equivalent — the helper is
+    // what ships, so it is the thing worth testing.
+    const hatch = withPlatformRead;
+
+    // (1) It DOES see both tenants' due work — that is the point of it.
+    const due = await hatch((tx) =>
+      tx.query('SELECT organization_id FROM notification_delivery'),
+    );
+    expect(due.rows).toHaveLength(2);
+    expect(new Set(due.rows.map((r) => r.organization_id))).toEqual(new Set([orgA, orgB]));
+
+    // (2) It does NOT see settled work. Mark one SENT and it disappears from the
+    // hatch while staying visible to its tenant.
+    await admin.query(
+      "UPDATE notification_delivery SET status = 'SENT', sent_at = now() WHERE organization_id = $1",
+      [orgA],
+    );
+    const afterSend = await hatch((tx) =>
+      tx.query('SELECT organization_id FROM notification_delivery'),
+    );
+    expect(afterSend.rows.map((r) => r.organization_id)).toEqual([orgB]);
+    expect(
+      (await withOrg(orgA, (tx) => tx.query('SELECT status FROM notification_delivery'))).rows,
+    ).toEqual([{ status: 'SENT' }]);
+
+    // (3) It is READ-ONLY. `platform_read` is FOR SELECT, so an UPDATE matches no
+    // row — RLS filters rather than raising, and zero rows affected IS the
+    // refusal.
+    const wrote = await hatch((tx) =>
+      tx.query("UPDATE notification_delivery SET status = 'CANCELLED'"),
+    );
+    expect(wrote.rowCount).toBe(0);
+
+    // (4) It sees live tokens and not consumed ones — which is what makes
+    // "reject an expired or used token" a row that is absent rather than an `if`.
+    expect((await hatch((tx) => tx.query('SELECT id FROM action_token'))).rows).toHaveLength(2);
+    await admin.query('UPDATE action_token SET consumed_at = now() WHERE organization_id = $1', [
+      orgA,
+    ]);
+    expect((await hatch((tx) => tx.query('SELECT id FROM action_token'))).rows).toHaveLength(1);
+    await admin.query("UPDATE action_token SET expires_at = now() - interval '1 day'");
+    expect((await hatch((tx) => tx.query('SELECT id FROM action_token'))).rows).toHaveLength(0);
+
+    // (5) And the flag does NOTHING on any other tenant table. It is not a
+    // master key, and adding it to a third table has to be a migration somebody
+    // writes on purpose.
+    const elsewhere = await hatch(async (tx) => ({
+      reports: (await tx.query('SELECT * FROM expense_report')).rows.length,
+      audit: (await tx.query('SELECT * FROM audit_entry')).rows.length,
+      users: (await tx.query('SELECT * FROM app_user')).rows.length,
+      notifications: (await tx.query('SELECT * FROM notification')).rows.length,
+    }));
+    expect(elsewhere).toEqual({ reports: 0, audit: 0, users: 0, notifications: 0 });
   });
 
   it('a notification cannot be joined back to another tenant report', async () => {
