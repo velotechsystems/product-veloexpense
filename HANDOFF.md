@@ -378,6 +378,31 @@ attribution cannot be changed without breaking it.
   meaning "a step the resolver could not fill", and conflating them makes "how often could we not
   find an approver" unanswerable.
 
+**What VX2-4a shipped** (the ladder admin surface, split out of VX2-4 — the item §7 had carried
+since VX2-1 asking whether it rode with VX2-4 or took its own ticket) —
+`app/admin/approval-ladder/`, `lib/approvals/approver-token.ts`, `test/approver-token.test.ts`
+(16 pure tests). A tenant can now configure who approves what without SQL.
+- **An approver is ONE select, not five fields.** Each option encodes the kind and its companion in
+  a single token — `MANAGER:2`, `ROLE:ADMIN`, `USER:<uuid>`. A kind dropdown plus a field per
+  companion needs client JS to hide the irrelevant three and lets an admin save "a specific person"
+  with nobody chosen, which is the half-configured state `approval_policy_approver_complete` refuses
+  and ExpenseOS needed a zod schema to police (AP-11). The token makes it unrepresentable.
+- **EMAIL approvers are NOT offered.** Stored by the schema, refused by the resolver until VX2-8, so
+  offering one would let an admin save a ladder that breaks every submit in the tenant. Existing
+  rows render read-only with a warning. Add it to `approverChoices` the day VX2-8 lands.
+- **The codec is a PURE module, not in the `'use server'` file.** It is the contract between the page
+  and the rows it writes, and one of its tests is a property: every choice the page offers must
+  decode without throwing, so adding a kind and forgetting the decoder fails CI rather than on save.
+- **Update replaces the rung's approver set wholesale**, which is `updatePolicy`'s documented
+  behaviour — hence every approver of a rung being a select inside one form, and "set it to none and
+  save" being how one is removed. No separate delete action to fall out of step.
+
+**STILL NO ADMIN NAVIGATION, AND `/` IS THE CREATE-NEXT-APP TEMPLATE.** Every screen is reachable
+only by typing its URL, and `app/page.tsx` has never been replaced — it still carries the Next.js
+starter's Vercel links. The two admin surfaces now cross-link each other as a stopgap. This is the
+concrete form of §7's "nobody has clicked these screens", and it wants a small ticket of its own: an
+admin nav plus a landing page. Not folded in here.
+
 **VX2-4 SHOULD COME BEFORE VX2-5**, which is a change from the board order. Everything the engine
 does is currently unreachable by a human: there is no screen on which to approve anything, so the
 whole of Phase 2 so far is exercised only by tests. VX2-5's delegation schema and resolver support
@@ -507,9 +532,10 @@ approvals, notifications or audit entries.
    none today) and the bucket CORS rule; an `app_user` row in the demo tenant
    matching a real Google/Entra identity with `role='ADMIN'`; then "Restore
    starter rules" on `/admin/expense-policies`, or nothing will ever flag.
-3. **VX2-4 next** (VX2-1, VX2-2, VX2-3 and VX2-6 are all done — see §5) — the
-   approver inbox and decision UI, taken ahead of VX2-5 because nothing the
-   engine does can currently be reached by a person. What it has to respect:
+3. **VX2-4 next — the INBOX half** (VX2-1, VX2-2, VX2-3, VX2-6 and VX2-4a's
+   ladder page are done — see §5). Still ahead of VX2-5, because a decision can
+   now be configured but not made: there is no screen on which to approve
+   anything. What it has to respect:
    **(a)** render from `canDecide` and gate on `assertCanDecide` — the SAME pair,
    never a second predicate. ExpenseOS shipped an Approve button that failed when
    pressed precisely because the page and the mutation asked different questions;
@@ -550,11 +576,9 @@ approvals, notifications or audit entries.
    tenant's reports are undecidable by anyone. And every guard test runs twice,
    once with the caller's admin role set — a guard exercised only on the
    unprivileged path is how ExpenseOS's shipped.
-4. **Still no admin surface for the approval ladder.** The board never assigns
-   one (VX1-7 shipped `/admin/expense-policies` with the engine; VX2-1 is
-   schema-only at 2 days). `ensureDefaultLadder` and the rung CRUD exist and are
-   tested, so a page over them is small — decide whether it rides with VX2-4 or
-   takes its own ticket, but a tenant cannot tune the ladder until it exists.
+4. **DONE — the approval-ladder admin surface shipped as VX2-4a**, its own
+   ticket rather than riding with VX2-4. See §5. What remains unbuilt around it
+   is navigation, not configuration.
 5. **Porting discipline — read `docs/porting/SPEC-BASELINES.md` first.** Port from
    ExpenseOS **SOURCE**, not from the `NN-module.md` summaries. Everything through
    VX2-1 was designed from the docs instead, which cost VX2-1 a full rewrite, and
