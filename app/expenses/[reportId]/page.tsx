@@ -31,6 +31,7 @@ import {
   getValidation,
   addLineItemFromForm,
   deleteReportFromForm,
+  getDecidableTask,
   getReportWorkbench,
   getWorkbenchOptions,
   removeExpenseFromForm,
@@ -54,6 +55,7 @@ import {
 import { ReceiptDrawer, type ReceiptSummary } from './receipt-drawer';
 import { PolicyPanel } from './policy-panel';
 import { LifecycleBar, ReportHistory } from './lifecycle-bar';
+import { ApprovalPanel } from './approval-panel';
 
 export const dynamic = 'force-dynamic';
 
@@ -68,6 +70,7 @@ export default async function ReportWorkbenchPage({
   const { error } = await searchParams;
 
   const workbench = await getReportWorkbench(reportId);
+  const decidable = await getDecidableTask(reportId);
   if (!workbench) notFound();
 
   const { report, expenses, uncodedExpenseCount } = workbench;
@@ -118,6 +121,23 @@ export default async function ReportWorkbenchPage({
       ) : null}
 
       <LifecycleBar reportId={report.id} status={report.status} readiness={readiness} />
+
+      {/* VX2-4: shown only when this person actually has a decision to make on
+          this report. The panel and the mutation behind it both come from
+          `getDecidableTask`, so a rendered button always works. */}
+      {decidable ? (
+        <ApprovalPanel
+          taskId={decidable.taskId}
+          reportId={report.id}
+          step={decidable.step}
+          totalSteps={decidable.totalSteps}
+          rungName={decidable.rungName}
+          requireReceiptViewAck={decidable.requireReceiptViewAck}
+          route={decidable.route}
+          coveringFor={decidable.coveringFor}
+          receiptCount={decidable.receiptCount}
+        />
+      ) : null}
 
       <PolicyPanel reportId={report.id} summary={validation} editable={editable} />
 

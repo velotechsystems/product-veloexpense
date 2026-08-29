@@ -66,9 +66,16 @@ export default async function ExpenseReportsPage({
             {orgWide ? ' across your organization' : ' submitted by you'}
           </p>
         </div>
-        <Button asChild>
-          <Link href="/expenses/new">New report</Link>
-        </Button>
+        <div className="flex items-center gap-3">
+          {/* Still no app-wide navigation (HANDOFF §7), so the inbox is linked
+              from the one page every user already visits. */}
+          <Link href="/approvals" className="text-sm underline underline-offset-4">
+            Approvals
+          </Link>
+          <Button asChild>
+            <Link href="/expenses/new">New report</Link>
+          </Button>
+        </div>
       </header>
 
       <ErrorBanner message={sp.error} />
