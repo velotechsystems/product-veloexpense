@@ -36,7 +36,19 @@ const STATE_PATH = path.join('e2e', '.auth', 'state.json');
  */
 const APPROVER_STATE_PATH = path.join('e2e', '.auth', 'approver.json');
 
-/** The seeded admin of the demo tenant (scripts/seed.mjs). */
+/**
+ * The seeded admin of the demo tenant (scripts/seed.mjs).
+ *
+ * `npm run e2e` SEEDS before it runs, added by VX2-10 after this exact trap
+ * caught me: every DB suite in `npm test` does
+ * `TRUNCATE app_user, organization CASCADE`, so running the e2e after the unit
+ * tests without re-seeding leaves both of these users gone and BOTH setup
+ * projects fail. CI has always known this — its workflow has a "Seed the demo
+ * tenant" step with a comment saying why — and the failure is only ever a
+ * hand-run command block that forgot it. The seed is idempotent
+ * (`ON CONFLICT DO UPDATE` throughout), so seeding twice costs nothing and the
+ * trap cannot recur.
+ */
 const E2E_EMAIL = 'admin@demo.test';
 const E2E_APPROVER_EMAIL = 'owner@demo.test';
 const E2E_ORG_SLUG = 'demo';
