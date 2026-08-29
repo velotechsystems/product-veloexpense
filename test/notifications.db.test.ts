@@ -192,8 +192,26 @@ describe('a decision notifies the submitter', () => {
     // the failure this asserts against, and it is invisible if you only check
     // that a row exists.
     expect(mine[0].body).toContain('Berlin');
-    expect(mine[0].body).toContain('$1,234.56');
     expect(mine[0].body).not.toContain('{');
+
+    // The AMOUNT is asserted on the approver's notification, not the
+    // submitter's, because that is where it belongs and where the copy carries
+    // it. `report_awaiting_approval` says "{actor} needs your approval on
+    // {report} ({total})"; `report_approved` deliberately does not repeat the
+    // figure back to the person who filed it — they know what the trip cost, and
+    // the approver is the one being asked to commit money sight-unseen.
+    //
+    // Asserting `{total}` on the APPROVED sentence was this test's own mistake,
+    // and the right fix was to assert it where it is used rather than to add a
+    // placeholder to shipped copy so a test would pass.
+    //
+    // Grouped digits, not the currency symbol: `Intl.NumberFormat` renders CAD
+    // as '$' under en-CA and 'CA$' under a fallback locale, so the symbol
+    // asserts the runner's ICU data. `test/money.test.ts` made the same choice.
+    const theirs = await inboxOf(manager);
+    expect(theirs[0].eventType).toBe('TASK_ASSIGNED');
+    expect(theirs[0].body).toContain('1,234.56');
+    expect(theirs[0].body).not.toContain('{');
 
     // The control: nobody else hears about it.
     expect(await inboxOf(bystander)).toHaveLength(0);
@@ -305,7 +323,13 @@ describe('preferences suppress it', () => {
     // Nothing to deliver anywhere, so nothing is stored — and therefore nothing
     // reappears if they un-mute in-app alone.
     expect(out.notified).toEqual([]);
-    const rows = await admin.query('SELECT count(*)::int AS n FROM notification');
+    // Scoped to the SUBMITTER. `submitted()` above already wrote a TASK_ASSIGNED
+    // row to the manager, so an unscoped `count(*) FROM notification` counts
+    // somebody else's inbox and fails — which is exactly what it did.
+    const rows = await admin.query(
+      'SELECT count(*)::int AS n FROM notification WHERE recipient_id = $1',
+      [submitter],
+    );
     expect(rows.rows[0].n).toBe(0);
   });
 
@@ -419,7 +443,9 @@ describe('an empty template table still renders shipped copy', () => {
     );
     const after = (await inboxOf(submitter))[0];
     expect(after.fromTemplate).toBe(true);
-    expect(after.body).toBe('Signed off: Lisbon for $5.00.');
+    // Same reason as above: the amount's digits are the product's behaviour, the
+    // currency symbol is ICU's.
+    expect(after.body).toMatch(/^Signed off: Lisbon for .*5\.00\.$/);
   });
 
   it('clearing a template is a RESET, not a stored blank', async () => {

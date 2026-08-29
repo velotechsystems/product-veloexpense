@@ -573,7 +573,16 @@ export async function setTemplate(
       'UNKNOWN_TEMPLATE_KEY',
     );
   }
-  const body = input.body?.trim() ?? null;
+  // EMPTY AFTER TRIMMING IS A RESET, and `?? null` alone does not say that:
+  // `'   '.trim()` is `''`, which is not null, so a whitespace-only body fell
+  // through to the INSERT and stored `{"en": ""}`. That is the precise failure
+  // this function's own doc comment warns about two paragraphs up — a body
+  // `renderContent` treats as a MISS, so the message renders shipped copy while
+  // occupying a row with a timestamp claiming somebody authored it, and
+  // `listTemplates` shows "shipped wording" next to an editor's name. I wrote
+  // the warning and then wrote the bug; the test caught it.
+  const trimmedBody = input.body?.trim() ?? null;
+  const body = trimmedBody === '' ? null : trimmedBody;
   if (body === null) {
     await tx.query(
       `DELETE FROM notification_template WHERE template_key = $1 AND channel = $2`,
@@ -581,7 +590,8 @@ export async function setTemplate(
     );
     return;
   }
-  const subject = input.channel === 'EMAIL' ? (input.subject?.trim() ?? null) : null;
+  const trimmedSubject = input.channel === 'EMAIL' ? (input.subject?.trim() ?? null) : null;
+  const subject = trimmedSubject === '' ? null : trimmedSubject;
   await tx.query(
     `INSERT INTO notification_template
        (organization_id, template_key, channel, body, subject, updated_by_id)
