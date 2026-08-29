@@ -47,6 +47,45 @@ beforeAll(async () => {
   await withOrg(orgB, (tx) =>
     tx.query("INSERT INTO expense_category (organization_id, code, label) VALUES ($1,'meals','Meals B')", [orgB]),
   );
+  // VX1-1's OTHER three reference tables — legal_entity, business_unit,
+  // department — added by VX2-10, and found by the coverage guard it introduced
+  // rather than by anybody noticing. They had correct RLS from migration 0002 and
+  // no test naming them, for six phases: exactly the state that guard exists to
+  // detect, since the policy guard alone would have stayed green forever.
+  //
+  // Worth isolating on their own merits, not just for the count: together they
+  // are a tenant's ORG CHART and legal footprint. One leaked row tells another
+  // tenant which countries you operate in, what your subsidiaries are called, and
+  // how your business is divided up.
+  for (const [org, label] of [
+    [orgA, 'A'],
+    [orgB, 'B'],
+  ] as const) {
+    await withOrg(org, async (tx) => {
+      await tx.query(
+        `INSERT INTO legal_entity (organization_id, name, country, currency_code)
+         VALUES ($1, $2, 'CA', 'CAD')`,
+        [org, `Entity ${label}`],
+      );
+      await tx.query(
+        'INSERT INTO business_unit (organization_id, name) VALUES ($1, $2)',
+        [org, `Unit ${label}`],
+      );
+      // A parent and a child, so the SELF-REFERENCE is exercised too:
+      // `department.parent_department_id` points at `department`, and a
+      // hierarchy walk is the shape most likely to escape a tenant if the
+      // policy were ever dropped.
+      const parent = await tx.query(
+        'INSERT INTO department (organization_id, name) VALUES ($1, $2) RETURNING id',
+        [org, `Division ${label}`],
+      );
+      await tx.query(
+        `INSERT INTO department (organization_id, name, parent_department_id)
+         VALUES ($1, $2, $3)`,
+        [org, `Team ${label}`, parent.rows[0].id],
+      );
+    });
+  }
   // VX1-3: an expense report per org (submitter resolved within the org via subquery).
   const reportA = await withOrg(orgA, (tx) =>
     tx.query(
@@ -385,6 +424,43 @@ describe('RLS tenant isolation', () => {
       delegations: 0,
       audit: 0,
     });
+  });
+
+  it('the reference tables — entities, units and departments — are tenant-isolated', async () => {
+    const a = await withOrg(orgA, async (tx) => ({
+      entities: (await tx.query('SELECT name FROM legal_entity')).rows.map((r) => r.name),
+      units: (await tx.query('SELECT name FROM business_unit')).rows.map((r) => r.name),
+      departments: (await tx.query('SELECT name FROM department ORDER BY name')).rows.map(
+        (r) => r.name,
+      ),
+    }));
+    expect(a).toEqual({
+      entities: ['Entity A'],
+      units: ['Unit A'],
+      departments: ['Division A', 'Team A'],
+    });
+
+    const none = await withoutOrg(async (tx) => ({
+      entities: (await tx.query('SELECT * FROM legal_entity')).rows.length,
+      units: (await tx.query('SELECT * FROM business_unit')).rows.length,
+      departments: (await tx.query('SELECT * FROM department')).rows.length,
+    }));
+    expect(none).toEqual({ entities: 0, units: 0, departments: 0 });
+  });
+
+  it('a department hierarchy cannot be walked across tenants', async () => {
+    // `department.parent_department_id` references `department`, so the join walk
+    // is a table onto ITSELF — and both ends are independently RLS-scoped. The
+    // one-row answer is the guarantee: org A sees its own child joined to its own
+    // parent and nothing of org B's identically-shaped pair.
+    const rows = await withOrg(orgA, (tx) =>
+      tx.query(
+        `SELECT child.name AS child, parent.name AS parent
+           FROM department child
+           JOIN department parent ON parent.id = child.parent_department_id`,
+      ),
+    );
+    expect(rows.rows).toEqual([{ child: 'Team A', parent: 'Division A' }]);
   });
 
   it('activities, notifications, preferences and template wording are tenant-isolated', async () => {
