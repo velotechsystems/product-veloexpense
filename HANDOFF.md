@@ -30,6 +30,17 @@ Two separate codebases:
 - **Shared libs are VENDORED, not npm deps.** Copy the lib's `src/` into the app and pin the commit. `@velotech/auth-kit` is vendored at `src/auth-kit/` (pinned `e1db5c1`). `@velotech/ui` tokens are vendored at `app/velotech-tokens.css` + `app/tailwind-v4.css`; components come via `npx shadcn add https://velotechsystems.github.io/lib-ui-kit/r/<name>.json`.
 - **Git flow: this repo uses MERGE-COMMIT PRs (not squash).** So stacked branches are simple: `git fetch origin && git checkout -b <next> origin/main`. Always fetch before branching (local `origin/main` goes stale between merges).
 - **Every new tenant table** must have RLS + be added to the isolation test. CI's RLS-coverage guard fails the build otherwise.
+- **A `'use server'` module exports its OWN `export async function`s and NOTHING else.**
+  No re-export, no `export const`, no `export type`, no `export default`. Next registers
+  every export of such a file as a server action; an export it cannot wrap makes it register
+  **none of them** — the build stays clean and the page's forms fail in a browser with
+  `Failed to find Server Action "…". This request might be from an older or newer deployment.`
+  That message names a cause that is not the cause, and it cost a wrong diagnosis on VX2-10
+  (`export { inspectToken };` in `app/approve/actions.ts`) before anyone read
+  `.next/server/server-reference-manifest.json` and saw the page had no actions at all.
+  A page needs a non-action helper from a lib module, it imports it from the lib module.
+  CI's `npm run check:actions` guard fails the build on both halves of this — the export
+  shape, and any page whose co-located actions file registered nothing.
 
 ## 2. Repo / stack facts
 - Next.js 16 (App Router, Turbopack) · React 19 · Tailwind v4 · shadcn (`radix-nova`, `components.json`) · Postgres (own DB) · Node 24 (`.nvmrc`).

@@ -21,7 +21,10 @@
  */
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
-import { decideFromTokenForm, inspectToken } from './actions';
+import { inspectToken } from '@/lib/notifications/approve';
+// Only the action comes from './actions' — see the comment there on why nothing
+// else may.
+import { decideFromTokenForm } from './actions';
 
 export const dynamic = 'force-dynamic';
 

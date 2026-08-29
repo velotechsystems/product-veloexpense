@@ -11,9 +11,10 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "seed": "node scripts/seed.mjs",
-    "e2e": "npm run build && npm run seed && playwright test",
+    "e2e": "npm run build && npm run check:actions && npm run seed && playwright test",
     "e2e:ui": "playwright test --ui",
     "start:standalone": "cp -r public .next/standalone/public 2>/dev/null; cp -r .next/static .next/standalone/.next/static && node .next/standalone/server.js",
+    "check:actions": "node scripts/check-server-actions.mjs",
     "verify:chain": "vitest run --config vitest.chain.config.ts"
   },
   "dependencies": {

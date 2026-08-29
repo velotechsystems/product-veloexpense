@@ -57,6 +57,15 @@ jobs:
       - name: Build
         run: npm run build
 
+      # VX2-10. A `'use server'` module whose exports Next cannot wrap registers
+      # NONE of its actions, builds clean, and fails only in a browser with
+      # "Failed to find Server Action …" — a message about deployments, for a
+      # problem that is not one. `app/approve` shipped exactly that. This reads
+      # the manifest the build just wrote and checks every page with actions
+      # actually has some. Runs right after Build, because it needs one.
+      - name: Server action registration guard
+        run: npm run check:actions
+
       - name: Type check
         run: npm run typecheck
 

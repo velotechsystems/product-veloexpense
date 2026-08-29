@@ -9,9 +9,31 @@
  * `<form action={serverAction}>` like every other surface here.
  */
 import { redirect } from 'next/navigation';
-import { decideFromToken, inspectToken } from '@/lib/notifications/approve';
+import { decideFromToken } from '@/lib/notifications/approve';
 
-export { inspectToken };
+/*
+ * `inspectToken` IS NOT RE-EXPORTED FROM HERE, and that is load-bearing.
+ *
+ * It used to be — `export { inspectToken };`, so the page could import both
+ * halves from one place — and the cost was that `app/approve/page` ended up with
+ * NO server actions registered at all. Not the re-export missing: the whole
+ * module's registration silently absent from `.next/server/server-reference-
+ * manifest.json`, while every other page's actions were there. The form then
+ * posted an action id the server had never heard of:
+ *
+ *     Failed to find Server Action "4066e8…". This request might be from an
+ *     older or newer deployment.
+ *
+ * A misleading message — nothing was stale, the build had simply never
+ * registered the action — which is why this cost a wrong diagnosis before the
+ * manifest was actually read. Next treats every export of a `'use server'`
+ * module as an action to wrap, and a plain re-export of a binding declared in
+ * another module is not something it can wrap; it does not fail the build.
+ *
+ * So: a `'use server'` file exports its OWN async functions and nothing else.
+ * `inspectToken` is an ordinary server-side read and the page imports it
+ * straight from `@/lib/notifications/approve`, which is where it lives.
+ */
 
 /**
  * Redirects back to `/approve` with the outcome in the query string, so the

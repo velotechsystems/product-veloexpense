@@ -92,6 +92,20 @@ export default defineConfig({
     {
       command: 'node scripts/e2e-storage.mjs',
       port: STORAGE_PORT,
+      // Reused locally, and that is a REAL HAZARD rather than the convenience the
+      // first version of this comment called it. `reuseExistingServer` reuses
+      // whatever is answering the PORT; Playwright cannot tell s3rver from
+      // anything else that happens to be on 9000 — MinIO's default, and several
+      // Docker things. When something else is there, s3rver never starts (no
+      // startup line in the log is the tell), the app presigns against a stranger,
+      // and the receipt specs fail on a drawer that never lists the file — three
+      // failures pointing at the upload code and none at the port.
+      //
+      // Left reusable for now, deliberately and not comfortably: flipping it to
+      // false turns that into an immediate "port in use", which is the better
+      // failure, but it also breaks the local loop of anyone who has a legitimate
+      // occupant on 9000 until they free it or set E2E_STORAGE_PORT. That is a
+      // decision with a cost, so it is its own change and not a drive-by.
       reuseExistingServer: !process.env.CI,
       stdout: 'pipe',
       stderr: 'pipe',
@@ -100,6 +114,11 @@ export default defineConfig({
       command: 'node scripts/e2e-mail.mjs',
       // The HTTP control port, not the SMTP one — see the note above.
       port: MAIL_HTTP_PORT,
+      // Reused locally, with the same caveat as the storage sink above: the probe
+      // identifies a PORT, not a program. What is safe here is narrower — a
+      // captured message does not depend on which build sent it, and
+      // `approval-flow.spec.ts` clears the inbox in its `beforeAll` so a genuinely
+      // reused sink cannot serve the last run's mail.
       env: {
         E2E_SMTP_PORT: String(SMTP_PORT),
         E2E_MAIL_HTTP_PORT: String(MAIL_HTTP_PORT),
@@ -111,7 +130,33 @@ export default defineConfig({
     {
       command: 'npm run start:standalone',
       port: PORT,
-      reuseExistingServer: !process.env.CI,
+      // Not reused, and the honest reason is narrower than the one that was
+      // written here first.
+      //
+      // What was claimed: "Next mints a fresh id for every server action on every
+      // build, so a reused server serves the old registry." MEASURED, AND FALSE.
+      // Action ids are derived from the module path and export name, not from the
+      // build — `decideFromTokenForm` is `401c4214…` in every local build, and a
+      // different but equally stable id in CI (a different checkout path). A
+      // reused server therefore answers unchanged actions perfectly well.
+      //
+      // It also was NOT the cause of the `/approve` failure this setting was added
+      // for. That was `export { inspectToken };` in `app/approve/actions.ts`,
+      // which made the build register no actions for the page at all;
+      // `scripts/check-server-actions.mjs` now fails on it. The id in the local
+      // error and the id in the manifest after the fix are the same string, which
+      // is how that was finally pinned down.
+      //
+      // What is left, and is reason enough: ids are stable but the SET is not. Add,
+      // rename or move an action and a server from an earlier build has never heard
+      // of the new id — routine during development, and the symptom is a spec
+      // failing on the assertion AFTER the click, pointing nowhere near the cause.
+      // The e2e rebuilds every time, so the server must come from that build.
+      //
+      // The trade: you cannot point the e2e at `npm run dev` on this port. That was
+      // never supported anyway — the note at the top of this file explains that the
+      // e2e deliberately serves the STANDALONE build, which `next dev` is not.
+      reuseExistingServer: false,
       env: APP_ENV,
       stdout: 'pipe',
       stderr: 'pipe',
