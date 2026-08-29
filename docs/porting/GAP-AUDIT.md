@@ -1976,6 +1976,381 @@ The one addition: because `APPROVED` is the only permitted source status, an alr
 report falls into the same branch — so "cannot pay it twice" and "cannot pay an unapproved report"
 are one guard, and RB-2's atomic claim is what makes that guard actually hold.
 
+## accounting · the integration registry and the ledger hand-off (VX3 planning) — `packages/platform`, `packages/integrations-netsuite`, read 2026-08-29
+
+Read at ExpenseOS `5a11a647`. **Note the drift before using any line number below:** the Plan and
+the Differences Chart were both written against `fb1cead`, and the NetSuite package has been
+reworked since (`NetSuiteAccount` was created, dropped, recreated and renamed across four
+migrations). This is the first section of this audit where the spec source has visibly moved under
+the plan, which is exactly what Plan §6's baseline tags exist to catch — see AC-15.
+
+Orientation. The registry is `packages/platform/src/{types,registry,capabilities,reconcile}.ts`
+plus the catalog at `apps/web/src/server/platform/catalog.ts`. The ledger hand-off is
+`packages/integrations-netsuite/src/{postExpenseReport,sync,records,recordLink}.ts`, the seam at
+`apps/web/src/server/lib/netsuitePosting.ts`, and three workers under
+`apps/worker/src/handlers/netsuite-*.ts`. ~7,500 LOC in the NetSuite package alone.
+
+### AC-1 · There is NO adapter contract to port, and the Plan tells us to build one ⚠ NET-NEW
+
+This is the finding that shapes the whole phase, and it inverts the usual instruction. `IntegrationDescriptor` is
+pure declarative metadata — every field is a slug, a localized string, a string array or a JSON
+schema:
+
+```ts
+export interface IntegrationDescriptor {
+  slug: string; name: LocalizedText; description: LocalizedText;
+  capabilities: Capability[]; affectsEntities?: AffectableEntity[];
+  providesModules?: string[]; configSchema?: JsonSchema; configUiSchema?: UiSchema;
+  setup?: SetupInstructions;
+}
+```
+
+No function members, no module path, no `import()` handle. There is no interface, base class or
+implementation registry that an integration conforms to. NetSuite is reached from generic code three
+ways, all vendor-specific: direct imports of `@expenseos/integrations-netsuite` from four routers and
+four workers; a hardcoded `switch (input.slug)` for connection testing whose `default` returns
+`No Test Connection implementation for integration '<slug>'`; and five vendor-named job types
+(`integration.netsuite.postExpenseReport`, …). Config loading is copy-pasted seven times — the same
+`findUnique({ where: { slug: '<literal>' }, ... take: 1 })` in `integrations-netsuite/src/config.ts`,
+`googleMaps.ts`, `serpapi.ts`, `notification-dispatch.ts`, `anthropicConfig.ts`, `expenses.ts`,
+`virtualCardTransactions.ts`.
+
+None of that is a criticism of ExpenseOS: with exactly one accounting system, a switch is cheaper
+than an abstraction. It is a statement about what Phase 3 is. The Plan's risk register asks for the
+opposite and says why: *"Adapter contract — define the accounting-adapter contract once (VeloLedger)
+so QuickBooks/Xero/Sage are repeatable; avoid per-vendor special cases leaking into core."*
+**So VX3-3 designs a contract rather than porting one, and that is the plan speaking, not a
+shortcut.** The standing rule is to port from source except where the plan calls for a difference;
+here it calls for one in as many words.
+
+### AC-2 · The REGISTRY, unlike the adapter, is worth porting nearly verbatim
+
+Code is the source of truth, the row is a reflection, and the file says so:
+*"Specs are code-owned. The DB rows are a persisted reflection used for referential lookups and to
+hang the admin-toggled installation state off of — they are never the source of truth for a spec's
+shape."* `reconcile.ts` upserts every descriptor by slug at boot, validates cross-references BEFORE
+writing anything (there is a test named for it), and re-reads `setup` from code at request time
+rather than persisting it.
+
+Two flaws to fix rather than inherit:
+
+1. **Stale rows are never pruned.** `reconcile.ts` has no delete path, so a descriptor removed from
+   the catalog leaves a row that still lists in the admin API with its old `configSchema`.
+2. **The whole reconcile is wrapped in one try/catch at boot**, and their own test file records the
+   blast radius: *"a typo in `requiresIntegrations` does not fail the build, does not fail the boot,
+   and does not fail loudly: it silently skips the ENTIRE reconcile, so no module or integration row
+   is created or updated, and every module-gated page 404s with nothing in the logs pointing at the
+   cause."* This is the third measured "silent gate" incident in this audit (NT-11 holds the other
+   two) and the rule is the same: a gate that fails closed must say so.
+
+### AC-3 · Multi-installation keyed by `code`, and the tenant dimension is a comment
+
+`IntegrationInstallation.integrationId` is deliberately non-unique — *"an integration TYPE may have
+several labeled installations (e.g. two Google Workspace connections). `code` is the
+per-installation unique identifier. Reads that want 'an' installation use `take: 1`."* Every
+installation-level procedure keys on `code`, not slug.
+
+Two things a porter must not miss. First, the schema docstring three lines above that comment still
+says *"Single-tenant: one installation per Integration (unique)"* — the two contradict each other
+and the correct one is the newer inline note. Second, the only mention of tenancy in the entire
+ExpenseOS repo is `schema.prisma:1903`: *"A future tenant model adds `tenantId` here only."* So
+"per-tenant credentials" in the Plan has no implementation to port at all — `integration_installation`
+becomes a tenant table with RLS in VeloExpense, and `code` unique **per organization** rather than
+globally.
+
+Then note what that breaks, which they already half-know: `loadNetSuiteConfig` does
+`installations: { where: { active: true }, take: 1 }` with **no ordering**, so two active
+installations of one type resolve arbitrarily. Nothing detects that state. The port either enforces
+one active installation per (org, integration) or makes the choice explicit; picking silently is not
+an option once the row is tenant-scoped and a customer can create it.
+
+### AC-4 · Credentials are pgcrypto inside the config blob — and one path writes them in cleartext ⚠ SECURITY
+
+The design is better than it sounds and worth porting. There is no credential table: secret values
+live in `IntegrationInstallation.config` (Json), and **which** keys are secret is derived from the
+UI schema — `secretFieldNames` returns fields whose `'ui:widget' === 'password'`. Encryption is
+Postgres pgcrypto invoked by the app, ciphertext base64-wrapped behind a version marker and written
+back into the same column:
+
+```
+"Secret-typed config values … are encrypted with Postgres `pgcrypto` (`pgp_sym_encrypt`) under the
+ same `PG_CRYPTO_KEY` used for VCC PAN/CVV. The ciphertext is base64-wrapped behind an `enc:v1:`
+ marker and stored back inside the existing `IntegrationInstallation.config` Json column — no schema
+ change, no new column."
+```
+
+Read-path hygiene is good too: the API returns `redactSecrets(...)` plus a `secretsSet` name list,
+blanks round-trip as "unchanged", and the audit row records `{ slug, code }` with an explicit
+`// never log the config blob`.
+
+**The gap is the marker.** Decryption is marker-driven and tolerant by design — *"any top-level
+string value beginning with `enc:v1:` is decrypted; everything else (including legacy plaintext
+written before this change, or before the backfill ran) passes through untouched."* Tolerance plus a
+second writer is the defect: `apps/web/src/server/platform/bootstrap.ts` writes
+`clientSecret: process.env.GOOGLE_OAUTH_CLIENT_SECRET ?? ''` straight into `config` and **never calls
+`encryptSecretFields`** (the symbol does not appear in the file — verified). So an env-bootstrapped
+installation stores a password-marked secret in cleartext and the reader accepts it without a
+murmur. Port the encryption; do not port the tolerance. In VeloExpense a secret-marked field that
+arrives without the marker should be refused at the write, not silently stored — a tenant's
+accounting credentials are not a place for a compatibility shim we have no legacy rows to need.
+
+### AC-5 · `capabilities` is declared, validated, persisted, and consulted by nothing
+
+`CAPABILITIES` is a closed union — `AUTH_PROVIDER, USER_DIRECTORY, GL_CODING, VCC_ISSUER,
+RECEIPT_OCR, EXPENSE_SYNC, AI_ASSISTANT` — asserted at boot and stored in `Integration.capabilities`.
+Grepping the app for any of those strings outside the catalog and `packages/platform` returns
+**zero** hits. `integrationsWithCapability` and `integrationsAffecting` have no callers; so do
+`createRegistry`, `isIntegrationActive` and `activeIntegrationSlugs` — all dead. The admin list
+endpoint drops the field entirely. The file's own comment that *"the auth framework keys off
+AUTH_PROVIDER specifically"* is stale.
+
+Real gating is by module slug, and the `netsuite-gl` module hardcodes the vendor
+(`requiresIntegrations: ['netsuite']`) rather than the capability it declares. **This is the exact
+shape of the trap NT-4 recorded**: a taxonomy that reads as an identity from outside and is decided
+by something else in fact. Either the port resolves the accounting adapter BY capability — which is
+what makes "QuickBooks in a second tenant" work without a switch — or it does not ship the field.
+Declaring it and ignoring it is how VX2-7's `EVENT_KEY_MAP` collision guard would have been if
+nobody had built the ladder.
+
+### AC-6 · Posting is triggered by APPROVAL — from four call sites, and one transition has no hook at all
+
+RB-6 recorded the rule; here is the whole surface. `postApprovedReport` is enqueued from:
+
+1. `decide` — the terminal approval decision. The comment is the one RB-6 quotes: *"An approved
+   report is a liability, so NetSuite gets it now rather than when somebody remembers (rule 7)."*
+2. `decideBulk` — the same call.
+3. **`submit`**, for a report that auto-approves on submission: *"A report that approved on SUBMIT —
+   no matching workflow, or one that resolved immediately — reaches APPROVED without any approval
+   decision ever being recorded, so the post-on-approve hook in expenseApprovals never fires. It was
+   silently never sent to NetSuite."* Past tense: this was a bug they fixed.
+4. A manual admin push from the posting dry-run.
+
+And a fifth path that is not a hook but a net: a cron sweep every 30 minutes across the business day
+picks up APPROVED reports with no settled sync row. Its header names the hole it covers —
+*"an approval TTL expired with onExpire=APPROVE, which drives the report terminal from the worker's
+sweep — a path with no post-on-approve hook at all."*
+
+**The lesson for VeloExpense is structural, not a port detail.** Four call sites and a sweep exist
+because the trigger is attached to *callers* rather than to the transition. VeloExpense already has
+one place where every terminal transition is written — `lib/expenses/lifecycle.ts`, behind
+`assertDraft()` and the atomic claim — and VX2-6's `withAudit` already serializes an audit row with
+the business change in one transaction. The hand-off belongs there, beside the audit append, where
+it cannot be forgotten by a new caller. Note that VeloExpense has no TTL at all (HANDOFF §5), so
+path 5's forcing case does not exist here yet; when a TTL lands it must go through the same seam.
+
+### AC-7 · The post is fire-and-forget with one attempt, and a cron sweep is the retry
+
+`postApprovedReport` returns `void` and wraps its body in `void (async () => { ... })().catch(log)`.
+It runs after the audited transaction has committed, and the reasoning is sound:
+
+```
+ * Fire-and-forget on purpose. An enqueue that fails is logged and dropped rather than surfaced —
+ * the approval already happened and is not in doubt … Failing the approval over a Redis hiccup
+ * would be the worse trade.
+```
+
+It re-reads status rather than trusting the decision (*"an intermediate approval on a multi-tier
+workflow is not a terminal outcome"*) and skips `SYNCED | DENIED | RECONCILED`. The job is enqueued
+with `attempts: 1`: *"a BullMQ retry storm against an accounting system is not a recovery
+strategy."* Retry is therefore the sweep, capped at `MAX_SWEEP_ATTEMPTS = 5` — sized against a
+measured incident, *"three reports at 46 attempts each — 138 guaranteed-to-fail posts"* — and past
+the budget there is no dead state, only a log line: `GIVING UP on … needs a human re-push`.
+
+**VeloExpense should not build any of that machinery, because it already has it.** VX2-8's
+`notification_delivery` is a Postgres outbox with `attempts`, `next_attempt_at` backoff,
+`claimed_at`/`claimed_by` as a visibility timeout, a `DEAD` state and an admin queue — chosen over
+Redis for exactly the reason quoted above. An enqueue that is a row in the same transaction as the
+approval cannot be lost by a Redis hiccup, which removes the need for the fire-and-forget trade AND
+the sweep that compensates for it. That is the single largest simplification Phase 3 gets for free,
+and it is only available because VX2-8 diverged.
+
+### AC-8 · The "posted but not recorded" row is automatically re-posted, and the only guard is unverified ⚠ REAL DEFECT
+
+The two-phase structure is right and the comment states the invariant exactly:
+
+```
+  // Phase 2 — persist. The record now EXISTS in NetSuite, so a failure here must
+  // NOT leave a re-postable FAILED row: a retry would hit NetSuite's
+  // externalId-uniqueness guard and wedge.
+```
+
+Then the catch on that phase calls `fail(...)`, which upserts
+`status: 'FAILED', lastError: <"…do NOT re-post: …">, attempts: { increment: 1 }` — a re-postable
+FAILED row, the one thing the comment forbids. The sweep selects
+`status: { notIn: ['SYNCED','DENIED','RECONCILED'] }, attempts: { lt: 5 }`, so that row qualifies and
+is re-posted automatically, up to five times, with the words "do NOT re-post" sitting in its
+`lastError` column. **The instruction is addressed to a human and enforced against nobody.**
+
+What stands between that and a duplicate liability in the ledger is NetSuite rejecting a second
+record with the same `externalId` — and the transport carrying that claim is marked, in its own
+header, *"⚠️ The field ids below follow the documented REST Record schema but are UNVERIFIED against
+a live account."* So the guard is an assumption about a third party, asserted by no test, protecting
+the one transition where a duplicate means money booked twice.
+
+This is the fourth-and-a-half appearance of RB-2's shape: a status read outside the write, and a
+write that does not re-assert it. The answer is the same one this codebase has used five times —
+a conditional write. `UPDATE integration_post SET status='POSTED' WHERE id=$1 AND status='CLAIMED'`
+with a `rowCount !== 1` check, and a state that means *posted upstream, not recorded locally* which
+no automatic path may leave. Not "do not re-post" in a string.
+
+### AC-9 · There is NO chart-of-accounts template — and the vendor-neutral account table was DELETED ⚠ blocking
+
+The Plan puts *"selectable starter chart-of-accounts templates (global templates → per-tenant
+instances)"* in Phase 1 and the Differences Chart lists it as a required dimension. HANDOFF §6
+already records that VeloExpense never built it. What this audit adds is that **it cannot be
+ported, because ExpenseOS deleted the only table it could have come from**:
+
+```sql
+-- Remove the ExpenseOS `Account` lookup. Its only functional consumer was
+-- VirtualCard.ccAccount, which now points at NetSuiteAccount …
+DROP TABLE IF EXISTS "AccountExternalId";
+DROP TABLE IF EXISTS "Account";
+```
+
+After that migration there is no vendor-neutral account model in ExpenseOS at all. Accounts exist
+only as `NetSuiteAccount`, a cache filled by a twice-daily SOAP pull; a grep for chart-of-account
+templates across `packages`, `apps` and `docs` finds prose only; there is no accounts seed file and
+no manual account-entry screen. The seed creates exactly two rows, non-prod, with a fictional id and
+a comment saying so, purely so the tax accounts resolve. Their own seed comment describes the
+resting state honestly: a category's GL account is *"null when NetSuite has never synced, which is
+the normal state of a fresh environment."*
+
+So an ExpenseOS install with no accounting connection has an empty chart of accounts and every
+category unmapped — a state that is fine for one company that certainly has NetSuite, and not fine
+for a product where a tenant signs up on a Tuesday and connects a ledger on Friday. **VX3-1 is
+therefore design, not port**, and it is the first ticket of the phase because three things wait on
+it: the adapter's "pull chart of accounts", Module 12's `GL_MAPPING_GAP`, and Phase 4's Budgets —
+where `Budget.glAccountId` is a **required** FK to `NetSuiteAccount`, so as the schema stands a
+tenant cannot create a single budget row without a synced NetSuite chart.
+
+### AC-10 · The line SNAPSHOTS its GL account on write — port this verbatim, including the reason
+
+```
+/// The GL account this line posts to, SNAPSHOTTED from its category when the line is
+/// written — not read through the category at report time.
+```
+
+One helper does all the stamping and names its four call sites — the tRPC create, the tRPC update,
+the worker's extraction prefill, the worker's determination rebuild — and states the rule: *"The
+stamp is a SNAPSHOT, not a cache… stamp on write, and never refresh."* Posting resolves the line's
+own account first and the category only as a fallback, so *"the report posts to the account the line
+was coded to when it was filed, not to wherever its category points today."*
+
+It also refuses an account that is inactive upstream, and — the part worth keeping — a category with
+no account is a *problem collected for the approver*, not an error thrown at the employee:
+*"Nullable, and a null blocks nothing: a category with no account is a configuration gap, and the
+employee filing the expense is not who fixes it."* That is the same instinct as VX1-8's submit gate
+and AP-13's ordering. Port the nullable column, the stamp-on-write, the resolution order, the
+inactive refusal and the sentence.
+
+### AC-11 · Payment is a one-directional POLL, and it is the only writer of `REIMBURSED` — DIVERGES from VX2-9 ⚠ decision
+
+`postExpenseReport` never writes `ExpenseReport.status`. The only status write in the entire NetSuite
+loop is the payment poller, which runs hourly across the business day, reads `payStatus` back from
+NetSuite and sets `REIMBURSED` inside `withAudit` with a system actor. It is deliberately
+one-directional: *"A report NetSuite reports as still owing is left alone rather than 'corrected'
+back to APPROVED."* The report is posted `UNPAID` because *"ExpenseOS approving a claim authorises
+it; it does not pay it."*
+
+**VX2-9 built the opposite**: `reimburseReport` is a human action on an admin screen, refuses
+self-payment, records actor, date and an optional reference, and says on the screen in those words
+that pressing it does not pay anybody. Both designs are coherent and they cannot both be the
+authority. The fork is a real decision for whoever picks up the adapter ticket:
+
+- **Poller drives `REIMBURSED`** — the ledger is the source of truth for "paid", which it arguably
+  is, and the AP screen becomes redundant for connected tenants. But `reimbursed_by_id` is `NOT
+  NULL`-paired with `reimbursed_at` by a CHECK constraint (`0013`), so a system actor needs a
+  representation, and VX2-9's self-payment control has nothing to bite on.
+- **Human action stays authoritative, poll is advisory** — the poller records `payStatus` and
+  surfaces a discrepancy, and a person still marks it paid. Keeps VX2-9's controls; means a
+  connected tenant does the same work twice.
+
+Not resolved here on purpose. It is a controls question, not a schema one, and it belongs to the
+ticket rather than to a planning pass.
+
+### AC-12 · The reference caches are install-global singletons — the port cannot host two ledgers as they stand
+
+Seven cache tables — `NetSuiteBusinessUnit`, `NetSuiteSubsidiary`, `NetSuiteDepartment`,
+`NetSuiteClass`, `NetSuiteLocation`, `NetSuiteAccount`, `NetSuiteGlVendor` — each keyed
+`netsuiteId @unique`, none carrying a tenant or installation column. Soft-deleted via
+`isActive = false` *"so historical mappings keep resolving"*, which is the right instinct and should
+be ported. The pull is SOAP, twice daily by cron (`0 4,16 * * *`, a locked decision in their comment)
+plus manual, with runs tracked on `NetSuiteSyncRun`: states `RUNNING | COMPLETED | ERROR | DISABLED
+| CANCELLED`, cooperative cancel, `updatedAt` as a heartbeat, and a ten-minute stale-run reclaim
+whose comment is the reason it exists — *"one dead run wedges every future sync forever with
+'already running' — which once froze the reference cache for ~3 weeks."*
+
+`@@unique(netsuiteId)` is the thing that has to go: in VeloExpense the natural key is
+`(organization_id, installation_id, external_id)`. Note the sync module already draws the line the
+port needs: *"The caches are a RECONCILIATION layer, not the correlation source — dimension
+resolution at post time goes through ExpenseOS entities' externalIds."*
+
+### AC-13 · The `netsuite-gl` gate exists and is bypassed in four places — the list to design against
+
+The Plan asks to *"generalize/gate NetSuite-specific fields so non-NetSuite tenants never see
+them."* ExpenseOS does have the gate — a `netsuite-gl` module, deliberately not default-on, checked
+by `isModuleActive` — and the VCC pages and the employee directory use it correctly. Where it leaks,
+which is the useful part:
+
+- **`Budget.glAccountId` is a REQUIRED FK to `NetSuiteAccount`** with `onDelete: Restrict`, and the
+  Budgets page is not behind the gate. Module 10 cannot store a row without a NetSuite chart.
+- **`pickers.glAccounts` / `pickers.vendors` query the NetSuite tables from a plain
+  `protectedProcedure`** — no module gate, no permission gate, on the grounds that this is
+  *"non-sensitive reference data"*. On a tenant with no NetSuite they return empty lists rather than
+  being absent, which is the worst of the three options.
+- **Three generic admin screens render a GL-account field** sourced from the NetSuite cache —
+  expense categories, mileage rates, travel categories — none consulting the gate.
+- **The expense workbench shows a NetSuite posting badge and push button** on every APPROVED report
+  to anyone holding `netsuite.sync.push`, gated only in the mutation.
+- **`ExpenseAllocation.classId` → `NetSuiteClass`** is the third cost dimension on a core table, and
+  the *only* class taxonomy in the product, while `BusinessUnit` and `Department` are native models.
+  Analytics carries a special case for it because *"NetSuiteClass carries a plain `name`, not a
+  localized label."*
+- Also: `User.nsClassId` on the core user table, four NetSuite default-coding columns on
+  `VirtualCard` and `VirtualCardRequest`, five NetSuite enums re-exported from the shared `db`
+  package, a `netsuite:` permission block granted wholesale to the admin system role, eleven
+  `integration.netsuite.*` audit actions in the shared action registry, and NetSuite named in shared
+  i18n copy on business-unit, job-level and fiscal-year admin screens.
+
+VeloExpense has none of this today, so the ticket is preventive rather than remedial: a **generic
+per-tenant dimension set** (the vendor-neutral shape behind class/location/subsidiary) plus the rule
+that a vendor name may not appear in a core table, a shared enum, a permission slug or an audit
+action. `LegalEntity` → `LegalEntityExternalId` is the pattern that already does this correctly on
+their side, and their own posting module documents the split; copy that, not the columns.
+
+For the record, `eblock` / `edealer` are tenant identity rather than NetSuite modelling and appear
+only in seed data, comments and tests — no application code branches on them. The Differences Chart
+lists them under data/seed, and that is where they stay.
+
+### AC-14 · `GL_MAPPING_GAP` checks the CATEGORY, not the line — and not whether the account still exists
+
+The control counts line items in the period whose **category** has a null `glAccountId`, grouped per
+category and ranked by spend, at severity `INFO`. Two blind spots, both of which matter once the
+snapshot of AC-10 exists: it does not look at `ExpenseLineItem.glAccountId`, so a line with an
+unstamped snapshot whose category IS mapped is invisible to it; and it does not check `isActive`, so
+an account that was deactivated upstream passes the control and then fails at post time with
+`GL account "X" … is inactive`. Its predecessor table, `GlMapping`, was dropped with a migration
+comment worth reading twice: *"it has also never had a writer in this codebase — nothing has ever
+inserted a row, so it can only ever have been empty, and the one reader (the GL_MAPPING_GAP control)
+treated an absent row as 'unmapped', which is what it always was."* A control reading a table nobody
+writes is the fraud-module cousin of NT-5's test asserting on copy it never reached.
+
+### AC-15 · The spec source has moved, and there are still zero baseline tags ⚠ John action
+
+The Plan and the Chart were written against ExpenseOS `fb1cead`. `~/ExpenseOS` is now at
+`5a11a647`, and the accounting surface is demonstrably among what changed — `NetSuiteAccount`
+created, dropped, recreated and renamed; `GlMapping` dropped; the generic `Account` dropped; the
+card clearing account re-pointed. Plan §6 asks for `git tag veloexpense-spec/<module>-YYYYMMDD
+<sha>` per ported module so that catching later changes is *"a mechanical re-diff, not a memory
+exercise"*, and HANDOFF §6 has recorded since 2026-08-27 that `git tag -l` returns nothing.
+
+Phase 2 could arguably live without them. Phase 3 cannot: the accounting module is the one place
+where the Plan's own sync strategy flags the source as unstable — *"still-in-flux items last
+(webhooks/GL-recon, analytics scheduled-exports/KPI…)"* — and this section's line numbers are
+already a perishable good. **Tag `accounting` at `5a11a647` before VX3-3 starts**, or the first
+question of the first adapter ticket is "which version of their code was this read at", and the
+honest answer will be a guess.
+
 ## Not yet audited
 
 `expense-reports` (`packages/expense-lines`, `packages/money` — **do `money` first**, it is where
