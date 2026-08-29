@@ -66,11 +66,18 @@ export default async function ExpensePoliciesPage({
             save of a report, no deploy
           </p>
         </div>
-        <form action={restoreStarterRulesFromForm}>
-          <Button type="submit" variant="outline">
-            Restore starter rules
-          </Button>
-        </form>
+        <div className="flex items-center gap-3">
+          {/* No admin navigation exists yet; the two admin surfaces link to each
+              other so neither is reachable only by typing a URL. */}
+          <Link href="/admin/approval-ladder" className="text-sm underline underline-offset-4">
+            Approval ladder
+          </Link>
+          <form action={restoreStarterRulesFromForm}>
+            <Button type="submit" variant="outline">
+              Restore starter rules
+            </Button>
+          </form>
+        </div>
       </header>
 
       <ErrorBanner message={error} />
