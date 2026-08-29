@@ -964,6 +964,96 @@ VX2-7 is `activity` + `notification` with a per-user preference map (type × cha
 resolution exact → any-subject → shipped catalog string. VX2-8 absorbs VX0-8. Also deferred, on
 purpose: per-legal-entity template scope, French template localisation, digest scheduling.
 
+### Phase 3 board, drafted 2026-08-29 — NO SOURCE DOCUMENT EXISTS FOR THIS ONE
+
+Phases 0, 1 and 2 each had a tickets document. **Phase 3 does not.** The Plan describes it as five
+prose work items plus an exit criterion and defers sizing until its open inputs are confirmed (all
+four are now confirmed at their assumed defaults — §2 of the Plan). This board is therefore drafted
+from the Plan's Phase-3 prose, the Differences Chart's accounting rows, and the source audit
+recorded as GAP-AUDIT **AC-1..AC-15**. Read those fifteen findings before picking up any ticket
+here; four of them change what the ticket is.
+
+The Plan's Phase 3, verbatim:
+
+> Integration registry per tenant; build the VeloLedger MCP adapter as the reference (post approved
+> reports/expenses; pull chart of accounts). Then QuickBooks Online, then Xero, then Sage — same
+> adapter contract; per-tenant credentials (encrypted). Generalize/gate NetSuite-specific fields so
+> non-NetSuite tenants never see them; NetSuite becomes one optional adapter.
+> **Exit:** a tenant connects VeloLedger and posts an approved report end-to-end; QuickBooks in a
+> second tenant.
+
+**The one thing to understand before reading the table.** Every phase so far has been a port, and
+the standing rule is to port from source rather than build fresh. Phase 3 is the exception the rule
+already contains, because the Plan asks for it in as many words: *"define the accounting-adapter
+contract once (VeloLedger) so QuickBooks/Xero/Sage are repeatable; avoid per-vendor special cases
+leaking into core."* AC-1 confirms there is nothing to port — ExpenseOS has no adapter contract at
+all, and reaches NetSuite by direct import, a `switch (slug)`, and five vendor-named job types. With
+one accounting system that is the cheaper engineering; with four it is the thing the Plan's risk
+register warns against. **So VX3-3 designs, and the rest port.** What IS portable is listed against
+each ticket.
+
+| ID | Title | Acceptance | ~d |
+| --- | --- | --- | --- |
+| VX3-1 | Chart-of-accounts templates + per-tenant accounts | A new tenant picks a starter template at setup and gets its OWN accounts; a category maps to one; a line snapshots it on write; both tenant tables have RLS and appear in the isolation suite; the global template tables are reference data only | 3 |
+| VX3-2 | Currency-aware policy thresholds (PE-1) | A tenant with a USD report and a CAD report compares each against a threshold in ITS currency; a missing rate degrades to INFO rather than passing silently; the existing policy suites stay green | 2 |
+| VX3-3 | Per-tenant integration registry + the adapter contract | A tenant connects an integration without SQL; credentials are encrypted at rest and never leave the server; two tenants' installations cannot see each other (isolation test); one interface, no vendor name in core; adding a second adapter touches no shared file | 4 |
+| VX3-4 | VeloLedger adapter — post an approved report | Approving a report enqueues a post in the SAME transaction as the audit row; the post is idempotent under concurrent attempts (two overlapping transactions, one post); an upstream failure never changes the report's status; posted-upstream-but-unrecorded is a state no automatic path may retry | 4 |
+| VX3-5 | Pull the chart of accounts and reconcile | Connecting a ledger fills the tenant's accounts; an account withdrawn upstream deactivates rather than disappears, and historical mappings still resolve; a second run is idempotent; a stale run cannot wedge the next one | 2 |
+| VX3-6 | Posting queue, dry run and manual push | An operator sees what is unposted and why, in words; a dry run writes nothing; a manual push is audited and attributed; a withheld report stays withheld | 2 |
+| VX3-7 | Generic tenant dimension sets | A tenant defines its own cost dimensions and maps them per integration; no vendor name appears in a core table, a shared enum, a permission slug or an audit action; a tenant with no integration sees no integration fields anywhere | 2 |
+| VX3-8 | QuickBooks Online on the same contract | A SECOND tenant connects QBO and posts end to end; the diff that adds it contains no change to core or to the VeloLedger adapter — that diff is the acceptance test for VX3-3 | 3 |
+| VX3-9 | Phase-3 isolation + e2e | Two tenants on two different ledgers, side by side, in CI; the RLS guards still pass; the e2e posts a real report through a stub ledger and asserts the payload | 2 |
+
+~24 dev-days, in line with Phase 2's ~26. Build order is the table order, and only two edges are
+hard: VX3-1 blocks VX3-4/5 (an adapter cannot pull a chart into tables that do not exist), and VX3-3
+blocks both adapters. VX3-2 is independent of everything and can go in parallel or first — it is on
+this board because a currency defect underneath something that posts amounts is the wrong order, not
+because it is accounting work.
+
+**What each ticket ports, so nobody rebuilds what exists:**
+
+- **VX3-1** — the shape is net-new (AC-9: ExpenseOS DELETED its vendor-neutral `Account` table, so
+  accounts exist only as a NetSuite cache and there is no template anywhere). But AC-10's
+  stamp-on-write is portable almost verbatim, including the sentence *"a category with no account is
+  a configuration gap, and the employee filing the expense is not who fixes it"*, and AC-14 says
+  what the mapping-gap control must check that theirs does not.
+- **VX3-3** — port the REGISTRY, design the CONTRACT. AC-2: descriptor in code, DB row as a
+  reflection, cross-references validated before any write. AC-4: the pgcrypto-in-the-config-blob
+  design with a version marker and UI-schema-driven secret marking — port it and **drop its
+  tolerance of unmarked plaintext**, which is how their own env-bootstrap path stores a Google secret
+  in cleartext. AC-3: `code`-keyed multi-installation, made unique per organization. AC-5:
+  capabilities must either be what resolves the adapter or not ship.
+- **VX3-4** — AC-6 (the trigger is approval, from four call sites in their code because it hangs off
+  callers; here it goes in `lib/expenses/lifecycle.ts` beside the audit append, where a new caller
+  cannot forget it), AC-7 (**do not build a queue — VX2-8's outbox already is one**, and a row in the
+  approving transaction cannot be lost by a Redis hiccup, which removes both the fire-and-forget
+  trade and the 30-minute sweep that compensates for it), and AC-8 (their "posted but not recorded"
+  row is automatically re-posted five times with the words *do NOT re-post* in its error column;
+  the answer is the conditional write this codebase has used five times).
+- **VX3-5** — AC-12: port the soft-deactivate and the stale-run heartbeat reclaim (their comment:
+  *"one dead run wedges every future sync forever … which once froze the reference cache for ~3
+  weeks"*), and drop the global `netsuiteId @unique` for `(organization_id, installation_id,
+  external_id)`.
+- **VX3-7** — AC-13 is the list to design against, and it is preventive here rather than remedial:
+  VeloExpense has no vendor columns yet. `LegalEntity` → `LegalEntityExternalId` is the pattern on
+  their side that already does this correctly; copy that, not the columns.
+
+**Open inputs, named rather than guessed:**
+
+1. **Who owns "paid" — the poller or the person? (AC-11)** ExpenseOS's payment poller is the ONLY
+   writer of `REIMBURSED` in its entire NetSuite loop; VX2-9 made reimbursement a human action with a
+   self-payment control and a `NOT NULL`-paired actor. Both are coherent; they cannot both be the
+   authority. This is a controls decision and it belongs to VX3-4, not to a planning pass.
+2. **Does NetSuite ship as an adapter in this phase at all?** The Plan says only that it *"becomes
+   one optional adapter"*. Nothing in the exit criterion needs it, and building it would mean porting
+   ~7,500 LOC of SOAP and REST whose posting transport carries its own *"⚠️ UNVERIFIED against a live
+   account"* warning. Recommendation: not in Phase 3.
+3. **Xero and Sage are explicitly after the exit criterion** and are not on this board. Two adapters
+   prove a contract; four only prove it more expensively.
+4. **Spec-baseline tags (AC-15) are now blocking, not tidy.** The Plan and the Chart were written
+   against ExpenseOS `fb1cead`; `~/ExpenseOS` is at `5a11a647`, and the accounting surface is
+   demonstrably among what moved. Tag `accounting` at `5a11a647` before VX3-3 starts.
+
 ### Plan-fidelity corrections (found 2026-08-27 reading the Plan + Differences Chart)
 
 Both source documents were re-read end to end against the code. Three things had drifted; the
@@ -1035,44 +1125,61 @@ approvals, notifications or audit entries.
    none today) and the bucket CORS rule; an `app_user` row in the demo tenant
    matching a real Google/Entra identity with `role='ADMIN'`; then "Restore
    starter rules" on `/admin/expense-policies`, or nothing will ever flag.
-3. **THE BOARD IS EMPTY. Phase 3 has no tickets, and that is the next piece of
-   work — writing them, not writing code.** §6 records that the Phase-2 document
-   went missing twice and had to be transcribed; there is no Phase-3 document at
-   all, and the Port & Build Plan defers sizing until its open inputs are
-   confirmed. So the honest next action is a planning pass, and it has three
-   known inputs already in hand:
+3. **THE PHASE 3 BOARD NOW EXISTS — §6, nine tickets, ~24 dev-days.** Drafted 2026-08-29 from the
+   Plan's Phase-3 prose, the Differences Chart's accounting rows, and a full source audit of the
+   ExpenseOS accounting surface recorded as **GAP-AUDIT AC-1..AC-15**. There is no Phase-3 tickets
+   document and there never was one, so that board and the audit behind it ARE the specification.
+   Start with the audit, not the board: four of the fifteen findings change what a ticket is.
 
-   **(a) THE CHART-OF-ACCOUNTS TABLES ARE STILL MISSING, and they were a PHASE 1
-   deliverable.** §5's Phase-1 exit note says so: the plan asked for starter CoA
-   templates in that phase and they were never built. Phase 3's accounting
-   adapter cannot pull a chart of accounts that does not exist, so this is not a
-   Phase-3 task that happens to be first — it is Phase-1 debt that blocks the
-   phase from starting.
+   The three inputs that were in hand before the planning pass, and what the audit did to each:
 
-   **(b) THE ADAPTER HOOKS APPROVAL, NOT PAYMENT** (GAP-AUDIT RB-6). ExpenseOS
-   calls `postApprovedReport` only from `decide`, with the reason in the comment:
-   "An approved report is a liability, so NetSuite gets it now rather than when
-   somebody remembers." `markReimbursed` touches no accounting function at all.
-   "Post it when we pay it" is the intuitive and wrong answer, and it is the kind
-   of thing that is expensive to discover after the adapter is built.
+   **(a) THE CHART-OF-ACCOUNTS TABLES ARE STILL MISSING** — now **VX3-1**, first ticket of the
+   phase, and worse than "not yet built": AC-9 found that ExpenseOS **deleted** its vendor-neutral
+   `Account` table (`20260617233000_drop_expenseos_account`), so accounts there exist only as a
+   NetSuite cache filled by a twice-daily SOAP pull, and there is no chart-of-accounts template
+   anywhere in their codebase. **This one cannot be ported. It has to be designed.** Three things
+   wait on it: the adapter's "pull chart of accounts", Module 12's `GL_MAPPING_GAP`, and Phase 4's
+   Budgets, where `Budget.glAccountId` is a REQUIRED FK to the NetSuite cache.
 
-   **(c) PE-1 IS STILL THE ONLY LIVE DEFECT and it is a currency defect**, which
-   makes it Phase-3-adjacent: policy thresholds are compared against amounts in
-   whatever currency the report happens to be in. An accounting integration that
-   posts amounts is not a thing to build on top of a currency bug.
+   **(b) THE ADAPTER HOOKS APPROVAL, NOT PAYMENT** (RB-6) — confirmed and widened by AC-6: their
+   post is enqueued from FOUR call sites, including one added after a report that auto-approved on
+   submit was *"silently never sent to NetSuite"*, plus a cron sweep covering a TTL path with no hook
+   at all. The lesson is structural: the trigger hangs off callers there, and belongs on the
+   transition here — `lib/expenses/lifecycle.ts`, beside the audit append. And AC-7 is the phase's
+   free win: **do not build a queue.** VX2-8's outbox already is one, and a row written in the
+   approving transaction cannot be lost, which removes both their fire-and-forget trade and the
+   sweep that compensates for it.
 
-   **The unticketed list is now 19 items long** (see the tracker), and several
-   have graduated from "nice to have" to "blocking something": CoA templates,
-   PE-1, per-tenant RBAC (RB-4 — "may release payments" and "may read every
-   expense in the company" are currently one grant), an admin navigation and a
-   landing page, the audit retention purge, and a reversal path for a
-   mis-clicked reimbursement (RB-5 — terminal, no undo, and it freezes the
-   report).
+   **(c) PE-1 IS STILL THE ONLY LIVE DEFECT** — now **VX3-2**, second on the board, independent of
+   the rest and safe to take first. It is there because an integration that posts amounts should not
+   be built on top of a currency bug.
 
-   **Slack and Teams are unticketed too** (NT-20/21). Teams has no ExpenseOS
-   source at all; Slack is a real port that drags in an app registration, a bot
-   token, a signing secret and an inbound endpoint that verifies request
-   signatures.
+   **Two things the planning pass turned up that are worth acting on separately:**
+
+   - **AC-8 is a real defect in their shipped code, on the money path.** The "posted to NetSuite but
+     recording the result failed" row is written as `FAILED` with `attempts` incremented, and the
+     sweep re-posts exactly that row up to five times — with the words *do NOT re-post* sitting in
+     its error column, addressed to a human and enforced against nobody. The only thing between that
+     and a double liability is NetSuite rejecting a duplicate `externalId`, and the transport
+     carrying that claim is marked *"⚠️ UNVERIFIED against a live account"* in its own header. Fifth
+     appearance of RB-2's shape; same answer, a conditional write.
+   - **AC-15: tag the spec baseline before VX3-3.** The Plan and the Chart were written against
+     ExpenseOS `fb1cead`; `~/ExpenseOS` is now at `5a11a647`, and the accounting surface is
+     demonstrably among what moved. Plan §6 has asked for `veloexpense-spec/<module>-YYYYMMDD` tags
+     since the beginning and `git tag -l` still returns nothing. Phase 2 could live without them.
+     Phase 3 cannot, because this is the one module the Plan's own sync strategy flags as unstable.
+     **John action — this session has no git.**
+
+   **The unticketed list is 20 items long** (see the tracker). Two graduated onto the board (CoA,
+   PE-1). Still unticketed and now load-bearing: per-tenant RBAC (RB-4 — "may release payments" and
+   "may read every expense in the company" are one grant), the audit retention purge, a reversal path
+   for a mis-clicked reimbursement (RB-5), an admin navigation and a landing page, and Slack/Teams
+   (NT-20/21 — Teams has no ExpenseOS source at all).
+
+   **§6 correction, 2026-08-29:** `VeloExpense-Phase-2-Tickets.docx` IS in Drive after all — 13,595
+   bytes, created 2026-08-27, and 13.5 KB matches the size §6 records as the good original. §6 says
+   a Drive-wide title search found nothing on 2026-08-27; a title search on 2026-08-29 finds it. The
+   transcribed board stays regardless — it cost nothing and the document has now been mislaid twice.
 
 4. **DONE — the approval-ladder admin surface shipped as VX2-4a**, its own
    ticket rather than riding with VX2-4. See §5. What remains unbuilt around it
