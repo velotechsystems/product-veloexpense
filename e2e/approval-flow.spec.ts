@@ -88,11 +88,34 @@ async function waitForApproveLink(request: APIRequestContext, to: string): Promi
   const message = last.find((m) => m.to.includes(to) && m.text.includes('/approve?token='))!;
   const match = message.text.match(/(https?:\/\/\S*\/approve\?token=[\w-]+)/);
   expect(match, 'the mail should carry an absolute approve URL').not.toBeNull();
-  // The FIRST link is Approve and the second Reject — dispatch.ts writes them in
-  // that order. Asserting both exist so a change to that order fails here rather
-  // than silently rejecting things somebody meant to approve.
-  const all = [...message.text.matchAll(/\/approve\?token=([\w-]+)/g)];
-  expect(all.length, 'the mail should carry both an approve and a reject link').toBe(2);
+
+  // TWO DISTINCT TOKENS, not two occurrences.
+  //
+  // The first version of this counted matches and expected 2; CI found 4, and it
+  // was right. The message is multipart and the sink deliberately keeps every
+  // part in one blob (scripts/e2e-mail.mjs says why it does not split them), so
+  // each link appears once in text/plain and once in text/html. Counting
+  // occurrences was asserting the MIME structure by accident. Counting DISTINCT
+  // tokens asserts the thing that matters: Approve and Reject are two separate
+  // single-use credentials.
+  const tokens = [...message.text.matchAll(/\/approve\?token=([\w-]+)/g)].map((m) => m[1]);
+  const distinct = new Set(tokens);
+  expect(distinct.size, 'approve and reject should be two different tokens').toBe(2);
+
+  // And each appears more than once — which is the useful half of what the old
+  // assertion was checking by accident: BOTH MIME parts carry the links. A
+  // recipient whose client prefers text/plain and one whose client prefers
+  // text/html must each get something to click.
+  for (const token of distinct) {
+    expect(
+      tokens.filter((t) => t === token).length,
+      'each link should appear in both the text and the HTML part',
+    ).toBeGreaterThan(1);
+  }
+  // The FIRST occurrence is Approve — dispatch.ts writes them in that order, in
+  // both parts. Asserted so a change to that order fails here rather than
+  // silently rejecting things somebody meant to approve.
+  expect(match![1], 'the first link should be the approve one').toContain(tokens[0]);
   return match![1];
 }
 
