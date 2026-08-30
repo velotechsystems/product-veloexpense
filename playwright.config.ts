@@ -28,7 +28,17 @@ import { defineConfig, devices } from '@playwright/test';
 
 const PORT = Number(process.env.E2E_PORT ?? 3000);
 const BASE_URL = `http://localhost:${PORT}`;
-const STORAGE_PORT = Number(process.env.E2E_STORAGE_PORT ?? 9000);
+// 9401, not 9000. 9000 is MinIO's default and a dozen other things' — and on one
+// developer's machine something held it, so Playwright's port probe found an
+// answer, decided the sink was already up, never started s3rver, and left the app
+// presigning receipt uploads against a stranger. Three specs then failed on a
+// drawer that never listed the file, pointing at the upload code. The absent
+// "e2e storage listening on…" line in the log was the only clue, and it is an
+// absence, which is the hardest kind of clue to notice.
+//
+// A quieter port does not FIX that class of bug — `reuseExistingServer: false`
+// below is what fixes it — but it removes the collision that is actually likely.
+const STORAGE_PORT = Number(process.env.E2E_STORAGE_PORT ?? 9401);
 const SMTP_PORT = Number(process.env.E2E_SMTP_PORT ?? 2525);
 // Playwright waits on a PORT for readiness and cannot probe SMTP, so the sink
 // also serves its captured inbox over HTTP — which is how the spec reads it.
@@ -92,21 +102,18 @@ export default defineConfig({
     {
       command: 'node scripts/e2e-storage.mjs',
       port: STORAGE_PORT,
-      // Reused locally, and that is a REAL HAZARD rather than the convenience the
-      // first version of this comment called it. `reuseExistingServer` reuses
-      // whatever is answering the PORT; Playwright cannot tell s3rver from
-      // anything else that happens to be on 9000 — MinIO's default, and several
-      // Docker things. When something else is there, s3rver never starts (no
-      // startup line in the log is the tell), the app presigns against a stranger,
-      // and the receipt specs fail on a drawer that never lists the file — three
-      // failures pointing at the upload code and none at the port.
+      // NEVER REUSED. `reuseExistingServer` reuses whatever is answering the PORT,
+      // and a port probe cannot tell s3rver from anything else — so a stranger on
+      // the port is silently adopted as the storage backend, and the failure
+      // surfaces three specs later as an upload that never appears. With this
+      // false, Playwright always starts its own; if the port is busy, s3rver
+      // cannot bind and says so in one line (see the EADDRINUSE handler in
+      // scripts/e2e-storage.mjs).
       //
-      // Left reusable for now, deliberately and not comfortably: flipping it to
-      // false turns that into an immediate "port in use", which is the better
-      // failure, but it also breaks the local loop of anyone who has a legitimate
-      // occupant on 9000 until they free it or set E2E_STORAGE_PORT. That is a
-      // decision with a cost, so it is its own change and not a drive-by.
-      reuseExistingServer: !process.env.CI,
+      // The trade, stated: someone running their own s3rver on this port has to
+      // stop it or set E2E_STORAGE_PORT. That is a worse first minute and a much
+      // better tenth.
+      reuseExistingServer: false,
       stdout: 'pipe',
       stderr: 'pipe',
     },
@@ -114,16 +121,17 @@ export default defineConfig({
       command: 'node scripts/e2e-mail.mjs',
       // The HTTP control port, not the SMTP one — see the note above.
       port: MAIL_HTTP_PORT,
-      // Reused locally, with the same caveat as the storage sink above: the probe
-      // identifies a PORT, not a program. What is safe here is narrower — a
-      // captured message does not depend on which build sent it, and
-      // `approval-flow.spec.ts` clears the inbox in its `beforeAll` so a genuinely
-      // reused sink cannot serve the last run's mail.
+      // Also never reused, for the same reason and to keep the two consistent: the
+      // probe identifies a PORT, not a program. (What WOULD have been safe about
+      // reusing this one is narrower than it looks — a captured message does not
+      // depend on which build sent it, and `approval-flow.spec.ts` clears the
+      // inbox in its `beforeAll` — but none of that helps if the thing on the port
+      // is not this sink at all.)
+      reuseExistingServer: false,
       env: {
         E2E_SMTP_PORT: String(SMTP_PORT),
         E2E_MAIL_HTTP_PORT: String(MAIL_HTTP_PORT),
       },
-      reuseExistingServer: !process.env.CI,
       stdout: 'pipe',
       stderr: 'pipe',
     },

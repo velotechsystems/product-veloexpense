@@ -110,6 +110,30 @@ if (!existsSync(MANIFEST)) {
   );
   process.exit(1);
 }
+// ── Is the manifest older than the sources it is being judged against? ──────
+// Without this the check has a false failure with a badly misleading message: add
+// a page, run `npm run check:actions` before `npm run build`, and it reports that
+// the build registered no actions for it — which is true and useless, because the
+// build has not seen the page. `npm run e2e` and CI both build immediately before
+// this runs, so it only ever bites someone running the guard by hand, which is
+// exactly the person who does not need a puzzle.
+const manifestMtime = statSync(MANIFEST).mtimeMs;
+const newestSource = serverModules.reduce((newest, file) => {
+  const m = statSync(file).mtimeMs;
+  return m > newest ? m : newest;
+}, 0);
+if (newestSource > manifestMtime) {
+  const stale = serverModules.filter((f) => statSync(f).mtimeMs > manifestMtime);
+  console.error(
+    `check-server-actions: ${MANIFEST} is OLDER than ${stale.length} 'use server' ` +
+      `module(s), so it cannot say anything about them:\n` +
+      stale.map((f) => `  · ${f}`).join('\n') +
+      `\nRun \`npm run build\` and try again. (This is not a finding — the build ` +
+      `simply has not seen these files yet.)`,
+  );
+  process.exit(1);
+}
+
 const manifest = JSON.parse(readFileSync(MANIFEST, 'utf8'));
 const registered = new Set();
 for (const entry of Object.values(manifest.node ?? {})) {

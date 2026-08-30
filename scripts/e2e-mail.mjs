@@ -122,6 +122,10 @@ smtp.on('error', (err) => {
   // Logged rather than thrown: an SMTP-level error must not take the sink down
   // mid-run, because a dead sink turns one informative failure into every
   // subsequent test timing out on a port that stopped answering.
+  //
+  // ONE EXCEPTION, handled below: a port that was never acquired. There is no run
+  // to protect yet, and staying alive without a listener is the silent failure
+  // this whole file exists to avoid.
   console.error('[e2e-mail] smtp error', err.message);
 });
 
@@ -145,6 +149,26 @@ const http = createServer((req, res) => {
   }
   res.writeHead(404).end();
 });
+
+// Same treatment as the storage sink: Playwright no longer reuses whatever is on
+// these ports, so a busy port stops the run, and a named port with a command to
+// run beats a bare EADDRINUSE in a webServer log.
+for (const [server, label] of [
+  [smtp, 'SMTP'],
+  [http, 'inbox HTTP'],
+]) {
+  server.on('error', (err) => {
+    if (err && err.code === 'EADDRINUSE') {
+      const port = label === 'SMTP' ? SMTP_PORT : HTTP_PORT;
+      console.error(
+        `[e2e-mail] the ${label} port ${port} is already in use, so the mail sink cannot start.\n` +
+          `  Find it with:  lsof -nP -iTCP:${port} -sTCP:LISTEN\n` +
+          `  Then stop it, or set E2E_SMTP_PORT / E2E_MAIL_HTTP_PORT.`,
+      );
+      process.exit(1);
+    }
+  });
+}
 
 smtp.listen(SMTP_PORT, '127.0.0.1', () => {
   http.listen(HTTP_PORT, '127.0.0.1', () => {

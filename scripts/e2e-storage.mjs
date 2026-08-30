@@ -16,7 +16,9 @@
 import { rm } from 'node:fs/promises';
 import S3rver from 's3rver';
 
-const PORT = Number(process.env.E2E_STORAGE_PORT ?? 9000);
+// 9401, not 9000: see the note in playwright.config.ts. 9000 is MinIO's default,
+// and a stranger answering it once got silently adopted as the storage backend.
+const PORT = Number(process.env.E2E_STORAGE_PORT ?? 9401);
 const BUCKET = process.env.STORAGE_BUCKET ?? 'veloexpense-receipts';
 const ORIGIN = process.env.E2E_APP_ORIGIN ?? 'http://localhost:3000';
 const DIRECTORY = process.env.E2E_STORAGE_DIR ?? '.e2e-storage';
@@ -46,7 +48,25 @@ const server = new S3rver({
   configureBuckets: [{ name: BUCKET, configs: [CORS] }],
 });
 
-await server.run();
+// EADDRINUSE is the failure this handler exists for, and the message matters more
+// than it looks. Playwright no longer reuses whatever is on this port, so a busy
+// port now stops the run — correctly — and the raw error is a bare
+// "listen EADDRINUSE" buried in a webServer log. Say what to do about it instead,
+// because the alternative history is what happened on 9000: a silent adoption and
+// three specs failing about receipt uploads.
+try {
+  await server.run();
+} catch (err) {
+  if (err && err.code === 'EADDRINUSE') {
+    console.error(
+      `[e2e-storage] port ${PORT} is already in use, so the S3 surface cannot start.\n` +
+        `  Something else is listening there — find it with:  lsof -nP -iTCP:${PORT} -sTCP:LISTEN\n` +
+        `  Then either stop it, or run the e2e against another port:  E2E_STORAGE_PORT=9402 npm run e2e`,
+    );
+    process.exit(1);
+  }
+  throw err;
+}
 console.log(`e2e storage listening on http://127.0.0.1:${PORT} (bucket ${BUCKET})`);
 
 for (const signal of ['SIGINT', 'SIGTERM']) {
