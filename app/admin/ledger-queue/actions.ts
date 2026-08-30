@@ -11,7 +11,14 @@ import { auth } from '@/auth';
 import { withCurrentOrg } from '@/lib/tenant/request';
 import type { QueryRunner } from '@/lib/db/client';
 import { getEmployeeByEmail, type EmployeeRow } from '@/lib/employees/service';
-import { cancelPost, listQueue, queueSummary, retryNow } from '@/lib/integrations/post-outbox';
+import {
+  cancelPost,
+  dryRun,
+  listQueue,
+  queueSummary,
+  retryNow,
+} from '@/lib/integrations/post-outbox';
+import { append as auditAppend } from '@/lib/audit/service';
 import { postOne } from '@/lib/integrations/dispatch';
 import { resolveCapability } from '@/lib/integrations/service';
 
@@ -40,6 +47,40 @@ export async function getQueuePage() {
     // difference should be on the screen rather than inferred.
     connected: (await resolveCapability(tx, 'POST_EXPENSE_REPORT')) !== null,
   }));
+}
+
+/**
+ * The audit row for an operator's decision about a queued post (VX3-6).
+ *
+ * VX3-4 shipped these three buttons with NO audit row at all — an omission against
+ * VX3-6's own acceptance criterion, "a manual push is audited and attributed".
+ * Every one of them overrides something the system decided on its own, which is
+ * exactly the class of action an audit trail exists for.
+ *
+ * `entityType` is the REPORT rather than the queue row: `audit_entry` is read by
+ * report, an auditor asking "what happened to EXP-000123" should see the ledger
+ * hand-off in the same chain as its approval, and a queue row is an implementation
+ * detail that may be retried away.
+ */
+async function auditPostAction(
+  tx: QueryRunner,
+  actor: EmployeeRow,
+  action: string,
+  postId: string,
+  details: Record<string, unknown>,
+): Promise<void> {
+  const row = await tx.query('SELECT report_id FROM integration_post WHERE id = $1', [postId]);
+  if (row.rows.length === 0) throw new Error('no such queued post');
+  await auditAppend(
+    tx,
+    { id: actor.id, name: actor.display_name ?? actor.email, role: actor.role },
+    {
+      action,
+      entityType: 'expense_report',
+      entityId: row.rows[0].report_id as string,
+      details: { postId, ...details },
+    },
+  );
 }
 
 function required(form: FormData, key: string): string {
@@ -72,17 +113,58 @@ async function guarded(fn: () => Promise<void>) {
 
 export async function retryFromForm(form: FormData) {
   await guarded(async () => {
-    await asAdmin((tx) => retryNow(tx, required(form, 'id')));
+    const id = required(form, 'id');
+    await asAdmin(async (tx, actor) => {
+      // Read the state BEFORE the retry: what an auditor needs is what this
+      // operator overrode, and `retryNow` resets exactly that.
+      const before = await tx.query(
+        'SELECT status, attempts, external_id, last_error FROM integration_post WHERE id = $1',
+        [id],
+      );
+      if (before.rows.length === 0) throw new Error('no such queued post');
+      const prior = before.rows[0];
+      await retryNow(tx, id);
+      // Same transaction as the change — `auditAppend` requires it, and a retry
+      // that happened without its audit row is worse than no audit row.
+      await auditPostAction(tx, actor, 'LEDGER_POST_RETRIED', id, {
+        fromStatus: prior.status,
+        priorAttempts: prior.attempts,
+        // The one that matters: retrying a NEEDS_REVIEW row means an operator has
+        // decided the ledger does NOT already hold this bill. If they were wrong,
+        // this row is the record of who decided.
+        priorExternalId: prior.external_id,
+        priorError: prior.last_error,
+        overrodeNeedsReview: prior.status === 'NEEDS_REVIEW',
+      });
+    });
   });
 }
 
 export async function cancelFromForm(form: FormData) {
   await guarded(async () => {
+    const id = required(form, 'id');
     const reason = (form.get('reason') as string | null)?.trim();
-    await asAdmin((tx) =>
-      cancelPost(tx, required(form, 'id'), reason || 'withheld by an administrator'),
-    );
+    await asAdmin(async (tx, actor) => {
+      await cancelPost(tx, id, reason || 'withheld by an administrator');
+      await auditPostAction(tx, actor, 'LEDGER_POST_WITHHELD', id, {
+        reason: reason ?? null,
+      });
+    });
   });
+}
+
+/**
+ * What would be sent, and what would stop it. Writes nothing.
+ *
+ * Not audited, deliberately: it changes nothing and reads only what the operator
+ * can already see on the report. An audit trail full of "somebody looked" entries
+ * is how the entries that matter get lost.
+ */
+export async function dryRunFromForm(form: FormData) {
+  const id = required(form, 'id');
+  const result = await asAdmin((tx) => dryRun(tx, id));
+  if (!result) redirect(`${PAGE}?error=${encodeURIComponent('no such queued post')}`);
+  redirect(`${PAGE}?preview=${encodeURIComponent(JSON.stringify(result))}`);
 }
 
 /**
@@ -103,6 +185,13 @@ export async function sendNowFromForm(form: FormData) {
       if (r.rows.length === 0) throw new Error('no such queued post');
       return r.rows[0].organization_id as string;
     });
-    await postOne(orgId, id);
+    const outcome = await postOne(orgId, id);
+    // Audited AFTER, with the outcome — the operator's action is "sent this now",
+    // and what happened is the part an auditor wants. It cannot share the
+    // transaction with the send, because the send deliberately holds none open
+    // while it talks to the ledger.
+    await asAdmin((tx, actor) =>
+      auditPostAction(tx, actor, 'LEDGER_POST_SENT_MANUALLY', id, { outcome }),
+    );
   });
 }

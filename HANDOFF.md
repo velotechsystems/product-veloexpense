@@ -1337,6 +1337,48 @@ Smaller, each with a reason:
 - **`last_seen_at`'s value is not the point**; which rows a completed pull did NOT
   touch is.
 
+**What VX3-6 shipped** — audit rows for the three manual queue actions, a dry run,
+and four tests. **No migration.** Much smaller than the two days boarded, because
+VX3-4 had already shipped the queue screen — and one of its criteria turned out to
+be a GAP in what VX3-4 shipped rather than new work.
+
+- **VX3-4 SHIPPED THREE OVERRIDE BUTTONS WITH NO AUDIT ROW, and that was my
+  omission.** VX3-6's acceptance criterion says "a manual push is audited and
+  attributed"; a grep for `auditAppend` in `app/admin/ledger-queue/actions.ts`
+  returned zero. Send-now, retry and withhold each override something the system
+  decided on its own, which is exactly the class of action an audit trail exists for.
+  Three new actions: `LEDGER_POST_SENT_MANUALLY`, `LEDGER_POST_RETRIED`,
+  `LEDGER_POST_WITHHELD`. No migration needed — `audit_entry.action` is a free
+  string validated non-empty, deliberately, so a new action never needs one.
+- **THE RETRY AUDIT READS THE STATE BEFORE THE RETRY**, because what an auditor
+  needs is what the operator OVERRODE and `retryNow` resets precisely that. It
+  records `overrodeNeedsReview`, and that flag is the point: retrying a
+  NEEDS_REVIEW row is an operator asserting the ledger does NOT already hold this
+  bill. If they are wrong, that row is the record of who decided.
+- **`entityType` IS THE REPORT, NOT THE QUEUE ROW.** `audit_entry` is read by
+  report; an auditor asking "what happened to EXP-000123" should find the ledger
+  hand-off in the same chain as its approval. A queue row is an implementation
+  detail that may be retried away.
+- **THE SEND-NOW AUDIT IS AFTER, WITH THE OUTCOME.** It cannot share a transaction
+  with the send, because the send deliberately holds none open while it talks to the
+  ledger. The operator's action is "sent this now" and the outcome is the part worth
+  recording.
+- **THE DRY RUN DOES NOT CONTACT THE LEDGER**, and the screen says what that costs.
+  `draft_bill` has no validate-only mode, so the only way to have the ledger confirm
+  a bill is acceptable is to send it one. So a clean dry run means VeloExpense has no
+  objection — not that the ledger will accept it. A closed period and a missing
+  vendor are the two commonest real failures and neither is discoverable without
+  asking. That sentence is on the screen, not just here.
+- **THE DRY RUN IS NOT AUDITED, deliberately.** It changes nothing and reads only
+  what the operator can already see on the report. An audit trail full of "somebody
+  looked" is how the entries that matter get lost.
+
+**A note on the board:** VX3-6 was sized at two days assuming the screen was part of
+it. It was not — VX3-4 needed a queue screen to be reviewable at all, so it built
+one. What was genuinely left was a day. The remaining tickets should be re-read the
+same way before being picked up; VX3-9's e2e in particular may be larger than
+boarded now that there are two adapters and a pull to cover.
+
 ## 6. Planning docs (in the ExpenseOS Google-Drive folder, `Specifications_and_Planning/`)
 - `VeloExpense-Port-and-Build-Plan.docx` (7-phase plan + ExpenseOS→VeloExpense sync strategy)
 - `ExpenseOS-vs-VeloExpense-Differences-Chart-rev2.docx`

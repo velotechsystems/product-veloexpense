@@ -296,3 +296,51 @@ describe('draining', () => {
     expect(stub.posted()).toHaveLength(1);
   });
 });
+
+describe('the dry run (VX3-6)', () => {
+  it('reports what would post, and writes nothing', async () => {
+    await connectStub();
+    await approvedReport('previewed', 4200);
+    const queue = await withOrg(orgId, (tx) => outbox.listQueue(tx));
+    const result = await withOrg(orgId, (tx) => outbox.dryRun(tx, queue[0].id));
+    expect(result?.problems).toEqual([]);
+    expect(result?.lines).toHaveLength(1);
+    expect(result?.lines[0].glAccountNumber).toBe('68100');
+    expect(result?.totalMinor).toBe('4200');
+    // Nothing sent, nothing changed.
+    expect(stub.posted()).toEqual([]);
+    const after = await withOrg(orgId, (tx) => outbox.listQueue(tx));
+    expect(after[0]).toMatchObject({ status: 'PENDING', attempts: 0 });
+  });
+
+  it('names an unmapped category as the reason it would not post', async () => {
+    await connectStub();
+    const reportId = await approvedReport('unmapped');
+    // Clear both the snapshot and the category mapping, which is what an
+    // unmapped line actually looks like.
+    await admin.query('UPDATE expense_line_item SET gl_account_id = NULL');
+    await admin.query('UPDATE expense_category SET gl_account_id = NULL');
+    expect(reportId).toBeTruthy();
+    const queue = await withOrg(orgId, (tx) => outbox.listQueue(tx));
+    const result = await withOrg(orgId, (tx) => outbox.dryRun(tx, queue[0].id));
+    expect(result?.problems.join(' ')).toMatch(/no GL account/);
+    expect(result?.lines[0].glAccountNumber).toBeNull();
+  });
+
+  it('says so when it has already been sent', async () => {
+    await connectStub();
+    await approvedReport('already gone');
+    const queue = await withOrg(orgId, (tx) => outbox.listQueue(tx));
+    await postOne(orgId, queue[0].id);
+    const result = await withOrg(orgId, (tx) => outbox.dryRun(tx, queue[0].id));
+    expect(result?.problems.join(' ')).toMatch(/already been sent/);
+  });
+
+  it('returns null for a post that does not exist', async () => {
+    expect(
+      await withOrg(orgId, (tx) =>
+        outbox.dryRun(tx, '00000000-0000-0000-0000-000000000000'),
+      ),
+    ).toBeNull();
+  });
+});
