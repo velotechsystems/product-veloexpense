@@ -31,6 +31,7 @@
  */
 import type { QueryRunner } from '@/lib/db/client';
 import { append as auditAppend, type AuditActor } from '@/lib/audit/service';
+import { enqueuePost } from '@/lib/integrations/post-outbox';
 import { assertCanDecide } from '@/lib/approvals/eligibility';
 import { tieredRouter } from '@/lib/approvals/resolver';
 import { RoutingError, type ResolvedAssignment } from '@/lib/approvals/routing';
@@ -408,6 +409,25 @@ export async function decide(
       receiptsPresentAtDecision: receiptsPresent,
     },
   });
+
+  // ── VX3-4: the ledger hand-off, ON THE TRANSITION ─────────────────────────
+  //
+  // Beside the audit append, in the SAME transaction, and only where the report
+  // actually reached APPROVED — not on an intermediate step of a multi-tier
+  // workflow. GAP-AUDIT AC-6 is why it lives here rather than in a caller:
+  // ExpenseOS hangs its post off FOUR call sites plus a 30-minute cron sweep,
+  // and one of those call sites was added after a report that auto-approved on
+  // submit was "silently never sent to NetSuite". A hook on the transition cannot
+  // be forgotten by a new caller.
+  //
+  // A ROW, not a job (AC-7): it commits with the approval or not at all, so no
+  // fire-and-forget trade and no sweep to compensate for one. And it is enqueued
+  // unconditionally — whether anything is CONNECTED is the poller's question, not
+  // the approver's, because a tenant connecting a ledger next week should still
+  // find last week's approvals waiting to go.
+  if (reportStatus === 'APPROVED') {
+    await enqueuePost(tx, task.report_id as string);
+  }
 
   await auditAppend(tx, actor, {
     action:

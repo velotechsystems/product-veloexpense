@@ -2225,6 +2225,15 @@ a conditional write. `UPDATE integration_post SET status='POSTED' WHERE id=$1 AN
 with a `rowCount !== 1` check, and a state that means *posted upstream, not recorded locally* which
 no automatic path may leave. Not "do not re-post" in a string.
 
+**CLOSED by VX3-4.** `integration_post.status = 'NEEDS_REVIEW'`, and it is stronger than the
+conditional write this entry asked for: `0017`'s narrowed `platform_read` policy does not MATCH that
+status, so the poller cannot see the row at all — a future change that forgot to exclude it still
+cannot reach it. The refused/ambiguous distinction is in `dispatch.ts`, and `isDefinitelyNotApplied()`
+is how an adapter tells the caller which kind of failure it had; a plain thrown Error defaults to
+ambiguous. VeloLedger also makes the underlying risk smaller than NetSuite's did — `draft_bill` takes
+an `idempotencyKey` it namespaces per API key server-side — but the state is kept regardless, because
+a guard that depends on the other system behaving is not the guard.
+
 ### AC-9 · There is NO chart-of-accounts template — and the vendor-neutral account table was DELETED ⚠ blocking
 
 The Plan puts *"selectable starter chart-of-accounts templates (global templates → per-tenant
