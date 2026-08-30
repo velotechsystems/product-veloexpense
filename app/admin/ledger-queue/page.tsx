@@ -25,7 +25,13 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { formatMinor } from '@/lib/money';
 import { EmptyRow, ErrorBanner, formatDate } from '@/app/expenses/ui';
-import { cancelFromForm, getQueuePage, retryFromForm, sendNowFromForm } from './actions';
+import {
+  cancelFromForm,
+  dryRunFromForm,
+  getQueuePage,
+  retryFromForm,
+  sendNowFromForm,
+} from './actions';
 
 export const dynamic = 'force-dynamic';
 
@@ -41,9 +47,31 @@ const STATUS_TEXT: Record<string, string> = {
 export default async function LedgerQueuePage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string }>;
+  searchParams: Promise<{ error?: string; preview?: string }>;
 }) {
-  const { error } = await searchParams;
+  const { error, preview } = await searchParams;
+  // The dry run's result travels in the query string rather than being re-read,
+  // so what is shown belongs to the button that was pressed. A malformed value is
+  // ignored rather than thrown on — it is a preview, not a record.
+  let previewed: {
+    reportTitle: string;
+    reportNumber: string | null;
+    currencyCode: string;
+    totalMinor: string;
+    problems: string[];
+    lines: Array<{
+      description: string;
+      amountMinor: string;
+      categoryLabel: string;
+      glAccountNumber: string | null;
+      glAccountName: string | null;
+    }>;
+  } | null = null;
+  try {
+    previewed = preview ? JSON.parse(preview) : null;
+  } catch {
+    previewed = null;
+  }
   const { rows, summary, connected } = await getQueuePage();
   const waiting = summary.PENDING + summary.FAILED;
 
@@ -64,6 +92,68 @@ export default async function LedgerQueuePage({
       </header>
 
       <ErrorBanner message={error} />
+
+      {previewed ? (
+        <section className="flex flex-col gap-2 rounded-lg border border-border p-4">
+          <h2 className="text-lg font-medium">
+            Dry run — {previewed.reportTitle}
+            {previewed.reportNumber ? ` · ${previewed.reportNumber}` : ''}
+          </h2>
+          {previewed.problems.length === 0 ? (
+            <p className="text-sm">
+              <strong className="font-medium">Nothing here would stop this posting.</strong> Which
+              is not the same as the ledger accepting it — a closed accounting period or a missing
+              vendor can only be found by asking, and those are the two commonest real failures.
+              Nothing was sent and nothing was written.
+            </p>
+          ) : (
+            <div className="rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm">
+              <strong className="font-medium">This would not post:</strong>
+              <ul className="mt-1 list-disc pl-5">
+                {previewed.problems.map((problem) => (
+                  <li key={problem}>{problem}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+          <div className="overflow-x-auto rounded-md border border-border">
+            <table className="w-full min-w-[600px] text-left text-sm">
+              <thead className="bg-muted/50 text-xs uppercase tracking-wide text-muted-foreground">
+                <tr>
+                  <th className="px-3 py-2 font-medium">Line</th>
+                  <th className="px-3 py-2 font-medium">Would post to</th>
+                  <th className="px-3 py-2 font-medium">Amount</th>
+                </tr>
+              </thead>
+              <tbody>
+                {previewed.lines.map((line, index) => (
+                  <tr key={`${line.description}-${index}`} className="border-t border-border">
+                    <td className="px-3 py-2">
+                      {line.description}
+                      <span className="block text-xs text-muted-foreground">
+                        {line.categoryLabel}
+                      </span>
+                    </td>
+                    <td className="px-3 py-2">
+                      {line.glAccountNumber ? (
+                        `${line.glAccountNumber} — ${line.glAccountName}`
+                      ) : (
+                        <span className="text-destructive">no account mapped</span>
+                      )}
+                    </td>
+                    <td className="px-3 py-2 tabular-nums">
+                      {formatMinor(line.amountMinor, previewed.currencyCode)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <p className="text-sm text-muted-foreground">
+            Total {formatMinor(previewed.totalMinor, previewed.currencyCode)}
+          </p>
+        </section>
+      ) : null}
 
       <p className="rounded-md border border-border bg-muted/40 px-3 py-2 text-sm">
         An approved report becomes a <strong>draft bill</strong> in the connected ledger. Somebody
@@ -157,6 +247,9 @@ export default async function LedgerQueuePage({
                     </td>
                     <td className="px-3 py-2">
                       <div className="flex flex-wrap items-center gap-2">
+                        <Button form={`dry-${row.id}`} type="submit" size="sm" variant="outline">
+                          Preview
+                        </Button>
                         {row.status === 'PENDING' || row.status === 'FAILED' ? (
                           <Button form={`send-${row.id}`} type="submit" size="sm" variant="outline">
                             Send now
@@ -199,6 +292,9 @@ export default async function LedgerQueuePage({
       {/* Row forms, outside the table, referenced by `form=` above. */}
       {rows.map((row) => (
         <div key={row.id} className="hidden">
+          <form id={`dry-${row.id}`} action={dryRunFromForm}>
+            <input type="hidden" name="id" value={row.id} />
+          </form>
           <form id={`send-${row.id}`} action={sendNowFromForm}>
             <input type="hidden" name="id" value={row.id} />
           </form>

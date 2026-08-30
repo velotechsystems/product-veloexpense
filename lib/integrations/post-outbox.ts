@@ -280,3 +280,104 @@ export async function cancelPost(tx: QueryRunner, id: string, reason: string): P
     throw new Error('that post is already posted, or does not exist');
   }
 }
+
+/* ── the dry run (VX3-6) ───────────────────────────────────────────────────── */
+
+export interface DryRun {
+  reportId: string;
+  reportNumber: string | null;
+  reportTitle: string;
+  currencyCode: string;
+  totalMinor: string;
+  /** One entry per line, with the account it would post to. */
+  lines: Array<{
+    description: string;
+    amountMinor: string;
+    taxMinor: string;
+    categoryLabel: string;
+    glAccountNumber: string | null;
+    glAccountName: string | null;
+  }>;
+  /** Everything that would stop this posting. Empty means it would go. */
+  problems: string[];
+  /** The adapter it would go to, or null when nothing is connected. */
+  destination: string | null;
+}
+
+/**
+ * What WOULD be sent, and what would stop it. Writes nothing, and calls nobody.
+ *
+ * Deliberately does NOT contact the ledger. VX3-6's criterion is "a dry run writes
+ * nothing", and the only way to have the ledger confirm a bill would be acceptable
+ * is to send it one — `draft_bill` has no validate-only mode. So this checks
+ * everything checkable HERE: is anything connected, does every line have an
+ * account, is there anything to post at all.
+ *
+ * The honest limit, and it belongs on the screen rather than in a comment: a clean
+ * dry run means VeloExpense has no objection. It does not mean the ledger will
+ * accept it — a closed period or a missing vendor is only discoverable by asking,
+ * and those are the two commonest real failures.
+ */
+export async function dryRun(tx: QueryRunner, postId: string): Promise<DryRun | null> {
+  const head = await tx.query(
+    `SELECT p.report_id, p.status, r.number, r.title, r.currency_code, r.total_minor, r.status AS report_status
+       FROM integration_post p
+       JOIN expense_report r ON r.id = p.report_id
+      WHERE p.id = $1`,
+    [postId],
+  );
+  if (head.rows.length === 0) return null;
+  const row = head.rows[0];
+
+  const lines = await tx.query(
+    `SELECT li.description, li.amount_minor, li.tax_minor,
+            c.label AS category_label,
+            coalesce(lg.number, cg.number) AS gl_account_number,
+            coalesce(lg.name, cg.name)     AS gl_account_name
+       FROM expense_line_item li
+       JOIN expense e ON e.id = li.expense_id
+       JOIN expense_category c ON c.id = li.category_id
+       LEFT JOIN gl_account lg ON lg.id = li.gl_account_id
+       LEFT JOIN gl_account cg ON cg.id = c.gl_account_id
+      WHERE e.report_id = $1
+      ORDER BY e.txn_date NULLS LAST, li.created_at`,
+    [row.report_id],
+  );
+
+  const problems: string[] = [];
+  if (lines.rows.length === 0) problems.push('The report has no line items.');
+  const unmapped = [
+    ...new Set(
+      lines.rows
+        .filter((l) => l.gl_account_number === null)
+        .map((l) => l.category_label as string),
+    ),
+  ];
+  if (unmapped.length > 0) {
+    problems.push(
+      `These categories have no GL account, so a bill line cannot name one: ${unmapped.join(', ')}.`,
+    );
+  }
+  if (row.report_status !== 'APPROVED' && row.report_status !== 'REIMBURSED') {
+    problems.push(`The report is ${row.report_status}, not approved.`);
+  }
+  if (row.status === 'POSTED') problems.push('This has already been sent.');
+
+  return {
+    reportId: row.report_id as string,
+    reportNumber: row.number as string | null,
+    reportTitle: row.title as string,
+    currencyCode: row.currency_code as string,
+    totalMinor: String(row.total_minor),
+    lines: lines.rows.map((l) => ({
+      description: (l.description as string | null) ?? (l.category_label as string),
+      amountMinor: String(l.amount_minor),
+      taxMinor: String(l.tax_minor),
+      categoryLabel: l.category_label as string,
+      glAccountNumber: l.gl_account_number as string | null,
+      glAccountName: l.gl_account_name as string | null,
+    })),
+    problems,
+    destination: null,
+  };
+}
