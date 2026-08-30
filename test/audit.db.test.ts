@@ -36,6 +36,14 @@ const admin = new Pool({ connectionString: ADMIN_URL });
 let orgId: string;
 let otherOrgId: string;
 let actorId: string;
+// VX3-10. The second tenant needs its OWN actor. Until migration 0019 it did
+// not: `insertRaw` defaulted every row's actor to `actorId`, a user in the FIRST
+// org, and the rows this suite wrote into `audit-co-2` referenced it happily —
+// because a single-column `REFERENCES app_user(id)` is checked with RLS bypassed
+// and does not care which tenant the target belongs to (GAP-AUDIT TN-1). So this
+// suite had been writing a cross-tenant audit row since VX2-6 and nothing
+// objected. The composite FK objects, which is the point of it.
+let otherActorId: string;
 
 const H = (c: string) => c.repeat(64);
 
@@ -60,7 +68,10 @@ async function insertRaw(
        RETURNING id, sequence, occurred_at`,
       [
         org,
-        over.actorId === undefined ? actorId : over.actorId,
+        // The actor defaults to the one belonging to the org being WRITTEN INTO,
+        // not to a module-level id that happens to be the first org's. See the
+        // note on `otherActorId`.
+        over.actorId === undefined ? (org === orgId ? actorId : otherActorId) : over.actorId,
         over.actorEmail ?? null,
         over.actorName ?? 'Ada Admin',
         over.actorRole ?? 'ADMIN',
@@ -115,6 +126,14 @@ beforeAll(async () => {
       [orgId],
     );
     actorId = u.rows[0].id;
+  });
+  await withOrg(otherOrgId, async (tx) => {
+    const u = await tx.query(
+      `INSERT INTO app_user (organization_id, email, display_name, role)
+       VALUES ($1,'bob@audit2.test','Bob Admin','ADMIN') RETURNING id`,
+      [otherOrgId],
+    );
+    otherActorId = u.rows[0].id;
   });
 });
 

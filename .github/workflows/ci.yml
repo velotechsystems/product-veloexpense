@@ -143,6 +143,49 @@ jobs:
           fi
           echo "Isolation coverage OK — every tenant table is named in the suite."
 
+      # VX3-10. The two guards above are about RLS. This one is about FOREIGN
+      # KEYS, and it exists because RLS cannot help with them: Postgres performs
+      # referential-integrity checks as the constraint's OWNER with row-level
+      # security BYPASSED, so a plain `REFERENCES app_user(id)` accepts another
+      # tenant's id — no policy is consulted. Forty-two constraints in this schema
+      # were declared that way until migration 0019 (GAP-AUDIT TN-1).
+      #
+      # test/tenant-fk.db.test.ts carries the same assertion, generated the same
+      # way. This step is here so a weakly-declared FK fails the build BEFORE the
+      # suite starts, and with a message that says what to write instead — the
+      # person who trips it will be somebody adding a table, and the fix is one
+      # line they should not have to go and find.
+      - name: Tenant FK guard (every tenant-to-tenant FK must be composite)
+        run: |
+          WEAK=$(psql "$ADMIN_DATABASE_URL" -tAc "
+            WITH tenant AS (
+              SELECT c.oid, c.relname,
+                     (SELECT a.attnum FROM pg_attribute a
+                       WHERE a.attrelid = c.oid AND a.attname = 'organization_id'
+                         AND NOT a.attisdropped) AS org_attnum
+              FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+              WHERE n.nspname = 'public' AND c.relkind = 'r'
+                AND EXISTS (SELECT 1 FROM pg_attribute a
+                            WHERE a.attrelid = c.oid AND a.attname = 'organization_id'
+                              AND NOT a.attisdropped))
+            SELECT string_agg(src.relname || '.' || k.conname || ' -> ' || tgt.relname, ', ')
+            FROM pg_constraint k
+            JOIN tenant src ON src.oid = k.conrelid
+            JOIN tenant tgt ON tgt.oid = k.confrelid
+            WHERE k.contype = 'f'
+              AND (array_position(k.conkey, src.org_attnum) IS NULL
+                   OR k.confkey[array_position(k.conkey, src.org_attnum)]
+                      IS DISTINCT FROM tgt.org_attnum);")
+          if [ -n "$WEAK" ]; then
+            echo "::error::Foreign keys that accept another tenant's row: $WEAK"
+            echo "Declare each one as:"
+            echo "  FOREIGN KEY (organization_id, <col>) REFERENCES <target> (organization_id, id)"
+            echo "which needs UNIQUE (organization_id, id) on the target table."
+            echo "See prisma/migrations/0019_composite_tenant_fks/migration.sql."
+            exit 1
+          fi
+          echo "Tenant FK guard OK — every tenant-to-tenant FK is composite through organization_id."
+
       - name: RLS isolation gate + unit tests
         run: npm test
 

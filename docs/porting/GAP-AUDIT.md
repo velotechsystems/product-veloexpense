@@ -1235,6 +1235,13 @@ model Activity {
   subjectId   String   @db.Uuid   // loose — no FK
 ```
 
+**Qualifier added by VX3-10 (TN-1).** Read the paragraph below with one correction: a foreign key
+is only a "second line" behind RLS if it is COMPOSITE through `organization_id`. Postgres checks
+referential integrity with RLS bypassed, so a single-column `REFERENCES` accepts another tenant's
+id and guards nothing. Until migration `0019` that described nearly every FK in VeloExpense — so
+what made `activity` special was never that the others were safe, only that `activity` had no
+constraint to fix. Since `0019` the contrast below is real.
+
 `Activity.subjectId` is a bare uuid with no foreign key, and `ReplyThread` is the same
 (`/// Loose ids (no FK): the inbound path re-validates the subject + recipient`). That is forced by
 the polymorphism — a column cannot reference four different subject tables — so **there is no FK to
@@ -2407,7 +2414,7 @@ Not a port finding — this one is about VeloExpense's own schema, which is why 
 Found by testing migration `0014`'s new constraints against a real Postgres 16 rather than reading
 them, and then checking whether the property was specific to the new table. It is not.
 
-### TN-1 · A tenant can point a foreign key at another tenant's row ⚠ needs a ticket
+### TN-1 · A tenant can point a foreign key at another tenant's row ✅ CLOSED by VX3-10 (migration `0019`)
 
 Postgres performs referential-integrity checks as the constraint's owner **with row-level security
 bypassed**. So a plain `REFERENCES <tenant table>(id)` does not scope anything to a tenant:
@@ -2481,6 +2488,29 @@ are their own ticket** — it is one migration touching almost every table in th
 isolation test per FK, and it wants a CI guard so a new tenant-to-tenant FK cannot be added in the
 weak form. Folding a schema-wide security change into a chart-of-accounts PR is how it would go
 unreviewed.
+
+**CLOSED — VX3-10, migration `0019`.** All 42 remaining constraints are composite through
+`organization_id`. Three things carry it forward, and the order matters — the guard fails the build
+before the suite runs, and the suite fails before anybody reads a doc:
+
+1. **A CI step** (`Tenant FK guard`) walking `pg_constraint` for any FK between two tenant tables
+   whose referencing columns do not include `organization_id` lined up against the target's
+   `organization_id`. It names the offenders and prints the two lines to write instead.
+2. **`test/tenant-fk.db.test.ts`** — the same enumeration as an assertion, plus behavioural cases:
+   the cross-tenant insert above (now refused), the same insert **on the superuser connection**
+   where RLS does not apply at all, a same-tenant insert (still accepted — a constraint that refused
+   everything would pass the rest), the self-referencing `app_user.manager_id`, `MATCH SIMPLE`
+   nullability, and one case per surviving delete action.
+3. **HANDOFF §1** now states the rule with the pattern, and the qualifier this entry asked for:
+   *RLS guards READS, it does not guard FK TARGETS.* **NT-1's "RLS is the whole guard" sentence has
+   the matching qualifier** — it was true of `activity` and, until `0019`, quietly true of every
+   other table too.
+
+The exposure count in this entry says 45 and the migration converted 42. Both are right: 49
+tenant-to-tenant FKs exist today, 7 were already composite (`0014`, `0016`, `0017`), and the
+schema grew by four such constraints between this entry being written and `0019` being applied.
+The generated enumeration is the number to trust; a count written into prose is stale the next
+time somebody adds a table, which is the argument for the guard rather than for a list.
 
 ## Not yet audited
 
