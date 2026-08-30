@@ -59,6 +59,22 @@ jobs:
       - name: Install dependencies
         run: npm install --no-audit --no-fund
 
+      # VX3-7. The Plan asks for one adapter contract "so QuickBooks/Xero/Sage are
+      # repeatable; avoid per-vendor special cases leaking into core". VX3-8's diff
+      # is the real acceptance test for that, but it runs ONCE, on the day somebody
+      # writes the second adapter. This runs every build.
+      #
+      # It caught two things on its first run, and neither was cosmetic:
+      # `lib/integrations/dispatch.ts` imported the refused-versus-ambiguous
+      # classifier from the VeloLedger adapter BY NAME — so VeloLedger was the only
+      # adapter that could report a refusal, and every other adapter's 401 would
+      # have become NEEDS_REVIEW, which no automatic path retries. And a CSV
+      # validation error shown to admins carried "VeloLedger 0028" in it.
+      #
+      # Needs no build and no database, so it goes first and fails in seconds.
+      - name: Vendor-neutrality guard (no vendor name in core)
+        run: npm run check:vendor
+
       # Build first: Next 16 generates .next/types/** (e.g. LayoutProps) that the
       # standalone `tsc --noEmit` typecheck depends on.
       - name: Build

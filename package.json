@@ -15,6 +15,7 @@
     "e2e:ui": "playwright test --ui",
     "start:standalone": "cp -r public .next/standalone/public 2>/dev/null; cp -r .next/static .next/standalone/.next/static && node .next/standalone/server.js",
     "check:actions": "node scripts/check-server-actions.mjs",
+    "check:vendor": "node scripts/check-vendor-neutral.mjs",
     "verify:chain": "vitest run --config vitest.chain.config.ts"
   },
   "dependencies": {

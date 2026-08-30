@@ -2408,6 +2408,99 @@ already a perishable good. **Tag `accounting` at `5a11a647` before VX3-3 starts*
 question of the first adapter ticket is "which version of their code was this read at", and the
 honest answer will be a guess.
 
+### AC-16 · A DRAFTED bill is not a POSTABLE one, and two of the three refusals are invisible over the contract ⚠ needs upstream changes
+
+Found 2026-08-30, building VX3-7, by reading what happens AFTER `draft_bill` returns rather than
+what it returns.
+
+`draft_bill`'s banner is *"agents draft AP vendor bills; humans post via UI"*, and VX3-4 was right
+to keep that boundary. What VX3-4 did not establish is how much a successful draft proves. The
+answer is less than it looks:
+
+**`createBill` does not validate account numbers at all.** It stores `expense_account_number` as
+plain `text` on `bill_line` — no foreign key, no existence check. The numbers are resolved in
+`buildAndPostBillJournal`:
+
+```sql
+SELECT id, number FROM account WHERE entity_id = $1 AND number = ANY($2::text[])
+```
+
+...which runs on the POSTING path, and throws `bill post requires account number N which is not in
+the chart of accounts`. `lib/gl/post.ts` adds two more post-time gates: `ROLLUP_ACCOUNT` for a line
+coded to a non-postable account, and `SEGMENTS_REQUIRED` when the company runs
+`entity_segment_config.mode = 'required'` and a P&L line has no business unit or department. The
+segment gate auto-fills from the company default first, but only for `source != 'manual'` and only
+if that default is set — so a `required`-mode company with NULL defaults refuses the bill.
+
+So three refusals, all of them AFTER we have written `POSTED` and shown "drafted in the ledger",
+all of them in their UI, to somebody who did not file the expense, with **no feedback path to
+VeloExpense**. The report sits looking done here and unpostable there, indefinitely.
+
+**What VX3-7 could and could not do about it:**
+
+| Refusal | Detectable over the contract? | What ships |
+| --- | --- | --- |
+| Account number absent from their chart | **Yes** — `list_accounts` | Pre-flighted in `postExpenseReport`; refused locally, numbers named, "pull the chart of accounts" as the instruction |
+| Account is a rollup there | **No** — `list_accounts` returns `number, name, type, normalBalance, isActive, subLedger` and no postability | Said out loud in `testConnection` and on the ledger-queue screen |
+| Segments `required`, no default | **No** — no tool exposes `entity_segment_config` | Same |
+
+The first is not a remote possibility: VX3-1's starter template takes its 28 numbers from
+VeloLedger's own starter chart, but **VX3-5's pull is optional**, so a tenant that picked the
+template and never connected-then-pulled is sending numbers its ledger may never have had.
+
+**Three upstream asks for VeloLedger, in order of value:**
+
+1. **`isPostable` on `list_accounts`.** One column in an existing payload, and it turns the rollup
+   refusal from invisible into pre-flightable by the same mechanism the number check now uses.
+2. **Optional business-unit and department codes on `DraftBillLineInput`.** Without them a
+   VeloExpense-drafted bill can only inherit the vendor default, and VX3-7's dimension half has
+   nowhere to send an answer — which is why that half is blocked rather than deferred.
+3. **Segment mode on `list_entities`** (or any read tool). Enough to warn at connect time that a
+   company requires segments no default supplies.
+
+Until (1) and (3) exist, the honest position is the one now on the screen: VeloExpense checks what
+it can check and says which two it cannot. Worth noting the asks are small and the sibling-product
+relationship makes them cheap to raise — this is the one integration where the far end is ours.
+
+### AC-17 · Core imported an adapter by name, so only VeloLedger could report a refusal ✅ CLOSED by VX3-7
+
+Found by the vendor-neutrality guard on its first run — not by review, and not by any test, because
+a test asserted the wrong behaviour was right.
+
+`lib/integrations/dispatch.ts`, the generic outbox drain, contained:
+
+```ts
+import { isDefinitelyNotApplied } from '@/lib/integrations/veloledger';
+```
+
+The classifier checked `err instanceof LedgerError`. So the refused-versus-ambiguous distinction —
+the whole of AC-8's fix, the thing that decides between a retryable `FAILED` and a `NEEDS_REVIEW` no
+automatic path will touch — **worked for exactly one adapter**. Any other adapter's failure was
+classified ambiguous, whatever it was.
+
+**The consequence for the first QuickBooks tenant:** a mistyped credential returns 401, which
+definitely never reached QuickBooks. It would have become `NEEDS_REVIEW` — un-retryable by design —
+on every approved report, each one needing a human to clear it by hand. The correct outcome is a
+`FAILED` row that backs off and retries once the credential is fixed.
+
+It also contradicted VX3-3's acceptance criterion in as many words: *"adding a second adapter
+touches no shared file"*. Adding one would have had to touch this file.
+
+**Closed:** `AdapterError` and `isDefinitelyNotApplied` moved to `lib/integrations/contract.ts`;
+`LedgerError extends AdapterError` and keeps its name for logs and `last_error`. The default stays
+fail-safe — a non-`AdapterError` classifies as ambiguous — because an adapter wrapping a vendor SDK
+may let one of that SDK's error types escape, and being wrong in that direction costs a human a
+click rather than costing a company a duplicated bill.
+
+**The part worth remembering is not the bug.** `test/ledger-post.db.test.ts` had a test called
+"a REFUSED failure stays retryable and backs off" which asserted `NEEDS_REVIEW`, with a comment
+explaining that *"only the VeloLedger adapter can say definitely not applied"*. The comment was
+accurate. The behaviour it described was the defect, written down, reviewed and merged as intended
+behaviour — and the reason nobody caught it is that **the stub could not throw a refusal at all**,
+so the branch was unreachable from the suite. A test double that cannot produce one of two outcomes
+hides every bug in the outcome it cannot produce. The stub now has `failNext(msg, refused)` and
+`failNextBare(msg)`, and both branches are asserted through it rather than through VeloLedger.
+
 ## tenancy · foreign keys do not respect RLS (found 2026-08-29 building VX3-1)
 
 Not a port finding — this one is about VeloExpense's own schema, which is why it has its own prefix.

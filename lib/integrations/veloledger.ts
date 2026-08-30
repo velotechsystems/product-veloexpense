@@ -43,25 +43,30 @@
  * configured entity is REACHABLE and says plainly that it has not proven the key
  * can draft.
  */
-import type {
-  AccountingAdapter,
-  AdapterConfig,
-  PostResult,
-  PostableReport,
-  RemoteAccount,
-  TestResult,
+import {
+  AdapterError,
+  type AccountingAdapter,
+  type AdapterConfig,
+  type PostResult,
+  type PostableReport,
+  type RemoteAccount,
+  type TestResult,
 } from '@/lib/integrations/contract';
 
 /** Seconds. A ledger that has not answered by now is not about to. */
 const TIMEOUT_SECONDS = 20;
 
-class LedgerError extends Error {
-  constructor(
-    message: string,
-    /** True when the call certainly did NOT reach the ledger's handler. */
-    readonly definitelyNotApplied: boolean,
-  ) {
-    super(message);
+/**
+ * VX3-7: now an `AdapterError` from the contract rather than a bare `Error` with
+ * its own classifier. The classifier used to live here and `dispatch.ts` imported
+ * it, which made this adapter the only one able to report a refusal — see the
+ * note on `AdapterError`. The subclass survives for its NAME, which shows up in
+ * logs and in `last_error`, and because `callTool` builds VeloLedger-shaped
+ * messages that are worth keeping distinct from another vendor's.
+ */
+class LedgerError extends AdapterError {
+  constructor(message: string, definitelyNotApplied: boolean) {
+    super(message, definitelyNotApplied);
     this.name = 'LedgerError';
   }
 }
@@ -201,10 +206,24 @@ export const veloLedgerAdapter: AccountingAdapter = {
         ok: true,
         // Said out loud, because `list_entities` is a READ tool open to every role:
         // a key that cannot draft passes this test and fails on the first report.
+        //
+        // VX3-7 added the second half. A drafted bill is not a posted one, and two
+        // of the three ways their post can refuse it are INVISIBLE over this
+        // contract — there is no tool that reports whether an account is a rollup
+        // (`list_accounts` returns number, name, type, normalBalance, isActive and
+        // subLedger, and no postability) and none that reports whether the company
+        // runs segment tracking in `required` mode. The third — an account number
+        // their chart does not have — IS checkable, and `postExpenseReport`
+        // pre-flights it. Saying which is which beats a green tick that means less
+        // than an admin will assume.
         detail:
           `Reached VeloLedger and found entity "${match.name ?? match.id}". ` +
           `This does not prove the key may DRAFT bills — that needs the ` +
-          `system_integrator role, and the first posted report will tell you.`,
+          `system_integrator role, and the first posted report will tell you. ` +
+          `It also proves nothing about POSTING: VeloExpense drafts, a person in ` +
+          `VeloLedger posts, and their post can still refuse a draft if an account ` +
+          `is a rollup there, or if the company requires a business unit and ` +
+          `department that no default supplies. Neither is visible from here.`,
       };
     } catch (err) {
       return { ok: false, detail: err instanceof Error ? err.message : String(err) };
@@ -244,6 +263,57 @@ export const veloLedgerAdapter: AccountingAdapter = {
           `Map them on the chart-of-accounts screen and retry.`,
         true,
       );
+    }
+
+    // ── PRE-FLIGHT: does their chart actually contain these numbers? (VX3-7) ──
+    //
+    // `draft_bill` does NOT validate account numbers. `createBill` stores
+    // `expense_account_number` as PLAIN TEXT on `bill_line`, with no foreign key
+    // and no existence check; the numbers are resolved in
+    // `buildAndPostBillJournal` — which runs when a HUMAN POSTS the bill, not when
+    // we draft it. So a number that is not in their chart drafts perfectly, and
+    // fails later with "bill post requires account number N which is not in the
+    // chart of accounts", in their UI, to somebody who did not file the expense.
+    //
+    // Nothing on our side would ever learn of it. We would show "drafted in the
+    // ledger" for a bill that cannot be posted, permanently.
+    //
+    // This is not a remote possibility. VX3-1 ships a starter template whose 28
+    // numbers come from VeloLedger's own starter chart, but VX3-5's pull is
+    // OPTIONAL — a tenant that picked the template and never connected-then-pulled
+    // is sending numbers its ledger may never have had. `activeOnly: false`
+    // deliberately: an INACTIVE account still posts at their end (their post-time
+    // lookup filters on entity and number only), so treating it as missing would
+    // refuse a bill that would in fact have gone through.
+    //
+    // Costs one extra read per post. Worth it — the alternative is a queue that
+    // reports success and a ledger that quietly cannot accept any of it.
+    const chart = await callTool<{ accounts?: Array<{ number?: string }> }>(
+      config,
+      'list_accounts',
+      { entityId: config.entityId, activeOnly: false },
+    );
+    const theirNumbers = new Set(
+      (chart.accounts ?? []).map((a) => a.number).filter((n): n is string => !!n),
+    );
+    // An EMPTY chart is not evidence of absence — a tool that returned nothing,
+    // a shape we mis-read, a permission that hides accounts. Refusing every post
+    // on a bad read would be worse than the defect this guards.
+    if (theirNumbers.size > 0) {
+      const absent = [
+        ...new Set(report.lines.map((l) => l.glAccountNumber!).filter((n) => !theirNumbers.has(n))),
+      ].sort();
+      if (absent.length > 0) {
+        throw new LedgerError(
+          `these account numbers are not in VeloLedger's chart for this entity: ` +
+            `${absent.join(', ')}. The bill was NOT drafted — VeloLedger would have ` +
+            `accepted the draft and refused it when somebody tried to post it. ` +
+            `Pull the chart of accounts on the integrations screen so the two agree, ` +
+            `then retry.`,
+          // Refused locally, nothing sent: safe to retry once the charts agree.
+          true,
+        );
+      }
     }
 
     const result = await callTool<{ billId: string; humanReviewUrl?: string; created?: boolean }>(
@@ -313,7 +383,9 @@ export const veloLedgerAdapter: AccountingAdapter = {
   },
 };
 
-/** Exposed so a caller can tell a refused call from an ambiguous one. */
-export function isDefinitelyNotApplied(err: unknown): boolean {
-  return err instanceof LedgerError && err.definitelyNotApplied;
-}
+// `isDefinitelyNotApplied` USED TO LIVE HERE and was imported by
+// `lib/integrations/dispatch.ts`. VX3-7 moved it to the contract: a classifier
+// that only one adapter can satisfy is not a contract, and core importing an
+// adapter by name is the leak the vendor-neutrality guard now fails the build on.
+// Nothing replaces it here — `LedgerError extends AdapterError`, so the contract's
+// classifier answers correctly for this adapter with no help from it.
