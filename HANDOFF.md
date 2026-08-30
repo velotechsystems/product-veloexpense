@@ -25,11 +25,28 @@ Two separate codebases:
   - **RLS scopes rows to the ORG, not to a PERSON.** Anything employee-owned needs a second
     ownership check in the action layer, or a colleague who guesses an id can read/edit it
     (see VX1-6's `onReport` helper).
+  - **RLS GUARDS READS. IT DOES NOT GUARD FK TARGETS.** Postgres runs referential-integrity
+    checks as the constraint's OWNER with row-level security BYPASSED, so a plain
+    `REFERENCES app_user(id)` accepts another tenant's id — no policy is consulted, and a
+    superuser connection or a permissive policy makes no difference either way. **Every
+    tenant-to-tenant FK is therefore COMPOSITE through `organization_id`:**
+    ```sql
+    ALTER TABLE <target> ADD CONSTRAINT <target>_org_id_uniq UNIQUE (organization_id, id);
+    ALTER TABLE <src> ADD CONSTRAINT <src>_<col>_fkey
+      FOREIGN KEY (organization_id, <col>) REFERENCES <target> (organization_id, id);
+    ```
+    Declare the composite FK AFTER the `UNIQUE` it references — Postgres validates at
+    `CREATE TABLE`. `ON DELETE SET NULL` must NAME ITS COLUMN (`SET NULL (<col>)`); the
+    unqualified form nulls `organization_id` too, which is `NOT NULL`, so the delete fails.
+    `MATCH SIMPLE` is the default and what we want: a NULL in any referencing column skips
+    the constraint, so a nullable FK stays nullable. Migration `0019` converted the 42 that
+    predated the rule (GAP-AUDIT TN-1); a CI guard and `test/tenant-fk.db.test.ts` keep the
+    count at zero.
 - **Session var name is `app.current_org`** (locked; do not use `app.current_organization_id`).
 - **Architecture = Next.js server actions + `lib/<domain>/` modules. NO tRPC** (matches VeloLedger; the original plan said tRPC — overridden).
 - **Shared libs are VENDORED, not npm deps.** Copy the lib's `src/` into the app and pin the commit. `@velotech/auth-kit` is vendored at `src/auth-kit/` (pinned `e1db5c1`). `@velotech/ui` tokens are vendored at `app/velotech-tokens.css` + `app/tailwind-v4.css`; components come via `npx shadcn add https://velotechsystems.github.io/lib-ui-kit/r/<name>.json`.
 - **Git flow: this repo uses MERGE-COMMIT PRs (not squash).** So stacked branches are simple: `git fetch origin && git checkout -b <next> origin/main`. Always fetch before branching (local `origin/main` goes stale between merges).
-- **Every new tenant table** must have RLS + be added to the isolation test. CI's RLS-coverage guard fails the build otherwise.
+- **Every new tenant table** must have RLS + be added to the isolation test, and **every FK it points at another tenant table must be composite** (above). Three CI guards fail the build otherwise: RLS coverage, isolation-suite coverage, and the tenant-FK guard.
 - **A `'use server'` module exports its OWN `export async function`s and NOTHING else.**
   No re-export, no `export const`, no `export type`, no `export default`. Next registers
   every export of such a file as a server action; an export it cannot wrap makes it register
@@ -570,7 +587,11 @@ Smaller things, each with a reason worth not losing:
 
 - **`activity.subject_id` is a polymorphic uuid with NO FOREIGN KEY**, because it cannot have one.
   Every other tenant table in this schema has an FK acting as a second line behind RLS; this one does
-  not, so RLS is the whole guard. `test/rls-isolation.test.ts` therefore gained a join-walk case
+  not, so RLS is the whole guard. **That claim only became true with VX3-10.** When it was written
+  the other FKs were single-column, and a single-column FK is not a second line against anything —
+  Postgres checks it with RLS bypassed and accepts another tenant's id (TN-1). Since `0019` they are
+  composite and the sentence means what it says; `activity` remains the one table it does not apply
+  to. `test/rls-isolation.test.ts` therefore gained a join-walk case
   (notification → activity → `subject_id` → expense_report) AND a direct attempt at another tenant's
   real report id through that column. Both are in the suite because the table's exposure is not the
   same as the table's policy.
@@ -1020,7 +1041,8 @@ Smaller, each with a reason:
   exists there to make a bootstrap re-runnable and is unnecessary here because an
   import into a populated chart is refused outright.
 - **`0014`'s three FKs are COMPOSITE, through `organization_id`** — see TN-1. The
-  other 43 in this schema are not, which is VX3-10.
+  other 42 were not; VX3-10's migration `0019` converted every one of them, and the
+  house rule in §1 now carries the pattern.
 
 **What VX3-2 shipped** — migration `0015` (one global table, two columns),
 `lib/policy/rates.ts`, currency conversion in `lib/money.ts`, the threshold-currency
@@ -1379,6 +1401,60 @@ one. What was genuinely left was a day. The remaining tickets should be re-read 
 same way before being picked up; VX3-9's e2e in particular may be larger than
 boarded now that there are two adapters and a pull to cover.
 
+
+**What VX3-10 shipped** — migration `0019` (55 `ADD CONSTRAINT` statements: 13
+`UNIQUE (organization_id, id)` additions and 42 FK drop/recreate pairs),
+`test/tenant-fk.db.test.ts`, a `Tenant FK guard` step in CI, the §1 house rule above,
+and one fixture fix. **TN-1 is closed: every tenant-to-tenant FK in the schema is
+composite through `organization_id`.**
+
+- **THE MIGRATION WAS GENERATED, NOT TYPED.** The body came out of `pg_constraint` on
+  a live schema, with each `confdeltype` read back and written into the recreated
+  constraint. Doing it by hand would have been 42 chances to transcribe a delete action
+  wrongly — and a `CASCADE` that quietly became a `NO ACTION` is the kind of defect
+  that surfaces years later as orphaned rows. The reproducing query is in the migration
+  header.
+- **Delete actions were preserved exactly:** 19 NO ACTION, 16 CASCADE, 3 SET NULL,
+  4 RESTRICT before; the same distribution after, plus the 7 already-composite from
+  `0014`/`0016`/`0017`. Three behavioural tests pin one of each class rather than
+  trusting the count — `RESTRICT` in particular, because it and `NO ACTION` behave
+  identically until somebody defers a check, so a mechanical rewrite could have
+  flattened it silently.
+- **THE ISOLATION TEST IS GENERATED, TOO, and that is the point of it.** It walks
+  `pg_constraint` and requires every tenant-to-tenant FK to be composite. The ticket
+  asked for "one isolation assertion per FK"; 42 hand-written assertions would have
+  covered the schema on the day they were written and rotted on the day somebody added
+  the 43rd. The generated form cannot rot, and it carries a guard against ITSELF: it
+  asserts the enumeration returns more than 40 rows, so a renamed catalogue column or a
+  typo in the CTE fails the test instead of emptying the offender list and passing.
+- **The strongest case in the suite runs on the SUPERUSER connection.** That is the
+  argument for a composite key over a trigger or a policy: RLS is not merely satisfied
+  there, it is bypassed, and the constraint refuses the cross-tenant row anyway. A guard
+  built on policies would let it through.
+- **A REAL DEFECT IT SURFACED, in a test rather than in shipped code.**
+  `test/audit.db.test.ts` had been writing audit rows into its SECOND tenant with an
+  actor belonging to the FIRST — `insertRaw` defaulted every row's actor to a
+  module-level `actorId` — and had done so since VX2-6 with nothing objecting, because
+  the old FK does not care which tenant the target is in. The composite FK objected
+  immediately. The fixture now gives each tenant its own actor. Worth recording as
+  evidence rather than tidying away: this is what the hole looks like in practice, and it
+  went unnoticed for six phases inside the suite that exists to catch exactly this.
+- **`0019` changes WHICH rows may be referenced, not what happens when one is deleted.**
+  No data migration and no backfill: there was no cross-tenant row in any database to
+  clean up, and if one existed the `ADD CONSTRAINT` would fail loudly rather than drop it.
+- **What is NOT covered.** `activity.subject_id` is untouched — polymorphic, no FK
+  possible, RLS is still the whole guard there (NT-1, now qualified). And global
+  reference tables (`organization`, `currency`, `coa_template*`, `fx_rate`) are out of
+  scope by definition: a single-column FK to a global table is correct.
+
+**Verified:** all 19 migrations applied clean on a fresh Postgres 16; the tenant-FK
+enumeration returns zero weakly-declared FKs after `0019` and correctly names one when a
+constraint is regressed to the single-column form on a copy of the database; **25 suites /
+483 tests green against the `0019` schema** — including every DB suite in the repo except
+the two whose deps the container harness cannot install. `next build`, `npm run lint` and
+`npm run typecheck` are John's step (the device VM cannot build: `linux/arm64`
+`node_modules` vs macOS).
+
 ## 6. Planning docs (in the ExpenseOS Google-Drive folder, `Specifications_and_Planning/`)
 - `VeloExpense-Port-and-Build-Plan.docx` (7-phase plan + ExpenseOS→VeloExpense sync strategy)
 - `ExpenseOS-vs-VeloExpense-Differences-Chart-rev2.docx`
@@ -1451,7 +1527,7 @@ each ticket.
 | VX3-6 | Posting queue, dry run and manual push | An operator sees what is unposted and why, in words; a dry run writes nothing; a manual push is audited and attributed; a withheld report stays withheld | 2 |
 | VX3-7 | Generic tenant dimension sets | A tenant defines its own cost dimensions and maps them per integration; no vendor name appears in a core table, a shared enum, a permission slug or an audit action; a tenant with no integration sees no integration fields anywhere | 2 |
 | VX3-8 | QuickBooks Online on the same contract | A SECOND tenant connects QBO and posts end to end; the diff that adds it contains no change to core or to the VeloLedger adapter — that diff is the acceptance test for VX3-3 | 3 |
-| VX3-10 | Composite foreign keys on every tenant-to-tenant FK (TN-1) | A tenant cannot reference another tenant's row — refused by the constraint, with the trigger/app layer removed from the test; one isolation assertion per FK; a CI guard fails the build on a new tenant-to-tenant FK declared the weak way | 3 |
+| VX3-10 ✅ | Composite foreign keys on every tenant-to-tenant FK (TN-1) | A tenant cannot reference another tenant's row — refused by the constraint, with the trigger/app layer removed from the test; one isolation assertion per FK; a CI guard fails the build on a new tenant-to-tenant FK declared the weak way | 3 (took ~1) |
 | VX3-9 | Phase-3 isolation + e2e | Two tenants on two different ledgers, side by side, in CI; the RLS guards still pass; the e2e posts a real report through a stub ledger and asserts the payload | 2 |
 
 ~27 dev-days across ten tickets. VX3-10 was added on 2026-08-29, mid-VX3-1, when testing `0014`'s constraints turned up TN-1 — 45 tenant-to-tenant foreign keys that accept another tenant's id, because Postgres checks referential integrity with RLS bypassed. It sits late in the order only because nothing else waits on it; by severity it could go first. Build order is the table order, and only two edges are
@@ -1575,7 +1651,7 @@ approvals, notifications or audit entries.
    none today) and the bucket CORS rule; an `app_user` row in the demo tenant
    matching a real Google/Entra identity with `role='ADMIN'`; then "Restore
    starter rules" on `/admin/expense-policies`, or nothing will ever flag.
-3. **THE PHASE 3 BOARD NOW EXISTS — §6, nine tickets, ~24 dev-days.** Drafted 2026-08-29 from the
+3. **THE PHASE 3 BOARD NOW EXISTS — §6, ten tickets, ~27 dev-days.** Drafted 2026-08-29 from the
    Plan's Phase-3 prose, the Differences Chart's accounting rows, and a full source audit of the
    ExpenseOS accounting surface recorded as **GAP-AUDIT AC-1..AC-15**. There is no Phase-3 tickets
    document and there never was one, so that board and the audit behind it ARE the specification.
