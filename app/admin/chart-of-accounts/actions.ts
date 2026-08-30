@@ -22,6 +22,8 @@ import { auth } from '@/auth';
 import { withCurrentOrg } from '@/lib/tenant/request';
 import type { QueryRunner } from '@/lib/db/client';
 import { getEmployeeByEmail, type EmployeeRow } from '@/lib/employees/service';
+import { PullError, pullFromLedger } from '@/lib/accounts/pull';
+import { resolveCapability } from '@/lib/integrations/service';
 import {
   AccountError,
   createAccount,
@@ -64,8 +66,47 @@ export async function getChartPage() {
       // Only offered while the chart is empty — `instantiateTemplate` refuses a
       // populated tenant, and a button that always refuses is worse than no button.
       templates: accounts.length === 0 ? await listTemplates(tx) : [],
+      // VX3-5. Whether a pull is even possible, so the button is absent rather
+      // than present-and-refusing.
+      canPull: (await resolveCapability(tx, 'PULL_CHART_OF_ACCOUNTS')) !== null,
+      // PULLED rows the last pull did not report. Reported, never acted on
+      // (GAP-AUDIT AC-12) — a tenant whose ledger stops reporting an account it
+      // has been coding to should be told, not have it silently deactivated.
+      orphaned: accounts
+        .filter((a) => a.source === 'PULLED' && a.last_seen_at === null)
+        .map((a) => a.number),
     };
   });
+}
+
+/**
+ * Pull the chart from the connected ledger.
+ *
+ * `pullFromLedger` opens its own transactions around the HTTP call, so this action
+ * hands it a tenant-transaction opener rather than a transaction — an HTTP call to
+ * somebody else's service must not hold one open.
+ */
+export async function pullFromLedgerForm() {
+  try {
+    const outcome = await pullFromLedger(async (fn) => asAdmin((tx) => fn(tx)));
+    revalidatePath(PAGE);
+    const summary = [
+      `${outcome.added.length} added`,
+      `${outcome.adopted.length} matched`,
+      outcome.orphaned.length > 0 ? `${outcome.orphaned.length} no longer reported` : null,
+      outcome.localOnly.length > 0 ? `${outcome.localOnly.length} not in the ledger` : null,
+    ]
+      .filter(Boolean)
+      .join(' · ');
+    redirect(`${PAGE}?pulled=${encodeURIComponent(summary)}`);
+  } catch (err) {
+    if (isRedirect(err)) throw err;
+    if (err instanceof PullError) {
+      const detail = err.detail.length > 0 ? ` (${err.detail.join(', ')})` : '';
+      redirect(`${PAGE}?error=${encodeURIComponent(err.message + detail)}`);
+    }
+    fail(err);
+  }
 }
 
 /** Turn an AccountError into a query string the page renders; rethrow anything else. */

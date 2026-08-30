@@ -1275,6 +1275,68 @@ has never spoken to a real VeloLedger — every test drives the stub. The first 
 connection will find something; `testConnection` and the queue screen exist so that
 what it finds is legible.
 
+**What VX3-5 shipped** — migration `0018` (two columns, a widened key, one relaxed
+constraint), `lib/accounts/pull.ts`, a "Pull from the ledger" button on the
+chart-of-accounts screen, and `test/account-pull.db.test.ts`. **A connected tenant
+can reconcile its chart against the ledger's.**
+
+Read GAP-AUDIT AC-12 before touching it. Five things a later reader will otherwise
+undo:
+
+- **A MATCHING ACCOUNT IS ADOPTED, NOT DUPLICATED, and this is the ticket.** A
+  pulled account whose NUMBER matches an existing row stamps that row's
+  `external_id` and turns it `PULLED` — the same row, the same id. So a tenant that
+  instantiated the starter template on day one, mapped its categories, and filed
+  expenses for a month has none of that re-pointed when it connects a ledger. The
+  test asserts the id is unchanged and the category mapping survives, because that
+  is the property, not the row count.
+- **AND THAT IS WHY VX3-1 TOOK VELOLEDGER'S NUMBERS VERBATIM.** For a VeloLedger
+  tenant the match is near-total by construction. It is the payoff for resisting a
+  tidy-up in `0014`, and the test pinning four of those numbers is what protects it.
+- **ORPHANS ARE REPORTED, NEVER DEACTIVATED.** ExpenseOS deactivates them from its
+  sync — "rows no longer present upstream are marked isActive = false (never
+  hard-deleted…)" — and the never-hard-deleted half is right, because a line's
+  `gl_account_id` is a SNAPSHOT and a snapshot that can vanish is not one. The
+  deactivating half is not: a tenant whose ledger stops reporting an account it has
+  been coding to for a year should be TOLD, not have its categories quietly
+  unmapped by a job. The screen names them and leaves them usable.
+- **AN EMPTY RESPONSE IS REFUSED.** An empty chart is far more often a wrong entity
+  id or a permission problem than a genuinely empty ledger, and acting on it would
+  report every local account as orphaned at once. Same instinct for DUPLICATE
+  NUMBERS: refused before any write, because silently picking a winner is how a
+  tenant ends up coding to the account it did not mean.
+- **`is_postable` IS DERIVED FROM OUR TREE, NOT THE LEDGER'S VIEW.** A pull rebuilds
+  parents by number and then recomputes the flag from who has children. The ledger's
+  idea of a rollup is not necessarily ours, and VeloLedger's own `0028` is the
+  record of what a stale flag costs.
+
+Smaller, each with a reason:
+
+- **`0014`'s `source_template` CHECK had to be RELAXED, and the reason is worth
+  keeping.** It asserted "TEMPLATE is the only source that names a template", which
+  was true when written and false the moment adoption exists: a template row the
+  ledger has confirmed is `PULLED` and still, factually, came from that template.
+  The first version of `pull.ts` hit the constraint on the adoption path and a test
+  found it. Provenance is KEPT rather than cleared — clearing the column to satisfy
+  the old rule would have destroyed information to preserve an assumption that had
+  stopped being true.
+- **The external-id key now includes the installation**, which `0014` said in a
+  comment it eventually would. AC-12 is why it matters: ExpenseOS's seven caches are
+  keyed `netsuiteId @unique`, install-global, with no tenant or installation column,
+  so that schema cannot hold two ledgers side by side at all — which is exactly what
+  the Plan's exit criterion asks for.
+- **NO sync-run table, and that is the lesson rather than an omission.** ExpenseOS
+  has one with a ten-minute stale-run reclaim, and their comment says why: "one dead
+  run wedges every future sync forever with 'already running' — which once froze the
+  reference cache for ~3 weeks." A reclaim is a fix for a LOCK. A pull here is a
+  button, one HTTP call, one transaction, and holds no lock — so there is no run to
+  wedge. If a scheduled background sync is ever added, that comment in `0018` is
+  where to start, and the heartbeat reclaim is the part to bring.
+- **The fetch is outside any transaction**, the reconcile inside one — same structure
+  as the post dispatcher, and for the same reason.
+- **`last_seen_at`'s value is not the point**; which rows a completed pull did NOT
+  touch is.
+
 ## 6. Planning docs (in the ExpenseOS Google-Drive folder, `Specifications_and_Planning/`)
 - `VeloExpense-Port-and-Build-Plan.docx` (7-phase plan + ExpenseOS→VeloExpense sync strategy)
 - `ExpenseOS-vs-VeloExpense-Differences-Chart-rev2.docx`

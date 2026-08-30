@@ -32,6 +32,7 @@ import { EmptyRow, ErrorBanner, selectClass } from '@/app/expenses/ui';
 import {
   createAccountFromForm,
   getChartPage,
+  pullFromLedgerForm,
   importCsvFromForm,
   instantiateTemplateFromForm,
   removeAccountFromForm,
@@ -65,10 +66,10 @@ function depths(accounts: Page['accounts']): Map<string, number> {
 export default async function ChartOfAccountsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string; created?: string }>;
+  searchParams: Promise<{ error?: string; created?: string; pulled?: string }>;
 }) {
-  const { error, created } = await searchParams;
-  const { accounts, postable, mappings, templates } = await getChartPage();
+  const { error, created, pulled } = await searchParams;
+  const { accounts, postable, mappings, templates, canPull, orphaned } = await getChartPage();
   const indent = depths(accounts);
   const unmapped = mappings.filter((m) => m.gl_account_id === null).length;
   const dangling = mappings.filter((m) => m.dangling).length;
@@ -90,6 +91,23 @@ export default async function ChartOfAccountsPage({
         <p className="rounded-md border border-border bg-muted/40 px-3 py-2 text-sm">
           Added {created} accounts.
         </p>
+      ) : null}
+      {pulled ? (
+        <p className="rounded-md border border-border bg-muted/40 px-3 py-2 text-sm">
+          Pulled from the ledger — {pulled}.
+        </p>
+      ) : null}
+      {orphaned.length > 0 ? (
+        // Said rather than done. ExpenseOS deactivates these from a background
+        // job; a tenant whose ledger stops reporting an account it has been coding
+        // to for a year should be told (AC-12).
+        <div className="rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm">
+          <strong className="font-medium">
+            The ledger no longer reports {orphaned.length} account(s): {orphaned.join(', ')}.
+          </strong>{' '}
+          They are still active here and still usable, because deactivating them would unmap
+          categories nobody asked to change. Deactivate them yourself if the ledger is right.
+        </div>
       ) : null}
       {dangling > 0 ? (
         <div className="rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm">
@@ -169,7 +187,16 @@ export default async function ChartOfAccountsPage({
       {/* ── The chart ───────────────────────────────────────────────────────── */}
       {accounts.length === 0 ? null : (
         <section className="flex flex-col gap-3">
-          <h2 className="text-lg font-medium">Accounts</h2>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <h2 className="text-lg font-medium">Accounts</h2>
+            {canPull ? (
+              <form action={pullFromLedgerForm}>
+                <Button type="submit" size="sm" variant="outline">
+                  Pull from the ledger
+                </Button>
+              </form>
+            ) : null}
+          </div>
           <div className="overflow-x-auto rounded-lg border border-border">
             <table className="w-full min-w-[900px] text-left text-sm">
               <thead className="bg-muted/50 text-xs uppercase tracking-wide text-muted-foreground">
