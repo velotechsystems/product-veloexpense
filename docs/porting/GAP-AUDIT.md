@@ -145,6 +145,14 @@ it makes each report internally consistent and says nothing about the threshold.
 **Do:** ticket a policy currency (tenant default + per-rule override) and convert before comparing.
 Port ExpenseOS's *loud* degradation, not its silent one — see PE-7. Needs PE-3 to express it.
 
+**CLOSED by VX3-2 (migration `0015`, PR pending).** Exactly as prescribed: `organization
+.policy_currency_code` with a nullable `expense_policy.currency_code` override, and the LINE is
+converted into the THRESHOLD's currency rather than the reverse — the threshold is what an admin
+typed and is authoritative in the currency they typed it in. A missing rate emits INFO with an
+`fxRateMissing` payload and does not block. The message now names both currencies whenever a
+conversion happened, because the sentence that printed a CAD limit with the report's currency symbol
+is how this survived as long as it did.
+
 ### PE-2 · Graduated thresholds are impossible to configure — DELIBERATE DIVERGENCE, with a cost
 
 **ExpenseOS** allows several instances of one rule kind at one scope, and therefore needs a
@@ -176,6 +184,12 @@ A rule that cannot evaluate has no way to say "I could not check this" — it ei
 configured severity or stays silent.
 
 **Do:** add an optional `severity` to `Finding`. Cheap, and PE-1 needs it.
+
+**CLOSED by VX3-2.** `Finding.severity?` resolves as `finding.severity ?? policy.severity`, the same
+shape as their `f.severity ?? inst.severity`. One caller so far: the missing-rate INFO. Worth knowing
+that the first implementation passed the POLICY's severity on the INSERT path and the finding's only
+on the UPDATE path, so the override worked on re-validation and not on first evaluation — which is
+the run nobody looks at. A test caught it.
 
 ### PE-4 · No cap on findings per rule — GAP, small
 
@@ -238,6 +252,14 @@ produces a signal and the other produces a wrong number, and the newer code path
 **Do:**
 1. **PORT** the loud degradation when PE-1 lands: a rule that cannot convert emits INFO with a
    `fxRateMissing` payload. Never guess.
+
+**Item 1 DONE, and the reciprocal gap avoided rather than inherited, by VX3-2.** `fx_rate` stores
+one direction and `lib/policy/rates.ts` DERIVES the inverse, so a CAD-quoted source cannot leave a
+USD-policy tenant unable to convert anything. Storing both directions was considered and rejected:
+two rows for one pair can disagree, a derivation cannot. There is a test that stores only `USD->CAD`,
+sets the policy currency to USD, and asserts a CAD line is still checked — with `rateBasis:
+'RECIPROCAL'` in the payload so the reader can tell which way it went. No triangulation: an unknown
+pair returns null and degrades loudly.
 2. **DO NOT PORT** `facts.ts`'s raw fallback. If VeloExpense ever adds a predicate fact layer, a
    missing rate must fail the check, not substitute a wrong number.
 3. **Derive reciprocals** when building any rate lookup, or refuse the pair explicitly. A

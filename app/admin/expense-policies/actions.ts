@@ -13,7 +13,7 @@ import { auth } from '@/auth';
 import { withCurrentOrg } from '@/lib/tenant/request';
 import type { QueryRunner } from '@/lib/db/client';
 import { getEmployeeByEmail, type EmployeeRow } from '@/lib/employees/service';
-import { listCategories } from '@/lib/expenses/service';
+import { listCategories, listCurrencies } from '@/lib/expenses/service';
 import * as policy from '@/lib/policy/service';
 import { parseAmountToMinor } from '@/lib/money';
 
@@ -39,6 +39,11 @@ export async function getPoliciesPage() {
   return asAdmin(async (tx) => ({
     policies: await policy.listPolicies(tx),
     categories: await listCategories(tx, { includeInactive: true }),
+    // VX3-2 / PE-1. `currencies` backs the two selects; `policyCurrency` also
+    // carries which report currencies cannot be converted into it, which is the
+    // one thing an admin changing this setting needs to see BEFORE they change it.
+    policyCurrency: await policy.getPolicyCurrency(tx),
+    currencies: await listCurrencies(tx),
   }));
 }
 
@@ -100,6 +105,7 @@ export async function createPolicyFromForm(form: FormData) {
       severity: text(form, 'severity') ?? undefined,
       enabled: form.get('enabled') !== null,
       categoryId: text(form, 'categoryId'),
+      currencyCode: text(form, 'currencyCode'),
       params: { thresholdMinor: amountParam(form, 'thresholdMinor') },
       effectiveFrom: text(form, 'effectiveFrom'),
       effectiveTo: text(form, 'effectiveTo'),
@@ -117,6 +123,7 @@ export async function updatePolicyFromForm(form: FormData) {
       severity: text(form, 'severity') ?? undefined,
       enabled: form.get('enabled') !== null,
       categoryId: text(form, 'categoryId'),
+      currencyCode: text(form, 'currencyCode'),
       params: { thresholdMinor: amountParam(form, 'thresholdMinor') },
       effectiveFrom: text(form, 'effectiveFrom'),
       effectiveTo: text(form, 'effectiveTo'),
@@ -124,6 +131,24 @@ export async function updatePolicyFromForm(form: FormData) {
   });
   if (failure) redirect(failure);
   revalidatePath(PAGE);
+}
+
+/**
+ * The tenant-wide policy currency.
+ *
+ * Its own action rather than a field on a rule form: it changes what EVERY
+ * threshold in the tenant means, so it should not be something you alter as a side
+ * effect of editing one rule's severity.
+ */
+export async function setPolicyCurrencyFromForm(form: FormData) {
+  const failure = await guard(async () => {
+    const code = text(form, 'policyCurrency');
+    if (!code) throw new Error('pick a currency');
+    await asAdmin((tx) => policy.setPolicyCurrency(tx, code));
+  });
+  if (failure) redirect(failure);
+  revalidatePath(PAGE);
+  revalidatePath('/expenses');
 }
 
 export async function deletePolicyFromForm(form: FormData) {

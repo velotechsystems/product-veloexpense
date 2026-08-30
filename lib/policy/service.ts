@@ -18,7 +18,8 @@
  *     cleared, because BLOCK findings must be fixed rather than waved through.
  */
 import type { QueryRunner } from '@/lib/db/client';
-import { getReportWorkbench } from '@/lib/expenses/service';
+import { getReportWorkbench, type WorkbenchReport } from '@/lib/expenses/service';
+import { buildRateLookup, type RateLookup, type RateRow } from '@/lib/policy/rates';
 import {
   DEFAULT_POLICIES,
   evaluatePolicies,
@@ -88,6 +89,8 @@ export interface NewPolicy {
   severity?: string;
   enabled?: boolean;
   categoryId?: string | null;
+  /** null = the organization's policy currency (VX3-2 / PE-1). */
+  currencyCode?: string | null;
   params?: Record<string, unknown>;
   effectiveFrom?: string | null;
   effectiveTo?: string | null;
@@ -134,6 +137,23 @@ function assertKind(kind: string): RuleKind {
   return kind;
 }
 
+/**
+ * A currency code that exists, or null for "the organization's".
+ *
+ * Checked here rather than left to the foreign key so the error is a sentence
+ * about a currency instead of a constraint name, and because `null` and `'null'`
+ * arriving off a form are different things.
+ */
+async function assertCurrency(tx: QueryRunner, code: string | null): Promise<string | null> {
+  if (code === null || code === '') return null;
+  const upper = code.trim().toUpperCase();
+  const r = await tx.query('SELECT code FROM currency WHERE code = $1', [upper]);
+  if (r.rows.length === 0) {
+    throw new PolicyError(`unknown currency: ${code}`, 'INVALID_PARAM');
+  }
+  return upper;
+}
+
 function assertSeverity(severity: string): Severity {
   if (!isSeverity(severity)) throw new PolicyError(`unknown severity: ${severity}`, 'UNKNOWN_SEVERITY');
   return severity;
@@ -153,11 +173,60 @@ async function assertCategory(tx: QueryRunner, kind: RuleKind, categoryId: strin
   }
 }
 
+/* ── the tenant's policy currency (VX3-2) ──────────────────────────────────── */
+
+export interface PolicyCurrencyInfo {
+  code: string;
+  /** Every currency a report in this tenant is actually written in. */
+  reportCurrencies: string[];
+  /** Pairs a lookup could resolve, direct or by reciprocal. */
+  convertible: string[];
+  /**
+   * Report currencies that CANNOT be converted into the policy currency, so every
+   * amount threshold is unenforceable for them. This is the number that matters:
+   * an admin who changes the policy currency and gets this wrong finds out through
+   * INFO findings on individual reports, which is late.
+   */
+  unconvertible: string[];
+}
+
+export async function getPolicyCurrency(tx: QueryRunner): Promise<PolicyCurrencyInfo> {
+  const org = await tx.query(
+    `SELECT policy_currency_code FROM organization
+      WHERE id = current_setting('app.current_org', true)::uuid`,
+  );
+  const code = (org.rows[0]?.policy_currency_code as string | undefined) ?? 'CAD';
+
+  const used = await tx.query(
+    'SELECT DISTINCT currency_code FROM expense_report ORDER BY currency_code',
+  );
+  const reportCurrencies = used.rows.map((r) => r.currency_code as string);
+
+  const rates = await tx.query('SELECT base, quote, rate, as_of FROM fx_rate ORDER BY as_of DESC');
+  const lookup = buildRateLookup(rates.rows as RateRow[]);
+  const unconvertible = reportCurrencies.filter((from) => lookup.find(from, code) === null);
+  return { code, reportCurrencies, convertible: lookup.pairs(), unconvertible };
+}
+
+export async function setPolicyCurrency(tx: QueryRunner, code: string): Promise<void> {
+  const checked = await assertCurrency(tx, code);
+  if (checked === null) throw new PolicyError('a policy currency is required', 'MISSING_PARAM');
+  // `organization` carries no organization_id and so is not RLS-scoped — the
+  // session variable is what names the row, and the WHERE is what keeps this from
+  // being an update across every tenant.
+  await tx.query(
+    `UPDATE organization SET policy_currency_code = $1, updated_at = now()
+      WHERE id = current_setting('app.current_org', true)::uuid`,
+    [checked],
+  );
+}
+
 /* ── policy CRUD ───────────────────────────────────────────────────────────── */
 
 const SELECT_POLICY = `
   SELECT p.id, p.kind, p.severity, p.enabled, p.category_id, c.label AS category_label,
-         p.params, p.effective_from, p.effective_to, p.created_at, p.updated_at
+         p.currency_code, p.params, p.effective_from, p.effective_to,
+         p.created_at, p.updated_at
     FROM expense_policy p
     LEFT JOIN expense_category c ON c.id = p.category_id`;
 
@@ -194,14 +263,16 @@ export async function createPolicy(tx: QueryRunner, input: NewPolicy): Promise<P
   try {
     inserted = await tx.query(
       `INSERT INTO expense_policy
-         (organization_id, kind, severity, enabled, category_id, params, effective_from, effective_to)
-       VALUES (${ORG}, $1, $2, $3, $4, $5::jsonb, $6, $7)
+         (organization_id, kind, severity, enabled, category_id, currency_code, params,
+          effective_from, effective_to)
+       VALUES (${ORG}, $1, $2, $3, $4, $5, $6::jsonb, $7, $8)
        RETURNING id`,
       [
         kind,
         severity,
         input.enabled ?? true,
         categoryId,
+        await assertCurrency(tx, input.currencyCode ?? null),
         JSON.stringify(params),
         input.effectiveFrom ?? null,
         input.effectiveTo ?? null,
@@ -243,6 +314,9 @@ export async function updatePolicy(
   if (patch.params !== undefined) {
     set('params', JSON.stringify(normalizeParams(current.kind, patch.params)));
     sets[sets.length - 1] += '::jsonb';
+  }
+  if ('currencyCode' in patch) {
+    set('currency_code', await assertCurrency(tx, patch.currencyCode ?? null));
   }
   if ('effectiveFrom' in patch) set('effective_from', patch.effectiveFrom ?? null);
   if ('effectiveTo' in patch) set('effective_to', patch.effectiveTo ?? null);
@@ -314,6 +388,53 @@ function summarize(violations: ViolationRow[]): ValidationSummary {
   };
 }
 
+/**
+ * The currency half of a rule's context: the tenant's policy currency, the minor
+ * units of every currency in play, and the rate lookup (VX3-2 / PE-1).
+ *
+ * Loaded HERE rather than inside a rule because `rules.ts` is a pure registry —
+ * it may not touch `pg` — and because one load per validation is one load, where
+ * a rule-level fetch would be one per rule per line.
+ *
+ * Rates are bounded by the report's own date where it has one. A report filed in
+ * March should be judged against March's rate, not against whatever arrived this
+ * morning; and re-validating an old report must not change its findings because
+ * the market moved. `txn_date` is per expense and nullable, so the bound is the
+ * latest date the report actually carries, falling back to today.
+ */
+async function currencyContext(
+  tx: QueryRunner,
+  report: WorkbenchReport,
+): Promise<{ policyCurrency: string; minorUnits: Record<string, number>; rates: RateLookup }> {
+  const org = await tx.query(
+    `SELECT policy_currency_code FROM organization
+      WHERE id = current_setting('app.current_org', true)::uuid`,
+  );
+  const policyCurrency = (org.rows[0]?.policy_currency_code as string | undefined) ?? 'CAD';
+
+  const units = await tx.query('SELECT code, minor_unit FROM currency');
+  const minorUnits: Record<string, number> = {};
+  for (const row of units.rows) minorUnits[row.code as string] = Number(row.minor_unit);
+
+  const bound = await tx.query(
+    `SELECT coalesce(max(e.txn_date), current_date) AS as_of
+       FROM expense e WHERE e.report_id = $1`,
+    [report.id],
+  );
+  const asOf = bound.rows[0]?.as_of ?? null;
+
+  // ORDER BY as_of DESC so the lookup's "strictly newer wins" tie-break is
+  // deterministic rather than dependent on Map insertion order.
+  const rates = await tx.query(
+    'SELECT base, quote, rate, as_of FROM fx_rate ORDER BY as_of DESC',
+  );
+  return {
+    policyCurrency,
+    minorUnits,
+    rates: buildRateLookup(rates.rows as RateRow[], asOf ?? undefined),
+  };
+}
+
 /** Re-run every rule against one report and reconcile the stored findings. */
 export async function validateReport(
   tx: QueryRunner,
@@ -323,9 +444,27 @@ export async function validateReport(
   if (!context) throw new PolicyError('report not found', 'NOT_FOUND');
 
   const policies = await activePolicies(tx);
-  const evaluated = evaluatePolicies({ report: context.report, expenses: context.expenses }, policies);
+  const evaluated = evaluatePolicies(
+    {
+      report: context.report,
+      expenses: context.expenses,
+      ...(await currencyContext(tx, context.report)),
+    },
+    policies,
+  );
 
-  const desired = new Map<string, { policy: PolicyRow; message: string; lineItemId: string | null; findingKey: string; data: Record<string, unknown> }>();
+  const desired = new Map<
+    string,
+    {
+      policy: PolicyRow;
+      message: string;
+      lineItemId: string | null;
+      findingKey: string;
+      data: Record<string, unknown>;
+      /** PE-3: a finding may downgrade its own severity — see `Finding.severity`. */
+      severity: Severity;
+    }
+  >();
   for (const { policy, finding } of evaluated) {
     const key = findingIdentity(finding.ruleCode, finding.lineItemId, finding.findingKey);
     // First writer wins for a given identity; a rule that wants several
@@ -337,6 +476,11 @@ export async function validateReport(
         lineItemId: finding.lineItemId,
         findingKey: finding.findingKey,
         data: finding.data,
+        // The finding's own severity wins where it states one. Same resolution as
+        // ExpenseOS's `f.severity ?? inst.severity`, and it is what lets a rule
+        // that could not convert an amount report INFO instead of firing a BLOCK
+        // on an unchecked comparison.
+        severity: finding.severity ?? policy.severity,
       });
     }
   }
@@ -358,13 +502,13 @@ export async function validateReport(
     }
     seen.add(key);
     // BLOCK is never acknowledgeable, so a severity change to BLOCK clears one.
-    const clearResolution = want.policy.severity === 'BLOCK' && row.resolved_at !== null;
+    const clearResolution = want.severity === 'BLOCK' && row.resolved_at !== null;
     await tx.query(
       `UPDATE policy_violation
           SET severity = $2, message = $3, data = $4::jsonb, policy_id = $5
               ${clearResolution ? ', resolved_at = NULL, resolved_by_id = NULL, resolve_note = NULL' : ''}
         WHERE id = $1`,
-      [row.id, want.policy.severity, want.message, JSON.stringify(want.data), want.policy.id],
+      [row.id, want.severity, want.message, JSON.stringify(want.data), want.policy.id],
     );
   }
 
@@ -380,7 +524,11 @@ export async function validateReport(
         want.lineItemId,
         want.policy.id,
         want.policy.kind,
-        want.policy.severity,
+        // `want.severity`, NOT `want.policy.severity`. A finding may downgrade its
+        // own (PE-3), and this is the FIRST-evaluation path — passing the policy's
+        // here made the override work only on re-validation, which is precisely the
+        // run nobody looks at. A test caught it.
+        want.severity,
         want.message,
         want.findingKey,
         JSON.stringify(want.data),
