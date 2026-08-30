@@ -24,6 +24,7 @@ import {
   type Capability,
 } from '@/lib/integrations/contract';
 import { stubAdapter } from '@/lib/integrations/stub';
+import { veloLedgerAdapter } from '@/lib/integrations/veloledger';
 
 /**
  * Every adapter this build contains, enabled or not.
@@ -39,7 +40,7 @@ import { stubAdapter } from '@/lib/integrations/stub';
  * wrote the rule down for `appOrigin()` — "read at CALL time, not module load" —
  * and it applies to anything a test needs to vary.
  */
-const ALL_ADAPTERS: AccountingAdapter[] = [stubAdapter];
+const ALL_ADAPTERS: AccountingAdapter[] = [veloLedgerAdapter, stubAdapter];
 
 /**
  * The shape checks. Exported so `test/integration-registry.test.ts` can assert

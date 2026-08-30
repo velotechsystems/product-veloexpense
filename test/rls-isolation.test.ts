@@ -823,4 +823,79 @@ describe('RLS tenant isolation', () => {
     ).rejects.toThrow();
   });
 
+
+  it('ledger posts are tenant-isolated, and the platform hatch is narrow', async () => {
+    // VX3-4. Both tenants queue a post for their own report; neither sees the
+    // other's, and the poller's hatch exposes only DUE work.
+    const queued: Record<string, string> = {};
+    for (const [org, label] of [
+      [orgA, 'A'],
+      [orgB, 'B'],
+    ] as const) {
+      const id = await withOrg(org, async (tx) => {
+        const rep = await tx.query(
+          `INSERT INTO expense_report (organization_id, submitter_id, title, currency_code,
+                                       status, approved_at)
+             SELECT $1, u.id, $2, 'CAD', 'APPROVED', clock_timestamp()
+               FROM app_user u WHERE u.organization_id = $1 LIMIT 1
+           RETURNING id`,
+          [org, `Ledger report ${label}`],
+        );
+        const reportId = rep.rows[0].id as string;
+        await tx.query(
+          `INSERT INTO integration_post (organization_id, report_id, idempotency_key)
+           VALUES ($1, $2, $3)`,
+          [org, reportId, `key-${label}`],
+        );
+        return reportId;
+      });
+      queued[label] = id;
+    }
+
+    const seen = async (org: string) =>
+      withOrg(org, async (tx) => {
+        const r = await tx.query('SELECT idempotency_key FROM integration_post');
+        return r.rows.map((row) => row.idempotency_key as string);
+      });
+    expect(await seen(orgA)).toEqual(['key-A']);
+    expect(await seen(orgB)).toEqual(['key-B']);
+    const blind = await withoutOrg((tx) =>
+      tx.query('SELECT count(*)::int AS n FROM integration_post'),
+    );
+    expect(blind.rows[0].n).toBe(0);
+
+    // The hatch sees both tenants' DUE rows — that is its purpose — and stops
+    // seeing a row the moment it is no longer due work.
+    const due = await withPlatformRead((tx) =>
+      tx.query('SELECT count(*)::int AS n FROM integration_post'),
+    );
+    expect(due.rows[0].n).toBe(2);
+    await withOrg(orgA, (tx) =>
+      tx.query(
+        `UPDATE integration_post SET status = 'NEEDS_REVIEW' WHERE idempotency_key = 'key-A'`,
+      ),
+    );
+    const afterReview = await withPlatformRead((tx) =>
+      tx.query('SELECT idempotency_key FROM integration_post'),
+    );
+    expect(afterReview.rows.map((r) => r.idempotency_key)).toEqual(['key-B']);
+  });
+
+  it('a ledger post cannot reference another tenant\'s report', async () => {
+    // TN-1 again, on a table where the reference decides where money is proposed
+    // to move. 0017 declares the FK composite, so this is structural.
+    const foreign = await withOrg(orgB, (tx) =>
+      tx.query("SELECT id FROM expense_report WHERE title = 'Ledger report B'"),
+    );
+    await expect(
+      withOrg(orgA, (tx) =>
+        tx.query(
+          `INSERT INTO integration_post (organization_id, report_id, idempotency_key)
+           VALUES ($1, $2, 'smuggled')`,
+          [orgA, foreign.rows[0].id],
+        ),
+      ),
+    ).rejects.toThrow();
+  });
+
 });

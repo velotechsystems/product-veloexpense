@@ -49,26 +49,13 @@ export type DeliveryStatus = 'PENDING' | 'SENT' | 'FAILED' | 'DEAD' | 'CANCELLED
  * shorter than a working day: an admin who comes in to a DEAD row can still act
  * on the approval it was about.
  */
-export const MAX_ATTEMPTS = 5;
-
-/**
- * Backoff by attempt number, in seconds. Index 0 is unused (attempts start at 1).
- *
- * A table rather than a formula, because the shape matters more than the maths: a
- * minute for the blip, then widening fast enough that a real outage is not a load
- * generator. Past the end of the table the row is DEAD, so there is no cap to
- * choose.
- */
-const BACKOFF_SECONDS = [0, 60, 300, 900, 3600, 14400];
-
-/**
- * How long a claim is honoured before another poller may take the row.
- *
- * Longer than any plausible SMTP timeout — a send that is genuinely still in
- * flight must not be duplicated — and short enough that a crashed poller does not
- * strand work for an hour.
- */
-export const CLAIM_TIMEOUT_SECONDS = 300;
+// VX3-4 moved the retry POLICY to `lib/outbox/policy.ts`, which VX3-4's ledger
+// post-outbox also uses. Two outboxes that disagreed about how long to wait, how
+// many times to try, or how long a claim is honoured would be two operational
+// behaviours to learn — which is the real cost GAP-AUDIT AC-7 was pointing at.
+// Re-exported here so this module's own callers and tests are unaffected.
+export { MAX_ATTEMPTS, CLAIM_TIMEOUT_SECONDS } from '@/lib/outbox/policy';
+import { BACKOFF_SECONDS, CLAIM_TIMEOUT_SECONDS, MAX_ATTEMPTS } from '@/lib/outbox/policy';
 
 export interface DeliveryRow {
   id: string;

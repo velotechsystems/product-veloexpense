@@ -1181,6 +1181,100 @@ Smaller, each with a reason:
   suites can be green while a real upload is broken."* A stub reachable in production
   would be worse, so it is behind `INTEGRATIONS_ENABLE_STUB`.
 
+**What VX3-4 shipped** — migration `0017` (one tenant table), `lib/outbox/policy.ts`
+(shared with VX2-8), `lib/integrations/{post-outbox,dispatch,veloledger}.ts`, the
+enqueue hook on the approval transition, `/api/internal/ledger/drain`,
+`app/admin/ledger-queue/`, and `test/ledger-post.db.test.ts`. **An approved report
+now reaches VeloLedger as a draft AP bill.**
+
+Read GAP-AUDIT AC-6, AC-7, AC-8 and AC-11 before touching it. Six things a later
+reader will otherwise undo:
+
+- **THE TRANSPORT IS HTTP, NOT MCP, AND THE PLAN'S WORDING MISLEADS.** The Plan says
+  "the VeloLedger MCP adapter". The TOOLS are MCP tools; the transport cannot be —
+  `product-veloledger/lib/mcp/server.ts` says so itself: *"Transport: stdio (standard
+  MCP local-server pattern). Phase 3 adds SSE/HTTP"*, and that is VeloLedger's Phase
+  3, not ours. A server action cannot speak stdio to another product across a
+  network. What IS reachable is their REST v1 route over the SAME registry —
+  `POST /api/v1/<tool>` with a bearer key, and *"adding a new MCP tool automatically
+  exposes it at /api/v1/<name>"*. So the adapter calls tools by name over HTTP, and
+  the names and payloads are already right for the day an HTTP MCP transport exists.
+- **IT DRAFTS; IT DOES NOT POST, and that is a feature.** `draft_bill`'s banner:
+  *"agents draft AP vendor bills; humans post via UI."* VeloExpense proposes a
+  payable and somebody in VeloLedger posts it, so a mis-configured expense system
+  cannot corrupt a general ledger. A BILL rather than a journal because RB-6 is right
+  about what an approved report is — *"an approved report is a liability"* — and that
+  is accounts payable.
+- **AC-11 IS SETTLED, and the answer fell out of the above.** The adapter never
+  writes `REIMBURSED`. There is no payment to observe, because nothing has been
+  posted yet — so VX2-9's human action keeps its self-payment control and its
+  NOT-NULL-paired actor. ExpenseOS's poller being the only writer of `REIMBURSED` in
+  its whole NetSuite loop is a consequence of its adapter posting directly, which
+  ours does not.
+- **THE ENQUEUE IS ON THE TRANSITION, IN THE APPROVING TRANSACTION.** Beside the
+  audit append in `lib/approvals/engine.ts`, guarded on `reportStatus === 'APPROVED'`
+  so an intermediate step of a multi-tier workflow does not queue anything. AC-6:
+  ExpenseOS hangs its post off FOUR call sites plus a 30-minute sweep, and one of
+  those was added after a report that auto-approved on submit was *"silently never
+  sent to NetSuite"*. It is also enqueued whether or not anything is connected —
+  whether a ledger exists is the poller's question, so a tenant connecting next week
+  finds last week's approvals waiting.
+- **`NEEDS_REVIEW` IS THE STATE AC-8 EXISTS TO DEMAND, and the poller CANNOT SEE
+  IT.** It means the ledger accepted the bill and recording that here failed. `0017`'s
+  narrowed `platform_read` policy does not match the status, so the row is invisible
+  to the poller even if a future change forgot to exclude it. Compare theirs: the same
+  situation is written as a retryable FAILED row with *"do NOT re-post"* in
+  `lastError`, and their sweep re-posts it five times — an instruction addressed to a
+  human and enforced against nobody.
+- **A FAILURE IS EITHER REFUSED OR AMBIGUOUS, and conflating them is the bug.**
+  401/403/404/422 were refused before the handler ran, so nothing exists upstream and
+  the row stays retryable. A timeout, a network error or a 5xx MIGHT have applied, so
+  the row becomes `NEEDS_REVIEW`. `isDefinitelyNotApplied()` is how the adapter tells
+  the caller which. A plain thrown Error defaults to AMBIGUOUS, which is the safe
+  direction.
+
+Smaller, each with a reason:
+
+- **The retry POLICY is shared; the TABLES are not.** `lib/outbox/policy.ts` holds
+  MAX_ATTEMPTS, the backoff table and the claim timeout, and VX2-8's mail outbox now
+  imports it. AC-7 said "do not build a queue" and the substance is honoured — nobody
+  has to learn two sets of backoff semantics — but a mail delivery and a ledger post
+  differ in payload, terminal states and audience, and merging the tables would have
+  put a migration on working notification machinery into this PR.
+- **The idempotency key is derived from the report id and NEVER regenerated.**
+  VeloLedger namespaces it per API key server-side and refuses a second bill carrying
+  the same one, so a retry after an ambiguous failure cannot double-post at the far
+  end. A key that changed per attempt would make the mechanism decorative. This is a
+  much better position than AC-8's NetSuite equivalent, whose only guard was
+  `externalId` uniqueness asserted by no test in a transport marked *"UNVERIFIED
+  against a live account"* — we keep `NEEDS_REVIEW` anyway, because a guard that
+  depends on the other system behaving is not the guard.
+- **`markNeedsReview` takes NULL, not `''`, for an unknown external id.** `0017` has a
+  partial unique index on `(organization_id, external_id)`, so two empty strings in
+  one tenant collide, the second write fails, and the row falls back to RETRYABLE —
+  the one outcome the state exists to prevent. There is a test with two simultaneous
+  ambiguous failures.
+- **`testConnection` says what it has NOT proven.** It calls `list_entities`, a READ
+  tool open to every role, so a key without `system_integrator` passes the test and
+  fails on the first real report. The message says so rather than implying a working
+  connection.
+- **An unmapped GL account fails the POST, not the filing.** VX3-1's snapshot is
+  nullable on purpose, but a bill line must name an account — so the adapter refuses
+  with the category names in the message, which is actionable, and the employee who
+  filed the expense is never involved.
+- **Tax is passed through with NO recoverable account.** Which account an input tax
+  credit posts to is a tax-engine decision this product has not made, and inventing
+  one would put ITCs somewhere wrong quietly. Their schema makes the account optional.
+- **Two drain routes, not one.** A mail outage must not stop approved reports reaching
+  the ledger, and a ledger outage must not delay a notification. One route would
+  couple the schedules and give an operator one number where two are needed.
+
+**WHAT VX3-4 DOES NOT DO:** it does not pull a chart of accounts (that method exists
+on the adapter and is VX3-5's to wire), it does not read payment status back, and it
+has never spoken to a real VeloLedger — every test drives the stub. The first real
+connection will find something; `testConnection` and the queue screen exist so that
+what it finds is legible.
+
 ## 6. Planning docs (in the ExpenseOS Google-Drive folder, `Specifications_and_Planning/`)
 - `VeloExpense-Port-and-Build-Plan.docx` (7-phase plan + ExpenseOS→VeloExpense sync strategy)
 - `ExpenseOS-vs-VeloExpense-Differences-Chart-rev2.docx`
