@@ -16,6 +16,12 @@
  *   STORAGE_BUCKET            bucket name                    [required for s3]
  *   STORAGE_REGION            e.g. 'ca-central-1'            (default us-east-1)
  *   STORAGE_ENDPOINT          MinIO URL, e.g. http://localhost:9000  (optional)
+ *
+ * NOTE on 9000, added after it cost a debugging round: the e2e's own S3 surface
+ * (scripts/e2e-storage.mjs) deliberately defaults to 9401 instead, because a local
+ * MinIO started with the command below occupies 9000 — and Playwright's port probe
+ * cannot tell MinIO from s3rver, so it silently adopted it and three receipt specs
+ * failed about uploads. Local MinIO and the e2e can now both run at once.
  *   STORAGE_FORCE_PATH_STYLE  'true' for MinIO                      (optional)
  *   STORAGE_ACCESS_KEY_ID / STORAGE_SECRET_ACCESS_KEY  (optional; falls back to
  *                             the ambient AWS credential chain — an IAM role in
