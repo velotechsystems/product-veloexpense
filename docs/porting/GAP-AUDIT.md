@@ -2045,6 +2045,11 @@ so QuickBooks/Xero/Sage are repeatable; avoid per-vendor special cases leaking i
 shortcut.** The standing rule is to port from source except where the plan calls for a difference;
 here it calls for one in as many words.
 
+**DONE by VX3-3.** `lib/integrations/contract.ts` — a capability union, a config-field spec whose
+`type: 'secret'` is the single source of truth for sensitivity, and an adapter interface whose
+capability methods are optional and checked against the declaration at module load. Core resolves
+through `resolveCapability`, so no vendor name appears in it. VX3-8's diff is the acceptance test.
+
 ### AC-2 · The REGISTRY, unlike the adapter, is worth porting nearly verbatim
 
 Code is the source of truth, the row is a reflection, and the file says so:
@@ -2058,6 +2063,11 @@ Two flaws to fix rather than inherit:
 
 1. **Stale rows are never pruned.** `reconcile.ts` has no delete path, so a descriptor removed from
    the catalog leaves a row that still lists in the admin API with its old `configSchema`.
+**NOT PORTED, and the reflection table is gone with it — VX3-3.** `integration_slug` is text
+validated against the code registry, exactly as `0006` does for `expense_policy.kind` ("adding a rule
+kind must not require a migration"). No boot step, nothing to prune, and flaw 2 below cannot happen
+because there is no reconcile to skip.
+
 2. **The whole reconcile is wrapped in one try/catch at boot**, and their own test file records the
    blast radius: *"a typo in `requiresIntegrations` does not fail the build, does not fail the boot,
    and does not fail loudly: it silently skips the ENTIRE reconcile, so no module or integration row
