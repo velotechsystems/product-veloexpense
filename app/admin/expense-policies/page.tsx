@@ -20,6 +20,7 @@ import {
   createPolicyFromForm,
   deletePolicyFromForm,
   getPoliciesPage,
+  setPolicyCurrencyFromForm,
   restoreStarterRulesFromForm,
   updatePolicyFromForm,
 } from './actions';
@@ -53,7 +54,7 @@ export default async function ExpensePoliciesPage({
   searchParams: Promise<{ error?: string }>;
 }) {
   const { error } = await searchParams;
-  const { policies, categories } = await getPoliciesPage();
+  const { policies, categories, policyCurrency, currencies } = await getPoliciesPage();
   const scopeable = RULE_KINDS.filter((kind) => RULE_DEFINITIONS[kind].supportsCategoryScope);
 
   return (
@@ -81,6 +82,62 @@ export default async function ExpensePoliciesPage({
       </header>
 
       <ErrorBanner message={error} />
+
+      {/* ── The policy currency (VX3-2 / PE-1) ────────────────────────────────
+          Its own panel, above the rules, because it changes what every threshold
+          in the tenant MEANS. Before this existed, `thresholdMinor` was a bare
+          number compared straight against a report's amount — so 500000 was
+          $5,000 on a CAD report and $5,000 on a USD one, roughly a 37% difference
+          in the rule an employee actually met. */}
+      <section className="flex flex-col gap-3 rounded-lg border border-border p-4">
+        <div className="flex flex-wrap items-end justify-between gap-4">
+          <div className="max-w-2xl">
+            <h2 className="text-lg font-medium">Threshold currency</h2>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Every amount below is compared in this currency. A report in another currency is
+              converted first, so one limit means the same thing to everybody. A rule can override
+              it — useful if you have entities in more than one country.
+            </p>
+          </div>
+          <form action={setPolicyCurrencyFromForm} className="flex items-end gap-2">
+            <select
+              name="policyCurrency"
+              className={selectClass}
+              defaultValue={policyCurrency.code}
+              aria-label="Policy currency"
+            >
+              {currencies.map((c) => (
+                <option key={c.code} value={c.code}>
+                  {c.code} — {c.name}
+                </option>
+              ))}
+            </select>
+            <Button type="submit" size="sm" variant="outline">
+              Save
+            </Button>
+          </form>
+        </div>
+
+        {policyCurrency.unconvertible.length > 0 ? (
+          // The warning an admin needs BEFORE the reports start coming back with
+          // "could not be checked" notes on them. Naming the currencies makes it
+          // actionable; "no rate" on its own does not.
+          <div className="rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm">
+            <strong className="font-medium">
+              Amount limits cannot be enforced on {policyCurrency.unconvertible.join(', ')} reports.
+            </strong>{' '}
+            There is no exchange rate between{' '}
+            {policyCurrency.unconvertible.length === 1 ? 'that currency' : 'those currencies'} and{' '}
+            {policyCurrency.code}, so those reports get an informational note instead of a limit
+            check. Rules that do not involve an amount are unaffected.
+          </div>
+        ) : null}
+        <p className="text-xs text-muted-foreground">
+          {policyCurrency.convertible.length === 0
+            ? 'No exchange rates are loaded. Reports in a single currency are unaffected.'
+            : `Rates available: ${policyCurrency.convertible.join(', ')} (the reverse of each is derived).`}
+        </p>
+      </section>
 
       <div className="overflow-x-auto rounded-lg border border-border">
         <table className="w-full min-w-[900px] text-left text-sm">
@@ -151,14 +208,35 @@ export default async function ExpensePoliciesPage({
                     </td>
                     <td className="px-3 py-2">
                       {takesThreshold ? (
-                        <Input
-                          form={`policy-${p.id}`}
-                          name="thresholdMinor"
-                          inputMode="decimal"
-                          className="max-w-28 text-right"
-                          placeholder="0.00"
-                          defaultValue={thresholdValue(p.params)}
-                        />
+                        <div className="flex items-center gap-1">
+                          <Input
+                            form={`policy-${p.id}`}
+                            name="thresholdMinor"
+                            inputMode="decimal"
+                            className="max-w-28 text-right"
+                            placeholder="0.00"
+                            defaultValue={thresholdValue(p.params)}
+                          />
+                          {/* Empty = the tenant's currency, which is the case for
+                              nearly every rule and is why the option is labelled
+                              with the code rather than left blank. */}
+                          <select
+                            form={`policy-${p.id}`}
+                            name="currencyCode"
+                            className={selectClass}
+                            defaultValue={p.currency_code ?? ''}
+                            aria-label={`Currency for the ${definition.label} threshold`}
+                          >
+                            <option value="">{policyCurrency.code}</option>
+                            {currencies
+                              .filter((c) => c.code !== policyCurrency.code)
+                              .map((c) => (
+                                <option key={c.code} value={c.code}>
+                                  {c.code}
+                                </option>
+                              ))}
+                          </select>
+                        </div>
                       ) : (
                         <span className="text-muted-foreground">—</span>
                       )}

@@ -9,7 +9,7 @@
  * findings must be idempotent, an acknowledgement must survive a re-run, and a
  * finding that stops firing must take its acknowledgement with it.
  */
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, beforeEach, afterAll } from 'vitest';
 import { Pool } from 'pg';
 import { withOrg } from '@/lib/tenant/context';
 import * as expenses from '@/lib/expenses/service';
@@ -51,8 +51,39 @@ async function draft(amountMinor: number, opts: { categoryId?: string; withRecei
   });
 }
 
+/**
+ * The same as `draft`, in a chosen currency. VX3-2: the whole point of PE-1 is
+ * that a report's currency and a threshold's currency are different things, so a
+ * test of it cannot use the fixture that hard-codes CAD for both.
+ */
+async function draftIn(currencyCode: string, amountMinor: number) {
+  return withOrg(orgId, async (tx) => {
+    const report = await expenses.createReport(tx, 'p@policy.test', {
+      title: `Policy subject ${currencyCode}`,
+      currencyCode,
+    });
+    const expense = await expenses.addExpense(tx, report.id, { currencyCode, merchant: 'M' });
+    const line = await expenses.addLineItem(tx, expense.id, {
+      categoryId: mealsId,
+      amountMinor,
+    });
+    return { reportId: report.id as string, lineId: line.id as string };
+  });
+}
+
+async function setRate(base: string, quote: string, rate: string, asOf = '2020-01-01') {
+  await admin.query(
+    `INSERT INTO fx_rate (base, quote, rate, as_of, source) VALUES ($1,$2,$3,$4,'MANUAL')
+       ON CONFLICT (base, quote, as_of) DO UPDATE SET rate = EXCLUDED.rate`,
+    [base, quote, rate, asOf],
+  );
+}
+
 beforeAll(async () => {
   await admin.query('TRUNCATE app_user, organization CASCADE');
+  // fx_rate is GLOBAL, so it survives the tenant truncate above and has to be
+  // cleared explicitly or one test's rate leaks into another's.
+  await admin.query('DELETE FROM fx_rate');
   const o = await admin.query(
     "INSERT INTO organization (slug, name) VALUES ('policy-co','Policy Co') RETURNING id",
   );
@@ -363,5 +394,160 @@ describe('policy configuration', () => {
     expect(counts.first).toBe(4);
     expect(counts.second).toBe(0);
     expect(counts.total).toBe(4);
+  });
+});
+
+describe('threshold currency (VX3-2, PE-1)', () => {
+  beforeEach(async () => {
+    await admin.query('DELETE FROM fx_rate');
+    await admin.query('DELETE FROM policy_violation');
+    await admin.query('DELETE FROM expense_policy');
+    await admin.query("UPDATE organization SET policy_currency_code = 'CAD' WHERE id = $1", [orgId]);
+  });
+
+  it('THE DEFECT: a CAD threshold is not applied to a USD amount unconverted', async () => {
+    // The rule: nothing over CAD 500.00. The report: USD 400.00, which is CAD
+    // 540.00 at 1.35 and therefore OVER. Before VX3-2 the comparison was
+    // 40000 <= 50000 and the report passed — the exact case PE-1 describes.
+    await setRate('USD', 'CAD', '1.35000000');
+    await withOrg(orgId, (tx) =>
+      policy.createPolicy(tx, {
+        kind: 'PER_TRANSACTION_LIMIT',
+        severity: 'WARNING',
+        params: { thresholdMinor: 50000 },
+      }),
+    );
+    const { reportId } = await draftIn('USD', 40000);
+    const summary = await withOrg(orgId, (tx) => policy.validateReport(tx, reportId));
+    const violation = summary.violations.find((v) => v.rule_code === 'PER_TRANSACTION_LIMIT');
+    expect(violation, 'USD 400 is CAD 540 and must breach a CAD 500 limit').toBeDefined();
+    expect(violation?.severity).toBe('WARNING');
+    expect(violation?.data.convertedMinor).toBe('54000');
+    expect(violation?.data.rateBasis).toBe('DIRECT');
+  });
+
+  it('and a USD amount that is genuinely under the converted limit does not fire', async () => {
+    await setRate('USD', 'CAD', '1.35000000');
+    await withOrg(orgId, (tx) =>
+      policy.createPolicy(tx, {
+        kind: 'PER_TRANSACTION_LIMIT',
+        params: { thresholdMinor: 50000 },
+      }),
+    );
+    // USD 370.00 -> CAD 499.50, just under.
+    const { reportId } = await draftIn('USD', 37000);
+    const summary = await withOrg(orgId, (tx) => policy.validateReport(tx, reportId));
+    expect(summary.violations.filter((v) => v.rule_code === 'PER_TRANSACTION_LIMIT')).toEqual([]);
+  });
+
+  it('names both currencies in the message once a conversion happened', async () => {
+    // The sentence is what hid this defect: "is $700.00, over the $500.00 limit"
+    // with one figure USD and the other CAD reads as though it had converted.
+    await setRate('USD', 'CAD', '1.35000000');
+    await withOrg(orgId, (tx) =>
+      policy.createPolicy(tx, { kind: 'PER_TRANSACTION_LIMIT', params: { thresholdMinor: 50000 } }),
+    );
+    const { reportId } = await draftIn('USD', 40000);
+    const summary = await withOrg(orgId, (tx) => policy.validateReport(tx, reportId));
+    const message = summary.violations.find((v) => v.rule_code === 'PER_TRANSACTION_LIMIT')!.message;
+    expect(message).toMatch(/converted/);
+  });
+
+  it('degrades LOUDLY to INFO when no rate exists, and does not guess', async () => {
+    // No fx_rate rows at all. ExpenseOS's v2 path returns the unconverted amount
+    // here, comparing USD minor units against a CAD threshold with no signal
+    // whatever (PE-7). This asserts the opposite: a finding that says so.
+    await withOrg(orgId, (tx) =>
+      policy.createPolicy(tx, {
+        kind: 'PER_TRANSACTION_LIMIT',
+        severity: 'BLOCK',
+        params: { thresholdMinor: 50000 },
+      }),
+    );
+    const { reportId } = await draftIn('USD', 40000);
+    const summary = await withOrg(orgId, (tx) => policy.validateReport(tx, reportId));
+    const finding = summary.violations.find((v) => v.rule_code === 'PER_TRANSACTION_LIMIT');
+    expect(finding).toBeDefined();
+    // INFO, not the configured BLOCK — PE-3's severity override in use.
+    expect(finding?.severity).toBe('INFO');
+    expect(finding?.data.fxRateMissing).toBe(true);
+    expect(finding?.data).toMatchObject({ fromCurrency: 'USD', toCurrency: 'CAD' });
+    // And crucially it does NOT block the submit: an unenforceable rule must not
+    // become an outage caused by a missing reference row.
+    expect(summary.blocking).toBe(false);
+  });
+
+  it('a same-currency report needs no rate at all', async () => {
+    await withOrg(orgId, (tx) =>
+      policy.createPolicy(tx, { kind: 'PER_TRANSACTION_LIMIT', params: { thresholdMinor: 50000 } }),
+    );
+    const { reportId } = await draftIn('CAD', 60000);
+    const summary = await withOrg(orgId, (tx) => policy.validateReport(tx, reportId));
+    const finding = summary.violations.find((v) => v.rule_code === 'PER_TRANSACTION_LIMIT');
+    expect(finding?.severity).toBe('WARNING');
+    expect(finding?.data.fxRateMissing).toBeUndefined();
+  });
+
+  it('a per-rule currency overrides the tenant default', async () => {
+    // Tenant policy currency is CAD; this rule is a USD 300.00 cap. A USD 400.00
+    // line breaches it with no conversion needed, and no rate is loaded — which
+    // also proves the override is what was used rather than the default.
+    await withOrg(orgId, (tx) =>
+      policy.createPolicy(tx, {
+        kind: 'PER_TRANSACTION_LIMIT',
+        currencyCode: 'USD',
+        params: { thresholdMinor: 30000 },
+      }),
+    );
+    const { reportId } = await draftIn('USD', 40000);
+    const summary = await withOrg(orgId, (tx) => policy.validateReport(tx, reportId));
+    const finding = summary.violations.find((v) => v.rule_code === 'PER_TRANSACTION_LIMIT');
+    expect(finding?.severity).toBe('WARNING');
+    expect(finding?.data.thresholdCurrency).toBe('USD');
+    expect(finding?.data.fxRateMissing).toBeUndefined();
+  });
+
+  it('uses the reciprocal when only the reverse pair is stored', async () => {
+    // PE-7's shape: a Bank-of-Canada-style source gives USD->CAD only, and the
+    // tenant's policy currency is USD. Every CAD amount is unconvertible in
+    // ExpenseOS; here the inverse is derived.
+    await setRate('USD', 'CAD', '1.35000000');
+    await admin.query("UPDATE organization SET policy_currency_code = 'USD' WHERE id = $1", [orgId]);
+    await withOrg(orgId, (tx) =>
+      policy.createPolicy(tx, { kind: 'PER_TRANSACTION_LIMIT', params: { thresholdMinor: 30000 } }),
+    );
+    // CAD 500.00 -> about USD 370.37, over a USD 300.00 cap.
+    const { reportId } = await draftIn('CAD', 50000);
+    const summary = await withOrg(orgId, (tx) => policy.validateReport(tx, reportId));
+    const finding = summary.violations.find((v) => v.rule_code === 'PER_TRANSACTION_LIMIT');
+    expect(finding?.severity).toBe('WARNING');
+    expect(finding?.data.rateBasis).toBe('RECIPROCAL');
+  });
+
+  it('a receipt rule with NO amount still blocks when no rate exists', async () => {
+    // The rule that must not degrade. "Every expense needs a receipt" is about
+    // presence, not about an amount, so a missing rate has nothing to do with it —
+    // and a BLOCK that a missing reference row can turn into a note is not a
+    // control. This is checked before any conversion happens in `rules.ts`.
+    await withOrg(orgId, (tx) =>
+      policy.createPolicy(tx, { kind: 'RECEIPT_REQUIRED', severity: 'BLOCK', params: {} }),
+    );
+    const { reportId } = await draftIn('USD', 40000);
+    const summary = await withOrg(orgId, (tx) => policy.validateReport(tx, reportId));
+    const finding = summary.violations.find((v) => v.rule_code === 'RECEIPT_REQUIRED');
+    expect(finding?.severity).toBe('BLOCK');
+    expect(summary.blocking).toBe(true);
+  });
+
+  it('reports which report currencies cannot be enforced', async () => {
+    // What the admin screen warns with, before the INFO findings start arriving.
+    await draftIn('USD', 1000);
+    const info = await withOrg(orgId, (tx) => policy.getPolicyCurrency(tx));
+    expect(info.code).toBe('CAD');
+    expect(info.unconvertible).toContain('USD');
+    await setRate('USD', 'CAD', '1.35000000');
+    const after = await withOrg(orgId, (tx) => policy.getPolicyCurrency(tx));
+    expect(after.unconvertible).toEqual([]);
+    expect(after.convertible).toEqual(['USD->CAD']);
   });
 });

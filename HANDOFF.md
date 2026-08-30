@@ -1013,6 +1013,76 @@ Smaller, each with a reason:
 - **`0014`'s three FKs are COMPOSITE, through `organization_id`** — see TN-1. The
   other 43 in this schema are not, which is VX3-10.
 
+**What VX3-2 shipped** — migration `0015` (one global table, two columns),
+`lib/policy/rates.ts`, currency conversion in `lib/money.ts`, the threshold-currency
+panel on `/admin/expense-policies`, `test/policy-rates.test.ts` and nine new
+cross-currency cases in `test/policy.db.test.ts`. **PE-1 is closed: VeloExpense has
+no live defects.**
+
+Read GAP-AUDIT PE-1, PE-3 and PE-7 before touching it. Five things a later reader
+will otherwise undo:
+
+- **THE LINE IS CONVERTED INTO THE THRESHOLD'S CURRENCY, not the reverse.** A
+  threshold is what an admin typed; converting it would print a number nobody chose
+  back at them, and it would drift every time a rate moved. The consequence to keep:
+  the finding's message names BOTH currencies whenever a conversion happened,
+  because "is $700.00, over the $500.00 limit" with one figure USD and the other CAD
+  is the sentence that hid this defect for two phases.
+- **A MISSING RATE IS AN INFO FINDING, NEVER A GUESS.** ExpenseOS's v2 predicate
+  path returns the unconverted amount when a rate is absent, so 10,000 JPY minor
+  units get compared against a CAD threshold with no signal at all (PE-7). Ours
+  emits `fxRateMissing` at INFO and does not block — an unenforceable rule must not
+  become an outage caused by a missing reference row. That needed PE-3
+  (`Finding.severity?`), which is now in.
+- **A RULE WITH NO AMOUNT MUST NOT BE ABLE TO DEGRADE.** "Every expense needs a
+  receipt" is about presence, so `RECEIPT_REQUIRED` with no floor is checked BEFORE
+  any conversion is attempted. A BLOCK that a missing rate can quietly turn into a
+  note is not a control. There is a test for exactly that.
+- **RECIPROCALS ARE DERIVED, NOT STORED.** `fx_rate` holds one direction;
+  `rates.ts` inverts. This is PE-7's bug avoided at the source: ExpenseOS's source
+  is the Bank of Canada, which publishes CAD-quoted pairs, and its lookup is
+  forward-only — so an admin who correctly set a US entity's policy currency to USD
+  found EVERY CAD amount unconvertible, which their GA audit recorded as "CAD
+  excluded from totals". Two stored rows for one pair can disagree; a derivation
+  cannot. **No triangulation**: an unknown pair returns null and degrades loudly
+  rather than routing through a pivot and rounding twice.
+- **RATES ARE BOUNDED BY THE REPORT'S OWN DATE.** A report filed in March is judged
+  against March's rate, so re-validating an old report does not change its findings
+  because the market moved. The bound is the latest `txn_date` the report carries,
+  falling back to today.
+
+Smaller, each with a reason:
+
+- **The conversion is BigInt throughout** — `convertMinor` in `lib/money.ts`, one
+  rounded division with no intermediate truncation, half-even so a long run does not
+  drift upward. ExpenseOS uses dinero.js for this; adding a dependency to multiply
+  two integers would have broken the house rule that `lib/money.ts` is the only
+  minor-unit converter. `rateToScaled` REFUSES a rate with more than eight decimals
+  rather than truncating one, because a truncated rate silently moves every
+  threshold it touches.
+- **`minor_unit` comes from the `currency` table, never from 100.** Every currency
+  this product ships has two decimals and JPY has none; there is a test converting
+  JPY both ways for the day that matters.
+- **`0015` SEEDS NO RATES.** A plausible-looking rate in a global table is worse
+  than an absent one — stale from the moment it is written, with nothing saying so.
+  `scripts/seed.mjs` inserts one obviously-round fixture pair (USD->CAD at 1.35, a
+  fixed `as_of`) so the demo tenant and the e2e can convert, and it inserts only ONE
+  direction so the derivation is exercised by default rather than only by a unit test.
+- **The admin screen warns BEFORE the reports do.** The panel lists which report
+  currencies cannot be converted into the policy currency, because an admin who
+  changes that setting and gets it wrong otherwise finds out through INFO findings on
+  individual reports, one at a time.
+- **A new rule has no currency select; an existing row does.** A rule created
+  without one uses the tenant's currency, which is the right default for nearly
+  every rule; the row select is where a tenant with two entities changes it.
+
+**STILL MISSING, and now the honest gap in this area: there is no rate SOURCE.**
+`fx_rate` is a table an admin cannot yet write to and no job fills. The demo seed is
+the only writer. A scheduled Bank-of-Canada fetch (their source, and it is free and
+unauthenticated) plus a manual-entry screen is a small ticket and it is unticketed —
+until it exists, a tenant with two currencies gets INFO findings rather than
+enforcement, which is at least loud.
+
 ## 6. Planning docs (in the ExpenseOS Google-Drive folder, `Specifications_and_Planning/`)
 - `VeloExpense-Port-and-Build-Plan.docx` (7-phase plan + ExpenseOS→VeloExpense sync strategy)
 - `ExpenseOS-vs-VeloExpense-Differences-Chart-rev2.docx`
@@ -1234,9 +1304,11 @@ approvals, notifications or audit entries.
    approving transaction cannot be lost, which removes both their fire-and-forget trade and the
    sweep that compensates for it.
 
-   **(c) PE-1 IS STILL THE ONLY LIVE DEFECT** — now **VX3-2**, second on the board, independent of
-   the rest and safe to take first. It is there because an integration that posts amounts should not
-   be built on top of a currency bug.
+   **(c) PE-1 IS CLOSED** — shipped as VX3-2 (migration `0015`). **VeloExpense has no live defects.**
+   What replaced it on the untracked list is narrower and loud rather than silent: `fx_rate` has no
+   SOURCE. No job fills it and no screen writes it, so a tenant with two currencies gets INFO
+   findings instead of enforcement until someone loads a rate. A scheduled Bank-of-Canada fetch —
+   their source, free and unauthenticated — plus a manual-entry screen is a small ticket.
 
    **Two things the planning pass turned up that are worth acting on separately:**
 

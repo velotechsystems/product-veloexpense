@@ -15,7 +15,8 @@
  * detection, fiscal-period close) slots in by adding entries here — no
  * migration, since `expense_policy.kind` is deliberately not a CHECK constraint.
  */
-import { formatMinor, toBigInt } from '@/lib/money';
+import { convertMinor, formatMinor, toBigInt, type MinorAmount } from '@/lib/money';
+import type { RateBasis, RateLookup } from '@/lib/policy/rates';
 import type { WorkbenchExpense, WorkbenchReport } from '@/lib/expenses/service';
 
 export const RULE_KINDS = [
@@ -44,6 +45,12 @@ export interface PolicyRow {
   enabled: boolean;
   category_id: string | null;
   category_label?: string | null;
+  /**
+   * Currency this rule's amount thresholds are written in. NULL means the
+   * organization's `policy_currency_code` (VX3-2 / PE-1) — the override exists for
+   * a tenant with a Canadian and a US entity, where a cap is natural in each.
+   */
+  currency_code: string | null;
   params: Record<string, unknown>;
   effective_from: Date | string | null;
   effective_to: Date | string | null;
@@ -55,6 +62,17 @@ export interface PolicyRow {
 export interface PolicyContext {
   report: WorkbenchReport;
   expenses: WorkbenchExpense[];
+  /**
+   * The currency amount thresholds are compared in when a rule does not name its
+   * own — `organization.policy_currency_code`. VX3-2 / PE-1: a report's currency
+   * is per report and a threshold is per tenant, so something has to convert
+   * before any numeric comparison, and this is what it converts INTO.
+   */
+  policyCurrency: string;
+  /** `currency.minor_unit` per code, for every currency in play. Never 100. */
+  minorUnits: Record<string, number>;
+  /** Built by `lib/policy/service.ts`; pure here. */
+  rates: RateLookup;
 }
 
 export interface Finding {
@@ -68,6 +86,15 @@ export interface Finding {
    */
   findingKey: string;
   data: Record<string, unknown>;
+  /**
+   * PE-3, and VX3-2 is what needed it. Overrides the configured severity for ONE
+   * finding, so a rule can say "I could not check this" instead of choosing
+   * between firing at full severity and staying silent. The only current use is
+   * the missing-rate INFO below; ExpenseOS has the same mechanism
+   * (`f.severity ?? inst.severity`) and it is what makes their loud degradation
+   * possible.
+   */
+  severity?: Severity;
 }
 
 export interface ParamSpec {
@@ -93,6 +120,85 @@ export interface RuleDefinition {
 
 function money(context: PolicyContext, amount: string | number | bigint) {
   return formatMinor(amount, context.report.currency_code, context.report.minor_unit);
+}
+
+/** The currency a rule's thresholds are written in. */
+function thresholdCurrency(context: PolicyContext, policy: PolicyRow): string {
+  return policy.currency_code ?? context.policyCurrency;
+}
+
+function minorUnitOf(context: PolicyContext, code: string): number {
+  // Defaulting to 2 rather than throwing: every currency this product ships has
+  // two, and a rule that cannot evaluate should degrade through the FX path
+  // below, not crash the whole validation over a missing reference row.
+  return context.minorUnits[code] ?? 2;
+}
+
+/** Format an amount in a named currency — used for the THRESHOLD, which is not
+ *  necessarily in the report's currency. That confusion was the original bug:
+ *  `rules.ts` printed a CAD-set limit with the report's currency and it read as
+ *  though it had been converted. */
+function moneyIn(amount: MinorAmount, code: string, context: PolicyContext) {
+  return formatMinor(amount, code, minorUnitOf(context, code));
+}
+
+type Comparable =
+  | { ok: true; amount: bigint; basis: RateBasis; rate: bigint; asOf: string }
+  | { ok: false; from: string; to: string };
+
+/**
+ * Put a report-currency amount into the threshold's currency.
+ *
+ * Returns a miss rather than the unconverted number. That distinction IS the
+ * ticket: ExpenseOS's v2 predicate path returns `amountMinor` unchanged when a
+ * rate is absent, so 10,000 JPY minor units get compared against a CAD threshold
+ * as if no conversion were needed — no INFO, no payload, no signal, and a
+ * threshold that silently under- or over-triggers (GAP-AUDIT PE-7).
+ */
+function toThresholdCurrency(
+  context: PolicyContext,
+  policy: PolicyRow,
+  amount: MinorAmount,
+): Comparable {
+  const from = context.report.currency_code;
+  const to = thresholdCurrency(context, policy);
+  const hit = context.rates.find(from, to);
+  if (!hit) return { ok: false, from, to };
+  return {
+    ok: true,
+    amount: convertMinor(amount, hit.scaled, minorUnitOf(context, from), minorUnitOf(context, to)),
+    basis: hit.basis,
+    rate: hit.scaled,
+    asOf: hit.asOf,
+  };
+}
+
+/**
+ * The INFO finding a rule emits when it could not convert.
+ *
+ * Ported from ExpenseOS's built-in limit rules, whose engine header states the
+ * rule: limit rules "degrade to `info` severity with a 'rate missing' payload —
+ * never silently skip, never crash." The message names both currencies, because
+ * the fix is an admin action and "no rate" without the pair is not actionable.
+ */
+function rateMissingFinding(
+  ruleCode: RuleKind,
+  lineItemId: string | null,
+  findingKey: string,
+  miss: { from: string; to: string },
+  what: string,
+): Finding {
+  return {
+    ruleCode,
+    lineItemId,
+    findingKey,
+    severity: 'INFO',
+    message:
+      `${what} could not be checked against the limit: there is no exchange rate from ` +
+      `${miss.from} to ${miss.to}, so the two amounts are not comparable. ` +
+      `An administrator needs to add one.`,
+    data: { fxRateMissing: true, fromCurrency: miss.from, toCurrency: miss.to },
+  };
 }
 
 function threshold(policy: PolicyRow, name = 'thresholdMinor'): bigint | null {
@@ -134,21 +240,47 @@ const PER_TRANSACTION_LIMIT: RuleDefinition = {
   evaluate(context, policy) {
     const limit = threshold(policy);
     if (limit === null) return [];
+    const limitCurrency = thresholdCurrency(context, policy);
     const findings: Finding[] = [];
     for (const expense of context.expenses) {
       for (const line of expense.lineItems) {
         if (policy.category_id && line.category_id !== policy.category_id) continue;
         const amount = toBigInt(line.amount_minor);
-        if (amount <= limit) continue;
+        const label = lineLabel(expense, line.description, line.category_label);
+        // VX3-2 / PE-1: the LINE is converted into the LIMIT's currency, not the
+        // other way round. The limit is what an admin typed and is authoritative
+        // in the currency they typed it in; converting it would print a number
+        // nobody chose back at them.
+        const comparable = toThresholdCurrency(context, policy, amount);
+        if (!comparable.ok) {
+          findings.push(
+            rateMissingFinding('PER_TRANSACTION_LIMIT', line.id, '', comparable, label),
+          );
+          continue;
+        }
+        if (comparable.amount <= limit) continue;
         findings.push({
           ruleCode: 'PER_TRANSACTION_LIMIT',
           lineItemId: line.id,
           findingKey: '',
-          message: `${lineLabel(expense, line.description, line.category_label)} is ${money(
-            context,
-            amount,
-          )}, over the ${money(context, limit)} per-transaction limit.`,
-          data: { amountMinor: amount.toString(), thresholdMinor: limit.toString() },
+          // Both currencies are named whenever they differ. A sentence that reads
+          // "is $700.00, over the $500.00 limit" while one is USD and the other
+          // CAD is the sentence that hid this defect in the first place.
+          message:
+            comparable.basis === 'IDENTITY'
+              ? `${label} is ${money(context, amount)}, over the ` +
+                `${moneyIn(limit, limitCurrency, context)} per-transaction limit.`
+              : `${label} is ${money(context, amount)} — ` +
+                `${moneyIn(comparable.amount, limitCurrency, context)} converted — over the ` +
+                `${moneyIn(limit, limitCurrency, context)} per-transaction limit.`,
+          data: {
+            amountMinor: amount.toString(),
+            thresholdMinor: limit.toString(),
+            thresholdCurrency: limitCurrency,
+            convertedMinor: comparable.amount.toString(),
+            rateBasis: comparable.basis,
+            rateAsOf: comparable.asOf,
+          },
         });
       }
     }
@@ -183,17 +315,60 @@ const RECEIPT_REQUIRED: RuleDefinition = {
       // A scoped rule only speaks to expenses that carry its category.
       if (policy.category_id && lines.length === 0) continue;
       const subtotal = lines.reduce((sum, line) => sum + toBigInt(line.amount_minor), 0n);
-      if (floor !== null && subtotal <= floor) continue;
+
+      // No floor means "every expense needs a receipt", which is a rule about
+      // presence and not about an amount — so it needs no conversion and must not
+      // be able to degrade to INFO over a missing rate. Checking this BEFORE
+      // converting is the difference between a BLOCK that always fires and one a
+      // missing reference row can quietly turn into a note.
+      if (floor === null) {
+        findings.push({
+          ruleCode: 'RECEIPT_REQUIRED',
+          lineItemId: null,
+          // One finding per expense — this is why finding_key exists.
+          findingKey: expense.id,
+          message: `${expenseLabel(expense)} has no receipt attached.`,
+          data: { expenseId: expense.id, subtotalMinor: subtotal.toString() },
+        });
+        continue;
+      }
+
+      const floorCurrency = thresholdCurrency(context, policy);
+      const comparable = toThresholdCurrency(context, policy, subtotal);
+      if (!comparable.ok) {
+        findings.push(
+          rateMissingFinding(
+            'RECEIPT_REQUIRED',
+            null,
+            expense.id,
+            comparable,
+            expenseLabel(expense),
+          ),
+        );
+        continue;
+      }
+      if (comparable.amount <= floor) continue;
       findings.push({
         ruleCode: 'RECEIPT_REQUIRED',
         lineItemId: null,
-        // One finding per expense — this is why finding_key exists.
         findingKey: expense.id,
         message:
-          floor === null
-            ? `${expenseLabel(expense)} has no receipt attached.`
-            : `${expenseLabel(expense)} is ${money(context, subtotal)} and has no receipt attached (receipts required above ${money(context, floor)}).`,
-        data: { expenseId: expense.id, subtotalMinor: subtotal.toString() },
+          comparable.basis === 'IDENTITY'
+            ? `${expenseLabel(expense)} is ${money(context, subtotal)} and has no receipt ` +
+              `attached (receipts required above ${moneyIn(floor, floorCurrency, context)}).`
+            : `${expenseLabel(expense)} is ${money(context, subtotal)} — ` +
+              `${moneyIn(comparable.amount, floorCurrency, context)} converted — and has no ` +
+              `receipt attached (receipts required above ` +
+              `${moneyIn(floor, floorCurrency, context)}).`,
+        data: {
+          expenseId: expense.id,
+          subtotalMinor: subtotal.toString(),
+          thresholdMinor: floor.toString(),
+          thresholdCurrency: floorCurrency,
+          convertedMinor: comparable.amount.toString(),
+          rateBasis: comparable.basis,
+          rateAsOf: comparable.asOf,
+        },
       });
     }
     return findings;

@@ -135,6 +135,24 @@ const STARTER_CATEGORIES = [
 /** The starter template every seeded tenant gets. */
 const COA_TEMPLATE = 'na-expense-claims';
 
+/**
+ * ONE fixed demo exchange rate (VX3-2).
+ *
+ * `fx_rate` is GLOBAL reference data and migration 0015 deliberately seeds none:
+ * a plausible-looking rate in a global table is worse than an absent one, because
+ * it is stale from the moment it is written and nothing says so. This is the
+ * DEMO seed, so a fixed, obviously-round rate on a fixed date is the right thing —
+ * it makes cross-currency policy checks work in the demo tenant and in the e2e,
+ * and it is recognisable as a fixture rather than mistakable for market data.
+ *
+ * Only USD->CAD is inserted. CAD->USD is DERIVED by lib/policy/rates.ts, which is
+ * PE-7's fix: ExpenseOS stored one direction and looked up forward-only, so a
+ * tenant whose policy currency was USD found every CAD amount unconvertible.
+ * Seeding one direction here means the derivation is exercised by default rather
+ * than only by a unit test.
+ */
+const DEMO_FX = { base: 'USD', quote: 'CAD', rate: '1.35000000', asOf: '2026-01-01' };
+
 async function seedReferenceData(orgId) {
   const client = await pool.connect();
   try {
@@ -150,6 +168,20 @@ async function seedReferenceData(orgId) {
     await client.query(
       `INSERT INTO department (organization_id, name) VALUES ($1, 'General & Admin')
          ON CONFLICT (organization_id, name) DO NOTHING`, [orgId]);
+    // ── One demo FX rate, and the tenant's policy currency ───────────────────
+    // Global table, so ON CONFLICT DO NOTHING rather than an update: two tenants
+    // seeded in one run must not fight over it, and a real rate loaded later must
+    // not be overwritten by this fixture.
+    await client.query(
+      `INSERT INTO fx_rate (base, quote, rate, as_of, source)
+         VALUES ($1, $2, $3, $4, 'SEED')
+         ON CONFLICT (base, quote, as_of) DO NOTHING`,
+      [DEMO_FX.base, DEMO_FX.quote, DEMO_FX.rate, DEMO_FX.asOf]);
+    // CAD explicitly rather than by relying on the column default, so the seed
+    // states the demo tenant's intent instead of inheriting it.
+    await client.query(
+      "UPDATE organization SET policy_currency_code = 'CAD' WHERE id = $1", [orgId]);
+
     // ── Chart of accounts, before the categories that map into it ────────────
     // Two passes exactly as lib/accounts/service.ts does it, for the same reason:
     // a template is a tree, and the parents have to exist before parent_id can be
