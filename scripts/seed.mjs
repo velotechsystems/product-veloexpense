@@ -110,15 +110,30 @@ async function seedReportingLine(orgId) {
   }
 }
 
-// Starter chart-of-accounts template (per-tenant expense categories).
+// Starter expense categories, and the account each posts to.
+//
+// The comment here used to call this "starter chart-of-accounts template", which
+// it never was — these are CATEGORIES, and their old `gl_account` values
+// (630500, 640100, …) were invented numbers matching no chart anywhere. VX3-1
+// built the actual chart (migration 0014, template `na-expense-claims`), so the
+// fourth column is now an account NUMBER in that template and the seed resolves
+// it to a real `gl_account` row.
+//
+// Note travel_air / travel_lodging / ground all post to 68100: a chart of
+// accounts is not a category list, and three ways of travelling are one line in
+// the general ledger. Meals go to 68200 instead because they are 50% deductible
+// in Canada and travel is not.
 const STARTER_CATEGORIES = [
-  ['meals', 'Meals & Entertainment', '630500', 10],
-  ['travel_air', 'Airfare', '640100', 20],
-  ['travel_lodging', 'Lodging', '640200', 30],
-  ['ground', 'Ground Transportation', '640300', 40],
-  ['office', 'Office Supplies', '650100', 50],
-  ['software', 'Software & Subscriptions', '650200', 60],
+  ['meals', 'Meals & Entertainment', '68200', 10],
+  ['travel_air', 'Airfare', '68100', 20],
+  ['travel_lodging', 'Lodging', '68100', 30],
+  ['ground', 'Ground Transportation', '68100', 40],
+  ['office', 'Office Supplies', '67100', 50],
+  ['software', 'Software & Subscriptions', '66100', 60],
 ];
+
+/** The starter template every seeded tenant gets. */
+const COA_TEMPLATE = 'na-expense-claims';
 
 async function seedReferenceData(orgId) {
   const client = await pool.connect();
@@ -135,12 +150,42 @@ async function seedReferenceData(orgId) {
     await client.query(
       `INSERT INTO department (organization_id, name) VALUES ($1, 'General & Admin')
          ON CONFLICT (organization_id, name) DO NOTHING`, [orgId]);
-    for (const [code, label, gl, sort] of STARTER_CATEGORIES) {
+    // ── Chart of accounts, before the categories that map into it ────────────
+    // Two passes exactly as lib/accounts/service.ts does it, for the same reason:
+    // a template is a tree, and the parents have to exist before parent_id can be
+    // resolved. Idempotent — the whole seed is re-run after every test truncate,
+    // so it must not care whether the accounts are already there.
+    await client.query(
+      `INSERT INTO gl_account
+           (organization_id, number, name, type, sub_type, is_postable, source, source_template)
+       SELECT $1, a.number, a.name, a.type, a.sub_type, a.is_postable, 'TEMPLATE', a.template_key
+         FROM coa_template_account a
+        WHERE a.template_key = $2
+       ON CONFLICT (organization_id, number) DO NOTHING`,
+      [orgId, COA_TEMPLATE]);
+    // Comma-join, not a JOIN inside FROM: an UPDATE's target table cannot be
+    // referenced from a FROM join condition. See lib/accounts/service.ts.
+    await client.query(
+      `UPDATE gl_account g
+          SET parent_id = p.id
+         FROM coa_template_account a, gl_account p
+        WHERE a.template_key = $2
+          AND g.organization_id = $1
+          AND g.number = a.number
+          AND a.parent_number IS NOT NULL
+          AND p.number = a.parent_number
+          AND p.organization_id = g.organization_id
+          AND g.parent_id IS NULL`,
+      [orgId, COA_TEMPLATE]);
+
+    for (const [code, label, glNumber, sort] of STARTER_CATEGORIES) {
       await client.query(
-        `INSERT INTO expense_category (organization_id, code, label, gl_account, sort_order)
-           VALUES ($1, $2, $3, $4, $5)
-           ON CONFLICT (organization_id, code) DO NOTHING`,
-        [orgId, code, label, gl, sort]);
+        `INSERT INTO expense_category (organization_id, code, label, sort_order, gl_account_id)
+           VALUES ($1, $2, $3, $4, (SELECT id FROM gl_account
+                                     WHERE organization_id = $1 AND number = $5))
+           ON CONFLICT (organization_id, code)
+           DO UPDATE SET gl_account_id = EXCLUDED.gl_account_id`,
+        [orgId, code, label, sort, glNumber]);
     }
     await client.query('COMMIT');
   } catch (err) {

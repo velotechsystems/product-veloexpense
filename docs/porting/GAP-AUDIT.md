@@ -2351,6 +2351,87 @@ already a perishable good. **Tag `accounting` at `5a11a647` before VX3-3 starts*
 question of the first adapter ticket is "which version of their code was this read at", and the
 honest answer will be a guess.
 
+## tenancy · foreign keys do not respect RLS (found 2026-08-29 building VX3-1)
+
+Not a port finding — this one is about VeloExpense's own schema, which is why it has its own prefix.
+Found by testing migration `0014`'s new constraints against a real Postgres 16 rather than reading
+them, and then checking whether the property was specific to the new table. It is not.
+
+### TN-1 · A tenant can point a foreign key at another tenant's row ⚠ needs a ticket
+
+Postgres performs referential-integrity checks as the constraint's owner **with row-level security
+bypassed**. So a plain `REFERENCES <tenant table>(id)` does not scope anything to a tenant:
+
+```
+-- as veloapp, app.current_org = tenant 1
+INSERT INTO expense_report (organization_id, submitter_id, title, currency_code)
+VALUES ('<tenant-1>', '<tenant-2 app_user id>', 'X', 'CAD');
+-- -> ALLOWED
+```
+
+That is a pre-existing FK on a shipped table, not one of `0014`'s.
+
+**What it is not.** There is no disclosure. Reading back through the reference returns nothing —
+both an inner and an outer join were checked, and RLS still filters the target row. A tenant cannot
+learn anything about the row it just referenced.
+
+**What it is.** An integrity hole and a missing backstop, and the shape it leaves behind is nastier
+than it first sounds:
+
+```
+gl_account_id set: true, resolvable: false
+```
+
+A category that looks mapped and joins to nothing. Note what that does to the control AC-14
+describes, which counts categories where `glAccountId IS NULL`: this row is NOT null, so a
+cross-tenant reference reads as *correctly mapped* to the very check meant to find unmapped ones.
+
+It also contradicts a stated house rule. HANDOFF §1 says tenancy is RLS, and NT-1 leans on exactly
+that — `Activity.subjectId` is a polymorphic uuid with no FK at all, and the entry says "RLS is the
+only guard". RLS guards READS. It does not guard FK targets. Both statements need the qualifier.
+
+**Exposure: 45 tenant-to-tenant foreign keys across ~20 tables** (query below reproduces the list).
+Every one of them accepts a cross-tenant id today.
+
+```sql
+WITH tenant AS (
+  SELECT c.oid, c.relname FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+  WHERE n.nspname = 'public' AND c.relkind = 'r'
+    AND EXISTS (SELECT 1 FROM pg_attribute a
+                WHERE a.attrelid = c.oid AND a.attname = 'organization_id' AND NOT a.attisdropped))
+SELECT src.relname || '.' || a.attname || ' -> ' || tgt.relname
+FROM pg_constraint k
+JOIN tenant src ON src.oid = k.conrelid
+JOIN tenant tgt ON tgt.oid = k.confrelid
+JOIN pg_attribute a ON a.attrelid = k.conrelid AND a.attnum = k.conkey[1]
+WHERE k.contype = 'f' ORDER BY 1;
+```
+
+**The fix is structural, not a trigger.** A composite foreign key through `organization_id`:
+
+```sql
+ALTER TABLE app_user ADD CONSTRAINT app_user_org_id_uniq UNIQUE (organization_id, id);
+ALTER TABLE expense_report ADD CONSTRAINT expense_report_submitter_fkey
+  FOREIGN KEY (organization_id, submitter_id) REFERENCES app_user (organization_id, id);
+```
+
+Verified: the cross-tenant insert above is refused, a same-tenant insert is unaffected, and it holds
+with no trigger and no cooperation from RLS — the constraint cannot be bypassed by a permissive
+policy or a superuser connection, which is more than RLS itself can say. Two details worth carrying
+into the ticket:
+
+- **`ON DELETE SET NULL` must name its column** — `ON DELETE SET NULL (gl_account_id)`. The
+  unqualified form nulls EVERY referencing column, `organization_id` included, which is `NOT NULL`,
+  so the delete fails instead of clearing the mapping. Postgres 15+ syntax; this project is on 16.
+- **MATCH SIMPLE is what we want**: with a NULL in any referencing column the constraint is skipped,
+  so a nullable FK stays nullable.
+
+`0014` adopts the pattern for the two FKs it introduces, plus `gl_account.parent_id`. **The other 43
+are their own ticket** — it is one migration touching almost every table in the schema, it needs an
+isolation test per FK, and it wants a CI guard so a new tenant-to-tenant FK cannot be added in the
+weak form. Folding a schema-wide security change into a chart-of-accounts PR is how it would go
+unreviewed.
+
 ## Not yet audited
 
 `expense-reports` (`packages/expense-lines`, `packages/money` — **do `money` first**, it is where
