@@ -106,6 +106,17 @@ beforeAll(async () => {
          VALUES ($1, 'travel', $2, $3)`,
         [org, `Travel ${label}`, leaf.rows[0].id],
       );
+      // VX3-3: a connected integration per tenant. Both use the SAME `code`
+      // ('main'), because `code` is unique per ORGANIZATION and two tenants
+      // naming their connection the same thing is the normal case — and it is the
+      // case a missing tenant predicate would surface as a duplicate-key error
+      // rather than as a leak, which is a much easier bug to miss.
+      await tx.query(
+        `INSERT INTO integration_installation
+             (organization_id, integration_slug, code, label, active, config)
+         VALUES ($1, 'stub-ledger', 'main', $2, true, $3::jsonb)`,
+        [org, `Ledger ${label}`, JSON.stringify({ ledgerUrl: `https://${label}.test` })],
+      );
     });
   }
   // VX1-3: an expense report per org (submitter resolved within the org via subquery).
@@ -777,6 +788,39 @@ describe('RLS tenant isolation', () => {
         ]),
       ),
     ).rejects.toThrow(/rollup/i);
+  });
+
+
+  it('integration installations are tenant-isolated, including their config', async () => {
+    // VX3-3. The config blob holds credentials, so this is the one isolation
+    // assertion in this file where a leak would be a disclosure of somebody's
+    // accounting system rather than of their expense data.
+    const seen = async (org: string) =>
+      withOrg(org, async (tx) => {
+        const r = await tx.query(
+          'SELECT label, config->>\'ledgerUrl\' AS url FROM integration_installation',
+        );
+        return r.rows.map((row) => `${row.label} @ ${row.url}`);
+      });
+    expect(await seen(orgA)).toEqual(['Ledger A @ https://A.test']);
+    expect(await seen(orgB)).toEqual(['Ledger B @ https://B.test']);
+    const blind = await withoutOrg((tx) =>
+      tx.query('SELECT count(*)::int AS n FROM integration_installation'),
+    );
+    expect(blind.rows[0].n).toBe(0);
+  });
+
+  it('WITH CHECK rejects an installation written into another tenant', async () => {
+    await expect(
+      withOrg(orgA, (tx) =>
+        tx.query(
+          `INSERT INTO integration_installation
+               (organization_id, integration_slug, code, label)
+           VALUES ($1, 'stub-ledger', 'smuggled', 'Smuggled')`,
+          [orgB],
+        ),
+      ),
+    ).rejects.toThrow();
   });
 
 });

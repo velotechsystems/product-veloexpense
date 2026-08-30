@@ -112,6 +112,15 @@ SQL
 #                    Fail-closed on purpose.
 export APP_URL=http://localhost:3000
 export WORKER_SECRET=dev-only-not-a-secret
+# VX3-3 — REQUIRED to connect an accounting integration. Exactly 32 bytes,
+# base64: the envelope refuses a passphrase or a wrong length rather than padding
+# it, because accepting one means a product encrypted under eight bytes of
+# entropy. The admin screen says so before anybody types a credential.
+export SECRET_ENCRYPTION_KEY="$(openssl rand -base64 32)"
+# The stub ledger is registered ONLY under this flag. Never set it in a deployed
+# environment: it accepts every post and reports success, so a finance team would
+# watch a queue drain to nowhere.
+export INTEGRATIONS_ENABLE_STUB=1
 
 # env for tests / app
 export ADMIN_DATABASE_URL="postgres://postgres:velo@localhost:5433/veloexpense"   # superuser (test truncate)
@@ -1082,6 +1091,95 @@ the only writer. A scheduled Bank-of-Canada fetch (their source, and it is free 
 unauthenticated) plus a manual-entry screen is a small ticket and it is unticketed —
 until it exists, a tenant with two currencies gets INFO findings rather than
 enforcement, which is at least loud.
+
+**What VX3-3 shipped** — migration `0016` (one tenant table), `lib/crypto/secrets.ts`,
+`lib/integrations/{contract,registry,stub,service}.ts`, `app/admin/integrations/`,
+four new test files and two new isolation tests. **A tenant can connect a ledger,
+test it, and disconnect it, and core can find an adapter without knowing a vendor
+name.** No real ledger yet — that is VX3-4.
+
+Read GAP-AUDIT AC-1..AC-5 before touching it. Six things a later reader will
+otherwise undo:
+
+- **THIS IS THE ONE FILE IN THE PORT THAT IS DESIGNED, NOT PORTED**, and the Plan
+  asks for it in as many words. AC-1: ExpenseOS has no adapter contract —
+  `IntegrationDescriptor` is pure metadata with no function members, and NetSuite is
+  reached by direct import from four routers and four workers, a
+  `switch (input.slug)` whose default returns an error string, and five vendor-named
+  job types. With one accounting system that is the cheaper engineering. The Plan's
+  risk register: *"define the accounting-adapter contract once (VeloLedger) so
+  QuickBooks/Xero/Sage are repeatable; avoid per-vendor special cases leaking into
+  core."*
+- **RESOLUTION IS BY CAPABILITY. Core never asks which vendor a tenant is on.**
+  `resolveCapability(tx, 'POST_EXPENSE_REPORT')`. AC-5 is why this matters: ExpenseOS
+  declares a closed capability union, asserts it at boot, stores it on every row —
+  and a grep for those seven strings outside the registry returns ZERO hits, because
+  real gating is `requiresIntegrations: ['netsuite']`. A taxonomy that reads as an
+  identity from outside and is decided by something else in fact is the NT-4 shape.
+  **VX3-8's diff is the test of whether this held**: adding QuickBooks must touch no
+  file in core.
+- **NO REFLECTION TABLE, and that is a deliberate divergence.** ExpenseOS upserts a
+  global `Integration` row per descriptor at boot. AC-2 records the cost: stale rows
+  are never pruned, and the whole reconcile is one try/catch whose failure their own
+  test describes — *"a typo … silently skips the ENTIRE reconcile, so no module or
+  integration row is created or updated, and every module-gated page 404s with
+  nothing in the logs pointing at the cause."* `0006` already had the better
+  convention: *"validated against the code registry, NOT a CHECK constraint."* So
+  `integration_slug` is text, the registry is code, and there is nothing to
+  reconcile, prune, or fail silently at boot.
+- **THE ENCRYPTION KEY NEVER LEAVES THE APP.** AES-256-GCM in Node, versioned
+  envelope, key read at CALL time from `SECRET_ENCRYPTION_KEY`. ExpenseOS does the
+  equivalent with pgcrypto — `pgp_sym_encrypt(${plaintext}, ${key})` — so the key
+  travels to the database on every read and write. They are bind parameters rather
+  than statement text, so this is not the disaster it first sounds like, but Postgres
+  can be configured to log bind parameters and the key then exists in the database
+  process too. GCM rather than CBC because it AUTHENTICATES: a tampered credential
+  fails to decrypt instead of returning plausible bytes.
+- **`decryptSecret` REFUSES AN UNMARKED VALUE.** This is the tolerance not ported.
+  Theirs passes any non-`enc:v1:` value through untouched — and `bootstrap.ts` writes
+  a Google client secret straight into `config` without ever calling the encrypt
+  helper, so an env-bootstrapped installation stores a password-marked secret in
+  cleartext and the reader accepts it silently (AC-4). We have no legacy rows to be
+  tolerant of. `auditSecrets()` exists to find that state if a future writer creates
+  it, and there is a test that simulates exactly their bug.
+- **ONE ACTIVE INSTALLATION PER INTEGRATION**, a partial unique index in `0016`.
+  AC-3: theirs resolves with `installations: { where: { active: true }, take: 1 }` and
+  NO ordering, so two active installations pick arbitrarily and nothing detects it.
+  Several installations are still allowed — that is what `code` is for, and two
+  QuickBooks companies for two subsidiaries is a real shape — but only one active.
+
+Smaller, each with a reason:
+
+- **Availability is read at CALL time; shape is checked at module LOAD.** The first
+  version read `process.env` at load and a test could not vary it, because ES imports
+  are hoisted and the registry loaded before the test body ran. NT-14 had already
+  written the rule for `appOrigin()`. The collision and capability-pairing guards do
+  NOT depend on the environment, so they stay at load — a declared capability with no
+  method behind it is a startup failure, not a `TypeError` mid-post.
+- **`assertAdapterShape` and `assertNoDuplicateSlugs` are exported** so a test can
+  see them fire. A throw at module load cannot be asserted on, and a guard nobody has
+  observed working is NT-5's shape: *"the test named a behaviour it could not
+  observe."*
+- **`0016`'s FK is composite and RESTRICT.** Composite per TN-1. RESTRICT because the
+  first version was `SET NULL (connected_by_id)`, which CONTRADICTS the paired
+  `(connected_at IS NULL) = (connected_by_id IS NULL)` CHECK — nulling the actor while
+  the timestamp stays set violates the pair, so deleting the user failed with a check
+  error instead of clearing attribution. Only a delete surfaces that. RESTRICT is also
+  right on its own terms, and is what `0013` chose for `reimbursed_by_id`.
+- **DISCONNECT DESTROYS THE CREDENTIAL.** The row stays, so the history of what was
+  connected and by whom survives and a reconnect keeps its `code`; the secrets are
+  removed from the jsonb, not merely blanked on the way out. A disconnect that leaves
+  a working credential in the database is not a disconnect.
+- **A secret is ABSENT from the screen, not masked.** Masking implies the value is
+  present and merely hidden, which is how one ends up in a page's HTML source. An
+  existing secret shows an empty box and the words "already set"; blank means unchanged.
+- **A THROWN adapter is a failed test, not a failed request.** An admin pressing
+  "test" is asking a question and an exception page is not an answer.
+- **The stub adapter is real and drives the tests.** Same argument as VX2-8's MEMORY
+  transport and VX1-9's s3rver, and the same warning: VX1-9 recorded that
+  *"MemoryStorage signs `memory://` URLs no browser can fetch, which is why the vitest
+  suites can be green while a real upload is broken."* A stub reachable in production
+  would be worse, so it is behind `INTEGRATIONS_ENABLE_STUB`.
 
 ## 6. Planning docs (in the ExpenseOS Google-Drive folder, `Specifications_and_Planning/`)
 - `VeloExpense-Port-and-Build-Plan.docx` (7-phase plan + ExpenseOS→VeloExpense sync strategy)

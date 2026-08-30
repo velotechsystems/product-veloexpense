@@ -20,6 +20,13 @@ jobs:
     timeout-minutes: 15
     env:
       AUTH_SECRET: ci-test-only-not-a-real-secret
+      # VX3-3. 32 bytes of base64 — the integration-credential envelope refuses
+      # anything else rather than padding it. CI-only and deliberately not a secret:
+      # nothing it encrypts here outlives the job.
+      SECRET_ENCRYPTION_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+      # The stub ledger is registered only under this flag, so the suites can drive
+      # a full connect -> test -> post round trip with no network.
+      INTEGRATIONS_ENABLE_STUB: '1'
       # App connects as the NON-superuser role (RLS must apply); admin resets state.
       ADMIN_DATABASE_URL: postgres://postgres:velo@localhost:5432/veloexpense
       DATABASE_URL: postgres://veloapp:velo@localhost:5432/veloexpense
