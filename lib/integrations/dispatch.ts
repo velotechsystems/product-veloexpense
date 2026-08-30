@@ -24,6 +24,14 @@
  * error column, and its sweep re-posts it up to five times. The instruction is
  * addressed to a human and enforced against nobody.
  *
+ * VX3-7 CORRECTED A DEFECT IN THIS FILE. It used to import the refused-versus-
+ * ambiguous classifier from the VeloLedger adapter by name, so VeloLedger was the
+ * only adapter that could report a refusal and every other adapter's failures —
+ * a 401 included — became NEEDS_REVIEW, a state no automatic path retries. The
+ * classifier is now `isDefinitelyNotApplied` on the contract, satisfied by any
+ * adapter that throws `AdapterError`, and the default for anything else is still
+ * the dangerous case.
+ *
  * VeloLedger's `idempotencyKey` means a genuine double-send would be refused at
  * the far end anyway — which is a much better position than the NetSuite path,
  * whose only guard was `externalId` uniqueness asserted by no test in a transport
@@ -32,7 +40,6 @@
  */
 import { withOrg } from '@/lib/tenant/context';
 import { requireCapability, IntegrationError } from '@/lib/integrations/service';
-import { isDefinitelyNotApplied } from '@/lib/integrations/veloledger';
 import {
   claimPost,
   duePosts,
@@ -40,7 +47,7 @@ import {
   markNeedsReview,
   markPosted,
 } from '@/lib/integrations/post-outbox';
-import type { PostableReport } from '@/lib/integrations/contract';
+import { isDefinitelyNotApplied, type PostableReport } from '@/lib/integrations/contract';
 import type { QueryRunner } from '@/lib/db/client';
 
 export interface DrainResult {

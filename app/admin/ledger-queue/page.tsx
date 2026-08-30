@@ -91,6 +91,17 @@ export default async function LedgerQueuePage({
         </Link>
       </header>
 
+      {summary.POSTED > 0 ? (
+        <p className="rounded-md border border-border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
+          <strong className="font-medium text-foreground">Drafted is not posted.</strong> A drafted
+          bill is waiting for somebody in the ledger to review and post it, and their post can still
+          refuse it — most often because an account is a rollup there, or because the company
+          requires a business unit and department that no default supplies. Neither is something
+          VeloExpense can see, so a report shown as drafted here may still be sitting unposted
+          there. The account numbers themselves are checked before drafting.
+        </p>
+      ) : null}
+
       <ErrorBanner message={error} />
 
       {previewed ? (

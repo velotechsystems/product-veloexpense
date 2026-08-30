@@ -16,13 +16,14 @@
  * production would be worse than that — it accepts every post and reports success,
  * so a finance team would see a queue draining to nowhere.
  */
-import type {
-  AccountingAdapter,
-  AdapterConfig,
-  PostResult,
-  PostableReport,
-  RemoteAccount,
-  TestResult,
+import {
+  AdapterError,
+  type AccountingAdapter,
+  type AdapterConfig,
+  type PostResult,
+  type PostableReport,
+  type RemoteAccount,
+  type TestResult,
 } from '@/lib/integrations/contract';
 
 interface StubState {
@@ -30,10 +31,27 @@ interface StubState {
   accounts: RemoteAccount[];
   /** Set to make the next call fail, so a failure path can be tested. */
   failWith: string | null;
+  /**
+   * How the next failure classifies. VX3-7: the stub used to throw a bare
+   * `Error`, which is AMBIGUOUS — so no test could exercise the REFUSED branch
+   * through a non-VeloLedger adapter, and the defect where only VeloLedger could
+   * report a refusal was invisible to the suite. A test double that cannot
+   * produce one of the two outcomes is a test double that hides a bug.
+   */
+  failRefused: boolean;
+  /** Throw a plain Error instead of an AdapterError — see `failNextBare`. */
+  failBare: boolean;
   paid: Set<string>;
 }
 
-const state: StubState = { posted: [], accounts: [], failWith: null, paid: new Set() };
+const state: StubState = {
+  posted: [],
+  accounts: [],
+  failWith: null,
+  failRefused: false,
+  failBare: false,
+  paid: new Set(),
+};
 
 /** Test seam. Returns a restore function, same shape as `setEmailTransport`. */
 export function stubControl() {
@@ -42,8 +60,25 @@ export function stubControl() {
     setAccounts(accounts: RemoteAccount[]) {
       state.accounts = accounts;
     },
-    failNext(message: string | null) {
+    /**
+     * `refused: true` means the far end rejected the call and certainly did not
+     * apply it — a 401, a validation failure. `false` (the default) means it
+     * might have applied, which is what a timeout looks like.
+     */
+    failNext(message: string | null, refused = false) {
       state.failWith = message;
+      state.failRefused = refused;
+      state.failBare = false;
+    },
+    /**
+     * Throw a BARE `Error` rather than an `AdapterError` — what an adapter looks
+     * like when a vendor SDK's own error type escapes it. Core must classify that
+     * as ambiguous, and a test double with no way to produce it could not prove so.
+     */
+    failNextBare(message: string) {
+      state.failWith = message;
+      state.failRefused = false;
+      state.failBare = true;
     },
     markPaid(externalId: string) {
       state.paid.add(externalId);
@@ -52,6 +87,8 @@ export function stubControl() {
       state.posted = [];
       state.accounts = [];
       state.failWith = null;
+      state.failRefused = false;
+      state.failBare = false;
       state.paid = new Set();
     },
   };
@@ -62,8 +99,13 @@ function consumeFailure(): void {
   const message = state.failWith;
   // One-shot: a test that wants two failures says so twice, and a test that
   // forgets to reset does not poison the next one silently.
+  const refused = state.failRefused;
+  const bare = state.failBare;
   state.failWith = null;
-  throw new Error(message);
+  state.failRefused = false;
+  state.failBare = false;
+  if (bare) throw new Error(message);
+  throw new AdapterError(message, refused);
 }
 
 export const stubAdapter: AccountingAdapter = {

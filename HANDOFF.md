@@ -47,6 +47,13 @@ Two separate codebases:
 - **Shared libs are VENDORED, not npm deps.** Copy the lib's `src/` into the app and pin the commit. `@velotech/auth-kit` is vendored at `src/auth-kit/` (pinned `e1db5c1`). `@velotech/ui` tokens are vendored at `app/velotech-tokens.css` + `app/tailwind-v4.css`; components come via `npx shadcn add https://velotechsystems.github.io/lib-ui-kit/r/<name>.json`.
 - **Git flow: this repo uses MERGE-COMMIT PRs (not squash).** So stacked branches are simple: `git fetch origin && git checkout -b <next> origin/main`. Always fetch before branching (local `origin/main` goes stale between merges).
 - **Every new tenant table** must have RLS + be added to the isolation test, and **every FK it points at another tenant table must be composite** (above). Three CI guards fail the build otherwise: RLS coverage, isolation-suite coverage, and the tenant-FK guard.
+- **NO VENDOR NAME OUTSIDE `lib/integrations/<vendor>.ts`.** Not in a table, a column, a type, a
+  CHECK literal, a shared enum, a constant, an audit action or a permission slug. Core resolves an
+  integration by CAPABILITY — `resolveCapability(tx, 'POST_EXPENSE_REPORT')` — and vendor-specific
+  DATA lives in a row (`integration_installation.integration_slug`), never in DDL. Comments are
+  exempt: naming what ExpenseOS did with NetSuite is how this project keeps its reasoning.
+  `npm run check:vendor` fails the build otherwise, and it found a real one the first time it ran
+  (GAP-AUDIT AC-17).
 - **A `'use server'` module exports its OWN `export async function`s and NOTHING else.**
   No re-export, no `export const`, no `export type`, no `export default`. Next registers
   every export of such a file as a server action; an export it cannot wrap makes it register
@@ -1455,6 +1462,95 @@ the two whose deps the container harness cannot install. `next build`, `npm run 
 `npm run typecheck` are John's step (the device VM cannot build: `linux/arm64`
 `node_modules` vs macOS).
 
+
+**What VX3-7 shipped (the guard half)** — `scripts/check-vendor-neutral.mjs`, a
+`check:vendor` npm script and a CI step, plus the three things the guard found.
+**The dimension half is blocked upstream, so VX3-7 stays open** — see the correction
+in §6 and GAP-AUDIT AC-16.
+
+- **THE GUARD FOUND A REAL DEFECT ON ITS FIRST RUN, which is the argument for it.**
+  `lib/integrations/dispatch.ts` — the GENERIC drain — imported the
+  refused-versus-ambiguous classifier from `lib/integrations/veloledger.ts` **by
+  name**. So VeloLedger was the only adapter that could ever report "this was
+  refused, nothing happened upstream", and every other adapter's failure fell
+  through to the ambiguous branch. `NEEDS_REVIEW` is deliberately a state no
+  automatic path retries (AC-8), so a QuickBooks tenant with a mistyped credential
+  would have had every report land in NEEDS_REVIEW on a **401** — a failure that
+  certainly never reached QuickBooks and should simply have backed off and retried
+  — and a human would have had to clear each one by hand. It also broke VX3-3's own
+  acceptance criterion, which says adding an adapter touches no shared file: it
+  would have had to touch that one.
+  - Fixed by moving `AdapterError` and `isDefinitelyNotApplied` **onto the
+    contract**. `LedgerError extends AdapterError` and keeps its name for logs.
+  - **The default is still the dangerous case:** anything that is not an
+    `AdapterError` classifies as ambiguous, so an adapter that lets a vendor SDK's
+    own error escape costs a human one click rather than costing a company a
+    duplicated bill. There is a test for exactly that.
+- **THE TEST SUITE HAD ENCODED THE BUG AS CORRECT BEHAVIOUR.**
+  `test/ledger-post.db.test.ts`'s "a REFUSED failure stays retryable" asserted
+  `NEEDS_REVIEW`, with a comment explaining that *"only the VeloLedger adapter can
+  say definitely not applied"*. True, and that was the bug. The stub could not
+  produce a refusal at all — it threw a bare `Error` — so no test could reach the
+  branch. `stubControl().failNext(msg, refused)` and `failNextBare(msg)` now exist,
+  and the assertion is `FAILED` with one attempt spent. **A test double that cannot
+  produce one of two outcomes hides a bug in the outcome it cannot produce.**
+- **A DRAFT IS NOT A POST, and three things can refuse one after we call it done.**
+  Their `createBill` stores `expense_account_number` as PLAIN TEXT on `bill_line`
+  with no foreign key and no existence check; numbers are resolved in
+  `buildAndPostBillJournal`, which runs when a **human posts**. So a bill can draft
+  perfectly and be permanently unpostable, in their UI, with no path back to us:
+  1. **the account number is not in their chart** — now PRE-FLIGHTED against
+     `list_accounts` before drafting, and refused locally with the numbers named and
+     "pull the chart of accounts" as the instruction. Costs one extra read per post.
+     Most likely of the three, because VX3-1's starter template is numbered from
+     VeloLedger's chart but **VX3-5's pull is optional** — a tenant that never
+     pulled is sending numbers on faith.
+  2. **the number is a rollup there** — `ROLLUP_ACCOUNT` at post time.
+     NOT detectable: `list_accounts` returns number, name, type, normalBalance,
+     isActive and subLedger, and no postability.
+  3. **segments in `required` mode with no vendor and no company default** —
+     `SEGMENTS_REQUIRED` at post time. NOT detectable: no tool exposes segment mode.
+  `testConnection` and the ledger-queue screen now say which of the three is checked
+  and which two are not, rather than showing a green tick that means less than an
+  admin will assume.
+- **The pre-flight FAILS OPEN on an empty chart**, deliberately. An empty
+  `list_accounts` is not evidence of absence — a tool that answered oddly, a shape
+  mis-read, a permission that hides accounts — and refusing every post in this
+  product because of a bad read at the far end is a worse outage than the defect.
+- **`lib/accounts/validate.ts` no longer says "VeloLedger 0028" to an admin.** That
+  parenthetical was in a CSV validation error shown on screen, to somebody who may
+  be running QuickBooks and has no idea what VeloLedger 0028 is. The lesson moved
+  to the comment; the message now says what actually happens to a line coded to a
+  rollup.
+- **THE GUARD ITSELF TOOK THREE ATTEMPTS, and both failures are instructive.**
+  Substring matching reported 180 offenders, every one the word "message"
+  containing "sage" — a guard that cries wolf gets `|| true` appended within a week.
+  `\b<vendor>\b` fixed that and then MISSED `QUICKBOOKS_SPECIAL_CASE`, because `_`
+  is a word character, and would have missed `quickBooksClient` too — precisely the
+  shapes a leak takes, so it was blind to the surfaces it exists to police while
+  appearing to work. It now tokenizes on non-letters, splits camelCase, and asks
+  whether any contiguous run of components spells a vendor name.
+  Comments, `INSERT`/`UPDATE`/`COPY` row data and `COMMENT ON` provenance are
+  excluded on purpose — a guard that forbade naming NetSuite in a comment would
+  delete this project's reasoning along with its risk.
+- **First tests the VeloLedger adapter has ever had** (`test/veloledger-adapter.test.ts`,
+  `fetch` stubbed). It still has never met a real VeloLedger — that item stays open
+  on the tracker — but which calls we make, in what order, and what we refuse to send
+  are now pinned. The load-bearing assertion is not "it threw": it is
+  `expect(calls).toEqual(['resolve_period', 'list_accounts'])`, because a refusal
+  that happens after `draft_bill` would leave the unpostable draft at the far end.
+
+**Verified:** 26 suites / 492 tests green. Each fix was checked against its own
+absence rather than only asserted: with the old VeloLedger-only classifier restored
+the refusal test fails `expected 'NEEDS_REVIEW' to be 'FAILED'`, and with the
+pre-flight disabled three tests fail with `promise resolved "{ externalId: 'b-1' }"`
+— the bill drafted with a bogus account number. The guard was exercised on a scratch
+copy of the tree against ten cases: six leak shapes caught (SCREAMING_SNAKE constant,
+camelCase identifier, audit action, permission slug, CHECK literal, column name) and
+four legitimate uses passed (a slug in an INSERT, `COMMENT ON` provenance, comments
+naming vendors, and words containing vendor substrings). `next build`, `npm run lint`
+and `npm run typecheck` are John's step.
+
 ## 6. Planning docs (in the ExpenseOS Google-Drive folder, `Specifications_and_Planning/`)
 - `VeloExpense-Port-and-Build-Plan.docx` (7-phase plan + ExpenseOS→VeloExpense sync strategy)
 - `ExpenseOS-vs-VeloExpense-Differences-Chart-rev2.docx`
@@ -1525,7 +1621,7 @@ each ticket.
 | VX3-4 | VeloLedger adapter — post an approved report | Approving a report enqueues a post in the SAME transaction as the audit row; the post is idempotent under concurrent attempts (two overlapping transactions, one post); an upstream failure never changes the report's status; posted-upstream-but-unrecorded is a state no automatic path may retry | 4 |
 | VX3-5 | Pull the chart of accounts and reconcile | Connecting a ledger fills the tenant's accounts; an account withdrawn upstream deactivates rather than disappears, and historical mappings still resolve; a second run is idempotent; a stale run cannot wedge the next one | 2 |
 | VX3-6 | Posting queue, dry run and manual push | An operator sees what is unposted and why, in words; a dry run writes nothing; a manual push is audited and attributed; a withheld report stays withheld | 2 |
-| VX3-7 | Generic tenant dimension sets | A tenant defines its own cost dimensions and maps them per integration; no vendor name appears in a core table, a shared enum, a permission slug or an audit action; a tenant with no integration sees no integration fields anywhere | 2 |
+| VX3-7 ◐ | Generic tenant dimension sets | A tenant defines its own cost dimensions and maps them per integration; no vendor name appears in a core table, a shared enum, a permission slug or an audit action; a tenant with no integration sees no integration fields anywhere | 2 (guard half shipped; dimension half BLOCKED — see below) |
 | VX3-8 | QuickBooks Online on the same contract | A SECOND tenant connects QBO and posts end to end; the diff that adds it contains no change to core or to the VeloLedger adapter — that diff is the acceptance test for VX3-3 | 3 |
 | VX3-10 ✅ | Composite foreign keys on every tenant-to-tenant FK (TN-1) | A tenant cannot reference another tenant's row — refused by the constraint, with the trigger/app layer removed from the test; one isolation assertion per FK; a CI guard fails the build on a new tenant-to-tenant FK declared the weak way | 3 (took ~1) |
 | VX3-9 | Phase-3 isolation + e2e | Two tenants on two different ledgers, side by side, in CI; the RLS guards still pass; the e2e posts a real report through a stub ledger and asserts the payload | 2 |
@@ -1563,6 +1659,38 @@ because it is accounting work.
 - **VX3-7** — AC-13 is the list to design against, and it is preventive here rather than remedial:
   VeloExpense has no vendor columns yet. `LegalEntity` → `LegalEntityExternalId` is the pattern on
   their side that already does this correctly; copy that, not the columns.
+
+  **CORRECTION, 2026-08-30 — a claim in an earlier handover was wrong.** After VX3-6 I wrote that
+  VX3-7 was "mostly speculative" because *"VeloLedger's `bill_line` has no cost dimensions at all"*.
+  The `bill_line` observation is true and the conclusion drawn from it is false. I read `0008` and
+  stopped. **VeloLedger has a full dimension model**, added later and one layer below the bill:
+
+  - `0035_dimensions` — `dimension` (per-ENTITY axes, not per-org, so a consolidated view can show
+    one entity's "Department" beside another's "Cost Center"), `dimension_value` with a `parent_id`
+    hierarchy for roll-ups, and `journal_line_dimension` tagging with
+    `UNIQUE (journal_line_id, dimension_id)` enforcing one value per axis per line. Tagging is
+    OPTIONAL and untagged lines keep working — no backfill.
+  - `0060_segments` — `dimension.kind IN ('business_unit','department','custom')`, a partial unique
+    index allowing at most ONE business-unit axis and ONE department axis per company, and
+    `business_unit_department` as a many-to-many *"NOT a strict one-parent tree"*. Optionality lives
+    in `entity_segment_config` (`off | optional | required`), and **an absent row means off**, which
+    is the same no-backfill discipline VX2-7's preference map uses.
+  - `0061_vendor_segment_defaults` — per-vendor default BU/Dept that pre-populates a drafted bill's
+    expense line, mirroring `vendor.default_expense_account_number`.
+
+  So the model is portable and worth porting. **What is NOT available is TRANSMISSION.**
+  `DraftBillLineInput` is `description`, `unitPriceMinor`, `expenseAccountNumber`,
+  `taxAmountMinor`, `taxRecoverableAccountNumber`, `quantityNumerator`, `quantityDenominator`,
+  `notes` — and nothing else. There is no field for a business unit, a department or any dimension,
+  and no MCP tool exposes segment mode either (`list_entities` returns id, name,
+  functionalCurrency, reportingFramework and fiscalYearStartMonth). A bill drafted by VeloExpense
+  therefore takes whatever BU/Dept the VENDOR default gives it, and VeloExpense cannot influence,
+  read or verify that.
+
+  **Which is why the dimension half is BLOCKED rather than done or deferred.** Building tenant
+  dimension sets now would produce a screen a tenant can fill in and a payload that cannot carry
+  the answer. The upstream asks are listed in AC-16 and want raising with VeloLedger before the
+  dimension half is worth starting.
 
 **Open inputs, named rather than guessed:**
 

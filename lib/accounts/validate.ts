@@ -163,10 +163,17 @@ export function validateCoaCsv(parsed: ParsedCsv): ValidationResult {
       errors.push({
         lineNumber: a.lineNumber,
         field: 'is_postable',
+        // VX3-7: the parenthetical used to read "(VeloLedger 0028: a line hit the
+        // rollup and vanished from the income statement)". That is the right
+        // REASON and the wrong place for it — this string is shown to an admin
+        // importing a CSV, who may well be running QuickBooks and has no idea what
+        // VeloLedger 0028 is. A sibling product's migration number in a
+        // user-facing error is a vendor leak, so the provenance moved to the
+        // header comment above and the message says what happens instead.
         message: a.declaredPostable
           ? `account '${a.number}' is marked postable but other rows name it as their parent, ` +
-            `which makes it a rollup — nothing may post to a rollup ` +
-            `(VeloLedger 0028: a line hit the rollup and vanished from the income statement)`
+            `which makes it a rollup — nothing may post to a rollup, because a line coded to ` +
+            `one disappears from the income statement instead of appearing under it`
           : `account '${a.number}' is marked as a rollup but no row names it as a parent, so it ` +
             `is a leaf and nothing could ever post to it`,
       });

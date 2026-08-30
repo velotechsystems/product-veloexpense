@@ -151,6 +151,60 @@ export interface AccountingAdapter {
   readPaymentStatus?(config: AdapterConfig, externalId: string): Promise<'PAID' | 'UNPAID'>;
 }
 
+/**
+ * The error an adapter throws, and the one thing core needs to know about it.
+ *
+ * ── Why this is on the CONTRACT and not in an adapter (VX3-7) ────────────────
+ *
+ * It was in an adapter, and that was a defect rather than an untidiness. The
+ * generic drain in `lib/integrations/dispatch.ts` imported
+ * `isDefinitelyNotApplied` from `lib/integrations/veloledger.ts` — so the ONLY
+ * adapter that could say "this call was refused, nothing happened upstream" was
+ * VeloLedger. Every other adapter's failure fell through to the ambiguous branch,
+ * and `NEEDS_REVIEW` is deliberately a state no automatic path will retry (AC-8).
+ *
+ * The consequence, for a tenant nobody has yet: a QuickBooks connection with a
+ * mistyped credential returns 401 on every report, each one lands in
+ * NEEDS_REVIEW, and a human has to clear each by hand — for a failure that
+ * definitely never reached QuickBooks and should simply have backed off and
+ * retried. VX3-3's acceptance criterion says adding an adapter touches no shared
+ * file; it would have had to touch this one.
+ *
+ * So: an adapter throws `AdapterError` and says which kind of failure it was.
+ *
+ *   definitelyNotApplied = true   The far end refused BEFORE doing anything —
+ *                                 401/403/404/422, a bad configuration, a
+ *                                 validation rejection. Safe to retry.
+ *   definitelyNotApplied = false  It might have applied — a timeout, a 5xx, a
+ *                                 dropped connection. NOT safe to retry.
+ *
+ * The DEFAULT IS THE DANGEROUS CASE: anything that is not an `AdapterError`
+ * classifies as ambiguous. An adapter wrapping a vendor SDK it does not control
+ * must therefore catch that SDK's errors and re-throw them as `AdapterError`,
+ * and forgetting to costs a human a click rather than costing a company a
+ * duplicated bill.
+ */
+export class AdapterError extends Error {
+  constructor(
+    message: string,
+    /** True when the call certainly did NOT reach the far end's handler. */
+    readonly definitelyNotApplied: boolean,
+  ) {
+    super(message);
+    this.name = 'AdapterError';
+  }
+}
+
+/**
+ * Did this failure certainly not apply upstream?
+ *
+ * Core's only question about an adapter's error. Fail-safe by construction: an
+ * error of any other kind answers `false`, which routes to NEEDS_REVIEW.
+ */
+export function isDefinitelyNotApplied(err: unknown): boolean {
+  return err instanceof AdapterError && err.definitelyNotApplied;
+}
+
 /** The method each capability promises. Used by the registry's pairing check. */
 export const CAPABILITY_METHOD: Record<Capability, keyof AccountingAdapter> = {
   POST_EXPENSE_REPORT: 'postExpenseReport',

@@ -172,16 +172,46 @@ describe('posting', () => {
   });
 
   it('a REFUSED failure stays retryable and backs off', async () => {
+    // VX3-7 FIXED A DEFECT THIS TEST USED TO ENCODE. It asserted NEEDS_REVIEW
+    // with a comment explaining that "only the VeloLedger adapter can say
+    // definitely not applied" — which was true, and was the bug: `dispatch.ts`
+    // imported the classifier from `lib/integrations/veloledger.ts` by name, so
+    // EVERY other adapter's refusal became NEEDS_REVIEW, a state no automatic
+    // path retries. A QuickBooks tenant with a mistyped key would have needed a
+    // human to clear every report, one at a time, for a 401.
+    //
+    // The classifier is now `isDefinitelyNotApplied` on the CONTRACT, and this
+    // test drives the STUB — deliberately not VeloLedger, because an assertion
+    // that passes only for the adapter the mechanism was written around proves
+    // nothing about the mechanism.
     await connectStub();
     await approvedReport('refused');
     const queue = await withOrg(orgId, (tx) => outbox.listQueue(tx));
-    stub.failNext('the ledger refused this bill');
+    stub.failNext('the ledger refused this bill', true);
+    expect(await postOne(orgId, queue[0].id)).toBe('FAILED');
+    const after = await withOrg(orgId, (tx) => outbox.listQueue(tx));
+    expect(after[0].status).toBe('FAILED');
+    // Retryable, and it HAS spent an attempt — a refusal that never backs off is
+    // a hot loop against somebody's ledger.
+    expect(after[0].attempts).toBe(1);
+    expect(after[0].next_attempt_at).toBeInstanceOf(Date);
+    expect(after[0].external_id).toBeNull();
+  });
+
+  it('an adapter that throws a BARE error is still treated as ambiguous', async () => {
+    // The fail-safe default, and the reason the fix did not simply trust
+    // adapters. An adapter wrapping a vendor SDK may let one of that SDK's own
+    // error types escape; core cannot know whether it applied, so it must assume
+    // it might have. Forgetting to wrap costs a human one click. Guessing wrong
+    // in the other direction costs a duplicated bill.
+    await connectStub();
+    await approvedReport('bare throw');
+    const queue = await withOrg(orgId, (tx) => outbox.listQueue(tx));
+    stub.failNextBare('something escaped the SDK');
     expect(await postOne(orgId, queue[0].id)).toBe('NEEDS_REVIEW');
-    // The stub throws a plain Error, which is AMBIGUOUS by design — only the
-    // VeloLedger adapter can say "definitely not applied". So a plain throw is
-    // treated as the dangerous case, which is the right default.
     const after = await withOrg(orgId, (tx) => outbox.listQueue(tx));
     expect(after[0].status).toBe('NEEDS_REVIEW');
+    expect(after[0].external_id).toBeNull();
   });
 
   it('an ambiguous failure becomes NEEDS_REVIEW with NO external id — AC-8', async () => {
