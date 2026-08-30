@@ -63,7 +63,7 @@ Two separate codebases:
   - `lib/policy/rules.ts` + `lib/policy/service.ts` — VX1-7; rule TYPES in code, rule INSTANCES in `expense_policy`. `rules.ts` is PURE (no DB) and is where a new rule kind is added. `app/admin/expense-policies/` is the config surface, `app/expenses/[reportId]/policy-panel.tsx` the employee-facing one.
   - `test/rls-isolation.test.ts` — the RLS gate; extend it for each new tenant table.
   - `scripts/seed.mjs` — `npm run seed` (demo + blank tenants, synthetic data; demo has admin/manager/employee with a wired reporting line).
-- Migrations are plain SQL under `prisma/migrations/NNNN_name/migration.sql`, applied with `psql -f` (no Prisma migrate wired yet). Current: `0001_init`, `0002_reference_and_employees`, `0003_expense_reports`, `0004_employee_roles`, `0005_receipt_upload_state`, `0006_policy_engine`, `0007_report_lifecycle`, `0008_approval_schema`.
+- Migrations are plain SQL under `prisma/migrations/NNNN_name/migration.sql`, applied with `psql -f` (no Prisma migrate wired yet). Current: `0001_init` … `0014_chart_of_accounts` (fourteen; the list was stale at `0008` for six tickets — check `ls prisma/migrations` rather than trusting this line).
 - **Gotchas learned the hard way:**
   - `vitest.config.ts` sets **`fileParallelism: false`** — the DB suites share one Postgres and each `TRUNCATE`s in `beforeAll`. Parallel files race (duplicate slugs, FK violations). Do not remove while the suites share a database; give each new suite its own org slugs too.
   - `npx shadcn add` guesses a **`src/` layout** (the repo has `src/auth-kit/`), but `tsconfig` maps `@/*` → `./*`. After every add: `mv src/components/ui components/ui` and `mv src/lib/utils.ts lib/utils.ts`. lib-ui-kit ships no table/select/badge — those are hand-rolled against the vendored tokens in `app/expenses/ui.tsx`.
@@ -120,6 +120,12 @@ npm install && npm test && npm run build && npm run typecheck && npm run seed
 # end-to-end (VX1-9): builds, starts its own S3 surface + the standalone server
 npx playwright install chromium   # once
 npm run e2e
+# The e2e's S3 surface listens on 9401, NOT 9000 — a local MinIO on 9000 (the
+# command in lib/storage/index.ts uses it) was being silently adopted by
+# Playwright's port probe, which cannot tell MinIO from s3rver, and three receipt
+# specs then failed about uploads with the storage sink's startup line simply
+# absent from the log. The sinks are no longer reused either, so a busy port now
+# stops the run and names itself. Both can run at once now.
 ```
 **`npm run start` does NOT serve this app.** `next.config.ts` sets
 `output: 'standalone'`, and with that setting `next start` prints a warning and
@@ -930,6 +936,83 @@ needs a ticket — it has no home on the board today.
   it. Every "assign it anyway and let expiry escalate" branch of ExpenseOS was replaced with
   something terminal because of this.
 
+**What VX3-1 shipped** — migration `0014` (two global template tables, one tenant
+table, two columns and a trigger), `lib/accounts/{csv,validate,service}.ts`,
+`app/admin/chart-of-accounts/`, the GL snapshot in `lib/expenses/service.ts`,
+`test/{coa-csv,accounts.db}.test.ts`, four new isolation tests, and a seed that
+gives the demo tenant a real chart. **The chart-of-accounts debt from Phase 1 is
+closed.**
+
+Read GAP-AUDIT AC-9, AC-10, AC-14 and TN-1 before touching it. Five things a
+later reader will otherwise undo:
+
+- **THIS ONE COULD NOT BE PORTED, AND THAT IS THE FINDING.** ExpenseOS DELETED its
+  vendor-neutral account table (`20260617233000_drop_expenseos_account`), so
+  accounts exist there only as `NetSuiteAccount` — a cache filled by a twice-daily
+  SOAP pull — with no template, no accounts seed and no manual-entry screen. Their
+  own seed comment states the resting position: a category's GL account is null
+  *"when NetSuite has never synced, which is the normal state of a fresh
+  environment"*. Fine for one company that certainly has NetSuite; not fine for a
+  product. **So the shape comes from VeloLedger's `public.account` instead**, which
+  is the right source twice over: house sibling, and the reference adapter Phase 3
+  posts to.
+- **THE ACCOUNT NUMBERS ARE VELOLEDGER'S, VERBATIM, AND THAT IS THE FEATURE.**
+  All 28 rows of the `na-expense-claims` template come from
+  `product-veloledger/docs/Starter-Chart-of-Accounts.csv`. VX3-4 posts by matching
+  on `number`, so a "tidied" number here silently breaks the adapter — there is a
+  test pinning four of them for exactly that reason. It is the EXPENSE-CLAIM subset
+  of their 279: a claim cannot reach a balance-sheet account, a salary line or
+  deferred income tax, and shipping those would be 250 rows of picker noise.
+  68100/68200 stay split because **meals are 50% deductible in Canada** and merging
+  them is a tax error, not a simplification.
+- **`is_postable` IS DERIVED, NEVER PASSED IN.** Ported from VeloLedger
+  `0028_account_postable`, whose comment records the incident: rollups used as
+  headings, nothing preventing postings, and *"the 'invoice posted but IS shows no
+  revenue' bug where a line hit 40000 and vanished from the presentation"*. They
+  had to BACKFILL the flag because a manual value had drifted from the tree; here
+  the validator derives it and *errors* if a CSV declares it wrongly, and
+  `createAccount` demotes a parent in the same transaction as adding its first
+  child. VeloExpense has no journal, so the guard is a trigger on the two places
+  an account is chosen — a category's mapping and a line's snapshot — which is
+  what makes it hold for paths nobody has written yet.
+- **THE LINE SNAPSHOTS ITS ACCOUNT ON WRITE** (AC-10), so a report posts to the
+  account it was coded to when it was filed, not to wherever its category points
+  months later. Re-stamped ONLY when the category changes; amount, tax and
+  description edits leave it alone. Nullable, and a null blocks nothing — theirs
+  and worth keeping: *"a category with no account is a configuration gap, and the
+  employee filing the expense is not who fixes it."*
+- **DEACTIVATE IS THE REMOVAL; DELETE IS THE EXCEPTION.** `removeAccount` refuses
+  anything with a category, a line or a child, and the screen only offers it when
+  all three are zero. A snapshot that can vanish is not a snapshot.
+
+Smaller, each with a reason:
+
+- **`expense_category.gl_account` (text) was DROPPED, not kept alongside.** Its only
+  reader was one SELECT, and the seed's values (630500, 640100, …) were invented
+  numbers matching no chart anywhere — a column that looks authoritative and
+  resolves to nothing. ExpenseOS made the same free-text → FK move and recorded the
+  same reason.
+- **Templates are GLOBAL, and `0001_init` already said they would be**: its comment
+  names "chart-of-accounts starter templates" as global reference data alongside
+  `currency`. The CI RLS guard keys off an `organization_id` column, so the two
+  template tables are correctly outside it — do not add one to make the guard
+  happy.
+- **Instantiation is two passes in one transaction**, and the second pass is a
+  comma-join with every predicate in `WHERE`. That is not style: an UPDATE's target
+  table cannot be referenced from a JOIN condition inside FROM (*"invalid reference
+  to FROM-clause entry for table g"*). It typechecked, it linted, and it would have
+  left every account parentless. Found by running it against a real Postgres.
+- **Instantiating over a populated chart is REFUSED**, as is importing over one.
+  Half one template and half another is not a chart. Replacing a populated chart is
+  a different operation — it invalidates every mapping — and it deliberately does
+  not exist yet.
+- **The CSV import is all-or-nothing** and carries line-numbered errors to the
+  screen. Ported from VeloLedger's `import-coa` CLI minus its CSV hash, which
+  exists there to make a bootstrap re-runnable and is unnecessary here because an
+  import into a populated chart is refused outright.
+- **`0014`'s three FKs are COMPOSITE, through `organization_id`** — see TN-1. The
+  other 43 in this schema are not, which is VX3-10.
+
 ## 6. Planning docs (in the ExpenseOS Google-Drive folder, `Specifications_and_Planning/`)
 - `VeloExpense-Port-and-Build-Plan.docx` (7-phase plan + ExpenseOS→VeloExpense sync strategy)
 - `ExpenseOS-vs-VeloExpense-Differences-Chart-rev2.docx`
@@ -1002,9 +1085,10 @@ each ticket.
 | VX3-6 | Posting queue, dry run and manual push | An operator sees what is unposted and why, in words; a dry run writes nothing; a manual push is audited and attributed; a withheld report stays withheld | 2 |
 | VX3-7 | Generic tenant dimension sets | A tenant defines its own cost dimensions and maps them per integration; no vendor name appears in a core table, a shared enum, a permission slug or an audit action; a tenant with no integration sees no integration fields anywhere | 2 |
 | VX3-8 | QuickBooks Online on the same contract | A SECOND tenant connects QBO and posts end to end; the diff that adds it contains no change to core or to the VeloLedger adapter — that diff is the acceptance test for VX3-3 | 3 |
+| VX3-10 | Composite foreign keys on every tenant-to-tenant FK (TN-1) | A tenant cannot reference another tenant's row — refused by the constraint, with the trigger/app layer removed from the test; one isolation assertion per FK; a CI guard fails the build on a new tenant-to-tenant FK declared the weak way | 3 |
 | VX3-9 | Phase-3 isolation + e2e | Two tenants on two different ledgers, side by side, in CI; the RLS guards still pass; the e2e posts a real report through a stub ledger and asserts the payload | 2 |
 
-~24 dev-days, in line with Phase 2's ~26. Build order is the table order, and only two edges are
+~27 dev-days across ten tickets. VX3-10 was added on 2026-08-29, mid-VX3-1, when testing `0014`'s constraints turned up TN-1 — 45 tenant-to-tenant foreign keys that accept another tenant's id, because Postgres checks referential integrity with RLS bypassed. It sits late in the order only because nothing else waits on it; by severity it could go first. Build order is the table order, and only two edges are
 hard: VX3-1 blocks VX3-4/5 (an adapter cannot pull a chart into tables that do not exist), and VX3-3
 blocks both adapters. VX3-2 is independent of everything and can go in parallel or first — it is on
 this board because a currency defect underneath something that posts amounts is the wrong order, not

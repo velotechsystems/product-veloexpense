@@ -22,6 +22,7 @@
  */
 import type { QueryRunner } from '@/lib/db/client';
 import type { Actor } from '@/lib/auth/actor';
+import { accountForCategory } from '@/lib/accounts/service';
 
 const ORG = "current_setting('app.current_org', true)::uuid";
 
@@ -585,17 +586,26 @@ export async function addLineItem(tx: QueryRunner, expenseId: string, input: New
   const reportId = await reportIdForExpense(tx, expenseId);
   await assertDraft(tx, reportId);
   await assertCategory(tx, input.categoryId);
+  // VX3-1 / GAP-AUDIT AC-10: the GL account is SNAPSHOTTED here, at write time,
+  // not read through the category when the report posts. So a report posts to the
+  // account the line was coded to when it was filed, rather than to wherever its
+  // category points months later. Null is fine and blocks nothing — an unmapped
+  // category is a configuration gap, and the person filing the expense is not who
+  // fixes it.
+  const glAccountId = await accountForCategory(tx, input.categoryId);
 
   const r = await tx.query(
     `INSERT INTO expense_line_item
-       (organization_id, expense_id, category_id, amount_minor, description, tax_minor)
-     VALUES (${ORG}, $1, $2, $3, $4, $5) RETURNING *`,
+       (organization_id, expense_id, category_id, amount_minor, description, tax_minor,
+        gl_account_id)
+     VALUES (${ORG}, $1, $2, $3, $4, $5, $6) RETURNING *`,
     [
       expenseId,
       input.categoryId,
       toMinorString(input.amountMinor, 'amount'),
       input.description ?? null,
       toMinorString(input.taxMinor ?? 0, 'tax'),
+      glAccountId,
     ],
   );
   await recomputeReportTotal(tx, reportId);
@@ -615,6 +625,11 @@ export async function updateLineItem(tx: QueryRunner, lineItemId: string, patch:
   if (patch.categoryId !== undefined) {
     await assertCategory(tx, patch.categoryId);
     set('category_id', patch.categoryId);
+    // Re-stamped ONLY because the category changed — that is a re-coding, and a
+    // re-coding gets the account the new category points at now. Every other patch
+    // (amount, tax, description) leaves the snapshot alone, which is the whole
+    // point of it being a snapshot: "stamp on write, and never refresh" (AC-10).
+    set('gl_account_id', await accountForCategory(tx, patch.categoryId));
   }
   if (patch.amountMinor !== undefined) set('amount_minor', toMinorString(patch.amountMinor, 'amount'));
   if (patch.taxMinor !== undefined) set('tax_minor', toMinorString(patch.taxMinor, 'tax'));
@@ -662,6 +677,13 @@ export interface CategoryOption {
   id: string;
   code: string;
   label: string;
+  /**
+   * The mapped account as `number — name`, or null when the category is unmapped.
+   *
+   * VX3-1 replaced `expense_category.gl_account`, a bare `text` column that had
+   * held invented numbers matching no chart anywhere, with a real FK. This reads
+   * through it so a picker can show what a category will post to.
+   */
   gl_account: string | null;
   active: boolean;
 }
@@ -671,10 +693,12 @@ export async function listCategories(
   opts: { includeInactive?: boolean } = {},
 ): Promise<CategoryOption[]> {
   const r = await tx.query(
-    `SELECT id, code, label, gl_account, active
-       FROM expense_category
-      ${opts.includeInactive ? '' : 'WHERE active'}
-      ORDER BY sort_order, label`,
+    `SELECT c.id, c.code, c.label, c.active,
+            CASE WHEN g.id IS NULL THEN NULL ELSE g.number || ' — ' || g.name END AS gl_account
+       FROM expense_category c
+       LEFT JOIN gl_account g ON g.id = c.gl_account_id AND g.active
+      ${opts.includeInactive ? '' : 'WHERE c.active'}
+      ORDER BY c.sort_order, c.label`,
   );
   return r.rows as CategoryOption[];
 }

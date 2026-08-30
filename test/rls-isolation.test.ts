@@ -84,6 +84,28 @@ beforeAll(async () => {
          VALUES ($1, $2, $3)`,
         [org, `Team ${label}`, parent.rows[0].id],
       );
+      // VX3-1: a rollup and a leaf, so `gl_account.parent_id` — the second
+      // self-reference in this schema — is exercised the same way `department` is.
+      // Both orgs deliberately use THE SAME account numbers: a chart of accounts
+      // is numbered by convention, so two tenants having 68000/68100 is the normal
+      // case, and it is the case where a missing tenant predicate would show up as
+      // a picker listing every number twice.
+      const rollup = await tx.query(
+        `INSERT INTO gl_account (organization_id, number, name, type, is_postable, source)
+         VALUES ($1, '68000', $2, 'expense', false, 'MANUAL') RETURNING id`,
+        [org, `Travel M&E ${label}`],
+      );
+      const leaf = await tx.query(
+        `INSERT INTO gl_account
+             (organization_id, number, name, type, is_postable, source, parent_id)
+         VALUES ($1, '68100', $2, 'expense', true, 'MANUAL', $3) RETURNING id`,
+        [org, `Travel ${label}`, rollup.rows[0].id],
+      );
+      await tx.query(
+        `INSERT INTO expense_category (organization_id, code, label, gl_account_id)
+         VALUES ($1, 'travel', $2, $3)`,
+        [org, `Travel ${label}`, leaf.rows[0].id],
+      );
     });
   }
   // VX1-3: an expense report per org (submitter resolved within the org via subquery).
@@ -314,8 +336,14 @@ describe('RLS tenant isolation', () => {
   });
 
   it('reference tables are tenant-isolated (expense_category)', async () => {
-    const a = await withOrg(orgA, (tx) => tx.query('SELECT label FROM expense_category'));
-    expect(a.rows.map((r) => r.label)).toEqual(['Meals A']);
+    const a = await withOrg(orgA, (tx) =>
+      tx.query('SELECT label FROM expense_category ORDER BY label'),
+    );
+    // 'Travel A' arrived with VX3-1's fixture, which needed a category to map to
+    // an account. This exact-list pin is why that showed up as a failing test
+    // rather than as a silently longer list — worth leaving exact for the same
+    // reason.
+    expect(a.rows.map((r) => r.label)).toEqual(['Meals A', 'Travel A']);
     const none = await withoutOrg((tx) => tx.query('SELECT * FROM expense_category'));
     expect(none.rows).toHaveLength(0);
   });
@@ -666,4 +694,89 @@ describe('RLS tenant isolation', () => {
       ),
     ).rejects.toThrow();
   });
+
+  it('the chart of accounts is tenant-isolated, and two tenants may share numbers', async () => {
+    // VX3-1. Both orgs have 68000 and 68100; each must see exactly its own two.
+    const seen = async (org: string) =>
+      withOrg(org, async (tx) => ({
+        numbers: (await tx.query('SELECT number FROM gl_account ORDER BY number')).rows.map(
+          (r) => r.number,
+        ),
+        names: (await tx.query('SELECT name FROM gl_account ORDER BY number')).rows.map(
+          (r) => r.name,
+        ),
+      }));
+    expect(await seen(orgA)).toEqual({
+      numbers: ['68000', '68100'],
+      names: ['Travel M&E A', 'Travel A'],
+    });
+    expect(await seen(orgB)).toEqual({
+      numbers: ['68000', '68100'],
+      names: ['Travel M&E B', 'Travel B'],
+    });
+    // And nothing at all with the context unset — `withoutOrg` connects as the
+    // same non-superuser under FORCE RLS, so every policy body is NULL.
+    const blind = await withoutOrg((tx) => tx.query('SELECT count(*)::int AS n FROM gl_account'));
+    expect(blind.rows[0].n).toBe(0);
+  });
+
+  it('an account hierarchy cannot be walked across tenants', async () => {
+    // The same shape as the department walk above, and worth repeating rather
+    // than trusting: a rollup/leaf join is exactly what a chart-of-accounts
+    // picker does, and both tenants use the same numbers, so a missing predicate
+    // produces four rows that look plausible instead of an obvious error.
+    const walk = await withOrg(orgA, (tx) =>
+      tx.query(
+        `SELECT child.name AS child, parent.name AS parent
+           FROM gl_account child
+           JOIN gl_account parent ON parent.id = child.parent_id
+          ORDER BY child.number`,
+      ),
+    );
+    expect(walk.rows).toEqual([{ child: 'Travel A', parent: 'Travel M&E A' }]);
+  });
+
+  it('a category cannot be mapped to another tenant\'s account', async () => {
+    // TN-1: a plain `REFERENCES gl_account(id)` would ALLOW this, because Postgres
+    // checks referential integrity with RLS bypassed. `0014` declares the FK as
+    // composite through organization_id, which refuses it structurally. This test
+    // is the one that fails if anyone ever simplifies that constraint back.
+    const foreignAccount = await withOrg(orgB, (tx) =>
+      tx.query("SELECT id FROM gl_account WHERE number = '68100'"),
+    );
+    const foreignId = foreignAccount.rows[0].id as string;
+    await expect(
+      withOrg(orgA, (tx) =>
+        tx.query("UPDATE expense_category SET gl_account_id = $1 WHERE code = 'travel'", [
+          foreignId,
+        ]),
+      ),
+    ).rejects.toThrow();
+    // And A's own mapping is untouched by the attempt.
+    const mapping = await withOrg(orgA, (tx) =>
+      tx.query(
+        `SELECT g.name FROM expense_category c
+           JOIN gl_account g ON g.id = c.gl_account_id WHERE c.code = 'travel'`,
+      ),
+    );
+    expect(mapping.rows[0].name).toBe('Travel A');
+  });
+
+  it('nothing may be coded to a rollup account', async () => {
+    // Ported guard, VeloLedger 0028: "a line hit 40000 and vanished from the
+    // presentation". Enforced by a trigger rather than in the action layer, so it
+    // holds for paths nobody has written yet — including this one, which goes
+    // straight to SQL.
+    const rollup = await withOrg(orgA, (tx) =>
+      tx.query("SELECT id FROM gl_account WHERE number = '68000'"),
+    );
+    await expect(
+      withOrg(orgA, (tx) =>
+        tx.query("UPDATE expense_category SET gl_account_id = $1 WHERE code = 'travel'", [
+          rollup.rows[0].id,
+        ]),
+      ),
+    ).rejects.toThrow(/rollup/i);
+  });
+
 });
