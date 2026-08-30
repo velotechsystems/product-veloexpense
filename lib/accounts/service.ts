@@ -43,6 +43,10 @@ export interface GlAccountRow {
   active: boolean;
   source: AccountSource;
   external_id: string | null;
+  /** Which connection a PULLED account came from (VX3-5). NULL otherwise. */
+  installation_id: string | null;
+  /** When a pull last reported it. NULL means never, or never pulled. */
+  last_seen_at: Date | null;
   /** How many expense lines carry this account as their snapshot. */
   line_count: number;
   /** How many categories map to it. */
@@ -100,6 +104,7 @@ export async function listAccounts(
     `SELECT g.id, g.number, g.name, g.type, g.sub_type, g.parent_id,
             p.number AS parent_number,
             g.is_postable, g.active, g.source, g.external_id,
+            g.installation_id, g.last_seen_at,
             (SELECT count(*) FROM expense_line_item l WHERE l.gl_account_id = g.id)::int
               AS line_count,
             (SELECT count(*) FROM expense_category c WHERE c.gl_account_id = g.id)::int

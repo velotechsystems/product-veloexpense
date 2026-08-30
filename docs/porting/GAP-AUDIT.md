@@ -2326,6 +2326,15 @@ whose comment is the reason it exists — *"one dead run wedges every future syn
 port needs: *"The caches are a RECONCILIATION layer, not the correlation source — dimension
 resolution at post time goes through ExpenseOS entities' externalIds."*
 
+**ADDRESSED by VX3-5 (`0018`), with one deliberate divergence.** The key is now
+`(organization_id, installation_id, external_id)`, so two ledgers can coexist. The soft-delete
+instinct is ported — nothing is ever hard-deleted, because a line's `gl_account_id` is a snapshot.
+The AUTOMATIC deactivation is not: an account the ledger stops reporting is named on the
+chart-of-accounts screen and left usable, because unmapping a tenant's categories from a background
+job is a decision the tenant should make. And there is no sync-run table: the heartbeat reclaim their
+comment justifies ("one dead run wedges every future sync forever … froze the reference cache for ~3
+weeks") is a fix for a lock, and an admin-triggered pull holds none.
+
 ### AC-13 · The `netsuite-gl` gate exists and is bypassed in four places — the list to design against
 
 The Plan asks to *"generalize/gate NetSuite-specific fields so non-NetSuite tenants never see
