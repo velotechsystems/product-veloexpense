@@ -56,6 +56,14 @@ forward independently as it is re-synced, so the shared baseline is a starting p
 Fill this in from `tag-spec-baselines.sh` output — it resolves real ExpenseOS paths from
 `git ls-files`, so the paths recorded here come from the repo rather than from a guess.
 
+> **The script was BROKEN and is fixed (2026-08-31).** Its own sanity check was
+> `git ls-files | grep -qE '/(expenses|policies)\.ts$'` under `set -o pipefail`: `grep -q` exits
+> on the first match, `git ls-files` takes SIGPIPE and dies with 141, `pipefail` fails the
+> pipeline, and the script aborted with *"this does not look like the ExpenseOS repo"* **while
+> standing in it**. Measured 8 failures out of 8. It is a race, so it can also pass — which is how
+> it went unnoticed, and worse than failing every time. Now done in pure shell with no pipe, and
+> the file list is read once instead of once per module.
+
 | Module | Ported by | Baseline tag (`fb1cead9`, 2026-08-21) | ExpenseOS paths |
 | --- | --- | --- | --- |
 | `reference-data` | VX1-1 (PR #10) | `veloexpense-spec/reference-data-20260827` | `apps/web/src/server/routers/businessUnits.ts`<br>`apps/web/src/server/routers/departments.ts`<br>`apps/web/src/server/routers/expenseCategories.ts`<br>`apps/web/src/server/routers/legalEntities.ts` |
@@ -68,6 +76,46 @@ Fill this in from `tag-spec-baselines.sh` output — it resolves real ExpenseOS 
 Tagged and pushed 2026-08-27 from the `~/ExpenseOS` clone. ExpenseOS is a monorepo: the tRPC
 routers live under `apps/web/src/server/routers/`, and shared logic lives in `packages/*`
 (`@expenseos/audit`, `@expenseos/rbac`, `@expenseos/db`, …).
+
+### `accounting` — its own baseline, at its own commit (2026-08-31)
+
+Separate table, because the six above share `fb1cead9` and this one does not. Phase 3 read the
+accounting surface directly and recently, so it gets the sha it was actually read at rather than
+the deliberately-early shared one.
+
+| Module | Ported by | Baseline tag (`5a11a647`, 2026-08-28) | ExpenseOS paths |
+| --- | --- | --- | --- |
+| `accounting` | VX3-1..VX3-8 (PR #50–#55, #61, #62) | `veloexpense-spec/accounting-20260831` | `apps/web/src/server/routers/netsuiteSync.ts`<br>`packages/integrations-netsuite/src/postCardTransaction.ts`<br>`packages/integrations-netsuite/src/postExpenseReport.ts`<br>`packages/integrations-netsuite/src/recordLink.ts` |
+
+**Tagged and pushed 2026-08-31** as `johnrim-lab` — annotated, at `5a11a647`, verified in the
+clone and accepted by `carmigo/ExpenseOS`.
+
+`5a11a647` was HEAD for the whole of 2026-08-29 → 08-31, the window in which the Phase-3 planning
+pass and VX3-1..VX3-8 read this surface, so one baseline covers all eight tickets. The stamp is the
+TAGGING date, matching the convention the six above set.
+
+**How much the accounting surface had already moved**, measured across the two baselines over the
+paths in the re-sync command below:
+
+```
+git diff --stat fb1cead..veloexpense-spec/accounting-20260831 -- \
+  apps/web/src/server/routers/netsuiteSync.ts \
+  packages/integrations-netsuite/src packages/db/prisma/schema.prisma
+→ 15 files changed, 2683 insertions(+), 131 deletions(-)
+```
+
+That is the gap a shared `fb1cead` baseline would have hidden for this module, and the reason it
+gets its own. The same command against `origin/main` is currently EMPTY, which is the correct
+answer — the tag is at `origin/main`.
+
+The table lists only the four unambiguous basenames the script could resolve — `index.ts` matches
+37 files in this monorepo and `config.ts`/`records.ts` two each. The re-sync command below covers
+`packages/integrations-netsuite/src` wholesale, which is where the rest of it lives.
+
+**Also read but deliberately NOT in the tag:** `apps/web/src/server/routers/budgets.ts`. AC-9 reads
+it to establish that `Budget.glAccountId` is a REQUIRED foreign key to the NetSuite account cache —
+a fact that constrains Phase 4 — but budgets themselves are not ported, and tagging a file we have
+not ported from would overstate what the baseline means.
 
 ### Full diff paths per module
 
@@ -109,6 +157,13 @@ git diff veloexpense-spec/approvals-20260827..origin/main -- \
   packages/approvals/src packages/db/prisma/schema.prisma
 ```
 
+```bash
+# accounting        (the adapter surface Phase 3 was designed against)
+git diff veloexpense-spec/accounting-20260831..origin/main -- \
+  apps/web/src/server/routers/netsuiteSync.ts \
+  packages/integrations-netsuite/src packages/db/prisma/schema.prisma
+```
+
 When `audit` and `notifications` get baselined, their paths are:
 
 ```bash
@@ -142,7 +197,8 @@ Out of MVP scope, nothing ported, no baseline needed: `travel-lines`, `travel-se
 `api-scopes`, `platform`.
 
 **Not baselined yet, on purpose:** `audit` (VX2-6) and `notifications` (VX2-7/VX2-8). Tagging them
-at `fb1cead` would claim we ported from a commit nobody has read. They get a baseline at whatever
+at `fb1cead` would claim we ported from a commit nobody has read. (`accounting` was in this list
+until 2026-08-31 and is now baselined at its own commit — see above.) They get a baseline at whatever
 `origin/main` is when their ticket lands. This matters especially for `notifications`: a **654-file
 update landed on ExpenseOS `main`** recently (travel build-out, NetSuite posting, **notification
 template-key changes**), so porting those from August would port a shape that has since moved.
@@ -152,6 +208,30 @@ Deliberately absent: `virtualCards*`, `travelRequests`, `netsuiteSync`, `budgets
 optional adapter in Phase 3; Budgets and Analytics are Phase 4; fraud detection and control
 evaluation are Phase 4 by decision. Nothing has been ported from them, so nothing needs a baseline
 until it is.
+
+## Delta log — `accounting`, and why this mechanism is not bureaucracy
+
+Run ten minutes after the baseline existed, `fb1cead..5a11a647` is **91 commits, 16 of them
+touching the accounting surface**, plus a new migration
+`20260824153000_netsuite_sync_reconciled` that postdates the Differences Chart entirely.
+
+**Three of those commits land on work VeloExpense has already shipped**, and none was known when it
+was built:
+
+- **`1d9429e2` — "fix(netsuite): refuse an uncoded post instead of letting NetSuite reject it"
+  (#324)**, then **`76aafe31` — "fix(netsuite): refuse an uncoded post on every path, not just the
+  card one" (#351).** This is precisely the failure class **AC-16** describes and VX3-7's
+  pre-flight closes: a post accepted locally and rejected at the far end, where the fix is to refuse
+  before sending. ExpenseOS shipped it **twice**, because the first fix covered one call path and
+  missed the others — which is the same shape AC-6 records for their four posting call sites, and a
+  direct argument for VeloExpense's single choke point in `lib/integrations/dispatch.ts` over a
+  check per caller.
+- **`2a2e7033` — "fix(e2e): code the dimensions the NetSuite pre-flight now requires" (#340).**
+  Their pre-flight came to require dimensional coding — which is the half of **VX3-7** currently
+  blocked on VeloLedger having nowhere to send a dimension. Read this before that half restarts.
+
+That is the argument the Plan's §6 ask was making, demonstrated rather than asserted: without the
+baseline, finding these three means reading 91 commits or not finding them at all.
 
 ## Known ExpenseOS defects — do NOT port these forward
 
@@ -221,6 +301,19 @@ Two routes, and the second is the one a Cowork session can use:
    *latest* migration on a topic; later ones supersede earlier ones.
 3. Port it. State in the migration or module header which ExpenseOS behavior is kept, which is
    dropped, and which plan-mandated difference forces a change.
-4. **Tag the baseline in the same session**, while the sha is still known:
-   `git tag -a veloexpense-spec/<module>-YYYYMMDD <sha>` in the ExpenseOS repo, `git push origin --tags`,
-   and add the row to the table above.
+4. **Tag the baseline in the same session**, while the sha is still known — and tag it at the
+   START of the module, before reading source, not after shipping. Use the script, which resolves
+   real paths and refuses to move an existing baseline:
+
+   ```bash
+   cd ~/ExpenseOS
+   ONLY=<module> DRY_RUN=1 bash <this repo>/docs/porting/tag-spec-baselines.sh <sha> <YYYYMMDD>
+   ONLY=<module>             bash <this repo>/docs/porting/tag-spec-baselines.sh <sha> <YYYYMMDD>
+   git push origin 'refs/tags/veloexpense-spec/*'
+   ```
+
+   `ONLY=` exists because modules no longer share one baseline: an unfiltered run at a new sha
+   walks into the script's own refusal to move the six Phase-1 tags, and `FORCE=1` would move them,
+   which destroys the record. Then paste the printed row into the table above.
+   **Push it** — `git push origin --tags` would push every stray local tag in that clone; the
+   namespaced refspec above pushes only these.
