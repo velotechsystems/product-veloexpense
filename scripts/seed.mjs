@@ -179,6 +179,48 @@ const COA_TEMPLATE = 'na-expense-claims';
  */
 const DEMO_FX = { base: 'USD', quote: 'CAD', rate: '1.35000000', asOf: '2026-01-01' };
 
+/**
+ * VX4-1 — entitle a tenant to a module.
+ *
+ * ABSENCE MEANS OFF (migration `0021`), so a seeded tenant that is supposed to be
+ * able to use the accounting screens needs a row. There is no default-on set and
+ * deliberately so: the failure mode of a missing row is "a feature is
+ * unavailable", and the failure mode of an assumed default is "a tenant is using
+ * something nobody sold them".
+ *
+ * `blank` deliberately gets NOTHING, and that is the point of it: it is the tenant
+ * that shows what a freshly created organization looks like before anybody
+ * provisions it, which is exactly what Phase 5's self-serve onboarding has to fill
+ * in.
+ */
+async function seedModule(orgId, moduleCode) {
+  const client = await pool.connect();
+  try {
+    // A TENANT TABLE, so the tenant context has to be set — the first version of
+    // this function skipped the transaction and `set_config`, and RLS's WITH CHECK
+    // refused the row: "new row violates row-level security policy for table
+    // module_entitlement". Every other helper in this file already had the shape;
+    // this one just did not copy it.
+    await client.query('BEGIN');
+    await client.query("SELECT set_config('app.current_org', $1, true)", [orgId]);
+    await client.query(
+      `INSERT INTO module_entitlement (organization_id, module_code, enabled, enabled_at)
+       VALUES ($1, $2, true, clock_timestamp())
+       ON CONFLICT (organization_id, module_code)
+       DO UPDATE SET enabled = true,
+                     enabled_at = COALESCE(module_entitlement.enabled_at, clock_timestamp()),
+                     updated_at = clock_timestamp()`,
+      [orgId, moduleCode],
+    );
+    await client.query('COMMIT');
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
 async function seedReferenceData(orgId, entityName = 'Demo Co Inc.') {
   const client = await pool.connect();
   try {
@@ -265,6 +307,7 @@ async function main() {
     client.release();
   }
 
+  await seedModule(demoId, 'accounting');
   await seedReferenceData(demoId);
   // FOUR users, not three. `owner@demo.test` was added when VX2-3 made a submit
   // open an approval run: submitting routes the ladder, and admin@demo.test —
@@ -299,6 +342,12 @@ async function main() {
       client.release();
     }
   })();
+  // Both seeded tenants get accounting, so the two-tenant ledger e2e keeps
+  // working. The phase's exit criterion — tenants with DIFFERENT module sets — is
+  // proved by toggling one off inside a test rather than by seed asymmetry, so
+  // that a spec asserting "off" cannot silently depend on the seed staying that
+  // way.
+  await seedModule(secondId, 'accounting');
   await seedReferenceData(secondId, 'Second Co Ltd.');
   await seedUser(secondId, 'owner@second.test', 'Second Owner', { role: 'ADMIN', title: 'Owner' });
   await seedUser(secondId, 'admin@second.test', 'Second Admin', { role: 'ADMIN', title: 'Controller' });
@@ -327,9 +376,10 @@ async function main() {
   // bonus, is the first coverage the connect screen has ever had.
 
   console.log(
-    'Seeded: demo (reference data + 4 users: owner/admin/manager/employee, reporting line wired,' +
-      ' sole-approver self-approval enabled), second (reference data + 2 users),' +
-      ' blank (0 users). No ledger is connected — the e2e connects one per tenant.',
+    'Seeded: demo (accounting module + reference data + 4 users: owner/admin/manager/employee, reporting line wired,' +
+      ' sole-approver self-approval enabled), second (accounting module + reference data' +
+      ' + 2 users), blank (0 users, NO modules — a fresh org before provisioning).' +
+      ' No ledger is connected — the e2e connects one per tenant.',
   );
   await pool.end();
 }

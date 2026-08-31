@@ -48,6 +48,7 @@ import {
   markPosted,
 } from '@/lib/integrations/post-outbox';
 import { isDefinitelyNotApplied, type PostableReport } from '@/lib/integrations/contract';
+import { isModuleDisabled } from '@/lib/modules/errors';
 import type { QueryRunner } from '@/lib/db/client';
 
 export interface DrainResult {
@@ -146,6 +147,14 @@ export async function postOne(
           kind: 'WAITING' as const,
           reason: 'No accounting integration is connected.',
         };
+      }
+      if (isModuleDisabled(err)) {
+        // VX4-1. The tenant does not have the accounting module. Waiting, not
+        // failing, and NO ATTEMPT BURNT — a tenant who buys the module next month
+        // must find this month's approvals still queued, which is the same rule
+        // VX3-4 wrote for "no ledger is connected yet". The reason goes on the row
+        // so the queue screen says *which* of the three waiting states this is.
+        return { kind: 'WAITING' as const, reason: err.message };
       }
       if (err instanceof IntegrationError && err.code === 'AMBIGUOUS_CAPABILITY') {
         // AC-22: TWO ledgers can post, so there is no right answer and this must

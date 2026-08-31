@@ -82,6 +82,16 @@ beforeAll(async () => {
   await admin.query('TRUNCATE app_user, organization CASCADE');
   const o = await admin.query("INSERT INTO organization (slug,name) VALUES ('real','Real') RETURNING id");
   orgId = o.rows[0].id;
+
+  // VX4-1: ABSENCE MEANS OFF. Entitled HERE and not at the end of this hook,
+  // because the hook itself calls `installIntegration` below — a gated write. The
+  // first mechanical placement put this line after that call and the suite failed
+  // with ModuleDisabledError from its own setup.
+  await admin.query(
+    `INSERT INTO module_entitlement (organization_id, module_code, enabled)
+     VALUES ($1, 'accounting', true)`,
+    [orgId],
+  );
   await withOrg(orgId, async (tx) => {
     const u = await tx.query("INSERT INTO app_user (organization_id,email,role) VALUES ($1,'a@r.test','ADMIN') RETURNING id", [orgId]);
     actorId = u.rows[0].id;

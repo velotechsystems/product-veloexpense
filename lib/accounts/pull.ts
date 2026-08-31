@@ -41,6 +41,7 @@
 import type { QueryRunner } from '@/lib/db/client';
 import type { RemoteAccount } from '@/lib/integrations/contract';
 import { requireCapability } from '@/lib/integrations/service';
+import { requireModule } from '@/lib/modules/service';
 
 const ORG = "current_setting('app.current_org', true)::uuid";
 
@@ -79,6 +80,10 @@ export async function pullChartOfAccounts(
   remote: RemoteAccount[],
   installationId: string,
 ): Promise<PullOutcome> {
+  // VX4-1: the gate, before any read or write. GAP-AUDIT MT-3 is why it lives
+  // here and not at the edge.
+  await requireModule(tx, 'accounting');
+
   if (remote.length === 0) {
     // Refused rather than treated as "the ledger has no accounts". An empty
     // response is far more often a wrong entity id or a permission problem than a

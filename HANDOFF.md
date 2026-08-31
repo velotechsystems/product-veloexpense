@@ -1917,6 +1917,57 @@ against their own absence — restoring the plain INSERT fails four assertions w
 `the code 'main' is already used here`; leaving the columns alone fails with
 `oauth_access_token survived the disconnect`.
 
+### VX4-1 part 1 SHIPPED — the entitlement spine, the gate, and the guard
+
+**Migration `0021`: `module_entitlement`.** `UNIQUE (organization_id, module_code)`, RLS + FORCE, a
+composite FK on the actor (TN-1), and a covering index for the one read every gated call makes.
+**ABSENCE MEANS OFF** — no `defaultOn`, no seeded default set. `enabled` is a column rather than the
+row's existence, so turning a module off keeps who and when.
+
+**`lib/modules/registry.ts` owns the codes, not the database.** Same reasoning as
+`lib/integrations/registry.ts` and `0016`'s note on `integration_slug`: a build either has the code
+that serves a module or it does not, and a row cannot make it true. `accounting` is available and
+gates everything Phase 3 built; `budgets`, `analytics`, `travel` and `virtual_cards` are declared with
+`available: false` — the dormant-QuickBooks pattern — so they cannot be enabled and gate nothing.
+
+**The gate is in the SERVICE layer, and the guard is what makes it sound.** `requireModule(tx, code)`
+at the top of 14 exports across `lib/accounts` and `lib/integrations`. `test/module-gates.test.ts` is
+generated from the registry and fails in both directions: a listed export with no gate in its body,
+and an export in a gated file that is neither gated nor exempted with a written reason. Verified by
+sabotage — one deleted gate and one unlisted export, both caught by name.
+
+**Reads stay ungated on purpose (AC-22).** A gated `listAccounts` makes "module off" look like "empty
+chart". So the reads are open, both admin screens carry a sentence saying the module is off and what
+that means, and `capabilityAvailability` returns the message instead of throwing — `/admin/ledger-queue`
+is where somebody asks why nothing is posting.
+
+**`dispatch.ts`: a disabled module is SKIPPED, no attempt burnt** — the third member of the same
+family as "no ledger connected" and AC-22's ambiguity. A tenant who buys the module next month finds
+this month's approvals still queued.
+
+**Blast radius, stated plainly:** a fail-closed default broke **99 tests** in six accounting suites
+until each entitled its own tenants — one line per suite, and that churn is the honest price of the
+default. Two placement mistakes worth recording: `accounts.db.test.ts` recreates its org in a
+`beforeEach`, so a `beforeAll` row was truncated away before the first test; and
+`veloledger-sink.db.test.ts` calls `installIntegration` *inside* its `beforeAll`, so a row appended at
+the end of that hook arrived after the gated call. Both were mechanical-insertion errors, both failed
+loudly.
+
+**Also corrected in flight:** `append()` refused my audit row — "entityType and entityId are both
+required, or neither" — and the contract was right, so the entitlement row's id is now the entity. And
+a comment claiming this guard runs before the build in CI was **false** (build is step one, `npm test`
+is step twelve); the comment now states the trade instead of inventing a property.
+
+**VX4-1 part 2:** the database backstop (`AND EXISTS (… module_entitlement … enabled)` on each gated
+table's policy — unbypassable, and silent, which is why it ships beside screens that can explain it),
+the admin Modules screen, and an e2e that toggles a module off and watches a tenant's posting stop.
+
+**Process fact:** `npx vitest` **cannot run in the device shell** — `node_modules` there is
+macOS-native (`@rollup/rollup-linux-arm64-gnu` missing), the same reason `next build` needs the Mac.
+Vitest runs on John's machine or in the cloud harness. Note also that the harness's copy of
+`test/audit.db.test.ts` is stale (618 lines vs 637; the device's was fixed by VX3-10), so it fails
+there and only there.
+
 ## 5a. PHASE 4 BOARD — drafted 31 Aug 2026, from the audit and not from the Plan's prose alone
 
 **There is no Phase-4 tickets document, and there never was one** — same as Phase 3. This board comes

@@ -69,7 +69,7 @@ export default async function ChartOfAccountsPage({
   searchParams: Promise<{ error?: string; created?: string; pulled?: string }>;
 }) {
   const { error, created, pulled } = await searchParams;
-  const { accounts, postable, mappings, templates, canPull, pullProblem, orphaned } =
+  const { accounts, postable, mappings, templates, canPull, pullProblem, orphaned, moduleEnabled } =
     await getChartPage();
   const indent = depths(accounts);
   const unmapped = mappings.filter((m) => m.gl_account_id === null).length;
@@ -86,6 +86,20 @@ export default async function ChartOfAccountsPage({
               `${unmapped === 0 ? 'every category is mapped' : `${unmapped} category/categories unmapped`}`}
         </p>
       </header>
+
+      {!moduleEnabled ? (
+        // VX4-1. Same reason as the integrations screen: the reads here are
+        // ungated so the page can render, so an off module is indistinguishable
+        // from an empty chart unless the page says which it is.
+        <div className="rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm">
+          <strong className="font-medium">
+            Accounting integrations are not enabled for this organization.
+          </strong>{' '}
+          The chart below is read-only: accounts cannot be added, imported, pulled
+          or mapped while the module is off. An administrator can turn it on under
+          Modules.
+        </div>
+      ) : null}
 
       <ErrorBanner message={error} />
       {created ? (

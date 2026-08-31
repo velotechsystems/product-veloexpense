@@ -24,6 +24,7 @@ import type { QueryRunner } from '@/lib/db/client';
 import { getEmployeeByEmail, type EmployeeRow } from '@/lib/employees/service';
 import { PullError, pullFromLedger } from '@/lib/accounts/pull';
 import { capabilityAvailability } from '@/lib/integrations/service';
+import { isModuleEnabled } from '@/lib/modules/service';
 import {
   AccountError,
   createAccount,
@@ -73,6 +74,8 @@ export async function getChartPage() {
     const accounts = await listAccounts(tx, { includeInactive: true });
     return {
       accounts,
+      // VX4-1: see the note in the integrations loader.
+      moduleEnabled: await isModuleEnabled(tx, 'accounting'),
       postable: await listPostableAccounts(tx),
       mappings: await listCategoryMappings(tx),
       // Only offered while the chart is empty — `instantiateTemplate` refuses a

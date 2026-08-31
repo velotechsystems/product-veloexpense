@@ -108,6 +108,15 @@ beforeAll(async () => {
     );
     categoryId = cat.rows[0].id;
   });
+
+  // VX4-1: ABSENCE MEANS OFF, so a suite that exercises accounting has to entitle
+  // its tenants — the same row `scripts/seed.mjs` writes for the demo orgs. Every
+  // org this file created, because the TRUNCATE above means these are the only ones.
+  await admin.query(
+    `INSERT INTO module_entitlement (organization_id, module_code, enabled)
+     SELECT id, 'accounting', true FROM organization
+     ON CONFLICT (organization_id, module_code) DO NOTHING`,
+  );
 });
 
 beforeEach(async () => {

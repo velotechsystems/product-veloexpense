@@ -140,6 +140,19 @@ beforeAll(async () => {
       );
     });
   }
+  // VX4-1: a module entitlement per org. This table decides what a customer is
+  // PAYING FOR, so a leak here is not a data-shape problem — it is one tenant able
+  // to read, and with a broken WITH CHECK to write, another tenant's commercial
+  // terms.
+  for (const org of [orgA, orgB]) {
+    await withOrg(org, (tx) =>
+      tx.query(
+        `INSERT INTO module_entitlement (organization_id, module_code, enabled, enabled_at)
+         VALUES ($1, 'accounting', true, clock_timestamp())`,
+        [org],
+      ),
+    );
+  }
   // VX1-3: an expense report per org (submitter resolved within the org via subquery).
   const reportA = await withOrg(orgA, (tx) =>
     tx.query(
@@ -869,6 +882,38 @@ describe('RLS tenant isolation', () => {
     expect(
       (await withPlatformRead((tx) => tx.query('SELECT id FROM integration_oauth_state'))).rows,
     ).toHaveLength(0);
+  });
+
+  it('module entitlements are tenant-isolated, in both directions', async () => {
+    // VX4-1. This table decides what a customer may USE, so the two halves are
+    // "can A read B's terms" and "can A write itself into B's". A tenant able to
+    // insert a row for another organization could switch a paid module on for
+    // somebody else — or, read the other way, learn what a competitor is buying.
+    const seen = async (org: string) =>
+      withOrg(org, async (tx) => {
+        const r = await tx.query('SELECT organization_id FROM module_entitlement');
+        return r.rows.map((row) => row.organization_id as string);
+      });
+    expect(await seen(orgA)).toEqual([orgA]);
+    expect(await seen(orgB)).toEqual([orgB]);
+
+    // An unset context sees nothing, which is what makes a job that forgets to set
+    // the tenant fail closed rather than fan out across the estate.
+    const blind = await withoutOrg((tx) =>
+      tx.query('SELECT count(*)::int AS n FROM module_entitlement'),
+    );
+    expect(blind.rows[0].n).toBe(0);
+
+    // And WITH CHECK refuses the write.
+    await expect(
+      withOrg(orgA, (tx) =>
+        tx.query(
+          `INSERT INTO module_entitlement (organization_id, module_code, enabled)
+           VALUES ($1, 'analytics', true)`,
+          [orgB],
+        ),
+      ),
+    ).rejects.toThrow();
   });
 
   it('WITH CHECK rejects an installation written into another tenant', async () => {
