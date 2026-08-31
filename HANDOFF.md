@@ -1917,6 +1917,71 @@ against their own absence — restoring the plain INSERT fails four assertions w
 `the code 'main' is already used here`; leaving the columns alone fails with
 `oauth_access_token survived the disconnect`.
 
+## 5a. PHASE 4 BOARD — drafted 31 Aug 2026, from the audit and not from the Plan's prose alone
+
+**There is no Phase-4 tickets document, and there never was one** — same as Phase 3. This board comes
+from the Plan's Phase-4 prose (per-tenant module enable/disable for VCC, Travel, Budgets and
+Analytics; per-tenant branding and subdomain; Budgets and Analytics ported tenant-scoped; bilingual
+plus en-US), the Differences Chart, HANDOFF's own deferrals (Module 12 slices 2–3 were pushed here
+because they are retrospective and need approval history), and a **source audit of ExpenseOS at
+`5a11a647`** recorded as GAP-AUDIT **MT-1..8 / BR-1..10 / BG-1..8 / AN-1..11 / IL-1..12**. Read the
+audit first: five of those findings change what a ticket is, and two of them delete work.
+
+**~24 dev-days across eight tickets** — in line with Phase 2's ~26 and Phase 3's ~27. Two hard edges:
+VX4-1 blocks almost everything, and VX4-5 was blocked on a chart of accounts that VX3-1 has already
+shipped.
+
+### What the audit deleted from the phase
+
+- **Storage keys need no work.** BR-10: theirs have no tenant prefix; ours already return
+  `org/<organizationId>/receipts/<id>/<file>` with the reason in the code. A day nobody has to spend.
+- **Analytics' tenancy is already done.** AN-2/3/5/9 are four separate cross-tenant leaks in their
+  analytics layer, all of the same shape: the privileged case is the *absence* of a predicate. RLS
+  supplies the predicate below the query, and `test/rls-isolation.test.ts` proves it per table, so the
+  class cannot recur here. What still ports is the money defect (AN-7) and the performance shape
+  (AN-10) — which is a much smaller ticket than "port a BI module" sounds.
+- **The report builder and scheduled exports do not exist** (AN-1). Four permissions are declared for
+  them and nothing implements them. Do not estimate from the permission catalogue.
+
+### The tickets
+
+| # | Ticket | Why it is this shape | Days |
+|---|---|---|---|
+| **VX4-1** | **Per-tenant module entitlements** | MT-1: activation is a global singleton (`moduleId @unique`) and the schema says a tenant model "adds `tenantId` here only". MT-3: their gate lives at the edge, so 30 of 40 routers are ungated and a page can be gated while its data is not. Ours goes **below the router** — a `module` catalogue owned by code, an `organization_module` table (not a `settings` blob: MT-8/AC-21), and a **generated guard** proving every gated surface is covered, in the shape of the RLS-coverage and vendor-neutrality guards. | 3 |
+| **VX4-2** | **Tenant-scoped settings, replacing the global singletons** | MT-2: `SystemFlag`, `PlatformConfig` and two env vars are four parallel global gates, and one of them holds the **policy currency** that analytics reports in. A typed per-tenant settings registry with a default, so "what is this tenant's base currency / date format / retention window" has one answer and one place. | 2 |
+| **VX4-3** | **Branding that actually renders** | BR-2 is the surprise: the fields, the admin form and the validation all exist and **nothing reads them**. So the port is the easy half and the render path is net-new — CSS custom properties injected per tenant (BR-3, deriving row/hover shades from the primary rather than hardcoding them), a tenant logo served pre-auth on the `public-icons` route's proven pattern (BR-4), `generateMetadata` instead of a static title (BR-5), and a branded email shell on VX2-8's template layer (BR-6). | 3 |
+| **VX4-4** | **Host-based tenant resolution** — *scope question, see below* | BR-1: they have none at all; we already resolve the tenant from the session's org, so this ticket is specifically subdomains and custom domains. BR-8: one origin per deployment, a certificate with no wildcard, and `WEBAUTHN_RP_ID` pinned to the host — so passkeys break on a subdomain move unless the RP id is the apex. NT-14 and AC-23 are both this family. | 2 |
+| **VX4-5** | **Budgets, tenant-scoped, on our own chart of accounts** | BG-2: `Budget.glAccountId` is a **required** FK into a NetSuite SOAP cache, and their vendor-neutral `Account` table was deleted — so budgets there are uncreatable without NetSuite. **VX3-1 already fixed this for us**; budgets point at `gl_account` and a vendor becomes an alias. Plus BG-1 (tenant column and composite keys on five tables, including an index Prisma cannot express), BG-3 (actuals recomputed over the whole fiscal year on every approval click, with an unbounded FX load → rollup), BG-6 (alert idempotency by mutable marker → our atomic-claim idiom). | 4 |
+| **VX4-6** | **Analytics, tenant-scoped** | The tenancy half is free (above). The work is AN-7 — a missing FX rate is currently summed **as if it were base currency**, unflagged, while the budget code counts unconverted amounts for the same situation — and AN-10: unbounded ranges, no `date` index, and a home page that runs a full-history aggregate for every signed-in user. Plus AN-8's lesson: size the data with a predicate, never with a role check that then queries everything. | 4 |
+| **VX4-7** | **Locale: retag `en` → `en-CA`, add `en-US`** | IL-1: their `en` already formats as en-US (`3/4/2026`, `CA$10,799.00`), so this is a retag **and** an addition, 2 locales to 3 — touching URL segments, stored preferences and every `{ en: … }` Json key, whose arity is hardcoded in ~17 files (IL-7). Also: a company default locale, which does not exist there (IL-2); what a missing key does, decided before the third catalog exists rather than after two blank pages (IL-4); and the date-formatting calls that pass no locale (IL-10). | 3 |
+| **VX4-8** | **Module 12 slices 2–3: fraud detection + control evaluation** | Deferred to this phase since Phase 2 because both are retrospective and need approval history, which now exists. Their versions are driven by `SystemFlag` config (MT-2) and run as unconditional global crons (MT-5), so both land on VX4-1 and VX4-2. | 3 |
+
+### The two things that need a decision before boarding is final
+
+1. **Is host-based tenancy (VX4-4) Phase 4 or Phase 5?** The Plan lists "per-tenant branding and
+   subdomain" here, but a subdomain is only meaningful once tenants self-provision, which is Phase 5.
+   Branding (VX4-3) does not depend on it — we already resolve the tenant from the session. Doing it
+   here means a wildcard certificate and an apex `WEBAUTHN_RP_ID` now; doing it in Phase 5 means one
+   fewer moving part in this phase.
+2. **Does a budget ever BLOCK?** BG-4: theirs is `WARNING` with an explicit "deliberately never
+   BLOCK", but nothing clamps a per-instance severity, so an admin can turn it into a hard stop
+   without meaning to. Our `lib/policy/rules.ts` has the same shape. Worth deciding once, on purpose.
+
+### The scheduling problem this phase finally forces
+
+MT-5: **the entire ExpenseOS worker is module-blind** — zero module checks in `apps/worker/src` or
+`packages/jobs/src`, and all 16 recurring jobs are unconditional global crons. Ours has the same
+shape for a different reason: `VX0-8` (worker + per-job tenant context) has been deferred since Phase
+0 because there was no worker surface to hang it on. A per-tenant entitlement is the first thing that
+cannot be honoured without it — a job has to fan out per tenant and check per tenant — so VX0-8 lands
+inside VX4-1 rather than staying deferred.
+
+### Exit criterion
+
+Two tenants, side by side, with **different modules enabled, different branding, and different
+locales** — one on `fr-CA`, one on `en-US` — each seeing only its own analytics and budgets, proved in
+a browser. The Phase-3 exit criterion took the same shape and it is what found AC-19, AC-22 and AC-23.
+
 ## 6. Planning docs (in the ExpenseOS Google-Drive folder, `Specifications_and_Planning/`)
 - `VeloExpense-Port-and-Build-Plan.docx` (7-phase plan + ExpenseOS→VeloExpense sync strategy)
 - `ExpenseOS-vs-VeloExpense-Differences-Chart-rev2.docx`
