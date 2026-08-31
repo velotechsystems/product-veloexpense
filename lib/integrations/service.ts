@@ -238,6 +238,46 @@ export async function installIntegration(
          (organization_id, integration_slug, code, label, active, auth_kind, config,
           connected_at, connected_by_id)
        VALUES (${ORG}, $1, $2, $3, $6, $7, $4::jsonb, clock_timestamp(), $5)
+       -- ── AC-20. Connecting again after a disconnect used to be IMPOSSIBLE ──
+       --
+       -- \`disconnect()\` keeps the row on purpose, so the history of what was
+       -- connected and by whom survives, and its own comment already promised the
+       -- rest: "a reconnect keeps the same \`code\`". Nothing implemented that. This
+       -- was an INSERT, \`code\` is \`UNIQUE (organization_id, code)\` and that one is
+       -- NOT partial (only the one-active index is), so a second connect collided
+       -- with the deactivated row and failed with DUPLICATE_CODE — naming a value
+       -- the admin never chose and cannot see, on a screen whose other error
+       -- advises "Disconnect it first". One disconnect and that integration could
+       -- never be connected again.
+       --
+       -- Reactivating the SAME row is what makes the promise true, and it keeps
+       -- \`integration_post.installation_id\` pointing at the connection the reports
+       -- were actually sent to rather than orphaning it.
+       ON CONFLICT (organization_id, code) DO UPDATE
+          SET label = EXCLUDED.label,
+              active = EXCLUDED.active,
+              auth_kind = EXCLUDED.auth_kind,
+              config = EXCLUDED.config,
+              connected_at = clock_timestamp(),
+              connected_by_id = EXCLUDED.connected_by_id,
+              -- A test result belongs to the credential that produced it.
+              last_test_ok = NULL, last_test_at = NULL, last_test_error = NULL,
+              -- And so does an authorisation. Redundant with \`disconnect()\` after
+              -- AC-21, deliberately: this makes a reactivated row IDENTICAL in
+              -- shape to a fresh insert, so an adapter that changes its auth kind
+              -- between releases cannot reactivate a row still carrying the other
+              -- kind's columns and trip \`config_has_no_tokens\`.
+              oauth_access_token = NULL, oauth_refresh_token = NULL,
+              oauth_access_expires_at = NULL, oauth_refresh_expires_at = NULL,
+              oauth_scope = NULL, oauth_needs_consent = false,
+              oauth_authorised_at = NULL, external_account_id = NULL,
+              updated_at = clock_timestamp()
+        WHERE integration_installation.active = false
+          -- The code identifies a CONNECTION, not a product. Letting a different
+          -- integration take over the code would rewrite this row's history
+          -- instead of reconnecting it, so that case falls through to the
+          -- DUPLICATE_CODE below rather than being quietly accepted.
+          AND integration_installation.integration_slug = EXCLUDED.integration_slug
        RETURNING id`,
       [
         adapter.slug,
@@ -263,6 +303,30 @@ export async function installIntegration(
       throw new IntegrationError(`the code '${code}' is already used here`, 'DUPLICATE_CODE');
     }
     throw err;
+  }
+
+  if (inserted.rows.length === 0) {
+    // The conflict target matched and the WHERE above refused, which happens for
+    // exactly two reasons. Which one it was decides what an admin is told, so ask
+    // the row rather than guessing — "already used here" for a connection that is
+    // simply already connected is the message this defect was made of.
+    const existing = await tx.query(
+      'SELECT active, integration_slug FROM integration_installation WHERE code = $1',
+      [code],
+    );
+    const row = existing.rows[0] as { active: boolean; integration_slug: string } | undefined;
+    if (row?.active) {
+      throw new IntegrationError(
+        `${adapter.name} is already connected for this organization. Disconnect it first, ` +
+          `or edit the existing connection.`,
+        'ALREADY_ACTIVE',
+      );
+    }
+    throw new IntegrationError(
+      `the code '${code}' belongs to a different integration here` +
+        `${row ? ` (${row.integration_slug})` : ''}. Choose another code.`,
+      'DUPLICATE_CODE',
+    );
   }
   return (await getInstallation(tx, inserted.rows[0].id as string))!;
 }
@@ -320,9 +384,20 @@ export async function updateInstallation(
  * Disconnect: deactivate AND destroy the credentials.
  *
  * The row stays, so the history of what was connected and by whom survives, and a
- * reconnect keeps the same `code`. The SECRETS do not stay — "disconnect" that
- * leaves a working credential in the database is not a disconnect, and it is the
- * kind of thing nobody checks until a breach report asks.
+ * reconnect keeps the same `code` — which AC-20 made true; before that fix this
+ * comment described behaviour no code path implemented. The SECRETS do not stay —
+ * "disconnect" that leaves a working credential in the database is not a
+ * disconnect, and it is the kind of thing nobody checks until a breach report asks.
+ *
+ * ── AC-21, and it is the same sentence failing on its own terms ─────────────
+ *
+ * That paragraph was written when a credential could only be a jsonb config key.
+ * `0020` put OAuth tokens in COLUMNS, and this function kept stripping only the
+ * config — so disconnecting an OAuth integration left an encrypted, rotating,
+ * perfectly usable REFRESH TOKEN in the row, plus the authorisation state that
+ * makes the screen say "Re-authorise" as though a live grant were still there.
+ * Nothing exploited it yet only because no OAUTH2 adapter can post until a
+ * QuickBooks client is onboarded. The columns are cleared here now.
  */
 export async function disconnect(tx: QueryRunner, id: string): Promise<void> {
   const current = await tx.query(
@@ -341,7 +416,17 @@ export async function disconnect(tx: QueryRunner, id: string): Promise<void> {
   await tx.query(
     `UPDATE integration_installation
         SET active = false, config = $2::jsonb, last_test_ok = NULL, last_test_at = NULL,
-            last_test_error = NULL, updated_at = clock_timestamp()
+            last_test_error = NULL,
+            -- AC-21. The credential half: an access token, and a refresh token that
+            -- would keep working for months.
+            oauth_access_token = NULL, oauth_refresh_token = NULL,
+            oauth_access_expires_at = NULL, oauth_refresh_expires_at = NULL,
+            -- And the state half. None of it is still true after a disconnect, and
+            -- \`oauth_authorised_at\` left set makes the screen offer
+            -- "Re-authorise" for a row holding nothing to re-authorise with.
+            oauth_scope = NULL, oauth_needs_consent = false, oauth_authorised_at = NULL,
+            external_account_id = NULL,
+            updated_at = clock_timestamp()
       WHERE id = $1`,
     [id, JSON.stringify(kept)],
   );

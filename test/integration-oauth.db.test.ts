@@ -26,7 +26,7 @@ import { stubOAuthControl } from '@/lib/integrations/stub';
 import { isEncrypted } from '@/lib/crypto/secrets';
 import * as outbox from '@/lib/integrations/post-outbox';
 import { postOne } from '@/lib/integrations/dispatch';
-import { resolveCapability, testInstallation } from '@/lib/integrations/service';
+import { disconnect, resolveCapability, testInstallation } from '@/lib/integrations/service';
 
 const admin = new Pool({
   connectionString: process.env.ADMIN_DATABASE_URL ?? process.env.DATABASE_URL,
@@ -577,5 +577,122 @@ describe('the authorisation actually reaches the adapter (VX3-9a)', () => {
     expect(await postOne(orgId, row.id)).toBe('SKIPPED');
     const after = await withOrg(orgId, (tx) => outbox.listQueue(tx));
     expect(after.find((q) => q.report_id === reportId)!.attempts).toBe(0);
+  });
+});
+
+describe('disconnecting an authorised connection (AC-21)', () => {
+  /**
+   * `disconnect()` promised, in its own comment, that a "disconnect" leaving a
+   * working credential in the database is not a disconnect. It then left one.
+   *
+   * That paragraph was written when a credential could only be a jsonb config key,
+   * and `0020` moved OAuth tokens into COLUMNS. The function kept stripping only
+   * the config, so disconnecting an OAuth integration left an encrypted, rotating,
+   * months-long-lived REFRESH TOKEN on the row — the exact thing it says it exists
+   * to destroy. Nothing exploited it only because no OAUTH2 adapter can post until
+   * a QuickBooks client is onboarded.
+   */
+  async function authorise() {
+    const { authorizeUrl } = await withOrg(orgId, (tx) =>
+      beginAuthorisation(tx, { installationId, actorId, redirectUri: REDIRECT }),
+    );
+    await completeAuthorisation({
+      stateValue: stateFromUrl(authorizeUrl),
+      code: 'good',
+      callbackParams: { realmId: 'company-21' },
+    });
+  }
+
+  const OAUTH_COLUMNS = [
+    'oauth_access_token',
+    'oauth_refresh_token',
+    'oauth_access_expires_at',
+    'oauth_refresh_expires_at',
+    'oauth_scope',
+    'oauth_authorised_at',
+    'external_account_id',
+  ] as const;
+
+  async function oauthRow() {
+    return (
+      await admin.query(
+        `SELECT active, oauth_needs_consent, ${OAUTH_COLUMNS.join(', ')}
+           FROM integration_installation WHERE id = $1`,
+        [installationId],
+      )
+    ).rows[0] as Record<string, unknown>;
+  }
+
+  it('destroys the TOKENS, not just the config', async () => {
+    await authorise();
+    // Asserted BEFORE, so a fix that quietly stopped storing tokens could not make
+    // this test pass by having nothing to clear.
+    const before = await oauthRow();
+    for (const column of OAUTH_COLUMNS) {
+      expect(before[column], `${column} should be set before the disconnect`).not.toBeNull();
+    }
+
+    await withOrg(orgId, (tx) => disconnect(tx, installationId));
+
+    const after = await oauthRow();
+    expect(after.active).toBe(false);
+    expect(after.oauth_needs_consent).toBe(false);
+    for (const column of OAUTH_COLUMNS) {
+      expect(after[column], `${column} survived the disconnect`).toBeNull();
+    }
+  });
+
+  it('leaves nothing usable behind: the token cannot be read back', async () => {
+    // The property an admin actually bought. `freshAuthConfig` is the only reader
+    // of those columns, so this is the assertion that the disconnect took effect
+    // where it counts rather than merely blanking a column somebody else still
+    // has a copy of.
+    await authorise();
+    expect(
+      await withOrg(orgId, (tx) => freshAuthConfig(tx, installationId)),
+    ).toMatchObject({ oauthAccessToken: 'access-1' });
+
+    await withOrg(orgId, (tx) => disconnect(tx, installationId));
+
+    // It REFUSES rather than returning an empty config, and the refusal names the
+    // human action — which is right for the Test button, still offered on a
+    // disconnected row: "Authorise it again" is true, and "not authorised yet"
+    // would be the lie AC-19 was about.
+    await expect(
+      withOrg(orgId, (tx) => freshAuthConfig(tx, installationId)),
+    ).rejects.toMatchObject({ code: 'NEEDS_CONSENT' });
+    // And no refresh was attempted on the way to finding that out: there is
+    // nothing left to refresh WITH, which is the whole point of the fix.
+    expect(stub.counts().refreshes).toBe(0);
+  });
+
+  it('and it can be connected again afterwards, under the same code — AC-20', async () => {
+    await authorise();
+    await withOrg(orgId, (tx) => disconnect(tx, installationId));
+
+    const again = await withOrg(orgId, (tx) =>
+      installIntegration(
+        tx,
+        { slug: 'stub-oauth', code: 'main', label: 'Stub OAuth', config: {} },
+        actorId,
+      ),
+    );
+    // Same row, and INACTIVE — an OAUTH2 installation is not connected until
+    // somebody authorises it, and `0020`'s `oauth_complete` CHECK would refuse the
+    // row if it claimed otherwise while holding no refresh token.
+    expect(again.id).toBe(installationId);
+    expect(again.active).toBe(false);
+    const row = await oauthRow();
+    for (const column of OAUTH_COLUMNS) {
+      expect(row[column], `${column} came back with the reconnect`).toBeNull();
+    }
+    expect(row.oauth_needs_consent).toBe(false);
+
+    // And the whole flow still works on the reconnected row, which is the point of
+    // reconnecting rather than being told to choose another code.
+    await authorise();
+    expect(
+      await withOrg(orgId, (tx) => freshAuthConfig(tx, installationId)),
+    ).toMatchObject({ oauthAccessToken: 'access-1' });
   });
 });

@@ -2651,7 +2651,7 @@ Verified against its own absence: with `usableConfig()` restored, three assertio
 defect's exact signature — `expected undefined to be 'access-1'`, `expected 'FAILED' to be 'POSTED'`,
 and `testConnection` returning false.
 
-### AC-20 · Disconnect is a one-way door — an integration cannot be reconnected ⚠️ OPEN
+### AC-20 · Disconnect is a one-way door — an integration cannot be reconnected ✅ CLOSED
 
 Found 2026-08-31 writing VX3-9a's e2e, while looking for a way to clear a leftover connection.
 
@@ -2675,15 +2675,66 @@ advises *"Disconnect it first, or edit the existing connection"* — advice that
 comment in `0016` about `code` existing so a tenant can have two connections to the same product is
 the design; nothing implements the second one either, since the form always sends the slug.
 
-**Read from source, not executed** — no test or run has produced the error. The two facts it rests on
-(the constraint is not partial; the form supplies no code) are each one line.
+**Why six phases missed it, which is the part worth keeping.** `test/integrations.db.test.ts` has a
+test called *"frees the slot, so the same integration can be reconnected"*. It reconnects with a
+DIFFERENT code — `'again'` rather than `'main'` — which is the one path that works. The screen has no
+code input at all: `connectFromForm` sends the slug every time. So the only reconnect a real admin
+can perform was the one nothing exercised, standing beside a test that read as coverage of it. The
+same shape as AC-17 and AC-19, for the third time in four tickets.
 
-**Not fixed here.** VX3-9a's e2e sidesteps it by wiping the rows through a superuser connection in a
-`beforeAll`, which is the right thing for a test and no help to an admin. The fix is small — an
-`ON CONFLICT (organization_id, code) DO UPDATE ... WHERE integration_installation.active = false`,
-reactivating the row and rewriting label, config and `connected_*`, with the no-rows case raising
-ALREADY_ACTIVE so the guard survives — but it changes a write path in `service.ts` and belongs in its
-own ticket, with the reconnect covered by a test.
+**Closed:** `ON CONFLICT (organization_id, code) DO UPDATE ... WHERE active = false AND
+integration_slug = EXCLUDED.integration_slug`, reactivating the row and rewriting label, config,
+`connected_*`, clearing the stale test result and every OAuth column. The slug condition keeps `code`
+meaning *a connection* rather than *a product*, so a different integration cannot take over a code
+and rewrite that row's history — that case still raises DUPLICATE_CODE, now with a message that says
+which integration holds it. When the conflict target matches and the WHERE refuses, the row is
+consulted rather than guessed at: still active → ALREADY_ACTIVE (previously this reached the admin as
+*"the code 'veloledger' is already used here"*, which describes a constraint, not a situation).
+
+Reactivating the same row rather than inserting a second also keeps
+`integration_post.installation_id` pointing at the connection those reports were actually sent to.
+
+Verified against its own absence: with the plain INSERT restored, four of the five new assertions fail
+with the defect's exact signature — `IntegrationError: the code 'main' is already used here`.
+
+### AC-21 · Disconnect left the OAuth refresh token in the row 🔒 CLOSED (security)
+
+Found 31 Aug, immediately after AC-20, by reading `disconnect()` closely enough to fix it — not by
+any test, and no test could have asked: no test disconnected an authorised OAUTH2 installation.
+
+`disconnect()` carries this in its own header:
+
+> The SECRETS do not stay — "disconnect" that leaves a working credential in the database is not a
+> disconnect, and it is the kind of thing nobody checks until a breach report asks.
+
+It then left one. That paragraph was written when a credential could only be a key in the `config`
+jsonb, and the function strips exactly that: it rebuilds `config` without the adapter's declared
+secret fields. **`0020` moved OAuth credentials into COLUMNS** — `oauth_access_token` and, worse,
+`oauth_refresh_token`, which is long-lived, rotates, and is the one credential that can mint new
+access tokens for months. Nothing touched them. So disconnecting an OAuth integration deactivated the
+row, deleted the config secrets it did not have, and left a live encrypted refresh token behind,
+along with `oauth_authorised_at` and `external_account_id` — which make the admin screen offer
+*"Re-authorise"* as though a grant were still standing.
+
+**Severity, stated honestly.** Nothing is exploitable today: QuickBooks is the only OAUTH2 adapter,
+it is dormant until two environment variables are set, and `resolveCapability` only selects ACTIVE
+installations, so no posting path reads those columns on a disconnected row. What it is instead is a
+control that does not do what the product tells the customer it does, and it would have become real
+on the day a client was onboarded — which is exactly when nobody would be re-reading this function.
+
+**Closed:** the UPDATE now nulls `oauth_access_token`, `oauth_refresh_token`, both expiries,
+`oauth_scope`, `oauth_authorised_at`, `external_account_id`, and resets `oauth_needs_consent`. AC-20's
+upsert clears the same columns on reconnect, redundantly and deliberately, so a reactivated row is
+identical in shape to a fresh insert — an adapter that changes its auth kind between releases cannot
+otherwise reactivate a row still carrying the other kind's columns and trip `config_has_no_tokens`.
+
+Verified against its own absence: with the columns left alone, the new test fails with
+`oauth_access_token survived the disconnect: expected 'enc:v1:tJcc1qYgLqnL…' to be null`, and
+`freshAuthConfig` hands the token back out after the disconnect instead of refusing.
+
+**The general form, since this is the second time `0020`'s columns have been missed by code written
+before them** (AC-19 was the first): moving a value out of a jsonb blob into a column takes it out of
+the reach of every loop that iterates the blob. Both defects are that one fact.
 
 ## tenancy · foreign keys do not respect RLS (found 2026-08-29 building VX3-1)
 
