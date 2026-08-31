@@ -40,6 +40,12 @@ const ORG = "current_setting('app.current_org', true)::uuid";
 export class IntegrationError extends Error {
   constructor(
     message: string,
+    /**
+     * A CLOSED union on purpose — the callers switch on it, so an invented code
+     * would silently fall through to a generic branch. VX3-8 added the last three
+     * and the compiler is what insisted; `npm test` cannot see this, because
+     * vitest transpiles without type checking.
+     */
     readonly code:
       | 'NOT_FOUND'
       | 'UNKNOWN_ADAPTER'
@@ -47,7 +53,15 @@ export class IntegrationError extends Error {
       | 'DUPLICATE_CODE'
       | 'ALREADY_ACTIVE'
       | 'NO_CAPABILITY'
-      | 'NOT_CONNECTED',
+      | 'NOT_CONNECTED'
+      // VX3-8, the OAuth flow:
+      /** An authorisation was started on an adapter that takes pasted values. */
+      | 'NOT_OAUTH'
+      /** The callback's state is unknown, already used, or expired — one code for
+       *  all three, matching the single message the caller is allowed to show. */
+      | 'STATE_INVALID'
+      /** Only a human can fix this: the refresh token is expired or revoked. */
+      | 'NEEDS_CONSENT',
   ) {
     super(message);
     this.name = 'IntegrationError';

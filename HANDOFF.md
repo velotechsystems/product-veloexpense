@@ -193,6 +193,29 @@ upload fails in the browser while every test still passes (tests use `MemoryStor
 
 GitHub repo vars set: `RUNNER_LABEL=ubuntu-latest`, `BACKEND_DIR=.` (others inherited org-wide). Ruleset `default-main-protection`: Repository admin = Always-allow bypass; merge PRs with `gh pr merge <n> --squash --admin` if needed (repo actually uses merge commits though).
 
+### What can and cannot be verified without a Mac — CORRECTED 2026-08-30
+
+A standing assumption in these notes was wrong and cost a round trip on VX3-8. The
+claim was "the device VM cannot build, so typecheck is John's step". Only the first
+half is true.
+
+| Command | Runs in the Linux VM over the mounted repo? | Why |
+| --- | --- | --- |
+| `node node_modules/typescript/bin/tsc --noEmit` | **YES** | `tsc` is pure JavaScript. Verified: it caught a planted `const x: number = "s"` with exit 2, and passes clean otherwise. |
+| `npx eslint` | **YES** | Same reason. |
+| `npx vitest run` | YES (with a database) | |
+| `next build` | **NO** | Turbopack/SWC load NATIVE binaries, and `node_modules` on the mounted volume is macOS while the shell is Linux. |
+| `npm run check:actions` | **NO** | It reads `.next/server/server-reference-manifest.json`, so it needs a build first. |
+
+**So typecheck and lint are NOT John's step and never were.** VX3-8 shipped six
+`TS2345` errors — an `IntegrationError` code union I extended in one file and not in
+its declaration — that `npm test` could never have caught, because **vitest transpiles
+without type checking**. One `tsc --noEmit` before handing over would have caught all
+six. Run it, every ticket, before writing out the commands.
+
+`next build` and `check:actions` genuinely do need the Mac, which is also the pair
+that catches a broken `'use server'` module (VX2-10) and any `.tsx` mistake.
+
 ## 4. Standard per-ticket loop
 ```bash
 git fetch origin
@@ -1649,9 +1672,11 @@ token is refused, a CONFIG row carrying tokens is refused, an unauthorised OAUTH
 is fine, a malformed state hash is refused); the new table's composite FK refuses a
 cross-tenant installation reference; **27 suites / 510 tests green**, including 17 new
 OAuth cases and the isolation suite extended for the new tenant table (which CI's
-isolation-coverage guard requires). `next build`, `npm run lint` and `npm run
-typecheck` are John's step — and this ticket touched two `.tsx` files, so the build is
-the first thing that will exercise them.
+isolation-coverage guard requires). `next build` is John's step, and this ticket touched two `.tsx` files, so
+the build is the first thing that will exercise them. **`typecheck` and `lint` were
+NOT run before the first handover and should have been — see the correction in §3.
+They are green now: six `TS2345` errors from an unextended `IntegrationError` code
+union were fixed after John's build found them.**
 
 ## 6. Planning docs (in the ExpenseOS Google-Drive folder, `Specifications_and_Planning/`)
 - `VeloExpense-Port-and-Build-Plan.docx` (7-phase plan + ExpenseOS→VeloExpense sync strategy)
