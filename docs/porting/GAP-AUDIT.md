@@ -2833,6 +2833,343 @@ the state-invalid message were all affected. The spec now anchors all three asse
 the expected origin: the first version matched only the path, which passed while the origin was wrong
 — an assertion that cannot see the defect it is standing next to.
 
+## phase 4 · module toggles, branding, budgets, analytics, localisation
+
+Audited 2026-08-31 against ExpenseOS `5a11a647` — the commit `veloexpense-spec/accounting-20260831`
+baselines — before any Phase-4 ticket was written, for the reason the Phase-3 audit gave: four of
+that phase's fifteen findings changed what a ticket was, and finding them after the board was drawn
+would have cost more than the audit did.
+
+**How to read the verification status.** The reading was fanned out across five parallel passes, one
+per surface. Every claim below carries a `path:line` citation from those passes, and the ones marked
+**[checked]** I re-read myself afterwards, because they are the ones a ticket hangs on. One claim came
+back wrong and is corrected in place at BG-7 — an audit that quietly drops its own errors is worth
+less than one that keeps them.
+
+**The one-line summary:** ExpenseOS has no tenant. `grep -c "companyId\|tenantId\|organizationId"`
+over all 99 models of `packages/db/prisma/schema.prisma` returns **1**, and that one is a comment
+**[checked]**: *"Single-tenant: one installation per Module (unique). A future tenant model adds
+`tenantId` here only"* (`schema.prisma:1903`). So most of what follows is not "a query is missing a
+predicate" — there is no predicate to miss, and several of these findings are things VeloExpense's
+RLS spine makes unreachable by construction. Those are named as such, because the phase's budget
+should go where the work actually is.
+
+### MT · module enable/disable
+
+**MT-1 · Activation is a global singleton, and the schema says so. [checked]**
+`Module` + `ModuleInstallation` are the only capability gate (`schema.prisma:1884`, `:1904`), and
+`moduleInstallation.moduleId` is `@unique` (`:1906`) — one row per module for the whole deployment.
+The readers take no tenant argument: `isModuleActive(db, slug)` / `activeModuleSlugs(db)`
+(`packages/platform/src/registry.ts:58-64`, `:76-82`). Their own e2e states the consequence:
+*"Turning `netsuite-gl` on is global, and the suite runs fully parallel against ONE database"*
+(`e2e/netsuite-card-dry-run.spec.ts:44`). **This is the root ticket; everything else in the phase
+depends on it.**
+
+**MT-2 · Three more global gates beside the module system.**
+`SystemFlag` — *"Global feature flag / system-setting key-value store"* keyed by `key` alone
+(`schema.prisma:820-822`) — carries fraud config (`packages/fraud/src/scan.ts:33-42`), audit
+retention (`apps/web/src/server/routers/audit.ts:186`), and the **policy currency**
+(`routers/analytics.ts:94`). `PlatformConfig` is a singleton read by unscoped `findFirst()`
+(`packages/integrations-netsuite/src/config.ts:41`, 16 call sites) carrying real toggles
+(`schema.prisma:1836-1862`). And two capabilities are switched by env var
+(`packages/integrations-google/src/client.ts:54`, `apps/worker/src/handlers/fx-rate-sync.ts:30`),
+which is process-wide and therefore untoggleable per tenant. Four mechanisms, four migrations.
+
+**MT-3 · The gate is at the EDGE, not on the data — so a page can be gated while its data is not.**
+Two enforcement points exist: tRPC middleware `moduleActive(slug)` (`apps/web/src/server/trpc.ts:131-139`)
+and `requireActiveModule(slug)` for server components (`server/platform/guard.ts:21-22`). Only **10 of
+40 routers** use the middleware. Several routers whose *pages* are gated are not: `expenses.ts`,
+`expenseCategories.ts`, `policies.ts`, `audit.ts`, `analytics.ts` — where `dashboard` is a bare
+`protectedProcedure` (`routers/analytics.ts:427`) while the page requires the reporting module
+(`analytics/page.tsx:24`). A direct call reaches the data with the module switched off. **This is
+AC-5's shape** (a capability taxonomy that means nothing because the gate lives somewhere else) and
+the reason VeloExpense's entitlement check belongs below the router, with a generated guard proving
+every gated surface is covered — the `test/rls-coverage` and vendor-guard pattern.
+
+**MT-4 · The `netsuite-gl` bypass, enumerated. [checked]**
+`netsuiteSync.ts` is properly gated. The bypass is `postApprovedReport()`, which enqueues a live
+NetSuite post with **no module check** (`server/lib/netsuitePosting.ts:26-48` — verified: the function
+body goes straight to `enqueue`), called from three ungated sites (`expenses.ts:1322`,
+`expenseApprovals.ts:722`, `:778`). The worker handler does not check either
+(`apps/worker/src/handlers/netsuite-post-expense-report.ts:20`). GL data also leaks through ungated
+reads (`expenses.ts:1001`, `:350-352`). VeloExpense already avoids the class by hanging the post on
+the transition rather than on callers (AC-6/AC-7), which is worth noticing: that decision, taken for
+a different reason, closed this too.
+
+**MT-5 · The worker is module-blind, and every cron is global.**
+Zero occurrences of `isModuleActive`/`activeModuleSlugs` anywhere in `apps/worker/src` or
+`packages/jobs/src`. All 16 recurring jobs are unconditional (`apps/worker/src/main.ts:86-221`),
+including fraud scan, control evaluation, VCC expiry and the NetSuite reference sync. A disabled
+module keeps writing rows and calling third-party APIs. **For us this is not a gating question but a
+scheduling one:** a per-tenant entitlement means every scheduled job needs tenant fan-out plus a
+per-tenant check, which is its own ticket and the first place VX0-8 (worker tenant context, deferred
+since Phase 0) actually has to land.
+
+**MT-6 · Unauthenticated ingress ignores modules — and tenancy.**
+`api/email/inbound`, `api/slack/events`, `api/slack/interactions` contain no module check. Inbound
+`receipts+<token>@` mail becomes an expense report (`api/email/inbound/route.ts:14-17`) with expense
+management off, and the token→thread lookup is the only routing key — so in a pooled database these
+routes have no tenant either. Anything VeloExpense adds on this shape has to derive the tenant from
+the token row, which is exactly the pattern `0020`'s OAuth callback already uses.
+
+**MT-7 · The MCP surface is strictly weaker than the UI.**
+`packages/mcp-server/src/visibility.ts:38-39` honours `spec.moduleSlug`, but only 4 of ~24 tools
+declare one (`tools.ts:222,422,436,453`). Uncovered: every expense tool including the mutations
+`submit_expense_report` and `decide_expense_report` (`tools.ts:126-181`), and all three travel tools —
+while `travelRequests.*` *is* gated in tRPC. A second surface that answers the same questions with
+different rules is the AC-17 pattern in a different costume.
+
+**MT-8 · There is no per-tenant module configuration to port.**
+`ModuleInstallation.config Json` exists (`schema.prisma:1909`) and is **never read** anywhere. So
+"module X, configured this way for this tenant" is a design decision for us, not a port. VeloExpense
+has a seam already: `organization.settings jsonb` was created in `0001` with the comment *"branding,
+enabled modules, locale/currency, enc-key seam"*. **A blob is the wrong home for entitlements** — AC-21
+is the argument, one layer down: a value inside a jsonb column is out of reach of every constraint,
+index and RLS predicate that would otherwise protect it. Entitlements want a table.
+
+### BR · branding and host resolution
+
+**BR-1 · There is no tenant resolution at all. [checked]**
+`apps/web/src/proxy.ts:51` is the only request-level interceptor and composes NextAuth with next-intl
+locale rewriting; it never reads `Host` or `X-Forwarded-Host`. Session claims carry no tenant
+(`server/auth.ts:686-695`), the tRPC context is `{ session, db, rbac }` (`trpc.ts:20-28`), and there
+is no Company model. **Nothing to port** — and VeloExpense already resolves the tenant from the
+session's org (VX0-2..6), so what remains is host-based tenancy specifically, which is a Phase-5
+commercialisation question as much as a Phase-4 one. Worth settling before it is boarded.
+
+**BR-2 · Branding fields exist, an admin form writes them, and NOTHING reads them. [checked]**
+`PlatformConfig.organization` is a Json column (`schema.prisma:1839`); the admin UI writes `logoUrl`,
+`primaryColor` and `loginTagline` into it (`admin/platform/PlatformAdmin.tsx:338-418`) and the router
+validates them (`routers/platform.ts:907-913`). All 47 occurrences of those three names in the repo
+are in those two files and their tests — there is no consumer. So the *storage and the form* are a
+port and the *rendering* is net-new, which is the opposite of how it looks from the admin screen.
+
+**BR-3 · The palette is overridable, but its derived shades are hand-computed and will break.**
+Tailwind 4 `@theme` declares `--color-primary: #f76b15` (`packages/design-system/src/globals.css:37`)
+and components read the custom properties at runtime (`Sidebar.tsx:43`), so a server-injected `:root`
+block can retint the product. But shades derived from that primary are hardcoded hexes —
+`--color-row-selected: #fff8f3` (`globals.css:60`) and WCAG-tuned navy alphas (`:82-99`) — so a tenant
+who picks blue gets orange-tinted row highlights. Deriving those from the primary is the actual work.
+
+**BR-4 · One logo, a hardcoded path, and an `alt` naming the wrong company.**
+Two static files, referenced with literal `src` and `alt="E Inc."` (`Sidebar.tsx:568`,
+`login/page.tsx:69`); no favicon anywhere. **The precedent to copy is already in the codebase:**
+`api/public-icons/[code]/route.ts:11-38` serves admin-uploaded image bytes from Postgres on an
+unauthenticated route — needed pre-auth for the login page — with `nosniff` and a sandbox CSP. A
+tenant logo has the same requirement and can have the same shape.
+
+**BR-5 · The product name is baked in at three layers, one of them build-time.**
+`export const metadata = { title: 'ExpenseOS' }` is a static export (`[locale]/layout.tsx:9`), so the
+tab title cannot vary per tenant without `generateMetadata`; `appName` is a bundled i18n key
+(`catalogs/en/common.json:2`); and five files hardcode the literal, including the face of a virtual
+card (`VirtualCardVisual.tsx:77`) and the WebAuthn `rpName` (`lib/webauthn.ts:47`).
+
+**BR-6 · Outbound email is either branded wrong or not branded at all.**
+`lib/email.ts:33-58` hardcodes the product name in both locales and inlines `#0c2340` / `#f76b15`.
+Notification email has the opposite problem: `notification-dispatch.ts:181` builds
+`html: \`<p>…</p>${actionsHtml}${ctaHtml}\`` with no wrapper, logo or colour at all. The sender is one
+process-wide env value (`packages/notifications/src/email.ts:67-68`) and there is **no sender display
+name field anywhere**. For us this lands on VX2-8's template layer, which already has per-tenant rows.
+
+**BR-7 · There is no PDF, so there is no PDF branding.**
+No PDF library is a dependency in any `package.json`; "export to PDF" is the browser's Print dialog
+emitting a bare document (`lib/exportTable.ts:159-177`, `:213-242`). Net-new whenever it is wanted.
+
+**BR-8 · One origin per deployment, hardwired in code and in infrastructure.**
+`APP_URL` is a **module-level constant** in `server/lib/reportLinks.ts:16`; the CDK stack derives
+`DOMAIN_NAME`, `AUTH_URL`, `APP_URL`, `WEBAUTHN_RP_ID` and `WEBAUTHN_ORIGIN` from a single
+`config.domainName` and issues a certificate for that exact host with no wildcard
+(`infrastructure/cdk/lib/{compute-stack.ts:200-211,cert.ts:57-77}`). Two consequences for a
+subdomain-per-tenant design: the certificate needs a wildcard, and `WEBAUTHN_RP_ID` must be the apex
+or every passkey stops validating when a tenant moves subdomain. NT-14 is the same family and we have
+already been bitten by it twice (NT-14 itself, then AC-23).
+
+**BR-10 · Their storage keys have no tenant prefix — ours already do.**
+`packages/storage/src/keys.ts:35-52` builds `{reportId}/{uuid}.{ext}` and friends, with buckets as
+single env values. VeloExpense's `receiptKey()` returns
+`org/${organizationId}/receipts/${receiptId}/${sanitizeFilename(filename)}`
+(`lib/receipts/service.ts:79-81`) **[checked]**, with the reason in its own comment. **Nothing to do —
+recorded so the phase does not spend a day rediscovering it.**
+
+### BG · budgets (their Module 10)
+
+**BG-1 · Five tables, no tenant column, and the real scope index is raw SQL.**
+`Budget`, `BudgetPeriod`, `BudgetAlertThreshold`, `BudgetAlertRecipient`, `BudgetViewer`
+(`schema.prisma:3875-4039`). The declared uniqueness
+`[fiscalYearId, glAccountId, businessUnitId, departmentId]` (`:3934`) is enforced in the database by a
+hand-written `NULLS NOT DISTINCT` index (`migrations/20260812210000_budgets/migration.sql:158-160`)
+that Prisma cannot express — so `db push` silently loses it. For us every one of those keys needs
+`organization_id` as its leading column, and per TN-1 every FK between them needs to be composite.
+
+**BG-2 · `Budget.glAccountId` is a REQUIRED foreign key into the NetSuite cache. [checked]**
+`glAccountId String @db.Uuid` — not nullable — relating to `NetSuiteAccount`
+(`schema.prisma:3883-3884`), with the reason in its own comment: *"GL account, not ExpenseCategory:
+EFIN populates NetSuite's Budget record at account level, so anything else would not reconcile."* The
+vendor-neutral `Account` table was **dropped** (`migrations/20260617233000_drop_expenseos_account/migration.sql:6-7`)
+**[checked]**, and `NetSuiteAccount` is filled only by a twice-daily SOAP sync
+(`packages/integrations-netsuite/src/sync.ts:279-296`, `apps/worker/src/main.ts:94-101`). It is the
+only non-nullable NetSuiteAccount FK in the schema. **This confirms the claim HANDOFF has carried
+since Phase-3 planning, and the blocker is already gone:** VX3-1 built a first-class tenant-owned
+chart of accounts, so budgets repoint at `gl_account` and NetSuite — or VeloLedger — becomes an alias.
+
+**BG-3 · Actuals are recomputed live over the whole fiscal year, on every approval decision.**
+`computeActuals` (`packages/approvals/src/budgets.ts:205-343`) scans `Expense` and
+`VirtualCardTransaction` for the year and apportions by allocation percentage; nothing is stored,
+cached or materialised. It runs on `budgets.list`, on submit-time validation
+(`policy/validate.ts:428`) and inside `loadSubject` (`engine.ts:352-355`) — which runs on every
+`startInstance`, every `decide` and every expiry sweep. It also loads **every FX rate ever fetched**,
+unbounded, per call (`budgets.ts:217`). An unbounded per-tenant table scan on every approval click
+does not survive shared infrastructure: our version wants a rollup keyed by tenant, year and month.
+
+**BG-4 · Budgets warn; they never block — but nothing clamps that.**
+`BUDGET_OVERAGE` is `defaultSeverity: 'WARNING'` with the comment *"WARNING, deliberately never
+BLOCK"* (`server/policy/kinds.ts:188-209`), and an over-budget report is submittable once the
+submitter justifies the warning (`routers/expenses.ts:1282-1291`). But the emitted finding carries no
+severity, and `severity: f.severity ?? inst.severity` (`policy/engine.ts:108`) means an admin who
+configures the instance at BLOCK turns it into a hard stop. Whether that is a feature or a defect is
+a product decision — ours already has the same shape in `lib/policy/rules.ts`, so it is worth
+deciding once, deliberately.
+
+**BG-5 · Periods are native fiscal years, and 12 is a hard constant.**
+`FiscalYear` is local admin data (`schema.prisma:1802-1819`) and is *not* in the sync client's
+delegate list — there is no vendor accounting-period pull. `MONTHS_IN_BUDGET_YEAR` is 12 with 4-4-5
+explicitly ruled out (`budgets.ts:82-93`). Portable; expect the 4-4-5 request from the first
+retail-shaped tenant and price it rather than discovering it.
+
+**BG-6 · Alert idempotency is a mutable marker stamped after the fan-out.**
+`fireBudgetThresholdAlerts` (`server/lib/budgetAlerts.ts:41-126`) reads
+`BudgetPeriod.alertedThresholdBp`, skips if already at or past the crossed level, notifies, and
+stamps the marker afterwards. Three ways the same threshold notifies twice: two concurrent submits
+both pass the read (no row lock, no unique guard); the fan-out succeeds and the stamp throws, which is
+caught and swallowed; and editing periods deletes and recreates the rows. **This is our atomic-claim
+idiom's use case exactly** — a uniquely-keyed row written in the transaction that sends, which is what
+`notification_delivery` already does.
+
+**BG-7 · "No filter" is the privileged case. [checked, with a correction]**
+`visibilityWhere` returns **`undefined`** for a holder of `budget.view.all` — its own doc comment says
+so: *"or `undefined` for 'everything'"* (`routers/budgets.ts:127-132`). And `budgets.update` /
+`budgets.delete` are permission-checked but carry no row predicate at all:
+`tx.budget.update({ where: { id } })` (`:405-406`) and `tx.budget.delete({ where: { id: input.id } })`
+(`:481`). In a pooled database a permission holder in one tenant edits another's budget by id.
+
+*The correction:* the audit pass reported `budgets.checkReport` as a bare `protectedProcedure` with no
+gate. It is not — it carries `.use(moduleActive(MODULE))` (`:497-498`). What it lacks is a
+*permission*, which is a smaller finding than the one reported. Recorded rather than quietly dropped,
+because the value of an audit is that its claims can be trusted, and one wrong claim in forty is the
+one that gets built on.
+
+### AN · analytics (their Module 13)
+
+**AN-1 · The module is one router with three procedures, and its ambitions are dead permissions.**
+`routers/analytics.ts` exposes `dashboard` (`:427`), `filterOptions` (`:536`) and `periodAnalysis`
+(`:585`); the page has three tabs. There are **no jobs, no materialized views, no cache** —
+`grep -rl "MATERIALIZED\|CREATE VIEW"` over the migrations finds nothing. Meanwhile
+`analytics.report.build`, `export.schedule`, `permissions.set` and `override.grant` are declared in
+the permission catalogue (`packages/rbac/src/permissions.ts:162-165`) and referenced nowhere but role
+tables. A report builder and scheduled exports do not exist; export is client-side
+(`AnalyticsDashboard.tsx:622-650`). Worth knowing before "port Analytics" is estimated as if it were a
+BI product.
+
+**AN-2/AN-3 · `viewAll` resolves to the literal absence of a WHERE clause, and a test asserts it. [checked]**
+`resolveScope` returns `null` for `analytics.view.all` (`analytics.ts:69`) and the query spreads
+nothing when scope is null: `...(scope ? { submitterId: { in: scope } } : {})` (`:236-238`). The only
+surviving predicate is the report status. `analytics.test.ts:140-146` asserts the absence
+(`expect(...where).not.toContain(ME)`). **In VeloExpense this class cannot recur** — RLS supplies the
+predicate below the query, and `test/rls-isolation.test.ts` proves it per table. That is this phase's
+free win, the AC-7 analogue: the expensive-looking part of porting analytics is already done by the
+tenancy spine.
+
+**AN-5 · Budget-vs-actual mixes row-scoped budgets with company-wide actuals.**
+`budgets.list` applies `visibilityWhere` to the budget rows and then calls `computeActuals`, which
+queries with only date and account predicates (`packages/approvals/src/budgets.ts:249-265`, `:311-316`).
+So the *list* is scoped and the *numbers in it* are not — which is worse than either, because the
+variance and the threshold breach are both computed from the unscoped figure.
+
+**AN-7 · A missing FX rate is summed as if it were base currency, unflagged. [checked]**
+`const toBase = (amountMinor, code) => { … return c ? c.amountMinor : amountMinor; // missing rate →
+best-effort raw }` (`analytics.ts:213-218`). Yen are added to cents and reported as base currency with
+nothing on the response to say so. **They knew:** `computeActuals` counts `unconvertedCount` for the
+same situation (`budgets.ts:216,241`), so the two halves of the same product disagree about whether an
+unconvertible amount is reportable. **This one ports** — it is not a tenancy defect, it is a money
+defect, and it is the same family as PE-1 and MO-*: our rule is that a missing rate is loud, never
+silently coerced.
+
+**AN-9 · `filterOptions` hands back every active lookup row, unscoped.**
+Business units, departments, classes, categories and legal entities with `where: { active: true }` and
+nothing else (`analytics.ts:540-553`) — in a pooled database, another tenant's org chart and legal
+entity names, to any user who can open the screen. RLS closes it for us; noted because it shows the
+pattern is systemic rather than isolated to the aggregates.
+
+**AN-10 · The performance shape is the part that actually ports.**
+No `take` on either spend query; `from`/`to` both optional; `periodAnalysis` deliberately ignores the
+date range and loads all history (`:585-610`); the month filter is applied in JS after loading; and
+`Expense` has **no index on `date`**. The home page calls `analytics.dashboard.useQuery({})` with no
+range (`HomeSurface.tsx:28`), so every signed-in user triggers a full-history aggregate on login. RLS
+does not make any of that cheaper — it adds a predicate. Bounded ranges, a date index and a rollup are
+real work and belong in the estimate.
+
+**AN-8 · A role check that then queries everything, plus one dead permission that becomes live.**
+Access is two questions — `dashboardView` opens the screen, `view.own|reportingChain|all` sizes the
+data (`analytics.ts:61-91`). `ap-clerk` holds `viewAll` but **not** `dashboardView`
+(`systemRoles.ts:238-239`), so the permission is inert today and grants company-wide spend the moment
+the gate changes. AP-15's lesson in a new place: a permission nobody can currently exercise is a
+permission nobody has tested.
+
+### IL · localisation
+
+**IL-1 · The `en` locale is not en-CA, and already formats like en-US.**
+`SUPPORTED_LOCALES = ['en', 'fr-CA']`, `DEFAULT_LOCALE = 'en'` (`packages/i18n/src/locales.ts:10,13`);
+23 catalog files per locale. The audit pass ran `Intl` against the tag: `en` gives `3/4/2026` and
+`CA$10,799.00` — identical to `en-US` — where `en-CA` gives `2026-03-04` and `$10,799.00`. So
+"bilingual plus en-US" is not an addition to two locales; it is **retagging `en` to `en-CA` and adding
+`en-US`**, which touches URL segments, every stored `localePref`, and every `{ en: … }` Json key.
+
+**IL-2 · Locale comes from the URL segment alone; the documented precedence is dead code.**
+`apps/web/src/i18n/request.ts:11-17` resolves from `requestLocale` only. `resolveLocale`
+(`packages/i18n/src/negotiate.ts:23-41`), which documents URL > user preference > cookie >
+Accept-Language, has **no non-test callers**. `User.localePref` is written and read by the worker and
+two API routes but by no page. And there is no company default column at all — which is the one a
+multi-tenant product needs first.
+
+**IL-4 · A missing key blanks the page, and it has happened twice in production.**
+No `getMessageFallback` or `onError` is configured. Their own crawler records the two shipped bugs:
+*"a missing key raises, the component throws, and the page goes blank"* (`e2e/crawl.spec.ts:48-62`).
+Adding a third locale multiplies that surface. Our equivalent decision — what a missing string does —
+should be made before the third catalog exists, not after.
+
+**IL-5/IL-6 · Two good CI gates, watching one locale.**
+`check-coverage.mjs` asserts key-for-key parity, matching types and non-emptiness across locales, and
+`check-used-keys.mjs` resolves literal keys against the default catalog; both run on every PR
+(`.github/workflows/ci.yml:99-106`). But the only thing that catches an *interpolated* missing key is
+the crawler, which sets `const LOCALE = 'en'` (`e2e/crawl.spec.ts:23`) and runs **nightly**, not per
+PR. A guard that watches one of three locales is the shape of guard this project keeps finding.
+
+**IL-7 · Localised DB content is a two-key Json map, and the "two" is hardcoded in ~17 files.**
+`getLocalized(field, locale, fallback)` returns `map[locale] ?? map[fallback] ?? null`
+(`packages/i18n/src/getLocalized.ts:17-25`), used at 67 sites across categories, roles, departments,
+entities, job levels, custom fields, currencies and notification templates. The shape is pinned to
+exactly `{ en, 'fr-CA' }` in six Zod schemas and eleven `labelEn`/`labelFr` form pairs. A third locale
+is a schema-and-form change plus a data backfill — the reason to design ours as a locale-keyed map with
+no hardcoded arity.
+
+**IL-9 · The password-reset email is hardcoded outside the catalogs and outside both gates.**
+Notifications correctly use the recipient's `localePref` (`notification-dispatch.ts:96`). But
+`apps/web/src/lib/email.ts:12-49` carries EN and FR reset copy as string literals with
+`normalizeLocale` = "starts with fr", collapsing every `en-*` variant. The one email a locked-out user
+must be able to read is the one no gate covers.
+
+**IL-10 · Money formatting is exemplary; dates are half-done.**
+`formatMoney` requires an explicit reader locale and derives symbol, position and separators from
+`Intl` (`packages/money/src/format.ts:68-85`) — worth porting as-is, and our `lib/money.ts` already
+has the same discipline. Against that, **29 calls in 12 files** use `toLocaleDateString()` /
+`toLocaleString()` with no locale, resolving to the runtime's locale — server process or browser,
+whichever renders. That is the exact bug their own money formatter documents and avoids.
+
+**IL-11 · 157 English server messages, rendered verbatim in the UI.**
+Literal `message: '…'` strings under `apps/web/src/server`, with 136 UI sites rendering `e.message`
+directly. No gate covers them. Ours has the same exposure and the same choice to make: either error
+copy is catalogued, or it is deliberately English-only and the UI stops printing it raw.
+
 ## tenancy · foreign keys do not respect RLS (found 2026-08-29 building VX3-1)
 
 Not a port finding — this one is about VeloExpense's own schema, which is why it has its own prefix.
