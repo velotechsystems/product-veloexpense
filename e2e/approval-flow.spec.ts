@@ -41,6 +41,24 @@ const WORKER_SECRET = process.env.WORKER_SECRET ?? 'e2e-worker-secret';
 const SUBMITTER = 'admin@demo.test';
 const APPROVER = 'owner@demo.test';
 
+/**
+ * IS THIS MESSAGE FROM THIS RUN?
+ *
+ * Every lookup below goes through this, and it is not defensive tidying — the
+ * suite failed without it. `beforeAll` empties the mail SINK, but the OUTBOX is a
+ * database table and `expense-flow.spec.ts` submits three reports and never
+ * drains: those rows sit in the demo tenant until the next run's first `drain()`
+ * flushes them. So on any laptop the sink's first message to the approver is the
+ * PREVIOUS run's, `find(to)` returned it, and `toContain(TITLE)` failed against
+ * mail that was real, correct, and about something else.
+ *
+ * CI never saw it because CI gets a fresh database every run. That is the shape to
+ * watch for: an assertion that holds only because the environment is disposable.
+ */
+function mine(message: Captured, to: string): boolean {
+  return message.to.includes(to) && message.text.includes(TITLE);
+}
+
 interface Captured {
   to: string[];
   subject: string;
@@ -77,7 +95,7 @@ async function waitForApproveLink(request: APIRequestContext, to: string): Promi
     .poll(
       async () => {
         last = await inbox(request);
-        return last.some((m) => m.to.includes(to) && m.text.includes('/approve?token='));
+        return last.some((m) => mine(m, to) && m.text.includes('/approve?token='));
       },
       {
         message: `no approve link mailed to ${to}`,
@@ -85,7 +103,7 @@ async function waitForApproveLink(request: APIRequestContext, to: string): Promi
       },
     )
     .toBe(true);
-  const message = last.find((m) => m.to.includes(to) && m.text.includes('/approve?token='))!;
+  const message = last.find((m) => mine(m, to) && m.text.includes('/approve?token='))!;
   const match = message.text.match(/(https?:\/\/\S*\/approve\?token=[\w-]+)/);
   expect(match, 'the mail should carry an absolute approve URL').not.toBeNull();
 
@@ -181,7 +199,7 @@ test('an approver decides from an emailed link, without ever signing in', async 
   const approveUrl = await waitForApproveLink(request, APPROVER);
 
   // The mail says what it is about, so an approver can triage without opening it.
-  const mail = (await inbox(request)).find((m) => m.to.includes(APPROVER))!;
+  const mail = (await inbox(request)).find((m) => mine(m, APPROVER))!;
   expect(mail.subject).toBeTruthy();
   expect(mail.text).toContain(TITLE);
   expect(mail.text).toContain('18.50');
@@ -239,12 +257,12 @@ test('the submitter is notified in-app, and by mail', async ({ page, request }) 
 
   // The same event went out by email as well, to the submitter this time.
   await expect
-    .poll(async () => (await inbox(request)).some((m) => m.to.includes(SUBMITTER)), {
+    .poll(async () => (await inbox(request)).some((m) => mine(m, SUBMITTER)), {
       message: 'the submitter should have been mailed about the approval',
       timeout: 15_000,
     })
     .toBe(true);
-  const theirs = (await inbox(request)).find((m) => m.to.includes(SUBMITTER))!;
+  const theirs = (await inbox(request)).find((m) => mine(m, SUBMITTER))!;
   expect(theirs.text).toContain(TITLE);
   // No action links: the submitter has nothing to decide, and a button that
   // always fails is worse than no button.

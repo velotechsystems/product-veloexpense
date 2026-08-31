@@ -231,6 +231,36 @@ CI (`.github/workflows/ci.yml`) spins up Postgres, applies migrations, creates `
 **Refresh THIS file on the feature branch, before the PR is opened** — a handoff commit pushed
 to a branch after its PR merged never reaches main (that is how the VX1-5 refresh was lost).
 
+### Writing a Playwright spec you cannot run
+`tsc` and `eslint` pass on a spec built entirely of selectors and fixtures that do not exist —
+they type-check strings. VX3-9a burned two CI rounds on that: six elements matching an adapter
+name, a connect form that disappears once connected (so CI's one retry failed differently and hid
+the real failure three tests later), a `getByText` on an input's `defaultValue` that could never
+fail, invented button labels, a category called **Travel** the seed does not have (68100 is the
+ACCOUNT's name; the category is Ground Transportation), a $125 report with no receipt that the
+starter BLOCK rule stops at submit, and an approval done as the SUBMITTER when the seeded
+reporting line routes it to `owner@demo.test`.
+
+So before pushing a new spec:
+1. **Take selectors from a passing spec**, not from the component read once. `expense-flow` owns
+   the workbench, `approval-flow` owns submit→approve→reimburse and the `.auth/*.json` states.
+2. **Check the fixtures the assertions name** — category labels, account numbers, who approves —
+   against `scripts/seed.mjs` and the migration, not against what the names suggest.
+3. **Assume the file re-runs from the top** (`retries: 1` + `mode: 'serial'`) and that the demo
+   tenant is NOT reset between runs. Titles want a per-run stamp, and anything a run LEAVES behind
+   is the next run's input: a connected integration hides its own connect form (`availableAdapters()`
+   excludes it), and mail nobody drained sits in the outbox until the next run's first drain delivers
+   it to an assertion that was looking for its own. Wipe what the file needs empty in a `beforeAll`
+   (superuser `Pool`, as `ledger-flow` does) and drain what it enqueues in an `afterAll`. **CI is
+   fresh every run and will not catch any of this** — an assertion that holds only because the
+   environment is disposable is the shape to watch for.
+4. **Amounts over $25 need a receipt.** `expense-flow`'s `beforeAll` restores the starter rules and
+   runs before every later file; RECEIPT_REQUIRED is BLOCK above $25.00.
+5. **A `getByText` never matches an input's value** — if the assertion cannot fail, it is not one.
+6. **`count()` does not auto-wait**, and neither does `innerText()`. After a click that navigates,
+   they answer about the page you just left. Anchor on an auto-waiting `expect(...)` first, then ask.
+   This is how VX3-9a skipped a required checkbox and got a refusal ten lines away from the cause.
+
 ## 5. STATUS — where things stand
 **Phase 0 (foundation & tenancy) — COMPLETE, merged to main:**
 VX0-1 scaffold · VX0-2..6 tenancy spine + RLS isolation gate (green) · VX0-7 SSO (vendored auth-kit + login page) · VX0-9 seeds · VX0-10 CI + standard workflows + Dockerfile. (VX0-8 worker/MCP tenant-context deferred until those surfaces exist.)
