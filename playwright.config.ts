@@ -43,6 +43,17 @@ const SMTP_PORT = Number(process.env.E2E_SMTP_PORT ?? 2525);
 // Playwright waits on a PORT for readiness and cannot probe SMTP, so the sink
 // also serves its captured inbox over HTTP — which is how the spec reads it.
 const MAIL_HTTP_PORT = Number(process.env.E2E_MAIL_HTTP_PORT ?? 2526);
+// VX3-9a — the ledger sink. Two ports for the same reason the mail sink has two:
+// Playwright waits on a port for readiness, and the port the app POSTs bills to is
+// not the port a spec should be able to read (or write) evidence on.
+// 9411/9412 rather than anything round, per the 9401 note above.
+const LEDGER_PORT = Number(process.env.E2E_LEDGER_PORT ?? 9411);
+const LEDGER_CONTROL_PORT = Number(process.env.E2E_LEDGER_CONTROL_PORT ?? 9412);
+// The entity the sink answers for. The spec configures the VeloLedger connection
+// with this value, so `testConnection`'s "is this entity one this key can see"
+// check passes against the sink's `list_entities`.
+const LEDGER_ENTITY_ID =
+  process.env.E2E_LEDGER_ENTITY_ID ?? '00000000-0000-4000-8000-0000000000e1';
 const WORKER_SECRET = process.env.WORKER_SECRET ?? 'e2e-worker-secret';
 
 const APP_ENV = {
@@ -69,6 +80,20 @@ const APP_ENV = {
   SMTP_PORT: String(SMTP_PORT),
   SMTP_FROM: 'veloexpense@e2e.test',
   WORKER_SECRET,
+
+  // VX3-9a. Two settings, both with an off state that would make the run pass
+  // while proving less:
+  //   INTEGRATIONS_ENABLE_STUB   unset -> `stub-ledger` is not registered, so the
+  //                              second tenant has no ledger to connect and the
+  //                              two-tenant assertion is vacuous.
+  //   INTEGRATIONS_STUB_LEDGER_URL unset -> the stub records in module state,
+  //                              which a browser test cannot read.
+  INTEGRATIONS_ENABLE_STUB: '1',
+  INTEGRATIONS_STUB_LEDGER_URL: `http://127.0.0.1:${LEDGER_PORT}`,
+  // The app encrypts integration credentials on write, so a connect form without
+  // this key fails with a message about the key rather than about the ledger.
+  SECRET_ENCRYPTION_KEY:
+    process.env.SECRET_ENCRYPTION_KEY ?? 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=',
 };
 
 export default defineConfig({
@@ -131,6 +156,24 @@ export default defineConfig({
       env: {
         E2E_SMTP_PORT: String(SMTP_PORT),
         E2E_MAIL_HTTP_PORT: String(MAIL_HTTP_PORT),
+      },
+      stdout: 'pipe',
+      stderr: 'pipe',
+    },
+    {
+      command: 'node scripts/e2e-ledger.mjs',
+      // The CONTROL port, not the ledger one — Playwright's probe needs a port the
+      // app does not depend on, exactly as with the mail sink's HTTP port.
+      port: LEDGER_CONTROL_PORT,
+      // Never reused, for the third time and the same reason: the probe identifies
+      // a PORT, not a program, and a stranger answering here would be silently
+      // adopted as the ledger — so bills would go somewhere unknown and the spec
+      // would fail on an empty inbox while blaming the posting code.
+      reuseExistingServer: false,
+      env: {
+        E2E_LEDGER_PORT: String(LEDGER_PORT),
+        E2E_LEDGER_CONTROL_PORT: String(LEDGER_CONTROL_PORT),
+        E2E_LEDGER_ENTITY_ID: LEDGER_ENTITY_ID,
       },
       stdout: 'pipe',
       stderr: 'pipe',

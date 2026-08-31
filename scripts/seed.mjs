@@ -54,7 +54,35 @@ async function seedUser(orgId, email, displayName, employee = {}) {
  * directory has something to show: employee → manager → admin, all placed in
  * the seeded department / business unit / legal entity. Idempotent.
  */
-async function seedReportingLine(orgId) {
+async function seedReportingLine(orgId, opts = {}) {
+  // ── VX3-9a made this multi-tenant, and it was TWO bugs, not one ────────────
+  //
+  // It was written for the demo tenant and hardcoded to it: `le.name = 'Demo Co
+  // Inc.'` and a chain of `*@demo.test` addresses. Called for a second tenant it
+  // matched nothing it should and something it should not.
+  //
+  // And every lookup relied on RLS for its tenant scoping — no `organization_id`
+  // predicate anywhere. That is fine while the seed runs as `veloapp` (which
+  // HANDOFF §3 says to do) and wrong the moment anybody runs it as a superuser,
+  // because a superuser bypasses RLS even under FORCE: the subqueries then see
+  // every tenant and pick the first row they find. Which is exactly what happened
+  // — the second tenant's users were assigned the DEMO tenant's business unit.
+  //
+  // It failed loudly rather than silently, and the reason is VX3-10: the composite
+  // foreign key refused
+  //   Key (organization_id, business_unit_id)=(second, <demo's unit>)
+  // A single-column `REFERENCES business_unit(id)` would have ACCEPTED it, and the
+  // second tenant would have quietly carried a pointer into another tenant's org
+  // chart. That is the exact case TN-1 was about, caught in practice.
+  //
+  // So: explicit `organization_id` predicates throughout, correct under any role.
+  const entityName = opts.entityName ?? 'Demo Co Inc.';
+  const chain = opts.chain ?? [
+    ['manager@demo.test', 'admin@demo.test'],
+    ['employee@demo.test', 'manager@demo.test'],
+    ['admin@demo.test', 'owner@demo.test'],
+  ];
+
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
@@ -66,35 +94,33 @@ async function seedReportingLine(orgId) {
               legal_entity_id  = le.id,
               updated_at       = now()
          FROM department d, business_unit bu, legal_entity le
-        WHERE d.name = 'General & Admin'
+        WHERE u.organization_id  = $1
+          AND d.organization_id  = $1
+          AND bu.organization_id = $1
+          AND le.organization_id = $1
+          AND d.name  = 'General & Admin'
           AND bu.name = 'Head Office'
-          AND le.name = 'Demo Co Inc.'`,
+          AND le.name = $2`,
+      [orgId, entityName],
     );
-    await client.query(
-      `UPDATE app_user
-          SET manager_id = (SELECT id FROM app_user WHERE email = 'admin@demo.test'),
-              updated_at = now()
-        WHERE email = 'manager@demo.test'`,
-    );
-    await client.query(
-      `UPDATE app_user
-          SET manager_id = (SELECT id FROM app_user WHERE email = 'manager@demo.test'),
-              updated_at = now()
-        WHERE email = 'employee@demo.test'`,
-    );
-    // employee → manager → admin → owner. Three levels, so manager_level 2 and 3
-    // mean something in a demo, and every user except the owner has an approver.
-    await client.query(
-      `UPDATE app_user
-          SET manager_id = (SELECT id FROM app_user WHERE email = 'owner@demo.test'),
-              updated_at = now()
-        WHERE email = 'admin@demo.test'`,
-    );
-    // The owner is still the top of the chain, and the only other ADMIN reports
-    // to them — so without this the owner cannot submit an expense at all. That
-    // is the AP-14 dead end, and in a DEMO tenant it reads as a broken product
-    // rather than as the control it is. Enabled here deliberately, per-tenant,
-    // and OFF by default everywhere else (see migration 0009).
+    // employee → manager → admin → owner in the demo tenant. Three levels, so
+    // manager_level 2 and 3 mean something, and every user except the top of the
+    // chain has an approver.
+    for (const [child, parent] of chain) {
+      await client.query(
+        `UPDATE app_user
+            SET manager_id = (SELECT id FROM app_user
+                               WHERE organization_id = $1 AND email = $3),
+                updated_at = now()
+          WHERE organization_id = $1 AND email = $2`,
+        [orgId, child, parent],
+      );
+    }
+    // The top of the chain is still the top, and in a two-person tenant the only
+    // other ADMIN reports to them — so without this the owner cannot submit an
+    // expense at all. That is the AP-14 dead end, and in a DEMO tenant it reads as
+    // a broken product rather than as the control it is. Enabled here deliberately,
+    // per-tenant, and OFF by default everywhere else (see migration 0009).
     await client.query(
       `UPDATE organization
           SET allow_sole_approver_self_approval = true, updated_at = now()
@@ -153,7 +179,7 @@ const COA_TEMPLATE = 'na-expense-claims';
  */
 const DEMO_FX = { base: 'USD', quote: 'CAD', rate: '1.35000000', asOf: '2026-01-01' };
 
-async function seedReferenceData(orgId) {
+async function seedReferenceData(orgId, entityName = 'Demo Co Inc.') {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
@@ -163,8 +189,8 @@ async function seedReferenceData(orgId) {
          ON CONFLICT (organization_id, name) DO NOTHING`, [orgId]);
     await client.query(
       `INSERT INTO legal_entity (organization_id, name, country, currency_code)
-         VALUES ($1, 'Demo Co Inc.', 'CA', 'CAD')
-         ON CONFLICT (organization_id, name) DO NOTHING`, [orgId]);
+         VALUES ($1, $2, 'CA', 'CAD')
+         ON CONFLICT (organization_id, name) DO NOTHING`, [orgId, entityName]);
     await client.query(
       `INSERT INTO department (organization_id, name) VALUES ($1, 'General & Admin')
          ON CONFLICT (organization_id, name) DO NOTHING`, [orgId]);
@@ -228,6 +254,7 @@ async function seedReferenceData(orgId) {
   }
 }
 
+
 async function main() {
   const client = await pool.connect();
   let demoId;
@@ -254,9 +281,55 @@ async function main() {
   await seedUser(demoId, 'employee@demo.test', 'Demo Employee', { role: 'EMPLOYEE', title: 'Analyst' });
   await seedReportingLine(demoId);
 
+  // ── VX3-9a: a SECOND populated tenant, on a DIFFERENT ledger ───────────────
+  //
+  // The point of the phase's exit criterion: two tenants side by side, each
+  // posting to its own far end, neither seeing the other's. `blank` stays blank —
+  // a genuinely empty tenant is worth keeping for from-scratch testing — so this
+  // is a third org rather than a repurposing of it.
+  //
+  // Two users, not four: this tenant exists to post, and posting needs a
+  // submitter plus somebody above them who can approve (AP-14 — the person at the
+  // top of the chain cannot approve their own spend).
+  const secondId = await (async () => {
+    const client = await pool.connect();
+    try {
+      return await upsertOrg(client, 'second', 'Second Co');
+    } finally {
+      client.release();
+    }
+  })();
+  await seedReferenceData(secondId, 'Second Co Ltd.');
+  await seedUser(secondId, 'owner@second.test', 'Second Owner', { role: 'ADMIN', title: 'Owner' });
+  await seedUser(secondId, 'admin@second.test', 'Second Admin', { role: 'ADMIN', title: 'Controller' });
+  await seedReportingLine(secondId, {
+    entityName: 'Second Co Ltd.',
+    // Two people: the controller reports to the owner, so the owner can approve
+    // the controller's spend and the sole-approver flag covers the owner's own.
+    chain: [['admin@second.test', 'owner@second.test']],
+  });
+
+  // ── NO LEDGER IS SEEDED, and the reason is worth writing down ──────────────
+  //
+  // The first version of this did seed one, and it would have broken every read.
+  // A `secret`-typed config field is encrypted ON WRITE by `lib/crypto/secrets.ts`
+  // — TypeScript this `.mjs` seed cannot import — and `decryptSecret` REFUSES an
+  // unmarked value rather than trusting it (deliberately: AC-4 is about ExpenseOS
+  // tolerating cleartext). So a seeded plaintext `apiKey` is not "insecure but
+  // working", it is a row that throws the moment the app touches it, and the e2e
+  // would have failed with a crypto error rather than anything about ledgers.
+  // Verified rather than assumed: `decryptSecret('seed-only-not-a-real-key')`
+  // throws.
+  //
+  // Duplicating the envelope here would put AES-GCM in a second place and invite
+  // drift. So `e2e/ledger-flow.spec.ts` CONNECTS each tenant's ledger through the
+  // real connect form instead — which uses the shipping encryption path and, as a
+  // bonus, is the first coverage the connect screen has ever had.
+
   console.log(
     'Seeded: demo (reference data + 4 users: owner/admin/manager/employee, reporting line wired,' +
-      ' sole-approver self-approval enabled), blank (0 users).',
+      ' sole-approver self-approval enabled), second (reference data + 2 users),' +
+      ' blank (0 users). No ledger is connected — the e2e connects one per tenant.',
   );
   await pool.end();
 }

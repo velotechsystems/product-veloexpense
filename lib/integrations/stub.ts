@@ -289,6 +289,9 @@ export const stubOAuthAdapter: AccountingAdapter = {
 
   async refreshTokens({ refreshToken }) {
     oauthState.refreshes += 1;
+    // Assert what a real far end would: a refresh with no token is a bug in core,
+    // not something to paper over by minting a fresh session anyway.
+    if (!refreshToken) throw new Error('the stub was asked to refresh with no refresh token');
     if (oauthState.nextRefresh === 'needs-consent') {
       oauthState.nextRefresh = 'ok';
       throw new OAuthConsentRequired('the stub says this connection was revoked');

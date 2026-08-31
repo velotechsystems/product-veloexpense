@@ -1717,15 +1717,53 @@ pre-existing warnings), vendor guard clean, no NUL bytes. The defect fix and the
 pre-flight were each checked against their own absence. `next build` and the e2e
 remain John's.
 
-**Part 2, still to do:** a second populated tenant in the seed (users, chart,
-category, an installation per tenant — the VeloLedger one pointed at the sink), a
-second `storageState` in `auth.setup.ts`, a `webServer` entry for the sink in
-`playwright.config.ts`, and `e2e/ledger-flow.spec.ts` asserting each tenant's
-report reaches its own ledger with its own payload and neither sees the other's.
-Note the second tenant's OAUTH2 installation cannot be authorised by the seed —
-tokens are encrypted by app code the seed cannot call — which is why part 2 uses
-the VeloLedger adapter for the sink-facing tenant and leaves the browser
-authorisation walk to **VX3-9b**.
+**What VX3-9a part 2 shipped** — a second populated tenant (`second`), a third
+`storageState`, the sink wired into `playwright.config.ts`, and
+`e2e/ledger-flow.spec.ts`: four tests covering per-tenant adapter resolution, the
+posted payload, cross-tenant invisibility through the app, and a real 502 becoming
+NEEDS_REVIEW. **The spec is the one thing in this ticket I could not run** — it
+needs `next build` and Playwright. Everything around it is verified.
+
+- **NO LEDGER IS SEEDED, and the first version tried to.** A `secret`-typed config
+  field is encrypted ON WRITE by TypeScript a `.mjs` seed cannot import, and
+  `decryptSecret` REFUSES an unmarked value rather than trusting it (AC-4). So a
+  seeded plaintext `apiKey` is not "insecure but working" — it is a row that throws
+  the moment the app reads it, and the e2e would have failed with a crypto error
+  rather than anything about ledgers. Verified, not assumed. The spec connects each
+  ledger through the real form instead, which uses the shipping encryption path and
+  is **the first coverage the connect screen has ever had**.
+- **`seedReportingLine` HAD TWO BUGS, and VX3-10 is what surfaced them.** It was
+  hardcoded to the demo tenant (`le.name = 'Demo Co Inc.'`, a chain of
+  `*@demo.test`), and every lookup relied on RLS for tenant scoping with no
+  `organization_id` predicate. Fine as `veloapp`; wrong as a superuser, which
+  bypasses RLS even under FORCE — the second tenant's users were assigned the DEMO
+  tenant's business unit. It **failed loudly** because the composite FK refused
+  `(organization_id, business_unit_id) = (second, <demo's unit>)`; a single-column
+  `REFERENCES business_unit(id)` would have ACCEPTED it and left a pointer into
+  another tenant's org chart. TN-1's exact case, caught in practice. Now
+  parameterised with explicit predicates, and verified correct under BOTH roles.
+- **An ordering hazard in my own spec, found by reasoning rather than running.**
+  `approval-flow.spec.ts` runs first and approves a report, which enqueues a post
+  that stays PENDING (no ledger connected → SKIPPED, no attempt burnt, by VX3-4's
+  design). The moment this spec connects a ledger, that row becomes due — so a
+  drain without flushing would post somebody else's report and both `posted: 1` and
+  `count: 1` would fail for reasons unrelated to the test. It now flushes, resets
+  the sink, then measures. `workers: 1` is what makes flushing sufficient.
+- **Latent, noted, not fixed:** config-field input ids on the connect screen are
+  `new-<fieldName>` and NOT adapter-scoped, so two adapters sharing a field name
+  would collide. None do today. The spec scopes its selectors to each `<form>`
+  rather than relying on that accident.
+
+**Verified:** the seed runs clean and idempotent on a fresh 21-migration database
+as **both** `postgres` and `veloapp`, with per-tenant org placement and manager
+chains correct in each; `tsc --noEmit` clean; `eslint` clean but for one
+pre-existing warning; vendor guard clean; 28 suites / 517 tests; `playwright
+--list` discovers the four new tests and the third setup project. **Not verified:
+the spec's assertions**, which need a browser.
+
+**VX3-9b** remains: the browser walk of the OAuth redirect, which needs a local
+provider endpoint (the sink is the obvious host for it — ~15 lines) because
+`stub-oauth` currently sends the browser to `https://stub.invalid`.
 
 ## 6. Planning docs (in the ExpenseOS Google-Drive folder, `Specifications_and_Planning/`)
 - `VeloExpense-Port-and-Build-Plan.docx` (7-phase plan + ExpenseOS→VeloExpense sync strategy)
