@@ -23,7 +23,7 @@ import { withCurrentOrg } from '@/lib/tenant/request';
 import type { QueryRunner } from '@/lib/db/client';
 import { getEmployeeByEmail, type EmployeeRow } from '@/lib/employees/service';
 import { PullError, pullFromLedger } from '@/lib/accounts/pull';
-import { resolveCapability } from '@/lib/integrations/service';
+import { capabilityAvailability } from '@/lib/integrations/service';
 import {
   AccountError,
   createAccount,
@@ -56,6 +56,18 @@ async function asAdmin<T>(fn: (tx: QueryRunner, actor: EmployeeRow) => Promise<T
   });
 }
 
+/**
+ * `canPull`, plus the sentence for the case where more than one ledger could.
+ * A thin rename of `capabilityAvailability` so the page keeps the field name it
+ * has always had.
+ */
+async function pullAvailability(
+  tx: QueryRunner,
+): Promise<{ canPull: boolean; pullProblem: string | null }> {
+  const { connected, problem } = await capabilityAvailability(tx, 'PULL_CHART_OF_ACCOUNTS');
+  return { canPull: connected && problem === null, pullProblem: problem };
+}
+
 export async function getChartPage() {
   return asAdmin(async (tx) => {
     const accounts = await listAccounts(tx, { includeInactive: true });
@@ -67,8 +79,10 @@ export async function getChartPage() {
       // populated tenant, and a button that always refuses is worse than no button.
       templates: accounts.length === 0 ? await listTemplates(tx) : [],
       // VX3-5. Whether a pull is even possible, so the button is absent rather
-      // than present-and-refusing.
-      canPull: (await resolveCapability(tx, 'PULL_CHART_OF_ACCOUNTS')) !== null,
+      // than present-and-refusing. AC-22: with two ledgers able to pull, a pull
+      // cannot choose either — so the button goes away and the reason is said,
+      // rather than the page throwing.
+      ...(await pullAvailability(tx)),
       // PULLED rows the last pull did not report. Reported, never acted on
       // (GAP-AUDIT AC-12) — a tenant whose ledger stops reporting an account it
       // has been coding to should be told, not have it silently deactivated.

@@ -20,7 +20,7 @@ import {
 } from '@/lib/integrations/post-outbox';
 import { append as auditAppend } from '@/lib/audit/service';
 import { postOne } from '@/lib/integrations/dispatch';
-import { resolveCapability } from '@/lib/integrations/service';
+import { capabilityAvailability } from '@/lib/integrations/service';
 
 const PAGE = '/admin/ledger-queue';
 
@@ -45,7 +45,11 @@ export async function getQueuePage() {
     // Whether anything can post at all. A queue full of PENDING rows with no
     // connected ledger is a configuration problem, not a backlog, and the
     // difference should be on the screen rather than inferred.
-    connected: (await resolveCapability(tx, 'POST_EXPENSE_REPORT')) !== null,
+    //
+    // AC-22 added the second half: TWO connected ledgers is also a configuration
+    // problem, and the one an operator is least likely to guess at, so it arrives
+    // as a sentence rather than as a thrown error on a page.
+    ...(await capabilityAvailability(tx, 'POST_EXPENSE_REPORT')),
   }));
 }
 

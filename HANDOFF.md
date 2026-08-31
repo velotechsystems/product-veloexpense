@@ -216,6 +216,13 @@ six. Run it, every ticket, before writing out the commands.
 `next build` and `check:actions` genuinely do need the Mac, which is also the pair
 that catches a broken `'use server'` module (VX2-10) and any `.tsx` mistake.
 
+### The device shell has no GitHub credentials, and its `main` is ancient
+`git fetch` fails there ("could not read Username for 'https://github.com'"), and the local `main`
+in that checkout is still at **PR #11**. So `git checkout main` there silently moves the whole tree
+back to Phase 1 — it happened once, and was recovered by checking the feature branch out again. Git
+READS are fine (`git --no-optional-locks log/status/diff`); branch switching and fetching belong in
+John's own terminal, where `gh` is authenticated as `Velotechsys`.
+
 ## 4. Standard per-ticket loop
 ```bash
 git fetch origin
@@ -1801,9 +1808,79 @@ the leftover-state one is the item to internalise, because CI cannot see it — 
 gets a fresh database every run, so an assertion that holds only because the
 environment is disposable passes there and fails on a laptop.
 
-**VX3-9b** remains: the browser walk of the OAuth redirect, which needs a local
-provider endpoint (the sink is the obvious host for it — ~15 lines) because
-`stub-oauth` currently sends the browser to `https://stub.invalid`.
+**What VX3-9b ships** — the OAuth redirect, walked in a browser, plus AC-22.
+
+- `scripts/e2e-ledger.mjs` serves `GET /oauth/authorize`: a real consent page with
+  an **Allow** and a **Deny** button, both redirecting with a GET because that is
+  what every real provider does and what the callback route has to survive. The
+  control port gained `GET /authorizations`, so a test can assert the
+  `redirect_uri` THE APP built — APP_URL plus the slug, which is the one thing on
+  that page that is the product's own doing, and NT-14 is the same defect for
+  emailed links.
+- `stub-oauth`'s `authorizeUrl` reads `INTEGRATIONS_STUB_AUTHORIZE_URL` at CALL
+  time (NT-14 again). Unset it stays `https://stub.invalid`, unreachable on purpose
+  so a vitest suite reaching for the network fails loudly rather than hanging.
+- `e2e/oauth-flow.spec.ts`, seven tests: an OAUTH2 connection arrives INACTIVE and
+  the screen says so; the admin consents at the far end and comes back connected,
+  with Test then holding a real token (**AC-19's regression, in a browser**); an
+  approved report posts carrying the token consent produced; **Deny** is a normal
+  outcome that changes nothing; a **replayed callback** does nothing and says what
+  an unknown one says; AC-22's guard refuses a second poster through the UI; and
+  **Disconnect → reconnect → re-authorise**, which is the first time anybody has
+  pressed the two buttons #66 fixed. Before this file,
+  `/api/integrations/[slug]/callback` had never been reached by a browser at all.
+- `e2e/helpers.ts` — the sink helpers, `submitAndApprove`, `connectLedger`,
+  `wipeIntegrations` and `drainNotifications`, moved out of `ledger-flow.spec.ts`
+  verbatim so both specs share one copy of the proven selectors.
+
+### AC-23 — the OAuth callback sent the admin back to the wrong origin
+
+Found by the new e2e on its first run, which is the whole argument for 9b existing.
+`authoriseFromForm` builds the `redirect_uri` from `appOrigin()` (APP_URL); the
+callback route built the way onward from `req.nextUrl.origin`. Bound to 0.0.0.0, or
+behind any proxy, those differ — the run landed on
+`http://0.0.0.0:3000/admin/integrations?notice=...is+connected`, an origin the
+session cookie does not cover, and middleware bounced the admin to `/login` **after
+a successful authorisation**. Tokens stored, connection live, person staring at a
+login page. NT-14's family: an origin read from the wrong source. Now
+`appOrigin() ?? req.nextUrl.origin`, and the spec anchors the expected origin at `^`
+because the first version matched only the path and passed while the origin was
+wrong.
+
+### AC-22 — two active ledgers, and the posting target was a coin flip
+
+Found scoping 9b, by reading `resolveCapability` to work out whether the new spec
+could connect a second adapter safely.
+
+`0016`'s partial index allows one active installation **per integration**, which
+stops two VeloLedger connections and does nothing about a VeloLedger and a
+QuickBooks — both declare `POST_EXPENSE_REPORT`. `resolveCapability` read the
+active rows **with no ORDER BY** and returned the first one it liked, which is
+physical heap order and moves whenever a row is updated. **That is AC-3, the
+finding this audit opened against ExpenseOS, reproduced one level up.** Not
+reachable in a deployed build yet (QuickBooks is dormant, so VeloLedger is the only
+adapter declaring a capability); reachable the day a QBO client is onboarded, which
+is AC-21's trigger too.
+
+Closed by refusing rather than choosing — **ordering was deliberately not the fix**,
+because a stable wrong ledger is still the wrong ledger and the tenant would have no
+way of knowing which one won:
+
+- `resolveCapability` raises `AMBIGUOUS_CAPABILITY` naming both connections;
+  `dispatch.ts` treats it exactly as "nothing is connected" — SKIPPED, **no attempt
+  burnt**, reason on the row — so the reports are still waiting when somebody
+  disconnects one.
+- `installIntegration` and `beginAuthorisation` refuse earlier, for the admin. A
+  rival is a DIFFERENT product; the same adapter is the one-active case and keeps
+  its own message. Conflating those broke two existing tests, which is how I found
+  out.
+- `capabilityAvailability()` for the two screens that only wanted a boolean: two
+  connected ledgers must not turn `/admin/ledger-queue` into a 500, least of all
+  the page an operator opens to ask why nothing is posting. It says so in words
+  there, and hides the pull button (with a reason) on the chart screen.
+- New leaf module `lib/integrations/conflicts.ts`, because `service.ts` already
+  imports `oauth.ts` and the reverse would be the cycle `errors.ts` was extracted
+  to break.
 
 ### AC-20 + AC-21 — the integration connect/disconnect pair (after #65)
 

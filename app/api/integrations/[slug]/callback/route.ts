@@ -35,13 +35,40 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { completeAuthorisation } from '@/lib/integrations/oauth';
 import { adapterFor } from '@/lib/integrations/registry';
+import { appOrigin } from '@/lib/notifications/email';
 
 export const dynamic = 'force-dynamic';
 
 const SCREEN = '/admin/integrations';
 
+/**
+ * Back to the screen, on the origin the ADMIN is actually using.
+ *
+ * ── AC-23. This used `req.nextUrl.origin`, and that is the wrong source ─────
+ *
+ * A round trip has two legs and they were built from two different places.
+ * `authoriseFromForm` builds the `redirect_uri` from `appOrigin()` — APP_URL — and
+ * this built the way onward from the incoming request's own origin. In a standalone
+ * server bound to 0.0.0.0, or behind any proxy, those are not the same string: the
+ * e2e landed on `http://0.0.0.0:3000/admin/integrations`, an origin the session
+ * cookie does not cover, and middleware bounced the admin to `/login`.
+ *
+ * The authorisation had SUCCEEDED. The tokens were stored, the connection was
+ * live, and the person who pressed the button saw a login page — so the only
+ * reasonable thing for them to do is try again, mint another state, and consent a
+ * second time to something that already worked.
+ *
+ * That is NT-14's family: an origin read from the wrong source. Same fix as NT-14's
+ * — one authority for the app's own address, read at call time — with the request's
+ * origin kept as the fallback for a deployment that has no APP_URL, where a
+ * same-origin redirect is still better than none.
+ *
+ * Found by `e2e/oauth-flow.spec.ts`, which is the only thing in the repo that
+ * walks the redirect. No unit test could have: `completeAuthorisation` returns
+ * successfully in both worlds.
+ */
 function back(req: NextRequest, params: Record<string, string>): NextResponse {
-  const url = new URL(SCREEN, req.nextUrl.origin);
+  const url = new URL(SCREEN, appOrigin() ?? req.nextUrl.origin);
   for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);
   return NextResponse.redirect(url);
 }

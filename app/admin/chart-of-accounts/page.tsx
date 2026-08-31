@@ -69,7 +69,8 @@ export default async function ChartOfAccountsPage({
   searchParams: Promise<{ error?: string; created?: string; pulled?: string }>;
 }) {
   const { error, created, pulled } = await searchParams;
-  const { accounts, postable, mappings, templates, canPull, orphaned } = await getChartPage();
+  const { accounts, postable, mappings, templates, canPull, pullProblem, orphaned } =
+    await getChartPage();
   const indent = depths(accounts);
   const unmapped = mappings.filter((m) => m.gl_account_id === null).length;
   const dangling = mappings.filter((m) => m.dangling).length;
@@ -195,6 +196,12 @@ export default async function ChartOfAccountsPage({
                   Pull from the ledger
                 </Button>
               </form>
+            ) : null}
+            {pullProblem ? (
+              // AC-22. The button is gone because a pull cannot choose between two
+              // ledgers — which is worth a sentence, since "the button vanished"
+              // is indistinguishable from "this build cannot pull".
+              <p className="text-xs text-destructive">{pullProblem}</p>
             ) : null}
           </div>
           <div className="overflow-x-auto rounded-lg border border-border">

@@ -35,6 +35,7 @@ import {
 } from '@/lib/integrations/contract';
 import { adapterFor, isKnownAdapter, listAdapters } from '@/lib/integrations/registry';
 import { IntegrationError } from '@/lib/integrations/errors';
+import { capabilityWords, findCapabilityRival, rivalMessage } from '@/lib/integrations/conflicts';
 import { freshAuthConfig } from '@/lib/integrations/oauth';
 
 const ORG = "current_setting('app.current_org', true)::uuid";
@@ -230,6 +231,14 @@ export async function installIntegration(
   //     being true within the hour. It becomes active when consent completes.
   const authKind = adapter.auth ?? 'CONFIG';
   const activeOnInstall = authKind !== 'OAUTH2';
+
+  // AC-22, told to the admin before the ambiguity can exist rather than after.
+  // Only when this install would be ACTIVE: an OAUTH2 row arrives inactive and is
+  // checked again at `beginAuthorisation`, which is where it would become active.
+  if (activeOnInstall) {
+    const rival = await findCapabilityRival(tx, adapter);
+    if (rival) throw new IntegrationError(rivalMessage(adapter, rival), 'AMBIGUOUS_CAPABILITY');
+  }
 
   let inserted;
   try {
@@ -494,13 +503,48 @@ export async function resolveCapability(
   capability: Capability,
 ): Promise<ResolvedAdapter | null> {
   const r = await tx.query(
-    'SELECT id, integration_slug, config FROM integration_installation WHERE active',
+    // ORDERED, which the first version was not — see below on why ordering alone
+    // would have been the wrong fix.
+    `SELECT id, integration_slug, label, config FROM integration_installation
+      WHERE active ORDER BY connected_at, id`,
   );
-  for (const row of r.rows) {
+  const candidates = r.rows.filter((row) => {
     const slug = row.integration_slug as string;
-    if (!isKnownAdapter(slug)) continue;
+    return isKnownAdapter(slug) && adapterFor(slug)!.capabilities.includes(capability);
+  });
+
+  // ── AC-22. TWO ACTIVE LEDGERS IS NOT A QUESTION THIS CAN ANSWER ────────────
+  //
+  // `0016`'s partial index allows one active installation per INTEGRATION, so two
+  // VeloLedger connections are impossible — and a VeloLedger and a QuickBooks are
+  // not. Both declare POST_EXPENSE_REPORT, and this function used to read the
+  // active rows with no ORDER BY and return the first one it liked, which is
+  // physical heap order: it moves whenever a row is updated. A tenant trialling a
+  // second ledger without disconnecting the first would have had reports drafted
+  // into one, then the other, silently.
+  //
+  // That is AC-3 — the finding this audit opened against ExpenseOS — reproduced
+  // one level up: fixed per vendor, missed per capability.
+  //
+  // Ordering is now deterministic, and ordering is deliberately NOT the fix. A
+  // stable wrong ledger is still the wrong ledger, and the tenant would have no
+  // way of knowing which one won. This is a configuration state only a human can
+  // resolve, so it refuses and says who is competing. `dispatch.ts` treats the
+  // refusal as SKIPPED WITHOUT BURNING AN ATTEMPT — the same treatment as "nothing
+  // is connected", for the same reason: the reports must still be waiting when
+  // somebody disconnects one.
+  if (candidates.length > 1) {
+    const names = candidates.map((row) => `"${row.label as string}"`).join(' and ');
+    throw new IntegrationError(
+      `${names} are both connected and can ${capabilityWords(capability)}, so there is ` +
+        `no single answer to which one should. Disconnect one of them.`,
+      'AMBIGUOUS_CAPABILITY',
+    );
+  }
+
+  for (const row of candidates) {
+    const slug = row.integration_slug as string;
     const adapter = adapterFor(slug)!;
-    if (!adapter.capabilities.includes(capability)) continue;
     const installationId = row.id as string;
     return {
       installationId,
@@ -565,6 +609,31 @@ export async function requireCapability(
     );
   }
   return resolved;
+}
+
+/**
+ * "Can anything do this job, and if not, why not" — for a SCREEN.
+ *
+ * AC-22's refusal is an exception, which is right for the posting path and wrong
+ * for a page: two connected ledgers must not turn `/admin/ledger-queue` into a
+ * 500, and that screen is precisely where an operator goes to ask why nothing is
+ * posting. So the two call sites that only wanted a boolean get the sentence too.
+ */
+export async function capabilityAvailability(
+  tx: QueryRunner,
+  capability: Capability,
+): Promise<{ connected: boolean; problem: string | null }> {
+  try {
+    return { connected: (await resolveCapability(tx, capability)) !== null, problem: null };
+  } catch (err) {
+    if (err instanceof IntegrationError && err.code === 'AMBIGUOUS_CAPABILITY') {
+      // Something IS connected — too much of it. Reporting `connected: false` here
+      // would put "no ledger is connected" on the screen of a tenant looking at
+      // two, which is the kind of wrong message that costs a support call.
+      return { connected: true, problem: err.message };
+    }
+    throw err;
+  }
 }
 
 /** For a diagnostic: whether a stored secret is actually readable. */

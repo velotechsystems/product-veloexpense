@@ -2736,6 +2736,103 @@ Verified against its own absence: with the columns left alone, the new test fail
 before them** (AC-19 was the first): moving a value out of a jsonb blob into a column takes it out of
 the reach of every loop that iterates the blob. Both defects are that one fact.
 
+### AC-22 · Two active ledgers, and the posting target was a coin flip ✅ CLOSED by VX3-9b
+
+Found 31 Aug scoping VX3-9b, by reading `resolveCapability` to work out whether the new spec could
+connect a second adapter safely. It could not, and neither could a customer.
+
+```sql
+-- resolveCapability, before:
+SELECT id, integration_slug, config FROM integration_installation WHERE active
+-- ...and return the FIRST row whose adapter declares the capability. No ORDER BY.
+```
+
+The guard beside it, from `0016`:
+
+```sql
+CREATE UNIQUE INDEX integration_installation_one_active_idx
+    ON integration_installation (organization_id, integration_slug) WHERE active;
+```
+
+One active installation **per integration** — which stops two VeloLedger connections and does nothing
+about a VeloLedger and a QuickBooks. Both declare `POST_EXPENSE_REPORT`. So which ledger a tenant's
+approved reports were drafted into was **physical heap order**, and a heap order moves whenever a row
+is updated: edit either connection's config and the winner can change. A tenant trialling a second
+ledger without disconnecting the first would have had reports going to one, then the other, with
+nothing said anywhere.
+
+**This is AC-3.** The finding this audit opened against ExpenseOS, in its own words: *"theirs resolves
+with `take: 1` and no ordering, so two active installations of one type resolve arbitrarily and
+nothing detects that state."* VeloExpense fixed it per vendor and reproduced it per capability, and
+`0016`'s comment — "only one of them may be ACTIVE" — is true of two connections to one product and
+false of two products.
+
+**Reachability, honestly.** Not reachable in a deployed build today: VeloLedger is the only adapter
+declaring a capability, because QuickBooks is dormant until its platform credentials are set. It
+becomes reachable on the day a QBO client is onboarded — which is the same trigger as AC-21, and the
+same shape: a control that reads as done and is not. It was reachable immediately in test and e2e
+builds, where `INTEGRATIONS_ENABLE_STUB` registers two more adapters that both claim it.
+
+**Closed, and ordering was deliberately NOT the fix.** A stable wrong ledger is still the wrong
+ledger, and the tenant would have no way of knowing which one won. This is a configuration state only
+a human can resolve, so it refuses and says who is competing, in three places for three audiences:
+
+- `resolveCapability` — the safety net. More than one candidate raises `AMBIGUOUS_CAPABILITY` naming
+  both connections by the labels the admin gave them. `dispatch.ts` treats it exactly as it treats
+  "nothing is connected": **SKIPPED, no attempt burnt**, with the reason on the row — so every
+  waiting report is still waiting when somebody disconnects one, per VX3-4's rule.
+- `installIntegration` — the admin, before the state can exist. A rival is a DIFFERENT product: an
+  active installation of the same adapter is the one-active case, which keeps its own
+  "already connected, disconnect it first" message. Two tests caught me conflating those.
+- `beginAuthorisation` — the same admin, before their browser is sent to a far end. Refusing on the
+  way back would mean they had granted a real permission to a connection this end will not accept,
+  and no state row is minted.
+
+`capabilityAvailability()` exists for the two screens that only wanted a boolean
+(`/admin/ledger-queue`, `/admin/chart-of-accounts`): two connected ledgers must not turn a page into
+a 500, least of all the page an operator opens to ask why nothing is posting. It reports
+`connected: true` with a sentence — something IS connected, too much of it — and the queue screen
+says so in words.
+
+Verified against its own absence: with the refusal removed, `resolveCapability` silently picks one
+(`expected undefined to be 'AMBIGUOUS_CAPABILITY'`) and `capabilityAvailability` reports no problem.
+
+### AC-23 · The OAuth callback sent the admin back to the wrong origin ✅ CLOSED by VX3-9b
+
+Found 31 Aug by `e2e/oauth-flow.spec.ts` on its first run — the only thing in the repo that walks the
+redirect. No unit test could have found it: `completeAuthorisation` returns successfully either way.
+
+A round trip has two legs, and they were built from two different sources.
+
+```ts
+// authoriseFromForm — the leg OUT:
+redirectUri: `${appOrigin()}/api/integrations/${slug}/callback`   // APP_URL
+
+// the callback route — the leg BACK:
+const url = new URL(SCREEN, req.nextUrl.origin);                 // the request's own origin
+```
+
+In a standalone Next server bound to `0.0.0.0`, or behind any proxy that presents an internal
+address, those are not the same string. The e2e landed on
+`http://0.0.0.0:3000/admin/integrations?notice=...+is+connected` — an origin the session cookie does
+not cover — and middleware bounced the admin to `/login`.
+
+**The authorisation had SUCCEEDED.** The tokens were stored, the connection was live, and the person
+who pressed the button was looking at a login screen with no confirmation. The only reasonable thing
+for them to do is press Connect again and consent a second time to something that already worked.
+Worse in a deployed environment than in the e2e: the origin would be an internal container address
+nobody can reach at all.
+
+**This is NT-14's family** — an origin read from the wrong source — and it takes NT-14's fix: one
+authority for the app's own address, read at call time. `appOrigin() ?? req.nextUrl.origin`, keeping
+the request's origin as the fallback for a deployment with no APP_URL, where a same-origin redirect is
+still better than none.
+
+Every outcome of that route goes through the same helper, so the notice, the provider's refusal and
+the state-invalid message were all affected. The spec now anchors all three assertions at `^` with
+the expected origin: the first version matched only the path, which passed while the origin was wrong
+— an assertion that cannot see the defect it is standing next to.
+
 ## tenancy · foreign keys do not respect RLS (found 2026-08-29 building VX3-1)
 
 Not a port finding — this one is about VeloExpense's own schema, which is why it has its own prefix.

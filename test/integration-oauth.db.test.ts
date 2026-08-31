@@ -580,6 +580,73 @@ describe('the authorisation actually reaches the adapter (VX3-9a)', () => {
   });
 });
 
+describe('a second poster cannot be authorised (AC-22)', () => {
+  /**
+   * The OAuth half of AC-22's guard, and the reason it is checked at
+   * `beginAuthorisation` rather than only at the callback: sending an admin to a
+   * far end to grant a real permission, and refusing it on the way back, is the
+   * worst available place to discover a configuration conflict. Nothing has left
+   * this end yet when this refuses.
+   */
+  it('refuses BEFORE the browser leaves, naming the connection already doing the job',
+    async () => {
+      // A CONFIG ledger, active, already able to post.
+      await withOrg(orgId, (tx) =>
+        installIntegration(
+          tx,
+          {
+            slug: 'stub-ledger',
+            code: 'pasted',
+            label: 'The pasted one',
+            config: { ledgerUrl: 'https://x.test', apiToken: 'tok' },
+          },
+          actorId,
+        ),
+      );
+
+      const refused = await withOrg(orgId, (tx) =>
+        beginAuthorisation(tx, { installationId, actorId, redirectUri: REDIRECT }).then(
+          () => null,
+          (err) => err as { code: string; message: string },
+        ),
+      );
+      expect(refused?.code).toBe('AMBIGUOUS_CAPABILITY');
+      expect(refused?.message).toContain('The pasted one');
+
+      // AND NO STATE WAS MINTED. A refused authorisation must not leave a live
+      // single-use credential behind for something that cannot complete.
+      const states = await admin.query('SELECT count(*)::int AS n FROM integration_oauth_state');
+      expect(states.rows[0].n).toBe(0);
+    });
+
+  it('and authorises normally once the rival is disconnected', async () => {
+    const rival = await withOrg(orgId, (tx) =>
+      installIntegration(
+        tx,
+        {
+          slug: 'stub-ledger',
+          code: 'pasted',
+          label: 'The pasted one',
+          config: { ledgerUrl: 'https://x.test', apiToken: 'tok' },
+        },
+        actorId,
+      ),
+    );
+    await withOrg(orgId, (tx) => disconnect(tx, rival.id));
+
+    const { authorizeUrl } = await withOrg(orgId, (tx) =>
+      beginAuthorisation(tx, { installationId, actorId, redirectUri: REDIRECT }),
+    );
+    await completeAuthorisation({
+      stateValue: stateFromUrl(authorizeUrl),
+      code: 'good',
+      callbackParams: { realmId: 'company-22' },
+    });
+    const resolved = await withOrg(orgId, (tx) => resolveCapability(tx, 'POST_EXPENSE_REPORT'));
+    expect(resolved?.adapter.slug).toBe('stub-oauth');
+  });
+});
+
 describe('disconnecting an authorised connection (AC-21)', () => {
   /**
    * `disconnect()` promised, in its own comment, that a "disconnect" leaving a
