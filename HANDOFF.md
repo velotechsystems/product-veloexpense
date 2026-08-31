@@ -1831,9 +1831,27 @@ because it is accounting work.
    account"* warning. Recommendation: not in Phase 3.
 3. **Xero and Sage are explicitly after the exit criterion** and are not on this board. Two adapters
    prove a contract; four only prove it more expensively.
-4. **Spec-baseline tags (AC-15) are now blocking, not tidy.** The Plan and the Chart were written
-   against ExpenseOS `fb1cead`; `~/ExpenseOS` is at `5a11a647`, and the accounting surface is
-   demonstrably among what moved. Tag `accounting` at `5a11a647` before VX3-3 starts.
+4. **Spec-baseline tags (AC-15) — `accounting` IS BASELINED AND PUSHED, 2026-08-31.**
+   `veloexpense-spec/accounting-20260831`, annotated, at `5a11a647`, in `carmigo/ExpenseOS`.
+   The re-sync diff was run both ways: empty against `origin/main` (correct — the tag is there),
+   and 15 files / 2683 insertions from the Plan's `fb1cead`, which is the drift a shared baseline
+   would have hidden. Remaining detail below is kept because the next module needs it.
+   `docs/porting/SPEC-BASELINES.md` has the row, the re-sync command and a delta log;
+   `tag-spec-baselines.sh` knows the module and gained an `ONLY=` filter (modules no longer share
+   one baseline, and an unfiltered run at a new sha would hit the script's own refusal to move the
+   six Phase-1 tags). **The tag needs a real tagger identity, which the Cowork shell does not have**
+   — `git config user.name` is empty in that VM because its `$HOME` is not the Mac's — so creating
+   an annotated tag from here would stamp it with nothing or with an invented name. Run it in a real
+   terminal as `johnrim-lab`:
+   ```bash
+   cd ~/ExpenseOS
+   ONLY=accounting DRY_RUN=1 bash ~/code/velotechsystems/product-veloexpense/docs/porting/tag-spec-baselines.sh 5a11a647 20260831
+   ONLY=accounting            bash ~/code/velotechsystems/product-veloexpense/docs/porting/tag-spec-baselines.sh 5a11a647 20260831
+   git push origin 'refs/tags/veloexpense-spec/*'
+   ```
+   **Correction to what this list said before:** it claimed zero baseline tags existed. Six do, and
+   have since 2026-08-27. Only `accounting` was missing. `audit` and `notifications` are still
+   unbaselined.
 
 ### Plan-fidelity corrections (found 2026-08-27 reading the Plan + Differences Chart)
 

@@ -2392,7 +2392,7 @@ inserted a row, so it can only ever have been empty, and the one reader (the GL_
 treated an absent row as 'unmapped', which is what it always was."* A control reading a table nobody
 writes is the fraud-module cousin of NT-5's test asserting on copy it never reached.
 
-### AC-15 · The spec source has moved, and there are still zero baseline tags ⚠ John action
+### AC-15 · The spec source has moved, and there were zero baseline tags ✅ accounting baselined + pushed 2026-08-31
 
 The Plan and the Chart were written against ExpenseOS `fb1cead`. `~/ExpenseOS` is now at
 `5a11a647`, and the accounting surface is demonstrably among what changed — `NetSuiteAccount`
@@ -2407,6 +2407,46 @@ where the Plan's own sync strategy flags the source as unstable — *"still-in-f
 already a perishable good. **Tag `accounting` at `5a11a647` before VX3-3 starts**, or the first
 question of the first adapter ticket is "which version of their code was this read at", and the
 honest answer will be a guess.
+
+**✅ ACCOUNTING IS BASELINED AND PUSHED — 2026-08-31.**
+`veloexpense-spec/accounting-20260831` is an annotated tag at `5a11a647` in
+`carmigo/ExpenseOS`, created with the script as `johnrim-lab`.
+`docs/porting/SPEC-BASELINES.md` carries the row, the re-sync command and the delta log.
+
+**The mechanism was exercised, not just installed.** From the tag to `origin/main`: empty, which is
+right — the tag is at `origin/main`. From the Plan's `fb1cead` to the tag over the same paths:
+**15 files, 2683 insertions, 131 deletions**. That is the drift a shared Phase-1 baseline would
+have hidden for this module.
+
+**THIS ENTRY WAS WRONG WHEN IT SAID "ZERO BASELINE TAGS", AND SO WAS I.** Six modules —
+`reference-data`, `employees-org`, `expense-reports`, `receipts`, `policy-engine`, `approvals` —
+were tagged at `fb1cead9` and **pushed to `carmigo/ExpenseOS` on 2026-08-27**, with a script, an
+index and the reasoning for a deliberately-early shared baseline, all in
+`docs/porting/SPEC-BASELINES.md`. This entry was written before that happened and never updated, so
+it read as though nothing existed. It does. What was genuinely missing was `accounting` alone.
+
+Corrections that came out of doing it:
+
+1. **`git tag -l` in `~/ExpenseOS` returns one tag** (`v1.0.0-rc.1`) — the six spec-baseline tags
+   were pushed from a DIFFERENT checkout and this clone has not fetched them. The file already
+   warned about the two checkouts; worth knowing before concluding a tag is missing.
+2. **The tags DO live in `carmigo/ExpenseOS`, and pushing them there is the established practice** —
+   as gh user `johnrim-lab`, never `Velotechsys`, with the namespaced refspec
+   `git push origin 'refs/tags/veloexpense-spec/*'` rather than `--tags`.
+3. **Accounting cannot share the Phase-1 baseline.** The script tags every module in one pass, so
+   running it at `5a11a647` without a filter walks into its own refusal to move the six existing
+   tags, and `FORCE=1` would move them — destroying exactly the record they exist to keep. An
+   `ONLY=<module>` filter was added for this.
+4. **The re-diff paid for itself in ten minutes.** 91 commits separate `fb1cead` from `5a11a647`; 16
+   touch accounting; three land on work already shipped. `1d9429e2` and `76aafe31` are ExpenseOS
+   refusing an uncoded post locally instead of letting NetSuite reject it — **the exact failure
+   class AC-16 describes and VX3-7 pre-flights** — fixed twice because the first fix covered one
+   call path and missed the others. `2a2e7033` shows their pre-flight coming to require dimensional
+   coding, which is VX3-7's blocked half. None of it was known when VX3-7 was built.
+
+**Still open:** `audit` and `notifications` remain deliberately unbaselined (VX2-6/7/8 ported them;
+their tags were never taken), and the forward rule now reads **baseline at the START of a module**,
+before reading source, rather than after shipping.
 
 ### AC-16 · A DRAFTED bill is not a POSTABLE one, and two of the three refusals are invisible over the contract ⚠ needs upstream changes
 

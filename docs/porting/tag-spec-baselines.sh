@@ -45,6 +45,13 @@ DRY_RUN="${DRY_RUN:-0}"
 # existing tag pointing at a DIFFERENT commit aborts the run unless FORCE=1.
 # Re-running against the same commit is a no-op either way.
 FORCE="${FORCE:-0}"
+# Tag ONE module. Added 2026-08-31 for `accounting`, whose baseline is a DIFFERENT
+# commit from Phase 1's: this script tags every module in one pass, so running it
+# at a new sha without a filter walks into its own (correct) refusal to move the
+# six existing baselines. A filter is the honest way to add a module at its own
+# commit; FORCE=1 is not, because it would move the others.
+#   ONLY=accounting bash tag-spec-baselines.sh 5a11a647 20260831
+ONLY="${ONLY:-}"
 TAG_PREFIX="veloexpense-spec"
 
 # module-slug : space-separated FILE BASENAMES that make up the module's spec.
@@ -66,6 +73,7 @@ MODULE_SLUGS=(
   receipts
   policy-engine
   approvals
+  accounting
 )
 MODULE_FILES=(
   "expenseCategories.ts legalEntities.ts businessUnits.ts departments.ts"
@@ -74,6 +82,11 @@ MODULE_FILES=(
   "expenses.ts"
   "policies.ts"
   "expenseApprovals.ts approvalWorkflows.ts delegations.ts"
+  # Only UNAMBIGUOUS basenames. `index.ts` matches 37 files in this monorepo and
+  # `config.ts`/`records.ts` match two each; the re-sync command in
+  # SPEC-BASELINES.md covers `packages/integrations-netsuite/src` wholesale, which
+  # is where the rest of the surface lives.
+  "netsuiteSync.ts postExpenseReport.ts postCardTransaction.ts recordLink.ts"
 )
 MODULE_TICKETS=(
   "VX1-1 (PR #10)"
@@ -82,15 +95,31 @@ MODULE_TICKETS=(
   "VX1-5 (PR #14), VX1-6 (PR #15), VX1-10 (PR #20)"
   "VX1-7 (PR #17)"
   "VX2-1 (PR #22, #23)"
+  "VX3-1..VX3-8 (PR #50-#55, #61, #62)"
 )
 
 # ── sanity ───────────────────────────────────────────────────────────────────
 git rev-parse --git-dir >/dev/null 2>&1 || { echo "ERROR: not inside a git repo." >&2; exit 1; }
-if ! git ls-files | grep -qE '/(expenses|policies)\.ts$'; then
-  echo "ERROR: this does not look like the ExpenseOS repo (no expenses.ts / policies.ts)." >&2
-  echo "       cd into your ExpenseOS checkout and re-run." >&2
-  exit 1
-fi
+
+# The file list, read ONCE. Two reasons, and the first is a bug fix (2026-08-31).
+#
+# This check used to be `git ls-files | grep -qE ...` under `set -o pipefail`, and
+# that combination is broken: `grep -q` exits the moment it matches, `git ls-files`
+# is still writing, git takes SIGPIPE and dies with 141, and `pipefail` makes the
+# whole pipeline fail. So the script aborted with "this does not look like the
+# ExpenseOS repo" while standing in the ExpenseOS repo. Measured 8 failures out of
+# 8 on a 2026-08-31 checkout; it is a race, so it can also pass, which is worse
+# than failing consistently. Doing it in pure shell has no pipe to break, and
+# reusing the list avoids re-walking a large monorepo once per module.
+ALL_FILES="$(git ls-files)"
+case "$ALL_FILES" in
+  */expenses.ts*|*/policies.ts*) ;;
+  *)
+    echo "ERROR: this does not look like the ExpenseOS repo (no expenses.ts / policies.ts)." >&2
+    echo "       cd into your ExpenseOS checkout and re-run." >&2
+    exit 1
+    ;;
+esac
 if ! git rev-parse --verify --quiet "${BASELINE}^{commit}" >/dev/null; then
   echo "ERROR: baseline '$BASELINE' is not a commit in this repo." >&2
   echo "       Fetch first (git fetch origin), or pass a sha you do have." >&2
@@ -120,13 +149,15 @@ for i in "${!MODULE_SLUGS[@]}"; do
   ticket="${MODULE_TICKETS[$i]}"
   tag="${TAG_PREFIX}/${slug}-${STAMP}"
 
+  if [ -n "$ONLY" ] && [ "$ONLY" != "$slug" ]; then continue; fi
+
   # Resolve basenames -> real repo paths. A read loop rather than `mapfile`,
   # because macOS ships bash 3.2 and mapfile is a bash 4 builtin.
   pattern="$(echo "$names" | tr ' ' '\n' | sed 's/\./\\./g' | paste -sd'|' -)"
   paths=()
   while IFS= read -r line; do
     [ -n "$line" ] && paths+=("$line")
-  done < <(git ls-files | grep -E "/(${pattern})$" || true)
+  done < <(printf '%s\n' "$ALL_FILES" | grep -E "/(${pattern})$" || true)
 
   echo "── ${slug}"
   if [ "${#paths[@]}" -eq 0 ]; then
