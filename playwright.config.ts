@@ -90,6 +90,10 @@ const APP_ENV = {
   //                              which a browser test cannot read.
   INTEGRATIONS_ENABLE_STUB: '1',
   INTEGRATIONS_STUB_LEDGER_URL: `http://127.0.0.1:${LEDGER_PORT}`,
+  //   INTEGRATIONS_STUB_AUTHORIZE_URL unset -> `stub-oauth` sends the browser to
+  //     `https://stub.invalid`, which no browser can reach. VX3-9b points it at the
+  //     sink's consent screen so the redirect can actually be walked.
+  INTEGRATIONS_STUB_AUTHORIZE_URL: `http://127.0.0.1:${LEDGER_PORT}/oauth/authorize`,
   // The app encrypts integration credentials on write, so a connect form without
   // this key fails with a message about the key rather than about the ledger.
   SECRET_ENCRYPTION_KEY:

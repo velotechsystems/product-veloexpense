@@ -142,21 +142,32 @@ export async function postOne(
         // Nothing connected that can post. NOT a failure of this row — it must not
         // burn an attempt, or a tenant that connects a ledger a week later finds
         // every waiting report already DEAD.
-        return { kind: 'NOT_CONNECTED' as const };
+        return {
+          kind: 'WAITING' as const,
+          reason: 'No accounting integration is connected.',
+        };
+      }
+      if (err instanceof IntegrationError && err.code === 'AMBIGUOUS_CAPABILITY') {
+        // AC-22: TWO ledgers can post, so there is no right answer and this must
+        // not invent one. Same treatment as "nothing is connected" — waiting, no
+        // attempt burnt — because the fix is a human disconnecting one, and every
+        // report must still be here when they do. The reason goes on the row, so
+        // the queue screen says which two rather than merely "waiting".
+        return { kind: 'WAITING' as const, reason: err.message };
       }
       throw err;
     }
   });
 
-  if (prepared.kind === 'NOT_CONNECTED') {
+  if (prepared.kind === 'WAITING') {
     await withOrg(organizationId, (tx) =>
       tx.query(
         `UPDATE integration_post
             SET claimed_at = NULL, claimed_by = NULL,
                 next_attempt_at = clock_timestamp() + interval '1 hour',
-                last_error = 'No accounting integration is connected.'
+                last_error = $2
           WHERE id = $1`,
-        [postId],
+        [postId, prepared.reason],
       ),
     );
     return 'SKIPPED';

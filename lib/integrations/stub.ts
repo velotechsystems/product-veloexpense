@@ -268,8 +268,20 @@ export const stubOAuthAdapter: AccountingAdapter = {
   configFields: [],
   available: () => process.env.INTEGRATIONS_ENABLE_STUB === '1',
 
+  /**
+   * Where the browser is sent to consent.
+   *
+   * `https://stub.invalid` by default — unreachable ON PURPOSE, so a vitest suite
+   * that reaches for the network fails loudly instead of hanging. VX3-9b added the
+   * override: `INTEGRATIONS_STUB_AUTHORIZE_URL` points at `scripts/e2e-ledger.mjs`,
+   * which serves a real consent page with Allow and Deny, so the redirect can be
+   * WALKED in a browser. Read at CALL time, never at module load (NT-14): imports
+   * are hoisted, so a module-load read cannot be varied by a test.
+   */
   authorizeUrl({ state, redirectUri }) {
-    const url = `https://stub.invalid/authorize?state=${encodeURIComponent(state)}&redirect_uri=${encodeURIComponent(redirectUri)}`;
+    const base =
+      process.env.INTEGRATIONS_STUB_AUTHORIZE_URL?.trim() || 'https://stub.invalid/authorize';
+    const url = `${base}?state=${encodeURIComponent(state)}&redirect_uri=${encodeURIComponent(redirectUri)}`;
     oauthState.lastAuthorizeUrl = url;
     return url;
   },

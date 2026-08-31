@@ -38,20 +38,20 @@
  * pre-flight, its `draft_bill` shape, its idempotency key — because two stubs
  * would satisfy the criterion's letter and prove nothing extra.
  */
+import { test, expect } from '@playwright/test';
 import {
-  test,
-  expect,
-  type Browser,
-  type Page,
-  type APIRequestContext,
-} from '@playwright/test';
-import { Pool } from 'pg';
+  CONTROL,
+  LEDGER,
+  billsAtSink,
+  connectLedger,
+  drainLedger,
+  drainNotifications,
+  resetSink,
+  submitAndApprove,
+  wipeIntegrations,
+} from './helpers';
 
-const CONTROL = `http://127.0.0.1:${process.env.E2E_LEDGER_CONTROL_PORT ?? 9412}`;
-const LEDGER = `http://127.0.0.1:${process.env.E2E_LEDGER_PORT ?? 9411}`;
 const ENTITY_ID = process.env.E2E_LEDGER_ENTITY_ID ?? '00000000-0000-4000-8000-0000000000e1';
-const WORKER_SECRET = process.env.WORKER_SECRET ?? 'e2e-worker-secret';
-
 /** The second tenant's admin, minted by `e2e/auth.setup.ts`. */
 const SECOND_STATE = 'e2e/.auth/second.json';
 
@@ -83,234 +83,21 @@ const RUN = Date.now().toString(36);
 const TITLE_POSTED = `E2E ledger post ${RUN}`;
 const TITLE_REFUSED = `E2E ledger refusal ${RUN}`;
 
-/**
- * THE APPROVER, WHO IS NOT THE SUBMITTER.
- *
- * Approval is not self-service in the seeded demo tenant: the reporting line makes
- * owner@demo.test the manager of admin@demo.test, so a report the default session
- * submits routes to the OWNER and the submitter's own /approvals inbox stays
- * empty. The first version of this file approved as the submitter, with a comment
- * asserting a sole-approver flag that does not exist — it would have hung on an
- * inbox that could never have held the report. `approval-flow.spec.ts` states the
- * relationship in a comment at the top of the file, which is what should have been
- * read instead of guessed at.
- */
-const APPROVER_STATE = 'e2e/.auth/approver.json';
-
-async function resetSink(request: APIRequestContext) {
-  const r = await request.post(`${CONTROL}/reset`);
-  expect(r.ok(), 'the e2e ledger sink is not answering — is scripts/e2e-ledger.mjs up?').toBe(true);
-}
-
-async function billsAtSink(request: APIRequestContext) {
-  const r = await request.get(`${CONTROL}/bills`);
-  expect(r.ok()).toBe(true);
-  return (await r.json()) as {
-    count: number;
-    bills: Array<{
-      billId: string;
-      via: string;
-      authorization: string | null;
-      externalAccount: string | null;
-      payload: Record<string, unknown>;
-    }>;
-  };
-}
-
-/** Drain the posting queue the way a scheduler would. */
-async function drainLedger(request: APIRequestContext) {
-  const r = await request.post('/api/internal/ledger/drain', {
-    headers: { authorization: `Bearer ${WORKER_SECRET}` },
-  });
-  expect(r.status(), 'the ledger drain route refused the worker secret').toBe(200);
-  return r.json();
-}
-
-/**
- * Connect a ledger through the real form.
- *
- * Selectors are scoped to the adapter's own `<form>` rather than to the input ids,
- * because those ids are `new-<fieldName>` and NOT adapter-scoped — two adapters
- * sharing a field name would collide today. No collision exists yet; relying on it
- * would be relying on an accident.
- */
-async function connectLedger(
-  page: Page,
-  adapterName: string,
-  label: string,
-  fields: Record<string, string>,
-) {
-  await page.goto('/admin/integrations');
-
-  // No guard here for "already connected", because `beforeAll` guarantees it is
-  // not: `availableAdapters()` hides an adapter that already has an ACTIVE
-  // installation, so a leftover connection makes this form ABSENT rather than
-  // duplicated. That is the failure this file hit twice — once as CI's retry
-  // reporting "no connect form for VeloLedger" three tests away from the real
-  // problem, once as a laptop inheriting a connection from a run in March. The
-  // clean slate is the fix; a guard here would only have papered over it.
-  const form = page.locator('form').filter({
-    has: page.getByRole('button', { name: `Connect ${adapterName}` }),
-  });
-  await expect(form, `no connect form for ${adapterName} — is its adapter registered?`).toHaveCount(1);
-  await form.locator('[name="label"]').fill(label);
-  for (const [name, value] of Object.entries(fields)) {
-    await form.locator(`[name="config.${name}"]`).fill(value);
-  }
-  await form.getByRole('button', { name: `Connect ${adapterName}` }).click();
-  await expect(page.getByText('Connected.', { exact: false })).toBeVisible();
-  // The connection is in the list, under the label just given it.
-  await expect(page.getByText(label, { exact: true })).toBeVisible();
-}
-
-/**
- * Submit and approve a one-line report.
- *
- * Every interaction here is COPIED from `expense-flow.spec.ts`,
- * `approval-flow.spec.ts` and `approval-panel.tsx` rather than invented. The first
- * version guessed — `getByLabel(/title/i)`, `getByRole('button', {name: /add an
- * expense/i})`, a report number scraped with `getByText(/EXP-\d+/)` — and would
- * have failed on almost every line: the real labels are exact ('Title', 'Merchant'), the real
- * buttons are 'Create draft' / 'Add expense' / 'Add line item' / 'Submit for
- * approval', the line-item inputs are id-prefixed locators rather than labels, and
- * merchant is FILLED BEFORE the add button is clicked, not after.
- *
- * The lesson, since it cost a CI round trip: when a flow already has a passing
- * spec, take its selectors — and its FIXTURES. Two of the four defects found on
- * the second read were not selectors at all: a category called 'Travel' that the
- * seed does not have, and an approver who is somebody else. Guessing at markup and
- * data you cannot run is the one part of this job with no feedback loop.
- */
-async function submitAndApprove(
-  page: Page,
-  browser: Browser,
-  title: string,
-  amount: string,
-) {
-  await page.goto('/expenses/new');
-  await page.getByLabel('Title').fill(title);
-  await page.getByRole('button', { name: 'Create draft' }).click();
-
-  await page.getByLabel('Merchant').first().fill('Beck Taxi');
-  await page.getByRole('button', { name: 'Add expense' }).click();
-  await expect(page.getByRole('heading', { name: 'Beck Taxi' })).toBeVisible();
-
-  // 'Ground Transportation', and NOT 'Travel' — there is no category by that
-  // name. The seed's six are Meals & Entertainment, Airfare, Lodging, Ground
-  // Transportation, Office Supplies and Software & Subscriptions; 'Travel (100%
-  // deductible)' is the ACCOUNT's name, because three ways of travelling are one
-  // line in the general ledger. That distinction is the whole reason VX3-1 stopped
-  // treating the category list as a chart of accounts, and picking the account's
-  // name out of the category dropdown was walking straight back into it.
-  //
-  // Ground Transportation maps to 68100, which the sink's `list_accounts` returns,
-  // so the adapter's pre-flight passes rather than refusing the bill.
-  await page
-    .locator('select[id^="categoryId-"]')
-    .selectOption({ label: 'Ground Transportation' });
-  await page.locator('input[id^="description-"]').fill('Airport taxi');
-  await page.locator('input[id^="amount-"]').fill(amount);
-  await page.getByRole('button', { name: 'Add line item' }).click();
-
-  await page.getByRole('button', { name: 'Submit for approval' }).click();
-  await expect(page.getByTestId('report-status')).toHaveText('SUBMITTED');
-
-  // ── the decision, in the APPROVER's session ───────────────────────────────
-  const approver = await browser.newContext({ storageState: APPROVER_STATE });
-  const approverPage = await approver.newPage();
-  try {
-    await approverPage.goto('/approvals');
-    // The inbox links to the report by TITLE; the decide controls live on the
-    // report page, not on /approvals.
-    await approverPage.getByRole('link', { name: title }).first().click();
-
-    // WAIT FOR THE PANEL BEFORE ASKING WHAT IS ON IT.
-    //
-    // `count()` does not auto-wait. It answers about the DOM as it stands right
-    // now, and the line above is a client-side Next navigation — so the first
-    // version's `if ((await ack.count()) > 0)` was answered about the /approvals
-    // page it had just left, found no checkbox, and skipped it. The Approve click
-    // then auto-waited, landed on a fully rendered panel, and the server refused
-    // with "this approval step requires you to confirm you reviewed the receipts".
-    // The report stayed SUBMITTED and the failure surfaced ten lines later.
-    //
-    // An auto-waiting assertion first, and the conditional is then a question about
-    // the right page. The conditional itself stays: the acknowledgement is a
-    // per-rung setting (`requireReceiptViewAck`), and the SERVER enforces it on
-    // APPROVED specifically — hard-coding it on breaks the day a tenant turns it
-    // off, and hard-coding it off is the version that just failed.
-    const approve = approverPage.getByRole('button', { name: 'Approve' });
-    await expect(approve).toBeVisible();
-    const ack = approverPage.locator('input[name="receiptViewAcknowledged"]');
-    if ((await ack.count()) > 0) await ack.check();
-
-    await approve.click();
-    // `decideFromForm` redirects back to `/expenses/<id>`, so the status the
-    // approver is looking at is the report's own.
-    await expect(approverPage.getByTestId('report-status')).toHaveText('APPROVED');
-  } finally {
-    await approver.close();
-  }
-}
-
 test.describe('two tenants, two ledgers', () => {
   test.describe.configure({ mode: 'serial' });
 
-  /**
-   * A KNOWN-EMPTY integration state for the two tenants this file uses.
-   *
-   * `scripts/seed.mjs` deliberately connects no ledger, but it does not DISCONNECT
-   * one either, and the demo tenant is never reset — so a connection made by an
-   * earlier run survives, `availableAdapters()` then hides the form, and every
-   * test in this file fails on a missing connect form. That is not hypothetical:
-   * it is exactly how this file failed on the first local run, against a
-   * `VeloLedger` installation left by an earlier attempt.
-   *
-   * Deleting the queue rows too, so `posted: 1` and `count: 1` below are about
-   * this run's report and nothing else. `integration_post` survives a deleted
-   * installation by design (`ON DELETE SET NULL (installation_id)`, so history
-   * says where a report was sent), which is why the posts go first and explicitly.
-   *
-   * Superuser connection, the same one `approval-flow.spec.ts` uses for its
-   * assertions — RLS is bypassed, so one statement can reach both tenants.
-   *
-   * In `beforeAll` rather than in the seed on purpose: a seed that deleted
-   * connections would destroy a developer's own working ledger every time they ran
-   * it. This is the only file that needs the tenants to start unconnected, so this
-   * is where the wiping belongs.
-   */
+  // Both tenants start with nothing connected and an empty queue — see
+  // `wipeIntegrations` for why the seed cannot do this and why it matters twice as
+  // much since AC-22.
   test.beforeAll(async () => {
-    const pool = new Pool({
-      connectionString: process.env.ADMIN_DATABASE_URL ?? process.env.DATABASE_URL,
-    });
-    try {
-      const orgs = ['demo', 'second'];
-      await pool.query(
-        `DELETE FROM integration_post
-          WHERE organization_id IN (SELECT id FROM organization WHERE slug = ANY($1))`,
-        [orgs],
-      );
-      await pool.query(
-        `DELETE FROM integration_installation
-          WHERE organization_id IN (SELECT id FROM organization WHERE slug = ANY($1))`,
-        [orgs],
-      );
-    } finally {
-      await pool.end();
-    }
+    await wipeIntegrations(['demo', 'second']);
   });
 
-  /**
-   * Leave the notification outbox empty, which is `approval-flow.spec.ts`'s own
-   * closing convention: "so the outbox is left empty rather than holding work the
-   * next run inherits". Two reports were submitted and approved above, and each
-   * enqueued mail. Without this, the next run's `approval-flow` drain sends it —
-   * which is precisely the mechanism that broke that spec once already.
-   */
+  // Two reports were submitted and approved here, and each enqueued mail. Left
+  // undrained it becomes the next run's input — the hole that broke
+  // `approval-flow.spec.ts` once already.
   test.afterAll(async ({ request }) => {
-    await request.post('/api/internal/notifications/drain', {
-      headers: { authorization: `Bearer ${WORKER_SECRET}` },
-    });
+    await drainNotifications(request);
   });
 
   test('each tenant connects its OWN ledger, and cannot see the other', async ({

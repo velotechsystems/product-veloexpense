@@ -34,7 +34,14 @@ export class IntegrationError extends Error {
        *  all three, matching the single message the caller is allowed to show. */
       | 'STATE_INVALID'
       /** Only a human can fix this: the refresh token is expired or revoked. */
-      | 'NEEDS_CONSENT',
+      | 'NEEDS_CONSENT'
+      // VX3-9b / AC-22:
+      /**
+       * Two ACTIVE installations claim the same capability, so there is no single
+       * right answer to "who posts for this tenant". Deliberately NOT resolved by
+       * picking one — see `resolveCapability`.
+       */
+      | 'AMBIGUOUS_CAPABILITY',
   ) {
     super(message);
     this.name = 'IntegrationError';

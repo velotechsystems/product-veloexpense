@@ -32,6 +32,7 @@ import { withOrg, withPlatformRead } from '@/lib/tenant/context';
 import { decryptSecret, encryptSecret } from '@/lib/crypto/secrets';
 import { adapterFor } from '@/lib/integrations/registry';
 import { IntegrationError } from '@/lib/integrations/errors';
+import { findCapabilityRival, rivalMessage } from '@/lib/integrations/conflicts';
 import { OAuthConsentRequired, type AdapterConfig } from '@/lib/integrations/contract';
 import type { QueryRunner } from '@/lib/db/client';
 
@@ -92,6 +93,13 @@ export async function beginAuthorisation(
       'NOT_OAUTH',
     );
   }
+
+  // AC-22, checked BEFORE the browser leaves. Sending an admin to a far end to
+  // consent to something this end will refuse on the way back is the worst place
+  // to discover a configuration conflict: they have granted a real permission to a
+  // connection that will not be activated.
+  const rival = await findCapabilityRival(tx, adapter, input.installationId);
+  if (rival) throw new IntegrationError(rivalMessage(adapter, rival), 'AMBIGUOUS_CAPABILITY');
 
   // Fresh secret per attempt. 32 bytes base64url: not guessable, and short enough
   // to survive every URL length limit in the chain.

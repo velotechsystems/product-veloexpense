@@ -28,7 +28,8 @@ import { Pool } from 'pg';
 import { withOrg } from '@/lib/tenant/context';
 import * as integrations from '@/lib/integrations/service';
 import { adaptersWithCapability, listAdapters } from '@/lib/integrations/registry';
-import { stubControl } from '@/lib/integrations/stub';
+import { stubControl, stubOAuthAdapter } from '@/lib/integrations/stub';
+import { findCapabilityRival } from '@/lib/integrations/conflicts';
 import { isEncrypted } from '@/lib/crypto/secrets';
 
 const admin = new Pool({
@@ -320,6 +321,143 @@ describe('disconnecting', () => {
     // useless — it describes a constraint, not the situation.
     await connect('main');
     await expect(connect('main')).rejects.toMatchObject({ code: 'ALREADY_ACTIVE' });
+  });
+});
+
+describe('two adapters claiming one capability (AC-22)', () => {
+  /**
+   * `0016` guarantees one ACTIVE installation per INTEGRATION. It does NOT stop a
+   * VeloLedger and a QuickBooks both being active while both declare
+   * POST_EXPENSE_REPORT — and `resolveCapability` read the active rows with no
+   * ORDER BY and returned the first one it liked, which is physical heap order and
+   * moves whenever a row is updated. Which ledger a tenant's approved reports were
+   * drafted into was therefore unstable, and nothing said so.
+   *
+   * That is AC-3, the finding this audit opened against ExpenseOS, reproduced one
+   * level up: fixed per vendor, missed per capability.
+   *
+   * Driven with the two stubs because they are the only pair of adapters in this
+   * build that both claim a capability — which is also why no test could reach the
+   * state before: in a deployed build VeloLedger is the only one, because
+   * QuickBooks is dormant until its platform credentials are set.
+   */
+  async function activeStubOAuth() {
+    // stub-oauth installs INACTIVE (OAUTH2, nothing authorised yet), so the row is
+    // activated directly. The authorisation path has its own guard, tested in
+    // `integration-oauth.db.test.ts`.
+    const installed = await withOrg(orgId, (tx) =>
+      integrations.installIntegration(
+        tx,
+        { slug: 'stub-oauth', code: 'byauth', label: 'The OAuth one', config: {} },
+        actorId,
+      ),
+    );
+    await admin.query(
+      `UPDATE integration_installation
+          SET active = true, oauth_refresh_token = 'enc:v1:pretend', auth_kind = 'OAUTH2'
+        WHERE id = $1`,
+      [installed.id],
+    );
+    return installed.id;
+  }
+
+  it('REFUSES to choose, rather than picking one', async () => {
+    await connect('main');
+    await activeStubOAuth();
+
+    // The refusal names both connections by the labels the admin gave them,
+    // because "a conflict exists" is not something anybody can act on.
+    const failure = await withOrg(orgId, (tx) =>
+      integrations.resolveCapability(tx, 'POST_EXPENSE_REPORT').then(
+        () => null,
+        (err) => err as { code: string; message: string },
+      ),
+    );
+    expect(failure?.code).toBe('AMBIGUOUS_CAPABILITY');
+    expect(failure?.message).toContain('Stub');
+    expect(failure?.message).toContain('The OAuth one');
+    expect(failure?.message).toMatch(/post expense report/);
+  });
+
+  it('a screen gets a sentence instead of an exception', async () => {
+    // Two connected ledgers must not turn /admin/ledger-queue into a 500 — that is
+    // the screen an operator opens to ask why nothing is posting.
+    await connect('main');
+    await activeStubOAuth();
+    const status = await withOrg(orgId, (tx) =>
+      integrations.capabilityAvailability(tx, 'POST_EXPENSE_REPORT'),
+    );
+    // `connected: true` deliberately: something IS connected, too much of it.
+    // Reporting false would print "no ledger is connected" to a tenant looking at
+    // two.
+    expect(status.connected).toBe(true);
+    expect(status.problem).toContain('Disconnect one of them');
+  });
+
+  it('refuses the second CONNECT, before the ambiguity can exist', async () => {
+    // The real pair, and the real admin's path: a tenant on the stub ledger tries
+    // to add VeloLedger without disconnecting. Both are CONFIG adapters and both
+    // claim POST_EXPENSE_REPORT, so this is the state the old code would have
+    // accepted and then resolved by coin flip.
+    await connect('main');
+    const refused = await withOrg(orgId, (tx) =>
+      integrations
+        .installIntegration(
+          tx,
+          {
+            slug: 'veloledger',
+            code: 'velo',
+            label: 'VeloLedger',
+            config: {
+              baseUrl: 'https://ledger.test',
+              apiKey: 'key',
+              entityId: '00000000-0000-4000-8000-00000000000e',
+              vendorRef: 'V-1',
+            },
+          },
+          actorId,
+        )
+        .then(
+          () => null,
+          (err) => err as { code: string; message: string },
+        ),
+    );
+    expect(refused?.code).toBe('AMBIGUOUS_CAPABILITY');
+    // Names the connection the admin already has, and what to do about it.
+    expect(refused?.message).toContain('Stub');
+    expect(refused?.message).toContain('Disconnect');
+    // And nothing was written: a refusal that half-connects is worse than either
+    // outcome.
+    const rows = await admin.query('SELECT count(*)::int AS n FROM integration_installation');
+    expect(rows.rows[0].n).toBe(1);
+  });
+
+  it('one active installation still resolves, and an inactive rival is not one', async () => {
+    // The property the refusal must not break: a dormant or disconnected rival is
+    // not competition. stub-oauth installs inactive, so this is also the QuickBooks
+    // case — registered, invisible, and harmless.
+    await connect('main');
+    await withOrg(orgId, (tx) =>
+      integrations.installIntegration(
+        tx,
+        { slug: 'stub-oauth', code: 'dormant', label: 'Dormant', config: {} },
+        actorId,
+      ),
+    );
+    const resolved = await withOrg(orgId, (tx) =>
+      integrations.resolveCapability(tx, 'POST_EXPENSE_REPORT'),
+    );
+    expect(resolved?.adapter.slug).toBe('stub-ledger');
+  });
+
+  it('an adapter with NO capabilities never conflicts', async () => {
+    // What keeps QuickBooks installable while dormant: `capabilities: []` means it
+    // cannot be chosen and cannot block anybody.
+    await connect('main');
+    const rival = await withOrg(orgId, (tx) =>
+      findCapabilityRival(tx, { ...stubOAuthAdapter, capabilities: [] }),
+    );
+    expect(rival).toBeNull();
   });
 });
 

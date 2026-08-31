@@ -72,7 +72,7 @@ export default async function LedgerQueuePage({
   } catch {
     previewed = null;
   }
-  const { rows, summary, connected } = await getQueuePage();
+  const { rows, summary, connected, problem } = await getQueuePage();
   const waiting = summary.PENDING + summary.FAILED;
 
   return (
@@ -183,6 +183,24 @@ export default async function LedgerQueuePage({
             integrations screen
           </Link>
           ; the queue drains on its own afterwards, including these.
+        </div>
+      ) : null}
+
+      {problem ? (
+        // AC-22. TWO connected ledgers, which is the configuration problem an
+        // operator is least likely to guess at: the queue is not stuck, it is
+        // waiting for somebody to say which ledger. Said here because this is the
+        // screen they come to when reports stop arriving at the far end, and
+        // because nothing is being retried in the meantime — no attempt is burnt,
+        // so every waiting report is still here once one is disconnected.
+        <div className="rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm">
+          <strong className="font-medium">Two ledgers can post, so nothing is posting.</strong>{' '}
+          {problem} Nothing is being retried and nothing has been sent anywhere; disconnect one on
+          the{' '}
+          <Link href="/admin/integrations" className="underline underline-offset-4">
+            integrations screen
+          </Link>{' '}
+          and the queue drains on its own.
         </div>
       ) : null}
 
