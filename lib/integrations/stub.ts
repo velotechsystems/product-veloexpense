@@ -18,6 +18,7 @@
  */
 import {
   AdapterError,
+  OAuthConsentRequired,
   type AccountingAdapter,
   type AdapterConfig,
   type PostResult,
@@ -115,6 +116,17 @@ export const stubAdapter: AccountingAdapter = {
     'A fake ledger that records what it is given. Available only when ' +
     'INTEGRATIONS_ENABLE_STUB is set; never in a deployed environment.',
   capabilities: ['POST_EXPENSE_REPORT', 'PULL_CHART_OF_ACCOUNTS', 'READ_PAYMENT_STATUS'],
+
+  /**
+   * VX3-8: this gate used to live in `registry.ts` as
+   * `a.slug !== 'stub-ledger' || process.env.INTEGRATIONS_ENABLE_STUB === '1'`.
+   * It belongs here — the reason the stub is gated is a fact about the stub.
+   *
+   * Read at CALL time, never at module load (NT-14): ES imports are hoisted, so a
+   * module-load read cannot be varied by a test, and `test/integration-registry.
+   * test.ts` sets this flag inside a test body.
+   */
+  available: () => process.env.INTEGRATIONS_ENABLE_STUB === '1',
   configFields: [
     {
       name: 'ledgerUrl',
@@ -154,5 +166,126 @@ export const stubAdapter: AccountingAdapter = {
   async readPaymentStatus(_config: AdapterConfig, externalId: string) {
     consumeFailure();
     return state.paid.has(externalId) ? ('PAID' as const) : ('UNPAID' as const);
+  },
+};
+
+/* ── a second double: the OAUTH2 machinery (VX3-8) ───────────────────────────
+ *
+ * Same argument as the stub ledger above, one layer over. The generic OAuth
+ * plumbing — state minting, single use, expiry, token storage, refresh-on-use,
+ * re-consent — is the part most likely to be subtly wrong and the part no test
+ * could reach otherwise: the only real OAUTH2 adapter is QuickBooks, and driving
+ * it means either a network or a mock of the network.
+ *
+ * VX3-7's lesson, written down one ticket earlier: a test double that cannot
+ * produce one of two outcomes hides every bug in the outcome it cannot produce.
+ * So this one can produce all of them — a refresh that rotates, a refresh that
+ * needs consent, and a refresh that merely fails.
+ */
+interface OAuthStubState {
+  exchanges: number;
+  refreshes: number;
+  /** What the next refresh does. */
+  nextRefresh: 'ok' | 'needs-consent' | 'transient';
+  /** Rotate the refresh token on each refresh, as QuickBooks does. */
+  rotate: boolean;
+  accessTtlSeconds: number | undefined;
+  lastAuthorizeUrl: string | null;
+}
+
+const oauthState: OAuthStubState = {
+  exchanges: 0,
+  refreshes: 0,
+  nextRefresh: 'ok',
+  rotate: true,
+  accessTtlSeconds: 3600,
+  lastAuthorizeUrl: null,
+};
+
+export function stubOAuthControl() {
+  return {
+    counts: () => ({ exchanges: oauthState.exchanges, refreshes: oauthState.refreshes }),
+    lastAuthorizeUrl: () => oauthState.lastAuthorizeUrl,
+    /** 'ok' rotates and succeeds; 'needs-consent' throws OAuthConsentRequired. */
+    nextRefresh(kind: 'ok' | 'needs-consent' | 'transient') {
+      oauthState.nextRefresh = kind;
+    },
+    setRotate(on: boolean) {
+      oauthState.rotate = on;
+    },
+    /** undefined means the far end reported no expiry. */
+    setAccessTtl(seconds: number | undefined) {
+      oauthState.accessTtlSeconds = seconds;
+    },
+    reset() {
+      oauthState.exchanges = 0;
+      oauthState.refreshes = 0;
+      oauthState.nextRefresh = 'ok';
+      oauthState.rotate = true;
+      oauthState.accessTtlSeconds = 3600;
+      oauthState.lastAuthorizeUrl = null;
+    },
+  };
+}
+
+export const stubOAuthAdapter: AccountingAdapter = {
+  slug: 'stub-oauth',
+  name: 'Stub ledger via authorisation (testing)',
+  description:
+    'A fake ledger that connects by redirect instead of by pasted key. Available ' +
+    'only when INTEGRATIONS_ENABLE_STUB is set; never in a deployed environment.',
+  auth: 'OAUTH2',
+  // No capabilities: this double exists to exercise AUTHENTICATION. Posting is
+  // already covered by `stub-ledger`, and declaring a capability here would make
+  // `resolveCapability` able to choose it over the one that records posts.
+  capabilities: [],
+  configFields: [],
+  available: () => process.env.INTEGRATIONS_ENABLE_STUB === '1',
+
+  authorizeUrl({ state, redirectUri }) {
+    const url = `https://stub.invalid/authorize?state=${encodeURIComponent(state)}&redirect_uri=${encodeURIComponent(redirectUri)}`;
+    oauthState.lastAuthorizeUrl = url;
+    return url;
+  },
+
+  async exchangeCode({ code, callbackParams }) {
+    oauthState.exchanges += 1;
+    if (code === 'BAD') throw new Error('the stub refused this code');
+    return {
+      accessToken: `access-1`,
+      refreshToken: `refresh-1`,
+      expiresInSeconds: oauthState.accessTtlSeconds,
+      refreshExpiresInSeconds: 8640000,
+      externalAccountId: callbackParams.realmId ?? 'stub-company',
+      scope: 'stub.accounting',
+    };
+  },
+
+  async refreshTokens({ refreshToken }) {
+    oauthState.refreshes += 1;
+    if (oauthState.nextRefresh === 'needs-consent') {
+      oauthState.nextRefresh = 'ok';
+      throw new OAuthConsentRequired('the stub says this connection was revoked');
+    }
+    if (oauthState.nextRefresh === 'transient') {
+      oauthState.nextRefresh = 'ok';
+      throw new Error('the stub could not be reached');
+    }
+    const n = oauthState.refreshes + 1;
+    return {
+      accessToken: `access-${n}`,
+      refreshToken: oauthState.rotate ? `refresh-${n}` : undefined,
+      expiresInSeconds: oauthState.accessTtlSeconds,
+      // Deliberately absent, so the COALESCE that keeps the previous refresh
+      // expiry is exercised rather than assumed.
+      refreshExpiresInSeconds: undefined,
+      scope: 'stub.accounting',
+    };
+  },
+
+  async testConnection(config: AdapterConfig): Promise<TestResult> {
+    return config.oauthAccessToken
+      ? { ok: true, detail: `Stub authorised, holding ${config.oauthAccessToken}.` }
+      : { ok: false, detail: 'Not authorised yet.' };
   },
 };

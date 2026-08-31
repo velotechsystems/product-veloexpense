@@ -23,7 +23,8 @@ import {
   type AccountingAdapter,
   type Capability,
 } from '@/lib/integrations/contract';
-import { stubAdapter } from '@/lib/integrations/stub';
+import { quickBooksAdapter } from '@/lib/integrations/quickbooks';
+import { stubAdapter, stubOAuthAdapter } from '@/lib/integrations/stub';
 import { veloLedgerAdapter } from '@/lib/integrations/veloledger';
 
 /**
@@ -40,7 +41,12 @@ import { veloLedgerAdapter } from '@/lib/integrations/veloledger';
  * wrote the rule down for `appOrigin()` — "read at CALL time, not module load" —
  * and it applies to anything a test needs to vary.
  */
-const ALL_ADAPTERS: AccountingAdapter[] = [veloLedgerAdapter, stubAdapter];
+const ALL_ADAPTERS: AccountingAdapter[] = [
+  veloLedgerAdapter,
+  quickBooksAdapter,
+  stubAdapter,
+  stubOAuthAdapter,
+];
 
 /**
  * The shape checks. Exported so `test/integration-registry.test.ts` can assert
@@ -57,6 +63,21 @@ export function assertAdapterShape(adapter: AccountingAdapter): void {
         `adapter '${adapter.slug}' declares ${capability} but implements no ${String(method)}() — ` +
           `a declared capability that is not there fails on a real report, at the worst moment`,
       );
+    }
+  }
+
+  // VX3-8: the same argument, for the auth mode. An adapter that says OAUTH2 and
+  // cannot mint an authorize URL, exchange a code or refresh a token would fail
+  // halfway through a redirect the admin has already been sent on — with the
+  // browser at the far end and nothing to come back to. Cheaper at import.
+  if (adapter.auth === 'OAUTH2') {
+    for (const method of ['authorizeUrl', 'exchangeCode', 'refreshTokens'] as const) {
+      if (typeof adapter[method] !== 'function') {
+        throw new Error(
+          `adapter '${adapter.slug}' declares auth 'OAUTH2' but implements no ${method}() — ` +
+            `an incomplete redirect flow breaks after the admin has already left the product`,
+        );
+      }
     }
   }
 }
@@ -82,13 +103,25 @@ for (const adapter of ALL_ADAPTERS) assertAdapterShape(adapter);
 /**
  * The adapters a tenant may actually connect, read at CALL time.
  *
- * The stub is available only under `INTEGRATIONS_ENABLE_STUB=1` — see the note in
- * `stub.ts`. A stub a tenant could reach in production accepts every post and
- * reports success, so a finance team would watch a queue drain to nowhere.
+ * VX3-8 MOVED THIS DECISION INTO THE ADAPTERS. It used to read:
+ *
+ *     const stubOk = process.env.INTEGRATIONS_ENABLE_STUB === '1';
+ *     return ALL_ADAPTERS.filter((a) => a.slug !== 'stub-ledger' || stubOk);
+ *
+ * — one slug named in a shared file, deciding another module's business. Exactly
+ * the shape `npm run check:vendor` fails the build on; it only survived because
+ * "stub-ledger" is not a vendor name. An adapter now answers for itself through
+ * `available()`, and adding a third gated adapter touches nothing here.
+ *
+ * That is also what lets QuickBooks ship dormant: it reports unavailable while the
+ * platform's client credentials are absent, so no tenant can see it, and it appears
+ * the day those variables are set — with no migration and no deploy of new code.
+ *
+ * Default TRUE when an adapter does not implement it: an adapter with no
+ * prerequisites is always connectable, and that keeps VeloLedger unchanged.
  */
 function enabled(): AccountingAdapter[] {
-  const stubOk = process.env.INTEGRATIONS_ENABLE_STUB === '1';
-  return ALL_ADAPTERS.filter((a) => a.slug !== 'stub-ledger' || stubOk);
+  return ALL_ADAPTERS.filter((a) => a.available?.() ?? true);
 }
 
 export function listAdapters(): AccountingAdapter[] {

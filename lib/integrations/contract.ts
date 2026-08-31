@@ -125,6 +125,61 @@ export interface RemoteAccount {
 }
 
 /**
+ * How an adapter authenticates. VX3-8.
+ *
+ *   CONFIG  An admin pastes values into a form. `configFields` describes them,
+ *           secret-typed ones are encrypted, and that is the whole flow. This is
+ *           what VX3-3 built and what VeloLedger uses (a bearer API key).
+ *
+ *   OAUTH2  Authorization-code redirect. The admin leaves for the far end,
+ *           consents, and returns to a callback carrying a short-lived code. Core
+ *           exchanges it for an access token and a refresh token, stores both
+ *           encrypted, refreshes on use, and asks for consent again when the
+ *           refresh token dies.
+ *
+ * The SPLIT OF LABOUR is the point of these types. Core owns everything generic
+ * and everything security-sensitive: minting and verifying the single-use state,
+ * encrypting tokens, deciding when to refresh, distinguishing "needs a human" from
+ * "try again later". The adapter owns only what is vendor knowledge — which URL to
+ * send the admin to, and how that vendor shapes a token exchange. An adapter
+ * cannot get the state handling wrong because it never sees it.
+ */
+export type AuthKind = 'CONFIG' | 'OAUTH2';
+
+/** What an adapter hands back from an authorisation or a refresh. */
+export interface OAuthTokens {
+  accessToken: string;
+  /**
+   * The far end may or may not rotate this. QuickBooks does, and the new value
+   * must replace the old one or the connection dies at the next refresh — so
+   * `undefined` means "keep what we have" rather than "there is none".
+   */
+  refreshToken?: string;
+  /** Seconds until the access token expires, as the far end reports it. */
+  expiresInSeconds?: number;
+  /** Seconds until the REFRESH token expires, where the vendor says. */
+  refreshExpiresInSeconds?: number;
+  /** The far end's id for the account the admin chose — a realm, company, tenant. */
+  externalAccountId?: string;
+  scope?: string;
+}
+
+/**
+ * Why a refresh failed, which is the only question core asks about it.
+ *
+ * Same distinction as `AdapterError.definitelyNotApplied`, and it matters for the
+ * same reason: getting it wrong in one direction nags an admin to re-authorise
+ * because of a network blip, and in the other leaves a dead connection retrying
+ * forever while reports pile up.
+ */
+export class OAuthConsentRequired extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'OAuthConsentRequired';
+  }
+}
+
+/**
  * An accounting adapter.
  *
  * Every capability method is OPTIONAL and must be present exactly when the
@@ -143,8 +198,68 @@ export interface AccountingAdapter {
   /** What to do in the other system first. Rendered on the connect screen. */
   setupSteps?: readonly string[];
 
+  /**
+   * How this adapter authenticates. Absent means `CONFIG`, so every adapter
+   * written before VX3-8 keeps working unchanged.
+   */
+  auth?: AuthKind;
+
+  /**
+   * May a tenant connect this adapter in THIS deployment?
+   *
+   * VX3-8 moved this decision from core to the adapter, and it was a special case
+   * in core before: `registry.ts` read
+   * `a.slug !== 'stub-ledger' || process.env.INTEGRATIONS_ENABLE_STUB === '1'`.
+   * One slug named in a shared file, which is precisely the shape
+   * `npm run check:vendor` exists to stop — it only escaped the guard because
+   * "stub-ledger" is not a vendor name.
+   *
+   * Each adapter now answers for itself, which is also what makes QuickBooks
+   * dormant-but-ready: it returns false while the platform's client credentials
+   * are absent, so it is invisible to every tenant, and it appears the day those
+   * two environment variables are set. No migration, no code change, no release.
+   *
+   * MUST be read at CALL time, never at module load (NT-14): ES imports are
+   * hoisted, so a module-load read cannot be varied by a test.
+   */
+  available?(): boolean;
+
   /** Always required: an admin must be able to find out if it works. */
   testConnection(config: AdapterConfig): Promise<TestResult>;
+
+  /**
+   * Where to send the admin to consent. OAUTH2 adapters only.
+   *
+   * `state` is minted, hashed and stored by core; the adapter's only job is to put
+   * it in the URL the vendor expects. `redirectUri` must be echoed byte-identically
+   * to `exchangeCode`, which is why core passes it rather than each side building it.
+   */
+  authorizeUrl?(input: {
+    config: AdapterConfig;
+    state: string;
+    redirectUri: string;
+  }): string;
+
+  /** Trade the callback's code for tokens. OAUTH2 adapters only. */
+  exchangeCode?(input: {
+    config: AdapterConfig;
+    code: string;
+    redirectUri: string;
+    /** Whatever else the callback carried, so a vendor-specific id can be read. */
+    callbackParams: Record<string, string>;
+  }): Promise<OAuthTokens>;
+
+  /**
+   * Trade a refresh token for a fresh access token. OAUTH2 adapters only.
+   *
+   * MUST throw `OAuthConsentRequired` when the failure is one only a human can
+   * fix — an expired or revoked refresh token — and any other error otherwise.
+   * Core sets the re-consent flag on the first and retries the second.
+   */
+  refreshTokens?(input: {
+    config: AdapterConfig;
+    refreshToken: string;
+  }): Promise<OAuthTokens>;
 
   postExpenseReport?(config: AdapterConfig, report: PostableReport): Promise<PostResult>;
   pullChartOfAccounts?(config: AdapterConfig): Promise<RemoteAccount[]>;

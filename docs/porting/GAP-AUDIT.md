@@ -2501,6 +2501,69 @@ so the branch was unreachable from the suite. A test double that cannot produce 
 hides every bug in the outcome it cannot produce. The stub now has `failNext(msg, refused)` and
 `failNextBare(msg)`, and both branches are asserted through it rather than through VeloLedger.
 
+### AC-18 · The integration layer could only express "paste a value into a form" ✅ CLOSED by VX3-8
+
+Found 2026-08-30, scoping VX3-8, by asking what QuickBooks actually needs before
+asking how to write it.
+
+VX3-3 built the registry around ONE shape of authentication, and it is exactly right for
+VeloLedger:
+
+```ts
+export interface ConfigField { type: 'text' | 'url' | 'secret'; … }
+export type AdapterConfig = Record<string, string>;
+```
+
+An admin pastes values, the secret-typed ones are encrypted, done. A bearer API key fits
+perfectly. A grep for `oauth|refresh_token|redirect_uri|callback` across `lib/`, `app/`
+and the migrations returned nothing in the integrations path — the only OAuth in the
+product is the SSO login.
+
+**QuickBooks cannot be connected that way at all.** Its auth is OAuth2
+authorization-code: the admin is redirected to Intuit, consents, and returns to a
+callback carrying a short-lived code plus an identifier for the company they chose. The
+code is exchanged for an access token AND a refresh token; the refresh token rotates when
+used and eventually expires, and when it does the only remedy is asking a human to
+consent again. There is no form field for any of that.
+
+So the exposure was not "we have not written a QuickBooks adapter". It was that **nothing
+in the product could carry one**, and the discovery would have landed on the day a client
+was being onboarded — under time pressure, on the part of the flow where mistakes are
+security bugs rather than inconveniences.
+
+**Closed by the plumbing half of VX3-8**, with QuickBooks itself deliberately dormant:
+
+- `0020` — `auth_kind`, encrypted token columns with separate expiries, a vendor-neutral
+  `external_account_id`, an `oauth_needs_consent` flag, and `integration_oauth_state`:
+  one in-flight attempt, stored as a sha256, single-use, short-lived, with the same
+  narrow `platform_task` hatch `action_token` has and for the same reason (the callback
+  arrives with no session and must derive its tenant from the state alone).
+- `AuthKind`, `OAuthTokens`, `OAuthConsentRequired` and three optional adapter methods on
+  the contract. Core keeps the state, the encryption, the refresh scheduling and the
+  classification; the adapter contributes only vendor knowledge.
+- `available()` on the adapter, replacing a slug named in `registry.ts`. This is what
+  makes "ready to connect later" real: QuickBooks reports unavailable while
+  `QUICKBOOKS_CLIENT_ID` / `QUICKBOOKS_CLIENT_SECRET` are absent, so it is invisible to
+  every tenant, and it appears the day those are set — no migration, no deploy.
+- `quickbooks.ts` declares **no capabilities**, so `resolveCapability` can never choose
+  it. The Bill mapping is the work that remains, and it wants a sandbox rather than
+  documentation — see the note below.
+
+**What remains for onboarding day, so nobody re-derives it:**
+
+1. Register the app with Intuit and set the three environment variables (plus `APP_URL`,
+   which the redirect is built from).
+2. Confirm the two endpoint hosts and the scope against current documentation. Intuit's
+   docs are JavaScript-rendered and could not be fetched while this was written, so **no
+   token lifetime is quoted anywhere in the code** — every expiry comes from the far
+   end's own response. This is a five-minute check, not a rewrite.
+3. Write `postExpenseReport` against a sandbox company: a `Bill` with `VendorRef` and
+   `Line[].AccountBasedExpenseLineDetail.AccountRef`, mapping VeloExpense's account
+   NUMBER to a QuickBooks account id (they differ from VeloLedger, which matches on
+   number — AC-16's pre-flight will need its equivalent here). Then declare
+   `POST_EXPENSE_REPORT` and add the capability method, which the registry's pairing
+   check will hold to.
+
 ## tenancy · foreign keys do not respect RLS (found 2026-08-29 building VX3-1)
 
 Not a port finding — this one is about VeloExpense's own schema, which is why it has its own prefix.
