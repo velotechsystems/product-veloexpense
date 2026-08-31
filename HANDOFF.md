@@ -1791,9 +1791,54 @@ pre-existing warning; vendor guard clean; 28 suites / 517 tests; `playwright
 --list` discovers the four new tests and the third setup project. **Not verified:
 the spec's assertions**, which need a browser.
 
+**VX3-9a is COMPLETE and green** as of PR #65 — 14 Playwright tests, and the four
+ledger ones needed three more rounds. Six defects, none in the code under test,
+and `tsc` and `eslint` passed on every one: two invented selectors, two fixtures
+assumed rather than read (a category called 'Travel' that does not exist — 68100 is
+the ACCOUNT's name; and an approver who is somebody else), one leftover-state
+class, and `count()` not auto-waiting. **HANDOFF §4 now carries the checklist**;
+the leftover-state one is the item to internalise, because CI cannot see it — CI
+gets a fresh database every run, so an assertion that holds only because the
+environment is disposable passes there and fails on a laptop.
+
 **VX3-9b** remains: the browser walk of the OAuth redirect, which needs a local
 provider endpoint (the sink is the obvious host for it — ~15 lines) because
 `stub-oauth` currently sends the browser to `https://stub.invalid`.
+
+### AC-20 + AC-21 — the integration connect/disconnect pair (after #65)
+
+Both found while writing VX3-9a's e2e, neither in its scope, both in
+`lib/integrations/service.ts`.
+
+- **AC-20: disconnect was a one-way door.** `installIntegration` only ever
+  INSERTed; `UNIQUE (organization_id, code)` is **not** partial (only the
+  one-active index is); and the connect form has no `code` input, so
+  `connectFromForm` sends the slug every time. Reconnecting collided with the row
+  the disconnect left behind and failed with *"the code 'veloledger' is already
+  used here"*. **One disconnect and that integration could never be connected again
+  from the screen** — while the ALREADY_ACTIVE error one step earlier advises
+  "Disconnect it first". Now an `ON CONFLICT ... DO UPDATE ... WHERE active = false
+  AND integration_slug = EXCLUDED.integration_slug` that reactivates the SAME row.
+  A test named *"the same integration can be reconnected"* had existed since VX3-3
+  and used a different `code`, which is the one path that worked.
+- **AC-21 (security): disconnect left the OAuth refresh token in the row.** The
+  function strips the adapter's declared secret fields out of the `config` jsonb —
+  and `0020` put OAuth credentials in **columns**. So a disconnect deactivated the
+  row and left a live, encrypted, rotating refresh token, plus
+  `oauth_authorised_at` and `external_account_id`, which make the screen offer
+  "Re-authorise" over nothing. Not exploitable today (QuickBooks is dormant and
+  `resolveCapability` only selects active rows) and it would have become real on
+  the day a client was onboarded. All of those columns are cleared now, on
+  disconnect AND on reconnect.
+- **The general form, and it is the second time:** moving a value out of a jsonb
+  blob into a column takes it out of reach of every loop that iterates the blob.
+  AC-19 was the same fact one layer up. When `0020`-style columns are added, grep
+  for the code that thinks the blob is the whole story.
+
+**Verified:** 106 tests across the seven integration suites, and both fixes proven
+against their own absence — restoring the plain INSERT fails four assertions with
+`the code 'main' is already used here`; leaving the columns alone fails with
+`oauth_access_token survived the disconnect`.
 
 ## 6. Planning docs (in the ExpenseOS Google-Drive folder, `Specifications_and_Planning/`)
 - `VeloExpense-Port-and-Build-Plan.docx` (7-phase plan + ExpenseOS→VeloExpense sync strategy)

@@ -254,10 +254,72 @@ describe('disconnecting', () => {
     expect(raw.rows[0].config.apiToken).toBeUndefined();
   });
 
-  it('frees the slot, so the same integration can be reconnected', async () => {
+  it('frees the slot, so the same integration can be reconnected under a NEW code', async () => {
     const installed = await connect('main');
     await withOrg(orgId, (tx) => integrations.disconnect(tx, installed.id));
     await expect(connect('again')).resolves.toMatchObject({ active: true });
+  });
+
+  /**
+   * AC-20, and the test above is why it survived six phases.
+   *
+   * "The same integration can be reconnected" was asserted with a DIFFERENT code
+   * ('again' rather than 'main') — the one path that worked. The screen has no
+   * code input at all: `connectFromForm` sends the slug, every time. So the only
+   * reconnect a real admin can perform was the one nothing exercised, and it was
+   * impossible: `UNIQUE (organization_id, code)` is not partial, so it collided
+   * with the row the disconnect left and failed with DUPLICATE_CODE — naming a
+   * value the admin never chose, on a screen whose other error says "Disconnect
+   * it first". One disconnect, and that integration was gone for good.
+   *
+   * The same shape as AC-17 and AC-19: a test that looks like coverage of a
+   * behaviour, standing next to the case that does not work.
+   */
+  it('reconnects UNDER THE SAME CODE, reactivating the same row — AC-20', async () => {
+    const first = await connect('main');
+    await withOrg(orgId, (tx) => integrations.testInstallation(tx, first.id));
+    await withOrg(orgId, (tx) => integrations.disconnect(tx, first.id));
+
+    const again = await connect('main', { ...CONFIG, apiToken: 'a-new-token' });
+
+    // THE SAME ROW, not a second one — which is what keeps `integration_post`'s
+    // `installation_id` pointing at the connection those reports were sent to.
+    expect(again.id).toBe(first.id);
+    expect(again.active).toBe(true);
+    const rows = await admin.query('SELECT count(*)::int AS n FROM integration_installation');
+    expect(rows.rows[0].n).toBe(1);
+
+    // The new credential is in force, and the old test result is gone: a "worked"
+    // stamp belongs to the credential that earned it.
+    expect(again.last_test_at).toBeNull();
+    const resolved = await withOrg(orgId, (tx) =>
+      integrations.resolveCapability(tx, 'POST_EXPENSE_REPORT'),
+    );
+    expect(resolved?.config.apiToken).toBe('a-new-token');
+  });
+
+  it('will not let a DIFFERENT integration take over the code', async () => {
+    // The code identifies a connection, not a product. Reactivating someone
+    // else's row would rewrite its history rather than reconnect it.
+    const installed = await connect('main');
+    await withOrg(orgId, (tx) => integrations.disconnect(tx, installed.id));
+    await expect(
+      withOrg(orgId, (tx) =>
+        integrations.installIntegration(
+          tx,
+          { slug: 'stub-oauth', code: 'main', label: 'Other', config: {} },
+          actorId,
+        ),
+      ),
+    ).rejects.toMatchObject({ code: 'DUPLICATE_CODE' });
+  });
+
+  it('says ALREADY_ACTIVE, not DUPLICATE_CODE, when it is simply still connected', async () => {
+    // Same code, still active. The old code path reached this through the unique
+    // violation and said "the code 'main' is already used here", which is true and
+    // useless — it describes a constraint, not the situation.
+    await connect('main');
+    await expect(connect('main')).rejects.toMatchObject({ code: 'ALREADY_ACTIVE' });
   });
 });
 
