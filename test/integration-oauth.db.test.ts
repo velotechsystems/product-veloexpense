@@ -24,6 +24,9 @@ import {
 } from '@/lib/integrations/oauth';
 import { stubOAuthControl } from '@/lib/integrations/stub';
 import { isEncrypted } from '@/lib/crypto/secrets';
+import * as outbox from '@/lib/integrations/post-outbox';
+import { postOne } from '@/lib/integrations/dispatch';
+import { resolveCapability, testInstallation } from '@/lib/integrations/service';
 
 const admin = new Pool({
   connectionString: process.env.ADMIN_DATABASE_URL ?? process.env.DATABASE_URL,
@@ -477,5 +480,102 @@ describe('an adapter with unmet prerequisites is invisible', () => {
         ),
       ),
     ).rejects.toThrow(IntegrationError);
+  });
+});
+
+describe('the authorisation actually reaches the adapter (VX3-9a)', () => {
+  /**
+   * THE regression suite for the defect VX3-9a found. VX3-8 stored tokens
+   * correctly, refreshed them correctly, and then handed adapters
+   * `usableConfig()` alone — the decrypted jsonb blob, which for an OAUTH2
+   * adapter is EMPTY, because its credentials are the platform's and its tokens
+   * live in columns. `freshAuthConfig` was called by nothing but its own test.
+   *
+   * Every assertion below fails if `service.ts` goes back to `usableConfig()`.
+   */
+  async function authorise() {
+    const { authorizeUrl } = await withOrg(orgId, (tx) =>
+      beginAuthorisation(tx, { installationId, actorId, redirectUri: REDIRECT }),
+    );
+    await completeAuthorisation({
+      stateValue: stateFromUrl(authorizeUrl),
+      code: 'good',
+      callbackParams: { realmId: 'company-9a' },
+    });
+  }
+
+  async function approvedReport(title: string) {
+    return withOrg(orgId, async (tx) => {
+      const rep = await tx.query(
+        `INSERT INTO expense_report (organization_id, submitter_id, title, currency_code,
+                                     status, approved_at, number, total_minor)
+         VALUES ($1, $2, $3, 'CAD', 'APPROVED', clock_timestamp(), $4, 5000) RETURNING id`,
+        [orgId, actorId, title, `EXP-${Math.floor(Math.random() * 100000)}`],
+      );
+      const reportId = rep.rows[0].id as string;
+      await outbox.enqueuePost(tx, reportId);
+      return reportId;
+    });
+  }
+
+  it('resolveCapability hands the adapter a LIVE access token', async () => {
+    await authorise();
+    const resolved = await withOrg(orgId, (tx) =>
+      resolveCapability(tx, 'POST_EXPENSE_REPORT'),
+    );
+    expect(resolved).not.toBeNull();
+    expect(resolved!.adapter.slug).toBe('stub-oauth');
+    // Decrypted, and the far end's account id alongside it. Before the fix this
+    // object was `{}`.
+    expect(resolved!.config.oauthAccessToken).toBe('access-1');
+    expect(resolved!.config.externalAccountId).toBe('company-9a');
+  });
+
+  it('a POST through an OAUTH2 adapter succeeds, and would have failed unauthenticated',
+    async () => {
+      // The stub throws when handed no token, deliberately — an adapter posting
+      // unauthenticated is a silent success here and a 401 at a real far end.
+      await authorise();
+      const reportId = await approvedReport('oauth posting');
+      const queue = await withOrg(orgId, (tx) => outbox.listQueue(tx));
+      const row = queue.find((q) => q.report_id === reportId)!;
+      expect(await postOne(orgId, row.id)).toBe('POSTED');
+      const after = await withOrg(orgId, (tx) => outbox.listQueue(tx));
+      const done = after.find((q) => q.report_id === reportId)!;
+      expect(done.status).toBe('POSTED');
+      expect(done.external_id).toBe(`stub-oauth-${reportId}`);
+      // And it went to the OAUTH2 adapter's own recorder, not the other stub's.
+      expect(stub.posted().map((p) => p.report.reportId)).toContain(reportId);
+    });
+
+  it('testConnection sees the token, so the Test button stops lying', async () => {
+    // Before the fix this returned "Not authorised yet" forever, including
+    // immediately after a successful authorisation — a button that lies is worse
+    // than a button that fails.
+    await authorise();
+    const result = await withOrg(orgId, (tx) => testInstallation(tx, installationId));
+    expect(result.ok).toBe(true);
+    expect(result.detail).toContain('access-1');
+  });
+
+  it('a report cannot post while the connection NEEDS CONSENT', async () => {
+    // The whole point of deactivating on a dead refresh token: the report waits
+    // for a human instead of failing forever against a connection that cannot
+    // authenticate.
+    await authorise();
+    await admin.query(
+      `UPDATE integration_installation
+          SET oauth_needs_consent = true, active = false WHERE id = $1`,
+      [installationId],
+    );
+    const reportId = await approvedReport('needs consent');
+    const queue = await withOrg(orgId, (tx) => outbox.listQueue(tx));
+    const row = queue.find((q) => q.report_id === reportId)!;
+    // No active installation with the capability -> SKIPPED, and no attempt burnt,
+    // which is VX3-4's "a tenant that connects next week finds last week's
+    // approvals still waiting".
+    expect(await postOne(orgId, row.id)).toBe('SKIPPED');
+    const after = await withOrg(orgId, (tx) => outbox.listQueue(tx));
+    expect(after.find((q) => q.report_id === reportId)!.attempts).toBe(0);
   });
 });

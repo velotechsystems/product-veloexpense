@@ -1678,6 +1678,55 @@ NOT run before the first handover and should have been — see the correction in
 They are green now: six `TS2345` errors from an unextended `IntegrationError` code
 union were fixed after John's build found them.**
 
+
+**What VX3-9a shipped (part 1 of 2)** — the OAuth wiring defect closed
+(GAP-AUDIT **AC-19**), `lib/integrations/errors.ts`, `scripts/e2e-ledger.mjs`, a
+posting-capable `stub-oauth`, and `test/veloledger-sink.db.test.ts`. **Part 2 —
+the second seeded tenant and the two-tenant browser spec — is the half that needs
+`next build` and Playwright, so it is deliberately not in this PR.**
+
+- **THE DEFECT IS THE HEADLINE, and it was in `main`.** VX3-8's `freshAuthConfig`
+  — decrypt, refresh-if-due, classify a dead refresh token — was called by nothing
+  but its own seventeen tests. Core handed adapters `usableConfig()` alone, which
+  for an OAUTH2 adapter is EMPTY. So VX3-8 stored tokens correctly and never used
+  them: a posting adapter would get no token, and QuickBooks' Test button said
+  "Not authorised yet" **forever, including right after a successful
+  authorisation**. See AC-19 for why no test could catch it — VX3-7's lesson
+  recurring one layer up, two tickets after I wrote it into this codebase.
+- **THE VELOLEDGER ADAPTER HAS NOW MET A REAL HTTP FAR END.** `scripts/e2e-ledger.mjs`
+  serves the tool surface (`list_entities`, `resolve_period`, `list_accounts`,
+  `draft_bill`), honours the idempotency key, and 401s an unauthenticated call.
+  `test/veloledger-sink.db.test.ts` starts it itself and drives the REAL adapter
+  through `postOne` — so **VX3-7's account pre-flight is proven against a far end
+  that really answers with a chart**, refusing a number it does not have with
+  nothing drafted. The tracker item stays open (it still has not met a real
+  VeloLedger) but it is no longer at zero.
+- **Why a sink and not module state:** Playwright drives a separate standalone
+  server, so a browser test cannot read module variables, and `integration_post`
+  stores `external_id` and `installation_id` but **not the payload**. "Asserts the
+  payload" is impossible without the payload leaving the process. Third instance of
+  the `e2e-storage.mjs` / `e2e-mail.mjs` argument.
+- **`stub-oauth` posts now**, reversing my own VX3-8 decision — that comment is
+  quoted in `stub.ts` beside the reversal, because the worry it raised was real and
+  the cost of acting on it was a hidden bug.
+- **My typecheck caught two arity errors before handover**, which is the §3
+  correction from VX3-8 working as intended rather than a claim about it.
+
+**Verified:** 28 suites / **517 tests**, `tsc --noEmit` clean, `eslint` clean (two
+pre-existing warnings), vendor guard clean, no NUL bytes. The defect fix and the
+pre-flight were each checked against their own absence. `next build` and the e2e
+remain John's.
+
+**Part 2, still to do:** a second populated tenant in the seed (users, chart,
+category, an installation per tenant — the VeloLedger one pointed at the sink), a
+second `storageState` in `auth.setup.ts`, a `webServer` entry for the sink in
+`playwright.config.ts`, and `e2e/ledger-flow.spec.ts` asserting each tenant's
+report reaches its own ledger with its own payload and neither sees the other's.
+Note the second tenant's OAUTH2 installation cannot be authorised by the seed —
+tokens are encrypted by app code the seed cannot call — which is why part 2 uses
+the VeloLedger adapter for the sink-facing tenant and leaves the browser
+authorisation walk to **VX3-9b**.
+
 ## 6. Planning docs (in the ExpenseOS Google-Drive folder, `Specifications_and_Planning/`)
 - `VeloExpense-Port-and-Build-Plan.docx` (7-phase plan + ExpenseOS→VeloExpense sync strategy)
 - `ExpenseOS-vs-VeloExpense-Differences-Chart-rev2.docx`

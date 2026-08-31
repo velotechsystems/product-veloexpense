@@ -193,6 +193,13 @@ interface OAuthStubState {
   lastAuthorizeUrl: string | null;
 }
 
+/**
+ * This adapter's OWN recorded posts, separate from `stub-ledger`'s. That
+ * separation is what makes "which adapter received which report" assertable — the
+ * exact worry the VX3-8 comment raised, and the reason it is now a non-issue.
+ */
+const oauthPosted: Array<{ report: PostableReport; externalId: string }> = [];
+
 const oauthState: OAuthStubState = {
   exchanges: 0,
   refreshes: 0,
@@ -205,6 +212,8 @@ const oauthState: OAuthStubState = {
 export function stubOAuthControl() {
   return {
     counts: () => ({ exchanges: oauthState.exchanges, refreshes: oauthState.refreshes }),
+    /** What THIS adapter received, so a test can tell the two ledgers apart. */
+    posted: () => [...oauthPosted],
     lastAuthorizeUrl: () => oauthState.lastAuthorizeUrl,
     /** 'ok' rotates and succeeds; 'needs-consent' throws OAuthConsentRequired. */
     nextRefresh(kind: 'ok' | 'needs-consent' | 'transient') {
@@ -218,6 +227,7 @@ export function stubOAuthControl() {
       oauthState.accessTtlSeconds = seconds;
     },
     reset() {
+      oauthPosted.length = 0;
       oauthState.exchanges = 0;
       oauthState.refreshes = 0;
       oauthState.nextRefresh = 'ok';
@@ -235,10 +245,26 @@ export const stubOAuthAdapter: AccountingAdapter = {
     'A fake ledger that connects by redirect instead of by pasted key. Available ' +
     'only when INTEGRATIONS_ENABLE_STUB is set; never in a deployed environment.',
   auth: 'OAUTH2',
-  // No capabilities: this double exists to exercise AUTHENTICATION. Posting is
-  // already covered by `stub-ledger`, and declaring a capability here would make
-  // `resolveCapability` able to choose it over the one that records posts.
-  capabilities: [],
+  /**
+   * VX3-9a GAVE THIS ADAPTER POSTING, and reversing my own VX3-8 decision is the
+   * point rather than an afterthought. That comment read:
+   *
+   *   "No capabilities: this double exists to exercise AUTHENTICATION. Posting is
+   *    already covered by `stub-ledger`, and declaring a capability here would
+   *    make `resolveCapability` able to choose it over the one that records posts."
+   *
+   * The stated worry was real and is solved by giving this adapter its own
+   * recorded state. What the decision actually cost was the bug it hid: with no
+   * OAUTH2 adapter able to post, **nothing could reach the posting path with a
+   * token**, and so nobody noticed that `service.ts` handed adapters
+   * `usableConfig()` alone — an empty object for an adapter whose credentials live
+   * in columns. VX3-8's whole OAuth flow stored tokens and never used them.
+   *
+   * Which is VX3-7's lesson, one layer up and two tickets later: a test double
+   * that cannot produce one of two outcomes hides every bug in the outcome it
+   * cannot produce.
+   */
+  capabilities: ['POST_EXPENSE_REPORT'],
   configFields: [],
   available: () => process.env.INTEGRATIONS_ENABLE_STUB === '1',
 
@@ -287,5 +313,92 @@ export const stubOAuthAdapter: AccountingAdapter = {
     return config.oauthAccessToken
       ? { ok: true, detail: `Stub authorised, holding ${config.oauthAccessToken}.` }
       : { ok: false, detail: 'Not authorised yet.' };
+  },
+
+  /**
+   * Post a report — over REAL HTTP when a sink URL is configured, and into module
+   * state otherwise.
+   *
+   * ── Why two modes, and why the HTTP one exists ──────────────────────────────
+   *
+   * Module state is enough for a vitest suite in the same process. It is worth
+   * nothing to an e2e: Playwright drives the STANDALONE SERVER in another process,
+   * so a browser test cannot read this module's variables, and
+   * `integration_post` stores `external_id` and `installation_id` but NOT the
+   * payload. So "the e2e asserts the payload" needs the payload to leave the
+   * process.
+   *
+   * `INTEGRATIONS_STUB_LEDGER_URL` points at `scripts/e2e-ledger.mjs`, which
+   * records what it received and serves it back on a control port — exactly the
+   * argument `e2e-mail.mjs` makes against the in-memory mail transport, and
+   * `e2e-storage.mjs` against MemoryStorage. Unset, this falls back to module
+   * state and the 500-odd vitest assertions are untouched.
+   *
+   * Read at CALL time (NT-14).
+   */
+  async postExpenseReport(config: AdapterConfig, report: PostableReport): Promise<PostResult> {
+    consumeFailure();
+
+    // THE assertion this adapter exists to make. An OAUTH2 adapter with no token
+    // must fail LOUDLY: posting unauthenticated would be a silent success here and
+    // a 401 at a real far end, and it is precisely what VX3-8 was doing.
+    const token = config.oauthAccessToken;
+    if (!token) {
+      throw new AdapterError(
+        'the stub OAuth ledger was handed no access token — core did not resolve ' +
+          'the authorisation for this installation',
+        true,
+      );
+    }
+
+    const sink = process.env.INTEGRATIONS_STUB_LEDGER_URL?.trim();
+    if (!sink) {
+      oauthPosted.push({ report, externalId: `stub-oauth-${report.reportId}` });
+      return {
+        externalId: `stub-oauth-${report.reportId}`,
+        detail: 'Recorded by the stub OAuth ledger (in-process).',
+      };
+    }
+
+    const response = await fetch(`${sink.replace(/\/+$/, '')}/bills`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        // The token, in the place a real far end would look for it. The e2e reads
+        // it back off the sink, which is what turns "the fix is wired" from a
+        // claim into an assertion.
+        authorization: `Bearer ${token}`,
+        'x-external-account': config.externalAccountId ?? '',
+      },
+      body: JSON.stringify({
+        reportId: report.reportId,
+        number: report.number,
+        title: report.title,
+        submitter: report.submitterName,
+        currency: report.currencyCode,
+        totalMinor: report.totalMinor,
+        lines: report.lines.map((l) => ({
+          description: l.description,
+          category: l.categoryCode,
+          account: l.glAccountNumber,
+          amountMinor: l.amountMinor,
+        })),
+      }),
+      cache: 'no-store',
+    });
+    const text = await response.text();
+    if (!response.ok) {
+      // 4xx refused, 5xx might have applied — the same distinction the real
+      // adapter makes, so the generic drain classifies this double correctly too.
+      throw new AdapterError(
+        `the stub ledger returned ${response.status}: ${text.slice(0, 200)}`,
+        response.status < 500,
+      );
+    }
+    const parsed = JSON.parse(text) as { billId?: string };
+    return {
+      externalId: parsed.billId ?? `stub-oauth-${report.reportId}`,
+      detail: `Posted to the stub ledger over HTTP as ${parsed.billId}.`,
+    };
   },
 };

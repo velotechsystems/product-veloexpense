@@ -31,7 +31,7 @@ import { createHash, randomBytes } from 'node:crypto';
 import { withOrg, withPlatformRead } from '@/lib/tenant/context';
 import { decryptSecret, encryptSecret } from '@/lib/crypto/secrets';
 import { adapterFor } from '@/lib/integrations/registry';
-import { IntegrationError } from '@/lib/integrations/service';
+import { IntegrationError } from '@/lib/integrations/errors';
 import { OAuthConsentRequired, type AdapterConfig } from '@/lib/integrations/contract';
 import type { QueryRunner } from '@/lib/db/client';
 
