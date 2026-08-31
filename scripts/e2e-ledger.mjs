@@ -66,6 +66,23 @@ const MAX_BILLS = 500;
  */
 let failNext = 0;
 let failStatus = 502;
+/**
+ * Which call to fail, or null for "the next one, whatever it is".
+ *
+ * A post is THREE tool calls — `resolve_period`, `list_accounts`, `draft_bill` —
+ * so an unaimed failure always lands on the first, where a 502 is a read that
+ * failed and nothing was ever sent. The interesting case is a 5xx on the WRITE,
+ * which may have applied at the far end; that is the whole of AC-8, and without a
+ * way to aim, no test can reach it. `bills` names the plain `POST /bills` route.
+ */
+let failTool = null;
+
+function shouldFail(tool) {
+  if (failNext <= 0) return false;
+  if (failTool !== null && failTool !== tool) return false;
+  failNext -= 1;
+  return true;
+}
 
 function json(res, status, body) {
   const text = JSON.stringify(body);
@@ -112,8 +129,7 @@ const LEDGER_ACCOUNTS = [
 ];
 
 async function veloLedgerTool(tool, req, res) {
-  if (failNext > 0) {
-    failNext -= 1;
+  if (shouldFail(tool)) {
     return json(res, failStatus, {
       error: { code: 'SINK_REFUSED', message: `the ledger refused ${tool} (${failStatus})` },
     });
@@ -188,8 +204,7 @@ const ledger = createServer(async (req, res) => {
     return json(res, 404, { error: 'POST /bills, or POST /api/v1/<tool>' });
   }
 
-  if (failNext > 0) {
-    failNext -= 1;
+  if (shouldFail('bills')) {
     // Deliberately a REAL status code. 5xx is ambiguous (the far end may have
     // applied it) and 4xx is a refusal — the distinction AC-8 and AC-17 are about,
     // and the app must classify it from the wire rather than from a stub flag.
@@ -239,13 +254,17 @@ const control = createServer(async (req, res) => {
     const parsed = body ? JSON.parse(body) : {};
     failNext = Number(parsed.count ?? 1);
     failStatus = Number(parsed.status ?? 502);
-    return json(res, 200, { failNext, failStatus });
+    // A tool NAME, so a test can aim the failure at `draft_bill` rather than at
+    // whichever call happens to come first.
+    failTool = parsed.tool ? String(parsed.tool) : null;
+    return json(res, 200, { failNext, failStatus, failTool });
   }
 
   if (req.method === 'POST' && url.pathname === '/reset') {
     bills.length = 0;
     failNext = 0;
     failStatus = 502;
+    failTool = null;
     return json(res, 200, { ok: true });
   }
 

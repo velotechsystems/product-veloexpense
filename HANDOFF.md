@@ -231,6 +231,36 @@ CI (`.github/workflows/ci.yml`) spins up Postgres, applies migrations, creates `
 **Refresh THIS file on the feature branch, before the PR is opened** — a handoff commit pushed
 to a branch after its PR merged never reaches main (that is how the VX1-5 refresh was lost).
 
+### Writing a Playwright spec you cannot run
+`tsc` and `eslint` pass on a spec built entirely of selectors and fixtures that do not exist —
+they type-check strings. VX3-9a burned two CI rounds on that: six elements matching an adapter
+name, a connect form that disappears once connected (so CI's one retry failed differently and hid
+the real failure three tests later), a `getByText` on an input's `defaultValue` that could never
+fail, invented button labels, a category called **Travel** the seed does not have (68100 is the
+ACCOUNT's name; the category is Ground Transportation), a $125 report with no receipt that the
+starter BLOCK rule stops at submit, and an approval done as the SUBMITTER when the seeded
+reporting line routes it to `owner@demo.test`.
+
+So before pushing a new spec:
+1. **Take selectors from a passing spec**, not from the component read once. `expense-flow` owns
+   the workbench, `approval-flow` owns submit→approve→reimburse and the `.auth/*.json` states.
+2. **Check the fixtures the assertions name** — category labels, account numbers, who approves —
+   against `scripts/seed.mjs` and the migration, not against what the names suggest.
+3. **Assume the file re-runs from the top** (`retries: 1` + `mode: 'serial'`) and that the demo
+   tenant is NOT reset between runs. Titles want a per-run stamp, and anything a run LEAVES behind
+   is the next run's input: a connected integration hides its own connect form (`availableAdapters()`
+   excludes it), and mail nobody drained sits in the outbox until the next run's first drain delivers
+   it to an assertion that was looking for its own. Wipe what the file needs empty in a `beforeAll`
+   (superuser `Pool`, as `ledger-flow` does) and drain what it enqueues in an `afterAll`. **CI is
+   fresh every run and will not catch any of this** — an assertion that holds only because the
+   environment is disposable is the shape to watch for.
+4. **Amounts over $25 need a receipt.** `expense-flow`'s `beforeAll` restores the starter rules and
+   runs before every later file; RECEIPT_REQUIRED is BLOCK above $25.00.
+5. **A `getByText` never matches an input's value** — if the assertion cannot fail, it is not one.
+6. **`count()` does not auto-wait**, and neither does `innerText()`. After a click that navigates,
+   they answer about the page you just left. Anchor on an auto-waiting `expect(...)` first, then ask.
+   This is how VX3-9a skipped a required checkbox and got a refusal ten lines away from the cause.
+
 ## 5. STATUS — where things stand
 **Phase 0 (foundation & tenancy) — COMPLETE, merged to main:**
 VX0-1 scaffold · VX0-2..6 tenancy spine + RLS isolation gate (green) · VX0-7 SSO (vendored auth-kit + login page) · VX0-9 seeds · VX0-10 CI + standard workflows + Dockerfile. (VX0-8 worker/MCP tenant-context deferred until those surfaces exist.)
@@ -1717,15 +1747,53 @@ pre-existing warnings), vendor guard clean, no NUL bytes. The defect fix and the
 pre-flight were each checked against their own absence. `next build` and the e2e
 remain John's.
 
-**Part 2, still to do:** a second populated tenant in the seed (users, chart,
-category, an installation per tenant — the VeloLedger one pointed at the sink), a
-second `storageState` in `auth.setup.ts`, a `webServer` entry for the sink in
-`playwright.config.ts`, and `e2e/ledger-flow.spec.ts` asserting each tenant's
-report reaches its own ledger with its own payload and neither sees the other's.
-Note the second tenant's OAUTH2 installation cannot be authorised by the seed —
-tokens are encrypted by app code the seed cannot call — which is why part 2 uses
-the VeloLedger adapter for the sink-facing tenant and leaves the browser
-authorisation walk to **VX3-9b**.
+**What VX3-9a part 2 shipped** — a second populated tenant (`second`), a third
+`storageState`, the sink wired into `playwright.config.ts`, and
+`e2e/ledger-flow.spec.ts`: four tests covering per-tenant adapter resolution, the
+posted payload, cross-tenant invisibility through the app, and a real 502 becoming
+NEEDS_REVIEW. **The spec is the one thing in this ticket I could not run** — it
+needs `next build` and Playwright. Everything around it is verified.
+
+- **NO LEDGER IS SEEDED, and the first version tried to.** A `secret`-typed config
+  field is encrypted ON WRITE by TypeScript a `.mjs` seed cannot import, and
+  `decryptSecret` REFUSES an unmarked value rather than trusting it (AC-4). So a
+  seeded plaintext `apiKey` is not "insecure but working" — it is a row that throws
+  the moment the app reads it, and the e2e would have failed with a crypto error
+  rather than anything about ledgers. Verified, not assumed. The spec connects each
+  ledger through the real form instead, which uses the shipping encryption path and
+  is **the first coverage the connect screen has ever had**.
+- **`seedReportingLine` HAD TWO BUGS, and VX3-10 is what surfaced them.** It was
+  hardcoded to the demo tenant (`le.name = 'Demo Co Inc.'`, a chain of
+  `*@demo.test`), and every lookup relied on RLS for tenant scoping with no
+  `organization_id` predicate. Fine as `veloapp`; wrong as a superuser, which
+  bypasses RLS even under FORCE — the second tenant's users were assigned the DEMO
+  tenant's business unit. It **failed loudly** because the composite FK refused
+  `(organization_id, business_unit_id) = (second, <demo's unit>)`; a single-column
+  `REFERENCES business_unit(id)` would have ACCEPTED it and left a pointer into
+  another tenant's org chart. TN-1's exact case, caught in practice. Now
+  parameterised with explicit predicates, and verified correct under BOTH roles.
+- **An ordering hazard in my own spec, found by reasoning rather than running.**
+  `approval-flow.spec.ts` runs first and approves a report, which enqueues a post
+  that stays PENDING (no ledger connected → SKIPPED, no attempt burnt, by VX3-4's
+  design). The moment this spec connects a ledger, that row becomes due — so a
+  drain without flushing would post somebody else's report and both `posted: 1` and
+  `count: 1` would fail for reasons unrelated to the test. It now flushes, resets
+  the sink, then measures. `workers: 1` is what makes flushing sufficient.
+- **Latent, noted, not fixed:** config-field input ids on the connect screen are
+  `new-<fieldName>` and NOT adapter-scoped, so two adapters sharing a field name
+  would collide. None do today. The spec scopes its selectors to each `<form>`
+  rather than relying on that accident.
+
+**Verified:** the seed runs clean and idempotent on a fresh 21-migration database
+as **both** `postgres` and `veloapp`, with per-tenant org placement and manager
+chains correct in each; `tsc --noEmit` clean; `eslint` clean but for one
+pre-existing warning; vendor guard clean; 28 suites / 517 tests; `playwright
+--list` discovers the four new tests and the third setup project. **Not verified:
+the spec's assertions**, which need a browser.
+
+**VX3-9b** remains: the browser walk of the OAuth redirect, which needs a local
+provider endpoint (the sink is the obvious host for it — ~15 lines) because
+`stub-oauth` currently sends the browser to `https://stub.invalid`.
 
 ## 6. Planning docs (in the ExpenseOS Google-Drive folder, `Specifications_and_Planning/`)
 - `VeloExpense-Port-and-Build-Plan.docx` (7-phase plan + ExpenseOS→VeloExpense sync strategy)

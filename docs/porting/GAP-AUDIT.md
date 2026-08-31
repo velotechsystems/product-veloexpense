@@ -2651,6 +2651,40 @@ Verified against its own absence: with `usableConfig()` restored, three assertio
 defect's exact signature — `expected undefined to be 'access-1'`, `expected 'FAILED' to be 'POSTED'`,
 and `testConnection` returning false.
 
+### AC-20 · Disconnect is a one-way door — an integration cannot be reconnected ⚠️ OPEN
+
+Found 2026-08-31 writing VX3-9a's e2e, while looking for a way to clear a leftover connection.
+
+`disconnect()` keeps the row and deactivates it, and says why in its own comment: *"The row stays, so
+the history of what was connected and by whom survives, and **a reconnect keeps the same `code`**."*
+There is no code path that does that. `installIntegration` only ever `INSERT`s, and `0016` declares
+
+```sql
+UNIQUE (organization_id, code),                              -- NOT partial
+CREATE UNIQUE INDEX integration_installation_one_active_idx  -- partial, WHERE active
+```
+
+The connect form has no `code` input, so `connectFromForm` sends `text(form,'code').trim() || slug` →
+the slug. Reconnecting therefore inserts a second row with the same `(organization_id, code)` as the
+disconnected one and hits the non-partial UNIQUE: `IntegrationError('the code 'veloledger' is already
+used here', 'DUPLICATE_CODE')`.
+
+So after one disconnect, that integration can never be connected again from the screen. The message
+names a `code` the admin never chose and cannot see, and the ALREADY_ACTIVE error one step earlier
+advises *"Disconnect it first, or edit the existing connection"* — advice that leads into this. The
+comment in `0016` about `code` existing so a tenant can have two connections to the same product is
+the design; nothing implements the second one either, since the form always sends the slug.
+
+**Read from source, not executed** — no test or run has produced the error. The two facts it rests on
+(the constraint is not partial; the form supplies no code) are each one line.
+
+**Not fixed here.** VX3-9a's e2e sidesteps it by wiping the rows through a superuser connection in a
+`beforeAll`, which is the right thing for a test and no help to an admin. The fix is small — an
+`ON CONFLICT (organization_id, code) DO UPDATE ... WHERE integration_installation.active = false`,
+reactivating the row and rewriting label, config and `connected_*`, with the no-rows case raising
+ALREADY_ACTIVE so the guard survives — but it changes a write path in `service.ts` and belongs in its
+own ticket, with the reconnect covered by a test.
+
 ## tenancy · foreign keys do not respect RLS (found 2026-08-29 building VX3-1)
 
 Not a port finding — this one is about VeloExpense's own schema, which is why it has its own prefix.

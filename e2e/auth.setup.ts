@@ -53,11 +53,29 @@ const E2E_EMAIL = 'admin@demo.test';
 const E2E_APPROVER_EMAIL = 'owner@demo.test';
 const E2E_ORG_SLUG = 'demo';
 
+/**
+ * VX3-9a — the SECOND tenant, for the phase's exit criterion: two tenants side by
+ * side, on two different ledgers, neither seeing the other's.
+ *
+ * Two users because posting needs a submitter and somebody above them who can
+ * approve — AP-14, the person at the top of a chain cannot approve their own spend.
+ * `admin@second.test` reports to `owner@second.test` (scripts/seed.mjs).
+ */
+const SECOND_ORG_SLUG = 'second';
+const SECOND_ADMIN_EMAIL = 'admin@second.test';
+const SECOND_STATE_PATH = path.join('e2e', '.auth', 'second.json');
+
 // Auth.js v5 derives the JWE salt from the cookie name; on http it is the
 // unprefixed one, which is also what proxy.ts checks for.
 const COOKIE_NAME = 'authjs.session-token';
 
-async function mintSession(email: string, statePath: string) {
+/**
+ * VX3-9a: the org slug is now a PARAMETER. It was closed over as `E2E_ORG_SLUG`,
+ * which is fine for a single-tenant e2e and wrong for one that proves two tenants
+ * cannot see each other — the second tenant's admin has to be looked up in the
+ * second tenant.
+ */
+async function mintSession(orgSlug: string, email: string, statePath: string) {
   const secret = process.env.AUTH_SECRET;
   expect(secret, 'AUTH_SECRET must be set for the e2e run').toBeTruthy();
 
@@ -70,11 +88,11 @@ async function mintSession(email: string, statePath: string) {
       `SELECT u.id, u.organization_id, u.display_name
          FROM app_user u JOIN organization o ON o.id = u.organization_id
         WHERE o.slug = $1 AND lower(u.email) = lower($2)`,
-      [E2E_ORG_SLUG, email],
+      [orgSlug, email],
     );
     expect(
       result.rows.length,
-      `${email} is missing from the '${E2E_ORG_SLUG}' tenant — run \`npm run seed\` first`,
+      `${email} is missing from the '${orgSlug}' tenant — run \`npm run seed\` first`,
     ).toBe(1);
     user = result.rows[0];
   } finally {
@@ -122,9 +140,13 @@ async function mintSession(email: string, statePath: string) {
 }
 
 setup('mint a session cookie for the demo admin', async () => {
-  await mintSession(E2E_EMAIL, STATE_PATH);
+  await mintSession(E2E_ORG_SLUG, E2E_EMAIL, STATE_PATH);
 });
 
 setup('mint a session cookie for the approver', async () => {
-  await mintSession(E2E_APPROVER_EMAIL, APPROVER_STATE_PATH);
+  await mintSession(E2E_ORG_SLUG, E2E_APPROVER_EMAIL, APPROVER_STATE_PATH);
+});
+
+setup('mint a session cookie for the second tenant admin', async () => {
+  await mintSession(SECOND_ORG_SLUG, SECOND_ADMIN_EMAIL, SECOND_STATE_PATH);
 });
