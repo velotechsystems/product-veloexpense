@@ -99,7 +99,7 @@ export default async function IntegrationsPage({
   }>;
 }) {
   const { error, connected, disconnected, tested, detail, notice } = await searchParams;
-  const { installations, available, keyConfigured } = await getIntegrationsPage();
+  const { installations, available, keyConfigured, moduleEnabled } = await getIntegrationsPage();
 
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-col gap-6 p-6">
@@ -122,6 +122,21 @@ export default async function IntegrationsPage({
           </Link>
         </div>
       </header>
+
+      {!moduleEnabled ? (
+        // VX4-1. The reads on this screen are deliberately UNGATED so the page can
+        // render, which means an off module looks exactly like an empty one unless
+        // the page says otherwise. That is the AC-22 mistake, and this is the
+        // sentence that avoids it.
+        <div className="rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm">
+          <strong className="font-medium">
+            Accounting integrations are not enabled for this organization.
+          </strong>{' '}
+          Everything below is read-only and nothing here will post: approved reports
+          are recorded and sent nowhere. An administrator can turn the module on
+          under Modules.
+        </div>
+      ) : null}
 
       <ErrorBanner message={error} />
       {notice ? (

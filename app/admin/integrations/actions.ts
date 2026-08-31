@@ -35,6 +35,7 @@ import {
 } from '@/lib/integrations/service';
 import { beginAuthorisation } from '@/lib/integrations/oauth';
 import { appOrigin } from '@/lib/notifications/email';
+import { isModuleEnabled } from '@/lib/modules/service';
 
 const PAGE = '/admin/integrations';
 
@@ -56,6 +57,10 @@ export async function getIntegrationsPage() {
   return asAdmin(async (tx) => ({
     installations: await listInstallations(tx),
     available: await availableAdapters(tx),
+    // VX4-1. The screen has to be able to say "this module is off" — the reads
+    // above are ungated precisely so it can, and a page that renders an empty
+    // list without explaining why is the AC-22 mistake.
+    moduleEnabled: await isModuleEnabled(tx, 'accounting'),
     // Whether the envelope can work at all. A screen that lets somebody type a
     // credential into a build with no key would fail on save with a stack trace;
     // saying so first is cheaper than explaining it afterwards.

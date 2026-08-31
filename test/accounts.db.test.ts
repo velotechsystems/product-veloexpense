@@ -43,6 +43,16 @@ beforeEach(async () => {
     "INSERT INTO organization (slug, name) VALUES ('coa-co','CoA Co') RETURNING id",
   );
   orgId = org.rows[0].id;
+
+  // VX4-1: ABSENCE MEANS OFF, so a suite that exercises accounting has to entitle
+  // its tenant — the same row `scripts/seed.mjs` writes for the demo orgs. In the
+  // beforeEACH and not the beforeAll, because this file recreates its org for
+  // every test and a beforeAll row would be truncated away before the first one.
+  await admin.query(
+    `INSERT INTO module_entitlement (organization_id, module_code, enabled)
+     VALUES ($1, 'accounting', true)`,
+    [orgId],
+  );
 });
 
 afterAll(async () => {

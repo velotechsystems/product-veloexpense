@@ -2856,7 +2856,7 @@ should go where the work actually is.
 
 ### MT · module enable/disable
 
-**MT-1 · Activation is a global singleton, and the schema says so. [checked]**
+**MT-1 · Activation is a global singleton, and the schema says so. [checked] ✅ CLOSED by VX4-1**
 `Module` + `ModuleInstallation` are the only capability gate (`schema.prisma:1884`, `:1904`), and
 `moduleInstallation.moduleId` is `@unique` (`:1906`) — one row per module for the whole deployment.
 The readers take no tenant argument: `isModuleActive(db, slug)` / `activeModuleSlugs(db)`
@@ -2875,7 +2875,8 @@ retention (`apps/web/src/server/routers/audit.ts:186`), and the **policy currenc
 (`packages/integrations-google/src/client.ts:54`, `apps/worker/src/handlers/fx-rate-sync.ts:30`),
 which is process-wide and therefore untoggleable per tenant. Four mechanisms, four migrations.
 
-**MT-3 · The gate is at the EDGE, not on the data — so a page can be gated while its data is not.**
+**MT-3 · The gate is at the EDGE, not on the data — so a page can be gated while its data is not.
+✅ CLOSED by VX4-1 (part 1)**
 Two enforcement points exist: tRPC middleware `moduleActive(slug)` (`apps/web/src/server/trpc.ts:131-139`)
 and `requireActiveModule(slug)` for server components (`server/platform/guard.ts:21-22`). Only **10 of
 40 routers** use the middleware. Several routers whose *pages* are gated are not: `expenses.ts`,
@@ -2919,13 +2920,54 @@ declare one (`tools.ts:222,422,436,453`). Uncovered: every expense tool includin
 while `travelRequests.*` *is* gated in tRPC. A second surface that answers the same questions with
 different rules is the AC-17 pattern in a different costume.
 
-**MT-8 · There is no per-tenant module configuration to port.**
+**MT-8 · There is no per-tenant module configuration to port. ✅ SETTLED by VX4-1**
 `ModuleInstallation.config Json` exists (`schema.prisma:1909`) and is **never read** anywhere. So
 "module X, configured this way for this tenant" is a design decision for us, not a port. VeloExpense
 has a seam already: `organization.settings jsonb` was created in `0001` with the comment *"branding,
 enabled modules, locale/currency, enc-key seam"*. **A blob is the wrong home for entitlements** — AC-21
 is the argument, one layer down: a value inside a jsonb column is out of reach of every constraint,
 index and RLS predicate that would otherwise protect it. Entitlements want a table.
+
+### What VX4-1 part 1 closed, and what it deliberately did not
+
+`module_entitlement` (migration `0021`) is the tenant model MT-1's comment promised:
+`UNIQUE (organization_id, module_code)`, RLS + FORCE, a composite FK on the actor per TN-1, and
+**absence means off** — no `defaultOn`, no seeded default set, because the failure mode of a missing
+row is "a feature is unavailable" and the failure mode of an assumed default is "a tenant is using
+something nobody sold them". `enabled` stays a column rather than the row's existence carrying the
+meaning, so turning a module off keeps its actor and timestamp; a deleted row answers no billing
+question.
+
+**MT-3's answer is the guard, not the diligence.** `requireModule` is called in the SERVICE layer —
+beside the writes, inside the tenant transaction — so a page, a server action, a job and a future MCP
+tool all pass through it. That is still a gate somebody can forget, so `lib/modules/registry.ts`
+lists which exports must carry it and `test/module-gates.test.ts` fails the build when one does not,
+in both directions: a listed export whose body has no `requireModule`, and an export in a gated file
+that is neither gated nor written down in `ungated` with a reason. Proven against absence by deleting
+one gate and adding one unlisted export — both halves failed, naming the exact entry.
+
+**The reads are deliberately ungated, and that is AC-22's lesson applied.** A gated
+`listAccounts` would make "the module is off" indistinguishable from "the chart is empty", so the
+reads stay open and the SCREENS carry the sentence. `capabilityAvailability` reports the module-off
+message rather than throwing, because `/admin/ledger-queue` is exactly where somebody goes to ask why
+nothing is posting and a 500 is the least useful answer available.
+
+**In `dispatch.ts` a disabled module is SKIPPED with no attempt burnt** — the same treatment as "no
+ledger is connected" and as AC-22's ambiguity, and for the same reason: a tenant who buys the module
+next month must find this month's approvals still queued (VX3-4).
+
+**Not closed, and named rather than left as a good intention:**
+
+- **The database does not enforce it yet.** The stronger form extends each gated table's policy with
+  `AND EXISTS (… module_entitlement … enabled)`, which no code path can bypass because no code path
+  supplies the predicate. It is deliberately out of part 1: a policy-level refusal is SILENT, so it
+  belongs beside the screens that can explain it, and it wants its own migration and test. VX4-1
+  part 2.
+- **MT-5's scheduling half is untouched.** VeloExpense has no cron surface yet, so there is nothing
+  to fan out per tenant; `dispatch.ts` is checked because it is called per tenant already. VX0-8
+  remains the ticket, and it becomes real with the first scheduled job.
+- **MT-2, MT-4, MT-6, MT-7** are VX4-2 and beyond, or already avoided by construction (MT-4's
+  bypass class cannot recur here: the post hangs on the transition, not on callers).
 
 ### BR · branding and host resolution
 

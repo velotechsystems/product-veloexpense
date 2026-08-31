@@ -26,6 +26,7 @@
 import type { QueryRunner } from '@/lib/db/client';
 import { parseCsv } from '@/lib/accounts/csv';
 import { validateCoaCsv, type ValidatedAccount, type ValidationError } from '@/lib/accounts/validate';
+import { requireModule } from '@/lib/modules/service';
 
 const ORG = "current_setting('app.current_org', true)::uuid";
 
@@ -138,6 +139,10 @@ export async function instantiateTemplate(
   tx: QueryRunner,
   templateKey: string,
 ): Promise<{ created: number }> {
+  // VX4-1: the gate, before any read or write. GAP-AUDIT MT-3 is why it lives
+  // here and not at the edge.
+  await requireModule(tx, 'accounting');
+
   const existing = await tx.query('SELECT count(*)::int AS n FROM gl_account');
   if ((existing.rows[0] as { n: number }).n > 0) {
     throw new AccountError(
@@ -193,6 +198,10 @@ export async function importFromCsv(
   tx: QueryRunner,
   content: string,
 ): Promise<{ created: number }> {
+  // VX4-1: the gate, before any read or write. GAP-AUDIT MT-3 is why it lives
+  // here and not at the edge.
+  await requireModule(tx, 'accounting');
+
   let parsed;
   try {
     parsed = parseCsv(content);
@@ -265,6 +274,10 @@ export async function createAccount(
     parentNumber?: string | null;
   },
 ): Promise<{ id: string }> {
+  // VX4-1: the gate, before any read or write. GAP-AUDIT MT-3 is why it lives
+  // here and not at the edge.
+  await requireModule(tx, 'accounting');
+
   const number = input.number.trim();
   const name = input.name.trim();
   if (!number || !name) {
@@ -325,6 +338,10 @@ export async function renameAccount(
   id: string,
   name: string,
 ): Promise<void> {
+  // VX4-1: the gate, before any read or write. GAP-AUDIT MT-3 is why it lives
+  // here and not at the edge.
+  await requireModule(tx, 'accounting');
+
   const trimmed = name.trim();
   if (!trimmed) throw new AccountError('an account needs a name', 'NOT_FOUND');
   const r = await tx.query(
@@ -343,6 +360,10 @@ export async function renameAccount(
  * refuses a new coding to an inactive account.
  */
 export async function deactivateAccount(tx: QueryRunner, id: string): Promise<void> {
+  // VX4-1: the gate, before any read or write. GAP-AUDIT MT-3 is why it lives
+  // here and not at the edge.
+  await requireModule(tx, 'accounting');
+
   const r = await tx.query(
     'UPDATE gl_account SET active = false, updated_at = clock_timestamp() WHERE id = $1',
     [id],
@@ -351,6 +372,10 @@ export async function deactivateAccount(tx: QueryRunner, id: string): Promise<vo
 }
 
 export async function reactivateAccount(tx: QueryRunner, id: string): Promise<void> {
+  // VX4-1: the gate, before any read or write. GAP-AUDIT MT-3 is why it lives
+  // here and not at the edge.
+  await requireModule(tx, 'accounting');
+
   const r = await tx.query(
     'UPDATE gl_account SET active = true, updated_at = clock_timestamp() WHERE id = $1',
     [id],
@@ -360,6 +385,10 @@ export async function reactivateAccount(tx: QueryRunner, id: string): Promise<vo
 
 /** Hard delete, for an account nothing has ever used. Refuses everything else. */
 export async function removeAccount(tx: QueryRunner, id: string): Promise<void> {
+  // VX4-1: the gate, before any read or write. GAP-AUDIT MT-3 is why it lives
+  // here and not at the edge.
+  await requireModule(tx, 'accounting');
+
   const used = await tx.query(
     `SELECT (SELECT count(*) FROM expense_category c WHERE c.gl_account_id = $1)::int AS cats,
             (SELECT count(*) FROM expense_line_item l WHERE l.gl_account_id = $1)::int AS lines,
@@ -430,6 +459,10 @@ export async function setCategoryAccount(
   categoryId: string,
   accountId: string | null,
 ): Promise<void> {
+  // VX4-1: the gate, before any read or write. GAP-AUDIT MT-3 is why it lives
+  // here and not at the edge.
+  await requireModule(tx, 'accounting');
+
   try {
     const r = await tx.query(
       'UPDATE expense_category SET gl_account_id = $2, updated_at = clock_timestamp() WHERE id = $1',

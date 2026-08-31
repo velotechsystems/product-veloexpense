@@ -37,6 +37,7 @@ import { adapterFor, isKnownAdapter, listAdapters } from '@/lib/integrations/reg
 import { IntegrationError } from '@/lib/integrations/errors';
 import { capabilityWords, findCapabilityRival, rivalMessage } from '@/lib/integrations/conflicts';
 import { freshAuthConfig } from '@/lib/integrations/oauth';
+import { isModuleDisabled, requireModule } from '@/lib/modules/service';
 
 const ORG = "current_setting('app.current_org', true)::uuid";
 
@@ -211,6 +212,10 @@ export async function installIntegration(
   input: { slug: string; code: string; label: string; config: Record<string, string> },
   actorId: string,
 ): Promise<InstallationView> {
+  // VX4-1: the gate, before any read or write. GAP-AUDIT MT-3 is why it lives
+  // here and not at the edge.
+  await requireModule(tx, 'accounting');
+
   const adapter = adapterFor(input.slug);
   if (!adapter) {
     throw new IntegrationError(`no such integration: ${input.slug}`, 'UNKNOWN_ADAPTER');
@@ -353,6 +358,10 @@ export async function updateInstallation(
   id: string,
   patch: { label?: string; config?: Record<string, string> },
 ): Promise<InstallationView> {
+  // VX4-1: the gate, before any read or write. GAP-AUDIT MT-3 is why it lives
+  // here and not at the edge.
+  await requireModule(tx, 'accounting');
+
   const current = await tx.query(
     'SELECT integration_slug, config FROM integration_installation WHERE id = $1',
     [id],
@@ -409,6 +418,10 @@ export async function updateInstallation(
  * QuickBooks client is onboarded. The columns are cleared here now.
  */
 export async function disconnect(tx: QueryRunner, id: string): Promise<void> {
+  // VX4-1: the gate, before any read or write. GAP-AUDIT MT-3 is why it lives
+  // here and not at the edge.
+  await requireModule(tx, 'accounting');
+
   const current = await tx.query(
     'SELECT integration_slug, config FROM integration_installation WHERE id = $1',
     [id],
@@ -446,6 +459,10 @@ export async function testInstallation(
   tx: QueryRunner,
   id: string,
 ): Promise<{ ok: boolean; detail: string }> {
+  // VX4-1: the gate, before any read or write. GAP-AUDIT MT-3 is why it lives
+  // here and not at the edge.
+  await requireModule(tx, 'accounting');
+
   const row = await tx.query(
     'SELECT integration_slug, config FROM integration_installation WHERE id = $1',
     [id],
@@ -502,6 +519,10 @@ export async function resolveCapability(
   tx: QueryRunner,
   capability: Capability,
 ): Promise<ResolvedAdapter | null> {
+  // VX4-1: the gate, before any read or write. GAP-AUDIT MT-3 is why it lives
+  // here and not at the edge.
+  await requireModule(tx, 'accounting');
+
   const r = await tx.query(
     // ORDERED, which the first version was not — see below on why ordering alone
     // would have been the wrong fix.
@@ -626,6 +647,12 @@ export async function capabilityAvailability(
   try {
     return { connected: (await resolveCapability(tx, capability)) !== null, problem: null };
   } catch (err) {
+    // VX4-1. The accounting module is off for this tenant. NOT an error for a
+    // screen: `/admin/ledger-queue` is exactly where somebody goes to ask why
+    // nothing is posting, and a 500 is the least useful answer available. Same
+    // argument as the ambiguity case below — a page gets a sentence, the posting
+    // path gets a refusal.
+    if (isModuleDisabled(err)) return { connected: false, problem: err.message };
     if (err instanceof IntegrationError && err.code === 'AMBIGUOUS_CAPABILITY') {
       // Something IS connected — too much of it. Reporting `connected: false` here
       // would put "no ledger is connected" on the screen of a tenant looking at
