@@ -66,6 +66,14 @@ interface InstallationRow {
   last_test_at: Date | null;
   last_test_ok: boolean | null;
   last_test_error: string | null;
+  /** VX3-8. 'CONFIG' or 'OAUTH2' — decides which affordance the screen offers. */
+  auth_kind: string;
+  /** VX3-8. A refresh failed in a way only a human can fix; the screen says so. */
+  oauth_needs_consent: boolean;
+  /** VX3-8. Null until an OAUTH2 connection has been authorised at least once. */
+  oauth_authorised_at: Date | null;
+  /** VX3-8. The far end's id for the authorised account, shown for confidence. */
+  external_account_id: string | null;
 }
 
 export interface InstallationView extends Omit<InstallationRow, 'config'> {
@@ -86,7 +94,9 @@ export interface InstallationView extends Omit<InstallationRow, 'config'> {
 const SELECT_INSTALLATION = `
   SELECT i.id, i.integration_slug, i.code, i.label, i.active, i.config,
          i.connected_at, u.display_name AS connected_by_name,
-         i.last_test_at, i.last_test_ok, i.last_test_error
+         i.last_test_at, i.last_test_ok, i.last_test_error,
+         i.auth_kind, i.oauth_needs_consent, i.oauth_authorised_at,
+         i.external_account_id
     FROM integration_installation i
     LEFT JOIN app_user u ON u.id = i.connected_by_id`;
 
@@ -216,15 +226,37 @@ export async function installIntegration(
   const code = input.code.trim() || input.slug;
   const config = prepareConfig(adapter, input.config, {});
 
+  // VX3-8. Two things follow from the adapter's auth mode, and both were wrong
+  // when this function was written against a world with only CONFIG adapters:
+  //
+  //   · `auth_kind` is copied onto the row so it is legible without loading code
+  //     (`0020`). Leaving it at the 'CONFIG' default made every OAUTH2
+  //     installation lie about itself, and a test asserting the value rather than
+  //     assuming it is what found that.
+  //   · `active` CANNOT be true for an OAUTH2 install. Nothing is authorised yet,
+  //     there is no refresh token, and `0020`'s `oauth_complete` CHECK refuses the
+  //     row outright — correctly: "active" would have been a claim that stops
+  //     being true within the hour. It becomes active when consent completes.
+  const authKind = adapter.auth ?? 'CONFIG';
+  const activeOnInstall = authKind !== 'OAUTH2';
+
   let inserted;
   try {
     inserted = await tx.query(
       `INSERT INTO integration_installation
-         (organization_id, integration_slug, code, label, active, config,
+         (organization_id, integration_slug, code, label, active, auth_kind, config,
           connected_at, connected_by_id)
-       VALUES (${ORG}, $1, $2, $3, true, $4::jsonb, clock_timestamp(), $5)
+       VALUES (${ORG}, $1, $2, $3, $6, $7, $4::jsonb, clock_timestamp(), $5)
        RETURNING id`,
-      [adapter.slug, code, input.label.trim() || adapter.name, JSON.stringify(config), actorId],
+      [
+        adapter.slug,
+        code,
+        input.label.trim() || adapter.name,
+        JSON.stringify(config),
+        actorId,
+        activeOnInstall,
+        authKind,
+      ],
     );
   } catch (err) {
     const code23505 = (err as { code?: string }).code === '23505';

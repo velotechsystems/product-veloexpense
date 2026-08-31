@@ -27,11 +27,14 @@ import {
   IntegrationError,
   availableAdapters,
   disconnect,
+  getInstallation,
   installIntegration,
   listInstallations,
   testInstallation,
   updateInstallation,
 } from '@/lib/integrations/service';
+import { beginAuthorisation } from '@/lib/integrations/oauth';
+import { appOrigin } from '@/lib/notifications/email';
 
 const PAGE = '/admin/integrations';
 
@@ -98,6 +101,53 @@ function configFrom(form: FormData): Record<string, string> {
     }
   }
   return config;
+}
+
+/**
+ * VX3-8 — begin an OAUTH2 authorisation, and hand the browser to the far end.
+ *
+ * Two things worth noting.
+ *
+ * The REDIRECT URI is built from the request's own origin via `appOrigin()`,
+ * because it has to match byte-for-byte at three points — the authorize URL, the
+ * token exchange, and whatever is registered with the vendor. NT-14's rule applies:
+ * read at call time, never at module load, so one deployment's origin cannot be
+ * baked into another's build.
+ *
+ * And the `redirect()` at the end is to ANOTHER SITE. That is the one place in this
+ * product where a server action sends somebody off the domain, so the URL comes
+ * from the adapter's own `authorizeUrl` and nothing in the form.
+ */
+export async function authoriseFromForm(form: FormData) {
+  let target: string;
+  try {
+    const id = required(form, 'id');
+    const origin = appOrigin();
+    if (!origin) {
+      fail(
+        new Error(
+          'This deployment has no APP_URL, so there is no address for the accounting ' +
+            'system to send you back to. Set APP_URL and try again.',
+        ),
+      );
+      return;
+    }
+    const { authorizeUrl } = await asAdmin(async (tx, actor) => {
+      const installation = await getInstallation(tx, id);
+      if (!installation) throw new Error('no such connection');
+      return beginAuthorisation(tx, {
+        installationId: id,
+        actorId: actor.id,
+        redirectUri: `${origin}/api/integrations/${installation.integration_slug}/callback`,
+      });
+    });
+    target = authorizeUrl;
+  } catch (err) {
+    if (isRedirect(err)) throw err;
+    fail(err);
+    return;
+  }
+  redirect(target);
 }
 
 export async function connectFromForm(form: FormData) {

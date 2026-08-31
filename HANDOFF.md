@@ -42,6 +42,12 @@ Two separate codebases:
     the constraint, so a nullable FK stays nullable. Migration `0019` converted the 42 that
     predated the rule (GAP-AUDIT TN-1); a CI guard and `test/tenant-fk.db.test.ts` keep the
     count at zero.
+- **An adapter's PREREQUISITES are the adapter's business.** `available()` on the
+  adapter decides whether a tenant may connect it, read at CALL time (NT-14).
+  `registry.ts` must not name a slug — it used to (`a.slug !== 'stub-ledger' || …`),
+  which is the shape `check:vendor` exists to stop and only escaped it because
+  "stub-ledger" is not a vendor name. This is also what lets an adapter ship dormant:
+  QuickBooks reports unavailable until the platform's credentials exist.
 - **Session var name is `app.current_org`** (locked; do not use `app.current_organization_id`).
 - **Architecture = Next.js server actions + `lib/<domain>/` modules. NO tRPC** (matches VeloLedger; the original plan said tRPC — overridden).
 - **Shared libs are VENDORED, not npm deps.** Copy the lib's `src/` into the app and pin the commit. `@velotech/auth-kit` is vendored at `src/auth-kit/` (pinned `e1db5c1`). `@velotech/ui` tokens are vendored at `app/velotech-tokens.css` + `app/tailwind-v4.css`; components come via `npx shadcn add https://velotechsystems.github.io/lib-ui-kit/r/<name>.json`.
@@ -141,6 +147,21 @@ export WORKER_SECRET=dev-only-not-a-secret
 # it, because accepting one means a product encrypted under eight bytes of
 # entropy. The admin screen says so before anybody types a credential.
 export SECRET_ENCRYPTION_KEY="$(openssl rand -base64 32)"
+# VX3-8 — QuickBooks Online. PLATFORM-level, not per tenant: one Intuit app serves
+# every tenant, and each tenant authorises that app against their own company. The
+# same shape NT-18 established for email transport, and for the same reason.
+#
+# WHILE THESE ARE UNSET, QUICKBOOKS IS INVISIBLE: `available()` returns false, so no
+# tenant can see or connect it. Setting them is the whole activation step — no
+# migration, no code change, no release.
+#   QUICKBOOKS_CLIENT_ID
+#   QUICKBOOKS_CLIENT_SECRET
+#   QUICKBOOKS_ENVIRONMENT   'production' switches the API host off sandbox.
+#                            Unset means SANDBOX, which is the safe default.
+# APP_URL is also REQUIRED for this: the redirect the far end sends the admin back
+# to is built from it, and the authorise action refuses with a sentence rather than
+# guessing an origin.
+
 # The stub ledger is registered ONLY under this flag. Never set it in a deployed
 # environment: it accepts every post and reports success, so a finance team would
 # watch a queue drain to nowhere.
@@ -1550,6 +1571,87 @@ camelCase identifier, audit action, permission slug, CHECK literal, column name)
 four legitimate uses passed (a slug in an INSERT, `COMMENT ON` provenance, comments
 naming vendors, and words containing vendor substrings). `next build`, `npm run lint`
 and `npm run typecheck` are John's step.
+
+
+**What VX3-8 shipped — the PLUMBING half; QuickBooks is dormant on purpose** —
+migration `0020`, `lib/integrations/oauth.ts`, `lib/integrations/quickbooks.ts`, an
+`available()` gate on the contract, a generic callback route, a Connect button, and
+`test/integration-oauth.db.test.ts`. **John's decision, 2026-08-30: a QBO client is
+not onboarded yet, so VeloExpense should carry the setup to connect later.** The
+VeloLedger upstream asks (AC-16) are deferred with it.
+
+- **THE REAL GAP WAS NOT "WRITE A QBO ADAPTER".** It was that the integration layer
+  could only express *paste a value into a form*: `ConfigField` is
+  `text | url | secret`, `AdapterConfig` is `Record<string, string>`, and connecting
+  is a form POST that encrypts the secret fields. QuickBooks is OAuth2
+  authorization-code — a redirect, a callback carrying a code and a company id, an
+  access token, and a refresh token that ROTATES and eventually dies. None of that
+  is a form field. Discovering it on the morning a client is onboarded is the bad
+  version of this ticket; AC-18 records it.
+- **What ships is the half that does NOT need an account.** The redirect, the state
+  handling, the exchange, the refresh, the re-consent path, encrypted storage —
+  generic OAuth2, fully tested through a stub. What does NOT ship is the Bill
+  mapping: `quickbooks.ts` declares **no capabilities**, so
+  `resolveCapability(tx, 'POST_EXPENSE_REPORT')` can never select it and no approved
+  report will be sent to it. Writing that payload from documentation and shipping it
+  unexecuted would produce exactly what GAP-AUDIT criticises on the other side —
+  ExpenseOS's NetSuite transport carries its own *"UNVERIFIED against a live
+  account"* warning.
+- **The split of labour is the design.** Core owns the state (minted from
+  `randomBytes`, stored as a sha256, single-use, ten-minute TTL), the encryption,
+  the refresh scheduling, and the "needs a human" versus "try again" distinction.
+  The adapter contributes three vendor-shaped functions and never sees the state at
+  all — so an adapter author cannot get the dangerous part wrong.
+- **THE STATE IS TREATED AS A CREDENTIAL, because it is one.** Whoever can replay it
+  can attach their own accounting account to somebody else's installation. Hence
+  the hash-not-the-value storage (the `action_token` precedent from `0012`), and
+  hence consuming it BEFORE the exchange: a failed exchange then costs the admin one
+  extra click, where exchanging first would leave a window in which the same state
+  could be replayed with a different code. One click against an account takeover.
+- **THREE OF MY OWN BUGS, all caught by tests rather than by reading:**
+  1. **`installIntegration` never learned to write `auth_kind`**, so every OAUTH2
+     installation would have described itself as `CONFIG`. Found by an assertion I
+     wrote in `beforeEach` *because* I was assuming it — and it also turned out that
+     `active = true` on install is illegal for OAUTH2 (`0020`'s `oauth_complete`
+     CHECK), since nothing is authorised yet.
+  2. **`completeAuthorisation` joined `integration_installation` inside
+     `withPlatformRead` and got nothing, every time.** That is the hatch working as
+     designed: `0020` grants `platform_read` to the state table and to NO other, so
+     a join reaches a table with no tenant context and RLS filters everything. The
+     fix reads the state alone, learns the tenant, then uses `withOrg`.
+  3. **The worst one: the needs-consent flag was written on the transaction the
+     function then threw out of, so the rollback erased it.** The flag would never
+     have persisted — no admin would ever be told, and every post would have called
+     the far end again to be refused again, forever, silently. It now commits on its
+     own connection first, the same shape VX3-4's `markNeedsReview` uses. Nothing
+     about the original code looked wrong; a test asserting `active` is false
+     afterwards is the only reason it was found.
+- **A refresh failure is classified in BOTH directions.** `invalid_grant` becomes
+  `OAuthConsentRequired` → flag, deactivate, tell the admin. Anything else — a
+  timeout, a 5xx — leaves the row untouched so the next attempt retries. Marking a
+  working connection dead because the network blipped is the same class of mistake as
+  AC-17, one layer down, and there is a test for each direction.
+- **`stub-oauth` exists for the same reason `stub-ledger` does**, and VX3-7's lesson
+  is why it can produce every outcome: a rotating refresh, a refresh needing consent,
+  a merely-failing refresh, and a bare error. A test double that cannot produce one
+  of two outcomes hides every bug in the outcome it cannot produce.
+- **Not verified, and flagged rather than guessed:** Intuit's developer docs are
+  JavaScript-rendered and could not be fetched, so **no token lifetime is quoted
+  anywhere in the code** — expiries come from the far end's own `expires_in` and
+  `x_refresh_token_expires_in` and are stored as absolute timestamps. The two
+  endpoint hosts want a glance against current documentation before the first real
+  connection. That check belongs to onboarding day, and it is on the ticket rather
+  than assumed done.
+
+**Verified:** `0020` applied clean on a fresh database with all 20 migrations; its
+four CHECK constraints exercised behaviourally (an active OAUTH2 row with no refresh
+token is refused, a CONFIG row carrying tokens is refused, an unauthorised OAUTH2 row
+is fine, a malformed state hash is refused); the new table's composite FK refuses a
+cross-tenant installation reference; **27 suites / 510 tests green**, including 17 new
+OAuth cases and the isolation suite extended for the new tenant table (which CI's
+isolation-coverage guard requires). `next build`, `npm run lint` and `npm run
+typecheck` are John's step — and this ticket touched two `.tsx` files, so the build is
+the first thing that will exercise them.
 
 ## 6. Planning docs (in the ExpenseOS Google-Drive folder, `Specifications_and_Planning/`)
 - `VeloExpense-Port-and-Build-Plan.docx` (7-phase plan + ExpenseOS→VeloExpense sync strategy)

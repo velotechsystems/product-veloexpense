@@ -27,6 +27,7 @@ import { Input } from '@/components/ui/input';
 import { EmptyRow, ErrorBanner, formatDate } from '@/app/expenses/ui';
 import {
   connectFromForm,
+  authoriseFromForm,
   disconnectFromForm,
   getIntegrationsPage,
   testFromForm,
@@ -93,9 +94,11 @@ export default async function IntegrationsPage({
     disconnected?: string;
     tested?: string;
     detail?: string;
+    /** VX3-8: set by the OAuth callback route, which has a sentence to deliver. */
+    notice?: string;
   }>;
 }) {
-  const { error, connected, disconnected, tested, detail } = await searchParams;
+  const { error, connected, disconnected, tested, detail, notice } = await searchParams;
   const { installations, available, keyConfigured } = await getIntegrationsPage();
 
   return (
@@ -121,6 +124,9 @@ export default async function IntegrationsPage({
       </header>
 
       <ErrorBanner message={error} />
+      {notice ? (
+        <p className="rounded-md border border-border bg-muted/40 px-3 py-2 text-sm">{notice}</p>
+      ) : null}
       {connected ? (
         <p className="rounded-md border border-border bg-muted/40 px-3 py-2 text-sm">
           Connected. Press <strong>Test</strong> to check it before relying on it.
@@ -232,6 +238,20 @@ export default async function IntegrationsPage({
                     </td>
                     <td className="px-3 py-2">
                       <div className="flex flex-wrap items-center gap-2">
+                        {/* VX3-8. An OAUTH2 connection is authorised at the far
+                            end, so its primary action is a redirect rather than a
+                            form save. The wording changes with the state because
+                            "Connect" and "Authorise again" mean different things to
+                            somebody looking at a connection that stopped working. */}
+                        {i.adapter && i.auth_kind === 'OAUTH2' ? (
+                          <Button form={`auth-${i.id}`} type="submit" size="sm">
+                            {i.oauth_needs_consent
+                              ? 'Authorise again'
+                              : i.oauth_authorised_at
+                                ? 'Re-authorise'
+                                : 'Connect'}
+                          </Button>
+                        ) : null}
                         {i.adapter ? (
                           <Button form={`test-${i.id}`} type="submit" size="sm" variant="outline">
                             Test
@@ -257,6 +277,9 @@ export default async function IntegrationsPage({
               <input type="hidden" name="id" value={i.id} />
             </form>
             <form id={`disc-${i.id}`} action={disconnectFromForm}>
+              <input type="hidden" name="id" value={i.id} />
+            </form>
+            <form id={`auth-${i.id}`} action={authoriseFromForm}>
               <input type="hidden" name="id" value={i.id} />
             </form>
           </div>

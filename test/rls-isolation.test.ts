@@ -111,11 +111,32 @@ beforeAll(async () => {
       // naming their connection the same thing is the normal case — and it is the
       // case a missing tenant predicate would surface as a duplicate-key error
       // rather than as a leak, which is a much easier bug to miss.
-      await tx.query(
+      const installation = await tx.query(
         `INSERT INTO integration_installation
              (organization_id, integration_slug, code, label, active, config)
-         VALUES ($1, 'stub-ledger', 'main', $2, true, $3::jsonb)`,
+         VALUES ($1, 'stub-ledger', 'main', $2, true, $3::jsonb)
+         RETURNING id`,
         [org, `Ledger ${label}`, JSON.stringify({ ledgerUrl: `https://${label}.test` })],
+      );
+      // VX3-8: an in-flight authorisation attempt per tenant. `0020` gives this
+      // table a SECOND policy gated on `app.platform_task`, because the OAuth
+      // callback arrives with no session and has to find out which tenant it
+      // belongs to — so, like `notification_delivery` and `action_token`, it needs
+      // both halves proven: that a tenant sees only its own, AND that the hatch is
+      // as narrow as it claims. The row it holds is a credential's hash, which is
+      // why it is worth more than a box-tick.
+      await tx.query(
+        `INSERT INTO integration_oauth_state
+             (organization_id, installation_id, state_hash, redirect_uri, expires_at,
+              created_by_id)
+         SELECT $1, $2, $3, $4, clock_timestamp() + interval '10 minutes', id
+           FROM app_user WHERE organization_id = $1 LIMIT 1`,
+        [
+          org,
+          installation.rows[0].id,
+          (label === 'A' ? 'e' : 'f').repeat(64),
+          `https://${label}.test/api/integrations/stub-oauth/callback`,
+        ],
       );
     });
   }
@@ -808,6 +829,46 @@ describe('RLS tenant isolation', () => {
       tx.query('SELECT count(*)::int AS n FROM integration_installation'),
     );
     expect(blind.rows[0].n).toBe(0);
+  });
+
+  it('authorisation attempts are tenant-isolated, and the hatch is narrow', async () => {
+    // VX3-8. The value stored is the sha256 of a state parameter — a credential
+    // that, replayed, attaches somebody else's accounting account to this tenant's
+    // installation. So both halves matter.
+    const seen = async (org: string) =>
+      withOrg(org, async (tx) => {
+        const r = await tx.query('SELECT state_hash FROM integration_oauth_state');
+        return r.rows.map((row) => (row.state_hash as string).slice(0, 1));
+      });
+    expect(await seen(orgA)).toEqual(['e']);
+    expect(await seen(orgB)).toEqual(['f']);
+    const blind = await withoutOrg((tx) =>
+      tx.query('SELECT count(*)::int AS n FROM integration_oauth_state'),
+    );
+    expect(blind.rows[0].n).toBe(0);
+
+    // The hatch sees both tenants' LIVE attempts — that is what lets a callback
+    // with no session find its tenant — and stops seeing one the moment it is
+    // consumed or expired, which is what makes "reject a replay" an absent row
+    // rather than an `if`.
+    const live = await withPlatformRead((tx) =>
+      tx.query('SELECT organization_id FROM integration_oauth_state'),
+    );
+    expect(live.rows).toHaveLength(2);
+    await admin.query(
+      'UPDATE integration_oauth_state SET consumed_at = clock_timestamp() WHERE organization_id = $1',
+      [orgA],
+    );
+    const afterConsume = await withPlatformRead((tx) =>
+      tx.query('SELECT organization_id FROM integration_oauth_state'),
+    );
+    expect(afterConsume.rows.map((r) => r.organization_id)).toEqual([orgB]);
+    await admin.query(
+      "UPDATE integration_oauth_state SET expires_at = clock_timestamp() - interval '1 second'",
+    );
+    expect(
+      (await withPlatformRead((tx) => tx.query('SELECT id FROM integration_oauth_state'))).rows,
+    ).toHaveLength(0);
   });
 
   it('WITH CHECK rejects an installation written into another tenant', async () => {
