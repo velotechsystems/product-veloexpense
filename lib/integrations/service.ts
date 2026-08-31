@@ -34,39 +34,16 @@ import {
   type ConfigField,
 } from '@/lib/integrations/contract';
 import { adapterFor, isKnownAdapter, listAdapters } from '@/lib/integrations/registry';
+import { IntegrationError } from '@/lib/integrations/errors';
+import { freshAuthConfig } from '@/lib/integrations/oauth';
 
 const ORG = "current_setting('app.current_org', true)::uuid";
 
-export class IntegrationError extends Error {
-  constructor(
-    message: string,
-    /**
-     * A CLOSED union on purpose — the callers switch on it, so an invented code
-     * would silently fall through to a generic branch. VX3-8 added the last three
-     * and the compiler is what insisted; `npm test` cannot see this, because
-     * vitest transpiles without type checking.
-     */
-    readonly code:
-      | 'NOT_FOUND'
-      | 'UNKNOWN_ADAPTER'
-      | 'MISSING_FIELD'
-      | 'DUPLICATE_CODE'
-      | 'ALREADY_ACTIVE'
-      | 'NO_CAPABILITY'
-      | 'NOT_CONNECTED'
-      // VX3-8, the OAuth flow:
-      /** An authorisation was started on an adapter that takes pasted values. */
-      | 'NOT_OAUTH'
-      /** The callback's state is unknown, already used, or expired — one code for
-       *  all three, matching the single message the caller is allowed to show. */
-      | 'STATE_INVALID'
-      /** Only a human can fix this: the refresh token is expired or revoked. */
-      | 'NEEDS_CONSENT',
-  ) {
-    super(message);
-    this.name = 'IntegrationError';
-  }
-}
+// VX3-9a: the class moved to `lib/integrations/errors.ts` so `oauth.ts` can throw
+// it without this module and that one importing each other. Re-exported here, so
+// every existing `import { IntegrationError } from '@/lib/integrations/service'`
+// is untouched.
+export { IntegrationError } from '@/lib/integrations/errors';
 
 interface InstallationRow {
   id: string;
@@ -390,8 +367,12 @@ export async function testInstallation(
 
   let result: { ok: boolean; detail: string };
   try {
+    // VX3-9a: `withAuth`, not `usableConfig`. With the latter, an OAUTH2 adapter's
+    // `testConnection` saw an empty config and reported "not authorised yet" —
+    // FOREVER, including immediately after a successful authorisation. The Test
+    // button lied, which is worse than it failing.
     result = await adapter.testConnection(
-      usableConfig(adapter, row.rows[0].config as Record<string, unknown>),
+      await withAuth(tx, id, adapter, row.rows[0].config as Record<string, unknown>),
     );
   } catch (err) {
     // A thrown adapter is a failed test, not a failed request. An admin pressing
@@ -435,13 +416,53 @@ export async function resolveCapability(
     if (!isKnownAdapter(slug)) continue;
     const adapter = adapterFor(slug)!;
     if (!adapter.capabilities.includes(capability)) continue;
+    const installationId = row.id as string;
     return {
-      installationId: row.id as string,
+      installationId,
       adapter,
-      config: usableConfig(adapter, row.config as Record<string, unknown>),
+      // VX3-9a FIXED A DEFECT HERE. This used to be `usableConfig(...)` alone —
+      // the decrypted jsonb blob and nothing else. For a CONFIG adapter that is
+      // the whole configuration and it was correct. For an OAUTH2 adapter it is
+      // EMPTY: QuickBooks declares `configFields: []`, because its credentials are
+      // the platform's and its tokens live in columns rather than in the blob.
+      //
+      // So VX3-8 stored tokens correctly, refreshed them correctly, and then
+      // handed the adapter nothing. `freshAuthConfig` — the function that
+      // decrypts, refreshes-if-due and returns exactly those keys — was called by
+      // NOTHING but its own test.
+      //
+      // Why no test caught it: every posting test drove a CONFIG adapter, which
+      // needs no token, and no OAUTH2 adapter could post because `stub-oauth`
+      // declared no capabilities. That is the lesson VX3-7 put in this codebase —
+      // a test double that cannot produce one of two outcomes hides every bug in
+      // the outcome it cannot produce — and it was written two tickets before
+      // this one.
+      config: await withAuth(tx, installationId, adapter, row.config as Record<string, unknown>),
     };
   }
   return null;
+}
+
+/**
+ * One config for both auth kinds: the adapter's own fields, plus — for an OAUTH2
+ * installation — a live access token and the far end's account id.
+ *
+ * A CONFIG installation pays nothing for this: `freshAuthConfig` returns `{}`
+ * without a network call once it sees `auth_kind <> 'OAUTH2'`.
+ *
+ * The OAuth keys are merged LAST and deliberately cannot be shadowed by a
+ * tenant's stored blob — a config value called `oauthAccessToken` in the jsonb
+ * must never override the real one.
+ */
+async function withAuth(
+  tx: QueryRunner,
+  installationId: string,
+  adapter: AccountingAdapter,
+  stored: Record<string, unknown>,
+): Promise<AdapterConfig> {
+  const base = usableConfig(adapter, stored);
+  const auth = await freshAuthConfig(tx, installationId);
+  return { ...base, ...auth };
 }
 
 /** Same, but a miss is an error — for a path that cannot proceed without one. */

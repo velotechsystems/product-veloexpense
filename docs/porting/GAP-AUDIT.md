@@ -2604,6 +2604,53 @@ security bugs rather than inconveniences.
    `POST_EXPENSE_REPORT` and add the capability method, which the registry's pairing
    check will hold to.
 
+### AC-19 · VX3-8 stored OAuth tokens and never used them ✅ CLOSED by VX3-9a
+
+Found 2026-08-31, scoping VX3-9, by asking what a second posting adapter would need — not by any
+test, because no test could have asked.
+
+`lib/integrations/oauth.ts` exported `freshAuthConfig`: decrypt the access token, refresh it if it
+is within the margin, distinguish a dead refresh token from a network blip, return the token and the
+far end's account id. It worked, and it had seventeen tests.
+
+**It was called by nothing but those tests.** `dispatch.ts` handed the adapter
+`resolved.config`, and `resolveCapability` built that with `usableConfig(adapter, row.config)` — the
+decrypted jsonb blob. For a CONFIG adapter that is the entire configuration and it was right. For an
+OAUTH2 adapter it is **empty**: QuickBooks declares `configFields: []`, because its credentials
+belong to the platform and its tokens live in columns `0020` added.
+
+Two consequences, both live in `main` between #62 and the fix:
+
+1. **A posting OAUTH2 adapter would have been handed no token**, and no refresh would ever have
+   happened on the posting path.
+2. **`testConnection` too** — so QuickBooks' Test button reported *"Not authorised yet. Use Connect
+   to sign in"* **forever, including immediately after a successful authorisation**. A button that
+   lies is worse than a button that fails.
+
+**Why no test caught it, which is the part worth keeping.** Every posting test drove a CONFIG
+adapter, which needs no token. No test drove an OAUTH2 adapter through the posting path — and none
+*could*, because VX3-8 gave `stub-oauth` no capabilities, with this comment:
+
+> "No capabilities: this double exists to exercise AUTHENTICATION. Posting is already covered by
+> `stub-ledger`, and declaring a capability here would make `resolveCapability` able to choose it
+> over the one that records posts."
+
+The stated worry was real and is solved by giving that adapter its own recorder. What the decision
+actually did was make the defective branch unreachable. **This is AC-17's lesson recurring one layer
+up, two tickets after it was written into the codebase:** a test double that cannot produce one of
+two outcomes hides every bug in the outcome it cannot produce.
+
+**Closed:** `withAuth()` in `service.ts` merges `freshAuthConfig`'s output into the config for both
+`resolveCapability` and `testInstallation`, with the OAuth keys merged last so a tenant's stored blob
+cannot shadow a real token. `IntegrationError` moved to `lib/integrations/errors.ts` to break the
+import cycle that made this awkward in the first place. `stub-oauth` now posts, over real HTTP when a
+sink is configured, and **throws when handed no token** — posting unauthenticated must be a loud
+failure, not a silent success.
+
+Verified against its own absence: with `usableConfig()` restored, three assertions fail with the
+defect's exact signature — `expected undefined to be 'access-1'`, `expected 'FAILED' to be 'POSTED'`,
+and `testConnection` returning false.
+
 ## tenancy · foreign keys do not respect RLS (found 2026-08-29 building VX3-1)
 
 Not a port finding — this one is about VeloExpense's own schema, which is why it has its own prefix.
