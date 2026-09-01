@@ -2042,7 +2042,8 @@ because they are retrospective and need approval history), and a **source audit 
 `5a11a647`** recorded as GAP-AUDIT **MT-1..8 / BR-1..10 / BG-1..8 / AN-1..11 / IL-1..12**. Read the
 audit first: five of those findings change what a ticket is, and two of them delete work.
 
-**~24 dev-days across eight tickets** — in line with Phase 2's ~26 and Phase 3's ~27. Two hard edges:
+**~22 dev-days across SEVEN tickets** (was eight — VX4-4 moved to Phase 5, see the decisions below) —
+in line with Phase 2's ~26 and Phase 3's ~27. Two hard edges:
 VX4-1 blocks almost everything, and VX4-5 was blocked on a chart of accounts that VX3-1 has already
 shipped.
 
@@ -2065,22 +2066,34 @@ shipped.
 | **VX4-1** | **Per-tenant module entitlements** | MT-1: activation is a global singleton (`moduleId @unique`) and the schema says a tenant model "adds `tenantId` here only". MT-3: their gate lives at the edge, so 30 of 40 routers are ungated and a page can be gated while its data is not. Ours goes **below the router** — a `module` catalogue owned by code, an `organization_module` table (not a `settings` blob: MT-8/AC-21), and a **generated guard** proving every gated surface is covered, in the shape of the RLS-coverage and vendor-neutrality guards. | 3 |
 | **VX4-2** | **Tenant-scoped settings, replacing the global singletons** | MT-2: `SystemFlag`, `PlatformConfig` and two env vars are four parallel global gates, and one of them holds the **policy currency** that analytics reports in. A typed per-tenant settings registry with a default, so "what is this tenant's base currency / date format / retention window" has one answer and one place. | 2 |
 | **VX4-3** | **Branding that actually renders** | BR-2 is the surprise: the fields, the admin form and the validation all exist and **nothing reads them**. So the port is the easy half and the render path is net-new — CSS custom properties injected per tenant (BR-3, deriving row/hover shades from the primary rather than hardcoding them), a tenant logo served pre-auth on the `public-icons` route's proven pattern (BR-4), `generateMetadata` instead of a static title (BR-5), and a branded email shell on VX2-8's template layer (BR-6). | 3 |
-| **VX4-4** | **Host-based tenant resolution** — *scope question, see below* | BR-1: they have none at all; we already resolve the tenant from the session's org, so this ticket is specifically subdomains and custom domains. BR-8: one origin per deployment, a certificate with no wildcard, and `WEBAUTHN_RP_ID` pinned to the host — so passkeys break on a subdomain move unless the RP id is the apex. NT-14 and AC-23 are both this family. | 2 |
 | **VX4-5** | **Budgets, tenant-scoped, on our own chart of accounts** | BG-2: `Budget.glAccountId` is a **required** FK into a NetSuite SOAP cache, and their vendor-neutral `Account` table was deleted — so budgets there are uncreatable without NetSuite. **VX3-1 already fixed this for us**; budgets point at `gl_account` and a vendor becomes an alias. Plus BG-1 (tenant column and composite keys on five tables, including an index Prisma cannot express), BG-3 (actuals recomputed over the whole fiscal year on every approval click, with an unbounded FX load → rollup), BG-6 (alert idempotency by mutable marker → our atomic-claim idiom). | 4 |
 | **VX4-6** | **Analytics, tenant-scoped** | The tenancy half is free (above). The work is AN-7 — a missing FX rate is currently summed **as if it were base currency**, unflagged, while the budget code counts unconverted amounts for the same situation — and AN-10: unbounded ranges, no `date` index, and a home page that runs a full-history aggregate for every signed-in user. Plus AN-8's lesson: size the data with a predicate, never with a role check that then queries everything. | 4 |
 | **VX4-7** | **Locale: retag `en` → `en-CA`, add `en-US`** | IL-1: their `en` already formats as en-US (`3/4/2026`, `CA$10,799.00`), so this is a retag **and** an addition, 2 locales to 3 — touching URL segments, stored preferences and every `{ en: … }` Json key, whose arity is hardcoded in ~17 files (IL-7). Also: a company default locale, which does not exist there (IL-2); what a missing key does, decided before the third catalog exists rather than after two blank pages (IL-4); and the date-formatting calls that pass no locale (IL-10). | 3 |
 | **VX4-8** | **Module 12 slices 2–3: fraud detection + control evaluation** | Deferred to this phase since Phase 2 because both are retrospective and need approval history, which now exists. Their versions are driven by `SystemFlag` config (MT-2) and run as unconditional global crons (MT-5), so both land on VX4-1 and VX4-2. | 3 |
 
-### The two things that need a decision before boarding is final
+### The two decisions, SETTLED 31 Aug 2026 (John)
 
-1. **Is host-based tenancy (VX4-4) Phase 4 or Phase 5?** The Plan lists "per-tenant branding and
-   subdomain" here, but a subdomain is only meaningful once tenants self-provision, which is Phase 5.
-   Branding (VX4-3) does not depend on it — we already resolve the tenant from the session. Doing it
-   here means a wildcard certificate and an apex `WEBAUTHN_RP_ID` now; doing it in Phase 5 means one
-   fewer moving part in this phase.
-2. **Does a budget ever BLOCK?** BG-4: theirs is `WARNING` with an explicit "deliberately never
-   BLOCK", but nothing clamps a per-instance severity, so an admin can turn it into a hard stop
-   without meaning to. Our `lib/policy/rules.ts` has the same shape. Worth deciding once, on purpose.
+**1. Host-based tenancy is PHASE 5.** VX4-4 is out of this board. The reasoning that carried it: a
+subdomain only means something once tenants self-provision, and we already resolve the tenant from the
+session's org, so branding (VX4-3) does not wait on it. Doing it in Phase 4 would have bought a
+wildcard certificate and an apex `WEBAUTHN_RP_ID` into a phase that needs neither.
+
+**What Phase 5 inherits with it**, so the audit work is not lost: BR-1 (ExpenseOS has no tenant
+resolution at all — greenfield, nothing to port) and **BR-8**, which is the one with teeth — `APP_URL`
+is a module-level constant, the CDK stack derives every origin from one `config.domainName` and issues
+a certificate for that exact host **with no wildcard**, and `WEBAUTHN_RP_ID` is pinned to the host, so
+**every passkey stops validating when a tenant moves subdomain** unless the RP id is the apex. NT-14
+and AC-23 are the same family and both cost a round trip already.
+
+**2. A budget NEVER blocks.** Matches ExpenseOS's stated intent, and unlike theirs it has to be
+enforced rather than commented.
+
+**The code consequence, so VX4-5 does not rediscover it:** `lib/policy/engine.ts` resolves severity as
+`f.severity ?? inst.severity` — the RULE INSTANCE decides, so an admin configuring a budget rule at
+BLOCK turns a warning into a hard stop, exactly as BG-4 describes for theirs. A decision that a budget
+never blocks therefore needs a **maximum severity on the rule definition**, clamped where severity is
+resolved, not a comment on the rule. That is a small change to `rules.ts` + `engine.ts` and it belongs
+in VX4-5 with a test that an instance configured at BLOCK still emits WARNING.
 
 ### The scheduling problem this phase finally forces
 
