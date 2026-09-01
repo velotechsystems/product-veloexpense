@@ -2232,6 +2232,56 @@ test Chrome's serialiser rather than our stylesheet.
 **Part 3 is the email shell (BR-6)** on VX2-8's template layer: `htmlBody()` in `dispatch.ts:292`
 builds bare `<p>` tags today, exactly the finding their `notification-dispatch.ts:181` has.
 
+### The migration runner and its ledger — the class that broke VX4-3's e2e run (John's call, 1 Sep)
+
+**What happened.** `0023` was merged and applied nowhere. `npm run e2e` built, passed
+`check:actions`, seeded, then died inside `approval-flow` — a spec with nothing to do with branding —
+on `column "brand_color" does not exist`, printed in a `[WebServer]` log rather than as a test
+failure. VX4-3 part 2 is what made it total instead of local: the root layout now reads branding on
+every render, so one missing column breaks every page in the product.
+
+**Why nothing could have caught it.** Migrations were applied BY HAND from a README line;
+`npm run e2e` never checked; and CI *cannot* notice drift, because CI creates a fresh database and
+applies every file in a loop. Every path that might have seen it was structurally unable to.
+
+**The fix, in the house pattern.** `scripts/migrate.mjs` + a `schema_migration` ledger (name,
+checksum, applied_at) is the mechanism; `test/migrations.test.ts` is the generated assertion, in the
+shape of the RLS-coverage, tenant-FK and vendor guards — it walks `prisma/migrations/` so migration
+`0024` is covered the moment it exists. CI's shell loop is replaced by the same runner, so a laptop
+and CI now share one code path. `npm run migrate` is a step in `npm run e2e` before the build.
+
+**Why a ledger rather than "run CI's loop locally too":** that loop is correct only because CI's
+database is empty. Replaying `0001..0023` over an existing database dies on the first `ADD COLUMN`,
+and the alternative — `IF NOT EXISTS` through every migration — turns each one into a statement that
+cannot tell "already applied" from "silently did nothing".
+
+**Four refusals, each verified against a real Postgres:**
+
+- **An edited applied migration.** The checksum is stored; if the file changed, the database and the
+  repository disagree about what the schema *is*, and every later reading of the files is wrong.
+- **A gap** — `0023` applied while `0022` is not. Applying `0022` now would run it against a schema
+  it was never written for.
+- **A populated database with an empty ledger.** It does NOT guess: probing for objects would either
+  replay DDL or skip it. It asks for `--baseline <name|number|all>` once, which records without
+  running. A fresh database needs no flag, because empty ledger + absent `organization` is
+  unambiguous.
+- **`--baseline` against a non-empty ledger** — refused rather than silently ignored.
+
+**A bug of mine that only running it could find, and it is worth keeping in mind for any script
+that both advises and acts.** The first version keyed the baseline branch on *"the ledger table did
+not exist"*. But the ask `exit(1)`s **after** `CREATE TABLE IF NOT EXISTS` has already run — so on the
+very next invocation the table existed, the branch was skipped, and the `--baseline` the script had
+just told the user to pass was **silently ignored**: it went straight to applying `0001` against a
+populated database and died on `relation "organization" already exists`. Guidance that leads to a
+worse failure than the one it explains is the worst kind. The condition is now "the ledger is empty",
+which is the honest test of *has this ever been recorded*.
+
+**Every migration runs in one transaction with its ledger insert**, so a failure leaves neither a
+half-applied schema nor a lie about it — verified with a deliberately broken `0024`: nothing leaked,
+nothing recorded. Checked, not assumed, that no migration in this repo uses `CREATE INDEX
+CONCURRENTLY` or opens its own transaction; one that needs `CONCURRENTLY` will fail loudly here,
+which is the right place for that conversation.
+
 ### The two decisions, SETTLED 31 Aug 2026 (John)
 
 **1. Host-based tenancy is PHASE 5.** VX4-4 is out of this board. The reasoning that carried it: a
