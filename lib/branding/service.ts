@@ -183,11 +183,19 @@ export async function setBrandColor(
  * support script and a restored backup all reach the column without reaching
  * this function.
  *
- * WHAT THIS DOES NOT DO is verify the bytes are the image the mime claims. That
- * needs a magic-number sniff, and it belongs here rather than in a route, so it
- * is filed as the next slice with the route that serves the bytes — the route
- * sends `nosniff` and a sandbox CSP, which is what makes deferring it safe rather
- * than merely convenient.
+ * AND IT VERIFIES THE BYTES ARE THE IMAGE THE MIME CLAIMS (part 2). The declared
+ * mime arrives from a multipart form, which is to say from whoever is posting, so
+ * on its own it is a claim and not a fact. Checking it HERE and not in the route
+ * is MT-3 again: the route is one caller, and the next one will be an importer.
+ *
+ * The check is a magic-number sniff, and its job is narrow and worth stating so
+ * nobody mistakes it for validation: it makes the stored `logo_mime` TRUE, so the
+ * `Content-Type` the route sends matches the bytes it sends. That is what makes
+ * `nosniff` meaningful — `nosniff` tells the browser to trust our Content-Type,
+ * which is only a safety property if our Content-Type is right. It is NOT a
+ * decode, so a truncated or corrupt PNG with a good signature still stores; that
+ * renders as a broken image and harms nobody, and a full decode means an image
+ * library in the request path for a wordmark.
  */
 export async function setLogo(
   tx: QueryRunner,
@@ -210,6 +218,16 @@ export async function setLogo(
       `the logo is ${Math.round(bytes.length / 1024)} KiB and the limit is ` +
         `${LOGO_MAX_BYTES / 1024} KiB`,
       'IMAGE_TOO_LARGE',
+    );
+  }
+  const sniffed = sniffImageMime(bytes);
+  if (sniffed !== mime) {
+    throw new BrandingError(
+      sniffed === null
+        ? `the uploaded file is not a PNG, JPEG or WebP image, whatever it is named`
+        : `the file was sent as ${mime} but its contents are ${sniffed} — ` +
+          `re-export it, or upload it with the right type`,
+      'INVALID_IMAGE',
     );
   }
   await updateOrganization(
@@ -273,4 +291,71 @@ async function auditBranding(
     throw new BrandingError('no tenant context, so there is nothing to audit against', 'NO_TENANT');
   }
   await append(tx, actor, { action, entityType: 'organization', entityId: id, details });
+}
+
+/**
+ * The first bytes of the three accepted formats, and nothing else.
+ *
+ *   PNG   89 50 4E 47 0D 0A 1A 0A          — the full 8-byte signature. The
+ *                                            CR/LF/EOF bytes are there to catch
+ *                                            transfers that mangled line endings,
+ *                                            which is exactly what we want.
+ *   JPEG  FF D8 FF                          — SOI plus the first marker byte.
+ *   WebP  'RIFF' xxxx 'WEBP'                — a RIFF container whose form type is
+ *                                            WEBP; the four size bytes between
+ *                                            them are skipped, not checked.
+ *
+ * Returns the mime the bytes ACTUALLY are, or null for anything else — including
+ * an SVG, which is the case that matters: `<svg` is text, matches no signature
+ * here, and so cannot be smuggled in under an `image/png` label.
+ *
+ * THE `bytes.length >=` GUARDS ARE REDUNDANT TODAY, and are kept deliberately —
+ * with the reason written down, because PE-8 was a fallback that looked like dead
+ * defence and was not, and the honest version of that lesson cuts both ways.
+ * Indexing a Buffer past its end yields `undefined` rather than throwing, and
+ * `Buffer.equals` on two different lengths is simply false, so every branch below
+ * already answers null for a short buffer. Sabotaging the guards away fails NO
+ * test, which is how this was established rather than assumed. They stay because
+ * the guard is the invariant, not the mechanism: a future rewrite reaching for
+ * `readUInt32BE` or a DataView to read the WebP chunk size WOULD throw on a short
+ * buffer, and the guard is what makes that rewrite safe by default instead of a
+ * crash on a one-byte upload.
+ */
+export function sniffImageMime(bytes: Buffer): LogoMime | null {
+  if (bytes.length >= 8 && bytes.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) {
+    return 'image/png';
+  }
+  if (bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) {
+    return 'image/jpeg';
+  }
+  if (
+    bytes.length >= 12 &&
+    bytes.subarray(0, 4).toString('latin1') === 'RIFF' &&
+    bytes.subarray(8, 12).toString('latin1') === 'WEBP'
+  ) {
+    return 'image/webp';
+  }
+  return null;
+}
+
+/**
+ * The bytes, for the one request that serves them. Separate from `getBranding`
+ * on purpose — see the note on `Branding.logo`.
+ */
+export async function readLogoBytes(
+  tx: QueryRunner,
+): Promise<{ bytes: Buffer; mime: LogoMime; updatedAt: Date } | null> {
+  const r = await tx.query(
+    `SELECT logo_bytes, logo_mime, logo_updated_at FROM organization WHERE id = ${ORG}`,
+  );
+  if (r.rows.length === 0) {
+    throw new BrandingError('no tenant context, so there is no logo to read', 'NO_TENANT');
+  }
+  const row = r.rows[0];
+  if (row.logo_mime === null) return null;
+  return {
+    bytes: row.logo_bytes as Buffer,
+    mime: row.logo_mime as LogoMime,
+    updatedAt: row.logo_updated_at as Date,
+  };
 }
