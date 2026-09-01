@@ -26,6 +26,7 @@
  * employee filing the expense is not who fixes it" — but it is the thing this
  * screen exists to let somebody fix, so it is counted at the top.
  */
+import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { EmptyRow, ErrorBanner, selectClass } from '@/app/expenses/ui';
@@ -95,9 +96,13 @@ export default async function ChartOfAccountsPage({
           <strong className="font-medium">
             Accounting integrations are not enabled for this organization.
           </strong>{' '}
-          The chart below is read-only: accounts cannot be added, imported, pulled
-          or mapped while the module is off. An administrator can turn it on under
-          Modules.
+          The chart below is empty and read-only while the module is off: its accounts
+          are hidden rather than deleted (migration <code>0022</code>), and nothing can
+          be added, imported, pulled or mapped. An administrator can turn it on under{' '}
+          <Link href="/admin/modules" className="underline underline-offset-4">
+            Modules
+          </Link>
+          .
         </div>
       ) : null}
 

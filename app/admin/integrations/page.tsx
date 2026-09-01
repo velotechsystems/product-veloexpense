@@ -114,6 +114,9 @@ export default async function IntegrationsPage({
           </p>
         </div>
         <div className="flex items-center gap-3">
+          <Link href="/admin/modules" className="text-sm underline underline-offset-4">
+            Modules
+          </Link>
           <Link href="/admin/chart-of-accounts" className="text-sm underline underline-offset-4">
             Chart of accounts
           </Link>
@@ -133,8 +136,12 @@ export default async function IntegrationsPage({
             Accounting integrations are not enabled for this organization.
           </strong>{' '}
           Everything below is read-only and nothing here will post: approved reports
-          are recorded and sent nowhere. An administrator can turn the module on
-          under Modules.
+          are recorded and queued, and go when the module is back on. An
+          administrator can turn it on under{' '}
+          <Link href="/admin/modules" className="underline underline-offset-4">
+            Modules
+          </Link>
+          .
         </div>
       ) : null}
 

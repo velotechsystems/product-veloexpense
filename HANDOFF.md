@@ -1958,9 +1958,67 @@ required, or neither" — and the contract was right, so the entitlement row's i
 a comment claiming this guard runs before the build in CI was **false** (build is step one, `npm test`
 is step twelve); the comment now states the trade instead of inventing a property.
 
-**VX4-1 part 2:** the database backstop (`AND EXISTS (… module_entitlement … enabled)` on each gated
-table's policy — unbypassable, and silent, which is why it ships beside screens that can explain it),
-the admin Modules screen, and an e2e that toggles a module off and watches a tenant's posting stop.
+### VX4-1 part 2 SHIPPED — the backstop, the screen, and the demonstration
+
+**Migration `0022`.** `app_module_enabled(text)` — one STABLE, SECURITY INVOKER function so the
+predicate is written once — and the `tenant_isolation` policies on `gl_account`,
+`integration_installation` and `integration_oauth_state` now carry `AND app_module_enabled('accounting')`.
+The predicate comes from the POLICY, so no query can omit it: not a new service function, not a raw
+`tx.query` in a screen, not a job written next year by somebody who has never read the registry.
+
+**THE TABLE THAT MUST NOT BE GATED, and this is the finding of part 2.** `integration_post` — the
+posting queue — is deliberately left alone. `enqueuePost()` runs **unconditionally inside the
+approving transaction** (`lib/approvals/engine.ts`, and its own comment says why). An entitlement in
+that policy would make the WITH CHECK refuse the insert and **APPROVING A REPORT WOULD FAIL for every
+tenant without the accounting module** — a core flow broken by an optional module's gate. Checked
+before writing the migration, not after.
+
+**Why gating `gl_account` is safe** for the core expense flow: `accountForCategory()` is called by
+`addLineItem` for every line item filed by every tenant, and with the module off the join returns
+nothing and the snapshot is NULL — which is exactly what VX3-1 already specified ("null is fine and
+blocks nothing"). Existing `expense_line_item.gl_account_id` values survive, because referential
+integrity is checked with RLS bypassed (TN-1): the rows go invisible, not orphaned, and come back.
+
+**Proven behaviourally against a real Postgres, as `veloapp`:** demo entitled sees its 28 accounts;
+`blank` (unentitled) sees 0 and its INSERT is refused; demo after disabling sees 0 while the 28 rows
+are still there to a superuser; re-enabled, all 28 return. The seed also proves the ordering —
+`seedModule` must precede `seedReferenceData` or the chart cannot be written at all.
+
+**`/admin/modules`** lists every declared module with this tenant's state, shows an unavailable one
+greyed rather than hidden (a customer asking for Budgets is a sales answer), and says *before* the
+toggle is pressed that turning a module off **hides its data and does not delete it**.
+
+**`e2e/modules-flow.spec.ts`** is the demonstration: turn accounting off through the screen, watch the
+integrations and chart screens explain themselves and their data vanish, approve a report and see it
+**queued rather than failed with no attempt burnt**, then turn it back on and watch the same report
+post. Three layers have to agree for that to pass — `0022`'s policy, part 1's service gate, and
+VX3-4's queue rule — and this is the only place they are exercised together.
+
+**Ordering, handled at the root:** the new spec sorts between `ledger-flow` and `oauth-flow`, so it
+restores the module in an `afterAll` AND `wipeIntegrations()` re-enables accounting for the tenants it
+wipes. A spec that depends on another spec's cleanup fails the day somebody adds a file whose name
+sorts between them.
+
+**A defect the spec caught while being written:** with the module off, `/admin/ledger-queue` would
+have printed AC-22's headline — *"Two ledgers can post, so nothing is posting"* — above a module-off
+sentence. `capabilityAvailability` now returns a `problemKind` and the screen picks its headline from
+it. Confidently wrong copy is worse than no copy, and nothing but writing the browser test would have
+found it.
+
+**AC-24, found by the e2e asserting a sentence the screen shows an admin.** A post skipped for a
+configuration reason backs off an hour without burning an attempt — and **fixing the configuration did
+not clear the backoff**, so an admin who turned the module on watched nothing happen while the screen
+said the queue "drains on its own". `requeueWaitingPosts()` now runs in the same transaction as the
+toggle: `PENDING` only (a `FAILED` row's retry schedule belongs to the far end that refused it) and
+never a claimed row (moving the schedule under the process holding it is how a double-post starts).
+Verified against absence — dropping the status predicate fails with `expected 2 to be 1`. **The same
+nudge is still owed to `installIntegration` and `disconnect`; flagged as AC-24 rather than folded in,
+because those change VX3-4-era behaviour and deserve a decision.**
+
+**Placement, for the third time:** the RLS backstop made the entitlement row's POSITION load-bearing —
+it must exist before any accounting write, not at the end of a hook — and two suites failed from their
+own setup until the row moved to immediately after org creation. The lesson is in HANDOFF §4's
+checklist territory: when a default is fail-closed, setup order becomes part of the contract.
 
 **Process fact:** `npx vitest` **cannot run in the device shell** — `node_modules` there is
 macOS-native (`@rollup/rollup-linux-arm64-gnu` missing), the same reason `next build` needs the Mac.

@@ -72,7 +72,7 @@ export default async function LedgerQueuePage({
   } catch {
     previewed = null;
   }
-  const { rows, summary, connected, problem } = await getQueuePage();
+  const { rows, summary, connected, problem, problemKind } = await getQueuePage();
   const waiting = summary.PENDING + summary.FAILED;
 
   return (
@@ -194,13 +194,23 @@ export default async function LedgerQueuePage({
         // because nothing is being retried in the meantime — no attempt is burnt,
         // so every waiting report is still here once one is disconnected.
         <div className="rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm">
-          <strong className="font-medium">Two ledgers can post, so nothing is posting.</strong>{' '}
-          {problem} Nothing is being retried and nothing has been sent anywhere; disconnect one on
-          the{' '}
-          <Link href="/admin/integrations" className="underline underline-offset-4">
-            integrations screen
-          </Link>{' '}
-          and the queue drains on its own.
+          <strong className="font-medium">
+            {problemKind === 'MODULE_DISABLED'
+              ? 'Accounting is turned off, so nothing is posting.'
+              : 'Two ledgers can post, so nothing is posting.'}
+          </strong>{' '}
+          {problem} Nothing is being retried and nothing has been sent anywhere; the queue below is
+          intact and drains on its own once{' '}
+          {problemKind === 'MODULE_DISABLED' ? (
+            <Link href="/admin/modules" className="underline underline-offset-4">
+              the module is back on
+            </Link>
+          ) : (
+            <Link href="/admin/integrations" className="underline underline-offset-4">
+              one of them is disconnected
+            </Link>
+          )}
+          .
         </div>
       ) : null}
 

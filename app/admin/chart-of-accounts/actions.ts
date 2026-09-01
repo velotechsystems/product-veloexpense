@@ -66,6 +66,8 @@ async function pullAvailability(
   tx: QueryRunner,
 ): Promise<{ canPull: boolean; pullProblem: string | null }> {
   const { connected, problem } = await capabilityAvailability(tx, 'PULL_CHART_OF_ACCOUNTS');
+  // The module-off case already has its own banner at the top of that screen, so
+  // repeating it beside the missing button would say the same thing twice.
   return { canPull: connected && problem === null, pullProblem: problem };
 }
 

@@ -33,6 +33,26 @@ beforeAll(async () => {
     orgA = a.rows[0].id;
     orgB = b.rows[0].id;
   });
+
+  // VX4-1: a module entitlement per org, FIRST. This table decides what a customer
+  // is PAYING FOR, so a leak is one tenant reading — or with a broken WITH CHECK,
+  // writing — another tenant's commercial terms.
+  //
+  // And it has to come before every accounting write, because since migration 0022
+  // the module gate is in the RLS POLICY as well: `gl_account`,
+  // `integration_installation` and `integration_oauth_state` are invisible and
+  // unwritable without it. The first placement was further down this hook and the
+  // suite failed from its own setup with "new row violates row-level security
+  // policy for table gl_account".
+  for (const org of [orgA, orgB]) {
+    await withOrg(org, (tx) =>
+      tx.query(
+        `INSERT INTO module_entitlement (organization_id, module_code, enabled, enabled_at)
+         VALUES ($1, 'accounting', true, clock_timestamp())`,
+        [org],
+      ),
+    );
+  }
   await withOrg(orgA, (tx) =>
     tx.query("INSERT INTO app_user (organization_id, email) VALUES ($1,'a@x.com')", [orgA]),
   );
@@ -139,19 +159,6 @@ beforeAll(async () => {
         ],
       );
     });
-  }
-  // VX4-1: a module entitlement per org. This table decides what a customer is
-  // PAYING FOR, so a leak here is not a data-shape problem — it is one tenant able
-  // to read, and with a broken WITH CHECK to write, another tenant's commercial
-  // terms.
-  for (const org of [orgA, orgB]) {
-    await withOrg(org, (tx) =>
-      tx.query(
-        `INSERT INTO module_entitlement (organization_id, module_code, enabled, enabled_at)
-         VALUES ($1, 'accounting', true, clock_timestamp())`,
-        [org],
-      ),
-    );
   }
   // VX1-3: an expense report per org (submitter resolved within the org via subquery).
   const reportA = await withOrg(orgA, (tx) =>
