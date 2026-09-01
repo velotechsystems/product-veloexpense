@@ -26,6 +26,9 @@
  * the next question — "then why didn't they see it?" — has nowhere to go.
  */
 import { withOrg, withPlatformRead } from '@/lib/tenant/context';
+import { getBranding } from '@/lib/branding/service';
+import { emailShell } from '@/lib/notifications/email-shell';
+import { escapeHtml } from '@/lib/notifications/html';
 import type { QueryRunner } from '@/lib/db/client';
 import { formatMinor } from '@/lib/money';
 import { placeholderValuesFrom } from '@/lib/notifications/catalog';
@@ -168,6 +171,13 @@ export async function prepareEmail(
   const origin = appOrigin();
   const reportUrl = origin ? `${origin}/expenses/${row.subject_id}` : null;
 
+  // VX4-3 part 3. One extra read per email, in the SAME transaction — `prepareEmail`
+  // already runs inside `withOrg(job.organizationId)`, so this is the tenant whose
+  // report the message is about, by construction rather than by being passed in.
+  // The bytes of the logo are deliberately not loaded: an email cannot use them
+  // (see `email-shell.ts` on why a remote logo is broken here, not merely blocked).
+  const branding = await getBranding(tx);
+
   // Approve links, only where there is something this person can actually decide.
   // `decidableTaskForReport` is VX2-4's function, which is the point: the mail
   // offers a button exactly when the report page would offer one, because both ask
@@ -217,7 +227,7 @@ export async function prepareEmail(
       subject,
       from: fromAddress(),
       text: plainText(rendered.body, reportUrl, actions),
-      html: htmlBody(rendered.body, reportUrl, actions),
+      html: htmlBody(branding.name, branding.brandColor, rendered.body, reportUrl, actions),
       ...threadHeaders(claim.notificationId, row.subject_id, row.recipient_id),
       headers: {
         // RFC 3834. Ported with ExpenseOS's reason, which nobody derives from
@@ -284,35 +294,46 @@ function plainText(
   return parts.join('\n');
 }
 
+/**
+ * VX4-3 part 3 (BR-6). This used to BE the message — four bare `<p>` tags, no
+ * doctype, no wrapper, no colour — which is the shape ExpenseOS's
+ * `notification-dispatch.ts:181` has and the one we inherited from it. It now
+ * builds only the BODY, and `emailShell` wraps it in the tenant's branding.
+ *
+ * THE APPROVE LINK IS THE PRIMARY ACTION AND THEREFORE THE BUTTON, and the split
+ * matters more than it looks: the recipient who most needs this mail is the
+ * approver deciding from a link without ever signing in (VX2-8), and for them the
+ * button IS the product. "Open the report" stays a plain link below it, because a
+ * second button competing with the first is how a one-click mistake happens.
+ *
+ * The confirm-first sentence survives the rewrite verbatim. It is not decoration:
+ * a link that acts on one click is a link a mail scanner can trip, ours asks
+ * first, and the recipient should know that BEFORE they click rather than after.
+ */
 function htmlBody(
+  organizationName: string,
+  brandColor: string | null,
   body: string,
   reportUrl: string | null,
   actions: { approveUrl: string; rejectUrl: string } | null,
 ): string {
-  const out = [`<p>${escapeHtml(body)}</p>`];
-  if (actions) {
-    out.push(
-      `<p><a href="${escapeHtml(actions.approveUrl)}">Approve</a>` +
-        `&nbsp;&nbsp;·&nbsp;&nbsp;` +
-        `<a href="${escapeHtml(actions.rejectUrl)}">Reject</a></p>`,
-    );
-  }
-  if (reportUrl) {
-    out.push(`<p><a href="${escapeHtml(reportUrl)}">Open the report</a></p>`);
-  }
-  if (actions) {
-    out.push('<p style="color:#666;font-size:12px">Both links ask you to confirm first.</p>');
-  }
-  return out.join('');
+  const links: { label: string; url: string }[] = [];
+  if (actions) links.push({ label: 'Reject', url: actions.rejectUrl });
+  if (reportUrl) links.push({ label: 'Open the report', url: reportUrl });
+
+  return emailShell({
+    organizationName,
+    brandColor,
+    bodyHtml: `<p style="margin:0">${escapeHtml(body)}</p>`,
+    cta: actions ? { label: 'Approve', url: actions.approveUrl } : null,
+    links,
+    footnote: actions ? 'Both links ask you to confirm before anything happens.' : null,
+  });
 }
 
-export function escapeHtml(s: string): string {
-  return s
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
-}
+// Moved to `lib/notifications/html.ts` — a leaf, because `email-shell.ts` needs it
+// and this file imports `email-shell.ts`. Re-exported so no caller had to change.
+export { escapeHtml } from '@/lib/notifications/html';
 
 /* ── the drain loop ───────────────────────────────────────────────────────── */
 

@@ -2311,6 +2311,49 @@ nothing recorded. Checked, not assumed, that no migration in this repo uses `CRE
 CONCURRENTLY` or opens its own transaction; one that needs `CONCURRENTLY` will fail loudly here,
 which is the right place for that conversation.
 
+### VX4-3 part 3 SHIPPED — the email shell, and a vacuous test of my own
+
+BR-6, and its two halves point opposite ways: ExpenseOS's password-reset mail IS branded and
+hardcoded (product name in both locales, `#0c2340`/`#f76b15` inlined), while their
+`notification-dispatch.ts:181` has no wrapper at all. **We inherited the unbranded one** — `htmlBody()`
+built four bare `<p>` tags. It now builds only the body and `emailShell()` wraps it: tables for
+layout, inline styles, no `<style>` for Gmail to strip, nothing external, `role="presentation"` so a
+screen reader does not read the scaffolding as data.
+
+**No logo in the email, and it is a finding rather than a shortcut.** `/api/branding/logo` is
+session-gated, so an `<img>` there **404s for every recipient** — not "blocked until they click show
+images". And the recipient who most needs this mail is the approver deciding from a link *without ever
+signing in*, who by construction has no session. CID embedding is the right answer, needs an
+`attachments` field on `EmailMessage` and a multipart-assembling transport, and is filed rather than
+half-built. Shipped: a text wordmark in the tenant's colour.
+
+**The unbranded default is NOT `--vl-brand`, on purpose.** #0284c7 is 4.10:1 / 4.36:1 — below AA either
+way. The app already renders it and that is not this ticket's call, but this surface is NEW and picking
+a measured-inaccessible colour for fresh code is indefensible. The accent is the ramp's 600 step
+(#0079bb, 4.72:1), derived so it cannot drift. The email's blue is a shade deeper than the app's; that
+seam should stay visible until the sheet is fixed.
+
+**A circular import, caught before it shipped, and the third instance of one shape.** `email-shell.ts`
+needed `escapeHtml`, which lived in `dispatch.ts`, which imports `email-shell.ts`. Extracted to
+`lib/notifications/html.ts` as a leaf and re-exported so no caller changed — the same move
+`lib/integrations/errors.ts` was (VX3-6) and the reason `conflicts.ts` was placed as a leaf (AC-22).
+**A shared helper belongs below both users, not inside one of them.** Worth promoting to a rule.
+
+**AND MY OWN PROPERTY TEST WAS VACUOUS.** The sweep asserting "the rendered button is readable for
+every colour a tenant can save" pulled the pair out of the HTML with
+`/background:(#hex);color:(#hex)/` — which matches the `<body>` tag
+(`background:#f1f5f9;color:#0f172a`) long before the button. Those contrast at 15:1, so the sweep
+passed for all 1,331 colours **while never once looking at a button**. Found by sabotaging the shell to
+always write white and noticing the sweep stayed green while a smaller test failed: the sabotage caught
+the code, and the code's survival caught the test. The matcher is now anchored on
+`display:inline-block`, and a separate assertion guards the helper so a markup reorder cannot make it
+vacuous again.
+
+That is the third time this session a check could not see one of its two outcomes — after
+`check:actions` discarding its own finding, and `innerText()` on a `<style>` answering `''`. The
+pattern worth carrying: **when a sabotage fails fewer tests than expected, the surviving tests are the
+finding.**
+
 ### The two decisions, SETTLED 31 Aug 2026 (John)
 
 **1. Host-based tenancy is PHASE 5.** VX4-4 is out of this board. The reasoning that carried it: a
