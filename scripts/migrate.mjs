@@ -115,6 +115,76 @@ const LEDGER = `
       applied_at  timestamptz NOT NULL DEFAULT now()
   )`;
 
+/**
+ * The tables and columns a migration DECLARES, used to check a `--baseline` claim.
+ *
+ * Comments are stripped first. Measured: NO migration in this repo currently
+ * mentions `ADD COLUMN` outside real DDL, so the stripping changes nothing today —
+ * the first draft of this comment claimed otherwise and was simply wrong, which is
+ * why the count got checked. It stays because the migrations here carry very long
+ * prose headers that explain their own DDL, so one of them will say it eventually,
+ * and the failure mode is the worst available: a scanner reading its own
+ * documentation as schema reports VERIFIED for objects nobody created.
+ *
+ * Deliberately narrow. It understands `CREATE TABLE` and `ADD COLUMN` and nothing
+ * else — no policies, functions, constraints, indexes or renames. A migration it
+ * cannot read yields nothing, which is reported as "cannot verify" rather than as
+ * "verified", because those are the two answers a check like this must never
+ * confuse.
+ */
+function declaredObjects(sql) {
+  const bare = sql.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/--[^\n]*/g, ' ');
+  const tables = [];
+  const columns = [];
+  for (const stmt of bare.split(';')) {
+    const created = /\bCREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?"?(\w+)"?/i.exec(stmt);
+    if (created) tables.push(created[1].toLowerCase());
+    const altered = /\bALTER\s+TABLE\s+(?:IF\s+EXISTS\s+)?"?(\w+)"?/i.exec(stmt);
+    if (altered) {
+      for (const m of stmt.matchAll(/\bADD\s+COLUMN\s+(?:IF\s+NOT\s+EXISTS\s+)?"?(\w+)"?/gi)) {
+        columns.push({ table: altered[1].toLowerCase(), column: m[1].toLowerCase() });
+      }
+    }
+  }
+  return { tables, columns };
+}
+
+/**
+ * Does the database actually contain what this migration says it creates?
+ *
+ * WHY THIS EXISTS, and it is worth the paragraph: `--baseline` is a CLAIM by the
+ * operator that everything up to a point is already applied, and recording it runs
+ * nothing. Get the point wrong by one and the ledger LIES — `migrate` then reports
+ * "nothing pending" forever while the schema is missing a column, which is the
+ * exact failure the ledger was built to prevent, now with a clean bill of health
+ * on top. That happened on the first day this script existed: the operator was
+ * told to run `--baseline all` against a database that was current through `0022`
+ * and had never seen `0023`, so `0023` was marked applied, `migrate` said
+ * "nothing pending", and six Playwright specs died on `column "brand_color" does
+ * not exist` exactly as before.
+ *
+ * The bad instruction was mine. This is the check that makes it impossible to
+ * follow.
+ */
+async function verifyPresent(client, objects) {
+  const missing = [];
+  for (const t of objects.tables) {
+    const r = await client.query(`SELECT to_regclass($1) IS NOT NULL AS yes`, [t]);
+    if (!r.rows[0].yes) missing.push(t);
+  }
+  for (const { table, column } of objects.columns) {
+    const r = await client.query(
+      `SELECT EXISTS (
+         SELECT 1 FROM information_schema.columns
+          WHERE table_name = $1 AND column_name = $2
+       ) AS yes`,
+      [table, column],
+    );
+    if (!r.rows[0].yes) missing.push(`${table}.${column}`);
+  }
+  return missing;
+}
+
 const client = new pg.Client({ connectionString: URL });
 await client.connect();
 
@@ -180,7 +250,43 @@ try {
         console.error(`migrate: --baseline ${baseline} matches no migration under ${DIR}.`);
         process.exit(1);
       }
-      for (const name of onDisk.slice(0, upto + 1)) {
+      // ── verify the claim BEFORE recording it ────────────────────────────
+      //
+      // Walk backwards from the newest migration being baselined to the first one
+      // whose objects this scanner can actually read, and require every one of
+      // them to be present. Backwards, because the newest is the claim most
+      // likely to be wrong — an operator's database is usually current up to
+      // "the last one I remembered to apply" — and nothing later has been applied
+      // yet, so all of its objects must exist if the claim is true.
+      const toBaseline = onDisk.slice(0, upto + 1);
+      let verified = null;
+      for (let i = toBaseline.length - 1; i >= 0; i -= 1) {
+        const objects = declaredObjects(sqlOf(toBaseline[i]));
+        if (objects.tables.length === 0 && objects.columns.length === 0) continue;
+        const missing = await verifyPresent(client, objects);
+        if (missing.length) {
+          const earlier = i > 0 ? toBaseline[i - 1] : null;
+          console.error(
+            `migrate FAILED: --baseline ${baseline} claims ${toBaseline[i]} is already\n` +
+              `  applied, but this database does not have what it creates:\n` +
+              missing.map((m) => `  · ${m}`).join('\n') +
+              `\n\n  Nothing was recorded. Baselining it would make the ledger LIE — every\n` +
+              `  later run would report "nothing pending" while the schema stays short a\n` +
+              `  column, which is the failure the ledger exists to prevent.\n\n` +
+              (earlier
+                ? `  If your database is current through ${earlier}, baseline THAT and let the\n` +
+                  `  runner apply the rest:\n\n` +
+                  `      node scripts/migrate.mjs --baseline ${earlier.slice(0, 4)}\n`
+                : `  This database appears to predate even the first migration. If it is empty,\n` +
+                  `  drop the ledger and run the migrations without --baseline.\n`),
+          );
+          process.exit(1);
+        }
+        verified = toBaseline[i];
+        break;
+      }
+
+      for (const name of toBaseline) {
         await client.query(
           'INSERT INTO schema_migration (name, checksum) VALUES ($1, $2) ON CONFLICT DO NOTHING',
           [name, sha(sqlOf(name))],
@@ -190,6 +296,12 @@ try {
       console.log(
         `migrate: baselined ${upto + 1} migration(s) as already applied ` +
           `(${onDisk[0]} … ${onDisk[upto]}). Nothing was run.`,
+      );
+      console.log(
+        verified === null
+          ? `migrate: NOTE — none of the baselined migrations declares a table or column ` +
+            `this script can check, so the claim was recorded unverified.`
+          : `migrate: verified against the schema — ${verified}'s tables and columns are all present.`,
       );
     }
   }

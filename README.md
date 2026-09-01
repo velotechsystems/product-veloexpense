@@ -39,6 +39,10 @@ not, so the runner asks once rather than guessing which migrations are already i
 npm run migrate -- --baseline all      # a database that is fully up to date
 npm run migrate -- --baseline 0022     # ...or up to a specific migration, then apply the rest
 ```
+`--baseline` is a claim that those migrations are already in, and recording it runs nothing — so it
+**verifies the claim against the schema before recording anything**, and refuses with the right
+baseline in the message if the newest one it can check is not actually there. Getting this wrong by
+one is how the ledger starts lying while reporting "nothing pending".
 Do not apply a migration by hand with `psql -f`. `npm run e2e` and CI both run the runner, and
 `test/migrations.test.ts` fails if the schema and `prisma/migrations/` disagree — which is the
 gate that did not exist when `0023` was merged, applied nowhere, and surfaced as

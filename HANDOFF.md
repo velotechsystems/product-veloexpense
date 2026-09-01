@@ -2267,8 +2267,37 @@ cannot tell "already applied" from "silently did nothing".
   unambiguous.
 - **`--baseline` against a non-empty ledger** — refused rather than silently ignored.
 
-**A bug of mine that only running it could find, and it is worth keeping in mind for any script
-that both advises and acts.** The first version keyed the baseline branch on *"the ledger table did
+**AND A WORSE ONE: the runner was correct and my INSTRUCTION was not.** The first real use of
+`--baseline` was mine, in the handover text, and I told John to run `--baseline all` against a
+database that was current through `0022` and had never seen `0023`. It did exactly what it was asked:
+recorded `0023` as applied without running it. `npm run migrate` then reported *"nothing pending"*,
+and the same six specs died on `column "brand_color" does not exist` — the original failure, now
+with a clean bill of health on top. I had tested the `--baseline 0022` path minutes earlier and still
+handed over the wrong value.
+
+The lesson is not "be careful with the flag". A one-time step everybody runs, whose wrong answer is
+silent and total, needs the tool to check the claim rather than the operator to get it right. So
+`--baseline` now **verifies before it records**: it walks backwards from the newest migration being
+baselined to the first one declaring a table or column it can read, and requires every one to be
+present. The bad instruction is now refused, by name, with the right one in the message:
+
+    migrate FAILED: --baseline all claims 0023_tenant_branding is already
+      applied, but this database does not have what it creates:
+      · organization.brand_color   … (five columns)
+      If your database is current through 0022_module_policy_backstop, baseline THAT
+
+Nothing is recorded when it refuses. `--baseline 0022` on that same database verifies against
+**0021** — because `0022` declares only a function and policies, which the scanner deliberately
+cannot read — then applies `0023` for real. A migration it cannot read at all is reported as *"recorded
+unverified"*, never as verified: those are the two answers a check like this must never conflate.
+
+**This also marks the limit of `test/migrations.test.ts`, worth stating plainly.** That guard compares
+the ledger to the FILES, not to the SCHEMA. A lying ledger passes it — which is precisely what
+happened. The schema check above closes the moment a lie can be introduced (a baseline); a ledger
+edited by hand afterwards is still outside what either guard sees.
+
+**A smaller bug of mine that only running it could find, and it is worth keeping in mind for any
+script that both advises and acts.** The first version keyed the baseline branch on *"the ledger table did
 not exist"*. But the ask `exit(1)`s **after** `CREATE TABLE IF NOT EXISTS` has already run — so on the
 very next invocation the table existed, the branch was skipped, and the `--baseline` the script had
 just told the user to pass was **silently ignored**: it went straight to applying `0001` against a
