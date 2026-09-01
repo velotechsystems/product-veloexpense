@@ -2071,6 +2071,69 @@ shipped.
 | **VX4-7** | **Locale: retag `en` → `en-CA`, add `en-US`** | IL-1: their `en` already formats as en-US (`3/4/2026`, `CA$10,799.00`), so this is a retag **and** an addition, 2 locales to 3 — touching URL segments, stored preferences and every `{ en: … }` Json key, whose arity is hardcoded in ~17 files (IL-7). Also: a company default locale, which does not exist there (IL-2); what a missing key does, decided before the third catalog exists rather than after two blank pages (IL-4); and the date-formatting calls that pass no locale (IL-10). | 3 |
 | **VX4-8** | **Module 12 slices 2–3: fraud detection + control evaluation** | Deferred to this phase since Phase 2 because both are retrospective and need approval history, which now exists. Their versions are driven by `SystemFlag` config (MT-2) and run as unconditional global crons (MT-5), so both land on VX4-1 and VX4-2. | 3 |
 
+### VX4-3 part 1 SHIPPED — the branding store, and the colour maths that is the actual ticket
+
+Migration `0023` puts `brand_color`, `logo_bytes`/`logo_mime`/`logo_updated_at` and `login_tagline` on
+**`organization`**, and the header explains why that beat the two alternatives. `organization.settings
+jsonb` has claimed branding in its comment since `0001`, and VX4-1 already refused the blob for
+modules (MT-8 / AC-21): every guarantee below would become an `if` in one code path. A new RLS table
+was the VX4-1 shape and is actively wrong here — branding has to be readable with NO tenant context,
+and under FORCE RLS an unset context sees zero rows, so it would work only for the reader that needs
+it least. `organization` carries no `organization_id`, is not RLS-scoped, and is already the table
+read by slug before anyone signs in.
+
+**`logo_url` is a deliberate NON-port** and their own repo makes the case: their form takes
+`z.string().url()` and renders it as `<img src>`, while `api/public-icons/[code]` — same problem,
+twenty files away — streams bytes out of Postgres with `nosniff`, `attachment` and a sandbox CSP,
+carrying the scar in its comment ("uploads are now raster-only, but rows may predate that"). We take
+the bytes shape and make raster-only a CHECK. Eight constraints, every one probed for refusal by name.
+
+**The colour work is the substance, and it is one hex in, everything out.** `lib/branding/color.ts` is
+pure arithmetic: normalise, WCAG luminance and ratio, an OKLab conversion, and a seven-step ramp.
+Three decisions worth not relitigating:
+
+- **Derived shades are SOLID, never alpha.** ExpenseOS's `rowState.ts` is the recorded reason — alpha
+  compounds between a `<tr>` and a sticky `<td>` and the leading cell goes visibly darker. "Derive the
+  hardcoded shades" naively means `/15`, which is the bug they already paid for.
+- **Computed in TypeScript, not emitted as `color-mix()`.** `color-mix` would be free and would get
+  dark mode by mixing against a token that flips. Rejected because a test over a CSS string containing
+  `color-mix(...)` asserts nothing about the resulting colour — this project's recurring lesson in a
+  new hat. Computed hexes can be asserted, and are: round trip ≤1 byte over a sweep, monotonic
+  lightness, hue retained, within 0.06 L of the hand-tuned sky it replaces.
+- **OKLab, not sRGB.** sRGB mixing desaturates into chalk unevenly per hue, so a yellow tenant and a
+  blue tenant would get ramps of different quality. Sabotaged both ways to check the tests can tell.
+
+**`brand_color IS NULL` emits NOTHING** — no existing tenant's product changes appearance because this
+shipped, and an absent colour stays distinguishable from a colour that happens to equal our sky.
+
+**The contrast rule, per John's call of 1 Sep:** choose white or ink per tenant from luminance, refuse
+only where NEITHER reaches 4.5:1. Measured over the 24-bit space that refuses **6.3%**, all of it
+mid-luminance, so the rule costs an admin almost nothing. The refusal lives in the SERVICE, not the
+form — MT-3 for the fourth time this phase, and a colour can also arrive from a seed, an import, or
+whatever provisions a tenant in Phase 5. Its message names both ratios, because "contrast too low"
+tells an admin nothing they can act on.
+
+**Two live a11y defects in our OWN shipped palette fell out of the arithmetic, and neither is fixed
+here** — `app/velotech-tokens.css` is shared VeloTech brand and recolouring the product is not this
+ticket's call. Both are pinned numerically in `test/branding-color.test.ts`, so fixing the sheet makes
+those tests fail, which is the intended signal to come back and delete them. (1) `--primary` #0284c7
+on white is **4.10:1**, below AA, and ink would be 4.36:1 — the shipped pairing is the worse of two
+short options. (2) Dark mode's `--accent-foreground` sits on `--accent` at **2.14:1**, because the dark
+block replaces the surface and not the text on it; 7.09:1 in light. A branded tenant escapes (2) —
+VX4-3's dark block moves that token — an unbranded one does not.
+
+**BR-9 was missing from my own BR-1..10 audit.** Filled from source rather than renumbered: ExpenseOS
+has no favicon file, no manifest, no `theme-color`, no apple-touch-icon, and `proxy.ts` excludes a
+`/favicon.ico` that does not exist. Ours is worse — `app/layout.tsx` still says
+`title: "Create Next App"`, live in every tab today. Part 2's `generateMetadata` is the same request
+path as a per-tenant icon route, so they belong together.
+
+**Part 2 is the render path:** `generateMetadata` + the icon route, the `<style>` injection in the
+layout, `/api/branding/logo` (with the magic-number sniff `setLogo` deliberately defers to it), the
+admin screen, and an e2e that sets a colour in one tenant and proves the other is untouched. **Part 3**
+is the email shell (BR-6) on VX2-8's template layer — `htmlBody()` in `dispatch.ts:292` currently
+builds bare `<p>` tags, the same finding their `notification-dispatch.ts:181` has.
+
 ### The two decisions, SETTLED 31 Aug 2026 (John)
 
 **1. Host-based tenancy is PHASE 5.** VX4-4 is out of this board. The reasoning that carried it: a
