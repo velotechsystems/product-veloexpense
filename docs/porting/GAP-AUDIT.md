@@ -280,6 +280,73 @@ code after an instance was authored would otherwise be handed the wrong context.
 scope governs."* VeloExpense derives scope from the code registry only, so this cannot bite — but
 the same hazard applies to any attribute we later denormalise onto `expense_policy`.
 
+### PE-8 · The policy currency had a default nobody chose — **CLOSED (VX4-2)**
+
+Found while closing VX4-2, and it is PE-1's family rather than a new one: PE-1 was a threshold with
+no currency, this was a *tenant* with no currency and a silent answer anyway. Two sites in
+`lib/policy/service.ts` read the tenant's policy currency with the same query and the same tail:
+
+```ts
+const code = (org.rows[0]?.policy_currency_code as string | undefined) ?? 'CAD';
+```
+
+`organization.policy_currency_code` is `NOT NULL DEFAULT 'CAD' REFERENCES currency(code)`, so the
+column cannot be null and the fallback reads as dead defence. It was not. The query keys on
+`app.current_org`, and with no tenant it matched no row and the fallback answered **CAD** — policy
+evaluated against a currency nobody chose. `lib/expenses/service.ts` already had the right shape for
+this, an explicit `NO_TENANT`, so the fix is one shared reader that refuses, used by
+`getPolicyCurrency` and `currencyContext` both, because two copies of a query are how they became two
+copies of a bad default.
+
+**The write half went with it.** `setPolicyCurrency` ran the same expression in an `UPDATE`, so with
+no tenant it changed nought rows and returned success. `organization` always has the row when there
+IS a tenant, so nought rows means the WHERE named nobody; it now refuses instead of silently
+succeeding, which is the worse half of the same bug.
+
+**AND THE FIRST VERSION OF THE FIX WAS WRONG, which is the part worth keeping.** [checked] The test
+asserted `NO_TENANT` from `withoutOrg` and got `22P02 invalid input syntax for type uuid: ""`.
+`set_config(k, v, is_local => true)` does not leave the GUC *undefined* when the transaction ends —
+it leaves it defined as the **empty string**. So a pooled connection reads NULL from
+`current_setting('app.current_org', true)` only until it has served its first `withOrg`, and `''` for
+the rest of its life, and a bare `''::uuid` raises rather than evaluating to NULL. Proven directly
+against Postgres 16: fresh connection `NULL`; after one `set_config(..., true)` plus `COMMIT`, `''`;
+bare cast `22P02`; `NULLIF(...,'')::uuid` → NULL, and the same predicate matches 0 rows without
+raising. So the unguarded cast had **two** no-context outcomes, not one — CAD on a fresh connection,
+an unintelligible uuid error on a recycled one — and only the `NULLIF` form refuses the same way
+every time. Both shapes are now asserted, the empty-string one explicitly rather than left to
+whichever connection the pool hands out: a test that reproduces the defect only sometimes reports it
+only sometimes.
+
+Three sabotage runs, one per assertion: restoring `?? 'CAD'` fails both refusal tests; dropping the
+`NULLIF` while keeping the throw fails both; dropping the `rowCount` check fails the write test.
+
+### PE-9 · Seventeen application-side copies of the tenant expression omit the `NULLIF` — **OPEN**
+
+Direct fallout of PE-8, and reported rather than folded in. Every RLS policy body in the schema is
+written `NULLIF(current_setting('app.current_org', true), '')::uuid` — 15 migrations, **zero**
+unguarded. The application side is the opposite: 17 modules under `lib/` declare
+
+```ts
+const ORG = "current_setting('app.current_org', true)::uuid";
+```
+
+and interpolate it into `WHERE` clauses and `INSERT ... VALUES`. `lib/audit/chain.ts:85` hashes the
+raw setting, which does not cast and so is unaffected.
+
+**This is not a leak and not a live defect.** Every one of those sites is reached through `withOrg`,
+where the setting is a real uuid, and off that path the query fails closed either way — `22P02` today,
+zero rows or a NOT NULL / RLS refusal with the guard. What it costs is the failure being legible: the
+first caller to arrive without a tenant gets `invalid input syntax for type uuid: ""` instead of a
+refusal naming the real problem, which is exactly the wrong error to hand a scheduled job (MT-5 /
+VX0-8) at 3am, and is the misreading `lib/tenant/context.ts`'s own header invited — it claimed the
+bare `current_setting` returns NULL when unset. **That header is corrected as part of VX4-2**, since
+it is the thing that produced the bug twice.
+
+**Recommendation, sized:** one line per file × 17, plus a guard in the house pattern — a test that
+scans `lib/**/*.ts` for `current_setting('app.current_org'` and fails on any occurrence not wrapped
+in `NULLIF(..., '')`, so the eighteenth copy cannot be written. No behaviour change inside `withOrg`,
+so the existing suites are the regression proof. Boarded separately; not in VX4-2's PR.
+
 ---
 
 ## money (VX1-6) — `packages/money/src` vs `lib/money.ts`
@@ -2970,7 +3037,20 @@ next month must find this month's approvals still queued (VX3-4).
 - **MT-5's scheduling half is untouched.** VeloExpense has no cron surface yet, so there is nothing
   to fan out per tenant; `dispatch.ts` is checked because it is called per tenant already. VX0-8
   remains the ticket, and it becomes real with the first scheduled job.
-- **MT-2, MT-4, MT-6, MT-7** are VX4-2 and beyond, or already avoided by construction (MT-4's
+- **MT-2 is NOT APPLICABLE to VeloExpense — verdict, and it closes VX4-2. [checked]** The gap is
+  four *global* mechanisms (`SystemFlag`, `PlatformConfig`, and two env vars) holding what should be
+  per-tenant settings, and the obvious port was a per-tenant settings registry. VeloExpense has no
+  equivalent to port *into*: every setting MT-2 names is already a per-tenant column with a NOT NULL
+  constraint, an FK where it has a domain, and an admin screen — the policy currency is
+  `organization.policy_currency_code` (`REFERENCES currency(code)`, PE-1/VX3-2), module state is
+  `module_entitlement` (VX4-1), audit retention is per-org. A key-value registry would be a step
+  *backwards* from that: it takes a value out of reach of every constraint, index and RLS predicate,
+  which is AC-21's lesson exactly. And all 27 `process.env` reads under `lib/` are platform-level by
+  design (connection strings, pool size, encryption key, stub switches) — none is a tenant-facing
+  capability, so MT-2's env half has nothing to convert. **What the audit of this item did find is a
+  real defect, and it is PE-8**: the policy currency, the one MT-2 setting we hold in a column, still
+  had a silent `'CAD'` fallback for callers with no tenant. Fixed, with PE-9 boarded behind it.
+- **MT-4, MT-6, MT-7** are VX4-3 and beyond, or already avoided by construction (MT-4's
   bypass class cannot recur here: the post hangs on the transition, not on callers).
 
 ### BR · branding and host resolution

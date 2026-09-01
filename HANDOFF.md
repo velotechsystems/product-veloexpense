@@ -2042,8 +2042,8 @@ because they are retrospective and need approval history), and a **source audit 
 `5a11a647`** recorded as GAP-AUDIT **MT-1..8 / BR-1..10 / BG-1..8 / AN-1..11 / IL-1..12**. Read the
 audit first: five of those findings change what a ticket is, and two of them delete work.
 
-**~22 dev-days across SEVEN tickets** (was eight — VX4-4 moved to Phase 5, see the decisions below) —
-in line with Phase 2's ~26 and Phase 3's ~27. Two hard edges:
+**~20 dev-days across SIX tickets** (was eight: VX4-4 moved to Phase 5 and VX4-2 closed
+superseded-by-construction — see the decisions below) — against Phase 2's ~26 and Phase 3's ~27. Two hard edges:
 VX4-1 blocks almost everything, and VX4-5 was blocked on a chart of accounts that VX3-1 has already
 shipped.
 
@@ -2064,7 +2064,7 @@ shipped.
 | # | Ticket | Why it is this shape | Days |
 |---|---|---|---|
 | **VX4-1** | **Per-tenant module entitlements** | MT-1: activation is a global singleton (`moduleId @unique`) and the schema says a tenant model "adds `tenantId` here only". MT-3: their gate lives at the edge, so 30 of 40 routers are ungated and a page can be gated while its data is not. Ours goes **below the router** — a `module` catalogue owned by code, an `organization_module` table (not a `settings` blob: MT-8/AC-21), and a **generated guard** proving every gated surface is covered, in the shape of the RLS-coverage and vendor-neutrality guards. | 3 |
-| **VX4-2** | **Tenant-scoped settings, replacing the global singletons** | MT-2: `SystemFlag`, `PlatformConfig` and two env vars are four parallel global gates, and one of them holds the **policy currency** that analytics reports in. A typed per-tenant settings registry with a default, so "what is this tenant's base currency / date format / retention window" has one answer and one place. | 2 |
+| ~~**VX4-2**~~ | ~~Tenant-scoped settings, replacing the global singletons~~ **CLOSED — superseded by construction, 1 Sep 2026** | MT-2 named four global mechanisms holding what should be per-tenant settings, and the port was a typed settings registry. There is nothing to port *into*: every setting it names is already a per-tenant **column** here — NOT NULL, FK-validated where it has a domain, with a screen (`organization.policy_currency_code`, `module_entitlement`, per-org retention) — and a key-value registry would take those values out of reach of every constraint, index and RLS predicate, which is AC-21's lesson. All 27 `process.env` reads under `lib/` are platform-level by design, so the env half has nothing to convert. Same outcome analytics' tenancy had. **The audit of it did find a real defect** — PE-8, the policy currency's silent `'CAD'` fallback — fixed under this ticket's number, with **PE-9** boarded behind it. | ~~2~~ 0 |
 | **VX4-3** | **Branding that actually renders** | BR-2 is the surprise: the fields, the admin form and the validation all exist and **nothing reads them**. So the port is the easy half and the render path is net-new — CSS custom properties injected per tenant (BR-3, deriving row/hover shades from the primary rather than hardcoding them), a tenant logo served pre-auth on the `public-icons` route's proven pattern (BR-4), `generateMetadata` instead of a static title (BR-5), and a branded email shell on VX2-8's template layer (BR-6). | 3 |
 | **VX4-5** | **Budgets, tenant-scoped, on our own chart of accounts** | BG-2: `Budget.glAccountId` is a **required** FK into a NetSuite SOAP cache, and their vendor-neutral `Account` table was deleted — so budgets there are uncreatable without NetSuite. **VX3-1 already fixed this for us**; budgets point at `gl_account` and a vendor becomes an alias. Plus BG-1 (tenant column and composite keys on five tables, including an index Prisma cannot express), BG-3 (actuals recomputed over the whole fiscal year on every approval click, with an unbounded FX load → rollup), BG-6 (alert idempotency by mutable marker → our atomic-claim idiom). | 4 |
 | **VX4-6** | **Analytics, tenant-scoped** | The tenancy half is free (above). The work is AN-7 — a missing FX rate is currently summed **as if it were base currency**, unflagged, while the budget code counts unconverted amounts for the same situation — and AN-10: unbounded ranges, no `date` index, and a home page that runs a full-history aggregate for every signed-in user. Plus AN-8's lesson: size the data with a predicate, never with a role check that then queries everything. | 4 |
@@ -2084,6 +2084,20 @@ is a module-level constant, the CDK stack derives every origin from one `config.
 a certificate for that exact host **with no wildcard**, and `WEBAUTHN_RP_ID` is pinned to the host, so
 **every passkey stops validating when a tenant moves subdomain** unless the RP id is the apex. NT-14
 and AC-23 are the same family and both cost a round trip already.
+
+**3. VX4-2 IS CLOSED, superseded by construction (1 Sep 2026).** Reasoning and evidence in GAP-AUDIT
+MT-2's verdict and PE-8. Phase 4 is six tickets / ~20 days. Two things it leaves boarded, deliberately,
+so neither gets lost in the closure:
+
+- **PE-9 — 17 application-side copies of the tenant expression omit the `NULLIF`.** Not a leak and not
+  a live defect: every site is reached through `withOrg`, and off that path the query fails closed
+  either way. What it costs is legibility — the first caller to arrive without a tenant gets `22P02
+  invalid input syntax for type uuid: ""` instead of a refusal naming the problem, which is precisely
+  the wrong error to hand a scheduled job (MT-5 / VX0-8). One line per file × 17 plus a guard test in
+  the house pattern, so the eighteenth copy cannot be written. Half a day.
+- **Audit-retention purge as a job.** Per-org retention is already a column and `0010` already has the
+  `app.audit_purge` hatch; what does not exist is the thing that runs. It is a scheduled job, so it
+  boards with VX0-8's fan-out rather than under settings.
 
 **2. A budget NEVER blocks.** Matches ExpenseOS's stated intent, and unlike theirs it has to be
 enforced rather than commented.
