@@ -11,7 +11,7 @@
  */
 import { describe, it, expect, beforeAll, beforeEach, afterAll } from 'vitest';
 import { Pool } from 'pg';
-import { withOrg } from '@/lib/tenant/context';
+import { withOrg, withoutOrg } from '@/lib/tenant/context';
 import * as expenses from '@/lib/expenses/service';
 import * as policy from '@/lib/policy/service';
 
@@ -549,5 +549,62 @@ describe('threshold currency (VX3-2, PE-1)', () => {
     const after = await withOrg(orgId, (tx) => policy.getPolicyCurrency(tx));
     expect(after.unconvertible).toEqual([]);
     expect(after.convertible).toEqual(['USD->CAD']);
+  });
+
+  // ── PE-8 ──────────────────────────────────────────────────────────────────
+  //
+  // Both currency readers used to end in `?? 'CAD'`. The column is
+  // `NOT NULL DEFAULT 'CAD' REFERENCES currency(code)`, so that looked like dead
+  // defence — but the query keys on `current_setting('app.current_org', true)`,
+  // and with no tenant that matched nothing and the fallback answered CAD.
+  // Policy would then have been evaluated against a currency nobody chose,
+  // which is PE-1's family, and a scheduled job is exactly the caller that
+  // arrives this way (MT-5 / VX0-8).
+  //
+  // THERE ARE TWO no-context shapes, and the first version of this fix only
+  // handled one of them. `set_config(k, v, is_local => true)` leaves the GUC
+  // defined as the EMPTY STRING once the transaction ends, not undefined — so a
+  // pooled connection reads NULL only until it has served its first `withOrg`,
+  // and `''` for the rest of its life. A bare `::uuid` answers CAD in the first
+  // shape and raises `22P02 invalid input syntax for type uuid: ""` in the
+  // second. Both are asserted below, and the second is asserted explicitly
+  // rather than left to whichever connection the pool hands out, because a test
+  // that reproduces the defect only sometimes is a test that reports it only
+  // sometimes.
+  it('REFUSES rather than assuming a currency when there is no tenant context', async () => {
+    await expect(withoutOrg((tx) => policy.getPolicyCurrency(tx))).rejects.toMatchObject({
+      code: 'NO_TENANT',
+    });
+  });
+
+  it('refuses the same way on a pooled connection whose org setting is empty, not unset', async () => {
+    await expect(
+      withoutOrg(async (tx) => {
+        // Exactly what the connection looks like after any earlier `withOrg`.
+        await tx.query("SELECT set_config('app.current_org', '', true)");
+        return policy.getPolicyCurrency(tx);
+      }),
+    ).rejects.toMatchObject({ code: 'NO_TENANT' });
+  });
+
+  it('refuses to SET a policy currency with no tenant, rather than updating nothing', async () => {
+    // The write half. `organization` always has the row when there is a tenant,
+    // so nought rows means the WHERE named nobody, and a write that quietly
+    // changes nothing is the worse half of the same bug.
+    await expect(
+      withoutOrg(async (tx) => {
+        await tx.query("SELECT set_config('app.current_org', '', true)");
+        return policy.setPolicyCurrency(tx, 'USD');
+      }),
+    ).rejects.toMatchObject({ code: 'NO_TENANT' });
+  });
+
+  it('and reads the TENANT\'s currency when there is one, not a default', async () => {
+    // The other half, so the refusal above cannot be satisfied by a reader that
+    // simply always throws.
+    await withOrg(orgId, (tx) => policy.setPolicyCurrency(tx, 'USD'));
+    const info = await withOrg(orgId, (tx) => policy.getPolicyCurrency(tx));
+    expect(info.code).toBe('USD');
+    await withOrg(orgId, (tx) => policy.setPolicyCurrency(tx, 'CAD'));
   });
 });

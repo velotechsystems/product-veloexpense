@@ -6,9 +6,20 @@
  * entry point — Next.js request/tRPC, BullMQ worker, MCP tool dispatch — must
  * wrap tenant work in withOrg().
  *
- * Forgetting to set the variable is safe-by-default: RLS policies use
- * current_setting('app.current_org', true) which returns NULL when unset, so
- * unset context sees ZERO rows (a loud, safe failure — never a cross-tenant leak).
+ * Forgetting to set the variable is safe-by-default: every RLS policy body reads
+ * NULLIF(current_setting('app.current_org', true), '')::uuid, which is NULL when
+ * there is no tenant, so unset context sees ZERO rows (a loud, safe failure —
+ * never a cross-tenant leak).
+ *
+ * THE `NULLIF` IS LOAD-BEARING, and this comment used to omit it and claim the
+ * bare `current_setting` returned NULL. It does not, past the first call:
+ * `set_config(k, v, is_local => true)` leaves the GUC DEFINED AS THE EMPTY STRING
+ * when the transaction ends, not undefined. So a pooled connection reads NULL only
+ * until it has served one withOrg(), and `''` for the rest of its life — and a
+ * bare `''::uuid` raises `22P02 invalid input syntax for type uuid: ""` instead of
+ * evaluating to NULL. The policies are written correctly; several application-side
+ * copies of the same expression are not (see PE-9 in docs/porting/GAP-AUDIT.md).
+ * Anything comparing against `app.current_org` in SQL must go through the NULLIF.
  */
 import { transaction, type QueryRunner } from '@/lib/db/client';
 

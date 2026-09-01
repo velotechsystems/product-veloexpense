@@ -48,7 +48,9 @@ export type PolicyErrorCode =
   | 'CATEGORY_NOT_FOUND'
   | 'DUPLICATE_RULE'
   | 'CANNOT_ACKNOWLEDGE_BLOCK'
-  | 'NOTE_REQUIRED';
+  | 'NOTE_REQUIRED'
+  /** No tenant context, so there is no policy currency to evaluate against. */
+  | 'NO_TENANT';
 
 export class PolicyError extends Error {
   constructor(
@@ -190,12 +192,51 @@ export interface PolicyCurrencyInfo {
   unconvertible: string[];
 }
 
-export async function getPolicyCurrency(tx: QueryRunner): Promise<PolicyCurrencyInfo> {
+/**
+ * PE-8 — THE TENANT'S POLICY CURRENCY, and it refuses rather than assuming one.
+ *
+ * Two call sites used to read this with the same query and the same fallback:
+ *
+ *     const code = (org.rows[0]?.policy_currency_code as string | undefined) ?? 'CAD';
+ *
+ * `organization.policy_currency_code` is `NOT NULL DEFAULT 'CAD' REFERENCES
+ * currency(code)`, so the column cannot be null and the fallback looked like dead
+ * defence. It is not. With no tenant context the WHERE matches no row, and the
+ * fallback answered **CAD** — policy evaluated against a currency nobody chose,
+ * which is PE-1's family. A scheduled job is exactly the caller that arrives this
+ * way (MT-5 / VX0-8), and `lib/expenses/service.ts` already had the right shape:
+ * an explicit `NO_TENANT`. This is now the single reader both call sites share,
+ * because two copies of a query are how they became two copies of a bad default.
+ *
+ * NOTE THE `NULLIF`, which the first version of this fix did not have and needed.
+ * `set_config(k, v, is_local => true)` does not leave the GUC *undefined* once the
+ * transaction ends — it leaves it defined as the EMPTY STRING. So on a pooled
+ * connection that has served one `withOrg` call, `current_setting('app.current_org',
+ * true)` returns `''` rather than NULL for the rest of that connection's life, and
+ * a bare `::uuid` raises `22P02 invalid input syntax for type uuid: ""`. The
+ * unguarded cast therefore had TWO no-context outcomes, not one — CAD on a fresh
+ * connection, an unintelligible uuid syntax error on a recycled one — and only the
+ * `NULLIF` form refuses the same way every time. Every RLS policy body in the
+ * schema is written `NULLIF(current_setting('app.current_org', true), '')::uuid`
+ * for this exact reason; the application-side copies of the expression were not.
+ * See the note filed against `const ORG` in the gap audit (PE-9).
+ */
+async function policyCurrencyCode(tx: QueryRunner): Promise<string> {
   const org = await tx.query(
     `SELECT policy_currency_code FROM organization
-      WHERE id = current_setting('app.current_org', true)::uuid`,
+      WHERE id = NULLIF(current_setting('app.current_org', true), '')::uuid`,
   );
-  const code = (org.rows[0]?.policy_currency_code as string | undefined) ?? 'CAD';
+  if (org.rows.length === 0) {
+    throw new PolicyError(
+      'no tenant context, so there is no policy currency to evaluate against',
+      'NO_TENANT',
+    );
+  }
+  return org.rows[0].policy_currency_code as string;
+}
+
+export async function getPolicyCurrency(tx: QueryRunner): Promise<PolicyCurrencyInfo> {
+  const code = await policyCurrencyCode(tx);
 
   const used = await tx.query(
     'SELECT DISTINCT currency_code FROM expense_report ORDER BY currency_code',
@@ -214,11 +255,20 @@ export async function setPolicyCurrency(tx: QueryRunner, code: string): Promise<
   // `organization` carries no organization_id and so is not RLS-scoped — the
   // session variable is what names the row, and the WHERE is what keeps this from
   // being an update across every tenant.
-  await tx.query(
+  const done = await tx.query(
     `UPDATE organization SET policy_currency_code = $1, updated_at = now()
-      WHERE id = current_setting('app.current_org', true)::uuid`,
+      WHERE id = NULLIF(current_setting('app.current_org', true), '')::uuid`,
     [checked],
   );
+  // PE-8, the write half. `organization` always has the row when there IS a
+  // tenant, so nought rows means the WHERE named nobody — and a write that
+  // quietly changes nothing is the worse half of the same bug the reader had.
+  if (done.rowCount === 0) {
+    throw new PolicyError(
+      'no tenant context, so there is no policy currency to set',
+      'NO_TENANT',
+    );
+  }
 }
 
 /* ── policy CRUD ───────────────────────────────────────────────────────────── */
@@ -406,11 +456,7 @@ async function currencyContext(
   tx: QueryRunner,
   report: WorkbenchReport,
 ): Promise<{ policyCurrency: string; minorUnits: Record<string, number>; rates: RateLookup }> {
-  const org = await tx.query(
-    `SELECT policy_currency_code FROM organization
-      WHERE id = current_setting('app.current_org', true)::uuid`,
-  );
-  const policyCurrency = (org.rows[0]?.policy_currency_code as string | undefined) ?? 'CAD';
+  const policyCurrency = await policyCurrencyCode(tx);
 
   const units = await tx.query('SELECT code, minor_unit FROM currency');
   const minorUnits: Record<string, number> = {};
