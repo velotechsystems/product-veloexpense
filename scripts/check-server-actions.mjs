@@ -103,6 +103,27 @@ for (const file of files) {
   });
 }
 
+// ── Check 1 needs NO MANIFEST, so it reports before anything can suppress it ──
+//
+// THIS ORDER IS A FIX, and the bug it fixes is the guard's own. Check 1 is pure
+// source analysis; check 2 reads the build. Both used to report together at the
+// bottom — after the two manifest bail-outs below — so a stale or missing
+// manifest THREW AWAY an already-collected check-1 finding and printed "This is
+// not a finding" while holding one. VX4-3 hit it exactly that way: an
+// `export interface` in a new 'use server' module, reported by CI (which builds
+// first) and silently swallowed by every local run (which does not), so the
+// author read "not a finding", believed it, and pushed.
+//
+// That is this project's recurring lesson wearing the guard's own clothes — a
+// check that cannot produce one of its two outcomes hides every defect in the
+// outcome it cannot produce. A guard whose findings depend on a build it does not
+// need is worse than no guard, because it answers.
+if (problems.length) {
+  console.error('check-server-actions FAILED:\n');
+  for (const p of problems) console.error(`  · ${p}\n`);
+  process.exit(1);
+}
+
 if (!existsSync(MANIFEST)) {
   console.error(
     `check-server-actions: ${MANIFEST} is missing. Run \`npm run build\` first — ` +

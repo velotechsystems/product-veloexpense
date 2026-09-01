@@ -2200,6 +2200,28 @@ input's value. **The reset silently did nothing.** It has its own field now. And
 injected `<style>` with `innerText()`, which answers `''` for anything not rendered, so that assertion
 could only ever pass vacuously — §4 gained a seventh entry for it.
 
+**CI caught a third bug of mine, and finding out why exposed a fourth in the guard itself.**
+`app/admin/branding/actions.ts` had `export interface BrandingPage`, and `check:actions` is right to
+refuse it: Next registers every export of a `'use server'` module as a server action, cannot wrap a
+type, and rather than failing the build **registers NONE of the module's actions** — so every form on
+the page posts an id the server has never heard of. A silent, total failure from one `export` keyword.
+The type is now unexported (`BrandingView`); `getModulesPage` returns an inline literal for the same
+reason, so this is the house pattern rather than a workaround.
+
+**The guard's own defect is the more useful finding.** Check 1 (export shapes) is pure source analysis
+and needs no build; check 2 reads the build's manifest. Both used to report together at the BOTTOM of
+the script — after the missing-manifest and stale-manifest bail-outs — so a stale manifest **threw away
+an already-collected check-1 finding** and printed *"This is not a finding — the build simply has not
+seen these files yet"* while holding one. That is why this reached CI: every local run of the guard
+swallowed it, and the message said so confidently enough to be believed. Fixed by reporting check 1
+before either bail-out, and verified by putting the `export` back and watching it report **without a
+build**. Check 1 across all 18 `'use server'` modules is otherwise clean, so nothing else was hidden.
+
+Worth stating as the general shape, because it is this project's recurring lesson wearing the guard's
+own clothes: **a check that cannot produce one of its two outcomes hides every defect in the outcome it
+cannot produce** — and a guard whose findings depend on a build it does not need is worse than no
+guard, because it answers.
+
 **Still unverified by me:** `e2e/branding-flow.spec.ts` (9 tests). vitest, `next build` and Playwright
 cannot run in the device shell, so the spec has been through §4's checklist and nothing else. Its
 riskiest assertion is the paint probe — it resolves `var(--primary)` into a real `color` and expects

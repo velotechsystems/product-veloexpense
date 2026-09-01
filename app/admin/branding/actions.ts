@@ -50,7 +50,16 @@ const auditActor = (a: EmployeeRow) => ({
   role: a.role,
 });
 
-export interface BrandingPage {
+/**
+ * NOT exported, and `check:actions` is why — it caught this on CI rather than in
+ * review. Next registers every export of a `'use server'` module as a server
+ * action; it cannot wrap a type, and rather than failing the build it registers
+ * NONE of the module's actions, so every form on the page would post an id the
+ * server has never heard of. A silent, total failure from an `export` keyword on
+ * an interface. `getBrandingPage`'s return type is structural, so no caller needs
+ * the name — and `getModulesPage` returns an inline literal for the same reason.
+ */
+interface BrandingView {
   name: string;
   brandColor: string | null;
   loginTagline: string | null;
@@ -65,7 +74,7 @@ export interface BrandingPage {
   maxLogoKiB: number;
 }
 
-export async function getBrandingPage(): Promise<BrandingPage> {
+export async function getBrandingPage(): Promise<BrandingView> {
   return asAdmin(async (tx) => {
     const b = await getBranding(tx);
     const rendered = brandCss(b.brandColor);
