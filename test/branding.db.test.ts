@@ -24,9 +24,11 @@ import {
   clearLogo,
   getBranding,
   LOGO_MAX_BYTES,
+  readLogoBytes,
   setBrandColor,
   setLoginTagline,
   setLogo,
+  sniffImageMime,
 } from '@/lib/branding/service';
 
 const admin = new Pool({
@@ -38,8 +40,23 @@ let otherOrgId: string;
 let actorId: string;
 
 const ACTOR = () => ({ id: actorId, name: 'Brand Admin', role: 'ADMIN' });
-/** A four-byte PNG signature. Enough to be non-empty bytes; not a real image. */
-const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47]);
+/**
+ * A real PNG signature — all EIGHT bytes, because `sniffImageMime` checks all
+ * eight and the four-byte stand-in this file used in part 1 would now be refused.
+ * The CR/LF/EOF bytes exist to catch transfers that mangled line endings, which is
+ * exactly the reason not to trim them.
+ */
+const PNG = Buffer.concat([
+  Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+  Buffer.from('IHDR-ish padding'),
+]);
+const JPEG = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.from('JFIF')]);
+const WEBP = Buffer.concat([
+  Buffer.from('RIFF', 'latin1'),
+  Buffer.from([0x1a, 0x00, 0x00, 0x00]),
+  Buffer.from('WEBP', 'latin1'),
+  Buffer.from('VP8 '),
+]);
 
 beforeAll(async () => {
   await admin.query('TRUNCATE app_user, organization CASCADE');
@@ -190,12 +207,17 @@ describe('logo (VX4-3)', () => {
     await expect(
       withOrg(orgId, (tx) => setLogo(tx, ACTOR(), Buffer.alloc(0), 'image/png')),
     ).rejects.toMatchObject({ code: 'INVALID_IMAGE' });
+    // Oversized, but with a VALID signature — otherwise this would pass for the
+    // wrong reason once the sniff exists, telling us about the header rather than
+    // the cap. The size check runs before the sniff for exactly this reason.
+    const big = (n: number) =>
+      Buffer.concat([PNG.subarray(0, 8), Buffer.alloc(n - 8, 1)]);
     await expect(
-      withOrg(orgId, (tx) => setLogo(tx, ACTOR(), Buffer.alloc(LOGO_MAX_BYTES + 1), 'image/png')),
+      withOrg(orgId, (tx) => setLogo(tx, ACTOR(), big(LOGO_MAX_BYTES + 1), 'image/png')),
     ).rejects.toMatchObject({ code: 'IMAGE_TOO_LARGE' });
     // Exactly at the cap is allowed — an off-by-one here is a support ticket
     // nobody can reproduce.
-    await withOrg(orgId, (tx) => setLogo(tx, ACTOR(), Buffer.alloc(LOGO_MAX_BYTES, 1), 'image/png'));
+    await withOrg(orgId, (tx) => setLogo(tx, ACTOR(), big(LOGO_MAX_BYTES), 'image/png'));
     expect((await withOrg(orgId, getBranding)).logo?.mime).toBe('image/png');
   });
 
@@ -306,5 +328,76 @@ describe('the columns refuse independently of the service (0023)', () => {
     await expect(raw(`login_tagline = repeat('x', 201)`)).rejects.toThrow(
       /organization_login_tagline_length/,
     );
+  });
+});
+
+describe('the magic-number sniff (VX4-3 part 2)', () => {
+  // The sniff's job is narrow and worth stating: it makes the stored `logo_mime`
+  // TRUE, so the Content-Type the route sends matches the bytes it sends. That is
+  // what makes `nosniff` mean anything — `nosniff` tells the browser to trust our
+  // Content-Type, which is a safety property only if ours is right.
+  it('names the format the bytes actually are', () => {
+    expect(sniffImageMime(PNG)).toBe('image/png');
+    expect(sniffImageMime(JPEG)).toBe('image/jpeg');
+    expect(sniffImageMime(WEBP)).toBe('image/webp');
+  });
+
+  it('returns null for anything else, SVG included', () => {
+    expect(sniffImageMime(Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"/>'))).toBeNull();
+    expect(sniffImageMime(Buffer.from('GIF89a'))).toBeNull();
+    expect(sniffImageMime(Buffer.from('%PDF-1.7'))).toBeNull();
+    expect(sniffImageMime(Buffer.alloc(0))).toBeNull();
+    // A truncated signature must not match. NOTE, because the first draft of this
+    // comment was wrong: in Node this is not protecting against a crash. Indexing
+    // a Buffer past its end yields `undefined` and `Buffer.equals` on differing
+    // lengths is false, so the length guards in `sniffImageMime` are redundant —
+    // sabotaging them away fails nothing, which is how that was established. These
+    // assertions pin the BEHAVIOUR (a short buffer is not a match) so it survives a
+    // rewrite that reaches for `readUInt32BE`, where the guards would matter.
+    expect(sniffImageMime(PNG.subarray(0, 7))).toBeNull();
+    expect(sniffImageMime(Buffer.from([0xff, 0xd8]))).toBeNull();
+    expect(sniffImageMime(WEBP.subarray(0, 11))).toBeNull();
+  });
+
+  it('refuses an SVG wearing a PNG label — the case the CHECK alone cannot catch', () => {
+    // `organization_logo_mime_raster` refuses `image/svg+xml`, so the only way to
+    // get scriptable bytes into the column is to LIE about the type. The column
+    // cannot tell; the sniff can.
+    return expect(
+      withOrg(orgId, (tx) =>
+        setLogo(tx, ACTOR(), Buffer.from('<svg onload="alert(1)"/>'), 'image/png'),
+      ),
+    ).rejects.toThrow(/not a PNG, JPEG or WebP image, whatever it is named/);
+  });
+
+  it('refuses a real image sent as the wrong one, and says which is which', async () => {
+    await expect(
+      withOrg(orgId, (tx) => setLogo(tx, ACTOR(), JPEG, 'image/png')),
+    ).rejects.toThrow(/sent as image\/png but its contents are image\/jpeg/);
+  });
+
+  it('leaves nothing stored when it refuses', async () => {
+    await withOrg(orgId, (tx) => setLogo(tx, ACTOR(), PNG, 'image/png'));
+    await expect(
+      withOrg(orgId, (tx) => setLogo(tx, ACTOR(), Buffer.from('nope'), 'image/webp')),
+    ).rejects.toMatchObject({ code: 'INVALID_IMAGE' });
+    // The good one from before is untouched — the refusal is not a half-write.
+    expect((await withOrg(orgId, getBranding)).logo?.mime).toBe('image/png');
+  });
+});
+
+describe('readLogoBytes (VX4-3 part 2)', () => {
+  it('returns the bytes and the stamp the route needs, and null when there is none', async () => {
+    expect(await withOrg(orgId, readLogoBytes)).toBeNull();
+    await withOrg(orgId, (tx) => setLogo(tx, ACTOR(), PNG, 'image/png'));
+    const logo = await withOrg(orgId, readLogoBytes);
+    expect(logo?.mime).toBe('image/png');
+    expect(logo?.bytes.equals(PNG)).toBe(true);
+    expect(logo?.updatedAt).toBeInstanceOf(Date);
+  });
+
+  it('does not reach another tenant\'s bytes', async () => {
+    await withOrg(orgId, (tx) => setLogo(tx, ACTOR(), PNG, 'image/png'));
+    expect(await withOrg(otherOrgId, readLogoBytes)).toBeNull();
   });
 });
