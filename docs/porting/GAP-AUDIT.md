@@ -3070,14 +3070,68 @@ validates them (`routers/platform.ts:907-913`). All 47 occurrences of those thre
 are in those two files and their tests — there is no consumer. So the *storage and the form* are a
 port and the *rendering* is net-new, which is the opposite of how it looks from the admin screen.
 
-**BR-3 · The palette is overridable, but its derived shades are hand-computed and will break.**
+**BR-3 · The palette is overridable, but its derived shades are hand-computed and will break.
+✅ CLOSED by VX4-3 (part 1) — and the correction below is the reason to read the source, not the summary.**
 Tailwind 4 `@theme` declares `--color-primary: #f76b15` (`packages/design-system/src/globals.css:37`)
 and components read the custom properties at runtime (`Sidebar.tsx:43`), so a server-injected `:root`
 block can retint the product. But shades derived from that primary are hardcoded hexes —
 `--color-row-selected: #fff8f3` (`globals.css:60`) and WCAG-tuned navy alphas (`:82-99`) — so a tenant
 who picks blue gets orange-tinted row highlights. Deriving those from the primary is the actual work.
 
-**BR-4 · One logo, a hardcoded path, and an `alt` naming the wrong company.**
+**CORRECTION, from reading `rowState.ts` rather than the sheet. [checked]** Those hexes are solid ON
+PURPOSE, and the reason forbids the obvious fix. `ROW_STATE_CLASSES`
+(`data-display/data-table/rowState.ts:83-105`) says it out loud: *"MUST be a solid color, not
+`bg-primary/15`: translucent alpha layers compound between the &lt;tr&gt; and any sticky &lt;td&gt;,
+making the leading cell visibly darker. Solid layers don't compound."* So "derive the shades" must
+mean **derive SOLID colours**; deriving them as alpha reintroduces a bug they already paid for. Noted
+because the naive reading of my own first write-up ("hand-computed, so compute them") leads straight
+to `/15`.
+
+**And the two sources documenting those derived values already disagree**, which is the argument for
+deriving in one place: `globals.css:60` annotates `--color-row-selected` as *"primary 5% over
+#ffffff"* while `rowState.ts:88` calls the same token *"primary 15% pre-composited over white"*. The
+hex is 5%. One value, two comments, drifting.
+
+**TWO LIVE ACCESSIBILITY DEFECTS IN VELOEXPENSE'S OWN SHIPPED PALETTE, found by doing this ticket's
+arithmetic. [checked]** Neither is in ExpenseOS — they are ours, in the vendored VeloTech token sheet
+`app/velotech-tokens.css`, and neither is fixed by VX4-3 because recolouring VeloTech brand is not a
+call this ticket gets to make. Both are pinned numerically in `test/branding-color.test.ts` so the
+numbers live somewhere a person reads:
+
+1. **`--primary` #0284c7 under `--primary-foreground: var(--vl-white)` is 4.10:1** — below AA's 4.5
+   for the label on every primary button in the product. Ink would be **4.36:1**, so the shipped
+   pairing is the *worse* of the two available and both fall short. A consequence, stated rather than
+   special-cased: a tenant who types our own blue into the branding form is REFUSED, while a tenant
+   who sets nothing is served that same blue. That is the rule reporting the defect. Candidate fixes,
+   measured: `#0369a1` gives 5.93:1 on white, `#0079bb` (our own derived brand-600) gives 4.72:1.
+2. **In dark mode `--accent-foreground` sits on `--accent` at 2.14:1.** The sheet's dark block replaces
+   the deep surfaces (`--vl-brand-50/100/200`) and not the text on them, so `--accent-foreground`
+   stays `--vl-brand-700` (#075985) over a #0b2236 ground. The same pair is 7.09:1 in light mode. A
+   *branded* tenant does not inherit this — VX4-3's dark block moves `--accent-foreground` to a light
+   step, 11.46:1 for sky — but every unbranded tenant still has it.
+
+**BR-4 · One logo, a hardcoded path, and an `alt` naming the wrong company.
+✅ CLOSED by VX4-3 (part 1) for storage; the pre-auth half travels to Phase 5 with BR-1/BR-8.**
+
+**THE PORT IS A DELIBERATE NON-PORT, and their own codebase contains the argument. [checked]** Their
+branding form validates `logoUrl: z.string().url().max(500)` (`routers/platform.ts:907`) — an
+arbitrary external URL typed by an admin and rendered as `<img src>`. That hands every viewer's IP
+and `Referer` to a third party on every page load, lets the bytes change after somebody approved
+them, breaks under a strict CSP, and serves SVG if the far end feels like it. Meanwhile
+`api/public-icons/[code]/route.ts` — twenty files away, for the same problem — streams admin-uploaded
+image BYTES out of Postgres with `nosniff`, `Content-Disposition: attachment` and a `sandbox` CSP,
+*because* the login screen is pre-auth and "serving from Postgres avoids needing a public S3 bucket".
+Its comment even carries the scar: *"uploads are now raster-only, but rows may predate that."* So the
+two features disagree with each other, and the icon route is the one that is right. `0023` takes the
+bytes shape and makes raster-only a CHECK rather than a note. **`logo_url` is not a column here and
+should not become one.**
+
+**Also, John's call of 1 Sep:** the pre-auth *rendering* waits for Phase 5. `/login` has no tenant to
+brand — it is a generic page where the user types their org slug — so branding it needs either
+host-based tenancy (already Phase 5, BR-1/BR-8) or a public slug→branding endpoint, which is an
+unauthenticated oracle for "does this company use VeloExpense, and what is its logo". Storage,
+service and audit ship now; the render path is in-app only.
+
 Two static files, referenced with literal `src` and `alt="E Inc."` (`Sidebar.tsx:568`,
 `login/page.tsx:69`); no favicon anywhere. **The precedent to copy is already in the codebase:**
 `api/public-icons/[code]/route.ts:11-38` serves admin-uploaded image bytes from Postgres on an
@@ -3109,6 +3163,33 @@ emitting a bare document (`lib/exportTable.ts:159-177`, `:213-242`). Net-new whe
 subdomain-per-tenant design: the certificate needs a wildcard, and `WEBAUTHN_RP_ID` must be the apex
 or every passkey stops validating when a tenant moves subdomain. NT-14 is the same family and we have
 already been bitten by it twice (NT-14 itself, then AC-23).
+
+**BR-9 · There is no browser or OS chrome identity at all — and this item was MISSING from my own
+BR-1..10 run. [checked]**
+
+Recording the hole first, because it matters more than the finding: the Phase-4 audit numbered
+**BR-1..8 and BR-10, skipping 9**, and HANDOFF and the tracker both advertise "BR-1..10". Nobody
+noticed until VX4-3 went to implement the section. Filled here with what is actually in the source
+rather than renumbered, so the count and the content agree.
+
+ExpenseOS has **no favicon file anywhere** (`apps/web/public/` contains exactly `icons/google.svg`,
+`images/einc-logo.png`, `images/einc-logo-login.png`; there is no `app/favicon.ico` and no
+`app/icon.*`), **no web app manifest**, **no `theme-color`**, and **no apple-touch-icon** — the
+`metadata` export is `{ title, description }` and nothing else (`[locale]/layout.tsx:8-11`). The only
+occurrence of the string `favicon` in the app is `proxy.ts:55`, which excludes `/favicon.ico` from the
+middleware matcher — a path deliberately routed around, with nothing behind it, so every browser's
+automatic request for it falls through the app and 404s.
+
+**Nothing to port, and it is net-new for us too**, which is the actual point: a white-label product
+whose browser tab is the *only* place a tenant's identity is guaranteed to appear has no story for it,
+and per-tenant favicons need a dynamic icon route rather than a static file, so the shape of the
+answer is decided by whether it is boarded before or after the tab title. VX4-3 part 2 does
+`generateMetadata` (BR-5); the icon route is the same request path and belongs with it.
+
+**And our own version of BR-5 is worse than theirs. [checked]** `app/layout.tsx` still exports
+`title: "Create Next App"`, `description: "Generated by create next app"` — the `create-next-app`
+scaffold defaults from VX0-1, never changed, live in every tab of the product today. `lang="en"` is
+hardcoded there too, which VX4-7 will need.
 
 **BR-10 · Their storage keys have no tenant prefix — ours already do.**
 `packages/storage/src/keys.ts:35-52` builds `{reportId}/{uuid}.{ext}` and friends, with buckets as
