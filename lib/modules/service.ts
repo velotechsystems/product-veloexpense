@@ -34,6 +34,7 @@ import type { QueryRunner } from '@/lib/db/client';
 import { append as auditAppend, type AuditActor } from '@/lib/audit/service';
 import { ModuleDisabledError } from '@/lib/modules/errors';
 import { listModules, moduleFor, type ModuleDefinition } from '@/lib/modules/registry';
+import { requeueWaitingPosts } from '@/lib/integrations/post-outbox';
 
 export { ModuleDisabledError, isModuleDisabled } from '@/lib/modules/errors';
 
@@ -160,6 +161,13 @@ export async function setEntitlement(
      RETURNING id`,
     [code, enabled, actor.id],
   );
+
+  // AC-24. Turning a module ON makes this tenant's backed-off posts due again: a
+  // post skipped for a configuration reason waits an hour without burning an
+  // attempt, and fixing the configuration is exactly the event that should clear
+  // that wait. Here rather than in the screen's action — see the note on
+  // `requeueWaitingPosts` for why that placement was a mistake worth reversing.
+  if (enabled) await requeueWaitingPosts(tx);
 
   await auditAppend(tx, actor, {
     action: enabled ? 'MODULE_ENABLED' : 'MODULE_DISABLED',

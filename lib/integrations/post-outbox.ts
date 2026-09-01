@@ -267,6 +267,24 @@ export async function markNeedsReview(
  * a `FAILED` row backed off because a real far end refused it, and its retry
  * schedule is not this function's business.
  *
+ * ── Called from the SERVICE layer, which reverses part 2's placement ────────
+ *
+ * VX4-1 part 2 called this from the admin screen's action, arguing that "what an
+ * admin pressing a button should experience" is a UI decision rather than an
+ * invariant. That argument was wrong, and wrong in the exact way this ticket spent
+ * three days fixing: a hook at the EDGE is a hook the next caller forgets, which is
+ * GAP-AUDIT MT-3. Two callers proved it immediately — the OAuth callback activates
+ * an installation without going through that action at all, and a tenant connecting
+ * a ledger has the identical problem with none of the same code in the path.
+ *
+ * It is now called by every operation that can change whether a tenant can post:
+ * `setEntitlement` (enabling), `installIntegration` (an active install),
+ * `disconnect` (which may resolve an AC-22 ambiguity), and
+ * `completeAuthorisation` (an OAUTH2 install becoming active). A seed or a
+ * provisioning job calling those has nothing queued yet, so the extra statement is
+ * a harmless no-op — which was never a reason to leave the hook where a caller
+ * could miss it.
+ *
  * Returns how many rows became due, so a caller can say so.
  */
 export async function requeueWaitingPosts(tx: QueryRunner): Promise<number> {

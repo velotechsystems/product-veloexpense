@@ -16,7 +16,6 @@ import { auth } from '@/auth';
 import { withCurrentOrg } from '@/lib/tenant/request';
 import { getEmployeeByEmail, type EmployeeRow } from '@/lib/employees/service';
 import { listEntitlements, setEntitlement } from '@/lib/modules/service';
-import { requeueWaitingPosts } from '@/lib/integrations/post-outbox';
 import type { QueryRunner } from '@/lib/db/client';
 
 const PAGE = '/admin/modules';
@@ -43,26 +42,16 @@ export async function toggleFromForm(form: FormData) {
   const code = String(form.get('code') ?? '').trim();
   const enable = String(form.get('enable') ?? '') === 'true';
   try {
-    await asAdmin(async (tx, actor) => {
-      await setEntitlement(tx, code, enable, {
+    // The queue nudge that used to live here now lives in `setEntitlement`, so the
+    // OAuth callback and a ledger connect get it too — see the note on
+    // `requeueWaitingPosts`.
+    await asAdmin((tx, actor) =>
+      setEntitlement(tx, code, enable, {
         id: actor.id,
         name: actor.display_name ?? actor.email,
         role: actor.role,
-      });
-      // TURNING A MODULE ON MOVES THE QUEUE, in the same transaction.
-      //
-      // A post skipped for a configuration reason backs off an hour without
-      // burning an attempt, so without this an admin who fixes the configuration
-      // watches nothing happen while the screen says the queue "drains on its own
-      // once the module is back on". The e2e asserted that sentence and caught it
-      // being false.
-      //
-      // Orchestrated HERE rather than inside `setEntitlement`, deliberately: it is
-      // a decision about what an admin pressing a button should experience, not an
-      // invariant of the entitlement itself — a seed or a provisioning job enabling
-      // a module has nothing queued to nudge.
-      if (enable) await requeueWaitingPosts(tx);
-    });
+      }),
+    );
   } catch (err) {
     if (
       typeof err === 'object' &&

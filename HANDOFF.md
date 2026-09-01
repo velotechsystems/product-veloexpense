@@ -2011,9 +2011,15 @@ not clear the backoff**, so an admin who turned the module on watched nothing ha
 said the queue "drains on its own". `requeueWaitingPosts()` now runs in the same transaction as the
 toggle: `PENDING` only (a `FAILED` row's retry schedule belongs to the far end that refused it) and
 never a claimed row (moving the schedule under the process holding it is how a double-post starts).
-Verified against absence — dropping the status predicate fails with `expected 2 to be 1`. **The same
-nudge is still owed to `installIntegration` and `disconnect`; flagged as AC-24 rather than folded in,
-because those change VX3-4-era behaviour and deserve a decision.**
+Verified against absence — dropping the status predicate fails with `expected 2 to be 1`.
+
+**AC-24 is now CLOSED for all four paths, and the placement was reversed.** Part 2 put the nudge in
+the Modules screen's action on the grounds that "what an admin experiences" is a UI decision. That was
+wrong in the way this ticket had just spent three days fixing — **a hook at the edge is a hook the next
+caller forgets**, which is MT-3 — and two callers proved it at once: the OAuth callback activates an
+installation without touching that action, and a ledger connect has the same problem with none of the
+same code in the path. It now lives in `setEntitlement`, `installIntegration` (active installs only),
+`disconnect` and `completeAuthorisation`. Verified against absence at three of them.
 
 **Placement, for the third time:** the RLS backstop made the entitlement row's POSITION load-bearing —
 it must exist before any accounting write, not at the end of a hook — and two suites failed from their

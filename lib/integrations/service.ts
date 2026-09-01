@@ -36,6 +36,7 @@ import {
 import { adapterFor, isKnownAdapter, listAdapters } from '@/lib/integrations/registry';
 import { IntegrationError } from '@/lib/integrations/errors';
 import { capabilityWords, findCapabilityRival, rivalMessage } from '@/lib/integrations/conflicts';
+import { requeueWaitingPosts } from '@/lib/integrations/post-outbox';
 import { freshAuthConfig } from '@/lib/integrations/oauth';
 import { isModuleDisabled, requireModule } from '@/lib/modules/service';
 
@@ -342,6 +343,13 @@ export async function installIntegration(
       'DUPLICATE_CODE',
     );
   }
+  // AC-24. A tenant that connects a ledger has approvals waiting from before it
+  // was connected — VX3-4 made sure of that on purpose — and each was skipped with
+  // an hour's backoff. Connecting IS the fix, so it clears the wait. Only when the
+  // installation is actually active: an OAUTH2 row arrives inactive and still
+  // cannot post, and `completeAuthorisation` does this when it becomes active.
+  if (activeOnInstall) await requeueWaitingPosts(tx);
+
   return (await getInstallation(tx, inserted.rows[0].id as string))!;
 }
 
@@ -435,6 +443,14 @@ export async function disconnect(tx: QueryRunner, id: string): Promise<void> {
     if (secrets.has(k)) continue;
     if (typeof v === 'string') kept[k] = v;
   }
+  // AC-24, and this one is less obvious than the others: disconnecting can be the
+  // FIX. Two active adapters claiming one capability make the posting path refuse
+  // to choose (AC-22), and the way out is to disconnect one — at which point the
+  // backed-off queue should move. Disconnecting a tenant's only ledger requeues
+  // rows that will simply be skipped again, which costs one statement and is not
+  // worth a special case.
+  await requeueWaitingPosts(tx);
+
   await tx.query(
     `UPDATE integration_installation
         SET active = false, config = $2::jsonb, last_test_ok = NULL, last_test_at = NULL,
