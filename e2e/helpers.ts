@@ -64,6 +64,19 @@ export async function wipeIntegrations(orgSlugs: string[]) {
         WHERE organization_id IN (SELECT id FROM organization WHERE slug = ANY($1))`,
       [orgSlugs],
     );
+    // VX4-1 part 2: and the accounting module is ON. `modules-flow.spec.ts` toggles
+    // it off to prove the gate, and restores it in an afterAll — but a spec that
+    // depends on another spec's cleanup is a spec that fails when somebody adds a
+    // file whose name sorts between them. One line here and the ordering coupling
+    // is gone.
+    await pool.query(
+      `INSERT INTO module_entitlement (organization_id, module_code, enabled, enabled_at)
+       SELECT id, 'accounting', true, clock_timestamp() FROM organization
+        WHERE slug = ANY($1)
+       ON CONFLICT (organization_id, module_code)
+       DO UPDATE SET enabled = true, updated_at = clock_timestamp()`,
+      [orgSlugs],
+    );
   } finally {
     await pool.end();
   }

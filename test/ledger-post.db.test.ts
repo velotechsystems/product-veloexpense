@@ -89,6 +89,15 @@ beforeAll(async () => {
     "INSERT INTO organization (slug, name) VALUES ('post-co','Post Co') RETURNING id",
   );
   orgId = o.rows[0].id;
+
+  // VX4-1: ABSENCE MEANS OFF, and since 0022 the gate is in the RLS policy too, so
+  // this row has to exist before the gl_account insert below. Placed at the end of
+  // this hook first, and the suite failed from its own setup.
+  await admin.query(
+    `INSERT INTO module_entitlement (organization_id, module_code, enabled, enabled_at)
+     VALUES ($1, 'accounting', true, clock_timestamp())`,
+    [orgId],
+  );
   await withOrg(orgId, async (tx) => {
     const u = await tx.query(
       "INSERT INTO app_user (organization_id, email, display_name) VALUES ($1,'a@post.test','Ada') RETURNING id",
@@ -108,15 +117,6 @@ beforeAll(async () => {
     );
     categoryId = cat.rows[0].id;
   });
-
-  // VX4-1: ABSENCE MEANS OFF, so a suite that exercises accounting has to entitle
-  // its tenants — the same row `scripts/seed.mjs` writes for the demo orgs. Every
-  // org this file created, because the TRUNCATE above means these are the only ones.
-  await admin.query(
-    `INSERT INTO module_entitlement (organization_id, module_code, enabled)
-     SELECT id, 'accounting', true FROM organization
-     ON CONFLICT (organization_id, module_code) DO NOTHING`,
-  );
 });
 
 beforeEach(async () => {
@@ -144,6 +144,62 @@ describe('enqueueing', () => {
     const reportId = await approvedReport('stable');
     const key = await admin.query('SELECT idempotency_key FROM integration_post');
     expect(key.rows[0].idempotency_key).toBe(outbox.idempotencyKeyFor(reportId));
+  });
+});
+
+describe('requeueing after a configuration fix (VX4-1 part 2)', () => {
+  /**
+   * A post skipped for a CONFIGURATION reason — nothing connected, two ledgers
+   * claiming one capability, the accounting module off — backs off an hour without
+   * burning an attempt. Right for the poller, wrong for the admin who just fixed
+   * the configuration and is told the queue "drains on its own". The e2e caught
+   * that promise being false; this pins the predicate.
+   */
+  it('makes a backed-off PENDING row due, and leaves a FAILED one alone', async () => {
+    const pending = await approvedReport('waiting on configuration');
+    const failed = await approvedReport('refused by a far end');
+    await admin.query(
+      `UPDATE integration_post
+          SET next_attempt_at = clock_timestamp() + interval '1 hour'
+        WHERE report_id = $1`,
+      [pending],
+    );
+    // A FAILED row backed off because a real far end refused it. Its retry
+    // schedule is not a configuration change's business.
+    await admin.query(
+      `UPDATE integration_post
+          SET status = 'FAILED', attempts = 1, last_error = 'the ledger said no',
+              next_attempt_at = clock_timestamp() + interval '1 hour'
+        WHERE report_id = $1`,
+      [failed],
+    );
+
+    const moved = await withOrg(orgId, (tx) => outbox.requeueWaitingPosts(tx));
+    expect(moved).toBe(1);
+
+    const rows = await admin.query(
+      `SELECT report_id, status, next_attempt_at <= clock_timestamp() AS due
+         FROM integration_post WHERE report_id = ANY($1)`,
+      [[pending, failed]],
+    );
+    const byReport = new Map(rows.rows.map((r) => [r.report_id, r]));
+    expect(byReport.get(pending)!.due).toBe(true);
+    expect(byReport.get(failed)!.due).toBe(false);
+    expect(byReport.get(failed)!.status).toBe('FAILED');
+  });
+
+  it('does not touch a row another poller has CLAIMED', async () => {
+    // A claimed row is in flight. Moving its schedule under the process holding it
+    // is how a double-post starts.
+    const reportId = await approvedReport('in flight');
+    await admin.query(
+      `UPDATE integration_post
+          SET claimed_at = clock_timestamp(), claimed_by = 'someone-else',
+              next_attempt_at = clock_timestamp() + interval '1 hour'
+        WHERE report_id = $1`,
+      [reportId],
+    );
+    expect(await withOrg(orgId, (tx) => outbox.requeueWaitingPosts(tx))).toBe(0);
   });
 });
 

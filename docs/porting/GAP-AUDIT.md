@@ -2958,11 +2958,15 @@ next month must find this month's approvals still queued (VX3-4).
 
 **Not closed, and named rather than left as a good intention:**
 
-- **The database does not enforce it yet.** The stronger form extends each gated table's policy with
-  `AND EXISTS (… module_entitlement … enabled)`, which no code path can bypass because no code path
-  supplies the predicate. It is deliberately out of part 1: a policy-level refusal is SILENT, so it
-  belongs beside the screens that can explain it, and it wants its own migration and test. VX4-1
-  part 2.
+- **The database now enforces it too — VX4-1 part 2, migration `0022`.** `app_module_enabled(text)`
+  in the `tenant_isolation` policies of `gl_account`, `integration_installation` and
+  `integration_oauth_state`. **`integration_post` is deliberately excluded:** `enqueuePost()` runs
+  unconditionally inside the approving transaction, so an entitlement in that policy would make
+  approving a report FAIL for a tenant without the module — an optional module's gate breaking a core
+  flow. Gating `gl_account` is safe because `accountForCategory()` returning null is what VX3-1
+  already specified for an unmapped category, and existing snapshots survive since FK checks bypass
+  RLS (TN-1). Proven as `veloapp`: entitled 28 accounts, unentitled 0 with the write refused,
+  disabled 0 while the rows remain, re-enabled 28 back.
 - **MT-5's scheduling half is untouched.** VeloExpense has no cron surface yet, so there is nothing
   to fan out per tenant; `dispatch.ts` is checked because it is called per tenant already. VX0-8
   remains the ticket, and it becomes real with the first scheduled job.
@@ -3211,6 +3215,36 @@ whichever renders. That is the exact bug their own money formatter documents and
 Literal `message: '…'` strings under `apps/web/src/server`, with 136 UI sites rendering `e.message`
 directly. No gate covers them. Ours has the same exposure and the same choice to make: either error
 copy is catalogued, or it is deliberately English-only and the UI stops printing it raw.
+
+### AC-24 · Fixing a configuration does not move the queue ⚠️ PARTLY OPEN
+
+Found 31 Aug by `e2e/modules-flow.spec.ts` on its first run — by a test asserting a sentence the
+screen puts in front of an admin.
+
+`postOne` skips a row for three CONFIGURATION reasons — nothing connected (VX3-4), two ledgers
+claiming one capability (AC-22), and the accounting module switched off (VX4-1) — and in each case
+pushes `next_attempt_at` an hour out **without burning an attempt**. The backoff is right for its
+purpose: a poller should not spin on a tenant whose configuration has not changed.
+
+What nobody had noticed is the other side of it: **the configuration changing does not clear the
+backoff.** An admin who fixes the problem watches nothing happen for up to an hour, while
+`/admin/ledger-queue` tells them the queue "drains on its own". The e2e asserted exactly that and got
+`posted: 0`.
+
+**Closed for the module case** by VX4-1 part 2: `requeueWaitingPosts()` in `post-outbox.ts` makes this
+tenant's backed-off `PENDING` rows due, called from the Modules screen's action in the same
+transaction as the toggle. `PENDING` only — a `FAILED` row backed off because a real far end refused
+it, and its retry schedule is not a configuration change's business — and never a `claimed_at` row,
+because moving the schedule under the process holding it is how a double-post starts. Both predicates
+are pinned by tests, and verified against absence: dropping the status predicate fails with
+`expected 2 to be 1`.
+
+**Still open, and deliberately not folded in:** the same one-line nudge belongs on the two sibling
+events — `installIntegration` (a tenant connects a ledger, and last week's approvals are backed off)
+and `disconnect` (an admin resolves an AC-22 ambiguity by disconnecting one of two). Both change
+VX3-4-era behaviour rather than VX4-1's, so they want a decision rather than a quiet edit. The
+argument for doing it is identical; the argument for pausing is that "connect a ledger" is the busiest
+of the three paths and worth thinking about once rather than by analogy.
 
 ## tenancy · foreign keys do not respect RLS (found 2026-08-29 building VX3-1)
 

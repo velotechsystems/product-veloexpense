@@ -246,6 +246,40 @@ export async function markNeedsReview(
   );
 }
 
+/**
+ * VX4-1 part 2 — make this tenant's WAITING posts due again.
+ *
+ * ── Why this exists, and it is a real gap the e2e found ────────────────────
+ *
+ * When `postOne` cannot post for a configuration reason — nothing connected, two
+ * ledgers claiming one capability, or the accounting module switched off — it
+ * SKIPS the row without burning an attempt and pushes `next_attempt_at` an hour
+ * out. That backoff is right for its purpose: the poller should not spin on a
+ * tenant whose configuration has not changed.
+ *
+ * But it means fixing the configuration does NOT move the queue. An admin who
+ * turns the accounting module on watches nothing happen for up to an hour, while
+ * the screen tells them the queue "drains on its own once the module is back on".
+ * The e2e asserted that sentence and it was false — `posted: 0` — which is exactly
+ * the kind of promise a browser test is for.
+ *
+ * So the ACT of fixing the configuration clears the backoff. Only `PENDING` rows:
+ * a `FAILED` row backed off because a real far end refused it, and its retry
+ * schedule is not this function's business.
+ *
+ * Returns how many rows became due, so a caller can say so.
+ */
+export async function requeueWaitingPosts(tx: QueryRunner): Promise<number> {
+  const r = await tx.query(
+    `UPDATE integration_post
+        SET next_attempt_at = clock_timestamp(), updated_at = clock_timestamp()
+      WHERE status = 'PENDING'
+        AND claimed_at IS NULL
+        AND next_attempt_at > clock_timestamp()`,
+  );
+  return r.rowCount ?? 0;
+}
+
 /** An operator's decision that a DEAD or NEEDS_REVIEW row should be tried again. */
 export async function retryNow(tx: QueryRunner, id: string): Promise<void> {
   // Attempts are RESET, so a human retry gets a full budget rather than one more

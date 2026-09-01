@@ -643,21 +643,36 @@ export async function requireCapability(
 export async function capabilityAvailability(
   tx: QueryRunner,
   capability: Capability,
-): Promise<{ connected: boolean; problem: string | null }> {
+): Promise<{
+  connected: boolean;
+  problem: string | null;
+  /**
+   * WHICH problem, because the two need different headlines and a screen that
+   * printed AC-22's "two ledgers can post" over a module-off sentence would be
+   * confidently wrong. Found by writing VX4-1's e2e, not by reading this.
+   */
+  problemKind: 'MODULE_DISABLED' | 'AMBIGUOUS_CAPABILITY' | null;
+}> {
   try {
-    return { connected: (await resolveCapability(tx, capability)) !== null, problem: null };
+    return {
+      connected: (await resolveCapability(tx, capability)) !== null,
+      problem: null,
+      problemKind: null,
+    };
   } catch (err) {
     // VX4-1. The accounting module is off for this tenant. NOT an error for a
     // screen: `/admin/ledger-queue` is exactly where somebody goes to ask why
     // nothing is posting, and a 500 is the least useful answer available. Same
     // argument as the ambiguity case below — a page gets a sentence, the posting
     // path gets a refusal.
-    if (isModuleDisabled(err)) return { connected: false, problem: err.message };
+    if (isModuleDisabled(err)) {
+      return { connected: false, problem: err.message, problemKind: 'MODULE_DISABLED' };
+    }
     if (err instanceof IntegrationError && err.code === 'AMBIGUOUS_CAPABILITY') {
       // Something IS connected — too much of it. Reporting `connected: false` here
       // would put "no ledger is connected" on the screen of a tenant looking at
       // two, which is the kind of wrong message that costs a support call.
-      return { connected: true, problem: err.message };
+      return { connected: true, problem: err.message, problemKind: 'AMBIGUOUS_CAPABILITY' };
     }
     throw err;
   }
