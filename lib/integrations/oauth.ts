@@ -33,6 +33,7 @@ import { decryptSecret, encryptSecret } from '@/lib/crypto/secrets';
 import { adapterFor } from '@/lib/integrations/registry';
 import { IntegrationError } from '@/lib/integrations/errors';
 import { findCapabilityRival, rivalMessage } from '@/lib/integrations/conflicts';
+import { requeueWaitingPosts } from '@/lib/integrations/post-outbox';
 import { OAuthConsentRequired, type AdapterConfig } from '@/lib/integrations/contract';
 import type { QueryRunner } from '@/lib/db/client';
 
@@ -230,8 +231,8 @@ export async function completeAuthorisation(input: {
 
   // 4. Store it. `active = true` and the refresh token land together, which is
   //    what `0020`'s `oauth_complete` CHECK requires.
-  await withOrg(state.organization_id, (tx) =>
-    tx.query(
+  await withOrg(state.organization_id, async (tx) => {
+    await tx.query(
       `UPDATE integration_installation
           SET oauth_access_token       = $2,
               oauth_refresh_token      = COALESCE($3, oauth_refresh_token),
@@ -260,8 +261,18 @@ export async function completeAuthorisation(input: {
         tokens.scope ?? null,
         state.id,
       ],
-    ),
-  );
+    );
+
+    // AC-24. This installation has just become able to post, and the tenant's
+    // approvals from before the authorisation were each skipped with an hour's
+    // backoff. Same transaction as the activation.
+    //
+    // This caller is why the nudge moved out of the Modules screen's action: an
+    // OAuth callback never touches that code, so an edge-placed hook would have
+    // missed the one path where the wait is longest — the admin has just come back
+    // from a far end and is watching the screen.
+    await requeueWaitingPosts(tx);
+  });
 
   return {
     organizationId: state.organization_id,

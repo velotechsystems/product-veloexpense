@@ -30,6 +30,7 @@ import * as integrations from '@/lib/integrations/service';
 import { stubControl } from '@/lib/integrations/stub';
 import { postOne, drainPosts } from '@/lib/integrations/dispatch';
 import { MAX_ATTEMPTS } from '@/lib/outbox/policy';
+import { setEntitlement } from '@/lib/modules/service';
 
 const admin = new Pool({
   connectionString: process.env.ADMIN_DATABASE_URL ?? process.env.DATABASE_URL,
@@ -186,6 +187,102 @@ describe('requeueing after a configuration fix (VX4-1 part 2)', () => {
     expect(byReport.get(pending)!.due).toBe(true);
     expect(byReport.get(failed)!.due).toBe(false);
     expect(byReport.get(failed)!.status).toBe('FAILED');
+  });
+
+  it('CONNECTING a ledger clears the backoff, and it is the service that does it', async () => {
+    // AC-24's open half. A tenant has approvals waiting from before it connected —
+    // VX3-4 made sure of that — each skipped with an hour's backoff. Connecting IS
+    // the fix, so the wait ends with it.
+    //
+    // Asserted through `installIntegration` rather than through a screen, because
+    // the whole point of moving the nudge into the service was that the edge is
+    // where a caller forgets it.
+    const reportId = await approvedReport('waiting for a ledger');
+    await admin.query(
+      `UPDATE integration_post SET next_attempt_at = clock_timestamp() + interval '1 hour'
+        WHERE report_id = $1`,
+      [reportId],
+    );
+    await admin.query('DELETE FROM integration_installation');
+
+    await withOrg(orgId, (tx) =>
+      integrations.installIntegration(
+        tx,
+        {
+          slug: 'stub-ledger',
+          code: 'after-the-fact',
+          label: 'Connected late',
+          config: { ledgerUrl: 'https://x.test', apiToken: 'tok' },
+        },
+        userId,
+      ),
+    );
+
+    const due = await admin.query(
+      `SELECT next_attempt_at <= clock_timestamp() AS due FROM integration_post
+        WHERE report_id = $1`,
+      [reportId],
+    );
+    expect(due.rows[0].due).toBe(true);
+  });
+
+  it('DISCONNECTING clears it too, because disconnecting can be the fix', async () => {
+    // Two adapters claiming one capability make the posting path refuse to choose
+    // (AC-22), and the way out is to disconnect one — at which point the queue
+    // should move rather than wait out an hour it spent being ambiguous.
+    const installed = await withOrg(orgId, (tx) =>
+      integrations.installIntegration(
+        tx,
+        {
+          slug: 'stub-ledger',
+          code: 'to-disconnect',
+          label: 'On the way out',
+          config: { ledgerUrl: 'https://x.test', apiToken: 'tok' },
+        },
+        userId,
+      ),
+    );
+    const reportId = await approvedReport('waiting on an ambiguity');
+    await admin.query(
+      `UPDATE integration_post SET next_attempt_at = clock_timestamp() + interval '1 hour'
+        WHERE report_id = $1`,
+      [reportId],
+    );
+
+    await withOrg(orgId, (tx) => integrations.disconnect(tx, installed.id));
+
+    const due = await admin.query(
+      `SELECT next_attempt_at <= clock_timestamp() AS due FROM integration_post
+        WHERE report_id = $1`,
+      [reportId],
+    );
+    expect(due.rows[0].due).toBe(true);
+  });
+
+  it('and TURNING THE MODULE ON does it from the service, not from the screen', async () => {
+    // The path VX4-1 part 2 originally hooked at the edge. Asserted through
+    // `setEntitlement` because that is where it lives now: an e2e already covers the
+    // button, and what needs pinning is that a caller who is NOT the button gets it.
+    const reportId = await approvedReport('waiting on a module');
+    await withOrg(orgId, (tx) =>
+      setEntitlement(tx, 'accounting', false, { id: userId, name: 'Ada', role: 'ADMIN' }),
+    );
+    await admin.query(
+      `UPDATE integration_post SET next_attempt_at = clock_timestamp() + interval '1 hour'
+        WHERE report_id = $1`,
+      [reportId],
+    );
+
+    await withOrg(orgId, (tx) =>
+      setEntitlement(tx, 'accounting', true, { id: userId, name: 'Ada', role: 'ADMIN' }),
+    );
+
+    const due = await admin.query(
+      `SELECT next_attempt_at <= clock_timestamp() AS due FROM integration_post
+        WHERE report_id = $1`,
+      [reportId],
+    );
+    expect(due.rows[0].due).toBe(true);
   });
 
   it('does not touch a row another poller has CLAIMED', async () => {

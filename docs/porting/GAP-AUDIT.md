@@ -3216,7 +3216,7 @@ Literal `message: '…'` strings under `apps/web/src/server`, with 136 UI sites 
 directly. No gate covers them. Ours has the same exposure and the same choice to make: either error
 copy is catalogued, or it is deliberately English-only and the UI stops printing it raw.
 
-### AC-24 · Fixing a configuration does not move the queue ⚠️ PARTLY OPEN
+### AC-24 · Fixing a configuration does not move the queue ✅ CLOSED
 
 Found 31 Aug by `e2e/modules-flow.spec.ts` on its first run — by a test asserting a sentence the
 screen puts in front of an admin.
@@ -3239,12 +3239,29 @@ because moving the schedule under the process holding it is how a double-post st
 are pinned by tests, and verified against absence: dropping the status predicate fails with
 `expected 2 to be 1`.
 
-**Still open, and deliberately not folded in:** the same one-line nudge belongs on the two sibling
-events — `installIntegration` (a tenant connects a ledger, and last week's approvals are backed off)
-and `disconnect` (an admin resolves an AC-22 ambiguity by disconnecting one of two). Both change
-VX3-4-era behaviour rather than VX4-1's, so they want a decision rather than a quiet edit. The
-argument for doing it is identical; the argument for pausing is that "connect a ledger" is the busiest
-of the three paths and worth thinking about once rather than by analogy.
+**Closed for all four paths, and the placement was reversed on the way.** VX4-1 part 2 called the
+nudge from the Modules screen's ACTION, arguing that what an admin experiences is a UI decision rather
+than an invariant. That argument was wrong in the exact way this ticket had just spent three days
+fixing: **a hook at the edge is a hook the next caller forgets**, which is MT-3. Two callers proved it
+immediately — the OAuth callback activates an installation without touching that action at all, and a
+tenant connecting a ledger has the identical problem with none of the same code in the path.
+
+It is now called by every operation that can change whether a tenant may post:
+
+| Called from | Because |
+|---|---|
+| `setEntitlement` (enabling) | the original case; an admin turns the module on |
+| `installIntegration` (active install) | VX3-4 deliberately queues approvals from before a ledger exists, and each was skipped with an hour's backoff. Connecting IS the fix. |
+| `disconnect` | the least obvious one: two adapters claiming a capability make the posting path refuse (AC-22), and disconnecting one is how an admin resolves it |
+| `completeAuthorisation` | an OAUTH2 install becoming active — **the path an edge-placed hook missed**, and the one where the wait is most visible because the admin has just come back from a far end |
+
+An OAUTH2 install is skipped at `installIntegration` because the row arrives inactive and still cannot
+post. A seed or provisioning job has nothing queued, so the statement is a harmless no-op — which was
+never a reason to leave the hook where a caller could miss it.
+
+Verified against absence at three call sites: removing the `installIntegration` and `disconnect` calls
+fails both new tests with `expected false to be true`, and removing the status predicate fails with
+`expected 2 to be 1`.
 
 ## tenancy · foreign keys do not respect RLS (found 2026-08-29 building VX3-1)
 
