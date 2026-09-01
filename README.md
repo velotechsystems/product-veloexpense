@@ -29,10 +29,24 @@ service-role escape hatch (migrations / cross-tenant admin only).
 
 ## Database + the RLS gate (VX0-6)
 ```bash
-# DATABASE_URL → the VeloExpense Postgres
-psql "$DATABASE_URL" -f prisma/migrations/0001_init/migration.sql
-npm test                    # test/rls-isolation.test.ts must pass
+# ADMIN_DATABASE_URL (superuser) → the VeloExpense Postgres; DATABASE_URL is the app role
+npm run migrate             # applies only what is pending, records it in schema_migration
+npm test                    # test/rls-isolation.test.ts and test/migrations.test.ts must pass
 ```
+**On an existing database created before the runner**, the ledger is empty while the schema is
+not, so the runner asks once rather than guessing which migrations are already in:
+```bash
+npm run migrate -- --baseline all      # a database that is fully up to date
+npm run migrate -- --baseline 0022     # ...or up to a specific migration, then apply the rest
+```
+`--baseline` is a claim that those migrations are already in, and recording it runs nothing — so it
+**verifies the claim against the schema before recording anything**, and refuses with the right
+baseline in the message if the newest one it can check is not actually there. Getting this wrong by
+one is how the ledger starts lying while reporting "nothing pending".
+Do not apply a migration by hand with `psql -f`. `npm run e2e` and CI both run the runner, and
+`test/migrations.test.ts` fails if the schema and `prisma/migrations/` disagree — which is the
+gate that did not exist when `0023` was merged, applied nowhere, and surfaced as
+`column "brand_color" does not exist` inside an unrelated Playwright spec.
 `app_user` in `0001_init` is the copy-me pattern: every future tenant table
 repeats organization_id + index + ENABLE/FORCE RLS + `tenant_isolation` policy.
 

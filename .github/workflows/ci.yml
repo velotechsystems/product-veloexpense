@@ -95,12 +95,16 @@ jobs:
       - name: Lint
         run: npm run lint
 
+      # ONE runner for CI and for a laptop, which is the point of the change.
+      # This used to be a shell loop over every file, correct only because CI's
+      # database is empty — so it could never notice the drift that broke VX4-3's
+      # e2e run locally, and a developer had no path that shared its behaviour.
+      # `scripts/migrate.mjs` applies only what is pending, records it in
+      # `schema_migration`, and refuses an edited file or an out-of-order ledger.
+      # On CI's fresh database that is exactly the old loop, plus the ledger that
+      # `test/migrations.test.ts` then asserts against.
       - name: Apply migrations
-        run: |
-          for f in prisma/migrations/*/migration.sql; do
-            echo "applying $f"
-            psql "$ADMIN_DATABASE_URL" -v ON_ERROR_STOP=1 -f "$f"
-          done
+        run: npm run migrate
 
       - name: Create non-superuser app role
         run: |

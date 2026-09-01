@@ -2232,6 +2232,128 @@ test Chrome's serialiser rather than our stylesheet.
 **Part 3 is the email shell (BR-6)** on VX2-8's template layer: `htmlBody()` in `dispatch.ts:292`
 builds bare `<p>` tags today, exactly the finding their `notification-dispatch.ts:181` has.
 
+### The migration runner and its ledger — the class that broke VX4-3's e2e run (John's call, 1 Sep)
+
+**What happened.** `0023` was merged and applied nowhere. `npm run e2e` built, passed
+`check:actions`, seeded, then died inside `approval-flow` — a spec with nothing to do with branding —
+on `column "brand_color" does not exist`, printed in a `[WebServer]` log rather than as a test
+failure. VX4-3 part 2 is what made it total instead of local: the root layout now reads branding on
+every render, so one missing column breaks every page in the product.
+
+**Why nothing could have caught it.** Migrations were applied BY HAND from a README line;
+`npm run e2e` never checked; and CI *cannot* notice drift, because CI creates a fresh database and
+applies every file in a loop. Every path that might have seen it was structurally unable to.
+
+**The fix, in the house pattern.** `scripts/migrate.mjs` + a `schema_migration` ledger (name,
+checksum, applied_at) is the mechanism; `test/migrations.test.ts` is the generated assertion, in the
+shape of the RLS-coverage, tenant-FK and vendor guards — it walks `prisma/migrations/` so migration
+`0024` is covered the moment it exists. CI's shell loop is replaced by the same runner, so a laptop
+and CI now share one code path. `npm run migrate` is a step in `npm run e2e` before the build.
+
+**Why a ledger rather than "run CI's loop locally too":** that loop is correct only because CI's
+database is empty. Replaying `0001..0023` over an existing database dies on the first `ADD COLUMN`,
+and the alternative — `IF NOT EXISTS` through every migration — turns each one into a statement that
+cannot tell "already applied" from "silently did nothing".
+
+**Four refusals, each verified against a real Postgres:**
+
+- **An edited applied migration.** The checksum is stored; if the file changed, the database and the
+  repository disagree about what the schema *is*, and every later reading of the files is wrong.
+- **A gap** — `0023` applied while `0022` is not. Applying `0022` now would run it against a schema
+  it was never written for.
+- **A populated database with an empty ledger.** It does NOT guess: probing for objects would either
+  replay DDL or skip it. It asks for `--baseline <name|number|all>` once, which records without
+  running. A fresh database needs no flag, because empty ledger + absent `organization` is
+  unambiguous.
+- **`--baseline` against a non-empty ledger** — refused rather than silently ignored.
+
+**AND A WORSE ONE: the runner was correct and my INSTRUCTION was not.** The first real use of
+`--baseline` was mine, in the handover text, and I told John to run `--baseline all` against a
+database that was current through `0022` and had never seen `0023`. It did exactly what it was asked:
+recorded `0023` as applied without running it. `npm run migrate` then reported *"nothing pending"*,
+and the same six specs died on `column "brand_color" does not exist` — the original failure, now
+with a clean bill of health on top. I had tested the `--baseline 0022` path minutes earlier and still
+handed over the wrong value.
+
+The lesson is not "be careful with the flag". A one-time step everybody runs, whose wrong answer is
+silent and total, needs the tool to check the claim rather than the operator to get it right. So
+`--baseline` now **verifies before it records**: it walks backwards from the newest migration being
+baselined to the first one declaring a table or column it can read, and requires every one to be
+present. The bad instruction is now refused, by name, with the right one in the message:
+
+    migrate FAILED: --baseline all claims 0023_tenant_branding is already
+      applied, but this database does not have what it creates:
+      · organization.brand_color   … (five columns)
+      If your database is current through 0022_module_policy_backstop, baseline THAT
+
+Nothing is recorded when it refuses. `--baseline 0022` on that same database verifies against
+**0021** — because `0022` declares only a function and policies, which the scanner deliberately
+cannot read — then applies `0023` for real. A migration it cannot read at all is reported as *"recorded
+unverified"*, never as verified: those are the two answers a check like this must never conflate.
+
+**This also marks the limit of `test/migrations.test.ts`, worth stating plainly.** That guard compares
+the ledger to the FILES, not to the SCHEMA. A lying ledger passes it — which is precisely what
+happened. The schema check above closes the moment a lie can be introduced (a baseline); a ledger
+edited by hand afterwards is still outside what either guard sees.
+
+**A smaller bug of mine that only running it could find, and it is worth keeping in mind for any
+script that both advises and acts.** The first version keyed the baseline branch on *"the ledger table did
+not exist"*. But the ask `exit(1)`s **after** `CREATE TABLE IF NOT EXISTS` has already run — so on the
+very next invocation the table existed, the branch was skipped, and the `--baseline` the script had
+just told the user to pass was **silently ignored**: it went straight to applying `0001` against a
+populated database and died on `relation "organization" already exists`. Guidance that leads to a
+worse failure than the one it explains is the worst kind. The condition is now "the ledger is empty",
+which is the honest test of *has this ever been recorded*.
+
+**Every migration runs in one transaction with its ledger insert**, so a failure leaves neither a
+half-applied schema nor a lie about it — verified with a deliberately broken `0024`: nothing leaked,
+nothing recorded. Checked, not assumed, that no migration in this repo uses `CREATE INDEX
+CONCURRENTLY` or opens its own transaction; one that needs `CONCURRENTLY` will fail loudly here,
+which is the right place for that conversation.
+
+### VX4-3 part 3 SHIPPED — the email shell, and a vacuous test of my own
+
+BR-6, and its two halves point opposite ways: ExpenseOS's password-reset mail IS branded and
+hardcoded (product name in both locales, `#0c2340`/`#f76b15` inlined), while their
+`notification-dispatch.ts:181` has no wrapper at all. **We inherited the unbranded one** — `htmlBody()`
+built four bare `<p>` tags. It now builds only the body and `emailShell()` wraps it: tables for
+layout, inline styles, no `<style>` for Gmail to strip, nothing external, `role="presentation"` so a
+screen reader does not read the scaffolding as data.
+
+**No logo in the email, and it is a finding rather than a shortcut.** `/api/branding/logo` is
+session-gated, so an `<img>` there **404s for every recipient** — not "blocked until they click show
+images". And the recipient who most needs this mail is the approver deciding from a link *without ever
+signing in*, who by construction has no session. CID embedding is the right answer, needs an
+`attachments` field on `EmailMessage` and a multipart-assembling transport, and is filed rather than
+half-built. Shipped: a text wordmark in the tenant's colour.
+
+**The unbranded default is NOT `--vl-brand`, on purpose.** #0284c7 is 4.10:1 / 4.36:1 — below AA either
+way. The app already renders it and that is not this ticket's call, but this surface is NEW and picking
+a measured-inaccessible colour for fresh code is indefensible. The accent is the ramp's 600 step
+(#0079bb, 4.72:1), derived so it cannot drift. The email's blue is a shade deeper than the app's; that
+seam should stay visible until the sheet is fixed.
+
+**A circular import, caught before it shipped, and the third instance of one shape.** `email-shell.ts`
+needed `escapeHtml`, which lived in `dispatch.ts`, which imports `email-shell.ts`. Extracted to
+`lib/notifications/html.ts` as a leaf and re-exported so no caller changed — the same move
+`lib/integrations/errors.ts` was (VX3-6) and the reason `conflicts.ts` was placed as a leaf (AC-22).
+**A shared helper belongs below both users, not inside one of them.** Worth promoting to a rule.
+
+**AND MY OWN PROPERTY TEST WAS VACUOUS.** The sweep asserting "the rendered button is readable for
+every colour a tenant can save" pulled the pair out of the HTML with
+`/background:(#hex);color:(#hex)/` — which matches the `<body>` tag
+(`background:#f1f5f9;color:#0f172a`) long before the button. Those contrast at 15:1, so the sweep
+passed for all 1,331 colours **while never once looking at a button**. Found by sabotaging the shell to
+always write white and noticing the sweep stayed green while a smaller test failed: the sabotage caught
+the code, and the code's survival caught the test. The matcher is now anchored on
+`display:inline-block`, and a separate assertion guards the helper so a markup reorder cannot make it
+vacuous again.
+
+That is the third time this session a check could not see one of its two outcomes — after
+`check:actions` discarding its own finding, and `innerText()` on a `<style>` answering `''`. The
+pattern worth carrying: **when a sabotage fails fewer tests than expected, the surviving tests are the
+finding.**
+
 ### The two decisions, SETTLED 31 Aug 2026 (John)
 
 **1. Host-based tenancy is PHASE 5.** VX4-4 is out of this board. The reasoning that carried it: a

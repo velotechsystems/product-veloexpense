@@ -3145,7 +3145,32 @@ tab title cannot vary per tenant without `generateMetadata`; `appName` is a bund
 (`catalogs/en/common.json:2`); and five files hardcode the literal, including the face of a virtual
 card (`VirtualCardVisual.tsx:77`) and the WebAuthn `rpName` (`lib/webauthn.ts:47`).
 
-**BR-6 · Outbound email is either branded wrong or not branded at all.**
+**BR-6 · Outbound email is either branded wrong or not branded at all.
+✅ CLOSED by VX4-3 (part 3) for notification mail.**
+
+**The two halves point OPPOSITE ways, and the pair is the design brief. [checked]**
+`lib/email.ts:33-58` (password reset) IS branded and hardcoded — the product name baked into both
+locales, `#0c2340` / `#f76b15` inlined in the markup, so per-tenant branding there is a rewrite rather
+than a change. `notification-dispatch.ts:181` has the opposite problem: `html: \`<p>…</p>${actionsHtml}${ctaHtml}\``,
+no wrapper, no doctype, no colour. **The unbranded one is what we inherited** — our `htmlBody()` built
+four bare `<p>` tags. So the port is "the branded half's intent at the unbranded half's placement",
+with the values coming from the tenant.
+
+**AND THERE IS NO LOGO IN THE EMAIL, which is a finding rather than a shortcut.**
+`/api/branding/logo` is session-gated, so an `<img>` in a message does not "wait for the reader to
+click show images" — it **404s for every recipient**. Worse, the recipient who most needs these emails
+is the approver deciding from a link *without ever signing in* (VX2-8), who by construction has no
+session. CID embedding (multipart/related) is the correct answer and needs an `attachments` field on
+`EmailMessage` plus a transport that assembles multipart bodies — a real slice, filed rather than
+half-built. Shipped instead: a text wordmark in the tenant's colour, which renders everywhere and
+cannot be blocked.
+
+**The unbranded default is deliberately NOT `--vl-brand`.** #0284c7 is 4.10:1 on white and 4.36:1 on
+ink (the defect recorded under BR-3). Every other surface already renders it and changing that is not
+a porting ticket's call — but this surface is NEW, and choosing a colour we have measured as
+inaccessible for brand-new code is indefensible. The email accent is the ramp's own 600 step, #0079bb
+at 4.72:1, derived rather than pasted so it cannot drift. **The email's blue is therefore a shade
+deeper than the app's, and that visible seam should stay until the sheet is fixed.**
 `lib/email.ts:33-58` hardcodes the product name in both locales and inlines `#0c2340` / `#f76b15`.
 Notification email has the opposite problem: `notification-dispatch.ts:181` builds
 `html: \`<p>…</p>${actionsHtml}${ctaHtml}\`` with no wrapper, logo or colour at all. The sender is one
