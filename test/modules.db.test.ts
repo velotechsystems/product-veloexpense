@@ -31,6 +31,7 @@ import {
   requireModule,
   setEntitlement,
 } from '@/lib/modules/service';
+import { listModules } from '@/lib/modules/registry';
 import { ModuleDisabledError } from '@/lib/modules/errors';
 import { installIntegration, resolveCapability } from '@/lib/integrations/service';
 import { listAccounts, createAccount } from '@/lib/accounts/service';
@@ -44,6 +45,18 @@ let otherOrgId: string;
 let actorId: string;
 
 const ACTOR = () => ({ id: actorId, name: 'Mod Admin', role: 'ADMIN' });
+
+/**
+ * A module this build declares and cannot serve, CHOSEN FROM THE REGISTRY rather
+ * than named.
+ *
+ * These three tests used to say `'budgets'`, which was true until VX4-5 part 3b
+ * made Budgets available and then broke all three at once. What they are about is
+ * the dormant-declaration property, not any particular module — so they now take
+ * whichever module is dormant today, and the `toBeDefined` below is what stops
+ * the whole block passing vacuously on the day none is.
+ */
+const UNAVAILABLE = listModules().find((m) => !m.available)?.code as string;
 
 beforeAll(async () => {
   await admin.query('TRUNCATE app_user, organization CASCADE');
@@ -109,14 +122,15 @@ describe('absence means off', () => {
   });
 
   it('a DECLARED BUT UNAVAILABLE module is off even with an enabled row', async () => {
-    // The dormant-QuickBooks property. A row saying a tenant has Budgets cannot
-    // make this build able to serve Budgets, so the read refuses to believe it.
+    // The dormant-QuickBooks property. A row saying a tenant has a module this
+    // build cannot serve does not make it servable, so the read refuses to
+    // believe it.
     await admin.query(
       `INSERT INTO module_entitlement (organization_id, module_code, enabled)
-       VALUES ($1, 'budgets', true)`,
-      [orgId],
+       VALUES ($1, $2, true)`,
+      [orgId, UNAVAILABLE],
     );
-    expect(await withOrg(orgId, (tx) => isModuleEnabled(tx, 'budgets'))).toBe(false);
+    expect(await withOrg(orgId, (tx) => isModuleEnabled(tx, UNAVAILABLE))).toBe(false);
   });
 });
 
@@ -173,9 +187,17 @@ describe('turning a module on and off', () => {
 
   it('refuses to enable a module this build cannot serve', async () => {
     await expect(
-      withOrg(orgId, (tx) => setEntitlement(tx, 'budgets', true, ACTOR())),
+      withOrg(orgId, (tx) => setEntitlement(tx, UNAVAILABLE, true, ACTOR())),
     ).rejects.toThrow(/not available in this build/);
     expect((await admin.query('SELECT count(*)::int AS n FROM module_entitlement')).rows[0].n).toBe(0);
+  });
+
+  it('this build still declares a module it cannot serve, or the three tests above prove nothing', () => {
+    // The floor every generated assertion in this repo carries. `UNAVAILABLE`
+    // being undefined would make the dormant-declaration tests assert things
+    // about a module code of `undefined`, which is not a pass.
+    expect(UNAVAILABLE).toBeDefined();
+    expect(listModules().some((m) => !m.available)).toBe(true);
   });
 
   it('lists every declared module, available or not, with this tenant’s state', async () => {
@@ -187,9 +209,9 @@ describe('turning a module on and off', () => {
     expect(accounting.changedByName).toBe('Mod Admin');
     // An unavailable module is SHOWN, not hidden: a customer asking for Budgets is
     // a sales answer, and an empty list is not one.
-    const budgets = rows.find((r) => r.module.code === 'budgets')!;
-    expect(budgets.module.available).toBe(false);
-    expect(budgets.enabled).toBe(false);
+    const dormant = rows.find((r) => r.module.code === UNAVAILABLE)!;
+    expect(dormant.module.available).toBe(false);
+    expect(dormant.enabled).toBe(false);
   });
 });
 

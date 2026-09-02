@@ -109,18 +109,65 @@ const ACCOUNTING: ModuleDefinition = {
 };
 
 /**
- * The four the Plan names and nothing implements. Declared, unavailable, and
+ * BUDGETS — per-account budgets, their rollup, and threshold alerts.
+ *
+ * Made available by VX4-5 part 3b, which is when it acquired an administrative
+ * surface to gate. Parts 1 and 2 shipped the schema and the rollup with the
+ * module still declared unavailable, which was a gap rather than a decision:
+ * `0025` closed the data-plane half by putting `app_module_enabled('budgets')`
+ * into every budget table's RLS policy, and these gates are the other half.
+ *
+ * NOTE WHAT IS *NOT* GATED, because it is the interesting part. The rollup and
+ * the snapshot loader run inside `submitReport` and every approval decision — for
+ * EVERY tenant, whether or not they have budgets. A `requireModule` there would
+ * throw in the middle of a submit for every tenant without the module, which is
+ * a gate breaking an unrelated feature: the same shape as `accountForCategory`
+ * being exempt in ACCOUNTING. Under `0025` those functions simply find no rows
+ * and no-op, which is the fail-closed answer with no code branch to forget.
+ */
+const BUDGETS: ModuleDefinition = {
+  code: 'budgets',
+  name: 'Budgets',
+  description:
+    'Per-account budgets with periods, a stored rollup, overage warnings on a report, ' +
+    'and threshold alerts to the budget owner. Without this module reports still go ' +
+    'through policy, approval and reimbursement; nothing is measured against a budget.',
+  available: true,
+  gates: [
+    'lib/budgets/admin.ts#createBudget',
+    'lib/budgets/admin.ts#updateBudget',
+    'lib/budgets/admin.ts#deleteBudget',
+    'lib/budgets/admin.ts#seedMonthlyPeriods',
+    'lib/budgets/admin.ts#addThreshold',
+    'lib/budgets/admin.ts#removeThreshold',
+    'lib/budgets/admin.ts#addRecipient',
+    'lib/budgets/admin.ts#removeRecipient',
+  ],
+  ungated: {
+    'lib/budgets/admin.ts#listBudgets':
+      'read: the screen renders its own module-off state around this, and a gated ' +
+      'read would make an off module indistinguishable from a tenant with no budgets',
+    'lib/budgets/admin.ts#getBudget': 'read: wraps listBudgets, same reasoning',
+    'lib/budgets/admin.ts#percentToBp':
+      'pure: parses a percentage into basis points and touches no tenant data at all',
+    'lib/budgets/service.ts#recomputeForReport':
+      'runs inside submitReport, recallReport and every approval decision, for EVERY ' +
+      'tenant — gating it would throw mid-submit for tenants without budgets. 0025 ' +
+      'makes the rows unreachable instead, so it finds nothing and no-ops',
+    'lib/budgets/service.ts#loadBudgetSnapshots':
+      'runs inside validateReport on every save, for every tenant — same reasoning ' +
+      'as recomputeForReport, and the same fail-closed answer from RLS',
+    'lib/budgets/alerts.ts#fireThresholdAlerts':
+      'called only from recomputeForReport, which is itself reached on every ' +
+      'tenant\'s submit; it reads budget rows that RLS has already made empty',
+  },
+};
+
+/**
+ * The three the Plan names and nothing implements. Declared, unavailable, and
  * gating nothing — see the header on why they are here at all.
  */
 const DECLARED_ONLY: ModuleDefinition[] = [
-  {
-    code: 'budgets',
-    name: 'Budgets',
-    description: 'Per-account budgets with periods, thresholds and overage warnings.',
-    available: false,
-    gates: [],
-    ungated: {},
-  },
   {
     code: 'analytics',
     name: 'Analytics',
@@ -147,7 +194,7 @@ const DECLARED_ONLY: ModuleDefinition[] = [
   },
 ];
 
-const MODULES: ModuleDefinition[] = [ACCOUNTING, ...DECLARED_ONLY];
+const MODULES: ModuleDefinition[] = [ACCOUNTING, BUDGETS, ...DECLARED_ONLY];
 
 /** Every declared module, available or not. Stable order, for a screen. */
 export function listModules(): ModuleDefinition[] {

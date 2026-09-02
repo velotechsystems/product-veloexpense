@@ -2585,6 +2585,70 @@ database with all 25 migrations: `npm run build` and `npm run check:actions` pas
 adds 15. **Nine sabotage runs**, each failing exactly its own tests — after the three above were
 fixed, which is the only reason that sentence means anything.
 
+### VX4-5 part 3b SHIPPED — the screen, the e2e, and VX4-5 CLOSED
+
+No migration. `lib/budgets/admin.ts` (gated CRUD) + `/admin/budgets` + `e2e/budget-flow.spec.ts` +
+the registry flip that finally makes `budgets` a real module. **VX4-5 is complete**: schema,
+department stamp, rollup, `BUDGET_OVERAGE`, the severity clamp, threshold alerts, the screen.
+
+**The module is available now, and the gates are what made it so.** Parts 1–2 shipped budget code
+with `budgets` still declared `available: false`; 3a closed the data plane (`0025`'s RLS predicate)
+and this closes the control plane — eight gated writers, six exemptions each carrying its reason.
+The two most interesting exemptions are `recomputeForReport` and `loadBudgetSnapshots`: they run
+inside submit, recall and every approval decision **for every tenant**, so a `requireModule` there
+would throw mid-submit for tenants without budgets. RLS makes their rows unreachable instead, so
+they find nothing and no-op — the same shape as `accountForCategory` being exempt in ACCOUNTING.
+
+**The gate guard caught a gate that was real.** The first version wrote
+`await requireModule(tx, MODULE)` with `const MODULE = 'budgets'`. The gate worked; the guard failed
+it anyway, because `test/module-gates.test.ts` scans each function's TEXT for the LITERAL
+`requireModule(tx, '<code>')` — deliberately, so a false pass would need somebody to write the call
+and not mean it. A constant defeats the scan. The code now writes the literal eight times, and the
+reason is a comment at the top of the file so the next person does not "tidy" it back.
+
+**Percent in, basis points out, in exactly one place.** `0025` names the units trap and cannot solve
+it — somebody meaning 90% who types `90` gets 0.9%, and both are legal integers. `percentToBp` is
+the only multiplication in the product, it REFUSES a third decimal rather than rounding it (the
+`parseAmountToMinor` rule), and the e2e asserts `9000` in the database after typing `90` in the form,
+which is the only place that wiring is provable.
+
+**FOUR ASSERTIONS BROKE BECAUSE THEY NAMED A FIXTURE INSTEAD OF A PROPERTY.** Making one module
+available broke three tests in `test/modules.db.test.ts` and one in `e2e/modules-flow.spec.ts`, all
+of which used `'budgets'` as their example of a module this build cannot serve. They are about the
+dormant-declaration property, not about Budgets, so they now take
+`listModules().find((m) => !m.available)` — with an explicit `toBeDefined()` floor, because the
+generalised form would otherwise pass vacuously on the day nothing is dormant. Worth noticing as a
+class: a test that hard-codes today's answer to a question the registry already answers will break on
+the day the answer changes, which is precisely the day you want the test to be about something else.
+
+**My own e2e broke an unrelated spec, exactly the way §4 warns.** `budget-flow` sorts before
+`expense-flow`, whose `beforeAll` restores the starter rules and asserts the table holds exactly four.
+The `BUDGET_OVERAGE` rule this file adds made it five, and `expense-flow` failed on an assertion with
+nothing to do with budgets. The `afterAll` now removes the rule and the budget and drains the mail the
+submit enqueued. "Anything a run leaves behind is the next run's input" — written down since VX3-9a,
+and still the first thing to get wrong.
+
+**What the e2e proves that the db tests cannot:** a threshold typed as a percentage arriving as basis
+points; server actions posted from a screen with no client JS of its own; `rolled_up_at IS NULL`
+rendering as "not yet calculated" rather than a confident $0.00; an over-budget report warning and
+still submitting; and the alert landing in the owner's own notification list — the owner being the
+person who submitted it, which is `includeActor` proved end to end. Fixtures were checked against
+`scripts/seed.mjs` rather than guessed: the demo category 'Meals & Entertainment' maps to **68200**,
+not 68100, because meals are split from travel as 50% deductible (`0014`). A budget on 68100 would
+have attributed nothing and every assertion would have passed on an empty rollup.
+
+**Two small things taken deliberately, and said out loud rather than folded in silently.** The
+notifications table now has a `BUDGET` entry in its subject-path map, because `subjectHref` returns
+null for an unmapped type and "your budget is over" as dead text with nowhere to go is the defect
+that map exists to prevent; and `/admin/modules` links to `/admin/budgets`, because there is still no
+global admin nav and a module made available with nothing pointing at its surface is a surface nobody
+finds (GAP-AUDIT UD-4's neighbour).
+
+**Verified:** `tsc`, `eslint`, `check:vendor` clean on the device. In the cloud harness:
+`npm run build` and `npm run check:actions` pass, **803 vitest across 41 files**, and **35/35
+Playwright** — 31 existing plus this ticket's four. Baseline MEASURED at `ee192a4` in the same
+harness: **790**, so this adds 13. **Seven sabotage runs**, each failing exactly its own tests.
+
 ### The two decisions, SETTLED 31 Aug 2026 (John)
 
 **1. Host-based tenancy is PHASE 5.** VX4-4 is out of this board. The reasoning that carried it: a

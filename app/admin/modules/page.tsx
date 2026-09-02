@@ -39,9 +39,19 @@ export default async function ModulesPage({
             {' · '}what this organization may use
           </p>
         </div>
-        <Link href="/admin/integrations" className="text-sm underline underline-offset-4">
-          Accounting integrations
-        </Link>
+        <div className="flex gap-4">
+          <Link href="/admin/integrations" className="text-sm underline underline-offset-4">
+            Accounting integrations
+          </Link>
+          {/* VX4-5 part 3b. There is no global admin nav — the /admin screens
+              cross-link ad hoc — so a module made available with nowhere pointing
+              at its surface is a surface nobody finds. That is upstream's
+              "the surfaces AP could not find" (GAP-AUDIT UD-4's neighbour), and
+              one link is cheaper than rediscovering it. */}
+          <Link href="/admin/budgets" className="text-sm underline underline-offset-4">
+            Budgets
+          </Link>
+        </div>
       </header>
 
       <ErrorBanner message={error} />
