@@ -75,6 +75,16 @@ jobs:
       - name: Vendor-neutrality guard (no vendor name in core)
         run: npm run check:vendor
 
+      # VX4-7. A locale tag decided outside lib/i18n/locales.ts is a locale the
+      # registry cannot move — and the cautionary case is upstream's own i18n
+      # gate, which opens by restating `['en', 'fr-CA']` locally. A third locale
+      # there is not merely unchecked: every loop iterates the stale pair and
+      # PASSES, so the gate reports success about a question it never asked.
+      # This one imports the list it polices. Needs no build and no database, so
+      # it sits beside the vendor guard and fails in seconds.
+      - name: Locale registry guard (no locale tag outside the registry)
+        run: npm run check:i18n
+
       # Build first: Next 16 generates .next/types/** (e.g. LayoutProps) that the
       # standalone `tsc --noEmit` typecheck depends on.
       - name: Build

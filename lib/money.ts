@@ -10,6 +10,7 @@
  * `minorUnit` comes from the global `currency` reference table (CAD/USD = 2),
  * never from a hard-coded 100.
  */
+import { DEFAULT_LOCALE } from '@/lib/i18n/locales';
 
 export type MinorAmount = string | number | bigint;
 
@@ -30,12 +31,36 @@ export function minorToDecimalString(amount: MinorAmount, minorUnit = 2): string
   return `${negative ? '-' : ''}${whole}.${fraction}`;
 }
 
-/** Display form: '$1,234.56'. Falls back to a plain decimal for odd codes. */
+/**
+ * Display form: '$1,234.56'. Falls back to a plain decimal for odd codes.
+ *
+ * ── VX4-7: THE DEFAULT NOW COMES FROM THE REGISTRY (GAP-AUDIT IL-1/IL-10) ───
+ *
+ * `locale = 'en-CA'` was a literal here, and `lib/notifications/catalog.ts`
+ * separately declared `DEFAULT_LOCALE = 'en'`. Two files, two answers to "what
+ * language is this product", and `Intl` renders them differently — `en` gives
+ * `CA$10,799.00` where `en-CA` gives `$10,799.00`. The tag now comes from
+ * `lib/i18n/locales.ts` and nowhere else.
+ *
+ * The PARAMETER, though, is worth defending exactly as it stands. IL-10 calls
+ * upstream's `formatMoney` "exemplary … requires an explicit reader locale and
+ * derives symbol, position and separators from `Intl`", and contrasts it with
+ * their 29 date calls that pass no locale and resolve to whatever the rendering
+ * process happens to be set to. This signature has had the right shape since
+ * VX1-6.
+ *
+ * What it has NOT had is a caller supplying it: all 23 call sites let the
+ * default stand, so the parameter has been correct and inert. Threading the
+ * reader's locale through those sites is part 1b of this ticket — which is why
+ * the default is still here rather than the parameter being made required. A
+ * required parameter today would be 23 mechanical edits in a PR about storage,
+ * and mechanical edits are where a wrong `locale` gets pasted.
+ */
 export function formatMinor(
   amount: MinorAmount,
   currencyCode: string,
   minorUnit = 2,
-  locale = 'en-CA',
+  locale: string = DEFAULT_LOCALE,
 ): string {
   const decimal = minorToDecimalString(amount, minorUnit);
   try {

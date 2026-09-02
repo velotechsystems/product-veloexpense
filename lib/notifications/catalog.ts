@@ -31,6 +31,15 @@
  * `virtual_credit_cards.request_issued` for one of them would be a rule quietly
  * inventing a second template."
  */
+import { DEFAULT_LOCALE, localizedFrom, type Locale } from '@/lib/i18n/locales';
+
+/**
+ * Re-exported, not redeclared. `lib/i18n/locales.ts` owns the value; this line
+ * exists so that the dozen call sites in `service.ts` that already import
+ * `DEFAULT_LOCALE` from the catalogue keep working, and so there is exactly one
+ * place it can be changed. See `LocaleMap` below for what having two was doing.
+ */
+export { DEFAULT_LOCALE };
 
 /* ── the taxonomy ──────────────────────────────────────────────────────────── */
 
@@ -208,9 +217,31 @@ export function isTemplateKey(key: string): boolean {
   return (TEMPLATE_KEY_OWNERS as readonly string[]).includes(owner);
 }
 
-/** Locale-keyed text. EN-only today; French is on the board's deferred list. */
-export type LocaleMap = Partial<Record<'en' | 'fr-CA', string>>;
-export const DEFAULT_LOCALE = 'en' as const;
+/**
+ * Locale-keyed text.
+ *
+ * ── VX4-7: THE ARITY IS GONE, AND SO IS THE SECOND DEFAULT (IL-7/IL-1) ──────
+ *
+ * This was `Partial<Record<'en' | 'fr-CA', string>>` with its own
+ * `DEFAULT_LOCALE = 'en'`, and both halves were wrong in the same way.
+ *
+ * The ARITY was hardcoded here, which is IL-7's finding in miniature: upstream
+ * pins the identical shape in six Zod schemas and eleven `labelEn`/`labelFr`
+ * form pairs across ~17 files, so their third locale is "a schema-and-form
+ * change plus a data backfill". Ours was two files, which is the only reason
+ * this ticket is three days and not three weeks. It now derives from
+ * `SUPPORTED_LOCALES`, so a fourth locale is one line in one file.
+ *
+ * The DEFAULT was worse, because it was a second opinion rather than a
+ * duplicate: this file said the product's language was `en` while
+ * `lib/money.ts` had been formatting `en-CA` since VX1. One product, two tags,
+ * and `Intl` treats them differently — `en` renders `3/4/2026` and
+ * `CA$10,799.00`, `en-CA` renders `2026-03-04` and `$10,799.00`. So a
+ * notification could name a date in one convention while the amount beside it
+ * used another. `DEFAULT_LOCALE` now lives in `lib/i18n/locales.ts` and nothing
+ * else declares one.
+ */
+export type LocaleMap = Partial<Record<Locale, string>>;
 
 export interface TemplateKeyDef {
   key: string;
@@ -250,28 +281,28 @@ export const TEMPLATE_KEYS: readonly TemplateKeyDef[] = [
     name: 'Report awaiting your approval',
     description: 'An approval step on an expense report was routed to the recipient.',
     events: [['TASK_ASSIGNED', 'EXPENSE_REPORT']],
-    shipped: { en: '{actor} needs your approval on {report} ({total}).' },
+    shipped: { 'en-CA': '{actor} needs your approval on {report} ({total}).' },
   },
   {
     key: 'expense_management.report_approved',
     name: 'Report approved',
     description: 'An expense report cleared its last approval step. Sent to the submitter.',
     events: [['APPROVED', 'EXPENSE_REPORT']],
-    shipped: { en: '{actor} approved {report}. It is ready for reimbursement.' },
+    shipped: { 'en-CA': '{actor} approved {report}. It is ready for reimbursement.' },
   },
   {
     key: 'expense_management.report_rejected',
     name: 'Report rejected',
     description: 'An approver rejected an expense report. Sent to the submitter.',
     events: [['REJECTED', 'EXPENSE_REPORT']],
-    shipped: { en: '{actor} rejected {report}.' },
+    shipped: { 'en-CA': '{actor} rejected {report}.' },
   },
   {
     key: 'expense_management.report_returned',
     name: 'Report returned for changes',
     description: 'An approver sent an expense report back to the submitter to amend.',
     events: [['RETURNED', 'EXPENSE_REPORT']],
-    shipped: { en: '{actor} returned {report} for changes.' },
+    shipped: { 'en-CA': '{actor} returned {report} for changes.' },
   },
   {
     key: 'expense_management.report_reimbursed',
@@ -285,7 +316,7 @@ export const TEMPLATE_KEYS: readonly TemplateKeyDef[] = [
     // optional at payment time (0013). An absent placeholder renders VERBATIM as
     // `{reference}`, which would be worse than saying nothing, so the shipped
     // copy does not use it and a tenant that always records one can add it.
-    shipped: { en: '{report} has been reimbursed. {total} is on its way to you.' },
+    shipped: { 'en-CA': '{report} has been reimbursed. {total} is on its way to you.' },
   },
   {
     key: 'expense_management.report_recalled',
@@ -294,7 +325,7 @@ export const TEMPLATE_KEYS: readonly TemplateKeyDef[] = [
       'A submitter withdrew a report before it was decided. Sent to the approvers whose ' +
       'pending tasks were cancelled.',
     events: [['RECALLED', 'EXPENSE_REPORT']],
-    shipped: { en: '{actor} withdrew {report}. It no longer needs your approval.' },
+    shipped: { 'en-CA': '{actor} withdrew {report}. It no longer needs your approval.' },
   },
   {
     key: 'budgets.threshold_crossed',
@@ -309,7 +340,7 @@ export const TEMPLATE_KEYS: readonly TemplateKeyDef[] = [
     // sentence is about a running total that many reports built. A tenant that
     // wants it can add `{actor}` to their own template.
     shipped: {
-      en:
+      'en-CA':
         '{budget} has crossed {thresholdPercent}% of its {period} budget — ' +
         '{used} of {amount}.',
     },
@@ -447,12 +478,18 @@ export function placeholderValuesFrom(payload: unknown): Record<string, string |
 
 /** Read one locale out of a locale-keyed map, falling back to `en`. */
 export function localized(map: unknown, locale: string = DEFAULT_LOCALE): string | null {
-  if (map === null || typeof map !== 'object' || Array.isArray(map)) return null;
-  const m = map as Record<string, unknown>;
-  const exact = m[locale];
-  if (typeof exact === 'string' && exact.length > 0) return exact;
-  const fallback = m[DEFAULT_LOCALE];
-  return typeof fallback === 'string' && fallback.length > 0 ? fallback : null;
+  // VX4-7: was `m[locale] ?? m[DEFAULT_LOCALE]` inline — ExpenseOS's exactly one
+  // hop, always to the default. `localizedFrom` walks `fallbackChain(locale)`
+  // instead, which is the same answer for `en-CA`, adds the `en-US -> en-CA` hop,
+  // and — the part that matters — gives `fr-CA` NO English hop at all.
+  //
+  // That last change is visible here rather than buried: this function used to
+  // guarantee a French reader an English sentence whenever French copy was
+  // missing, and now returns null so the caller falls through to shipped copy or
+  // shows the missing-copy marker. `locales.ts` argues why at length; the short
+  // version is that a fluent English fallback is invisible to everyone reviewing
+  // in English and therefore ships forever.
+  return localizedFrom<string>(map, locale);
 }
 
 /** One version's locale-keyed columns, as stored. */

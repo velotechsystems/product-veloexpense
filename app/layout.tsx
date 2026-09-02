@@ -39,6 +39,7 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { brandingForRender } from "@/lib/branding/request";
+import { readerPrefs } from "@/lib/i18n/request";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -70,10 +71,24 @@ export async function generateMetadata(): Promise<Metadata> {
 
 export default async function RootLayout({ children }: LayoutProps<"/">) {
   const { css } = await brandingForRender();
+  // VX4-7: `lang="en"` was hardcoded here from the `create-next-app` scaffold,
+  // alongside the `title: 'Create Next App'` that VX4-3 part 2 removed — the same
+  // line of provenance, found by `scripts/check-i18n.mjs` on its first run.
+  //
+  // This attribute is not decoration. A screen reader picks its voice and
+  // pronunciation rules from it, so a French page announced as English is read
+  // aloud in an English accent, word by word; `lang` is also what a browser's
+  // translate prompt and hyphenation use. `en` specifically was doubly wrong —
+  // not merely the wrong language for a French reader but, per IL-1, not even
+  // the right English.
+  //
+  // `readerPrefs()` is `cache()`d and `brandingForRender()` above already reads
+  // the session, so this adds no query to the request: see lib/i18n/request.ts.
+  const { locale } = await readerPrefs();
 
   return (
     <html
-      lang="en"
+      lang={locale}
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
       <head>

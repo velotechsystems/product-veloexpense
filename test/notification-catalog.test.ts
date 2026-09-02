@@ -239,24 +239,58 @@ describe('placeholder substitution', () => {
 
 describe('renderContent', () => {
   it('renders the requested locale', () => {
-    const out = renderContent({ body: { en: 'Hello {who}' } }, 'en', { who: 'Ada' });
+    const out = renderContent({ body: { 'en-CA': 'Hello {who}' } }, 'en-CA', { who: 'Ada' });
     expect(out).toEqual({ subject: null, body: 'Hello Ada' });
   });
 
-  it('falls back to the default locale, and returns null when there is nothing', () => {
-    expect(renderContent({ body: { en: 'Hi' } }, 'fr-CA', {})?.body).toBe('Hi');
-    // A half-authored template is a MISS, not an empty message — the caller has
-    // to be able to drop to the shipped string.
-    expect(renderContent({ body: {} }, 'en', {})).toBeNull();
-    expect(renderContent({ body: { en: '' } }, 'en', {})).toBeNull();
-    expect(renderContent({ body: null }, 'en', {})).toBeNull();
-    expect(renderContent({ body: 'a bare string' }, 'en', {})).toBeNull();
+  it('walks en-US to en-CA, so a shared sentence is authored once', () => {
+    // New in VX4-7, and the reason the chain exists rather than a single hop:
+    // `en-CA` and `en-US` differ in a handful of words (cheque/check, GST vs
+    // sales tax) and agree on everything else, so `en-US` overrides only where
+    // the words really differ.
+    expect(renderContent({ body: { 'en-CA': 'Hi' } }, 'en-US', {})?.body).toBe('Hi');
+    // …and an en-US override wins where there is one.
+    expect(
+      renderContent({ body: { 'en-CA': 'Cheque sent', 'en-US': 'Check sent' } }, 'en-US', {})?.body,
+    ).toBe('Check sent');
+  });
+
+  it('gives a French reader NOTHING rather than English — INVERTED in VX4-7', () => {
+    // This assertion used to read:
+    //
+    //     expect(renderContent({ body: { en: 'Hi' } }, 'fr-CA', {})?.body).toBe('Hi');
+    //
+    // i.e. it PINNED the behaviour this ticket deliberately removed. Under the
+    // old single-hop fallback a French reader was guaranteed an English sentence
+    // whenever French copy was missing, and `lib/i18n/locales.ts` argues at
+    // length why that is the worst available outcome: fluent English is
+    // invisible to everyone reviewing in English, reads as "this part of the
+    // product is English", and therefore ships forever. Returning null makes the
+    // caller drop to shipped copy or show a missing-copy marker — a bug report
+    // that files itself.
+    //
+    // Retagging `en` to `en-CA` here without flipping the expectation would have
+    // left the old promise in place and quietly failed the ticket.
+    expect(renderContent({ body: { 'en-CA': 'Hi' } }, 'fr-CA', {})).toBeNull();
+    expect(renderContent({ body: { 'en-US': 'Hi' } }, 'fr-CA', {})).toBeNull();
+  });
+
+  it('returns null for a miss, so the caller can drop to shipped copy', () => {
+    // A half-authored template is a MISS, not an empty message.
+    expect(renderContent({ body: {} }, 'en-CA', {})).toBeNull();
+    expect(renderContent({ body: { 'en-CA': '' } }, 'en-CA', {})).toBeNull();
+    expect(renderContent({ body: null }, 'en-CA', {})).toBeNull();
+    expect(renderContent({ body: 'a bare string' }, 'en-CA', {})).toBeNull();
+    // And the retagged-away key is a miss too: a row still holding `en` must not
+    // satisfy an `en-CA` read, or 0027's data migration would look like a no-op
+    // and the next person would delete it.
+    expect(renderContent({ body: { en: 'Old copy' } }, 'en-CA', {})).toBeNull();
   });
 
   it('substitutes into the subject as well as the body', () => {
     const out = renderContent(
-      { subject: { en: 'Re: {report}' }, body: { en: '{actor} approved it' } },
-      'en',
+      { subject: { 'en-CA': 'Re: {report}' }, body: { 'en-CA': '{actor} approved it' } },
+      'en-CA',
       { report: 'Q3', actor: 'Ada' },
     );
     expect(out).toEqual({ subject: 'Re: Q3', body: 'Ada approved it' });

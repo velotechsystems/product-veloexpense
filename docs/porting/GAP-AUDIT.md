@@ -3413,19 +3413,37 @@ permission nobody has tested.
 
 ### IL · localisation
 
-**IL-1 · The `en` locale is not en-CA, and already formats like en-US.**
+**IL-1 · The `en` locale is not en-CA, and already formats like en-US.** ✅ CLOSED (VX4-7 part 1)
 `SUPPORTED_LOCALES = ['en', 'fr-CA']`, `DEFAULT_LOCALE = 'en'` (`packages/i18n/src/locales.ts:10,13`);
 23 catalog files per locale. The audit pass ran `Intl` against the tag: `en` gives `3/4/2026` and
 `CA$10,799.00` — identical to `en-US` — where `en-CA` gives `2026-03-04` and `$10,799.00`. So
 "bilingual plus en-US" is not an addition to two locales; it is **retagging `en` to `en-CA` and adding
 `en-US`**, which touches URL segments, every stored `localePref`, and every `{ en: … }` Json key.
 
-**IL-2 · Locale comes from the URL segment alone; the documented precedence is dead code.**
+**Ours had the same disagreement already, in two files.** `lib/money.ts` defaulted to `en-CA`
+while `lib/notifications/catalog.ts` declared `DEFAULT_LOCALE = 'en'` — one product, two tags,
+and `Intl` renders them differently, so a notification could name a date in one convention and
+the amount beside it in another. `lib/i18n/locales.ts` is now the only place either can read,
+`0027` retags stored template keys `en` → `en-CA`, and the column's CHECK refuses a bare subtag
+so an importer cannot bring the old spelling back. `/admin/locale` puts `$10,799.00` and
+`CA$10,799.00` in adjacent rows, which is this whole finding visible in one glance.
+
+**IL-2 · Locale comes from the URL segment alone; the documented precedence is dead code.** ✅ CLOSED (VX4-7 part 1)
 `apps/web/src/i18n/request.ts:11-17` resolves from `requestLocale` only. `resolveLocale`
 (`packages/i18n/src/negotiate.ts:23-41`), which documents URL > user preference > cookie >
 Accept-Language, has **no non-test callers**. `User.localePref` is written and read by the worker and
 two API routes but by no page. And there is no company default column at all — which is the one a
 multi-tenant product needs first.
+
+**Ours is `app_user.locale` → `organization.default_locale` → `Accept-Language` → the constant,
+and every rung has a caller.** The URL segment is a deliberate NON-port: our routes are flat, and
+being first is exactly what made their rungs 2–4 unreachable and therefore untested. The company
+rung is inserted ABOVE the browser, which diverges from their documented order on purpose — a
+`default_locale` is an administrative decision, a header is whatever browser is open. The header
+rung is not decoration: `/login` has no user AND no tenant (checked — `brandingForRender` resolves
+the org from the session, and 0023 records that pre-auth tenancy waits for Phase 5), so on the
+first screen every user meets it is the only signal in existence. `e2e/locale-flow.spec.ts` is the
+caller their chain never had.
 
 **IL-4 · A missing key blanks the page, and it has happened twice in production.**
 No `getMessageFallback` or `onError` is configured. Their own crawler records the two shipped bugs:
@@ -3440,13 +3458,23 @@ should be made before the third catalog exists, not after.
 the crawler, which sets `const LOCALE = 'en'` (`e2e/crawl.spec.ts:23`) and runs **nightly**, not per
 PR. A guard that watches one of three locales is the shape of guard this project keeps finding.
 
-**IL-7 · Localised DB content is a two-key Json map, and the "two" is hardcoded in ~17 files.**
+**IL-7 · Localised DB content is a two-key Json map, and the "two" is hardcoded in ~17 files.** ✅ CLOSED (VX4-7 part 1)
 `getLocalized(field, locale, fallback)` returns `map[locale] ?? map[fallback] ?? null`
 (`packages/i18n/src/getLocalized.ts:17-25`), used at 67 sites across categories, roles, departments,
 entities, job levels, custom fields, currencies and notification templates. The shape is pinned to
 exactly `{ en, 'fr-CA' }` in six Zod schemas and eleven `labelEn`/`labelFr` form pairs. A third locale
 is a schema-and-form change plus a data backfill — the reason to design ours as a locale-keyed map with
 no hardcoded arity.
+
+**Ours was the same shape in two files, which is the only reason this ticket is days and not weeks.**
+`LocaleMap` now derives from `SUPPORTED_LOCALES`, and `scripts/check-i18n.mjs` refuses any locale tag
+outside the registry — a gate that IMPORTS the list it polices, unlike their `check-coverage.mjs`,
+which opens by restating `['en', 'fr-CA']` locally and would therefore have passed silently on a
+third locale. Writing that gate immediately caught two copies of a locale→label map I had just put
+in the two new screens, so the finding reproduced itself on the day it was closed. The one place a
+tag is still restated is `0027`'s CHECK, because SQL cannot import TypeScript;
+`test/i18n-schema.db.test.ts` reads the accepted set out of `pg_get_constraintdef` and asserts it
+equals the registry in both directions.
 
 **IL-9 · The password-reset email is hardcoded outside the catalogs and outside both gates.**
 Notifications correctly use the recipient's `localePref` (`notification-dispatch.ts:96`). But
@@ -3460,6 +3488,31 @@ must be able to read is the one no gate covers.
 has the same discipline. Against that, **29 calls in 12 files** use `toLocaleDateString()` /
 `toLocaleString()` with no locale, resolving to the runtime's locale — server process or browser,
 whichever renders. That is the exact bug their own money formatter documents and avoids.
+
+**THIS CLASS DOES NOT EXIST HERE, and the real finding is a different one.** Zero
+`toLocaleDateString` / `toLocaleString` / `toLocaleTimeString` calls exist in `app/`, `lib/` or
+`scripts/` — verified. There is exactly ONE date formatter, `formatDate` in `app/expenses/ui.tsx`,
+used at ~20 sites, and it is `toISOString().slice(0, 10)`: locale-independent, accidentally correct
+for en-CA, wrong for en-US. Fixing it is one function rather than 29 calls.
+
+But TWO bugs sit in that one line and only one of them is a locale bug. For a `timestamptz` it
+renders the **UTC day**, so a report approved 4 March at 18:00 PT displays as 5 March — live, in
+shipped code, for every reader west of UTC. And upstream's own scars say the naive fix is wrong in
+the other direction: they format calendar dates with an explicit `timeZone: 'UTC'` at four separate
+sites, each commented about behind-UTC readers seeing the previous day. The schema has both kinds —
+8 `date` columns (`expense.txn_date`, `budget_period.starts_on/ends_on`, `delegation.starts_on/
+ends_on`, `expense_policy.effective_from/effective_to`, `fx_rate.as_of`) and ~90 `timestamptz` —
+and one formatter is applied to both. So the fix is two functions plus a third: a calendar date
+formatted in UTC, an instant formatted in the reader's zone, and `toDateInputValue`, which must stay
+ISO `YYYY-MM-DD` forever because `<input type="date">` requires it.
+
+**That third one is a trap this ticket nearly walked into.** `app/expenses/[reportId]/page.tsx:292`
+feeds `formatDate(expense.txn_date)` straight into a `type="date"` input. A locale-aware
+`formatDate` renders `3/4/2026` there for en-US, Chrome silently rejects the value, the field goes
+blank, and saving clears the date — a data-loss bug introduced by the localisation fix. Part 1
+therefore ships the storage (`app_user.timezone`, `organization.default_timezone`, resolved by the
+same precedence chain, IANA-validated by trigger because a CHECK must be immutable) and leaves the
+render split to part 1b, where every call site moves at once.
 
 **IL-11 · 157 English server messages, rendered verbatim in the UI.**
 Literal `message: '…'` strings under `apps/web/src/server`, with 136 UI sites rendering `e.message`
