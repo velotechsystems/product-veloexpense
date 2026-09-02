@@ -2354,6 +2354,60 @@ That is the third time this session a check could not see one of its two outcome
 pattern worth carrying: **when a sabotage fails fewer tests than expected, the surviving tests are the
 finding.**
 
+### VX4-5 part 1 SHIPPED — the budget schema, and the department stamped at submit
+
+Migration `0024`. **BG-2's blocker was already gone and this is where it shows:** their
+`Budget.glAccountId` is a NON-NULLABLE FK into a twice-daily NetSuite SOAP cache whose
+vendor-neutral `Account` table they deleted, so budgets there are uncreatable without NetSuite. VX3-1
+built a tenant-owned chart of accounts, so `budget` points at `gl_account` and a vendor becomes an
+alias. Their reconciliation argument is kept — the scope is an ACCOUNT, not a category, because a
+category is how an employee describes a purchase and an account is what finance reports on.
+
+**Three decisions worth not relitigating:**
+
+- **`NULLS NOT DISTINCT` on the scope index.** BG-1's real defect: Postgres treats two NULL business
+  units as distinct, so without the clause "the company-wide travel budget" could be created twice and
+  every total afterwards would be wrong with nothing on screen to show it. Their ORM cannot express the
+  clause and drops it; ours is written out. Verified refusing a duplicate.
+- **Periods are rows with `starts_on`/`ends_on`, not an ordinal month.** Theirs hard-codes
+  `MONTHS_IN_BUDGET_YEAR = 12` and rules 4-4-5 out; the audit said price that request rather than
+  discover it. Twelve months is now a seeding decision, 4-4-5 is a different seeding decision, neither
+  is a migration.
+- **`unconvertible_minor` is its own column and is NEVER folded into `actual_minor`.** AN-7 inverted:
+  their analytics sums an amount with no FX rate *as if it were already in base currency, unflagged*.
+  A budget that quietly under-reports is worse than one that says it cannot answer. And
+  `rolled_up_at IS NULL` means "never calculated", not "zero spend", so a screen can say which.
+
+**The department is STAMPED at submit (John's call, 1 Sep).** `department_id` lives on `app_user`, so
+the obvious rollup joins through the submitter — and then a transfer rewrites a closed period's totals
+after the fact, nothing records why, and recomputing the same period twice can give two answers. The
+report now carries its own copy, which is AC-10's stamp-on-write for the same reason VX3-1 stamps the
+GL account. Existing rows are backfilled from each submitter's CURRENT department, and the migration
+says out loud that this is approximate for anybody who has since transferred — better than leaving
+them NULL, which would make every historical budget read as "no department".
+
+**A bug caught by verifying a claim I had already written.** The first stamp keyed on `actorId`, with a
+comment asserting that an `assertOwner` above had established the actor is the submitter.
+**`submitReport` has no ownership check at all** — the action layer does it, and it permits
+`submitter_id === actor.id || role === 'ADMIN'`. So an admin submitting somebody else's report is a
+supported path, and the stamp would have written the ADMIN's department onto an employee's spend. It
+now reads `expense_report.submitter_id` from the target row. `test/budgets.db.test.ts` puts the admin
+in Sales and the employee in Engineering specifically so that mistake cannot pass again, and sabotaging
+the fix back to `actorId` fails exactly that test.
+
+**Also caught: the entitlement row's placement, for the third time in this ticket family.** The first
+draft of the test created `gl_account` rows before writing `module_entitlement`, and `0022`'s policy
+refused them — VX4-1's fail-closed default doing its job. The row now goes immediately after org
+creation, which is where VX4-1 already learned it belongs.
+
+**Part 2** is the reader: `PolicyContext` is `{report, expenses, policyCurrency, minorUnits, rates}`
+and `evaluate` is pure and synchronous, so a budget snapshot has to be LOADED INTO the context by the
+service — the rule cannot query. That makes the rule and its loader one unit, and the severity clamp
+lands with them: a clamp with no rule carrying a maximum is untestable at evaluate time, and shipping
+the rule with an `evaluate` that returns `[]` to make the mechanism look tested is the
+stub-that-can-only-produce-one-outcome pattern that has cost this project four defects. **Part 3** is
+alerts (BG-6's atomic claim), the screen, and the e2e.
+
 ### The two decisions, SETTLED 31 Aug 2026 (John)
 
 **1. Host-based tenancy is PHASE 5.** VX4-4 is out of this board. The reasoning that carried it: a
@@ -2385,12 +2439,23 @@ so neither gets lost in the closure:
 **2. A budget NEVER blocks.** Matches ExpenseOS's stated intent, and unlike theirs it has to be
 enforced rather than commented.
 
-**The code consequence, so VX4-5 does not rediscover it:** `lib/policy/engine.ts` resolves severity as
+**The code consequence, so VX4-5 does not rediscover it** — and the path in the first version of this
+note was wrong: **there is no `lib/policy/engine.ts`**. The site is `lib/policy/service.ts:529`, inside
+`revalidate`'s `desired` map. Corrected before VX4-5 read it, because a note pointing at a file that
+does not exist is how somebody creates one. It resolves severity as
 `f.severity ?? inst.severity` — the RULE INSTANCE decides, so an admin configuring a budget rule at
 BLOCK turns a warning into a hard stop, exactly as BG-4 describes for theirs. A decision that a budget
 never blocks therefore needs a **maximum severity on the rule definition**, clamped where severity is
-resolved, not a comment on the rule. That is a small change to `rules.ts` + `engine.ts` and it belongs
-in VX4-5 with a test that an instance configured at BLOCK still emits WARNING.
+resolved, not a comment on the rule. `SEVERITIES` is `['INFO','WARNING','BLOCK']`, so the clamp is an
+index comparison against that array rather than a hand-written ordering.
+
+**TWO places, not one, and both are needed.** `createPolicy` / `updatePolicy` must REFUSE a severity
+above the rule's maximum, so the stored value can never disagree with what is evaluated and an admin
+is told no rather than silently overruled. And `revalidate` must clamp anyway, because a row written
+before the maximum existed — or by a seed, an import, or Phase 5's provisioning — has to evaluate
+correctly regardless. Refusing at the write is the courtesy; clamping at the read is the invariant.
+Test both: an instance configured at BLOCK is refused at the write, and a row forced to BLOCK in raw
+SQL still emits WARNING.
 
 ### The scheduling problem this phase finally forces
 

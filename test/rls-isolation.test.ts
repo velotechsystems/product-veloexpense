@@ -994,6 +994,93 @@ describe('RLS tenant isolation', () => {
     expect(afterReview.rows.map((r) => r.idempotency_key)).toEqual(['key-B']);
   });
 
+  /* ── budgets (VX4-5, migration 0024) ─────────────────────────────────────
+   *
+   * Added because the RLS-isolation-COVERAGE guard failed CI on PR #77 with
+   * "Tenant tables absent from test/rls-isolation.test.ts: budget
+   * budget_period". That is the guard working exactly as intended: a new tenant
+   * table whose policy nobody exercises is a policy nobody has checked, and
+   * `test/budgets.db.test.ts` asserting isolation in ITS OWN file does not
+   * satisfy the gate — deliberately, because this file is the one place a
+   * reviewer can read every tenant table's isolation in a single pass.
+   */
+  it('budgets and their periods are tenant-isolated, and a cross-tenant write is refused', async () => {
+    const accountOf = (org: string) =>
+      withOrg(org, async (tx) => {
+        const r = await tx.query("SELECT id FROM gl_account WHERE number = '68100'");
+        return r.rows[0].id as string;
+      });
+    const accountA = await accountOf(orgA);
+    const accountB = await accountOf(orgB);
+
+    // One budget and one period per tenant, with the SAME name and the same
+    // dates: identical rows are what make a missing predicate produce plausible
+    // duplicates rather than an obvious error.
+    for (const [org, account] of [
+      [orgA, accountA],
+      [orgB, accountB],
+    ] as const) {
+      await withOrg(org, async (tx) => {
+        const b = await tx.query(
+          `INSERT INTO budget (organization_id, name, gl_account_id, currency_code, fiscal_year)
+           VALUES ($1,'Travel 2026',$2,'CAD',2026) RETURNING id`,
+          [org, account],
+        );
+        await tx.query(
+          `INSERT INTO budget_period
+             (organization_id, budget_id, starts_on, ends_on, amount_minor)
+           VALUES ($1,$2,'2026-01-01','2026-01-31',500000)`,
+          [org, b.rows[0].id],
+        );
+      });
+    }
+
+    const seen = async (org: string) =>
+      withOrg(org, async (tx) => ({
+        budgets: (await tx.query('SELECT count(*)::int AS n FROM budget')).rows[0].n,
+        periods: (await tx.query('SELECT count(*)::int AS n FROM budget_period')).rows[0].n,
+      }));
+    expect(await seen(orgA)).toEqual({ budgets: 1, periods: 1 });
+    expect(await seen(orgB)).toEqual({ budgets: 1, periods: 1 });
+
+    // Unset context under FORCE RLS sees nothing on either table.
+    const blind = await withoutOrg(async (tx) => ({
+      budgets: (await tx.query('SELECT count(*)::int AS n FROM budget')).rows[0].n,
+      periods: (await tx.query('SELECT count(*)::int AS n FROM budget_period')).rows[0].n,
+    }));
+    expect(blind).toEqual({ budgets: 0, periods: 0 });
+
+    // WITH CHECK refuses a write stamped with the other tenant's id.
+    await expect(
+      withOrg(orgA, (tx) =>
+        tx.query(
+          `INSERT INTO budget (organization_id, name, gl_account_id, currency_code, fiscal_year)
+           VALUES ($1,'Smuggled',$2,'CAD',2027)`,
+          [orgB, accountB],
+        ),
+      ),
+    ).rejects.toThrow();
+  });
+
+  it('a budget cannot reference another tenant\'s GL account (TN-1)', async () => {
+    // A plain `REFERENCES gl_account(id)` would ALLOW this: Postgres checks
+    // referential integrity as the constraint owner with RLS BYPASSED. `0024`
+    // declares the FK composite through organization_id, so the refusal is
+    // structural rather than a predicate somebody could forget.
+    const foreignAccount = await withOrg(orgB, (tx) =>
+      tx.query("SELECT id FROM gl_account WHERE number = '68100'"),
+    );
+    await expect(
+      withOrg(orgA, (tx) =>
+        tx.query(
+          `INSERT INTO budget (organization_id, name, gl_account_id, currency_code, fiscal_year)
+           VALUES ($1,'Foreign account',$2,'CAD',2028)`,
+          [orgA, foreignAccount.rows[0].id],
+        ),
+      ),
+    ).rejects.toThrow();
+  });
+
   it('a ledger post cannot reference another tenant\'s report', async () => {
     // TN-1 again, on a table where the reference decides where money is proposed
     // to move. 0017 declares the FK composite, so this is structural.
