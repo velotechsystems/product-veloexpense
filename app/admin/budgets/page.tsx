@@ -38,10 +38,11 @@ import {
   ErrorBanner,
   cardClass,
   fieldClass,
-  formatDate,
   labelClass,
   selectClass,
 } from '@/app/expenses/ui';
+import { formatInstant } from '@/lib/i18n/format';
+import { readerPrefs } from '@/lib/i18n/request';
 
 export const dynamic = 'force-dynamic';
 
@@ -57,6 +58,7 @@ export default async function BudgetsPage({
 }: {
   searchParams: Promise<{ error?: string }>;
 }) {
+  const prefs = await readerPrefs();
   const sp = await searchParams;
   const {
     budgets,
@@ -260,7 +262,7 @@ export default async function BudgetsPage({
                             <tr key={p.id} data-testid="budget-period">
                               <td className="pr-3 text-muted-foreground">{p.starts_on}</td>
                               <td className="pr-3">
-                                {formatMinor(p.amount_minor, b.currency_code, b.minor_unit)}
+                                {formatMinor(p.amount_minor, b.currency_code, b.minor_unit, prefs.locale)}
                               </td>
                               <td className="pr-3">
                                 {/* NULL means never calculated, which is not zero
@@ -270,7 +272,7 @@ export default async function BudgetsPage({
                                   <span className="text-muted-foreground">not yet calculated</span>
                                 ) : (
                                   <>
-                                    {formatMinor(p.actual_minor, b.currency_code, b.minor_unit)}{' '}
+                                    {formatMinor(p.actual_minor, b.currency_code, b.minor_unit, prefs.locale)}{' '}
                                     spent
                                     {p.pending_minor !== '0' ? (
                                       <>
@@ -279,6 +281,7 @@ export default async function BudgetsPage({
                                           p.pending_minor,
                                           b.currency_code,
                                           b.minor_unit,
+                                          prefs.locale,
                                         )}{' '}
                                         awaiting a decision
                                       </>
@@ -291,6 +294,7 @@ export default async function BudgetsPage({
                                             p.unconvertible_minor,
                                             b.currency_code,
                                             b.minor_unit,
+                                            prefs.locale,
                                           )}{' '}
                                           could not be converted
                                         </span>
@@ -300,7 +304,7 @@ export default async function BudgetsPage({
                                 )}
                               </td>
                               <td className="text-muted-foreground">
-                                {p.rolled_up_at === null ? '' : formatDate(p.rolled_up_at)}
+                                {p.rolled_up_at === null ? '' : formatInstant(p.rolled_up_at, prefs)}
                               </td>
                             </tr>
                           ))}

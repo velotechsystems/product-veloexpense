@@ -31,6 +31,7 @@ import { emailShell } from '@/lib/notifications/email-shell';
 import { escapeHtml } from '@/lib/notifications/html';
 import type { QueryRunner } from '@/lib/db/client';
 import { formatMinor } from '@/lib/money';
+import { resolveReaderPrefs } from '@/lib/i18n/resolve';
 import { placeholderValuesFrom } from '@/lib/notifications/catalog';
 import { renderMessage } from '@/lib/notifications/service';
 import {
@@ -83,6 +84,10 @@ interface Row {
   payload: unknown;
   recipient_id: string;
   recipient_email: string | null;
+  recipient_locale: string | null;
+  recipient_timezone: string | null;
+  org_locale: string;
+  org_timezone: string;
   actor_name: string | null;
   report_title: string | null;
   report_number: string | null;
@@ -103,6 +108,22 @@ async function loadForDelivery(tx: QueryRunner, notificationId: string): Promise
     `SELECT a.event_type, a.subject_type, a.subject_id, a.payload,
             n.recipient_id,
             u.email AS recipient_email,
+            -- VX4-7 part 1b. The RECIPIENT'S locale and clock -- not the
+            -- sending process's, and not some reader's. An email is composed for
+            -- one person and posted, and it is the ONLY surface in the product
+            -- whose language cannot be corrected afterwards: the bell re-renders
+            -- from the activity on every view (the notification table stores no
+            -- body at all), and a policy violation can be re-rendered from its
+            -- rule_code plus its data column. Bytes that have left cannot.
+            --
+            -- The join onto app_user was already here for the address, so this
+            -- costs two columns and no extra round trip. organization is not
+            -- RLS-scoped (0023), so its defaults join in freely for the rungs
+            -- below the user's own.
+            u.locale   AS recipient_locale,
+            u.timezone AS recipient_timezone,
+            o.default_locale   AS org_locale,
+            o.default_timezone AS org_timezone,
             COALESCE(act.display_name, act.email) AS actor_name,
             rep.title  AS report_title,
             rep.number AS report_number,
@@ -111,6 +132,7 @@ async function loadForDelivery(tx: QueryRunner, notificationId: string): Promise
        FROM notification n
        JOIN activity a   ON a.id = n.activity_id
        JOIN app_user u   ON u.id = n.recipient_id
+       JOIN organization o ON o.id = u.organization_id
        LEFT JOIN app_user act ON act.id = a.actor_id
        LEFT JOIN expense_report rep
               ON rep.id = a.subject_id AND a.subject_type = 'EXPENSE_REPORT'
@@ -152,13 +174,27 @@ export async function prepareEmail(
   }
 
   const actor = row.actor_name ?? 'Somebody';
+  // The recipient's own answer, else their company's, else the constants — the
+  // same precedence every screen uses, resolved here from the row above.
+  const prefs = resolveReaderPrefs({
+    userLocale: row.recipient_locale,
+    orgLocale: row.org_locale,
+    userTimeZone: row.recipient_timezone,
+    orgTimeZone: row.org_timezone,
+  });
+
   const values = {
     ...placeholderValuesFrom(row.payload),
     // Reserved names LAST, so a payload key cannot shadow them (NT-6 rule 4).
     actor,
     report: row.report_title,
     number: row.report_number ?? '',
-    total: formatMinor(row.report_total_minor ?? '0', row.report_currency ?? 'CAD'),
+    total: formatMinor(
+      row.report_total_minor ?? '0',
+      row.report_currency ?? 'CAD',
+      undefined,
+      prefs.locale,
+    ),
   };
 
   const rendered = await renderMessage(tx, {
@@ -166,6 +202,12 @@ export async function prepareEmail(
     eventType: row.event_type,
     subjectType: row.subject_type,
     values,
+    // VX4-7 part 1b. `renderMessage` has taken a locale since VX2-7 and NOTHING
+    // ever passed one, so every email in the product has rendered in the default
+    // regardless of who it was addressed to — IL-2's shape exactly, a parameter
+    // that is correct and inert. The stored template's locale map and the
+    // shipped copy are both read through this, so one argument moves both.
+    locale: prefs.locale,
   });
 
   const origin = appOrigin();

@@ -3482,7 +3482,7 @@ Notifications correctly use the recipient's `localePref` (`notification-dispatch
 `normalizeLocale` = "starts with fr", collapsing every `en-*` variant. The one email a locked-out user
 must be able to read is the one no gate covers.
 
-**IL-10 · Money formatting is exemplary; dates are half-done.**
+**IL-10 · Money formatting is exemplary; dates are half-done.** ✅ CLOSED (VX4-7 part 1b)
 `formatMoney` requires an explicit reader locale and derives symbol, position and separators from
 `Intl` (`packages/money/src/format.ts:68-85`) — worth porting as-is, and our `lib/money.ts` already
 has the same discipline. Against that, **29 calls in 12 files** use `toLocaleDateString()` /
@@ -3513,6 +3513,36 @@ blank, and saving clears the date — a data-loss bug introduced by the localisa
 therefore ships the storage (`app_user.timezone`, `organization.default_timezone`, resolved by the
 same precedence chain, IANA-validated by trigger because a CHECK must be immutable) and leaves the
 render split to part 1b, where every call site moves at once.
+
+**PART 1B FOUND THE ACTUAL ROOT CAUSE, AND IT IS ONE LAYER LOWER THAN EITHER OF US THOUGHT.**
+node-postgres parses a `date` column into a JS Date at SERVER-LOCAL MIDNIGHT. Measured against one
+stored `2026-03-04`:
+
+| `TZ` | pg hands back | formatted in UTC |
+|---|---|---|
+| `UTC` | `2026-03-04T00:00:00Z` | Mar 4 |
+| `America/Toronto` | `2026-03-04T05:00:00Z` | Mar 4 |
+| `Europe/Paris` | `2026-03-03T23:00:00Z` | **Mar 3** |
+| `Australia/Sydney` | `2026-03-03T13:00:00Z` | **Mar 3** |
+
+So upstream's own remedy — `timeZone: 'UTC'`, applied at four sites, commented at each — is the same
+bug from the other side: right for a west-of-UTC deploy, wrong for an east-of-UTC one. And our
+`toISOString().slice(0, 10)` had it too. Invisible to everyone so far because the CI container runs
+UTC and the dev Mac runs Toronto, both west; a European region would have shifted every expense date
+in the product by a day, silently.
+
+The fix is to refuse the conversion rather than correct it: `lib/db/client.ts` registers a type
+parser for OID 1082 so a `date` arrives as `'YYYY-MM-DD'` text and carries no timezone for one to
+move. `lib/budgets` had already reached the same conclusion in one module (`starts_on::text`, typed
+`string`) — those casts are now belt-and-braces rather than the only thing standing between the
+product and a day-shift. SQL comparisons are unaffected; the JS ones compare ISO strings, which sort
+chronologically.
+
+**And the sabotage that was meant to prove the fix load-bearing proved something worse.** Removing
+the parser and running the four date-heaviest suites under `TZ=Europe/Paris` — 121 tests — changed
+NOTHING. All 121 passed with the bug and without it, because the calendar-date path had no coverage
+at all. A defect measurable at the driver in four lines was invisible to 895 tests.
+`test/i18n-dates.db.test.ts` and `test/i18n-format.test.ts` are what that finding bought.
 
 **IL-11 · 157 English server messages, rendered verbatim in the UI.**
 Literal `message: '…'` strings under `apps/web/src/server`, with 136 UI sites rendering `e.message`

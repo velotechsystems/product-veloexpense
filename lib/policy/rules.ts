@@ -73,8 +73,8 @@ export interface PolicyRow {
    */
   currency_code: string | null;
   params: Record<string, unknown>;
-  effective_from: Date | string | null;
-  effective_to: Date | string | null;
+  effective_from: string | null;
+  effective_to: string | null;
   created_at: Date;
   updated_at: Date;
 }

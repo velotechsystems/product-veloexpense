@@ -23,7 +23,9 @@
  */
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
-import { EmptyRow, ErrorBanner, formatDate } from '@/app/expenses/ui';
+import { EmptyRow, ErrorBanner } from '@/app/expenses/ui';
+import { formatInstant } from '@/lib/i18n/format';
+import { readerPrefs } from '@/lib/i18n/request';
 import { getInboxPage, markAllReadFromForm, markReadFromForm } from './actions';
 
 export const dynamic = 'force-dynamic';
@@ -51,6 +53,7 @@ export default async function NotificationsPage({
 }: {
   searchParams: Promise<{ error?: string; unread?: string }>;
 }) {
+  const prefs = await readerPrefs();
   const { error, unread } = await searchParams;
   const unreadOnly = unread === '1';
   const { rows, unread: unreadTotal } = await getInboxPage(unreadOnly);
@@ -148,7 +151,7 @@ export default async function NotificationsPage({
                       </p>
                     </td>
                     <td className="px-3 py-2 text-muted-foreground">
-                      {formatDate(row.occurredAt)}
+                      {formatInstant(row.occurredAt, prefs)}
                     </td>
                     <td className="px-3 py-2">
                       {row.readAt === null ? (

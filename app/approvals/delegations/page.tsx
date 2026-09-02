@@ -34,10 +34,12 @@ import {
   EmptyRow,
   ErrorBanner,
   fieldClass,
-  formatDate,
   labelClass,
   selectClass,
 } from '@/app/expenses/ui';
+import { formatInstant, toDateInputValue } from '@/lib/i18n/format';
+import type { ReaderPrefs } from '@/lib/i18n/resolve';
+import { readerPrefs } from '@/lib/i18n/request';
 import {
   createDelegationFromForm,
   getDelegationsPage,
@@ -53,12 +55,21 @@ export const dynamic = 'force-dynamic';
  */
 type DelegationCard = Awaited<ReturnType<typeof getDelegationsPage>>['cards'][number];
 
-/** 'YYYY-MM-DD' for `defaultValue` on a date input — never `toISOString`, which
- *  is UTC and so is the previous day for anyone west of it. */
-function todayLocal(): string {
-  const d = new Date();
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+/**
+ * 'YYYY-MM-DD' for `defaultValue` on a date input.
+ *
+ * VX4-7 part 1b: this used to read the SERVER's calendar day (`d.getFullYear()`
+ * and friends are process-local). Its own comment was already half of the
+ * finding — "never `toISOString`, which is UTC and so is the previous day for
+ * anyone west of it" — but the fix it chose swapped one wrong zone for another:
+ * a Vancouver employee opening this form got Toronto's today whenever the server
+ * ran in Toronto, and the two disagree for eight hours out of every day.
+ *
+ * `toDateInputValue` with the reader's zone is the answer, and it stays
+ * `YYYY-MM-DD` by construction because that is what a date input requires.
+ */
+function todayFor(prefs: ReaderPrefs): string {
+  return toDateInputValue(new Date(), prefs.timeZone);
 }
 
 function StateBadge({ row }: { row: DelegationCard }) {
@@ -90,6 +101,7 @@ export default async function DelegationsPage({
 }: {
   searchParams: Promise<{ error?: string; notice?: string }>;
 }) {
+  const prefs = await readerPrefs();
   const { error, notice } = await searchParams;
   const { cards, candidates, delegators, actor } = await getDelegationsPage();
 
@@ -196,7 +208,7 @@ export default async function DelegationsPage({
                 id="startsOn"
                 name="startsOn"
                 type="date"
-                defaultValue={todayLocal()}
+                defaultValue={todayFor(prefs)}
                 className="w-40"
                 required
               />
@@ -235,6 +247,7 @@ export default async function DelegationsPage({
 
       {/* ── the tables ────────────────────────────────────────────────────── */}
       <DelegationTable
+        prefs={prefs}
         title="Cover you have arranged"
         empty="You have not handed your approvals to anybody."
         rows={mine}
@@ -244,6 +257,7 @@ export default async function DelegationsPage({
       />
 
       <DelegationTable
+        prefs={prefs}
         title="Cover you are providing"
         empty="Nobody has handed you their approvals."
         rows={covering}
@@ -254,6 +268,7 @@ export default async function DelegationsPage({
 
       {actor.isAdmin ? (
         <DelegationTable
+        prefs={prefs}
           title="Everyone else"
           empty="No other delegations in this organization."
           rows={others}
@@ -292,7 +307,12 @@ function DelegationTable({
   show,
   actorId,
   isAdmin,
+  prefs,
 }: {
+  // Passed down rather than resolved here: this is a SYNC component, and
+  // `readerPrefs()` is async. Threading it as a prop also keeps the resolution
+  // on the page — one `await` per request, which is what `cache()` is for.
+  prefs: ReaderPrefs;
   title: string;
   empty: string;
   rows: DelegationCard[];
@@ -356,7 +376,7 @@ function DelegationTable({
                       <StateBadge row={row} />
                       {row.revoked_at !== null ? (
                         <p className="mt-0.5 text-xs text-muted-foreground">
-                          ended by {row.revoked_by_name} on {formatDate(row.revoked_at)}
+                          ended by {row.revoked_by_name} on {formatInstant(row.revoked_at, prefs)}
                         </p>
                       ) : row.created_by_id !== row.from_user_id ? (
                         // Worth surfacing: somebody else arranged this. It is why

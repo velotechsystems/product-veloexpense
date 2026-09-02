@@ -47,11 +47,12 @@ import {
   StatusBadge,
   cardClass,
   fieldClass,
-  formatDate,
   labelClass,
   selectClass,
   textareaClass,
 } from '../ui';
+import { formatCalendarDate, formatInstant, toDateInputValue } from '@/lib/i18n/format';
+import { readerPrefs } from '@/lib/i18n/request';
 import { ReceiptDrawer, type ReceiptSummary } from './receipt-drawer';
 import { PolicyPanel } from './policy-panel';
 import { LifecycleBar, ReportHistory } from './lifecycle-bar';
@@ -66,6 +67,7 @@ export default async function ReportWorkbenchPage({
   params: Promise<{ reportId: string }>;
   searchParams: Promise<{ error?: string }>;
 }) {
+  const prefs = await readerPrefs();
   const { reportId } = await params;
   const { error } = await searchParams;
 
@@ -81,7 +83,8 @@ export default async function ReportWorkbenchPage({
   const editable = report.status === 'DRAFT';
   const minorUnit: number = report.minor_unit;
   const inbox: ReceiptSummary[] = editable ? await listUnattachedReceipts() : [];
-  const money = (amount: string) => formatMinor(amount, report.currency_code, minorUnit);
+  const money = (amount: string) =>
+    formatMinor(amount, report.currency_code, minorUnit, prefs.locale);
 
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-col gap-6 p-6">
@@ -107,7 +110,7 @@ export default async function ReportWorkbenchPage({
         <p className="text-sm text-muted-foreground">
           {report.submitter_name ?? report.submitter_email}
           {report.business_unit_name ? ` · ${report.business_unit_name}` : ''} · created{' '}
-          {formatDate(report.created_at)}
+          {formatInstant(report.created_at, prefs)}
         </p>
       </header>
 
@@ -237,14 +240,15 @@ export default async function ReportWorkbenchPage({
       {/* ── expenses ──────────────────────────────────────────────────────── */}
       {expenses.map((expense) => {
         const receipts: ReceiptSummary[] = expense.receipts;
-        const expenseLabel = expense.merchant ?? formatDate(expense.txn_date) ?? 'Expense';
+        const expenseLabel =
+          expense.merchant ?? (formatCalendarDate(expense.txn_date, prefs.locale) || 'Expense');
         return (
           <section key={expense.id} className={`${cardClass} flex flex-col gap-4 p-5`}>
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
                 <h3 className="text-base font-semibold tracking-tight">{expenseLabel}</h3>
                 <p className="text-xs text-muted-foreground">
-                  {formatDate(expense.txn_date)} · subtotal {money(expense.subtotal_minor)}
+                  {formatCalendarDate(expense.txn_date, prefs.locale)} · subtotal {money(expense.subtotal_minor)}
                 </p>
               </div>
               <div className="flex items-center gap-2">
@@ -289,7 +293,10 @@ export default async function ReportWorkbenchPage({
                     id={`txnDate-${expense.id}`}
                     name="txnDate"
                     type="date"
-                    defaultValue={expense.txn_date ? formatDate(expense.txn_date) : ''}
+                    // NOT `formatCalendarDate` — see `toDateInputValue`. A localised
+                    // value here is silently rejected by the browser and the
+                    // field renders EMPTY, so saving the form clears the date.
+                    defaultValue={toDateInputValue(expense.txn_date)}
                   />
                 </div>
                 <div className={fieldClass}>
@@ -533,7 +540,7 @@ export default async function ReportWorkbenchPage({
         </section>
       ) : null}
 
-      <ReportHistory events={history} />
+      <ReportHistory events={history} prefs={prefs} />
 
       {editable ? (
         <form action={deleteReportFromForm} className="pt-2">

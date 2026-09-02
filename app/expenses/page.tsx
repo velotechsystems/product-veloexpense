@@ -12,7 +12,9 @@ import { Input } from '@/components/ui/input';
 import { REPORT_STATUSES, type ReportStatus } from '@/lib/expenses/service';
 import { formatMinor } from '@/lib/money';
 import { listReports, getWorkbenchOptions } from './actions';
-import { EmptyRow, ErrorBanner, StatusBadge, formatDate, selectClass } from './ui';
+import { EmptyRow, ErrorBanner, StatusBadge, selectClass } from './ui';
+import { formatInstant } from '@/lib/i18n/format';
+import { readerPrefs } from '@/lib/i18n/request';
 
 export const dynamic = 'force-dynamic';
 
@@ -33,6 +35,7 @@ export default async function ExpenseReportsPage({
     error?: string;
   }>;
 }) {
+  const prefs = await readerPrefs();
   const sp = await searchParams;
   const page = Math.max(Number(sp.page ?? '1') || 1, 1);
   const { actor } = await getWorkbenchOptions();
@@ -149,9 +152,9 @@ export default async function ExpenseReportsPage({
                   </td>
                   <td className="px-4 py-3 text-muted-foreground">{r.expense_count}</td>
                   <td className="px-4 py-3 text-muted-foreground">{r.receipt_count}</td>
-                  <td className="px-4 py-3 text-muted-foreground">{formatDate(r.created_at)}</td>
+                  <td className="px-4 py-3 text-muted-foreground">{formatInstant(r.created_at, prefs)}</td>
                   <td className="px-4 py-3 text-right font-medium tabular-nums">
-                    {formatMinor(r.total_minor, r.currency_code, r.minor_unit)}
+                    {formatMinor(r.total_minor, r.currency_code, r.minor_unit, prefs.locale)}
                   </td>
                 </tr>
               ))

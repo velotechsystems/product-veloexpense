@@ -13,7 +13,9 @@
 import Link from 'next/link';
 import { formatMinor } from '@/lib/money';
 import { getInbox } from './actions';
-import { EmptyRow, ErrorBanner, formatDate } from '@/app/expenses/ui';
+import { EmptyRow, ErrorBanner } from '@/app/expenses/ui';
+import { formatInstant } from '@/lib/i18n/format';
+import { readerPrefs } from '@/lib/i18n/request';
 
 export const dynamic = 'force-dynamic';
 
@@ -23,11 +25,25 @@ const ROUTE_LABEL: Record<string, string> = {
   ROLE_POOL: 'Your role',
 };
 
+/*
+ * `undefined` for `minorUnit` below is DELIBERATE and preserves today's exact
+ * behaviour: this screen's query does not select `currency.minor_unit`, so the
+ * formatter's default of 2 is what has always been used here.
+ *
+ * That is a real gap and it is NOT this ticket's — `lib/analytics/service.ts`
+ * already carries the warning ("formatMinor(x, 'JPY', 2) prints a hundredth of
+ * …"), and five queries across approvals, reimbursements and the ledger queue
+ * would each need the currency join to close it. Harmless while the product
+ * ships CAD and USD, both of which have a minor unit of 2. Writing `undefined`
+ * rather than a literal `2` is what keeps it visible as an absence instead of
+ * baking the assumption in. Boarded, not folded into a locale PR.
+ */
 export default async function ApprovalsPage({
   searchParams,
 }: {
   searchParams: Promise<{ error?: string }>;
 }) {
+  const prefs = await readerPrefs();
   const { error } = await searchParams;
   const { tasks, actor } = await getInbox();
 
@@ -94,7 +110,7 @@ export default async function ApprovalsPage({
                   </td>
                   <td className="px-3 py-2">{t.submitterName}</td>
                   <td className="px-3 py-2 tabular-nums">
-                    {formatMinor(t.totalMinor, t.currencyCode)}
+                    {formatMinor(t.totalMinor, t.currencyCode, undefined, prefs.locale)}
                   </td>
                   <td className="px-3 py-2">
                     {t.step} of {t.totalSteps}
@@ -120,7 +136,7 @@ export default async function ApprovalsPage({
                       </p>
                     ) : null}
                   </td>
-                  <td className="px-3 py-2 text-muted-foreground">{formatDate(t.submittedAt)}</td>
+                  <td className="px-3 py-2 text-muted-foreground">{formatInstant(t.submittedAt, prefs)}</td>
                 </tr>
               ))
             )}

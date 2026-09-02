@@ -25,16 +25,32 @@ import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { formatMinor } from '@/lib/money';
-import { EmptyRow, ErrorBanner, formatDate } from '@/app/expenses/ui';
+import { EmptyRow, ErrorBanner } from '@/app/expenses/ui';
+import { formatInstant } from '@/lib/i18n/format';
+import { readerPrefs } from '@/lib/i18n/request';
 import { getPayablePage, reimburseFromForm } from './actions';
 
 export const dynamic = 'force-dynamic';
 
+/*
+ * `undefined` for `minorUnit` below is DELIBERATE and preserves today's exact
+ * behaviour: this screen's query does not select `currency.minor_unit`, so the
+ * formatter's default of 2 is what has always been used here.
+ *
+ * That is a real gap and it is NOT this ticket's — `lib/analytics/service.ts`
+ * already carries the warning ("formatMinor(x, 'JPY', 2) prints a hundredth of
+ * …"), and five queries across approvals, reimbursements and the ledger queue
+ * would each need the currency join to close it. Harmless while the product
+ * ships CAD and USD, both of which have a minor unit of 2. Writing `undefined`
+ * rather than a literal `2` is what keeps it visible as an absence instead of
+ * baking the assumption in. Boarded, not folded into a locale PR.
+ */
 export default async function ReimbursementsPage({
   searchParams,
 }: {
   searchParams: Promise<{ error?: string }>;
 }) {
+  const prefs = await readerPrefs();
   const { error } = await searchParams;
   const { rows, breakGlass } = await getPayablePage();
   const total = rows.reduce((sum, r) => sum + BigInt(r.total_minor), 0n);
@@ -54,7 +70,7 @@ export default async function ReimbursementsPage({
                   // total is a number that means nothing, and PE-1 (policy
                   // thresholds are currency-blind) is a live reminder of what
                   // happens when a figure quietly assumes one currency.
-                  mixed ? '' : ` · ${formatMinor(total.toString(), currency)}`
+                  mixed ? '' : ` · ${formatMinor(total.toString(), currency, undefined, prefs.locale)}`
                 }`}
           </p>
         </div>
@@ -137,10 +153,10 @@ export default async function ReimbursementsPage({
                     </td>
                     <td className="px-3 py-2">{row.submitter_name}</td>
                     <td className="px-3 py-2 tabular-nums">
-                      {formatMinor(row.total_minor, row.currency_code)}
+                      {formatMinor(row.total_minor, row.currency_code, undefined, prefs.locale)}
                     </td>
                     <td className="px-3 py-2 text-muted-foreground">
-                      {formatDate(row.approved_at)}
+                      {formatInstant(row.approved_at, prefs)}
                     </td>
                     <td className="px-3 py-2">
                       <Input

@@ -21,7 +21,9 @@
 import { Fragment } from 'react';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
-import { ErrorBanner, formatDate, textareaClass } from '@/app/expenses/ui';
+import { ErrorBanner, textareaClass } from '@/app/expenses/ui';
+import { formatInstant } from '@/lib/i18n/format';
+import { readerPrefs } from '@/lib/i18n/request';
 import { getTemplatesPage, setTemplateFromForm } from './actions';
 
 export const dynamic = 'force-dynamic';
@@ -31,6 +33,7 @@ export default async function NotificationTemplatesPage({
 }: {
   searchParams: Promise<{ error?: string }>;
 }) {
+  const prefs = await readerPrefs();
   const { error } = await searchParams;
   const { templates, placeholders } = await getTemplatesPage();
   const overridden = templates.filter((t) => t.body !== null).length;
@@ -88,7 +91,7 @@ export default async function NotificationTemplatesPage({
               <span className="text-xs text-muted-foreground">
                 {t.body === null ? 'shipped wording' : 'reworded'}
                 {t.updatedAt
-                  ? ` · ${t.updatedByName ?? 'somebody'} on ${formatDate(t.updatedAt)}`
+                  ? ` · ${t.updatedByName ?? 'somebody'} on ${formatInstant(t.updatedAt, prefs)}`
                   : ''}
               </span>
             </div>

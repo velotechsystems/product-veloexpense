@@ -194,6 +194,65 @@ function findings(text, locales, filePath, isCopyFile) {
   return out.map((f) => ({ ...f, file: relative(repoRoot, filePath) }));
 }
 
+/* ── the date-input guard ─────────────────────────────────────────────────── */
+
+/**
+ * Display formatters. Their output is localised BY DESIGN and must never reach
+ * a date input's value.
+ */
+const DISPLAY_FORMATTERS = ['formatCalendarDate', 'formatInstant', 'formatMinor', 'formatDate'];
+
+/**
+ * Find `<input type="date">` elements whose value comes from a display
+ * formatter.
+ *
+ * ── WHY THIS IS A GATE AND NOT A CODE REVIEW NOTE ───────────────────────────
+ *
+ * HTML requires the value of a date input to be `YYYY-MM-DD`, always, in every
+ * locale. A browser given anything else does not complain — it shows an EMPTY
+ * field. So localising one produces a form that looks like the date was never
+ * set, and submitting it clears the stored date. Data loss, from a change that
+ * reads like an improvement, with no error anywhere.
+ *
+ * `app/expenses/[reportId]/page.tsx` had exactly this shape before part 1b: it
+ * fed the display formatter into `defaultValue` on the expense date field. It
+ * was correct only because the formatter was accidentally ISO. The moment that
+ * formatter learned about locales — the entire point of this ticket — it would
+ * have become a data-loss bug on the most-used form in the product.
+ *
+ * Neither the type system nor a test catches it: the value is a `string` either
+ * way, and an e2e that fills the field passes because filling overwrites
+ * whatever was there. It is a TEXT property, so it gets a text gate — the same
+ * reasoning `test/module-gates.test.ts` records for scanning source rather than
+ * asserting behaviour.
+ */
+function dateInputMisuse(text, filePath) {
+  const out = [];
+  const OPEN = /<(input|Input)\b/g;
+  for (const m of text.matchAll(OPEN)) {
+    // Take the element's own span: from `<input` to the first `>` that closes it.
+    // Attribute values here never contain a bare `>`, and a nested JSX expression
+    // inside one would end the span early — which costs a miss, not a false
+    // alarm, and a gate people trust is worth more than a gate that cries wolf.
+    const end = text.indexOf('>', m.index);
+    if (end === -1) continue;
+    const el = text.slice(m.index, end + 1);
+    if (!/type\s*=\s*["']date["']/.test(el)) continue;
+
+    for (const fn of DISPLAY_FORMATTERS) {
+      const re = new RegExp(`(?:default)?[Vv]alue\\s*=\\s*\\{[^}]*\\b${fn}\\s*\\(`);
+      if (re.test(el)) {
+        out.push({
+          file: relative(repoRoot, filePath),
+          line: text.slice(0, m.index).split('\n').length,
+          fn,
+        });
+      }
+    }
+  }
+  return out;
+}
+
 async function main() {
   const { locales, defaultLocale } = await readRegistry();
 
@@ -207,16 +266,33 @@ async function main() {
   }
 
   const all = [];
+  const dateInputs = [];
   for (const file of files) {
     const rel = relative(repoRoot, file);
     if (ALLOWED.has(rel)) continue;
-    all.push(...findings(await readFile(file, 'utf8'), locales, file, COPY_FILES.has(rel)));
+    const text = await readFile(file, 'utf8');
+    all.push(...findings(text, locales, file, COPY_FILES.has(rel)));
+    dateInputs.push(...dateInputMisuse(text, file));
   }
 
   console.log(
     `check:i18n — registry: ${locales.join(', ')} (default ${defaultLocale}); ` +
       `scanned ${files.length} files in ${SCAN_ROOTS.join(', ')}`,
   );
+
+  if (dateInputs.length > 0) {
+    console.error(`\n✗ ${dateInputs.length} date input(s) fed by a display formatter:\n`);
+    for (const d of dateInputs) {
+      console.error(`  ${d.file}:${d.line}  <input type="date"> value uses ${d.fn}()`);
+    }
+    console.error(
+      '\nA date input\'s value must be YYYY-MM-DD in every locale — the browser\n' +
+        'rejects anything else SILENTLY and renders an empty field, so submitting\n' +
+        'the form clears the stored date. Use toDateInputValue() from\n' +
+        'lib/i18n/format.ts, which is deliberately not locale-aware.\n',
+    );
+    process.exit(1);
+  }
 
   if (all.length > 0) {
     console.error(`\n✗ ${all.length} locale literal(s) outside lib/i18n/locales.ts:\n`);

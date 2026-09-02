@@ -36,7 +36,7 @@ export interface RateRow {
   quote: string;
   /** As it comes out of `numeric(18,8)`: a decimal string. */
   rate: string;
-  as_of: string | Date;
+  as_of: string;
 }
 
 export type RateBasis = 'IDENTITY' | 'DIRECT' | 'RECIPROCAL';
