@@ -16,6 +16,11 @@
  * migration, since `expense_policy.kind` is deliberately not a CHECK constraint.
  */
 import { convertMinor, formatMinor, toBigInt, type MinorAmount } from '@/lib/money';
+import {
+  hasUnconvertible,
+  projectedMinor,
+  type BudgetSnapshot,
+} from '@/lib/budgets/scope';
 import type { RateBasis, RateLookup } from '@/lib/policy/rates';
 import type { WorkbenchExpense, WorkbenchReport } from '@/lib/expenses/service';
 
@@ -24,6 +29,7 @@ export const RULE_KINDS = [
   'RECEIPT_REQUIRED',
   'CATEGORY_ACTIVE',
   'NON_NEGATIVE_AMOUNT',
+  'BUDGET_OVERAGE',
 ] as const;
 export type RuleKind = (typeof RULE_KINDS)[number];
 
@@ -35,6 +41,21 @@ export function isRuleKind(value: string): value is RuleKind {
 }
 export function isSeverity(value: string): value is Severity {
   return (SEVERITIES as readonly string[]).includes(value);
+}
+
+/**
+ * Is `severity` stronger than `maximum`? An INDEX COMPARISON against `SEVERITIES`,
+ * not a hand-written ordering — the array already states the ranking once, and a
+ * second copy of it is a second thing to get wrong when a level is added.
+ */
+export function severityExceeds(severity: Severity, maximum: Severity): boolean {
+  return SEVERITIES.indexOf(severity) > SEVERITIES.indexOf(maximum);
+}
+
+/** `severity`, held down to a rule's declared maximum. No maximum means no clamp. */
+export function clampSeverity(severity: Severity, maximum: Severity | undefined): Severity {
+  if (maximum === undefined) return severity;
+  return severityExceeds(severity, maximum) ? maximum : severity;
 }
 
 /** A rule instance as stored. `params` is validated per kind by the service. */
@@ -73,6 +94,17 @@ export interface PolicyContext {
   minorUnits: Record<string, number>;
   /** Built by `lib/policy/service.ts`; pure here. */
   rates: RateLookup;
+  /**
+   * The budget periods this report's spend lands in, already converted into each
+   * budget's currency by `lib/budgets/service.ts`.
+   *
+   * Loaded INTO the context because `evaluate` is pure and synchronous and gets
+   * no transaction — the rule cannot query, so the rule and its loader are one
+   * unit. Empty is the normal case: most reports code to accounts nobody has
+   * budgeted, and the loader is skipped entirely when no BUDGET_OVERAGE instance
+   * is enabled, because the scan is the expensive part of a validation.
+   */
+  budgets: BudgetSnapshot[];
 }
 
 export interface Finding {
@@ -110,6 +142,24 @@ export interface RuleDefinition {
   label: string;
   description: string;
   defaultSeverity: Severity;
+  /**
+   * The strongest severity an INSTANCE of this rule may evaluate at.
+   *
+   * Severity normally belongs to the instance (`f.severity ?? inst.severity`), so
+   * an admin can turn any rule into a hard stop. For a rule where that would
+   * contradict a product decision, the decision has to be a MECHANISM rather than
+   * a comment — BG-4 is precisely ExpenseOS's version of this going unenforced:
+   * `BUDGET_OVERAGE` is documented "WARNING, deliberately never BLOCK" and
+   * nothing stops an admin configuring the instance at BLOCK.
+   *
+   * Enforced in TWO places, and both are needed. `createPolicy`/`updatePolicy`
+   * REFUSE a severity above this, so a stored value can never disagree with what
+   * is evaluated and an admin is told no rather than silently overruled; and
+   * `validateReport` clamps anyway, because a row written by a seed, an import,
+   * or before this maximum existed has to evaluate correctly regardless.
+   * Refusing at the write is the courtesy; clamping at the read is the invariant.
+   */
+  maxSeverity?: Severity;
   /** Whether a rule instance may be narrowed to one expense category. */
   supportsCategoryScope: boolean;
   params: ParamSpec[];
@@ -433,11 +483,123 @@ const NON_NEGATIVE_AMOUNT: RuleDefinition = {
   },
 };
 
+/**
+ * Report spend that pushes a budget period past its budget.
+ *
+ * ── WARNING, and here that is enforced rather than commented ────────────────
+ *
+ * ExpenseOS's own reasoning, kept: "the money on a card has already left, and an
+ * unsubmittable claim strands a real expense — the answer to over-budget spend is
+ * routing it to somebody who can decide about it, not refusing to file it." John
+ * settled the same decision for us on 31 Aug. Theirs is a comment their engine
+ * then ignores (BG-4); ours is `maxSeverity`, which the write refuses to exceed
+ * and the read clamps.
+ *
+ * ── ONE finding per budget period, which is the OPPOSITE of theirs ──────────
+ *
+ * Their kind emits a single collapsed finding for the whole report, and its
+ * comment explains why it has to: their violation identity is
+ * `(ruleCode, lineItemId)`, so a second report-level finding from the same
+ * instance is silently dropped and a justification would attach to whichever row
+ * happened to be first. `policy_violation.finding_key` (VX1-7) exists precisely to
+ * fix that defect, so the constraint that forced their shape does not apply here —
+ * and the finer shape is the better product: an acknowledgement carries a NOTE,
+ * and one note waving through "the travel budget and the marketing budget
+ * together" tells an auditor nothing about either.
+ *
+ * ── The comparison, ported ──────────────────────────────────────────────────
+ *
+ * Against APPROVED + SUBMITTED + this report, not approved spend alone. Their
+ * `crossedThreshold` says why: "warning somebody at 90% while an already-submitted
+ * report would take them to 110% is worse than not warning them, because it reads
+ * as headroom."
+ *
+ * Configurable thresholds (warn at 90%) are BG-6's alert concern and arrive in
+ * part 3 with the alert table and the screen that edits them. This rule answers
+ * one question — does this report put the period over — so it has no params.
+ */
+const BUDGET_OVERAGE: RuleDefinition = {
+  kind: 'BUDGET_OVERAGE',
+  label: 'Over budget',
+  description:
+    'Flags a report whose spend takes a budget period past its budget, counting what is already approved and what is still awaiting a decision. Warns; it never blocks.',
+  defaultSeverity: 'WARNING',
+  maxSeverity: 'WARNING',
+  supportsCategoryScope: false,
+  params: [],
+  evaluate(context) {
+    const findings: Finding[] = [];
+    for (const budget of context.budgets) {
+      const scope = `${budget.budgetName} (${budget.startsOn} to ${budget.endsOn})`;
+      const amount = (value: bigint) =>
+        formatMinor(value, budget.currencyCode, budget.minorUnit);
+
+      // The overage, when there is one. Certain even if some spend could not be
+      // converted: unconvertible spend can only ADD, so being over stays true.
+      const projected = projectedMinor(budget);
+      if (budget.amountMinor > 0n && projected > budget.amountMinor) {
+        findings.push({
+          ruleCode: 'BUDGET_OVERAGE',
+          lineItemId: null,
+          findingKey: `${budget.budgetId}|${budget.periodId}`,
+          message:
+            `This report takes ${scope} to ${amount(projected)} against a budget of ` +
+            `${amount(budget.amountMinor)} — over by ${amount(projected - budget.amountMinor)}. ` +
+            `${amount(budget.actualMinor)} is already approved, ${amount(budget.pendingMinor)} ` +
+            `is awaiting a decision, and this report adds ${amount(budget.reportMinor)}.`,
+          data: {
+            budgetId: budget.budgetId,
+            periodId: budget.periodId,
+            currencyCode: budget.currencyCode,
+            amountMinor: budget.amountMinor.toString(),
+            projectedMinor: projected.toString(),
+            overageMinor: (projected - budget.amountMinor).toString(),
+            actualMinor: budget.actualMinor.toString(),
+            pendingMinor: budget.pendingMinor.toString(),
+            reportMinor: budget.reportMinor.toString(),
+          },
+        });
+      }
+
+      // A SEPARATE finding, with its own key, so it can coexist with the overage
+      // above rather than one silently replacing the other. AN-7 inverted: a
+      // number built on spend that could not be converted is a FLOOR, and saying
+      // so is the difference between "I cannot answer" and "you are fine".
+      if (!hasUnconvertible(budget)) continue;
+      const missing = budget.reportMissingRateFrom;
+      findings.push({
+        ruleCode: 'BUDGET_OVERAGE',
+        lineItemId: null,
+        findingKey: `${budget.budgetId}|${budget.periodId}|fx`,
+        severity: 'INFO',
+        message:
+          `Some spend counted against ${scope} could not be converted into ` +
+          `${budget.currencyCode}, so ${amount(projected)} is a floor rather than a total` +
+          (missing.length > 0
+            ? `. This report has spend in ${missing.join(', ')} with no exchange rate to ` +
+              `${budget.currencyCode}; an administrator needs to add one.`
+            : `. Earlier spend on this budget is affected; an administrator needs to add the ` +
+              `missing exchange rates.`),
+        data: {
+          budgetId: budget.budgetId,
+          periodId: budget.periodId,
+          fxRateMissing: true,
+          toCurrency: budget.currencyCode,
+          reportMissingRateFrom: missing,
+          unconvertibleMinor: budget.unconvertibleMinor.toString(),
+        },
+      });
+    }
+    return findings;
+  },
+};
+
 export const RULE_DEFINITIONS: Record<RuleKind, RuleDefinition> = {
   PER_TRANSACTION_LIMIT,
   RECEIPT_REQUIRED,
   CATEGORY_ACTIVE,
   NON_NEGATIVE_AMOUNT,
+  BUDGET_OVERAGE,
 };
 
 export function ruleDefinition(kind: RuleKind): RuleDefinition {
@@ -458,6 +620,10 @@ export const DEFAULT_POLICIES: Array<{
   { kind: 'RECEIPT_REQUIRED', severity: 'BLOCK', params: { thresholdMinor: 2500 } },
   { kind: 'CATEGORY_ACTIVE', severity: 'BLOCK', params: {} },
   { kind: 'NON_NEGATIVE_AMOUNT', severity: 'BLOCK', params: {} },
+  // BUDGET_OVERAGE is deliberately NOT here. A fresh tenant has no budgets, so a
+  // starter instance would be a rule that cannot fire — and a rule on the admin
+  // page that never says anything trains people to ignore the page. It is created
+  // alongside a budget, on part 3's screen.
 ];
 
 /** A finding plus the rule instance that raised it — severity lives on the instance. */

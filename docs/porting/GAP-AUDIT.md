@@ -3260,6 +3260,15 @@ cached or materialised. It runs on `budgets.list`, on submit-time validation
 unbounded, per call (`budgets.ts:217`). An unbounded per-tenant table scan on every approval click
 does not survive shared infrastructure: our version wants a rollup keyed by tenant, year and month.
 
+*PORTED, VX4-5 part 2.* `lib/budgets/service.ts` stores the totals on `budget_period` and recomputes
+them on the three transitions that can change them — submit, recall, and a terminal approval decision
+— bounded to the periods the report in hand touches, so a March report never recomputes November.
+Rates are bounded by each expense's own date rather than loaded wholesale, which also makes a total
+stable: re-running a rollup after a new rate arrives does not move last quarter. **Reimbursement is
+deliberately not a fourth hook** — APPROVED and REIMBURSED both count as `actual_minor`, so there is
+nothing to recompute, and `test/budgets.db.test.ts` asserts the totals do not move across one so the
+claim fails loudly if that mapping ever changes.
+
 **BG-4 · Budgets warn; they never block — but nothing clamps that.**
 `BUDGET_OVERAGE` is `defaultSeverity: 'WARNING'` with the comment *"WARNING, deliberately never
 BLOCK"* (`server/policy/kinds.ts:188-209`), and an over-budget report is submittable once the
@@ -3268,6 +3277,16 @@ severity, and `severity: f.severity ?? inst.severity` (`policy/engine.ts:108`) m
 configures the instance at BLOCK turns it into a hard stop. Whether that is a feature or a defect is
 a product decision — ours already has the same shape in `lib/policy/rules.ts`, so it is worth
 deciding once, deliberately.
+
+*DECIDED AND PORTED, VX4-5 part 2.* John settled it on 31 Aug: a budget never blocks. Enforced as a
+mechanism rather than a comment, in **two places**, because either alone is incomplete.
+`RuleDefinition.maxSeverity` declares the ceiling; `createPolicy`/`updatePolicy` REFUSE a severity
+above it (`SEVERITY_ABOVE_MAXIMUM`), so a stored value can never disagree with what is evaluated and
+an admin is told no rather than silently overruled; and `validateReport` CLAMPS anyway, because a row
+written by a seed, an import, a restored backup or Phase 5's provisioning reaches evaluation without
+passing through either. Refusing at the write is the courtesy; clamping at the read is the invariant.
+The clamp is an index comparison against `SEVERITIES` rather than a second hand-written ordering.
+Sabotaging either half fails only that half's tests, which is what proves both are load-bearing.
 
 **BG-5 · Periods are native fiscal years, and 12 is a hard constant.**
 `FiscalYear` is local admin data (`schema.prisma:1802-1819`) and is *not* in the sync client's

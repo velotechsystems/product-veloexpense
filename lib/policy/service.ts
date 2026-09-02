@@ -21,16 +21,19 @@ import type { QueryRunner } from '@/lib/db/client';
 import { getReportWorkbench, type WorkbenchReport } from '@/lib/expenses/service';
 import { buildRateLookup, type RateLookup, type RateRow } from '@/lib/policy/rates';
 import {
+  clampSeverity,
   DEFAULT_POLICIES,
   evaluatePolicies,
   findingIdentity,
   isRuleKind,
   isSeverity,
   ruleDefinition,
+  severityExceeds,
   type PolicyRow,
   type RuleKind,
   type Severity,
 } from '@/lib/policy/rules';
+import { loadBudgetSnapshots } from '@/lib/budgets/service';
 
 // Convenience re-exports so callers need only one import.
 export { RULE_DEFINITIONS, RULE_KINDS, SEVERITIES, ruleDefinition } from '@/lib/policy/rules';
@@ -42,6 +45,8 @@ export type PolicyErrorCode =
   | 'NOT_FOUND'
   | 'UNKNOWN_RULE_KIND'
   | 'UNKNOWN_SEVERITY'
+  /** The rule kind declares a maximum severity and the instance asked for more. */
+  | 'SEVERITY_ABOVE_MAXIMUM'
   | 'INVALID_PARAM'
   | 'MISSING_PARAM'
   | 'CATEGORY_NOT_SCOPEABLE'
@@ -159,6 +164,30 @@ async function assertCurrency(tx: QueryRunner, code: string | null): Promise<str
 function assertSeverity(severity: string): Severity {
   if (!isSeverity(severity)) throw new PolicyError(`unknown severity: ${severity}`, 'UNKNOWN_SEVERITY');
   return severity;
+}
+
+/**
+ * A severity this rule kind will actually evaluate at — the WRITE half of the
+ * clamp (`RuleDefinition.maxSeverity`).
+ *
+ * The read half in `validateReport` is what makes the maximum true; this is what
+ * makes it honest. Without it an admin sets a budget rule to BLOCK, the form says
+ * BLOCK, the list says BLOCK, and every report evaluates at WARNING — a stored
+ * value that disagrees with behaviour, which is worse than the behaviour alone.
+ * Being told no is the courtesy owed to somebody who asked for something the
+ * product has decided against.
+ */
+function assertSeverityForKind(kind: RuleKind, severity: string): Severity {
+  const checked = assertSeverity(severity);
+  const definition = ruleDefinition(kind);
+  const maximum = definition.maxSeverity;
+  if (maximum !== undefined && severityExceeds(checked, maximum)) {
+    throw new PolicyError(
+      `${definition.label} cannot be set to ${checked}: this rule never goes above ${maximum}`,
+      'SEVERITY_ABOVE_MAXIMUM',
+    );
+  }
+  return checked;
 }
 
 async function assertCategory(tx: QueryRunner, kind: RuleKind, categoryId: string | null) {
@@ -304,7 +333,7 @@ async function activePolicies(tx: QueryRunner): Promise<PolicyRow[]> {
 
 export async function createPolicy(tx: QueryRunner, input: NewPolicy): Promise<PolicyRow> {
   const kind = assertKind(input.kind);
-  const severity = assertSeverity(input.severity ?? ruleDefinition(kind).defaultSeverity);
+  const severity = assertSeverityForKind(kind, input.severity ?? ruleDefinition(kind).defaultSeverity);
   const categoryId = input.categoryId ?? null;
   await assertCategory(tx, kind, categoryId);
   const params = normalizeParams(kind, input.params);
@@ -355,7 +384,9 @@ export async function updatePolicy(
     sets.push(`${column} = $${values.length}`);
   };
 
-  if (patch.severity !== undefined) set('severity', assertSeverity(patch.severity));
+  if (patch.severity !== undefined) {
+    set('severity', assertSeverityForKind(current.kind, patch.severity));
+  }
   if (patch.enabled !== undefined) set('enabled', patch.enabled);
   if ('categoryId' in patch) {
     await assertCategory(tx, current.kind, patch.categoryId ?? null);
@@ -490,11 +521,17 @@ export async function validateReport(
   if (!context) throw new PolicyError('report not found', 'NOT_FOUND');
 
   const policies = await activePolicies(tx);
+  // Only when a BUDGET_OVERAGE instance is actually enabled. Ported from
+  // ExpenseOS's own guard on the same loader (`policy/validate.ts:421-427`) and
+  // for the same reason: the budget scan is the expensive part of a validation,
+  // and a tenant with no budget rule should not pay for it on every save.
+  const wantsBudgets = policies.some((p) => p.kind === 'BUDGET_OVERAGE');
   const evaluated = evaluatePolicies(
     {
       report: context.report,
       expenses: context.expenses,
       ...(await currencyContext(tx, context.report)),
+      budgets: wantsBudgets ? await loadBudgetSnapshots(tx, reportId) : [],
     },
     policies,
   );
@@ -526,7 +563,20 @@ export async function validateReport(
         // ExpenseOS's `f.severity ?? inst.severity`, and it is what lets a rule
         // that could not convert an amount report INFO instead of firing a BLOCK
         // on an unchecked comparison.
-        severity: finding.severity ?? policy.severity,
+        //
+        // THEN CLAMPED to the rule kind's maximum — the READ half, and the half
+        // that makes the maximum an invariant rather than a form validation.
+        // `createPolicy`/`updatePolicy` already refuse a severity above it, so
+        // this looks redundant and is not: a row written by a seed, an import,
+        // Phase 5's provisioning, or simply before the maximum existed reaches
+        // here without ever passing through those. BG-4 is what happens when only
+        // the comment exists — `severity: f.severity ?? inst.severity` with a rule
+        // documented "deliberately never BLOCK", and an instance at BLOCK turning
+        // it into a hard stop.
+        severity: clampSeverity(
+          finding.severity ?? policy.severity,
+          ruleDefinition(policy.kind).maxSeverity,
+        ),
       });
     }
   }

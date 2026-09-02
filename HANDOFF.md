@@ -213,8 +213,16 @@ its declaration — that `npm test` could never have caught, because **vitest tr
 without type checking**. One `tsc --noEmit` before handing over would have caught all
 six. Run it, every ticket, before writing out the commands.
 
-`next build` and `check:actions` genuinely do need the Mac, which is also the pair
+`next build` and `check:actions` cannot run on the DEVICE, which is also the pair
 that catches a broken `'use server'` module (VX2-10) and any `.tsx` mistake.
+
+**They do NOT need the Mac, though — corrected 2 Sep during VX4-5 part 2.** The cloud harness has a
+Linux `node_modules`, so `npm run build` and `npm run check:actions` both run there, and so does the
+full Playwright suite (point the chromium project's `launchOptions.executablePath` at
+`/opt/pw-browsers/chromium-1194/chrome-linux/chrome`, and set `AUTH_SECRET` or `auth.setup.ts`
+refuses to mint a session). The only container-copy edit still needed is stubbing the two `Geist`
+calls in `app/layout.tsx`, because egress blocks `fonts.googleapis.com`. So a ticket that touches a
+`.tsx` no longer has to hand the build over unverified — VX4-5 part 2 did not.
 
 ### The device shell has no GitHub credentials, and its `main` is ancient
 `git fetch` fails there ("could not read Username for 'https://github.com'"), and the local `main`
@@ -2407,6 +2415,95 @@ lands with them: a clamp with no rule carrying a maximum is untestable at evalua
 the rule with an `evaluate` that returns `[]` to make the mechanism look tested is the
 stub-that-can-only-produce-one-outcome pattern that has cost this project four defects. **Part 3** is
 alerts (BG-6's atomic claim), the screen, and the e2e.
+*Part 2 has since SHIPPED — see the section below, which also records why it grew the rollup writer.*
+
+### VX4-5 part 2 SHIPPED — the rollup, the rule, and both halves of the clamp
+
+**No migration.** `0024` already had the columns; this is the code that fills them and the rule that
+reads them. `lib/budgets/scope.ts` (pure) + `lib/budgets/service.ts` (the pg half) +
+`BUDGET_OVERAGE` in `lib/policy/rules.ts` + the clamp in `lib/policy/service.ts` + three transition
+hooks + `test/budget-scope.test.ts` and twenty new cases in `test/budgets.db.test.ts`.
+
+**The board said "the rule and the clamp"; it ships with the ROLLUP WRITER as well, and that was a
+decision (John, 2 Sep).** Nothing outside a test wrote `budget_period.actual_minor` /
+`pending_minor` / `rolled_up_at`, so a `BUDGET_OVERAGE` shipped alone would have read
+`rolled_up_at IS NULL` forever in production and could only ever have answered "not yet calculated".
+That is the check-that-cannot-produce-one-of-its-two-outcomes shape this project has paid for four
+times. The alternative — tests writing rollups in raw SQL, production silent until part 3 — would
+have been green and hollow.
+
+**Five decisions worth not relitigating:**
+
+- **`resolveBudget` is most-specific-first and returns ONE budget, never every match.** Ported from
+  ExpenseOS (`packages/approvals/src/budgets.ts:117-146`), including their tie-break: (account, BU,
+  null) beats (account, null, department), because business unit is the coarser and more reliably
+  populated dimension. Their reasoning for not summing matches is the part that matters — spend
+  counted against both a department budget and the company-wide budget for the same account is
+  double-counted, and the company total then drifts by however many department budgets exist, with
+  both numbers looking plausible on their own.
+- **A line's date falls back to `created_at::date`, not `current_date`.** `expense.txn_date` is
+  nullable and an undated line still has to land in a period or the totals under-report (the AN-7
+  family). `current_date` would make a budget total change overnight on its own; `submitted_at` moves
+  when a report is recalled and resubmitted. The rollup and the rule share one SQL constant for this,
+  because two copies of the expression is how they become two different answers.
+- **ONE finding per budget period, which is the OPPOSITE of theirs — and their own comment says why
+  they had to collapse.** ExpenseOS emits a single finding for the whole report because their
+  violation identity is `(ruleCode, lineItemId)`, so a second report-level finding is silently
+  dropped and a justification attaches to whichever row was first. `policy_violation.finding_key`
+  (VX1-7) exists to fix exactly that, so the constraint that forced their shape does not apply here.
+  The finer shape is also the better product: an acknowledgement carries a NOTE, and one note waving
+  through "the travel budget and the marketing budget together" tells an auditor nothing about either.
+- **Unconvertible spend gets its OWN finding, with its own key, beside the overage.** So the two
+  coexist rather than one replacing the other. Being over budget stays *certain* even when some spend
+  could not be converted (unconvertible can only add), and the projection is reported as a FLOOR
+  rather than a total. AN-7 inverted, at the rule layer this time.
+- **The loader may WRITE, once per period.** A period with `rolled_up_at IS NULL` has never been
+  calculated, which `0024` is explicit is not the same as zero spend — reading it as a baseline would
+  answer "under budget" for a period that might be fully committed. So the loader recomputes a
+  never-calculated period on first sight. That is bounded (each period pays it at most once, and the
+  transition hooks keep it fresh afterwards), it adds no new class of side effect (`validateReport`
+  already writes, and already runs only on write paths), and it buys a guarantee the rule leans on:
+  a snapshot never rests on an uncalculated period, so `BudgetSnapshot` carries no `rolledUpAt` and
+  **the rule has no branch for one**. A branch that can never be taken hides every defect in the
+  outcome it cannot produce.
+
+**A vacuous test of my own, caught by writing the sabotage before believing the green.** The first
+version of "does not fire when no BUDGET_OVERAGE instance is enabled" asserted `violations` is empty
+— which **cannot fail**: with no rule instance there is nothing to emit whether the loader ran or
+not, so it would have passed on a `validateReport` that loaded budgets on every single save, which is
+precisely the cost the gate exists to avoid. It now asserts the loader's fingerprint instead: a
+never-calculated period is still `rolled_up_at IS NULL`. Forcing the gate open fails it. Same family
+as VX4-3's 1,331-colour sweep that matched the `<body>` tag.
+
+**Eleven sabotage runs, each failing exactly the intended tests and nothing else:** read-half clamp
+removed (1 test), write-half refusal removed (2), `maxSeverity` dropped from the definition (4,
+including the guard that at least one rule declares one — without which the consistency guard passes
+vacuously), unconvertible folded into the total (1), attribution precedence reversed (6, split across
+the pure and DB layers), the never-calculated recompute removed (1), the engine hook narrowed to
+APPROVED only (1), the recall hook removed (1), the projection dropping pending (2), the loader gate
+forced open (1), the submit hook removed (5).
+
+**A correction to my own part-1 work, recorded rather than quietly fixed.** `0024`'s
+`budget_lookup` index is `(organization_id, fiscal_year) INCLUDE (gl_account_id)`, which anticipated
+a fiscal-year-first lookup. The lookup part 2 actually makes is account-first over a date range
+(`gl_account_id = ANY(...)` joined to periods overlapping a span), and that index does not serve it.
+**Deliberately NOT fixed here:** `budget` holds tens of rows per tenant, so the scan is free, and a
+migration to add an index nothing needs is worse than the note. Revisit if a tenant ever has
+thousands of budgets.
+
+**Verified:** `tsc --noEmit`, `eslint`, `check:vendor` clean on the device. In the cloud harness:
+`npm run build` **and** `npm run check:actions` pass (with the documented `next/font/google` stub,
+container-copy only — see §3), **775 vitest across 41 files**, and **31/31 Playwright**. The vitest
+baseline was MEASURED at `fb4ddfc` in the same harness rather than assumed: **731**, so this ticket
+adds 44. The tracker's "712" predates part 1 and was stale.
+
+**Part 3** is unchanged: alerts on BG-6's atomic-claim idiom, the admin screen (which is also where
+`BUDGET_OVERAGE` gets created — it is deliberately NOT in `DEFAULT_POLICIES`, because a fresh tenant
+has no budgets and a starter rule that cannot fire trains people to ignore the page), and the e2e.
+The "Add a rule" form's severity picker still offers BLOCK for every kind, because its rule is chosen
+in the same submit and narrowing the list would need client JS in a screen that deliberately has
+none; the service's refusal is the whole gate there, which is MT-3's rule. The per-row picker on an
+existing rule DOES narrow, because there the kind is known.
 
 ### The two decisions, SETTLED 31 Aug 2026 (John)
 

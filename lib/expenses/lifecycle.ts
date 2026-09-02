@@ -23,6 +23,7 @@
 import type { QueryRunner } from '@/lib/db/client';
 import * as policy from '@/lib/policy/service';
 import * as engine from '@/lib/approvals/engine';
+import { recomputeForReport } from '@/lib/budgets/service';
 import type { ReportStatus } from '@/lib/expenses/service';
 import { append as auditAppend } from '@/lib/audit/service';
 import { notify, reportPayload } from '@/lib/notifications/service';
@@ -189,6 +190,18 @@ export async function submitReport(
     [reportId],
   );
 
+  // VX4-5 part 2 — the budget rollup, ON THE TRANSITION and AFTER the status
+  // write, so this report is counted as pending by the recompute it triggers.
+  // Same placement rule as VX3-4's ledger hand-off (AC-6): a hook on the
+  // transition cannot be forgotten by a new caller, and it commits with the
+  // submission or not at all.
+  //
+  // Note the ordering against `validateReport` above, which is deliberate: the
+  // rule warns using the baseline WITHOUT this report plus this report's own
+  // contribution, then the report becomes part of the baseline. Recomputing
+  // first would double-count it.
+  await recomputeForReport(tx, reportId);
+
   await recordEvent(tx, {
     reportId,
     action: 'SUBMIT',
@@ -253,6 +266,11 @@ export async function recallReport(
   // while it is back in DRAFT, so re-banding an existing run would let an
   // employee returned at three sign-offs trim a line and resubmit into one.
   const cancelled = await engine.cancelRunForReport(tx, reportId, actorId);
+
+  // Back to DRAFT is spend LEAVING the pending total. Without this a recalled
+  // report keeps consuming its budget forever, and the only thing on screen would
+  // be a number that is too big for no visible reason.
+  await recomputeForReport(tx, reportId);
 
   await recordEvent(tx, {
     reportId,
