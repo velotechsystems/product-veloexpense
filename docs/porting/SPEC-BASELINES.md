@@ -21,6 +21,23 @@ without an index inside `product-veloexpense`, the mapping is invisible from whe
 happens. Create the tags with `./tag-spec-baselines.sh`, run from an ExpenseOS checkout, and paste
 its output table below.
 
+## The local ExpenseOS checkout has MOVED PAST the Phase-4 pin (noted 2 Sep 2026)
+
+The Phase-4 audit (MT/BR/BG/AN/IL) was taken at **`5a11a647`**. `~/ExpenseOS` is now at
+**`b9e242d7`**, twenty-four commits further on, and `5a11a647` is an ancestor of it — so a plain
+`cat` of a source file there is **not** what the audit describes. Read at the pin:
+
+```bash
+git show 5a11a647:apps/web/src/server/policy/kinds.ts
+```
+
+The drift does touch the budget/policy paths (`policy/kinds.ts`, `policy/types.ts`,
+`policy/validateTravel.ts`, `policy/travelKinds.test.ts` — 19 lines), but it is **one unrelated
+rename**: `TravelRequestLine.detail` became `.notes`, with the comments updated to match. Nothing in
+`BUDGET_OVERAGE`, `evaluateReportAgainstBudgets`, `computeActuals` or `budgetAlerts.ts` changed.
+Checked while porting VX4-5 part 2; recorded so the next reader does not re-derive it, and so a
+Phase-4 ticket that DOES find a meaningful delta knows to look.
+
 ## Read this before trusting a delta diff
 
 **Everything through VX2-1 was ported from the module DOCS (`NN-module.md`), not from ExpenseOS

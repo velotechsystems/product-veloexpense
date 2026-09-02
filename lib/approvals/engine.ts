@@ -32,6 +32,7 @@
 import type { QueryRunner } from '@/lib/db/client';
 import { append as auditAppend, type AuditActor } from '@/lib/audit/service';
 import { enqueuePost } from '@/lib/integrations/post-outbox';
+import { recomputeForReport } from '@/lib/budgets/service';
 import { assertCanDecide } from '@/lib/approvals/eligibility';
 import { tieredRouter } from '@/lib/approvals/resolver';
 import { RoutingError, type ResolvedAssignment } from '@/lib/approvals/routing';
@@ -393,6 +394,12 @@ export async function decide(
       WHERE id = $1`,
     [task.report_id, reportStatus, decision === 'APPROVED' ? new Date() : null],
   );
+
+  // VX4-5 part 2 — the budget rollup, on EVERY terminal decision and not only on
+  // APPROVED. A rejection or a return takes the report out of `pending_minor`
+  // just as surely as an approval moves it into `actual_minor`, and a budget that
+  // only ever counts spend upward is the one nobody trusts.
+  await recomputeForReport(tx, task.report_id as string);
 
   await recordEvent(tx, {
     reportId: task.report_id as string,

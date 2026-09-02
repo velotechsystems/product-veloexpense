@@ -15,7 +15,13 @@ import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { minorToDecimalString } from '@/lib/money';
-import { RULE_DEFINITIONS, RULE_KINDS, SEVERITIES, ruleDefinition } from '@/lib/policy/rules';
+import {
+  RULE_DEFINITIONS,
+  RULE_KINDS,
+  SEVERITIES,
+  ruleDefinition,
+  severityExceeds,
+} from '@/lib/policy/rules';
 import {
   createPolicyFromForm,
   deletePolicyFromForm,
@@ -199,7 +205,20 @@ export default async function ExpensePoliciesPage({
                         className={selectClass}
                         defaultValue={p.severity}
                       >
-                        {SEVERITIES.map((s) => (
+                        {/* A rule with a declared maximum does not offer more than
+                            it will evaluate at — `createPolicy`/`updatePolicy`
+                            refuse it and `validateReport` clamps it, so offering
+                            the option would only be a form that answers no. The
+                            "Add a rule" form below cannot do this: its kind is
+                            chosen in the same submit, and narrowing the list would
+                            need client JS in a screen that deliberately has none.
+                            There the service's refusal is the whole gate, which is
+                            MT-3's rule — gates belong below the screen. */}
+                        {SEVERITIES.filter(
+                          (s) =>
+                            definition.maxSeverity === undefined ||
+                            !severityExceeds(s, definition.maxSeverity),
+                        ).map((s) => (
                           <option key={s} value={s}>
                             {s}
                           </option>
