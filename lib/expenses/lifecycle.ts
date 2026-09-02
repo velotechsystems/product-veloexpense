@@ -158,11 +158,34 @@ export async function submitReport(
     );
   }
 
+  // VX4-5: STAMP the submitter's department onto the report, in the same statement
+  // that submits it. `department_id` lives on `app_user`, so a budget rollup could
+  // join through the submitter instead — and then a transfer would rewrite a closed
+  // period's totals after the fact, with nothing recording why, and recomputing the
+  // same period twice could give two answers. This is AC-10's stamp-on-write for
+  // the same reason VX3-1 stamps the GL account.
+  //
+  // FROM THE SUBMITTER, NOT THE ACTOR, and the difference is a real case rather
+  // than pedantry: this function performs NO ownership check — the action layer does
+  // it, and it permits `submitter_id === actor.id || role === 'ADMIN'`. So an admin
+  // submitting somebody else's report is a supported path, and keying this on
+  // `actorId` would stamp the ADMIN's department onto an employee's spend. The first
+  // draft did exactly that, with a comment claiming an `assertOwner` that does not
+  // exist in this function.
+  //
+  // A scalar sub-select on the target row, so the statement always assigns: NULL is
+  // a real answer (somebody with no department) and is stored as such. A
+  // `FROM app_user` join would instead update NOTHING if the join missed, turning a
+  // data oddity into a silent no-submit.
   const updated = await tx.query(
     `UPDATE expense_report
-        SET status = 'SUBMITTED', submitted_at = now(), updated_at = now()
+        SET status = 'SUBMITTED',
+            submitted_at = now(),
+            department_id =
+              (SELECT department_id FROM app_user WHERE id = expense_report.submitter_id),
+            updated_at = now()
       WHERE id = $1
-      RETURNING id, number, status, submitted_at`,
+      RETURNING id, number, status, submitted_at, department_id`,
     [reportId],
   );
 
