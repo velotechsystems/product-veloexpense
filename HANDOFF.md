@@ -2780,6 +2780,42 @@ built for it (no CHECK constraint), but the requirement itself is unassigned.
 
 ### Proposed, not yet on the board
 
+#### From the upstream delta review, 2 Sep 2026 (GAP-AUDIT `UD` section)
+
+All 24 ExpenseOS commits since the Phase-4 pin `5a11a647` were read and each verdict checked against
+OUR source. Four port; three are inputs to boarded tickets; one is a decision for John. Full evidence
+and the verdict on every commit is in GAP-AUDIT — this is the board entry.
+
+- **UD-1 — assert the ledger payload on the wire, ~0.5d.** `currencyCode` is required on
+  `PostableReport` and both adapters send it, but the adapter test's fetch stub records tool NAMES
+  only, so deleting `currency: report.currencyCode` fails nothing. Upstream lost money for a month in
+  exactly that gap (a USD 74.19 charge booked as CAD 74.19). Capture bodies; assert currency, account
+  numbers and the idempotency key.
+- **UD-2 — check GL coding at SUBMIT, not at post, ~1d.** `outbox.dryRun` already computes
+  `problems` and the adapter refuses an unmapped line in plain language; `submitReport` consults
+  neither, so a category with no `gl_account_id` passes submit AND approval and fails days later in
+  front of an operator who cannot fix it. One shared "what counts as postable" rule for both callers.
+  Only when a ledger is connected, and BEFORE the policy pass — a fact, not a judgement.
+- **UD-11 — audit what an edit changed, ~1–1.5d.** We audit transitions and approvals; we audit
+  content edits NOWHERE. "Who changed this amount, from what, when" is unanswerable across every
+  expense, report header and line item. Port their `auditDiff(before, patch)` → `{from, to}` plus an
+  explicit `unchanged`. Watch AU-5: our `details` IS in the hash payload and `canonical()` throws on
+  BigInt, which is most of our money.
+- **UD-3 — a role-crawl e2e, ~0.5d.** Open every route as EMPLOYEE, MANAGER and ADMIN. Upstream's
+  found a notification key that had rendered `MISSING_MESSAGE` since #95 and a page that scrolled
+  sideways; three other guard layers could not see either. Folds naturally into VX4-7's e2e.
+- **UD-4 — say whose reports `/expenses` is listing, minutes.** The heading says "Expense reports"
+  over a list that is `submitter_id = me`. Take it with the next ticket touching that page.
+- **Inputs to boarded tickets, not new work:** UD-5 gives VX4-7 three requirements (enum→catalogue
+  with a generated assertion; never compare catalogues against each other, because agreement is not
+  correctness; a static used-keys scan cannot see an interpolated key). UD-6 gives VX4-6 a second
+  money defect to sit beside AN-7 — a rolled-up total re-valued at today's FX table, which we do NOT
+  have today but which analytics is the natural place to introduce.
+- **UD-8 — a QUESTION for John, not a ticket.** Upstream now lets an installation choose whether
+  approval posts to the ledger or parks the report for AP to send, defaulting to the safe one. Ours
+  posts on approval, unconditionally. Everything the other mode needs already exists; it is a
+  decision about how finance operates.
+
 - **VX2-11 (proposed) — lib-ui-kit catch-up, ~1–2d.** Pull the six unused registry components
   (`npx shadcn add https://velotechsystems.github.io/lib-ui-kit/r/<name>.json`, then the
   `src/` → root move the repo's tsconfig requires); replace the hand-rolled `selectClass` /

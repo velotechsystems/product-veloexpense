@@ -3593,3 +3593,260 @@ Also still unread inside `notifications`, and named in the NT section's header: 
 the last unread input to VX2-2 — `SELF_APPROVAL` is declared in `routing.ts` with nothing behind it,
 and AP-6's rule 2 says their self-block was *incomplete*, so the fix branch may well be where the
 subordinate case got closed.
+
+---
+
+## UD · UPSTREAM DELTA — `5a11a647` → `b9e242d7`, reviewed 2 Sep 2026
+
+The Port & Build Plan §6 mechanism, run for the first time. All 24 commits ExpenseOS has landed
+since the Phase-4 audit pin were read — messages and diffs — and every "we already have this" below
+is **checked against VeloExpense source**, not asserted. 116 files, ~6,000 insertions upstream.
+
+Almost all of it is their GA audit v2 and Kati's UAT against a live NetSuite with 872 real employee
+records, so the raw diff is far less portable than its size suggests. **Four things port. Three more
+are inputs to tickets already boarded. One is a product question for John. The rest is theirs.**
+
+**The prefix is UD (upstream delta) and the numbering is per review**, so a second run of this
+mechanism starts at UD-1 again under its own date heading.
+
+### The verdict on all 24, so none is silently dropped
+
+| Upstream | What | Verdict |
+|---|---|---|
+| `b9e242d7` a report is worth what it was worth when it was filed | a rolled-up total re-valued at today's FX table, disagreeing with its own line by 15¢ on $125.50 | **No defect here — input to VX4-6.** UD-6 |
+| `86adb817` travel override records what it replaced | travel module | Not applicable — no travel module. Source of the `detail`→`notes` rename recorded in SPEC-BASELINES |
+| `c209d767` two addresses a scrubbing script broke | their production directory data | Not applicable |
+| `e9744f42` a dry run that could not report a conflict | `dryRun` returned before the conflict loop, so `refused` was always `[]` | Not applicable — but it is another instance of our own "a check that cannot produce one of its two outcomes" family |
+| `09713e14` the posting drawer belongs to the row you clicked | their React drawer state | Not applicable — our ledger queue has no drawer |
+| `a301417b` server vocabulary stops reaching users | error codes and enum values rendered raw at the user | **Input to VX4-7.** UD-5 |
+| `c61fedae` the employee sync says what NetSuite objected to | a SOAP fault discarded behind a bare 500 | Not applicable — our `LedgerError` already carries the far end's own words to the queue screen |
+| `22f81fd5` coding is checked at submit, not five weeks later | the postability pre-flight ran only on APPROVED reports | **PORT.** UD-2 |
+| `6aa7f548` external ids are editable | their `UserExternalId` alias rows | Not applicable |
+| `ee386b7c` one John Rim, and ids that can parse | their production directory data | Not applicable |
+| `ce8e64aa` all four approval subjects | two hand-kept copies of an enum, one annotated "(mirrors the router's)" | Not applicable — we have one subject type. Class recorded under UD-9 |
+| `1ab1bf19` stop sending a UUID into an integer field | our own id in a typed field whose contract they do not own | Not applicable — checked our payloads, see UD-1's sweep |
+| `575760e0` the surfaces AP could not find | a list whose scope is invisible reads as the whole set | **PORT.** UD-4 |
+| `ea158cd5` the posting screen shows what already posted | their queue dropped a report the moment it succeeded | **Already have it, better** — see UD-7 |
+| `836af348` who sends an approved report is a setting | `postingTrigger`: AP_QUEUE vs AUTOMATIC | **Product question for John.** UD-8 |
+| `9be674ac` fire CD on `published` | their release plumbing | Not applicable — ours is `velotechsystems/infra-ci-cd@v1` |
+| `12bfbfa8` a read-only date field stops offering a picker | their design system | Not applicable. Its TEST lesson is UD-10 |
+| `ce053ccd` crawl every page as every role | a technique, and the two bugs it found | **Adopt the technique.** UD-3 |
+| `704880cc` see the override amount while you type it | travel module | Not applicable |
+| `96883724` a mixed-currency report shows how it adds up | a reconciliation hidden in a hover tooltip | Not applicable today — single-currency per report (VX1-6). Revisit if that is lifted |
+| `28ba5f65` the update-in-place button says it overwrites | their VCC module | Not applicable |
+| `78e7b7b4` an edit records what changed, and from what | `details: { fields: Object.keys(input) }` | **PORT, and ours is worse.** UD-11 |
+| `2461e09e` the activity sections state what is true | three panels hardcoded to zero | Not applicable — no `/my-info`. Its lesson is an input to VX4-6 |
+| `9f67f533` a posting names the currency it is in | a body builder dropped the currency; the ledger took the subsidiary's base currency at face value | **Already correct — but nothing pins it.** UD-1 |
+
+---
+
+### UD-1 · The currency IS on our wire, and no test would notice if it left. [checked]
+
+Their `buildCardTransactionBody` emitted no `currency`, so NetSuite used the subsidiary's base
+currency at face value: a USD 74.19 charge became CAD 74.19, silently, on every foreign-currency
+charge since that poster shipped. The expense-report body had the same hole from the other side — the
+resolver had populated `ExpenseReportRecord.currency` since day one and the builder dropped it.
+
+**We are structurally safer and it is worth saying why:** `currencyCode` is a required field on the
+vendor-neutral `PostableReport` (`lib/integrations/contract.ts:89`), so it cannot be *absent* from
+the contract the way theirs was absent from a per-vendor builder — an adapter that drops it is an
+adapter bug rather than a hole in the shape. Both implementing adapters do send it
+(`lib/integrations/veloledger.ts:326`, `lib/integrations/stub.ts:393`); QuickBooks deliberately
+builds no payload yet.
+
+**The gap is the test, and it is exactly the one their commit names:** *"the report fixture had
+carried `currency: 'CAD'` through a test that never asserted it arrived, which is exactly what let a
+dead field look alive for a month."* Ours is the same. `test/veloledger-adapter.test.ts`'s fetch stub
+records **tool names only** (`calls.push(tool)`); it never captures a request body. So deleting
+`currency: report.currencyCode` from the adapter fails nothing — measured, not assumed. `e2e/
+ledger-flow.spec.ts` does not assert it either.
+
+**Do:** capture bodies in that stub and assert what reaches the wire — the currency, the account
+numbers, and the idempotency key, all three being fields whose absence is silent rather than loud.
+Half a day. Also sweep the payload for their `1ab1bf19` class while there: every field we send is a
+string, a number, a minor-unit string or an account NUMBER — no VeloExpense UUID goes into a typed
+field we do not own, `idempotencyKey` being deliberately namespaced and ours to define.
+
+### UD-2 · Our postability pre-flight also runs weeks too late. [checked]
+
+Theirs asked "is this coded well enough to post" only of an APPROVED report, so on dev **all 200
+approved reports refused**, every one for missing coding, and nothing stopped more arriving. The fix
+extracts "what counts as coded" into one module used by BOTH the poster and `submit`.
+
+**We have the same gap.** `outbox.dryRun` already computes a `problems` list
+(`lib/integrations/post-outbox.ts:399-432`), and the VeloLedger adapter refuses an unmapped line in
+plain language (`veloledger.ts:258-266`) — but `lib/expenses/lifecycle.ts:submitReport` consults
+neither. It checks status, that the report has line items, and the policy rules. **Nothing checks
+that a line has a GL account**, and `Workbench.uncodedExpenseCount` counts expenses with no line
+items, which is a different thing. A category with no `gl_account_id` — nullable on purpose since
+`0014`, "a configuration gap, and the employee filing the expense is not who fixes it" — therefore
+passes submit, passes approval, and surfaces days later in the ledger queue to an operator who did
+not file it and cannot fix it.
+
+**Two of their design points are not optional if we do this:**
+- **Only when a ledger is CONNECTED.** The requirement comes from the integration; an installation
+  with none has nothing to be coded *for*, and blocking submission there conjures a rule out of an
+  absent integration. Their `loadNetSuiteConfig` returning null skips the guard entirely and a test
+  asserts it is never reached; ours is `requireCapability(tx, 'POST_EXPENSE_REPORT')`.
+- **Before the policy pass.** This is a fact about the report, not a judgement about it — somebody
+  fixing coding should not have to read past a policy warning to learn the report cannot post at all.
+
+Their refusal also states the size of the job ("3 expenses need coding", singular handled). ~1 day.
+
+### UD-3 · Crawl every page as every role. [technique]
+
+`ce053ccd` opened every page as each of nine seeded roles — *"which nothing had done before"* — and
+it found two things nothing else could:
+
+- A notification event with **no catalogue copy**, rendering `MISSING_MESSAGE` since #95. Three
+  separate guards had missed it, and the reasons are the interesting part: their coverage check
+  compares EN against FR-CA and **both were missing the same key, so the files agreed perfectly** —
+  *agreement is not correctness*; their used-keys scan reads LITERAL keys and this one is assembled
+  at runtime (`` event.${subjectType}.${type} ``), **invisible to a static scan by construction**;
+  and their component tests mock the translator, so a missing key comes back as the key.
+- A page that **scrolls sideways** — wide content escaping its container and dragging the shell under
+  the viewport. Reported with a 24px tolerance rather than failed, because a few pixels can be a
+  scrollbar; deduped by route, because a layout fault belongs to the page and not to who opened it.
+
+We have three roles (EMPLOYEE / MANAGER / ADMIN), auth states already minted by `e2e/auth.setup.ts`,
+and 31 specs — none of which opens every route as every role. `12bfbfa8` came out of the same crawl
+and is the argument for it: *a control that only breaks for the role nobody tests as*. Cheap; fold
+into VX4-7's e2e or take it as a standalone half-day.
+
+### UD-4 · `/expenses` does not say whose reports it is showing. [checked]
+
+Their A6: a manager opened the list looking for a colleague's submission, found their own reports,
+and concluded it had not arrived — it was in the approvals queue the whole time. *"A list whose scope
+is invisible gets read as the whole set."*
+
+Ours is identical. `app/expenses/page.tsx:63` renders `<h1>Expense reports</h1>` over a list that is
+`submitter_id = me` unless an ADMIN passes `?scope=all` (`:39`). One word in a heading, plus saying
+so when the admin has widened it. Take it with the next ticket that touches the page.
+
+### UD-5 · Server vocabulary reaching users — three requirements for VX4-7.
+
+`a301417b` filed four cosmetic-looking items and then showed they were one: server tokens on screen,
+untranslated, *because they never enter the message catalogue at all* — so no amount of translation
+work reaches them. Their instance was `TRPCError` defaulting `message` to the CODE, which meant
+dozens of `throw new TRPCError({ code: 'NOT_FOUND' })` guards each rendered their own HTTP status
+word at whoever hit them.
+
+**We are clean on that half today** — `PolicyError`, `LedgerError`, `ExpenseError` and
+`LifecycleError` all carry a sentence and a code as separate arguments, and the code never renders.
+**We are not clean on the other half:** enum values (`SUBMITTED`, `PENDING`, `BLOCK`, `NEEDS_REVIEW`)
+render raw across the workbench, the approvals inbox and the ledger queue, which is invisible in one
+language and a defect in three. Three requirements for VX4-7:
+
+1. Enum-to-catalogue at the render boundary, with a generated assertion that every member of every
+   rendered enum has copy — the RLS-coverage guard shape.
+2. **A coverage check that compares catalogues against each other passes when all of them are
+   missing the same key.** Assert against the SOURCE of truth (the enum, the template list), never
+   catalogue-against-catalogue.
+3. **A static used-keys scan cannot see an interpolated key.** Our notification catalogue builds keys
+   the same way theirs does; that class needs a runtime assertion, at the source, in every locale.
+
+### UD-6 · The FX principle behind `b9e242d7`, and why VX4-6 needs it. [checked]
+
+One expense, one date, two answers: header CAD 174.29, its only line CAD 174.14. The line showed the
+rate the expense was FILED at; the header re-valued the rolled-up total at whatever the FX table says
+today. *"A filed claim is worth what it was worth when it was incurred. Otherwise an approved
+report's total moves on its own overnight."*
+
+**No such defect here — verified.** Every rate lookup that values money is bounded by a date:
+`lib/policy/service.ts:511` bounds by the report's own latest transaction date, and
+`lib/budgets/service.ts:105` bounds per expense (VX4-5 part 2, which reached the same principle
+independently). The single unbounded `buildRateLookup` is `getPolicyCurrency`'s admin diagnostic
+(`service.ts:276`), which asks "can this be converted *today*" and is correct as it stands.
+
+**It becomes live in VX4-6.** Analytics sums historical reports, and summing them at today's table is
+this exact defect at portfolio scale. Board it beside AN-7 — which is the same money layer failing in
+the other direction — and note their second consequence too: a multi-currency total that is a sum of
+per-expense conversions **has no single rate to disclose**, and naming one would name a rate that
+produced only part of the figure.
+
+### UD-7 · Their posting-screen gap is one we do not have. [checked]
+
+`ea158cd5` added a scope switch because their queue listed only reports NetSuite did *not* have, so a
+report vanished at the moment it succeeded and *"did EXP-000042 post, and as what?"* had no answer on
+the screen whose whole subject is posting.
+
+Ours never had that shape: `listQueue` filters by status only on request and returns everything by
+default, `POSTED` rows stay with the status text "drafted in the ledger", the summary counts them,
+and the row prints `ledger id <external_id>` — which is their commit's own stated point, *"a green
+badge is our word for it; an internal id is something a person can open the ledger and check."*
+Recorded so the phase does not spend a day rediscovering it.
+
+### UD-8 · A product question: does approval post, or does AP post? [for John]
+
+`836af348` is not a defect fix. Their AP lead asked *"we need posting to manually sit with AP"*, and
+the answer was a per-installation `postingTrigger` with two values — `AUTOMATIC` (approval posts it)
+and `AP_QUEUE` (approval stops at APPROVED; somebody reads the payload and sends it). **The default
+is the safe one**, and the reasoning is worth keeping verbatim: *"a report parked in a queue is
+recoverable; a wrong posting in a general ledger is a journal entry and a conversation."*
+
+Ours is `AUTOMATIC`, unconditionally: `applyTerminal` calls `enqueuePost` on APPROVED
+(`lib/approvals/engine.ts:428-430`). Everything `AP_QUEUE` needs already exists — an APPROVED,
+unposted report is exactly what our queue lists, and `dryRun` already previews the payload — so the
+whole change on that side is withholding the enqueue, plus a per-org column (a COLUMN, per VX4-2's
+closure and AC-21). **Not boarded. It is a decision about how finance operates, not a porting gap.**
+
+### UD-9 · Two hand-kept correspondences, recorded not fixed. [checked]
+
+`ce8e64aa`'s cause was a list annotated *"(mirrors the router's SUBJECT_TYPES)"* — *"which is what a
+hand-kept copy says right up until it stops mirroring anything"* — plus a cast that asserted the very
+thing that was false. Their remedy was one list and a generated parity assertion against
+`schema.prisma`. We have one approval subject type, so the defect cannot recur, but two comments in
+our tree make the same promise: `lib/receipts/constants.ts:8` ("kept in step with the UI's
+file-picker accept list") and `lib/policy/rules.ts:651` ("must match migration 0006's unique index
+exactly"). The first is low-stakes; the second is a code-to-DDL correspondence of exactly the kind our
+guard pattern exists for. Neither is urgent; both are cheaper to close than to discover.
+
+### UD-10 · Another check that cannot fail, for the house list.
+
+`12bfbfa8` tried to assert that a click no longer throws:
+`await expect(click()).resolves.not.toThrow()`. It passes with or without the guard, because **React
+does not reject a click over a throwing handler — it reports the error to `window` and carries on**.
+Removing the try/catch did not fail it. Their fix was to listen on the uncaught-error channel.
+
+Filed here beside the vacuous email-shell sweep, the test double that could only succeed (AC-17,
+AC-19), `check:actions` discarding its own finding, and `innerText()` answering `''` for a
+non-rendered element. Same family, new mechanism: **an assertion whose subject swallows the failure
+it is testing for.**
+
+### UD-11 · An edit is audited NOWHERE here, which is worse than their defect. [checked]
+
+`78e7b7b4` upgraded `details: { fields: Object.keys(input) }` — the keys the CLIENT SENT, on editors
+that post their whole model, so a row could not tell *"corrected the amount"* from *"opened it and
+pressed Save"* — to `auditDiff(before, patch)`: only genuine differences, each as `{ from, to }`,
+plus an explicit `unchanged` flag.
+
+**We are a step behind that.** `lib/expenses/service.ts` contains no audit append at all, and neither
+does `app/expenses/actions.ts`. `recordEvent` covers TRANSITIONS only (`SUBMIT | RECALL | APPROVE |
+REJECT | RETURN | REIMBURSE`), and the audit chain carries approvals, delegations, reimbursement,
+module and branding changes. So **"who changed this line's amount, from what, and when" is
+unanswerable** for every expense, report header and line item in the product — for an expense system,
+that is the question an audit trail exists to answer.
+
+Their design ports nearly verbatim, and four of its details are ours too:
+- An **omitted** field is skipped, not recorded as cleared; an explicit null IS a change. Our
+  `updateReport`/`updateEmployee` are already patch-with-nulls (VX1-6), so this maps exactly.
+- **Values are rendered for the jsonb column.** `JSON.stringify` reshapes Date and bigint silently
+  and THROWS on Decimal, and a throw inside an audited transaction rolls back the user's edit over a
+  logging detail. This is **AU-5 from the other side** — our `canonical()` already throws on BigInt
+  and our money is bigint everywhere.
+- A minor-unit column sent as its string form **is not a change**, or the log fills with non-events.
+- `redact` records THAT a field changed without recording what it became.
+
+One difference to get right: their `details` is *not* in the hash payload, so old rows verify
+unchanged. Ours **is** (AU-3), which is fine — old rows keep the details they were written with —
+but it means every diff has to survive `canonical()`, which is the BigInt trap above.
+
+The regression guard must be a **database** test: the "from" side comes out of the row itself, and a
+stubbed read would prove only that the code reads something. ~1–1.5 days.
+
+### Moving the pin
+
+The baseline tags live in the ExpenseOS repo and this session cannot push there. Once the ports above
+are boarded, move `veloexpense-spec/*` forward to `b9e242d7` from a checkout, so the next re-diff
+starts here rather than repeating this one. Until then **`5a11a647` remains the pin for every Phase-4
+audit claim**, and source must be read with `git show 5a11a647:<path>` — see SPEC-BASELINES.
