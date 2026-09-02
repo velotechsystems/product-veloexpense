@@ -176,6 +176,7 @@ export async function notifyRecipients(
   tx: QueryRunner,
   activityId: string,
   recipientIds: readonly (string | null | undefined)[],
+  options: { includeActor?: boolean } = {},
 ): Promise<string[]> {
   const unique = [...new Set(recipientIds)].filter((id): id is string => Boolean(id));
   if (unique.length === 0) return [];
@@ -190,7 +191,18 @@ export async function notifyRecipients(
   const eventType = act.rows[0].event_type as string;
   const actorId = act.rows[0].actor_id as string | null;
 
-  const candidates = unique.filter((id) => id !== actorId);
+  // `includeActor` is VX4-5 part 3a's one exception, and it is a real case rather
+  // than a convenience. The rule above — never tell somebody about their own
+  // action — is right for every event whose subject IS the action. A budget
+  // threshold alert is about a RUNNING TOTAL: a budget owner who files the claim
+  // that breaks their own budget is exactly the person who needs telling, and
+  // ExpenseOS's version says so ("somebody who owns a budget and files a claim
+  // against it should still be told their own claim broke it").
+  //
+  // An option rather than recording the activity with a null actor, which was the
+  // alternative and is worse: it would buy the fan-out at the cost of the activity
+  // stream no longer knowing who moved the number.
+  const candidates = options.includeActor ? unique : unique.filter((id) => id !== actorId);
   const prefs = await preferencesForMany(tx, candidates);
 
   const written: string[] = [];
@@ -236,9 +248,10 @@ export async function notify(
   tx: QueryRunner,
   input: NewActivity,
   recipientIds: readonly (string | null | undefined)[],
+  options: { includeActor?: boolean } = {},
 ): Promise<{ activityId: string; notified: string[] }> {
   const activityId = await recordActivity(tx, input);
-  const notified = await notifyRecipients(tx, activityId, recipientIds);
+  const notified = await notifyRecipients(tx, activityId, recipientIds, options);
   return { activityId, notified };
 }
 

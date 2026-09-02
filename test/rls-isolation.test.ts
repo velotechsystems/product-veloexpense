@@ -48,7 +48,8 @@ beforeAll(async () => {
     await withOrg(org, (tx) =>
       tx.query(
         `INSERT INTO module_entitlement (organization_id, module_code, enabled, enabled_at)
-         VALUES ($1, 'accounting', true, clock_timestamp())`,
+         VALUES ($1, 'accounting', true, clock_timestamp()),
+                ($1, 'budgets',    true, clock_timestamp())`,
         [org],
       ),
     );
@@ -901,8 +902,15 @@ describe('RLS tenant isolation', () => {
         const r = await tx.query('SELECT organization_id FROM module_entitlement');
         return r.rows.map((row) => row.organization_id as string);
       });
-    expect(await seen(orgA)).toEqual([orgA]);
-    expect(await seen(orgB)).toEqual([orgB]);
+    // EVERY visible row belongs to the asking tenant — not "there is exactly one".
+    // The count form broke the day VX4-5 part 3a entitled a second module, which
+    // is a test asserting the fixture rather than the property. `not.toHaveLength(0)`
+    // is what stops the new form passing vacuously on an empty read.
+    for (const org of [orgA, orgB]) {
+      const rows = await seen(org);
+      expect(rows).not.toHaveLength(0);
+      expect([...new Set(rows)]).toEqual([org]);
+    }
 
     // An unset context sees nothing, which is what makes a job that forgets to set
     // the tenant fail closed rather than fan out across the estate.
@@ -1079,6 +1087,108 @@ describe('RLS tenant isolation', () => {
         ),
       ),
     ).rejects.toThrow();
+  });
+
+  /* ── budget alerts (VX4-5 part 3a, migration 0025) ───────────────────────
+   *
+   * Placed AFTER the two budget tests above, which assert exact row counts —
+   * anything creating a budget earlier in this file would break them. The
+   * ordering is load-bearing and this comment is the warning.
+   */
+  it('budget alert thresholds, recipients and claims are tenant-isolated', async () => {
+    const setUp = (org: string) =>
+      withOrg(org, async (tx) => {
+        const b = await tx.query(
+          `SELECT id FROM budget WHERE name = 'Travel 2026'`,
+        );
+        const p = await tx.query('SELECT id FROM budget_period WHERE budget_id = $1', [
+          b.rows[0].id,
+        ]);
+        const t = await tx.query(
+          `INSERT INTO budget_alert_threshold (organization_id, budget_id, threshold_bp)
+           VALUES ($1,$2,9000) RETURNING id`,
+          [org, b.rows[0].id],
+        );
+        const u = await tx.query('SELECT id FROM app_user LIMIT 1');
+        await tx.query(
+          `INSERT INTO budget_alert_recipient (organization_id, threshold_id, user_id)
+           VALUES ($1,$2,$3)`,
+          [org, t.rows[0].id, u.rows[0].id],
+        );
+        await tx.query(
+          `INSERT INTO budget_alert_claim
+             (organization_id, period_id, threshold_bp, used_minor, amount_minor)
+           VALUES ($1,$2,9000,450000,500000)`,
+          [org, p.rows[0].id],
+        );
+        return { budgetId: b.rows[0].id as string, thresholdId: t.rows[0].id as string };
+      });
+    const a = await setUp(orgA);
+    await setUp(orgB);
+
+    const counts = (org: string) =>
+      withOrg(org, async (tx) => ({
+        thresholds: (await tx.query('SELECT count(*)::int AS n FROM budget_alert_threshold'))
+          .rows[0].n,
+        recipients: (await tx.query('SELECT count(*)::int AS n FROM budget_alert_recipient'))
+          .rows[0].n,
+        claims: (await tx.query('SELECT count(*)::int AS n FROM budget_alert_claim')).rows[0].n,
+      }));
+    expect(await counts(orgA)).toEqual({ thresholds: 1, recipients: 1, claims: 1 });
+    expect(await counts(orgB)).toEqual({ thresholds: 1, recipients: 1, claims: 1 });
+
+    const blind = await withoutOrg(async (tx) => ({
+      thresholds: (await tx.query('SELECT count(*)::int AS n FROM budget_alert_threshold'))
+        .rows[0].n,
+      claims: (await tx.query('SELECT count(*)::int AS n FROM budget_alert_claim')).rows[0].n,
+    }));
+    expect(blind).toEqual({ thresholds: 0, claims: 0 });
+
+    // TN-1: a recipient row cannot point at another tenant's threshold, and the
+    // refusal is the composite FK rather than a predicate somebody could forget.
+    const ownUser = await withOrg(orgB, (tx) => tx.query('SELECT id FROM app_user LIMIT 1'));
+    await expect(
+      withOrg(orgB, (tx) =>
+        tx.query(
+          `INSERT INTO budget_alert_recipient (organization_id, threshold_id, user_id)
+           VALUES ($1,$2,$3)`,
+          [orgB, a.thresholdId, ownUser.rows[0].id],
+        ),
+      ),
+    ).rejects.toThrow();
+  });
+
+  it('turning the budgets module off makes every budget table unreadable (0025)', async () => {
+    // The gate `0024` should have carried. `app_module_enabled('budgets')` is in
+    // the policy body, so this is true for every code path rather than for the
+    // ones somebody remembered — MT-3's whole point.
+    await admin.query(
+      `UPDATE module_entitlement SET enabled = false
+        WHERE organization_id = $1 AND module_code = 'budgets'`,
+      [orgA],
+    );
+    try {
+      const gated = await withOrg(orgA, async (tx) => ({
+        budgets: (await tx.query('SELECT count(*)::int AS n FROM budget')).rows[0].n,
+        periods: (await tx.query('SELECT count(*)::int AS n FROM budget_period')).rows[0].n,
+        thresholds: (await tx.query('SELECT count(*)::int AS n FROM budget_alert_threshold'))
+          .rows[0].n,
+        claims: (await tx.query('SELECT count(*)::int AS n FROM budget_alert_claim')).rows[0].n,
+      }));
+      expect(gated).toEqual({ budgets: 0, periods: 0, thresholds: 0, claims: 0 });
+      // And the other tenant is untouched, so this is the MODULE gate and not a
+      // tenant predicate that happens to be failing.
+      const other = await withOrg(orgB, (tx) =>
+        tx.query('SELECT count(*)::int AS n FROM budget'),
+      );
+      expect(other.rows[0].n).toBe(1);
+    } finally {
+      await admin.query(
+        `UPDATE module_entitlement SET enabled = true
+          WHERE organization_id = $1 AND module_code = 'budgets'`,
+        [orgA],
+      );
+    }
   });
 
   it('a ledger post cannot reference another tenant\'s report', async () => {

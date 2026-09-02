@@ -71,8 +71,9 @@ export async function wipeIntegrations(orgSlugs: string[]) {
     // is gone.
     await pool.query(
       `INSERT INTO module_entitlement (organization_id, module_code, enabled, enabled_at)
-       SELECT id, 'accounting', true, clock_timestamp() FROM organization
-        WHERE slug = ANY($1)
+       SELECT o.id, m.code, true, clock_timestamp()
+         FROM organization o CROSS JOIN (VALUES ('accounting'),('budgets')) AS m(code)
+        WHERE o.slug = ANY($1)
        ON CONFLICT (organization_id, module_code)
        DO UPDATE SET enabled = true, updated_at = clock_timestamp()`,
       [orgSlugs],

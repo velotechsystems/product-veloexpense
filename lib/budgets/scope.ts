@@ -120,3 +120,36 @@ export function projectedMinor(s: BudgetSnapshot): bigint {
 export function hasUnconvertible(s: BudgetSnapshot): boolean {
   return s.unconvertibleMinor > 0n || s.reportMissingRateFrom.length > 0;
 }
+
+/**
+ * The HIGHEST configured threshold a period has crossed, or null for none.
+ *
+ * Ported from ExpenseOS's `crossedThreshold`
+ * (`packages/approvals/src/budgets.ts:341-367`), with both of its decisions:
+ *
+ * · Compared against spend PLUS what is in flight, not approved spend alone.
+ *   Their reason: "warning somebody at 90% while an already-submitted report
+ *   would take them to 110% is worse than not warning them, because it reads as
+ *   headroom."
+ * · INTEGER MATHS THROUGHOUT. Basis points of the budget consumed, computed in
+ *   bigint. A float here "would put 10000.00000001 on the wrong side of the 100%
+ *   threshold", which is their comment and the reason the unit is bp.
+ *
+ * `unconvertibleMinor` is deliberately NOT part of `used`: it is not in this
+ * budget's currency and cannot be compared to an amount that is. It can only
+ * ever ADD, so a crossing computed without it is still a real crossing — the
+ * projection is a floor, which is what `hasUnconvertible` exists to say.
+ */
+export function crossedThresholdBp(
+  amountMinor: bigint,
+  usedMinor: bigint,
+  thresholdsBp: readonly number[],
+): number | null {
+  if (amountMinor <= 0n) return null;
+  const usedBp = (usedMinor * 10_000n) / amountMinor;
+  let highest: number | null = null;
+  for (const bp of thresholdsBp) {
+    if (usedBp >= BigInt(bp) && (highest === null || bp > highest)) highest = bp;
+  }
+  return highest;
+}

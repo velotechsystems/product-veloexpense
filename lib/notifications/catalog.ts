@@ -37,9 +37,11 @@
 /**
  * What a notification can be ABOUT. Polymorphic, because VX2-8's approve-links
  * and any later travel or card subject route through the same machinery.
- * 'EXPENSE_REPORT' is the only value today and VCC/Travel are off for MVP.
+ * 'BUDGET' arrives with VX4-5 part 3a — a threshold alert is about the BUDGET, not
+ * about the report whose spend crossed it, and addressing it to the report would
+ * put it in the submitter's bell instead of the owner's. VCC/Travel are off for MVP.
  */
-export const SUBJECT_TYPES = ['EXPENSE_REPORT'] as const;
+export const SUBJECT_TYPES = ['EXPENSE_REPORT', 'BUDGET'] as const;
 export type SubjectType = (typeof SUBJECT_TYPES)[number];
 
 /**
@@ -77,6 +79,16 @@ export const EVENT_TYPES = [
    * been paid".
    */
   'REIMBURSED',
+  /**
+   * A budget period crossed one of its configured thresholds (VX4-5 part 3a).
+   * Addressed to the budget's owner and that threshold's own recipients — NOT to
+   * whoever filed the claim that crossed it, who learns about it as a policy
+   * warning on their own report instead.
+   *
+   * The one event in the product whose subject is not an expense report, and the
+   * one that deliberately does NOT exclude the actor: see `notifyRecipients`.
+   */
+  'BUDGET_THRESHOLD',
 ] as const;
 export type EventType = (typeof EVENT_TYPES)[number];
 
@@ -186,7 +198,7 @@ export const TEMPLATE_KEY_PATTERN =
  * The list lives here and NOT in `0011`'s CHECK constraint on purpose: adding a
  * module must not need a migration.
  */
-export const TEMPLATE_KEY_OWNERS = ['expense_management'] as const;
+export const TEMPLATE_KEY_OWNERS = ['expense_management', 'budgets'] as const;
 export type TemplateKeyOwner = (typeof TEMPLATE_KEY_OWNERS)[number];
 
 /** True when `key` is well-formed AND owned by a known part of the product. */
@@ -283,6 +295,24 @@ export const TEMPLATE_KEYS: readonly TemplateKeyDef[] = [
       'pending tasks were cancelled.',
     events: [['RECALLED', 'EXPENSE_REPORT']],
     shipped: { en: '{actor} withdrew {report}. It no longer needs your approval.' },
+  },
+  {
+    key: 'budgets.threshold_crossed',
+    name: 'Budget threshold crossed',
+    description:
+      'A budget period reached one of its configured thresholds. Sent to the budget owner ' +
+      'and that threshold\'s own recipients.',
+    events: [['BUDGET_THRESHOLD', 'BUDGET']],
+    // No `{actor}`, deliberately, and it is the one shipped body that leaves the
+    // reserved placeholder out. The actor is whoever's claim happened to tip the
+    // period over; naming them reads as an accusation about one report when the
+    // sentence is about a running total that many reports built. A tenant that
+    // wants it can add `{actor}` to their own template.
+    shipped: {
+      en:
+        '{budget} has crossed {thresholdPercent}% of its {period} budget — ' +
+        '{used} of {amount}.',
+    },
   },
 ];
 

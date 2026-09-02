@@ -200,7 +200,7 @@ export async function submitReport(
   // rule warns using the baseline WITHOUT this report plus this report's own
   // contribution, then the report becomes part of the baseline. Recomputing
   // first would double-count it.
-  await recomputeForReport(tx, reportId);
+  await recomputeForReport(tx, reportId, actorId);
 
   await recordEvent(tx, {
     reportId,
@@ -270,7 +270,7 @@ export async function recallReport(
   // Back to DRAFT is spend LEAVING the pending total. Without this a recalled
   // report keeps consuming its budget forever, and the only thing on screen would
   // be a number that is too big for no visible reason.
-  await recomputeForReport(tx, reportId);
+  await recomputeForReport(tx, reportId, actorId);
 
   await recordEvent(tx, {
     reportId,

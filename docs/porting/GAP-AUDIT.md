@@ -3303,6 +3303,27 @@ caught and swallowed; and editing periods deletes and recreates the rows. **This
 idiom's use case exactly** — a uniquely-keyed row written in the transaction that sends, which is what
 `notification_delivery` already does.
 
+*PORTED, VX4-5 part 3a.* Their product rules are kept verbatim — fire once per crossing, suppress
+until a higher level or a fall-back-and-re-arm, owner first then that level's own recipients, an
+empty recipient list means owner-only and never nobody, a crossing with no audience is still
+recorded, and never throw out of the alert path. The MECHANISM is `budget_alert_claim` (`0025`), a
+uniquely-keyed row written in the transaction that sends.
+
+**The savepoint is the part that goes further than theirs.** Their marker is stamped AFTER the
+fan-out, and their comment says why — "so a failure re-fires next time rather than marking a crossing
+nobody was told about". No ordering of two separate statements can deliver both halves: stamp late
+and a successful send with a failed stamp sends twice; stamp early and a failed send marks a crossing
+nobody heard about. Claiming FIRST inside a `SAVEPOINT` collapses the choice — a failed send rolls
+the claim back with it, so the crossing is simply re-evaluated next time. The savepoint is also what
+lets the alert path honour "never throw" while running inside somebody else's transaction: a caught
+error leaves a Postgres transaction aborted unless there is a savepoint to roll back to, so without
+one, swallowing an alert failure would poison the submit that called it.
+
+The suppression read (`threshold_bp >= crossed`) is a fast-fail and NOT the guard, in the same
+relationship `decide`'s read-check has with its `AND status = 'PENDING'`. Which means the
+`ON CONFLICT` is reachable only under real concurrency — see the HANDOFF note on the three tests in
+this ticket that passed without exercising what they named.
+
 **BG-7 · "No filter" is the privileged case. [checked, with a correction]**
 `visibilityWhere` returns **`undefined`** for a holder of `budget.view.all` — its own doc comment says
 so: *"or `undefined` for 'everything'"* (`routers/budgets.ts:127-132`). And `budgets.update` /

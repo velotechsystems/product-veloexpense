@@ -308,6 +308,9 @@ async function main() {
   }
 
   await seedModule(demoId, 'accounting');
+  // VX4-5 part 3a: `0025` puts app_module_enabled('budgets') into every budget
+  // table's policy, so without this the demo tenant cannot see or write a budget.
+  await seedModule(demoId, 'budgets');
   await seedReferenceData(demoId);
   // FOUR users, not three. `owner@demo.test` was added when VX2-3 made a submit
   // open an approval run: submitting routes the ladder, and admin@demo.test —
@@ -348,6 +351,7 @@ async function main() {
   // that a spec asserting "off" cannot silently depend on the seed staying that
   // way.
   await seedModule(secondId, 'accounting');
+  await seedModule(secondId, 'budgets');
   await seedReferenceData(secondId, 'Second Co Ltd.');
   await seedUser(secondId, 'owner@second.test', 'Second Owner', { role: 'ADMIN', title: 'Owner' });
   await seedUser(secondId, 'admin@second.test', 'Second Admin', { role: 'ADMIN', title: 'Controller' });

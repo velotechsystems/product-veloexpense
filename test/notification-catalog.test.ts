@@ -68,6 +68,9 @@ describe('the taxonomy', () => {
     // drift, which is the whole reason a list this obvious is pinned. An event
     // type with no emitter is a preference row nobody can explain and a template
     // nobody can test.
+    // BUDGET_THRESHOLD joined the list with VX4-5 part 3a, which gave it an
+    // emitter (`lib/budgets/alerts.ts`). Recorded here as the visible decision
+    // this assertion exists to force.
     expect([...EVENT_TYPES]).toEqual([
       'TASK_ASSIGNED',
       'APPROVED',
@@ -75,6 +78,7 @@ describe('the taxonomy', () => {
       'RETURNED',
       'RECALLED',
       'REIMBURSED',
+      'BUDGET_THRESHOLD',
     ]);
   });
 });
@@ -138,8 +142,16 @@ describe('template keys', () => {
     // Not an exhaustiveness GUARANTEE — there deliberately is none (NT-8), an
     // unmapped event degrades to shipped copy. This asserts the registry is
     // complete TODAY, which is a different and checkable claim.
+    // Over ANY shipped subject, not over EXPENSE_REPORT specifically. The old form
+    // hard-coded the assumption that every event is an expense-report event, and
+    // VX4-5 part 3a's BUDGET_THRESHOLD — whose subject is the BUDGET, because
+    // addressing it to the report would put it in the submitter's bell instead of
+    // the owner's — is the first event for which that was false. This is the same
+    // claim, generalised, and it fails the same way if a new event ships with no
+    // template at all.
     for (const eventType of EVENT_TYPES) {
-      expect(templateKeyFor(eventType, 'EXPENSE_REPORT'), eventType).not.toBeNull();
+      const mapped = SUBJECT_TYPES.filter((s) => templateKeyFor(eventType, s) !== null);
+      expect(mapped, eventType).not.toHaveLength(0);
     }
     for (const pair of mappedEventPairs()) {
       expect(EVENT_TYPES as readonly string[]).toContain(pair.eventType);

@@ -31,6 +31,7 @@ import * as lifecycle from '@/lib/expenses/lifecycle';
 import * as policy from '@/lib/policy/service';
 import { decide } from '@/lib/approvals/engine';
 import { loadBudgetSnapshots } from '@/lib/budgets/service';
+import * as alertsLib from '@/lib/budgets/alerts';
 
 const admin = new Pool({
   connectionString: process.env.ADMIN_DATABASE_URL ?? process.env.DATABASE_URL,
@@ -69,7 +70,8 @@ beforeAll(async () => {
   // through `withOrg` and would not.
   await admin.query(
     `INSERT INTO module_entitlement (organization_id, module_code, enabled)
-     VALUES ($1,'accounting',true), ($2,'accounting',true)`,
+     VALUES ($1,'accounting',true), ($2,'accounting',true),
+            ($1,'budgets',   true), ($2,'budgets',   true)`,
     [orgId, otherOrgId],
   );
 
@@ -781,5 +783,451 @@ describe('a budget never blocks, and that is enforced in both places', () => {
     const finding = summary.violations.find((v) => v.rule_code === 'RECEIPT_REQUIRED');
     expect(finding!.severity).toBe('BLOCK');
     expect(summary.blocking).toBe(true);
+  });
+});
+
+/* ══════════════════════════════════════════════════════════════════════════════
+ * VX4-5 PART 3a — THRESHOLD ALERTS (BG-6)
+ *
+ * Driven through the LIFECYCLE, like the rollup tests above, because the claim is
+ * about what a transition does. `fireThresholdAlerts` called directly would only
+ * re-test the function against itself.
+ *
+ * The test that matters most is the last one. Every other assertion here would
+ * pass on ExpenseOS's design too — a marker column suppresses repeats perfectly
+ * well until something fails or races. What their design cannot do is roll the
+ * claim back with a failed send, and that is the one this file injects a real
+ * failure to prove.
+ * ═════════════════════════════════════════════════════════════════════════════ */
+
+async function addThreshold(budgetId: string, bp: number, recipients: string[] = []) {
+  const t = await admin.query(
+    `INSERT INTO budget_alert_threshold (organization_id, budget_id, threshold_bp)
+     VALUES ($1,$2,$3) RETURNING id`,
+    [orgId, budgetId, bp],
+  );
+  for (const userId of recipients) {
+    await admin.query(
+      `INSERT INTO budget_alert_recipient (organization_id, threshold_id, user_id)
+       VALUES ($1,$2,$3)`,
+      [orgId, t.rows[0].id, userId],
+    );
+  }
+  return t.rows[0].id as string;
+}
+
+async function setOwner(budgetId: string, userId: string | null) {
+  await admin.query('UPDATE budget SET owner_id = $2 WHERE id = $1', [budgetId, userId]);
+}
+
+async function claims(periodId: string) {
+  const r = await admin.query(
+    `SELECT threshold_bp, notified_count, used_minor, amount_minor
+       FROM budget_alert_claim WHERE period_id = $1 ORDER BY threshold_bp`,
+    [periodId],
+  );
+  return r.rows.map((x) => ({
+    bp: Number(x.threshold_bp),
+    notified: Number(x.notified_count),
+    used: String(x.used_minor),
+    amount: String(x.amount_minor),
+  }));
+}
+
+/** Who has a BUDGET_THRESHOLD notification, and what it says. */
+async function alerts() {
+  const r = await admin.query(
+    `SELECT n.recipient_id, a.payload
+       FROM notification n
+       JOIN activity a ON a.id = n.activity_id
+      WHERE a.event_type = 'BUDGET_THRESHOLD'
+      ORDER BY n.created_at, n.recipient_id`,
+  );
+  return r.rows.map((x) => ({
+    recipientId: x.recipient_id as string,
+    payload: x.payload as Record<string, unknown>,
+  }));
+}
+
+describe('budget threshold alerts fire once per crossing (BG-6)', () => {
+  beforeEach(async () => {
+    await admin.query('TRUNCATE activity CASCADE');
+  });
+
+  it('alerts the owner when a threshold is crossed, once', async () => {
+    const { budgetId, periodId } = await makeBudget({ amountMinor: 2000 });
+    await setOwner(budgetId, mgrId);
+    await addThreshold(budgetId, 9000);
+
+    const first = await draft(1800); // 90% of 2000
+    await withOrg(orgId, (tx) => lifecycle.submitReport(tx, first, empId));
+
+    expect(await claims(periodId)).toEqual([
+      { bp: 9000, notified: 1, used: '1800', amount: '2000' },
+    ]);
+    const sent = await alerts();
+    expect(sent).toHaveLength(1);
+    expect(sent[0].recipientId).toBe(mgrId);
+    expect(sent[0].payload.thresholdPercent).toBe('90');
+  });
+
+  it('does not alert again while the period sits at the same level', async () => {
+    const { budgetId, periodId } = await makeBudget({ amountMinor: 4000 });
+    await setOwner(budgetId, mgrId);
+    await addThreshold(budgetId, 9000);
+
+    // Two submissions, each on its own report, both leaving the period at or
+    // past 90%. This is the noise their marker exists to suppress — "an alert
+    // that arrives on every save is one people filter within a day".
+    for (const amount of [3600, 100]) {
+      const r = await draft(amount);
+      await withOrg(orgId, (tx) => lifecycle.submitReport(tx, r, empId));
+    }
+    expect(await claims(periodId)).toHaveLength(1);
+    expect(await alerts()).toHaveLength(1);
+  });
+
+  it('alerts AGAIN when a higher threshold is crossed', async () => {
+    const { budgetId, periodId } = await makeBudget({ amountMinor: 4000 });
+    await setOwner(budgetId, mgrId);
+    await addThreshold(budgetId, 5000);
+    await addThreshold(budgetId, 10000);
+
+    const first = await draft(2000); // 50%
+    await withOrg(orgId, (tx) => lifecycle.submitReport(tx, first, empId));
+    expect((await claims(periodId)).map((c) => c.bp)).toEqual([5000]);
+
+    const second = await draft(2000); // 100%
+    await withOrg(orgId, (tx) => lifecycle.submitReport(tx, second, empId));
+    expect((await claims(periodId)).map((c) => c.bp)).toEqual([5000, 10000]);
+    expect(await alerts()).toHaveLength(2);
+  });
+
+  it('a claim at a HIGHER level suppresses a lower crossing', async () => {
+    // The half a unique index cannot express: a period already alerted at 100%
+    // must not alert again at 90% because a correction brought it down a little.
+    //
+    // THE ORDERING HERE IS THE WHOLE TEST, and the first version of it did not
+    // have it — sabotaging `threshold_bp >= $2` to `= $2` failed nothing, because
+    // every path the test took happened to re-cross the SAME level. For `>=` to
+    // be load-bearing the period has to hold a claim at 100% and NO claim at 90%,
+    // which only happens when it jumps past both levels in one movement:
+    //
+    //   small (7.5%)              no crossing, no claim
+    //   + big  -> 100%            crosses BOTH; only the highest is claimed
+    //   recall small -> 92.5%     crosses 90%, which has never been claimed
+    //
+    // Under `=` that last step alerts a second time. Under `>=` it does not.
+    const { budgetId, periodId } = await makeBudget({ amountMinor: 4000 });
+    await setOwner(budgetId, mgrId);
+    await addThreshold(budgetId, 9000);
+    await addThreshold(budgetId, 10000);
+
+    const small = await draft(300);
+    await withOrg(orgId, (tx) => lifecycle.submitReport(tx, small, empId));
+    expect(await claims(periodId)).toHaveLength(0);
+
+    const big = await draft(3700); // 300 + 3700 = 4000 = 100%
+    await withOrg(orgId, (tx) => lifecycle.submitReport(tx, big, empId));
+    expect((await claims(periodId)).map((c) => c.bp)).toEqual([10000]);
+
+    // Back to 92.5%: over 90%, so no re-arm, and 90% has no claim of its own.
+    await withOrg(orgId, (tx) => lifecycle.recallReport(tx, small, empId));
+    expect((await periodTotals(periodId)).pending).toBe('3700');
+    expect((await claims(periodId)).map((c) => c.bp)).toEqual([10000]);
+    expect(await alerts()).toHaveLength(1);
+  });
+
+  it('RE-ARMS when the period falls back under every threshold', async () => {
+    // Their `clearBudgetAlertMarkers`, as a delete. Without it a budget that goes
+    // over, gets a correction and goes over again stays silent the second time.
+    const { budgetId, periodId } = await makeBudget({ amountMinor: 2000 });
+    await setOwner(budgetId, mgrId);
+    await addThreshold(budgetId, 9000);
+
+    const first = await draft(1800);
+    await withOrg(orgId, (tx) => lifecycle.submitReport(tx, first, empId));
+    expect(await claims(periodId)).toHaveLength(1);
+
+    await withOrg(orgId, (tx) => lifecycle.recallReport(tx, first, empId));
+    expect(await claims(periodId)).toHaveLength(0);
+
+    const again = await draft(1800);
+    await withOrg(orgId, (tx) => lifecycle.submitReport(tx, again, empId));
+    expect(await claims(periodId)).toHaveLength(1);
+    expect(await alerts()).toHaveLength(2);
+  });
+
+  it('tells the level’s own recipients as well as the owner, de-duped', async () => {
+    const { budgetId } = await makeBudget({ amountMinor: 2000 });
+    await setOwner(budgetId, mgrId);
+    // The owner is ALSO a named recipient. An empty recipient list means "owner
+    // only", never "nobody" — and a doubled list must not mean two bells.
+    await addThreshold(budgetId, 9000, [mgrId, admId]);
+
+    const r = await draft(1800);
+    await withOrg(orgId, (tx) => lifecycle.submitReport(tx, r, empId));
+
+    const sent = await alerts();
+    expect(sent.map((s) => s.recipientId).sort()).toEqual([mgrId, admId].sort());
+  });
+
+  it('tells a budget owner who broke their OWN budget', async () => {
+    // The one place `includeActor` is used. Every other event in the product
+    // excludes the actor, correctly — but a threshold alert is about a running
+    // total, and the owner filing the claim that breaks it is exactly who needs
+    // telling.
+    const { budgetId } = await makeBudget({ amountMinor: 2000 });
+    await setOwner(budgetId, empId);
+    await addThreshold(budgetId, 9000);
+
+    const r = await draft(1800);
+    await withOrg(orgId, (tx) => lifecycle.submitReport(tx, r, empId));
+
+    const sent = await alerts();
+    expect(sent).toHaveLength(1);
+    expect(sent[0].recipientId).toBe(empId);
+  });
+
+  it('records the crossing even when there is nobody to tell', async () => {
+    // "Nobody to tell, but the crossing still happened" — so making somebody the
+    // owner next month does not deliver a backlog of stale alerts.
+    const { budgetId, periodId } = await makeBudget({ amountMinor: 2000 });
+    await addThreshold(budgetId, 9000);
+
+    const r = await draft(1800);
+    await withOrg(orgId, (tx) => lifecycle.submitReport(tx, r, empId));
+
+    expect(await claims(periodId)).toEqual([
+      { bp: 9000, notified: 0, used: '1800', amount: '2000' },
+    ]);
+    expect(await alerts()).toHaveLength(0);
+  });
+
+  it('claims nothing when the budget has no thresholds configured', async () => {
+    const { budgetId, periodId } = await makeBudget({ amountMinor: 100 });
+    await setOwner(budgetId, mgrId);
+
+    const r = await draft(1800); // far over, but nobody asked to be told
+    await withOrg(orgId, (tx) => lifecycle.submitReport(tx, r, empId));
+
+    expect(await claims(periodId)).toHaveLength(0);
+    expect(await alerts()).toHaveLength(0);
+  });
+
+  it('sends nothing when a claim for this level is already on the row', async () => {
+    // THE FAST-FAIL READ, and named for it. An earlier version of this test
+    // claimed to be about the atomic claim and was not: the read catches
+    // `threshold_bp >= crossed`, which includes the equal case, so a sequential
+    // caller can NEVER reach the `ON CONFLICT`. Sabotaging the conflict clause
+    // failed nothing, which is how that was found. The real guard is exercised by
+    // the two-connection test below.
+    const { budgetId, periodId } = await makeBudget({ amountMinor: 2000 });
+    await setOwner(budgetId, mgrId);
+    await addThreshold(budgetId, 9000);
+    await admin.query(
+      `INSERT INTO budget_alert_claim
+         (organization_id, period_id, threshold_bp, used_minor, amount_minor, notified_count)
+       VALUES ($1,$2,9000,0,2000,7)`,
+      [orgId, periodId],
+    );
+
+    const r = await draft(1800);
+    await withOrg(orgId, (tx) => lifecycle.submitReport(tx, r, empId));
+
+    // Untouched — notified_count is still the other writer's, not overwritten.
+    expect(await claims(periodId)).toEqual([
+      { bp: 9000, notified: 7, used: '0', amount: '2000' },
+    ]);
+    expect(await alerts()).toHaveLength(0);
+  });
+
+  it('the CLAIM refuses a second writer that got past the read (two connections)', async () => {
+    // The guarantee the whole design rests on, and the only test here that can
+    // reach it. `ON CONFLICT DO NOTHING` is a CONCURRENCY guard: sequentially the
+    // fast-fail read always fires first, so a single-threaded test cannot exercise
+    // it — an earlier version of this file had an assertion that looked like
+    // coverage and was not, found by sabotaging the conflict clause and watching
+    // nothing fail.
+    //
+    // Driven through `fireThresholdAlerts` ITSELF on two hand-managed
+    // connections, not through raw SQL. A raw INSERT here would prove that
+    // Postgres enforces a unique index, which was never in doubt; what needs
+    // proving is that the CODE asks it to. `QueryRunner` is `Pick<PoolClient,
+    // 'query'>`, so a client is one.
+    //
+    // This is BG-6's first double-send path exactly: "two concurrent submits both
+    // pass the read. No row lock, no unique guard."
+    const { budgetId, periodId } = await makeBudget({ amountMinor: 2000 });
+    await setOwner(budgetId, mgrId);
+    await addThreshold(budgetId, 9000);
+    await admin.query(
+      `UPDATE budget_period SET actual_minor = 1800, rolled_up_at = now() WHERE id = $1`,
+      [periodId],
+    );
+
+    const a = await admin.connect();
+    const b = await admin.connect();
+    try {
+      for (const c of [a, b]) {
+        await c.query('BEGIN');
+        await c.query("SELECT set_config('app.current_org', $1, true)", [orgId]);
+      }
+
+      // A claims and sends, and does NOT commit yet.
+      const first = await alertsLib.fireThresholdAlerts(a, [periodId], empId);
+      expect(first).toEqual({ fired: 1, rearmed: 0 });
+
+      // B RUNS ON A PROXY THAT CONTROLS ONE THING: when A commits.
+      //
+      // The first version of this test just started B and committed A beside it,
+      // trusting the interleaving. It does not work — B's three reads and A's
+      // COMMIT are separate round trips, and A's commit lands before B's fast-fail
+      // read every time, so B saw the claim and returned early. The test passed
+      // and the sabotage that upserts instead of refusing ALSO passed, which is
+      // how the hole was found.
+      //
+      // The proxy holds A open until B is at the INSERT, which is the only moment
+      // the `ON CONFLICT` can be reached. It intercepts TIMING and never an
+      // outcome — every statement is still run against a real connection, and both
+      // results remain reachable.
+      let aCommitted = false;
+      const bAtTheInsert = {
+        query: async (text: string, params?: unknown[]) => {
+          if (!aCommitted && text.includes('INSERT INTO budget_alert_claim')) {
+            aCommitted = true;
+            await a.query('COMMIT');
+          }
+          return b.query(text, params);
+        },
+      } as unknown as Parameters<typeof alertsLib.fireThresholdAlerts>[0];
+
+      const second = await alertsLib.fireThresholdAlerts(bAtTheInsert, [periodId], empId);
+      expect(aCommitted).toBe(true); // B really did reach the insert
+      expect(second).toEqual({ fired: 0, rearmed: 0 });
+      await b.query('COMMIT');
+
+      const rows = await admin.query(
+        'SELECT count(*)::int AS n FROM budget_alert_claim WHERE period_id = $1',
+        [periodId],
+      );
+      expect(rows.rows[0].n).toBe(1);
+      // One claim AND one bell. A second notification is the defect; a second
+      // claim is merely how it would have happened.
+      expect(await alerts()).toHaveLength(1);
+    } finally {
+      // ROLL BOTH BACK BEFORE RELEASING. A connection returned to the pool with an
+      // open transaction keeps its locks, and every later test that touches
+      // `budget_alert_claim` then waits five seconds and times out — which is what
+      // happened while sabotaging this file, and turned one real failure into
+      // three that pointed nowhere. Harmless after a COMMIT.
+      await a.query('ROLLBACK').catch(() => {});
+      await b.query('ROLLBACK').catch(() => {});
+      a.release();
+      b.release();
+    }
+  });
+
+  it('the LOADER\'s first-sight recompute does not alert', async () => {
+    // `loadBudgetSnapshots` recomputes a never-calculated period, so it writes the
+    // same totals the transition hook does — and must NOT alert on them. That
+    // recompute is a lazy initialisation of a baseline, not an observation that
+    // spend moved: alerting there would fire on history the moment somebody opened
+    // a draft, attributed to whoever happened to be editing.
+    //
+    // Asserted on the CLAIM rather than on the notification, because a claim with
+    // nobody to tell is still a claim — checking only the bell would pass on an
+    // alert pass that ran and found no audience.
+    await budgetRule();
+    const { budgetId, periodId } = await makeBudget({ amountMinor: 2000 });
+    await setOwner(budgetId, mgrId);
+    await addThreshold(budgetId, 9000);
+
+    // THE FIXTURE IS THE TEST. An earlier version just validated a draft against
+    // an empty period — where the loader recomputes to zero, nothing crosses, and
+    // no alert would fire whether the loader alerted or not. It passed with the
+    // loader wired to alert, which is how that was found.
+    //
+    // So the period has to hold spend that ALREADY crosses the threshold while
+    // still being never-calculated: an approved report written straight to the
+    // database, the way a seed, an import or a restored backup arrives.
+    const earlier = await draft(1900);
+    await admin.query(
+      `UPDATE expense_report SET status = 'APPROVED', department_id = $2 WHERE id = $1`,
+      [earlier, engineeringId],
+    );
+    expect((await periodTotals(periodId)).rolledUpAt).toBeNull();
+
+    const r = await draft(50);
+    const summary = await withOrg(orgId, (tx) => policy.validateReport(tx, r));
+
+    // The rollup DID run — the never-calculated path from part 2 — and it found
+    // 1900 of 2000, which is over the 90% threshold.
+    const after = await periodTotals(periodId);
+    expect(after.rolledUpAt).not.toBeNull();
+    expect(after.actual).toBe('1900');
+    // The rule answered too, so this is not a case of nothing having happened.
+    expect(summary.violations.some((v) => v.rule_code === 'BUDGET_OVERAGE')).toBe(false);
+
+    // …and NOTHING was claimed or sent, because a lazy initialisation of a
+    // baseline is not an observation that spend moved.
+    expect(await claims(periodId)).toHaveLength(0);
+    expect(await alerts()).toHaveLength(0);
+  });
+
+  it('a FAILED send leaves no claim, and does not take the submit down with it', async () => {
+    // THE TEST THIS DESIGN EXISTS FOR, and the one ExpenseOS's shape cannot pass.
+    //
+    // Their marker is stamped after the fan-out precisely so a failure re-fires —
+    // but their fan-out and their stamp are separate statements with a `catch`
+    // between them, so a send that succeeds and a stamp that throws sends twice,
+    // and there is no arrangement of the two that fixes both directions.
+    //
+    // Here the claim and the send are one savepoint. Breaking the notification
+    // path mid-transaction must leave: no claim (so it re-fires), no notification,
+    // and a report that submitted anyway — because "an expense report that cannot
+    // be submitted because a notification failed is a worse outcome than a missing
+    // notification".
+    //
+    // The failure is injected in the database rather than mocked: these tests run
+    // the real service against a real Postgres, and a stubbed `notify` would prove
+    // only that the code calls something.
+    const { budgetId, periodId } = await makeBudget({ amountMinor: 2000 });
+    await setOwner(budgetId, mgrId);
+    await addThreshold(budgetId, 9000);
+
+    // The injection is SCOPED TO BUDGET ACTIVITY ROWS, and the first version was
+    // not — it renamed `activity.payload`, which also broke the approval run's own
+    // notification in `openRun`. That call is not inside a savepoint and correctly
+    // took the submit down with it, so the test failed for a reason that had
+    // nothing to do with what it was asserting. A CHECK on `subject_type` breaks
+    // exactly one insert: the budget alert's.
+    const r = await draft(1800);
+    await admin.query(
+      `ALTER TABLE activity ADD CONSTRAINT tmp_no_budget_activity
+         CHECK (subject_type <> 'BUDGET')`,
+    );
+    try {
+      await withOrg(orgId, (tx) => lifecycle.submitReport(tx, r, empId));
+    } finally {
+      await admin.query('ALTER TABLE activity DROP CONSTRAINT tmp_no_budget_activity');
+    }
+
+    // The submit went through and the ROLLUP still happened — the alert is the
+    // only thing that was lost.
+    const status = await admin.query('SELECT status FROM expense_report WHERE id = $1', [r]);
+    expect(status.rows[0].status).toBe('SUBMITTED');
+    expect((await periodTotals(periodId)).pending).toBe('1800');
+
+    // No claim, so the next evaluation tries again. This is the assertion that
+    // fails if the claim is written outside the savepoint.
+    expect(await claims(periodId)).toHaveLength(0);
+    expect(await alerts()).toHaveLength(0);
+
+    // And it really does re-fire once the path works again.
+    const next = await draft(100);
+    await withOrg(orgId, (tx) => lifecycle.submitReport(tx, next, empId));
+    expect(await claims(periodId)).toHaveLength(1);
+    expect(await alerts()).toHaveLength(1);
   });
 });
