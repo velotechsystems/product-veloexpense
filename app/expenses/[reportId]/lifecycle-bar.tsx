@@ -13,7 +13,9 @@ import { Input } from '@/components/ui/input';
 import type { ReportEvent } from '@/lib/expenses/lifecycle';
 import type { ReportStatus } from '@/lib/expenses/service';
 import { recallReportFromForm, submitReportFromForm } from '../actions';
-import { StatusBadge, cardClass, formatDate } from '../ui';
+import { StatusBadge, cardClass } from '../ui';
+import { formatInstant } from '@/lib/i18n/format';
+import type { ReaderPrefs } from '@/lib/i18n/resolve';
 
 export function LifecycleBar({
   reportId,
@@ -62,7 +64,14 @@ export function LifecycleBar({
   );
 }
 
-export function ReportHistory({ events }: { events: ReportEvent[] }) {
+export function ReportHistory({
+  events,
+  prefs,
+}: {
+  events: ReportEvent[];
+  /** Sync, like LifecycleBar — the page resolves once and threads down. */
+  prefs: ReaderPrefs;
+}) {
   if (events.length === 0) return null;
   return (
     <section className={`${cardClass} flex flex-col gap-3 p-5`}>
@@ -77,7 +86,7 @@ export function ReportHistory({ events }: { events: ReportEvent[] }) {
               {event.from_status} → {event.to_status}
             </span>
             <span className="text-muted-foreground">
-              by {event.actor_name ?? event.actor_email} on {formatDate(event.created_at)}
+              by {event.actor_name ?? event.actor_email} on {formatInstant(event.created_at, prefs)}
             </span>
             {event.note ? <span className="text-muted-foreground">— {event.note}</span> : null}
           </li>

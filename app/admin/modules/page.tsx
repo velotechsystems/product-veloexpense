@@ -15,7 +15,9 @@
  */
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
-import { ErrorBanner, formatDate } from '@/app/expenses/ui';
+import { ErrorBanner } from '@/app/expenses/ui';
+import { formatInstant } from '@/lib/i18n/format';
+import { readerPrefs } from '@/lib/i18n/request';
 import { getModulesPage, toggleFromForm } from './actions';
 
 export const dynamic = 'force-dynamic';
@@ -25,6 +27,7 @@ export default async function ModulesPage({
 }: {
   searchParams: Promise<{ error?: string; changed?: string }>;
 }) {
+  const prefs = await readerPrefs();
   const { error, changed } = await searchParams;
   const { entitlements } = await getModulesPage();
   const on = entitlements.filter((e) => e.enabled).length;
@@ -103,12 +106,12 @@ export default async function ModulesPage({
                 <td className="px-3 py-2 text-xs text-muted-foreground">
                   {enabled && enabledAt ? (
                     <>
-                      {formatDate(enabledAt)}
+                      {formatInstant(enabledAt, prefs)}
                       {changedByName ? <span className="block">by {changedByName}</span> : null}
                     </>
                   ) : disabledAt ? (
                     <>
-                      turned off {formatDate(disabledAt)}
+                      turned off {formatInstant(disabledAt, prefs)}
                       {changedByName ? <span className="block">by {changedByName}</span> : null}
                     </>
                   ) : (

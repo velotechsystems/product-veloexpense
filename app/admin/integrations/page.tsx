@@ -24,7 +24,9 @@
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { EmptyRow, ErrorBanner, formatDate } from '@/app/expenses/ui';
+import { EmptyRow, ErrorBanner } from '@/app/expenses/ui';
+import { formatInstant } from '@/lib/i18n/format';
+import { readerPrefs } from '@/lib/i18n/request';
 import {
   connectFromForm,
   authoriseFromForm,
@@ -98,6 +100,7 @@ export default async function IntegrationsPage({
     notice?: string;
   }>;
 }) {
+  const prefs = await readerPrefs();
   const { error, connected, disconnected, tested, detail, notice } = await searchParams;
   const { installations, available, keyConfigured, moduleEnabled } = await getIntegrationsPage();
 
@@ -230,7 +233,7 @@ export default async function IntegrationsPage({
                     <td className="px-3 py-2 text-muted-foreground">
                       {i.connected_at ? (
                         <>
-                          {formatDate(i.connected_at)}
+                          {formatInstant(i.connected_at, prefs)}
                           {i.connected_by_name ? (
                             <span className="block text-xs">by {i.connected_by_name}</span>
                           ) : null}
@@ -248,7 +251,7 @@ export default async function IntegrationsPage({
                             {i.last_test_ok ? 'worked' : 'failed'}
                           </span>
                           <span className="block text-xs text-muted-foreground">
-                            {formatDate(i.last_test_at)}
+                            {formatInstant(i.last_test_at, prefs)}
                           </span>
                           {i.last_test_error ? (
                             <span className="block text-xs text-destructive">

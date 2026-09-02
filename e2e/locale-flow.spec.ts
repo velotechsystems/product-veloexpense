@@ -108,6 +108,51 @@ async function sampleText(page: Page, testid: string): Promise<string> {
   return text as string;
 }
 
+
+/**
+ * A report with one dated expense, owned by the signed-in admin.
+ *
+ * Created here rather than borrowed from `expense-flow`'s leftovers: that spec
+ * runs earlier alphabetically, so borrowing would work today and break the day
+ * somebody renames a file — which is the handoff's rule about a spec that
+ * depends on another spec's cleanup. Removed in the afterAll.
+ */
+const DATED = '2026-03-04';
+let reportId: string | null = null;
+
+async function makeDatedReport(): Promise<string> {
+  const p = pool();
+  try {
+    const { rows } = await p.query<{ id: string }>(
+      `WITH me AS (
+         SELECT u.id, u.organization_id
+           FROM app_user u JOIN organization o ON o.id = u.organization_id
+          WHERE o.slug = 'demo' AND lower(u.email) = $1
+       ), r AS (
+         INSERT INTO expense_report (organization_id, submitter_id, title, currency_code, number)
+         SELECT organization_id, id, 'Locale date check', 'CAD', 'EXP-LOCALE'
+           FROM me RETURNING id, organization_id
+       )
+       INSERT INTO expense (organization_id, report_id, txn_date, currency_code, merchant)
+       SELECT organization_id, id, $2::date, 'CAD', NULL FROM r
+       RETURNING report_id AS id`,
+      [ADMIN, DATED],
+    );
+    return rows[0].id;
+  } finally {
+    await p.end();
+  }
+}
+
+async function dropDatedReport(id: string) {
+  const p = pool();
+  try {
+    await p.query(`DELETE FROM expense_report WHERE id = $1`, [id]);
+  } finally {
+    await p.end();
+  }
+}
+
 test.describe('the locale chain, end to end', () => {
   test.describe.configure({ mode: 'serial' });
 
@@ -123,6 +168,7 @@ test.describe('the locale chain, end to end', () => {
   test.afterAll(async () => {
     await setCompany(DEFAULT_LOCALE, 'UTC');
     await clearMine();
+    if (reportId) await dropDatedReport(reportId);
   });
 
   test('the admin screen shows the company default, and the page says so in lang', async ({
@@ -247,6 +293,83 @@ test.describe('the locale chain, end to end', () => {
     await setCompany('fr-CA', 'UTC');
     await page.goto('/expenses');
     expect(await langOf(page)).toBe('fr-CA');
+  });
+
+
+  test('money on a real screen follows the reader, not the server', async ({ page }) => {
+    // VX4-7 part 1b. `formatMinor` has had a locale parameter since VX1-6 and
+    // all 23 call sites let it default, so the parameter was correct and inert —
+    // IL-2's shape in the money code. This is the assertion that a screen now
+    // supplies it: CAD renders `$` for en-CA and `CA$` for en-US, which is IL-1
+    // showing up in the totals column of a list people read every day.
+    await setCompany(DEFAULT_LOCALE, 'UTC');
+    await clearMine();
+    reportId = reportId ?? (await makeDatedReport());
+
+    await page.goto('/expenses');
+    await expect(page.getByRole('heading', { name: /Expense reports/i })).toBeVisible();
+    const canadian = await page.locator('table').first().textContent();
+    expect(canadian ?? '').not.toContain('CA$');
+
+    await page.goto('/preferences');
+    await page.getByTestId('my-locale').selectOption('en-US');
+    await page.getByRole('button', { name: 'Save' }).click();
+    await expect(page.getByText('Saved.')).toBeVisible();
+
+    await page.goto('/expenses');
+    const american = await page.locator('table').first().textContent();
+    expect(american ?? '').toContain('CA$');
+    await clearMine();
+  });
+
+  test('the expense date field still holds YYYY-MM-DD in en-US', async ({ page }) => {
+    // THE DATA-LOSS GUARD, end to end, and the reason it is an e2e rather than a
+    // unit test: the failure is a browser silently refusing a value it cannot
+    // parse and rendering an EMPTY field. Nothing throws, nothing logs, and a
+    // unit test on the formatter cannot see it because the string is a string
+    // either way. Only asking a real Chrome what the input actually holds does.
+    //
+    // `scripts/check-i18n.mjs` refuses the shape statically; this proves the
+    // shape that shipped is the right one.
+    reportId = reportId ?? (await makeDatedReport());
+
+    await page.goto('/preferences');
+    await page.getByTestId('my-locale').selectOption('en-US');
+    await page.getByRole('button', { name: 'Save' }).click();
+    await expect(page.getByText('Saved.')).toBeVisible();
+
+    await page.goto(`/expenses/${reportId}`);
+    const dateField = page.locator('input[type="date"][name="txnDate"]').first();
+    await expect(dateField).toBeVisible();
+    // The VALUE, not the rendered text — a date input shows the user their own
+    // locale's rendering and holds ISO underneath. It is the underneath that
+    // round-trips through the form.
+    await expect(dateField).toHaveValue(DATED);
+
+    // And the same field read as a display date DOES follow the locale, which is
+    // what makes the pair meaningful: the two are deliberately different jobs.
+    const shown = await page.locator('body').textContent();
+    expect(shown ?? '').toMatch(/Mar(ch)? 4|4 Mar|2026-03-04/);
+    await clearMine();
+  });
+
+  test('a calendar date does not move when the reader changes zone', async ({ page }) => {
+    // An expense dated the 4th is the 4th for everyone — it has no time and no
+    // zone. This is the half upstream gets wrong in the other direction, and the
+    // half our own `toISOString()` got wrong on any server east of UTC.
+    reportId = reportId ?? (await makeDatedReport());
+
+    await page.goto('/preferences');
+    await page.getByTestId('my-timezone').selectOption('Australia/Sydney');
+    await page.getByRole('button', { name: 'Save' }).click();
+    await expect(page.getByText('Saved.')).toBeVisible();
+
+    await page.goto(`/expenses/${reportId}`);
+    await expect(page.locator('input[type="date"][name="txnDate"]').first()).toHaveValue(DATED);
+    const sydney = await page.locator('body').textContent();
+    expect(sydney ?? '').toMatch(/Mar(ch)? 4|4 Mar|2026-03-04/);
+    expect(sydney ?? '').not.toMatch(/Mar(ch)? 3\b/);
+    await clearMine();
   });
 
   /**

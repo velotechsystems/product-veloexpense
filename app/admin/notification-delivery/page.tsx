@@ -13,7 +13,9 @@
  */
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
-import { EmptyRow, ErrorBanner, formatDate } from '@/app/expenses/ui';
+import { EmptyRow, ErrorBanner } from '@/app/expenses/ui';
+import { formatInstant } from '@/lib/i18n/format';
+import { readerPrefs } from '@/lib/i18n/request';
 import { drainNowFromForm, getQueuePage, retryDeliveryFromForm } from './actions';
 
 export const dynamic = 'force-dynamic';
@@ -33,6 +35,7 @@ export default async function NotificationDeliveryPage({
 }: {
   searchParams: Promise<{ error?: string; status?: string }>;
 }) {
+  const prefs = await readerPrefs();
   const { error, status } = await searchParams;
   const { rows, summary, transport, filter } = await getQueuePage(status);
   const needsAttention = summary.dead + summary.failed;
@@ -163,7 +166,7 @@ export default async function NotificationDeliveryPage({
                     >
                       {row.eventType}
                     </Link>
-                    <p className="text-xs text-muted-foreground">{formatDate(row.createdAt)}</p>
+                    <p className="text-xs text-muted-foreground">{formatInstant(row.createdAt, prefs)}</p>
                   </td>
                   <td className="px-3 py-2">
                     <span
@@ -173,12 +176,12 @@ export default async function NotificationDeliveryPage({
                     </span>
                     {row.status === 'SENT' && row.sentAt ? (
                       <p className="mt-0.5 text-xs text-muted-foreground">
-                        accepted {formatDate(row.sentAt)}
+                        accepted {formatInstant(row.sentAt, prefs)}
                       </p>
                     ) : null}
                     {row.status === 'FAILED' ? (
                       <p className="mt-0.5 text-xs text-muted-foreground">
-                        next try {formatDate(row.nextAttemptAt)}
+                        next try {formatInstant(row.nextAttemptAt, prefs)}
                       </p>
                     ) : null}
                     {row.claimedAt ? (

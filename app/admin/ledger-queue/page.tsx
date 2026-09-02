@@ -24,7 +24,9 @@ import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { formatMinor } from '@/lib/money';
-import { EmptyRow, ErrorBanner, formatDate } from '@/app/expenses/ui';
+import { EmptyRow, ErrorBanner } from '@/app/expenses/ui';
+import { formatInstant } from '@/lib/i18n/format';
+import { readerPrefs } from '@/lib/i18n/request';
 import {
   cancelFromForm,
   dryRunFromForm,
@@ -44,11 +46,25 @@ const STATUS_TEXT: Record<string, string> = {
   NEEDS_REVIEW: 'needs review',
 };
 
+/*
+ * `undefined` for `minorUnit` below is DELIBERATE and preserves today's exact
+ * behaviour: this screen's query does not select `currency.minor_unit`, so the
+ * formatter's default of 2 is what has always been used here.
+ *
+ * That is a real gap and it is NOT this ticket's — `lib/analytics/service.ts`
+ * already carries the warning ("formatMinor(x, 'JPY', 2) prints a hundredth of
+ * …"), and five queries across approvals, reimbursements and the ledger queue
+ * would each need the currency join to close it. Harmless while the product
+ * ships CAD and USD, both of which have a minor unit of 2. Writing `undefined`
+ * rather than a literal `2` is what keeps it visible as an absence instead of
+ * baking the assumption in. Boarded, not folded into a locale PR.
+ */
 export default async function LedgerQueuePage({
   searchParams,
 }: {
   searchParams: Promise<{ error?: string; preview?: string }>;
 }) {
+  const prefs = await readerPrefs();
   const { error, preview } = await searchParams;
   // The dry run's result travels in the query string rather than being re-read,
   // so what is shown belongs to the button that was pressed. A malformed value is
@@ -153,7 +169,7 @@ export default async function LedgerQueuePage({
                       )}
                     </td>
                     <td className="px-3 py-2 tabular-nums">
-                      {formatMinor(line.amountMinor, previewed.currencyCode)}
+                      {formatMinor(line.amountMinor, previewed.currencyCode, undefined, prefs.locale)}
                     </td>
                   </tr>
                 ))}
@@ -161,7 +177,7 @@ export default async function LedgerQueuePage({
             </table>
           </div>
           <p className="text-sm text-muted-foreground">
-            Total {formatMinor(previewed.totalMinor, previewed.currencyCode)}
+            Total {formatMinor(previewed.totalMinor, previewed.currencyCode, undefined, prefs.locale)}
           </p>
         </section>
       ) : null}
@@ -259,7 +275,7 @@ export default async function LedgerQueuePage({
                     <td className="px-3 py-2 tabular-nums">
                       {row.total_minor === null
                         ? '—'
-                        : formatMinor(row.total_minor, row.currency_code ?? 'CAD')}
+                        : formatMinor(row.total_minor, row.currency_code ?? 'CAD', undefined, prefs.locale)}
                     </td>
                     <td className="px-3 py-2">
                       <span className={needsReview || row.status === 'DEAD' ? 'text-destructive' : ''}>
@@ -272,7 +288,7 @@ export default async function LedgerQueuePage({
                       ) : null}
                       {row.posted_at ? (
                         <span className="block text-xs text-muted-foreground">
-                          {formatDate(row.posted_at)}
+                          {formatInstant(row.posted_at, prefs)}
                         </span>
                       ) : null}
                     </td>

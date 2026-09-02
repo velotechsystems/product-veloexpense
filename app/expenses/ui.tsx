@@ -80,9 +80,16 @@ export function EmptyRow({ colSpan, children }: { colSpan: number; children: Rea
   );
 }
 
-export function formatDate(value: Date | string | null): string {
-  if (!value) return '—';
-  const date = typeof value === 'string' ? new Date(value) : value;
-  if (Number.isNaN(date.getTime())) return '—';
-  return date.toISOString().slice(0, 10);
-}
+/**
+ * `formatDate` LIVED HERE and is gone — VX4-7 part 1b.
+ *
+ * It was `toISOString().slice(0, 10)` and it did three different jobs at twenty
+ * call sites, badly at two of them. Its replacements are in `lib/i18n/format.ts`
+ * and there are three, because there are three kinds of value:
+ * `formatCalendarDate` for a `date` column, `formatInstant` for a `timestamptz`,
+ * and `toDateInputValue` for an `<input type="date">`.
+ *
+ * It is DELETED rather than deprecated, and not re-exported from here, so that
+ * the compiler had to name every caller — which is how all twenty were moved
+ * deliberately instead of by search-and-replace.
+ */

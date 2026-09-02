@@ -49,6 +49,7 @@ import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { formatMinor } from '@/lib/money';
+import { readerPrefs } from '@/lib/i18n/request';
 import { getAnalyticsPage } from './actions';
 import type { SpendSlice } from '@/lib/analytics/service';
 import { EmptyRow, ErrorBanner, cardClass, fieldClass, labelClass } from '@/app/expenses/ui';
@@ -97,11 +98,12 @@ export default async function AnalyticsPage({
 }: {
   searchParams: Promise<{ from?: string; to?: string }>;
 }) {
+  const prefs = await readerPrefs();
   const sp = await searchParams;
   const { moduleEnabled, summary, problem } = await getAnalyticsPage(sp.from, sp.to);
 
   const money = (v: bigint | string) =>
-    summary ? formatMinor(v, summary.baseCurrency, summary.baseMinorUnit) : '—';
+    summary ? formatMinor(v, summary.baseCurrency, summary.baseMinorUnit, prefs.locale) : '—';
 
   return (
     <main className="mx-auto flex max-w-6xl flex-col gap-6 p-6">
@@ -217,7 +219,7 @@ export default async function AnalyticsPage({
                       // USD", which is a number no reader of this screen thinks in.
                       // No trailing code: `formatMinor` already prefixes one
                       // ("US$77.00"), and "US$77.00 USD" says it twice.
-                      formatMinor(minor, code, summary.unconvertible.minorUnits[code] ?? 2),
+                      formatMinor(minor, code, summary.unconvertible.minorUnits[code] ?? 2, prefs.locale),
                   )
                   .join(', ')}{' '}
                 could not be valued in {summary.baseCurrency}. It is counted here and nowhere else —

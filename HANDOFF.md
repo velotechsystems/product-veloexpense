@@ -2081,8 +2081,76 @@ shipped.
 | **VX4-3** | **Branding that actually renders** | BR-2 is the surprise: the fields, the admin form and the validation all exist and **nothing reads them**. So the port is the easy half and the render path is net-new — CSS custom properties injected per tenant (BR-3, deriving row/hover shades from the primary rather than hardcoding them), a tenant logo served pre-auth on the `public-icons` route's proven pattern (BR-4), `generateMetadata` instead of a static title (BR-5), and a branded email shell on VX2-8's template layer (BR-6). | 3 |
 | **VX4-5** | **Budgets, tenant-scoped, on our own chart of accounts** | BG-2: `Budget.glAccountId` is a **required** FK into a NetSuite SOAP cache, and their vendor-neutral `Account` table was deleted — so budgets there are uncreatable without NetSuite. **VX3-1 already fixed this for us**; budgets point at `gl_account` and a vendor becomes an alias. Plus BG-1 (tenant column and composite keys on five tables, including an index Prisma cannot express), BG-3 (actuals recomputed over the whole fiscal year on every approval click, with an unbounded FX load → rollup), BG-6 (alert idempotency by mutable marker → our atomic-claim idiom). | 4 |
 | **VX4-6** | **Analytics, tenant-scoped** | The tenancy half is free (above). The work is AN-7 — a missing FX rate is currently summed **as if it were base currency**, unflagged, while the budget code counts unconverted amounts for the same situation — and AN-10: unbounded ranges, no `date` index, and a home page that runs a full-history aggregate for every signed-in user. Plus AN-8's lesson: size the data with a predicate, never with a role check that then queries everything. | 4 |
-| **VX4-7** ⏳ | **Locale: retag `en` → `en-CA`, add `en-US`** — part 1 (spine) DONE, parts 1b/2/3 open | IL-1: their `en` already formats as en-US (`3/4/2026`, `CA$10,799.00`), so this is a retag **and** an addition, 2 locales to 3 — touching URL segments, stored preferences and every `{ en: … }` Json key, whose arity is hardcoded in ~17 files (IL-7). Also: a company default locale, which does not exist there (IL-2); what a missing key does, decided before the third catalog exists rather than after two blank pages (IL-4); and the date-formatting calls that pass no locale (IL-10). | 3 |
+| **VX4-7** ⏳ | **Locale: retag `en` → `en-CA`, add `en-US`** — parts 1 + 1b DONE, parts 2/3 open | IL-1: their `en` already formats as en-US (`3/4/2026`, `CA$10,799.00`), so this is a retag **and** an addition, 2 locales to 3 — touching URL segments, stored preferences and every `{ en: … }` Json key, whose arity is hardcoded in ~17 files (IL-7). Also: a company default locale, which does not exist there (IL-2); what a missing key does, decided before the third catalog exists rather than after two blank pages (IL-4); and the date-formatting calls that pass no locale (IL-10). | 3 |
 | **VX4-8** | **Module 12 slices 2–3: fraud detection + control evaluation** | Deferred to this phase since Phase 2 because both are retrospective and need approval history, which now exists. Their versions are driven by `SystemFlag` config (MT-2) and run as unconditional global crons (MT-5), so both land on VX4-1 and VX4-2. | 3 |
+
+### VX4-7 part 1b SHIPPED — the render pass, and a root cause one layer below the ticket
+
+Baseline measured at HEAD before starting (895 tests / 46 files) and after (916 / 48). 47 Playwright
+twice in a row. The whole vitest suite also runs green under `TZ=Europe/Paris` and
+`TZ=Australia/Sydney`, which is new and is the point of the ticket.
+
+**The finding that reshaped the work.** node-postgres parses a `date` column into a JS Date at
+SERVER-LOCAL midnight, so one stored `2026-03-04` is a different instant per deploy zone — and
+rendering it in UTC gives **Mar 3** on any server east of UTC (measured: Paris and Sydney both). Our
+`toISOString().slice(0, 10)` had that bug, and so does upstream's own remedy of formatting calendar
+dates with `timeZone: 'UTC'`, which they apply at four sites with a comment at each. It is invisible
+here only because the CI container runs UTC and the dev Mac runs Toronto, both west of it.
+
+John's call was to fix it structurally: `lib/db/client.ts` now registers a type parser for OID 1082,
+so a `date` arrives as `'YYYY-MM-DD'` text and has no timezone for anything to shift. The bug stops
+being handled and becomes unrepresentable. `lib/budgets` had already reached this conclusion in one
+module (`starts_on::text`, typed `string`); those casts are now belt-and-braces rather than the only
+thing between the product and a day-shift. SQL comparisons are untouched, the JS ones compare ISO
+strings which sort chronologically, and four permissive `Date | string` declarations were narrowed to
+`string` so the compiler audits the rest.
+
+**A sabotage proved the tests, not the fix.** Removing the parser and running the four date-heaviest
+suites under `TZ=Europe/Paris` — 121 tests — changed nothing at all: they passed with the bug and
+without it, because the calendar-date path had NO coverage. A defect measurable at the driver in four
+lines was invisible to 895 tests. `test/i18n-dates.db.test.ts` and `test/i18n-format.test.ts` exist
+because of that, and both fail if the parser is removed.
+
+**Three kinds of date, three functions** (`lib/i18n/format.ts`), because the old `formatDate` was one
+function doing three jobs and was wrong at two of them:
+
+- `formatCalendarDate(value, locale)` — a `date` column. No zone involved; the same day for every
+  reader on earth. Verified identical under UTC, Vancouver, Toronto, Paris and Sydney.
+- `formatInstant(value, prefs)` — a `timestamptz`, in the READER'S zone. This is the live bug: 02:30
+  UTC on the 4th is 18:30 on the 3rd in Vancouver, and the old formatter showed the 4th.
+- `toDateInputValue(value, zone?)` — deliberately NOT locale-aware, because HTML requires
+  `YYYY-MM-DD` and a browser given anything else shows an EMPTY field with no error, so submitting
+  the form clears the date. Its output is assembled from `formatToParts` rather than laid out by a
+  locale, so it is provably locale-independent.
+
+**The gate grew teeth for that third one.** `scripts/check-i18n.mjs` now refuses a display formatter
+inside an `<input type="date">` value. Neither the type system nor an e2e catches that shape — the
+value is a `string` either way, and a test that fills the field overwrites whatever was there — so it
+is a text property and gets a text gate. Sabotage-verified: restoring the original code makes it
+exit 1.
+
+**What moved:** 21 date sites, 13 money sites, `<html lang>` (part 1), and two surfaces where the
+audience is NOT the reader:
+
+- **Email** now composes in the RECIPIENT'S locale and zone. `renderMessage` has accepted a locale
+  since VX2-7 and nothing ever passed one, so every email in the product rendered in the default
+  regardless of who it was addressed to — IL-2's shape in the notification code. The recipient join
+  was already there for the address, so this cost two columns. It matters more than the screens do:
+  email is the one surface whose language cannot be corrected later, because `notification` stores no
+  body and a policy violation can be re-rendered from its `rule_code` and `data`.
+- **The in-app bell** now renders in the reader's locale; `listInbox` had the same unused parameter.
+
+**Deliberately NOT done, and why:**
+
+- **Policy violation messages stay English.** `policy_violation.message` is stored TEXT, baked at
+  evaluation time, so two readers with different locales see one string. The right fix is to
+  re-render from `rule_code` + the `data` jsonb — which is already populated at every emit site, so
+  no backfill — and that is exactly UD-5 requirement 1, i.e. part 2's enum catalogue. Doing it here
+  would have been part 2 arriving inside part 1b.
+- **Five queries still default `minorUnit` to 2** (approvals inbox, reimbursements, ledger queue)
+  because they do not join `currency`. Pre-existing, harmless while the product ships CAD and USD,
+  and `lib/analytics/service.ts` already carries the warning. Those call sites pass `undefined`
+  rather than a literal `2`, so the absence stays visible. Boarded, not folded into a locale PR.
 
 ### VX4-7 part 1 SHIPPED — the locale spine, and a date bug that is not a locale bug
 

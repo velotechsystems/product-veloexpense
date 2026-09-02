@@ -15,6 +15,7 @@ import { auth } from '@/auth';
 import { withCurrentOrg } from '@/lib/tenant/request';
 import type { QueryRunner } from '@/lib/db/client';
 import { requireActor } from '@/lib/auth/actor';
+import { loadReaderPrefs } from '@/lib/i18n/service';
 import type { EmployeeRow } from '@/lib/employees/service';
 import { append as auditAppend } from '@/lib/audit/service';
 import {
@@ -49,7 +50,14 @@ async function asActor<T>(fn: (tx: QueryRunner, actor: EmployeeRow) => Promise<T
 
 export async function getInboxPage(unreadOnly: boolean) {
   return asActor(async (tx, actor) => ({
-    rows: await listInbox(tx, actor.id, { unreadOnly }),
+    // VX4-7 part 1b. `listInbox` has accepted a locale since VX2-7 and nobody
+    // passed one, so every bell rendered in the default. The reader IS the
+    // recipient here, unlike an email, so `loadReaderPrefs` is the right source
+    // — and it resolves through the same user -> company -> constant chain.
+    rows: await listInbox(tx, actor.id, {
+      unreadOnly,
+      locale: (await loadReaderPrefs(tx, actor.id)).locale,
+    }),
     unread: await unreadCount(tx, actor.id),
     actor: { id: actor.id, name: actor.display_name ?? actor.email },
   }));

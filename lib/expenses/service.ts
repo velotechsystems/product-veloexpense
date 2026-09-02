@@ -176,7 +176,7 @@ export interface WorkbenchExpense {
   id: string;
   report_id: string;
   merchant: string | null;
-  txn_date: string | Date | null;
+  txn_date: string | null;
   currency_code: string;
   notes: string | null;
   created_at: Date;
