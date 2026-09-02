@@ -35,6 +35,11 @@ export const dynamic = 'force-dynamic';
  *  surface"). */
 const SUBJECT_PATH: Record<string, (id: string) => string> = {
   EXPENSE_REPORT: (id) => `/expenses/${id}`,
+  // VX4-5 part 3b. The budgets screen has no per-budget route, so this lands on
+  // the list — which is still better than the alternative: `subjectHref` returns
+  // null for an unmapped type and the row renders as dead text, and "your budget
+  // is over" with nowhere to go is exactly the shape the comment above is about.
+  BUDGET: () => '/admin/budgets',
 };
 
 function subjectHref(subjectType: string, subjectId: string): string | null {

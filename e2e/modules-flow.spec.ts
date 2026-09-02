@@ -21,6 +21,7 @@
  * braces, one line, and the coupling is gone.
  */
 import { test, expect, type Page } from '@playwright/test';
+import { listModules } from '@/lib/modules/registry';
 import { Pool } from 'pg';
 import {
   LEDGER,
@@ -79,11 +80,19 @@ test.describe('turning a module off', () => {
     await expect(moduleRow(page)).toContainText('enabled');
     await expect(moduleRow(page).getByRole('button', { name: 'Turn off' })).toBeVisible();
 
-    // An unavailable module is SHOWN, greyed, not hidden: a customer asking for
-    // Budgets is a sales answer and an empty list is not one.
-    const budgets = page.getByRole('row').filter({ hasText: 'Budgets' });
-    await expect(budgets).toContainText('not in this build');
-    await expect(budgets.getByRole('button')).toHaveCount(0);
+    // An unavailable module is SHOWN, greyed, not hidden: a customer asking for a
+    // module is a sales answer and an empty list is not one.
+    //
+    // The module is taken FROM THE REGISTRY rather than named. This said
+    // 'Budgets' until VX4-5 part 3b made Budgets available, and then failed —
+    // which is the assertion being about a fixture rather than about the
+    // property. `expect(dormant).toBeDefined()` is what stops the generalised
+    // form passing vacuously on the day nothing is dormant.
+    const dormant = listModules().find((m) => !m.available);
+    expect(dormant).toBeDefined();
+    const row = page.getByRole('row').filter({ hasText: dormant!.name });
+    await expect(row).toContainText('not in this build');
+    await expect(row.getByRole('button')).toHaveCount(0);
 
     // And the screen warns what a toggle does before it is pressed, because
     // "hides, does not delete" is the thing an admin needs to know first.

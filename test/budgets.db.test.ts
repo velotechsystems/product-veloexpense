@@ -32,6 +32,7 @@ import * as policy from '@/lib/policy/service';
 import { decide } from '@/lib/approvals/engine';
 import { loadBudgetSnapshots } from '@/lib/budgets/service';
 import * as alertsLib from '@/lib/budgets/alerts';
+import * as budgetAdmin from '@/lib/budgets/admin';
 
 const admin = new Pool({
   connectionString: process.env.ADMIN_DATABASE_URL ?? process.env.DATABASE_URL,
@@ -1229,5 +1230,294 @@ describe('budget threshold alerts fire once per crossing (BG-6)', () => {
     await withOrg(orgId, (tx) => lifecycle.submitReport(tx, next, empId));
     expect(await claims(periodId)).toHaveLength(1);
     expect(await alerts()).toHaveLength(1);
+  });
+});
+
+/* ══════════════════════════════════════════════════════════════════════════════
+ * VX4-5 PART 3b — THE ADMIN SERVICE
+ *
+ * Driven through `lib/budgets/admin.ts` rather than raw SQL, because the claims
+ * here are about what the SERVICE does — the module gate, the percent
+ * conversion, the idempotent seed. The constraints underneath already have their
+ * own tests further up this file, driven the other way for the reason `0023`
+ * established.
+ * ═════════════════════════════════════════════════════════════════════════════ */
+
+async function moduleOff<T>(run: () => Promise<T>): Promise<T> {
+  await admin.query(
+    `UPDATE module_entitlement SET enabled = false
+      WHERE organization_id = $1 AND module_code = 'budgets'`,
+    [orgId],
+  );
+  try {
+    return await run();
+  } finally {
+    await admin.query(
+      `UPDATE module_entitlement SET enabled = true
+        WHERE organization_id = $1 AND module_code = 'budgets'`,
+      [orgId],
+    );
+  }
+}
+
+describe('the budgets admin service (VX4-5 part 3b)', () => {
+  it('converts a percentage to basis points in exactly one place', () => {
+    expect(budgetAdmin.percentToBp(90)).toBe(9000);
+    expect(budgetAdmin.percentToBp('90')).toBe(9000);
+    expect(budgetAdmin.percentToBp('90.5')).toBe(9050);
+    expect(budgetAdmin.percentToBp('99.99')).toBe(9999);
+    expect(budgetAdmin.percentToBp('100')).toBe(10000);
+  });
+
+  it('REFUSES a percentage it would have to round, rather than rounding it', () => {
+    // Same rule `parseAmountToMinor` follows: a threshold silently moved from what
+    // somebody typed is a threshold nobody can explain later.
+    expect(() => budgetAdmin.percentToBp('90.123')).toThrow(/at most two decimals/);
+    expect(() => budgetAdmin.percentToBp('ninety')).toThrow(/not a percentage/);
+    expect(() => budgetAdmin.percentToBp('0')).toThrow(/between/);
+    expect(() => budgetAdmin.percentToBp('201')).toThrow(/between/);
+  });
+
+  it('creates a budget, and refuses a second one for the same scope', async () => {
+    const made = await withOrg(orgId, (tx) =>
+      budgetAdmin.createBudget(tx, {
+        name: 'Travel',
+        glAccountId: accountId,
+        currencyCode: 'CAD',
+        fiscalYear: 2026,
+        ownerId: mgrId,
+      }),
+    );
+    expect(made.name).toBe('Travel');
+    expect(made.owner_id).toBe(mgrId);
+
+    // The company-wide case, which is the one NULLS NOT DISTINCT exists for: two
+    // NULL narrowings are DISTINCT to Postgres by default, so without that clause
+    // this second create would succeed and every total afterwards would be wrong.
+    await expect(
+      withOrg(orgId, (tx) =>
+        budgetAdmin.createBudget(tx, {
+          name: 'Travel again',
+          glAccountId: accountId,
+          currencyCode: 'CAD',
+          fiscalYear: 2026,
+        }),
+      ),
+    ).rejects.toMatchObject({ code: 'DUPLICATE_SCOPE' });
+  });
+
+  it('a narrower scope is a DIFFERENT budget, not a duplicate', async () => {
+    await withOrg(orgId, (tx) =>
+      budgetAdmin.createBudget(tx, {
+        name: 'Travel — company',
+        glAccountId: accountId,
+        currencyCode: 'CAD',
+        fiscalYear: 2026,
+      }),
+    );
+    const scoped = await withOrg(orgId, (tx) =>
+      budgetAdmin.createBudget(tx, {
+        name: 'Travel — Engineering',
+        glAccountId: accountId,
+        currencyCode: 'CAD',
+        fiscalYear: 2026,
+        departmentId: engineeringId,
+      }),
+    );
+    expect(scoped.department_name).toBe('Engineering');
+    expect(await withOrg(orgId, (tx) => budgetAdmin.listBudgets(tx))).toHaveLength(2);
+  });
+
+  it('REFUSES every write when the module is off, and still allows the READ', async () => {
+    // MT-3: the gate is below the screen, so it holds for any caller. And the read
+    // is deliberately ungated — a screen that cannot ask why it is empty cannot
+    // tell "module off" from "no budgets yet", which is AC-22's mistake.
+    await moduleOff(async () => {
+      await expect(
+        withOrg(orgId, (tx) =>
+          budgetAdmin.createBudget(tx, {
+            name: 'Nope',
+            glAccountId: accountId,
+            currencyCode: 'CAD',
+            fiscalYear: 2026,
+          }),
+        ),
+      ).rejects.toThrow(/not enabled for this organization/);
+
+      const readable = await withOrg(orgId, (tx) => budgetAdmin.listBudgets(tx));
+      expect(readable).toEqual([]);
+    });
+  });
+
+  it('seeds twelve calendar months, and re-running adds only what is missing', async () => {
+    const made = await withOrg(orgId, (tx) =>
+      budgetAdmin.createBudget(tx, {
+        name: 'Travel',
+        glAccountId: accountId,
+        currencyCode: 'CAD',
+        fiscalYear: 2026,
+      }),
+    );
+    const created = await withOrg(orgId, (tx) =>
+      budgetAdmin.seedMonthlyPeriods(tx, made.id, { startsOn: '2026-01-01', amountMinor: 50000 }),
+    );
+    expect(created).toBe(12);
+
+    const view = await withOrg(orgId, (tx) => budgetAdmin.getBudget(tx, made.id));
+    expect(view!.periods).toHaveLength(12);
+    expect(view!.periods[0].starts_on).toBe('2026-01-01');
+    // Month arithmetic done by Postgres, not by JavaScript: February lands on the
+    // 28th by itself, where a date built from (year, month + n, day) in JS rolls
+    // a 31-day start into the following month.
+    expect(view!.periods[1].starts_on).toBe('2026-02-01');
+    expect(view!.periods[1].ends_on).toBe('2026-02-28');
+    expect(view!.periods[11].ends_on).toBe('2026-12-31');
+
+    // IDEMPOTENT on the start-date unique index, so a half-finished seed is
+    // finished rather than doubled.
+    const again = await withOrg(orgId, (tx) =>
+      budgetAdmin.seedMonthlyPeriods(tx, made.id, { startsOn: '2026-01-01', amountMinor: 50000 }),
+    );
+    expect(again).toBe(0);
+    expect((await withOrg(orgId, (tx) => budgetAdmin.getBudget(tx, made.id)))!.periods).toHaveLength(
+      12,
+    );
+  });
+
+  it('four periods is a different seeding decision, not a different schema (BG-5)', async () => {
+    const made = await withOrg(orgId, (tx) =>
+      budgetAdmin.createBudget(tx, {
+        name: 'Quarterly',
+        glAccountId: accountId,
+        currencyCode: 'CAD',
+        fiscalYear: 2026,
+      }),
+    );
+    const created = await withOrg(orgId, (tx) =>
+      budgetAdmin.seedMonthlyPeriods(tx, made.id, {
+        startsOn: '2026-01-01',
+        months: 4,
+        amountMinor: 100000,
+      }),
+    );
+    expect(created).toBe(4);
+  });
+
+  it('adds a threshold as a PERCENTAGE and refuses the same level twice', async () => {
+    const made = await withOrg(orgId, (tx) =>
+      budgetAdmin.createBudget(tx, {
+        name: 'Travel',
+        glAccountId: accountId,
+        currencyCode: 'CAD',
+        fiscalYear: 2026,
+      }),
+    );
+    await withOrg(orgId, (tx) => budgetAdmin.addThreshold(tx, made.id, '90'));
+    const view = await withOrg(orgId, (tx) => budgetAdmin.getBudget(tx, made.id));
+    expect(view!.thresholds.map((t) => t.threshold_bp)).toEqual([9000]);
+
+    await expect(
+      withOrg(orgId, (tx) => budgetAdmin.addThreshold(tx, made.id, '90')),
+    ).rejects.toMatchObject({ code: 'DUPLICATE_THRESHOLD' });
+  });
+
+  it('recipients are idempotent, and removing a threshold takes them with it', async () => {
+    const made = await withOrg(orgId, (tx) =>
+      budgetAdmin.createBudget(tx, {
+        name: 'Travel',
+        glAccountId: accountId,
+        currencyCode: 'CAD',
+        fiscalYear: 2026,
+      }),
+    );
+    const thresholdId = await withOrg(orgId, (tx) =>
+      budgetAdmin.addThreshold(tx, made.id, '90'),
+    );
+    // Twice: a double-click is not an error worth a banner.
+    await withOrg(orgId, (tx) => budgetAdmin.addRecipient(tx, thresholdId, admId));
+    await withOrg(orgId, (tx) => budgetAdmin.addRecipient(tx, thresholdId, admId));
+    let view = await withOrg(orgId, (tx) => budgetAdmin.getBudget(tx, made.id));
+    expect(view!.thresholds[0].recipients).toHaveLength(1);
+
+    await withOrg(orgId, (tx) => budgetAdmin.removeThreshold(tx, thresholdId));
+    view = await withOrg(orgId, (tx) => budgetAdmin.getBudget(tx, made.id));
+    expect(view!.thresholds).toHaveLength(0);
+    const orphans = await admin.query(
+      'SELECT count(*)::int AS n FROM budget_alert_recipient WHERE threshold_id = $1',
+      [thresholdId],
+    );
+    expect(orphans.rows[0].n).toBe(0);
+  });
+
+  it('a threshold with no recipients still renders, rather than vanishing', async () => {
+    // The LEFT JOIN in `listBudgets`. An inner join would drop a threshold nobody
+    // is named on — which is the NORMAL state, since an empty recipient list means
+    // "owner only" — and the screen would then offer no way to add one.
+    const made = await withOrg(orgId, (tx) =>
+      budgetAdmin.createBudget(tx, {
+        name: 'Travel',
+        glAccountId: accountId,
+        currencyCode: 'CAD',
+        fiscalYear: 2026,
+      }),
+    );
+    await withOrg(orgId, (tx) => budgetAdmin.addThreshold(tx, made.id, '75'));
+    const view = await withOrg(orgId, (tx) => budgetAdmin.getBudget(tx, made.id));
+    expect(view!.thresholds).toHaveLength(1);
+    expect(view!.thresholds[0].recipients).toEqual([]);
+  });
+
+  it('clears an owner with an explicit null, which COALESCE could not express', async () => {
+    const made = await withOrg(orgId, (tx) =>
+      budgetAdmin.createBudget(tx, {
+        name: 'Travel',
+        glAccountId: accountId,
+        currencyCode: 'CAD',
+        fiscalYear: 2026,
+        ownerId: mgrId,
+      }),
+    );
+    const cleared = await withOrg(orgId, (tx) =>
+      budgetAdmin.updateBudget(tx, made.id, { ownerId: null }),
+    );
+    expect(cleared.owner_id).toBeNull();
+    // An ABSENT key leaves it alone, which is the other half of patch-with-nulls.
+    const renamed = await withOrg(orgId, (tx) =>
+      budgetAdmin.updateBudget(tx, made.id, { name: 'Travel 2026' }),
+    );
+    expect(renamed.name).toBe('Travel 2026');
+    expect(renamed.owner_id).toBeNull();
+  });
+
+  it('deleting a budget takes its periods, thresholds and alert claims with it', async () => {
+    const made = await withOrg(orgId, (tx) =>
+      budgetAdmin.createBudget(tx, {
+        name: 'Travel',
+        glAccountId: accountId,
+        currencyCode: 'CAD',
+        fiscalYear: 2026,
+      }),
+    );
+    await withOrg(orgId, (tx) =>
+      budgetAdmin.seedMonthlyPeriods(tx, made.id, { startsOn: '2026-01-01', amountMinor: 1000 }),
+    );
+    await withOrg(orgId, (tx) => budgetAdmin.addThreshold(tx, made.id, '90'));
+    const period = await admin.query(
+      'SELECT id FROM budget_period WHERE budget_id = $1 LIMIT 1',
+      [made.id],
+    );
+    await admin.query(
+      `INSERT INTO budget_alert_claim
+         (organization_id, period_id, threshold_bp, used_minor, amount_minor)
+       VALUES ($1,$2,9000,900,1000)`,
+      [orgId, period.rows[0].id],
+    );
+
+    await withOrg(orgId, (tx) => budgetAdmin.deleteBudget(tx, made.id));
+
+    for (const table of ['budget_period', 'budget_alert_threshold', 'budget_alert_claim']) {
+      const left = await admin.query(`SELECT count(*)::int AS n FROM ${table}`);
+      expect(left.rows[0].n, table).toBe(0);
+    }
   });
 });
