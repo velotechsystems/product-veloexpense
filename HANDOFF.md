@@ -2505,6 +2505,86 @@ in the same submit and narrowing the list would need client JS in a screen that 
 none; the service's refusal is the whole gate there, which is MT-3's rule. The per-row picker on an
 existing rule DOES narrow, because there the kind is known.
 
+### VX4-5 part 3a SHIPPED — threshold alerts, and three tests of mine that proved nothing
+
+Migration `0025`. `lib/budgets/alerts.ts` + `crossedThresholdBp` in `scope.ts` + a `BUDGET` subject
+and a `BUDGET_THRESHOLD` event in the notification catalogue + `includeActor` on the fan-out. Part 3b
+is the `/admin/budgets` screen and the e2e, split from this on John's call (2 Sep).
+
+**BG-6's mechanism, replaced rather than ported.** Their `alertedThresholdBp` is a mutable column
+stamped after the fan-out, which double-sends three ways: two concurrent submits both pass the read;
+the fan-out succeeds and the stamp throws into a `catch`; editing periods deletes and recreates the
+rows. Ours is `budget_alert_claim`, a uniquely-keyed row — the idiom `notification_delivery` and the
+approval-decision claim already use. Their PRODUCT rules are kept verbatim, including the ones that
+are easy to get wrong: an empty recipient list means owner-only and never nobody, and a crossing with
+nobody to tell is still recorded so that appointing an owner next month does not deliver a backlog.
+
+**The SAVEPOINT, which is where this goes past theirs.** Their comment explains that the marker is
+stamped last "so a failure re-fires next time rather than marking a crossing nobody was told about" —
+and no ordering of two statements can satisfy both directions. Claim first inside a savepoint and the
+choice disappears: a failed send rolls the claim back with it. It is also what lets the alert path
+honour "never throw" from inside somebody else's transaction, because a caught error leaves a
+Postgres transaction aborted unless there is a savepoint to roll back to — without one, swallowing an
+alert failure would poison the submit that called it, which is the exact outcome the rule exists to
+prevent.
+
+**A GAP IN MY OWN PARTS 1 AND 2, corrected here.** `budgets` is one of the four modules the Plan names
+as per-tenant, and `0024` created `budget` and `budget_period` with a plain tenant policy and no
+module predicate — so the product had a working budgets module that the entitlement machinery said
+did not exist. `0025` puts `app_module_enabled('budgets')` into every budget table's policy. That
+also does the data-plane gating for free, which is what makes it safe mid-phase: `loadBudgetSnapshots`
+and `recomputeForReport` run inside submit and approval for EVERY tenant, and a `requireModule` that
+threw there would break submit for tenants without budgets. Under RLS they simply find nothing and
+no-op. The `requireModule` calls and the registry flip to `available: true` belong with part 3b's
+admin service, so `test/module-gates.test.ts` has gates to enumerate.
+
+**THREE TESTS I WROTE PASSED WITHOUT EXERCISING WHAT THEY NAMED. All three were found by sabotage,
+none by review.** This is the clearest run of "when a sabotage fails FEWER tests than expected, the
+surviving tests are the finding" the project has had, so all three are recorded:
+
+1. *"a claim at a HIGHER level suppresses a lower crossing"* — sabotaging `threshold_bp >= $2` to
+   `= $2` failed nothing. Every path the test took re-crossed the SAME level, because the earlier
+   report stayed in `pending`. For `>=` to be load-bearing the period must hold a claim at 100% and
+   none at 90%, which happens only when it jumps past both in one movement and then comes back down
+   *without* going under 90%. The fixture is now three transitions and the ordering is the test.
+2. *the concurrency test* — twice. The first version pre-inserted a claim and submitted, but the
+   fast-fail read catches `>= crossed`, which includes the equal case, so a sequential caller can
+   never reach the `ON CONFLICT` at all. The second version ran two connections and committed A
+   beside B, trusting the interleaving — and A's COMMIT is one round trip while B's path is three, so
+   A always won and B returned early. It now runs B through a proxy `QueryRunner` that holds A open
+   until B is at the INSERT. The proxy intercepts TIMING and never an outcome, so both results stay
+   reachable — which is the line between a test double and the ones that cost us AC-17 and AC-19.
+3. *"the LOADER's first-sight recompute does not alert"* — true for a second reason. The loader runs
+   during a DRAFT save, and a draft is not counted spend, so the recompute found zero and nothing
+   would have crossed whether the loader alerted or not. The fixture now writes an APPROVED report
+   straight to the database — the way a seed, an import or a restored backup arrives — so the period
+   really is over its threshold at loader time.
+
+**Two existing guards had to change, and both got STRONGER rather than looser.**
+`test/notification-catalog.test.ts` asserted every event type maps onto a template over
+`'EXPENSE_REPORT'`, which hard-coded the assumption that every event is an expense-report event;
+`BUDGET_THRESHOLD` is the first for which that is false, and it now asserts every event maps over at
+least one shipped subject. `test/rls-isolation.test.ts` asserted exactly one entitlement row per
+tenant, which was asserting the fixture; it now asserts every visible row belongs to the asking
+tenant, with a non-empty check so the new form cannot pass vacuously.
+
+**A test-hygiene lesson worth keeping.** A hand-managed connection returned to the pool with an open
+transaction keeps its locks, and every later test touching the same table then waits five seconds and
+times out. One real sabotage failure arrived as three, two of which pointed nowhere. The
+two-connection test now rolls both back in a `finally` before releasing.
+
+**`includeActor`, and why it is an option rather than a null actor.** Every other event in the
+product excludes the actor, correctly — a threshold alert is about a running total, and a budget
+owner who files the claim that breaks their own budget is exactly who needs telling (ExpenseOS says
+so). The alternative was recording the activity with a null actor, which buys the fan-out at the cost
+of the activity stream no longer knowing who moved the number.
+
+**Verified:** `tsc`, `eslint`, `check:vendor` clean on the device. In the cloud harness on a fresh
+database with all 25 migrations: `npm run build` and `npm run check:actions` pass, **790 vitest across
+41 files**, **31/31 Playwright**. Baseline MEASURED at `e42b36f` in the same harness: **775**, so this
+adds 15. **Nine sabotage runs**, each failing exactly its own tests — after the three above were
+fixed, which is the only reason that sentence means anything.
+
 ### The two decisions, SETTLED 31 Aug 2026 (John)
 
 **1. Host-based tenancy is PHASE 5.** VX4-4 is out of this board. The reasoning that carried it: a

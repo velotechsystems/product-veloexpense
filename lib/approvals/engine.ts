@@ -399,7 +399,7 @@ export async function decide(
   // APPROVED. A rejection or a return takes the report out of `pending_minor`
   // just as surely as an approval moves it into `actual_minor`, and a budget that
   // only ever counts spend upward is the one nobody trusts.
-  await recomputeForReport(tx, task.report_id as string);
+  await recomputeForReport(tx, task.report_id as string, actorId);
 
   await recordEvent(tx, {
     reportId: task.report_id as string,

@@ -44,6 +44,7 @@ import type { QueryRunner } from '@/lib/db/client';
 import { convertMinor } from '@/lib/money';
 import { buildRateLookup, type RateLookup, type RateRow } from '@/lib/policy/rates';
 import { resolveBudget, type BudgetScope, type BudgetSnapshot } from '@/lib/budgets/scope';
+import { fireThresholdAlerts, type AlertOutcome } from '@/lib/budgets/alerts';
 
 /** Statuses whose spend is counted. DRAFT, REJECTED and RETURNED are not spend. */
 const COUNTED = ['SUBMITTED', 'APPROVED', 'REIMBURSED'] as const;
@@ -213,14 +214,32 @@ interface Totals {
  * plus a sweep already has been (ExpenseOS's post was "silently never sent to
  * NetSuite" for a report that auto-approved on submit).
  *
- * Returns the number of periods rewritten, which is what the tests assert on.
+ * Returns the number of periods rewritten and what the alert pass did, which is
+ * what the tests assert on.
+ *
+ * VX4-5 part 3a: THIS is where threshold alerts fire, and `recomputePeriods` below
+ * deliberately does not. The distinction is that this function is the transition
+ * hook — it runs because spend actually moved — where the loader's first-sight
+ * recompute is a lazy initialisation of a baseline. Firing there would alert on
+ * history the moment somebody opened a draft, attributed to whoever was editing.
  */
-export async function recomputeForReport(tx: QueryRunner, reportId: string): Promise<number> {
+export async function recomputeForReport(
+  tx: QueryRunner,
+  reportId: string,
+  actorId: string | null = null,
+): Promise<{ periods: number; alerts: AlertOutcome }> {
+  const none = { periods: 0, alerts: { fired: 0, rearmed: 0 } };
   const reach = await footprint(tx, reportId);
-  if (!reach) return 0;
+  if (!reach) return none;
   const periods = await periodsOverlapping(tx, reach.accountIds, reach.earliest, reach.latest);
-  if (periods.length === 0) return 0;
-  return recomputePeriods(tx, periods);
+  if (periods.length === 0) return none;
+  const rewritten = await recomputePeriods(tx, periods);
+  const alerts = await fireThresholdAlerts(
+    tx,
+    periods.map((p) => p.period_id),
+    actorId,
+  );
+  return { periods: rewritten, alerts };
 }
 
 /**
