@@ -249,8 +249,14 @@ export interface PolicyCurrencyInfo {
  * schema is written `NULLIF(current_setting('app.current_org', true), '')::uuid`
  * for this exact reason; the application-side copies of the expression were not.
  * See the note filed against `const ORG` in the gap audit (PE-9).
+ *
+ * EXPORTED as of VX4-6a. Analytics needs the tenant's base currency on a path
+ * where `getPolicyCurrency`'s three extra queries — every report currency, every
+ * rate, the convertibility diff — are diagnostics it does not want. Exporting the
+ * slim reader is the alternative to a third copy of this query, which is exactly
+ * what PE-8 was about.
  */
-async function policyCurrencyCode(tx: QueryRunner): Promise<string> {
+export async function policyCurrencyCode(tx: QueryRunner): Promise<string> {
   const org = await tx.query(
     `SELECT policy_currency_code FROM organization
       WHERE id = NULLIF(current_setting('app.current_org', true), '')::uuid`,

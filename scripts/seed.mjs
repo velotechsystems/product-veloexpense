@@ -311,6 +311,9 @@ async function main() {
   // VX4-5 part 3a: `0025` puts app_module_enabled('budgets') into every budget
   // table's policy, so without this the demo tenant cannot see or write a budget.
   await seedModule(demoId, 'budgets');
+  // VX4-6a: available as of this ticket. Enabled here so the demo tenant matches
+  // what the build can serve — the screen arrives in 6b and will find it on.
+  await seedModule(demoId, 'analytics');
   await seedReferenceData(demoId);
   // FOUR users, not three. `owner@demo.test` was added when VX2-3 made a submit
   // open an approval run: submitting routes the ladder, and admin@demo.test —
@@ -352,6 +355,7 @@ async function main() {
   // way.
   await seedModule(secondId, 'accounting');
   await seedModule(secondId, 'budgets');
+  await seedModule(secondId, 'analytics');
   await seedReferenceData(secondId, 'Second Co Ltd.');
   await seedUser(secondId, 'owner@second.test', 'Second Owner', { role: 'ADMIN', title: 'Owner' });
   await seedUser(secondId, 'admin@second.test', 'Second Admin', { role: 'ADMIN', title: 'Controller' });

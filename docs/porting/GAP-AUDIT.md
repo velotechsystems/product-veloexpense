@@ -3373,6 +3373,13 @@ unconvertible amount is reportable. **This one ports** — it is not a tenancy d
 defect, and it is the same family as PE-1 and MO-*: our rule is that a missing rate is loud, never
 silently coerced.
 
+*PORTED, VX4-6a, and its second sentence turned out to matter more than its first.* The FX half is
+`SpendSummary.unconvertible`: that spend is counted in its SOURCE currency, never in a total, with
+`byCurrency` naming what is missing. The half about their two halves DISAGREEING is now structurally
+impossible — `lib/spend/statuses.ts` is one statement of what counts as spend, read by both the
+budget rollup and analytics, and moving a status between its buckets fails eleven tests across both
+features at once.
+
 **AN-9 · `filterOptions` hands back every active lookup row, unscoped.**
 Business units, departments, classes, categories and legal entities with `where: { active: true }` and
 nothing else (`analytics.ts:540-553`) — in a pooled database, another tenant's org chart and legal
@@ -3386,6 +3393,16 @@ date range and loads all history (`:585-610`); the month filter is applied in JS
 range (`HomeSurface.tsx:28`), so every signed-in user triggers a full-history aggregate on login. RLS
 does not make any of that cheaper — it adds a predicate. Bounded ranges, a date index and a rollup are
 real work and belong in the estimate.
+
+*PORTED, VX4-6a.* Checked against our schema before building rather than assumed to transfer:
+`expense` carried only `expense_org_id_idx` and `expense_report_id_idx`, with nothing on `txn_date`
+at all. `0026` adds `(organization_id, txn_date, created_at)` — the tenant first because RLS already
+filters on it, and `created_at` included because an undated expense is attributed by it. The range is
+**REFUSED when absent rather than defaulted**, which is the part that actually prevents the
+full-history aggregate: a default is the same decision made quietly. Aggregation is one SQL
+GROUP BY over every dimension at once (John's call, 2 Sep), so nothing is summed in JS and no
+grouping rounds its own conversion — the alternative shipped for an hour and could have made a header
+and its own chart differ by cents, which is upstream `b9e242d7` in miniature.
 
 **AN-8 · A role check that then queries everything, plus one dead permission that becomes live.**
 Access is two questions — `dashboardView` opens the screen, `view.own|reportingChain|all` sizes the
