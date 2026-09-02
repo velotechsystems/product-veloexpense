@@ -2719,6 +2719,76 @@ database with all 26 migrations: `npm run build` and `npm run check:actions` pas
 43 files**, **35/35 Playwright**. Baseline MEASURED at `01b16e9`: **803**, so this adds 19. **Seven
 sabotage runs**, each failing exactly its own tests.
 
+### VX4-6b SHIPPED — the analytics screen, and four things a validator cannot catch
+
+No migration and NO NEW VITEST TESTS — 6b is a screen and an e2e, so the unit count is unchanged at
+822 and that is the honest number rather than a suspicious one. `/admin/analytics` +
+`e2e/analytics-flow.spec.ts` (5 tests). **VX4-6 is complete.**
+
+**ADMIN-only, at `/admin/analytics`, and AN-8 is why there is no scope model.** This screen shows the
+whole tenant's spend. ExpenseOS sizes that per reader — `view.own | reportingChain | all` — and AN-8
+is the note on how that went: the permission that SIZES the data and the one that OPENS the screen
+are separate, `ap-clerk` holds `viewAll` without `dashboardView`, so a permission nobody can
+currently exercise grants company-wide spend the moment the gate moves. We have one axis, role, so
+this is ADMIN-only and there is nothing to get wrong. A per-reader scope is a real feature and it is
+deliberately not invented; when it arrives it belongs in the service beside the module gate, as a
+PREDICATE, never as a role check that then queries everything.
+
+**The screen defaults a range and the service still refuses one, and those are different things.**
+Conflating them would be re-committing AN-10: their defect is an UNBOUNDED query, not the absence of
+a convenient default. The page defaults to the year so far and says so in copy; the service refusing
+to invent one is what stops any other caller reintroducing the full-history aggregate.
+
+**The palette was COMPUTED.** Two series need two hues that survive colour-vision deficiency, and the
+skill's rule is that the colour part is computable so compute it. Candidates run through the validator
+against OUR surface (`#ffffff`), not a reference one:
+
+| candidate | result |
+| --- | --- |
+| sky-600 + sky-300 | **FAIL** lightness band — `#7dd3fc` at L 0.83, outside 0.43–0.77 |
+| brand + sky-200 | **FAIL** band *and* chroma floor — `#bae6fd` reads grey |
+| brand-700 + sky-400 | **PASS** all checks; CVD ΔE 30.9, normal ΔE 31.3 |
+
+So `--vl-brand-700` and `--vl-brand-400`, both already in the ramp. The surviving WARN is `#38bdf8`
+at 2.14:1 on white, which obligates relief — "visible labels or a table view" — and the screen ships
+both: a legend plus one selective direct label on the chart, and every breakdown is a real table with
+the numbers in it.
+
+**DARK MODE IS NOT A SEPARATE PALETTE, and that is a finding.** `--background` and `--card` are
+`var(--vl-white)`, and the dark block in `app/velotech-tokens.css` does not redefine `--vl-white`. The
+chart surface is `#ffffff` in both modes, so the palette validated against white IS the dark palette;
+validating a second one against a surface nothing renders on would be paperwork. Same partial-dark
+gap as the `--accent-foreground` defect already pinned in `test/branding-color.test.ts`.
+
+**FOUR THINGS ONLY LOOKING AT IT CAUGHT.** The validator checks colour, not layout, so the procedure's
+last step is to render it and look — which found: 44px bars that read as a toy at full width (thin
+marks now, ≤22px); month labels printed as a bare `02`, a number a reader has to decode and cannot
+tell from a day (`Feb ’26`); the unconvertible warning reading "7700 minor units of USD", which is
+not a number anybody thinks in (formatted as money, with that currency's OWN minor unit carried on
+the payload rather than assumed to be 2); and the headline figure wearing the series colour, when
+"text wears text tokens, never the series color" — it is ink now, with a swatch beside the label.
+
+**MY OWN CLEANUP BROKE THREE UNRELATED TESTS, and only on the SECOND run.** `receipt.expense_id` is
+`ON DELETE SET NULL`, because VX1-5's receipt-first flow keeps unattached receipts in the uploader's
+INBOX. So this spec's `DELETE FROM expense_report` did not delete their receipts — it moved them into
+somebody's inbox, and `expense-flow`'s drawer then failed with `strict mode violation:
+getByText('receipt.png') resolved to 2 elements`, three times, in a file with nothing to do with
+analytics. The first full run passed because there was nothing to orphan yet. §4's rule 3, again, and
+the fix is two lines; the suite now passes twice in a row, which is the property that actually
+mattered.
+
+**`check:actions` caught a dead-form bug in the file whose header warns about it.** The first version
+of `actions.ts` had `export interface AnalyticsPage` three lines below the comment saying every export
+must be an `export async function`. Next registers each export as a server action; it cannot wrap an
+interface, and rather than failing it registers NONE of the module's actions — every form on the page
+posting an id the server has never heard of. That is VX2-8's `/approve` bug exactly, and the guard
+refused the build in those words. The interface is unexported now; the page infers the shape.
+
+**Verified:** `tsc`, `eslint`, `check:vendor`, `check:actions` clean. In the cloud harness:
+`npm run build` passes, **822 vitest across 43 files** (unchanged — 6b adds no unit tests), and
+**40/40 Playwright**, run TWICE to prove the re-run property. The screen was rendered and inspected
+as a full-page screenshot before any of this was written up.
+
 ### The two decisions, SETTLED 31 Aug 2026 (John)
 
 **1. Host-based tenancy is PHASE 5.** VX4-4 is out of this board. The reasoning that carried it: a

@@ -100,10 +100,19 @@ export interface Unconvertible {
   pendingMinor: bigint;
   /** Source currency -> the minor units left out, in THAT currency. */
   byCurrency: Record<string, string>;
+  /**
+   * That currency's `minor_unit`, so a screen can format the figure as money.
+   * Carried rather than assumed: `formatMinor(x, 'JPY', 2)` prints a hundredth of
+   * the real number, and "every currency we ship has two" is exactly the
+   * assumption `lib/money.ts` refuses to make.
+   */
+  minorUnits: Record<string, number>;
 }
 
 export interface SpendSummary {
   baseCurrency: string;
+  /** `currency.minor_unit` for the base currency. Never 2 by assumption. */
+  baseMinorUnit: number;
   range: SpendRange;
   committedMinor: bigint;
   pendingMinor: bigint;
@@ -274,7 +283,12 @@ export async function spendSummary(tx: QueryRunner, range: SpendRange): Promise<
 
   // ── convert once, per group, at that group's own day ──────────────────────
   const converted: Converted[] = [];
-  const unconvertible: Unconvertible = { committedMinor: 0n, pendingMinor: 0n, byCurrency: {} };
+  const unconvertible: Unconvertible = {
+    committedMinor: 0n,
+    pendingMinor: 0n,
+    byCurrency: {},
+    minorUnits: {},
+  };
   let committedMinor = 0n;
   let pendingMinor = 0n;
 
@@ -292,6 +306,7 @@ export async function spendSummary(tx: QueryRunner, range: SpendRange): Promise<
       else unconvertible.pendingMinor += amount;
       const held = BigInt(unconvertible.byCurrency[row.currency_code] ?? '0');
       unconvertible.byCurrency[row.currency_code] = (held + amount).toString();
+      unconvertible.minorUnits[row.currency_code] = units[row.currency_code] ?? 2;
       continue;
     }
     const inBase = convertMinor(
@@ -311,6 +326,7 @@ export async function spendSummary(tx: QueryRunner, range: SpendRange): Promise<
 
   return {
     baseCurrency: base,
+    baseMinorUnit: units[base] ?? 2,
     range,
     // The total is the sum of the SAME converted rows every dimension folds, so
     // the header and every chart under it agree exactly rather than to the cent.

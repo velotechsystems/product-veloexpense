@@ -51,6 +51,9 @@ export default async function ModulesPage({
           <Link href="/admin/budgets" className="text-sm underline underline-offset-4">
             Budgets
           </Link>
+          <Link href="/admin/analytics" className="text-sm underline underline-offset-4">
+            Analytics
+          </Link>
         </div>
       </header>
 
