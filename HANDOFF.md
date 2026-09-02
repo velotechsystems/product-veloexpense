@@ -2081,8 +2081,119 @@ shipped.
 | **VX4-3** | **Branding that actually renders** | BR-2 is the surprise: the fields, the admin form and the validation all exist and **nothing reads them**. So the port is the easy half and the render path is net-new — CSS custom properties injected per tenant (BR-3, deriving row/hover shades from the primary rather than hardcoding them), a tenant logo served pre-auth on the `public-icons` route's proven pattern (BR-4), `generateMetadata` instead of a static title (BR-5), and a branded email shell on VX2-8's template layer (BR-6). | 3 |
 | **VX4-5** | **Budgets, tenant-scoped, on our own chart of accounts** | BG-2: `Budget.glAccountId` is a **required** FK into a NetSuite SOAP cache, and their vendor-neutral `Account` table was deleted — so budgets there are uncreatable without NetSuite. **VX3-1 already fixed this for us**; budgets point at `gl_account` and a vendor becomes an alias. Plus BG-1 (tenant column and composite keys on five tables, including an index Prisma cannot express), BG-3 (actuals recomputed over the whole fiscal year on every approval click, with an unbounded FX load → rollup), BG-6 (alert idempotency by mutable marker → our atomic-claim idiom). | 4 |
 | **VX4-6** | **Analytics, tenant-scoped** | The tenancy half is free (above). The work is AN-7 — a missing FX rate is currently summed **as if it were base currency**, unflagged, while the budget code counts unconverted amounts for the same situation — and AN-10: unbounded ranges, no `date` index, and a home page that runs a full-history aggregate for every signed-in user. Plus AN-8's lesson: size the data with a predicate, never with a role check that then queries everything. | 4 |
-| **VX4-7** | **Locale: retag `en` → `en-CA`, add `en-US`** | IL-1: their `en` already formats as en-US (`3/4/2026`, `CA$10,799.00`), so this is a retag **and** an addition, 2 locales to 3 — touching URL segments, stored preferences and every `{ en: … }` Json key, whose arity is hardcoded in ~17 files (IL-7). Also: a company default locale, which does not exist there (IL-2); what a missing key does, decided before the third catalog exists rather than after two blank pages (IL-4); and the date-formatting calls that pass no locale (IL-10). | 3 |
+| **VX4-7** ⏳ | **Locale: retag `en` → `en-CA`, add `en-US`** — part 1 (spine) DONE, parts 1b/2/3 open | IL-1: their `en` already formats as en-US (`3/4/2026`, `CA$10,799.00`), so this is a retag **and** an addition, 2 locales to 3 — touching URL segments, stored preferences and every `{ en: … }` Json key, whose arity is hardcoded in ~17 files (IL-7). Also: a company default locale, which does not exist there (IL-2); what a missing key does, decided before the third catalog exists rather than after two blank pages (IL-4); and the date-formatting calls that pass no locale (IL-10). | 3 |
 | **VX4-8** | **Module 12 slices 2–3: fraud detection + control evaluation** | Deferred to this phase since Phase 2 because both are retrospective and need approval history, which now exists. Their versions are driven by `SystemFlag` config (MT-2) and run as unconditional global crons (MT-5), so both land on VX4-1 and VX4-2. | 3 |
+
+### VX4-7 part 1 SHIPPED — the locale spine, and a date bug that is not a locale bug
+
+`lib/i18n/` is four pure-or-nearly-pure files and one migration. Baseline measured at HEAD before
+starting (822 tests / 43 files) and after (895 / 46) — the practice of measuring rather than
+quoting, since the long-quoted "712" was two merges stale.
+
+**`lib/i18n/locales.ts` — the registry.** `SUPPORTED_LOCALES = ['en-CA','en-US','fr-CA']`,
+`DEFAULT_LOCALE = 'en-CA'`, `localeName` (endonyms, `Record<Locale, string>` so a new locale without
+a name is a compile error), and an EXPLICIT fallback table. Three decisions worth knowing:
+
+- **The chain is a table, not tag truncation.** Truncation is a rule that asserts a shorter tag is
+  always a real fallback, so `fr-CA` would resolve through a non-existent `fr` and land on English —
+  serving a French reader English as though somebody had decided to. Same class as their
+  `normalizeLocale` = "starts with fr" (IL-9).
+- **`en-US` inherits `en-CA`; `fr-CA` inherits NOTHING.** The second half is load-bearing and is the
+  assertion a well-meaning edit would break. A silent English fallback is invisible to every
+  reviewer reading in English, so missing French copy would ship forever; returning null makes it a
+  bug report that files itself. `test/notification-catalog.test.ts` had an assertion PINNING the old
+  behaviour (`renderContent({body:{en:'Hi'}}, 'fr-CA')` → `'Hi'`) — it is now inverted, with the
+  reason in the test, because retagging it without flipping the expectation would have quietly
+  failed the ticket.
+- **`en-CA` and `en-US` genuinely differ in words**, not only formatting — cheque/check, GST/HST vs
+  sales tax, postal code vs ZIP — which is why John chose a full-tag chain over language-keyed copy.
+
+**`resolve.ts` — precedence with a caller for every rung** (IL-2's real finding): user → company →
+`Accept-Language` → constant. The URL segment is a deliberate non-port; the company is inserted
+ABOVE the browser on purpose. `negotiateLocale` is ~20 lines of BCP-47 Lookup replacing
+`negotiator` + `@formatjs/intl-localematcher`, and the reason is not asceticism: their matcher takes
+the default as its fallback argument and so CANNOT return "no match", which collapses two rungs into
+one and makes the chain untestable.
+
+**`0027` — `organization.default_locale`/`default_timezone`, `app_user.locale`/`timezone`.** Columns
+on `organization` per 0023's settled argument (jsonb is out of reach of every constraint; and
+`organization` is the one table read before anybody is signed in). NULL on `app_user` means "follow
+the company" — a real answer, so an admin changing the default moves everybody who never chose.
+The zone is validated by TRIGGER against `pg_timezone_names`, because a CHECK must be immutable and
+`timezone()` is only STABLE; the failure it prevents is `Intl` throwing a RangeError on every render
+of every page showing a date, for one tenant, which reads as an outage rather than a typo in a
+settings row. Two `DO` blocks refuse the migration outright rather than migrate quietly: a template
+carrying BOTH `en` and `en-CA` (two authored strings, equal claim), and any tenant with a locale in
+`settings` jsonb — which finally turns 0001's aspirational comment into a checked claim.
+
+**`scripts/check-i18n.mjs` + a CI step.** It IMPORTS `SUPPORTED_LOCALES` and hunts for any locale
+tag outside the registry. Their `check-coverage.mjs` is the cautionary case one level up: it opens
+by restating `['en','fr-CA']`, so a third locale there is not merely unwatched — every loop iterates
+the stale pair and PASSES. Exit 2 (not 0) when it cannot read the registry or sees zero files, and
+all eight outcomes were sabotage-verified. On its FIRST run it found `<html lang="en">` hardcoded in
+the root layout since VX0-1 — the same `create-next-app` provenance as the `title: 'Create Next App'`
+VX4-3 removed — and then found two copies of a locale→label map in the two screens I had just
+written, i.e. IL-7 reproducing itself on the day it was closed.
+
+**Three things only running it caught, all recorded in the code:**
+
+1. **`revalidatePath('/', 'layout')` is required after a locale change.** Next preserves the root
+   layout across the soft navigation a server action's `redirect()` performs, so the page's own
+   sample updated while `<html lang>` on the same response still said the old locale — and since
+   every client-side navigation also keeps the root layout, it would have stayed stale for the whole
+   session. Found by `e2e/locale-flow.spec.ts`, which is why `<html lang>` is the assertion that file
+   is built around: a screen reader picks its voice from it, so the gap is invisible to everyone who
+   can see.
+2. **A blank timezone reported itself as a bad zone name.** A BEFORE trigger runs ahead of the row's
+   CHECKs, so `organization_default_timezone_nonempty` never got to speak and the first probe
+   produced `"     is not an IANA timezone name"`. The trigger now owns the wording; the CHECK stays
+   as the structural guarantee (0014's note: a trigger can be dropped, a constraint cannot be dropped
+   by accident).
+3. **The admin screen's first draft apologised for itself** — "the sample shows the setting currently
+   saved, not the one selected above". Looking at the rendered page is what made that unacceptable.
+   It now renders ALL THREE locales as a comparison table, which is better than a live preview
+   because the question is comparative: `$10,799.00` sits directly above `CA$10,799.00`, and that
+   pair is the whole of IL-1 on the screen where somebody can act on it.
+
+**A sabotage found a weak test of my own.** Breaking `loadReaderPrefs` to short-circuit on "the user
+has any preference" failed the independence test but left `by email … gives the same answer` green —
+its fixture set only the user's locale and left the company on UTC, the value it would fall back to
+anyway, so it passed for a second reason. Strengthened to disagree on both axes, and to assert the
+pair absolutely rather than only `toEqual(byId)`, since comparing two implementations to each other
+passes when both are wrong the same way. UD-5 req 2 in miniature.
+
+**Both writes are audited, `from → to`, and the actor is REQUIRED** (an optional actor is an audit
+call the next caller forgets — MT-3 applied to the trail). The reason is stronger than the one
+`app/notifications/actions.ts` gives for preference changes: locale changes how money and dates
+render on a financial record, and `03/04/2026` is two different days to two readers who dispute an
+expense report months later. A cleared preference records as `'inherit'`, not null — `canonical()` is
+in the hash and a null reads as "nothing recorded" where the fact is "this person chose to follow the
+company".
+
+#### The date finding, which is the part to read before starting part 1b
+
+IL-10's class **does not exist here** — zero `toLocale*` calls anywhere. There is one formatter,
+`formatDate` = `toISOString().slice(0,10)`, at ~20 sites. But two bugs sit in that one line and only
+one is about locale: for a `timestamptz` it renders the **UTC day**, so a report approved 4 March at
+18:00 PT shows as 5 March, live, in shipped code, for every reader west of UTC.
+
+The naive fix is wrong in the other direction, and upstream's own scars say so: they format calendar
+dates with an explicit `timeZone: 'UTC'` at four sites, each commented about behind-UTC readers
+seeing the previous day. The schema has both kinds — **8 `date` columns** and ~90 `timestamptz` — and
+one formatter is applied to both, so it is accidentally right for the calendar dates and wrong for
+the instants. Part 1b therefore needs THREE functions: a calendar date formatted in UTC, an instant
+formatted in the reader's zone, and `toDateInputValue`, which must stay ISO `YYYY-MM-DD` forever.
+
+**That third one is the trap.** `app/expenses/[reportId]/page.tsx:292` feeds
+`formatDate(expense.txn_date)` straight into `<input type="date">`. A locale-aware `formatDate`
+renders `3/4/2026` there for en-US, Chrome silently rejects it, the field goes blank, and saving
+clears the date — a data-loss bug introduced by the localisation fix. `app/admin/expense-policies/
+page.tsx:54` already keeps its own separate `dateValue()` helper for this, correctly.
+
+Part 1 ships the storage and the resolution and threads only `<html lang>`; `formatMinor` keeps its
+default parameter (all 23 call sites still let it stand) rather than becoming required, because 23
+mechanical edits inside a storage PR is where a wrong locale gets pasted. Part 1b moves every call
+site at once, with a scan that refuses a display formatter in an `<input>` value.
 
 ### VX4-3 part 1 SHIPPED — the branding store, and the colour maths that is the actual ticket
 

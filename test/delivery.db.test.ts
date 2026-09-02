@@ -519,8 +519,8 @@ describe('composition', () => {
          VALUES (current_setting('app.current_org', true)::uuid,
                  'expense_management.report_awaiting_approval', 'EMAIL', $1::jsonb, $2::jsonb)`,
         [
-          JSON.stringify({ en: 'Please look at {report} ({total}) from {actor}.' }),
-          JSON.stringify({ en: 'Approval needed: {report}' }),
+          JSON.stringify({ 'en-CA': 'Please look at {report} ({total}) from {actor}.' }),
+          JSON.stringify({ 'en-CA': 'Approval needed: {report}' }),
         ],
       ),
     );
@@ -528,6 +528,39 @@ describe('composition', () => {
     await drainOutbox();
     expect(mail.sent[0].subject).toBe('Approval needed: Oslo');
     expect(mail.sent[0].text).toContain('Please look at Oslo ($500.00) from sub.');
+  });
+
+  it('IGNORES a template still keyed on the retagged-away `en`', async () => {
+    // VX4-7. This fixture is what a tenant row written before 0027 looks like,
+    // and the assertion is at the layer that actually sends rather than in the
+    // pure renderer — because "the wrong copy went out by email" is the failure
+    // that cannot be taken back.
+    //
+    // Falling through to shipped copy is the right outcome and the honest one: an
+    // `en` row is copy in an unknown locale as far as the registry is concerned,
+    // and 0027 retagged every such row precisely so this case cannot arise in a
+    // migrated database. What this test protects against is the case arising
+    // AGAIN — a seed, a fixture or an admin action that writes the old key — and
+    // it makes the symptom "the tenant's wording silently stopped applying",
+    // which is visible, rather than "half the tenants render an unknown tag".
+    await withOrg(orgId, (tx) =>
+      tx.query(
+        `INSERT INTO notification_template
+           (organization_id, template_key, channel, body, subject)
+         VALUES (current_setting('app.current_org', true)::uuid,
+                 'expense_management.report_awaiting_approval', 'EMAIL', $1::jsonb, $2::jsonb)`,
+        [
+          JSON.stringify({ en: 'STALE KEY — should not be sent.' }),
+          JSON.stringify({ en: 'STALE SUBJECT' }),
+        ],
+      ),
+    );
+    await submitted(50000, 'Bergen');
+    await drainOutbox();
+    expect(mail.sent[0].subject).not.toBe('STALE SUBJECT');
+    expect(mail.sent[0].text).not.toContain('STALE KEY');
+    // The shipped sentence instead, which is `en-CA` in the catalogue.
+    expect(mail.sent[0].text).toContain('needs your approval on Bergen');
   });
 
   it('re-minting on a retry retires the previous email links', async () => {
@@ -585,7 +618,7 @@ describe('composition', () => {
         `INSERT INTO notification_template (organization_id, template_key, channel, body)
          VALUES (current_setting('app.current_org', true)::uuid,
                  'expense_management.report_awaiting_approval', 'EMAIL', $1::jsonb)`,
-        [JSON.stringify({ en: 'Look at <script>alert(1)</script> {report}' })],
+        [JSON.stringify({ 'en-CA': 'Look at <script>alert(1)</script> {report}' })],
       ),
     );
     await submitted(1000, 'Bath & Wells');
