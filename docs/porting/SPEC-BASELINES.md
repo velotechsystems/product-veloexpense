@@ -38,6 +38,12 @@ rename**: `TravelRequestLine.detail` became `.notes`, with the comments updated 
 Checked while porting VX4-5 part 2; recorded so the next reader does not re-derive it, and so a
 Phase-4 ticket that DOES find a meaningful delta knows to look.
 
+**The full delta has since been reviewed — all 24 commits, 2 Sep 2026 — in GAP-AUDIT's `UD` section.**
+Four items port, three are inputs to tickets already boarded, one is a product question, and the rest
+is theirs (travel, VCC, their production directory data, NetSuite SOAP, their CI). Read that section
+rather than re-running the diff. **The pin does not move until those ports are boarded**, so every
+Phase-4 audit claim still refers to `5a11a647` and source is still read with `git show`.
+
 ## Read this before trusting a delta diff
 
 **Everything through VX2-1 was ported from the module DOCS (`NN-module.md`), not from ExpenseOS
