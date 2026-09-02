@@ -2649,6 +2649,76 @@ finds (GAP-AUDIT UD-4's neighbour).
 Playwright** — 31 existing plus this ticket's four. Baseline MEASURED at `ee192a4` in the same
 harness: **790**, so this adds 13. **Seven sabotage runs**, each failing exactly its own tests.
 
+### VX4-6a SHIPPED — spend analytics: the money defect, the performance shape, and a rewrite
+
+Migration `0026` (two indexes, no tables, no columns). `lib/spend/statuses.ts` +
+`lib/analytics/service.ts` + the `analytics` module flipped available. **6b is the `/analytics`
+screen and its e2e**, split on John's call (2 Sep).
+
+**What the audit deleted, so the estimate was not four days of BI.** AN-1: their module is one router
+with three procedures; the report builder and scheduled exports are four declared permissions with
+nothing behind them. AN-2/3/5/9: four cross-tenant leaks, all "the privileged case is the ABSENCE of
+a predicate" — a class RLS makes impossible here, with a per-table proof already in
+`test/rls-isolation.test.ts`. What was left was a money defect and a performance shape.
+
+**AN-7, inverted.** Theirs is one line — `return c ? c.amountMinor : amountMinor; // missing rate →
+best-effort raw` — so yen are added to cents and reported as base currency with nothing on the
+response to say so. Ours counts that spend in `unconvertible`, in its SOURCE currency, and never in a
+total; `byCurrency` names what is missing so an admin knows which rate to add.
+
+**UD-6, from the upstream delta review, applied.** Every group is valued at the rate for ITS OWN DAY
+through `lib/policy/rates.ts`. Two identical USD amounts on two days with two rates produce two
+figures, and a rate published later does not move an earlier month — asserted both ways, because
+upstream's `b9e242d7` is the record of what happens otherwise.
+
+**AN-10, and John's call on how.** Theirs loads every matching row into memory, aggregates in JS,
+filters months in JS afterwards, has no `take`, and has both range ends optional with the home page
+passing neither. Ours SUMS IN SQL over a range that is **refused when absent, not defaulted** — a
+default is how theirs ended up aggregating all history on a page nobody thought was expensive. And
+`0026` adds the index the audit says they lack: checked rather than assumed, `expense` carried only
+`organization_id` and `report_id`, with nothing on `txn_date`.
+
+**A REWRITE, from a sabotage I had not run yet.** The first design ran six queries, one per
+dimension, each grouped by `(currency, day, value)`. Smaller, and wrong: each grouping rounds its own
+conversion, so the header total and the category chart under it could differ by cents — which is
+exactly upstream's `b9e242d7` ("Report header CAD 174.29 / the one line composing it CAD 174.14",
+15¢ on $125.50, for a year). Rounding once per emitted figure does not fix it either: the sum of
+rounded slices is not the rounded sum, and no arrangement of six independent groupings makes six sets
+of slices agree. It is now ONE query grouped by every dimension at once, converted once per group,
+with all six dimensions folded from the same converted rows — so they agree EXACTLY, and
+`EVERY dimension adds up to the header, exactly` asserts it across all six with a non-zero floor so
+it cannot pass vacuously. The honest cost: cardinality is now the distinct combinations of
+`(currency, day, category, account, department, business unit, submitter, status)`, which on a busy
+tenant approaches the line-item count. It is still the database summing over a bounded range, which
+is the property AN-10 is about. It also removed all the interpolated SQL the six-query version needed.
+
+**`lib/spend/statuses.ts` — one statement of what counts as spend, and the best sabotage of the
+run.** AN-7's most useful sentence is not about FX: *"the two halves of the same product disagree
+about whether an unconvertible amount is reportable"*, because each half decided for itself. That
+split was one copy away here — `lib/budgets/service.ts` had a private `COUNTED` array and analytics
+needed the same answer. Moving SUBMITTED from PENDING into COMMITTED in the shared module now fails
+**eleven tests across budgets AND analytics**, which is the drift being structurally impossible
+rather than merely documented. Renamed a variable while there: the rollup's `committed` was true for
+SUBMITTED and fed `committed ? 'pending' : 'actual'`, so it meant the opposite of its name.
+
+**Two fixtures the schema refused, twice, and it was right both times.** A raw-SQL REIMBURSED report
+has to satisfy `expense_report_reimbursed_stamped` *and*
+`expense_report_reimbursement_complete` — status implies the timestamp, and the timestamp implies an
+actor, because "a report with `reimbursed_at` and no actor is a payment nobody made". Satisfied
+rather than sidestepped by dropping REIMBURSED from the fixtures, since REIMBURSED counting as
+committed spend is one of the claims.
+
+**The module gate is on the READ here, and that is right for once.** Analytics owns no tables, so
+there is no RLS backstop to add: it reads the expense loop's rows, already tenant-scoped. A tenant
+without the module therefore has no analytics at all, and 6b's screen will render its own off-state
+from the ungated `isModuleEnabled`, exactly as the chart-of-accounts screen does. Contrast BUDGETS,
+where the gate had to be in the data plane because the rollup runs inside every tenant's submit.
+
+**Verified:** `tsc`, `eslint`, `check:vendor` clean on the device. In the cloud harness on a fresh
+database with all 26 migrations: `npm run build` and `npm run check:actions` pass, **822 vitest across
+43 files**, **35/35 Playwright**. Baseline MEASURED at `01b16e9`: **803**, so this adds 19. **Seven
+sabotage runs**, each failing exactly its own tests.
+
 ### The two decisions, SETTLED 31 Aug 2026 (John)
 
 **1. Host-based tenancy is PHASE 5.** VX4-4 is out of this board. The reasoning that carried it: a

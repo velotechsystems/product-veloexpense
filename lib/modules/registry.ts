@@ -164,18 +164,36 @@ const BUDGETS: ModuleDefinition = {
 };
 
 /**
- * The three the Plan names and nothing implements. Declared, unavailable, and
+ * ANALYTICS — spend summarised over a bounded range, in the tenant's own currency.
+ *
+ * Made available by VX4-6a. Unlike BUDGETS this needs no RLS backstop, because
+ * analytics OWNS NO TABLES: it reads the expense loop's rows, which are already
+ * tenant-scoped and already gated where they belong. So the module gate here is
+ * on the READ, and that is the right shape for once — a tenant without analytics
+ * has no analytics screen at all, and the screen renders its own off-state from
+ * the ungated `isModuleEnabled`, exactly as the chart-of-accounts screen does.
+ *
+ * AN-2/3/5/9 are the reason there is nothing else to gate: their four
+ * cross-tenant leaks are all "the privileged case is the absence of a predicate",
+ * and RLS supplies the predicate below every query here.
+ */
+const ANALYTICS: ModuleDefinition = {
+  code: 'analytics',
+  name: 'Analytics',
+  description:
+    'Spend summarised by month, category, GL account, department, business unit and ' +
+    'submitter, over a range you choose. Without this module every report still goes ' +
+    'through policy, approval and reimbursement; nothing is aggregated.',
+  available: true,
+  gates: ['lib/analytics/service.ts#spendSummary'],
+  ungated: {},
+};
+
+/**
+ * The two the Plan names and nothing implements. Declared, unavailable, and
  * gating nothing — see the header on why they are here at all.
  */
 const DECLARED_ONLY: ModuleDefinition[] = [
-  {
-    code: 'analytics',
-    name: 'Analytics',
-    description: 'Spend dashboards and period comparisons.',
-    available: false,
-    gates: [],
-    ungated: {},
-  },
   {
     code: 'travel',
     name: 'Travel',
@@ -194,7 +212,7 @@ const DECLARED_ONLY: ModuleDefinition[] = [
   },
 ];
 
-const MODULES: ModuleDefinition[] = [ACCOUNTING, BUDGETS, ...DECLARED_ONLY];
+const MODULES: ModuleDefinition[] = [ACCOUNTING, BUDGETS, ANALYTICS, ...DECLARED_ONLY];
 
 /** Every declared module, available or not. Stable order, for a screen. */
 export function listModules(): ModuleDefinition[] {

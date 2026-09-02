@@ -44,10 +44,17 @@ import type { QueryRunner } from '@/lib/db/client';
 import { convertMinor } from '@/lib/money';
 import { buildRateLookup, type RateLookup, type RateRow } from '@/lib/policy/rates';
 import { resolveBudget, type BudgetScope, type BudgetSnapshot } from '@/lib/budgets/scope';
+import { COMMITTED_STATUSES, COUNTED_STATUSES } from '@/lib/spend/statuses';
 import { fireThresholdAlerts, type AlertOutcome } from '@/lib/budgets/alerts';
 
-/** Statuses whose spend is counted. DRAFT, REJECTED and RETURNED are not spend. */
-const COUNTED = ['SUBMITTED', 'APPROVED', 'REIMBURSED'] as const;
+/**
+ * Statuses whose spend is counted, and the bucket each falls in.
+ *
+ * IMPORTED, not declared. This was a private `COUNTED` array here until VX4-6
+ * needed the same answer for analytics — and AN-7's real lesson is that their two
+ * halves disagreed about what was reportable precisely because each decided for
+ * itself. `lib/spend/statuses.ts` is the one statement both read.
+ */
 
 /**
  * The date a line is attributed by — see the header. Written once, used by both
@@ -264,7 +271,7 @@ async function recomputePeriods(tx: QueryRunner, periods: PeriodRow[]): Promise<
       WHERE r.status = ANY($1::expense_report_status[])
         AND li.gl_account_id = ANY($2::uuid[])
         AND ${ON_DATE} BETWEEN $3::date AND $4::date`,
-    [COUNTED, accountIds, from, to],
+    [COUNTED_STATUSES, accountIds, from, to],
   );
 
   const units = await minorUnits(tx);
@@ -292,7 +299,11 @@ async function recomputePeriods(tx: QueryRunner, periods: PeriodRow[]): Promise<
     const period = periodCovering(periods, budget.id, row.on_date);
     if (!period) continue;
 
-    const committed = row.status === 'SUBMITTED';
+    // PENDING vs COMMITTED from the shared statement rather than a literal, so a
+    // status moving between buckets moves for analytics at the same time. Renamed
+    // from `committed` while doing it: that variable was true for SUBMITTED and
+    // fed `committed ? 'pending' : 'actual'`, so it meant the opposite of its name.
+    const isPending = !(COMMITTED_STATUSES as readonly string[]).includes(row.status);
     const amount = BigInt(row.amount_minor);
     const hit = lookupFor(row.on_date).find(row.currency_code, budget.currencyCode);
     if (!hit) {
@@ -309,7 +320,7 @@ async function recomputePeriods(tx: QueryRunner, periods: PeriodRow[]): Promise<
       units[row.currency_code] ?? 2,
       units[budget.currencyCode] ?? 2,
     );
-    bump(period.period_id, committed ? 'pending' : 'actual', converted);
+    bump(period.period_id, isPending ? 'pending' : 'actual', converted);
   }
 
   // Every period in the set is written, including the ones that came back empty.
