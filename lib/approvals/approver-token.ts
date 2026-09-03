@@ -25,6 +25,8 @@
  * the page renders read-only.
  */
 import { DomainError } from '@/lib/errors/domain';
+import type { UserMessage } from '@/lib/errors/domain';
+import type { UserMessageCode } from '@/lib/i18n/catalog/errors';
 import {
   APPROVER_ROLES,
   MAX_MANAGER_LEVEL,
@@ -78,8 +80,10 @@ export function approverChoices(people: ApproverPerson[]): ApproverChoice[] {
 }
 
 export class ApproverTokenError extends DomainError {
-  constructor(message: string) {
-    super(message);
+  constructor(message: string,
+    userMessage: UserMessageCode | UserMessage | null = null,
+  ) {
+    super(message, userMessage);
     this.name = 'ApproverTokenError';
   }
 }
@@ -90,28 +94,38 @@ export class ApproverTokenError extends DomainError {
  */
 export function decodeApproverToken(token: string, position: number): NewApprover {
   const split = token.indexOf(':');
-  if (split < 1) throw new ApproverTokenError(`unrecognised approver: ${token}`);
+  if (split < 1) throw new ApproverTokenError(`unrecognised approver: ${token}`,
+      'APPROVER_SELECTION_STALE',
+    );
   const kind = token.slice(0, split);
   const rest = token.slice(split + 1);
 
   if (kind === 'MANAGER') {
     const level = Number(rest);
     if (!Number.isInteger(level) || level < 1 || level > MAX_MANAGER_LEVEL) {
-      throw new ApproverTokenError(`unrecognised reporting-line level: ${rest}`);
+      throw new ApproverTokenError(`unrecognised reporting-line level: ${rest}`,
+      'APPROVER_SELECTION_STALE',
+    );
     }
     return { position, approverKind: 'MANAGER', managerLevel: level };
   }
   if (kind === 'ROLE') {
     if (!(APPROVER_ROLES as readonly string[]).includes(rest)) {
-      throw new ApproverTokenError(`unrecognised role: ${rest}`);
+      throw new ApproverTokenError(`unrecognised role: ${rest}`,
+      'APPROVER_SELECTION_STALE',
+    );
     }
     return { position, approverKind: 'ROLE', approverRole: rest as EmployeeRole };
   }
   if (kind === 'USER') {
-    if (rest === '') throw new ApproverTokenError('pick a person');
+    if (rest === '') throw new ApproverTokenError('pick a person',
+      'APPROVER_NEEDS_PERSON',
+    );
     return { position, approverKind: 'USER', approverUserId: rest };
   }
-  throw new ApproverTokenError(`unrecognised approver: ${token}`);
+  throw new ApproverTokenError(`unrecognised approver: ${token}`,
+      'APPROVER_SELECTION_STALE',
+    );
 }
 
 /** The stored row as the token the select understands, so an existing rung's
@@ -137,6 +151,7 @@ export function decodeApproverList(tokens: readonly string[]): NewApprover[] {
     // the admin gets a sentence rather than an error code.
     throw new ApproverTokenError(
       'a rung needs at least one approver — a rung nobody signs can never complete',
+      'RUNG_NEEDS_APPROVER',
     );
   }
   return chosen.map((token, i) => decodeApproverToken(token, i + 1));

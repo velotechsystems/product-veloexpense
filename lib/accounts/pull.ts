@@ -39,6 +39,8 @@
  * ledger's chart does not cover yet.
  */
 import type { QueryRunner } from '@/lib/db/client';
+import type { UserMessage } from '@/lib/errors/domain';
+import type { UserMessageCode } from '@/lib/i18n/catalog/errors';
 import { DomainError } from '@/lib/errors/domain';
 import type { RemoteAccount } from '@/lib/integrations/contract';
 import { requireCapability } from '@/lib/integrations/service';
@@ -63,8 +65,9 @@ export class PullError extends DomainError {
     message: string,
     readonly code: 'DUPLICATE_NUMBERS' | 'EMPTY' | 'NOT_CONNECTED',
     readonly detail: string[] = [],
+    userMessage: UserMessageCode | UserMessage | null = null,
   ) {
-    super(message);
+    super(message, userMessage);
     this.name = 'PullError';
   }
 }
@@ -94,6 +97,8 @@ export async function pullChartOfAccounts(
       'the ledger reported no accounts at all — check the configured entity before ' +
         'treating that as correct',
       'EMPTY',
+      [],
+      'LEDGER_REPORTED_NOTHING',
     );
   }
 
@@ -111,6 +116,10 @@ export async function pullChartOfAccounts(
         `be reconciled: ${[...new Set(duplicates)].join(', ')}`,
       'DUPLICATE_NUMBERS',
       [...new Set(duplicates)],
+      {
+        code: 'LEDGER_DUPLICATE_NUMBERS',
+        params: { numbers: [...new Set(duplicates)].join(', ') },
+      },
     );
   }
 

@@ -2081,8 +2081,79 @@ shipped.
 | **VX4-3** | **Branding that actually renders** | BR-2 is the surprise: the fields, the admin form and the validation all exist and **nothing reads them**. So the port is the easy half and the render path is net-new — CSS custom properties injected per tenant (BR-3, deriving row/hover shades from the primary rather than hardcoding them), a tenant logo served pre-auth on the `public-icons` route's proven pattern (BR-4), `generateMetadata` instead of a static title (BR-5), and a branded email shell on VX2-8's template layer (BR-6). | 3 |
 | **VX4-5** | **Budgets, tenant-scoped, on our own chart of accounts** | BG-2: `Budget.glAccountId` is a **required** FK into a NetSuite SOAP cache, and their vendor-neutral `Account` table was deleted — so budgets there are uncreatable without NetSuite. **VX3-1 already fixed this for us**; budgets point at `gl_account` and a vendor becomes an alias. Plus BG-1 (tenant column and composite keys on five tables, including an index Prisma cannot express), BG-3 (actuals recomputed over the whole fiscal year on every approval click, with an unbounded FX load → rollup), BG-6 (alert idempotency by mutable marker → our atomic-claim idiom). | 4 |
 | **VX4-6** | **Analytics, tenant-scoped** | The tenancy half is free (above). The work is AN-7 — a missing FX rate is currently summed **as if it were base currency**, unflagged, while the budget code counts unconverted amounts for the same situation — and AN-10: unbounded ranges, no `date` index, and a home page that runs a full-history aggregate for every signed-in user. Plus AN-8's lesson: size the data with a predicate, never with a role check that then queries everything. | 4 |
-| **VX4-7** ⏳ | **Locale: retag `en` → `en-CA`, add `en-US`** — parts 1, 1b, 2a, 2b, 2c-1 DONE; 2c-2 + 3 open. fr-CA retired until its copy exists (0028) | IL-1: their `en` already formats as en-US (`3/4/2026`, `CA$10,799.00`), so this is a retag **and** an addition, 2 locales to 3 — touching URL segments, stored preferences and every `{ en: … }` Json key, whose arity is hardcoded in ~17 files (IL-7). Also: a company default locale, which does not exist there (IL-2); what a missing key does, decided before the third catalog exists rather than after two blank pages (IL-4); and the date-formatting calls that pass no locale (IL-10). | 3 |
+| **VX4-7** ⏳ | **Locale: retag `en` → `en-CA`, add `en-US`** — parts 1, 1b, 2a, 2b, 2c-1, 2c-2 DONE (IL-11 closed); part 3 open. fr-CA retired until its copy exists (0028) | IL-1: their `en` already formats as en-US (`3/4/2026`, `CA$10,799.00`), so this is a retag **and** an addition, 2 locales to 3 — touching URL segments, stored preferences and every `{ en: … }` Json key, whose arity is hardcoded in ~17 files (IL-7). Also: a company default locale, which does not exist there (IL-2); what a missing key does, decided before the third catalog exists rather than after two blank pages (IL-4); and the date-formatting calls that pass no locale (IL-10). | 3 |
 | **VX4-8** | **Module 12 slices 2–3: fraud detection + control evaluation** | Deferred to this phase since Phase 2 because both are retrospective and need approval history, which now exists. Their versions are driven by `SystemFlag` config (MT-2) and run as unconditional global crons (MT-5), so both land on VX4-1 and VX4-2. | 3 |
+
+### VX4-7 part 2c-2 SHIPPED — IL-11 closed, and four disclosure paths no list contained
+
+Baseline measured at HEAD before starting (1037 tests / 51 files) and after (**1157 / 51**). **49
+Playwright** twice in a row. No migration. **142 message codes** in total.
+
+**What closed.** The admin half of the reachable messages is catalogued and `errorParam`'s
+transitional branch is deleted, so there is no path left that puts an exception's own text in front of
+a person. Two cases now: a code, or the generic plus a log line. `renderUserMessage` also refuses an
+uncatalogued value instead of passing it through, so a hand-edited link can no longer render arbitrary
+text inside the product's error banner.
+
+**The 2c-1 no-parameters constraint was walked back on purpose, and it is written down.** Fourteen
+admin messages carry a COMPUTED value the page cannot show. The settling case is the contrast
+message: `e2e/branding-flow.spec.ts` asserts all three ratios and its own comment says why. Parameters
+ride base64url'd inside the error value (`?error=CODE~<blob>`), which is what kept all twenty
+`ErrorBanner` call sites and every `searchParams.error` reader untouched — a second query key would
+have meant twenty pages threading it, which is MT-3. `assertRenderableParams` refuses a UUID-shaped
+value outright, because part 2c exists because a UUID reached a screen and a parameter channel
+without that check is a nicer road in.
+
+**`requires` is DERIVED here, DECLARED in `policy-messages.ts`.** A policy sentence is a function and
+a function's body cannot be inspected — UD-5 req 3. A refusal is a template string, so the
+placeholders are in it, and a hand-written list beside it is a second source of truth: the first
+draft already had `APPROVER_OVERSPECIFIED` missing from it.
+
+**FOUR DISCLOSURE PATHS, EACH FOUND A DIFFERENT WAY.**
+
+| Where | What reached a screen | Found by |
+|---|---|---|
+| `lib/notifications/approve.ts:206` | anything `decide()` throws, on a page opened from an EMAIL link | reading the module — the gate scanned only `app/` |
+| `lib/accounts/service.ts:213` | a third-party CSV parser's exception | cataloguing the module |
+| `lib/accounts/service.ts:479` | a **Postgres trigger's** RAISE message, regex-matched and reshaped | cataloguing the module |
+| `app/api/.../callback/route.ts:96` | **`error_description` off the provider's query string** — a remote party writing our banner | the strict renderer, via a FAILING E2E |
+
+The last one is the keeper: making the renderer refuse unknown values turned a silent pass-through
+into `oauth-flow`'s "Deny is a normal outcome" going red.
+
+**BOTH GATES WERE WRONG BEFORE THEY WERE RIGHT, AND THAT IS THE LESSON.** Widening the raw-message
+check to `lib/` flagged fifteen sites, most of them correct — `lib/integrations/dispatch.ts` builds
+exactly that string for a delivery's `last_error`. **The pattern is not the defect; the destination
+is.** It split in two: the spelling check stays `app/`-only (it is what caught the receipt drawer,
+which has no URL at all) and a new destination check requires every `?error=${…}` anywhere to come
+from `errorParam`, `errorCodeParam` or `encodeUserMessage`. The new params check then produced two
+false positives of its own — a trailing shorthand key (`{ rule, maximum }`), and a multi-line object
+with `${…}` inside — before its regex was replaced with a real brace scan. A gate that fails the
+build on correct code teaches people to delete gates.
+
+**Three things the new gates caught in my own work on their first run:** `COA_IMPORT_HAD_PROBLEMS`
+declared `{detail}` while the throw site passed only `problems` (every bad CSV would have silently
+shown the generic); `POLICY_SEVERITY_ABOVE_MAX` was passing `maximum` as a RAW ENUM MEMBER, so an
+admin would have read "cannot be set above WARNING" — part 2a's defect walking back in through a
+parameter three PRs later; and a first pass tagged the receipt-uploader check with
+`MANAGER_NOT_IN_ORG`, rendering "That manager is not in this organization" at somebody uploading a
+receipt.
+
+**Copy discipline.** Ported, not rewritten — most of these were already written for the admin who
+pressed the button, unlike the approvals half. The port rule was: move the sentence, keep the words,
+change only what a code cannot carry. Two regressions from working off a truncated dump rather than
+the source were caught and fixed: the contrast message lost "Try a deeper or lighter shade of the
+same hue" (its only actionable clause), and `lib/branding/service.ts:229`'s magic-byte sniff — two
+sentences behind a ternary — was missed entirely and is now two codes.
+
+**Sabotages, three, re-run after `npm run build` where Playwright is involved.** Reinstating the
+transitional branch fails 2 tests; making the renderer pass unknown values through fails 2; putting
+`error_description` back in the banner fails `oauth-flow`. The params gate was separately checked in
+both directions by dropping and adding a key at a real site.
+
+**Still open — part 3, with the third locale:** IL-5/IL-6, the crawler pinned to one locale. Every
+catalogue now has a coverage assertion over `SUPPORTED_LOCALES`, so what remains is the crawl, and
+UD-3's role-crawl folds into it.
 
 ### VX4-7 part 2c-1 SHIPPED — a thrown error has two audiences, and one string served neither
 

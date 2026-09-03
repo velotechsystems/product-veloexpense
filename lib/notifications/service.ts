@@ -29,6 +29,8 @@
  *    a bug, not a delivery problem, and it propagates.
  */
 import type { QueryRunner } from '@/lib/db/client';
+import type { UserMessage } from '@/lib/errors/domain';
+import type { UserMessageCode } from '@/lib/i18n/catalog/errors';
 import { DomainError } from '@/lib/errors/domain';
 import { formatMinor } from '@/lib/money';
 import { enqueueDelivery } from '@/lib/notifications/outbox';
@@ -67,8 +69,9 @@ export class NotificationError extends DomainError {
       | 'EMPTY_BODY'
       | 'NOT_FOUND'
       | 'FORBIDDEN',
+    userMessage: UserMessageCode | UserMessage | null = null,
   ) {
-    super(message);
+    super(message, userMessage);
     this.name = 'NotificationError';
   }
 }
@@ -93,7 +96,9 @@ export interface NewActivity {
 /** Append one event to the stream. Notifies nobody — see property 2. */
 export async function recordActivity(tx: QueryRunner, input: NewActivity): Promise<string> {
   if (!isEventType(input.eventType)) {
-    throw new NotificationError(`unknown event type: ${input.eventType}`, 'UNKNOWN_EVENT_TYPE');
+    throw new NotificationError(`unknown event type: ${input.eventType}`, 'UNKNOWN_EVENT_TYPE',
+      'EVENT_TYPE_UNKNOWN',
+    );
   }
   const r = await tx.query(
     `INSERT INTO activity
@@ -507,10 +512,14 @@ export async function setPreference(
   enabled: boolean | null,
 ): Promise<void> {
   if (!isEventType(eventType)) {
-    throw new NotificationError(`unknown event type: ${eventType}`, 'UNKNOWN_EVENT_TYPE');
+    throw new NotificationError(`unknown event type: ${eventType}`, 'UNKNOWN_EVENT_TYPE',
+      'EVENT_TYPE_UNKNOWN',
+    );
   }
   if (!isChannel(channel)) {
-    throw new NotificationError(`unknown channel: ${channel}`, 'UNKNOWN_CHANNEL');
+    throw new NotificationError(`unknown channel: ${channel}`, 'UNKNOWN_CHANNEL',
+      'CHANNEL_UNKNOWN',
+    );
   }
   if (enabled === null) {
     await tx.query(
@@ -599,7 +608,9 @@ export async function setTemplate(
   input: { templateKey: string; channel: string; body: string | null; subject?: string | null },
 ): Promise<void> {
   if (!isChannel(input.channel)) {
-    throw new NotificationError(`unknown channel: ${input.channel}`, 'UNKNOWN_CHANNEL');
+    throw new NotificationError(`unknown channel: ${input.channel}`, 'UNKNOWN_CHANNEL',
+      'CHANNEL_UNKNOWN',
+    );
   }
   // Both halves of ExpenseOS's `isTemplateKey`, plus the registry: the shape is
   // also a CHECK in `0011`, the owner list is code-only, and a well-formed key
@@ -608,6 +619,7 @@ export async function setTemplate(
     throw new NotificationError(
       `unknown template key: ${input.templateKey}`,
       'UNKNOWN_TEMPLATE_KEY',
+      'TEMPLATE_KEY_UNKNOWN',
     );
   }
   // EMPTY AFTER TRIMMING IS A RESET, and `?? null` alone does not say that:

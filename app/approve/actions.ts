@@ -9,6 +9,7 @@
  * `<form action={serverAction}>` like every other surface here.
  */
 import { redirect } from 'next/navigation';
+import { encodeUserMessage } from '@/lib/errors/domain';
 import { decideFromToken } from '@/lib/notifications/approve';
 
 /*
@@ -45,7 +46,11 @@ export async function decideFromTokenForm(form: FormData) {
   const ack = form.get('receiptViewAcknowledged') !== null;
   const result = await decideFromToken(raw, { receiptViewAcknowledged: ack });
   if (result.kind === 'DONE') redirect(`/approve?done=${result.action}`);
-  if (result.kind === 'REFUSED') redirect(`/approve?error=${encodeURIComponent(result.reason)}`);
+  // `result.reason` is a MESSAGE CODE since part 2c-2, not a sentence — the page
+  // renders it through `ErrorBanner` like every other refusal. `errorCodeParam`
+  // rather than `errorParam` because there is no exception here to inspect.
+  if (result.kind === 'REFUSED')
+    redirect(`/approve?error=${encodeURIComponent(encodeUserMessage(result.reason))}`);
   // INVALID here means the token was used between rendering the question and
   // answering it — a double-click, or the other half of the pair. Falling through
   // to the bare page renders the "no longer works" card, which is the truth.

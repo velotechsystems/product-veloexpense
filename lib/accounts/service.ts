@@ -24,6 +24,8 @@
  *    from the tree and a posted line vanished from the income statement.
  */
 import type { QueryRunner } from '@/lib/db/client';
+import type { UserMessage } from '@/lib/errors/domain';
+import type { UserMessageCode } from '@/lib/i18n/catalog/errors';
 import { DomainError } from '@/lib/errors/domain';
 import { parseCsv } from '@/lib/accounts/csv';
 import { validateCoaCsv, type ValidatedAccount, type ValidationError } from '@/lib/accounts/validate';
@@ -75,8 +77,9 @@ export class AccountError extends DomainError {
       | 'INVALID_CSV',
     /** Line-numbered CSV problems, when the code is INVALID_CSV. */
     readonly errors: ValidationError[] = [],
+    userMessage: UserMessageCode | UserMessage | null = null,
   ) {
-    super(message);
+    super(message, userMessage);
     this.name = 'AccountError';
   }
 }
@@ -149,6 +152,8 @@ export async function instantiateTemplate(
     throw new AccountError(
       'this tenant already has a chart of accounts; import or add accounts instead',
       'ALREADY_POPULATED',
+      [],
+      'COA_ALREADY_EXISTS_IMPORT',
     );
   }
   const template = await tx.query('SELECT key FROM coa_template WHERE key = $1 AND active', [
@@ -210,6 +215,8 @@ export async function importFromCsv(
     throw new AccountError(
       e instanceof Error ? e.message : 'could not read that file as CSV',
       'INVALID_CSV',
+      [],
+      'COA_FILE_UNREADABLE',
     );
   }
   const validation = validateCoaCsv(parsed);
@@ -218,6 +225,23 @@ export async function importFromCsv(
       `that file has ${validation.errors.length} problem(s) and none of it was imported`,
       'INVALID_CSV',
       validation.errors,
+      {
+        code: 'COA_IMPORT_HAD_PROBLEMS',
+        params: {
+          problems: validation.errors.length,
+          // The per-line detail the ACTION used to append to the message as raw
+          // text, capped here the way it was capped there. It is the admin's own
+          // file content — nothing internal — and it is the useful half: "3
+          // problems" without "line 4: Cash is not a number" leaves them opening
+          // the file blind.
+          detail:
+            validation.errors
+              .slice(0, 5)
+              .map((e) => `line ${e.lineNumber}: ${e.message}`)
+              .join('; ') +
+            (validation.errors.length > 5 ? `; and ${validation.errors.length - 5} more` : ''),
+        },
+      },
     );
   }
   const existing = await tx.query('SELECT count(*)::int AS n FROM gl_account');
@@ -225,6 +249,8 @@ export async function importFromCsv(
     throw new AccountError(
       'this tenant already has a chart of accounts; add accounts individually instead',
       'ALREADY_POPULATED',
+      [],
+      'COA_ALREADY_EXISTS_ADD',
     );
   }
   return insertTree(tx, validation.accounts, 'IMPORT');
@@ -282,7 +308,10 @@ export async function createAccount(
   const number = input.number.trim();
   const name = input.name.trim();
   if (!number || !name) {
-    throw new AccountError('an account needs a number and a name', 'NOT_FOUND');
+    throw new AccountError('an account needs a number and a name', 'NOT_FOUND',
+      [],
+      'ACCOUNT_NEEDS_NUMBER_AND_NAME',
+    );
   }
 
   let parentId: string | null = null;
@@ -291,14 +320,20 @@ export async function createAccount(
       input.parentNumber,
     ]);
     if (parent.rows.length === 0) {
-      throw new AccountError(`no account numbered ${input.parentNumber} to be the parent`, 'NOT_FOUND');
+      throw new AccountError(`no account numbered ${input.parentNumber} to be the parent`, 'NOT_FOUND',
+      [],
+      { code: 'ACCOUNT_PARENT_MISSING', params: { number: String(input.parentNumber) } },
+    );
     }
     parentId = (parent.rows[0] as { id: string }).id;
   }
 
   const dup = await tx.query('SELECT id FROM gl_account WHERE number = $1', [number]);
   if (dup.rows.length > 0) {
-    throw new AccountError(`account ${number} already exists`, 'DUPLICATE_NUMBER');
+    throw new AccountError(`account ${number} already exists`, 'DUPLICATE_NUMBER',
+      [],
+      { code: 'ACCOUNT_NUMBER_TAKEN', params: { number: String(number) } },
+    );
   }
 
   const r = await tx.query(
@@ -325,7 +360,12 @@ export async function createAccount(
           `line(s). Adding a child under it would make it a rollup, which nothing may post to — ` +
           `re-code those to a leaf account first.`,
         'IN_USE',
-      );
+      [],
+      {
+        code: 'ACCOUNT_PARENT_IN_USE',
+        params: { number: String(input.parentNumber), categories: cats, lines },
+      },
+    );
     }
     await tx.query('UPDATE gl_account SET is_postable = false, updated_at = clock_timestamp() WHERE id = $1', [
       parentId,
@@ -344,7 +384,10 @@ export async function renameAccount(
   await requireModule(tx, 'accounting');
 
   const trimmed = name.trim();
-  if (!trimmed) throw new AccountError('an account needs a name', 'NOT_FOUND');
+  if (!trimmed) throw new AccountError('an account needs a name', 'NOT_FOUND',
+      [],
+      'ACCOUNT_NEEDS_NAME',
+    );
   const r = await tx.query(
     'UPDATE gl_account SET name = $2, updated_at = clock_timestamp() WHERE id = $1',
     [id, trimmed],
@@ -406,6 +449,8 @@ export async function removeAccount(tx: QueryRunner, id: string): Promise<void> 
       `that account is in use (${cats} category/categories, ${lines} expense line(s), ` +
         `${children} child account(s)) — deactivate it instead, which keeps the history readable`,
       'IN_USE',
+      [],
+      { code: 'ACCOUNT_IN_USE', params: { categories: cats, lines, children } },
     );
   }
   const r = await tx.query('DELETE FROM gl_account WHERE id = $1', [id]);
@@ -473,7 +518,10 @@ export async function setCategoryAccount(
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);
     if (/is a rollup/.test(message) || /is inactive/.test(message)) {
-      throw new AccountError(message.replace(/^[^:]*:\s*/, ''), 'NOT_POSTABLE');
+      throw new AccountError(message.replace(/^[^:]*:\s*/, ''), 'NOT_POSTABLE',
+      [],
+      /is a rollup/.test(message) ? 'ACCOUNT_IS_ROLLUP' : 'ACCOUNT_IS_INACTIVE',
+    );
     }
     throw e;
   }

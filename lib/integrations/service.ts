@@ -35,7 +35,7 @@ import {
 } from '@/lib/integrations/contract';
 import { adapterFor, isKnownAdapter, listAdapters } from '@/lib/integrations/registry';
 import { IntegrationError } from '@/lib/integrations/errors';
-import { capabilityWords, findCapabilityRival, rivalMessage } from '@/lib/integrations/conflicts';
+import { capabilityWords, findCapabilityRival, rivalMessage, rivalUserMessage } from '@/lib/integrations/conflicts';
 import { requeueWaitingPosts } from '@/lib/integrations/post-outbox';
 import { freshAuthConfig } from '@/lib/integrations/oauth';
 import { isModuleDisabled, requireModule } from '@/lib/modules/service';
@@ -179,7 +179,9 @@ function prepareConfig(
           continue;
         }
         if (field.required) {
-          throw new IntegrationError(`${field.label} is required`, 'MISSING_FIELD');
+          throw new IntegrationError(`${field.label} is required`, 'MISSING_FIELD',
+      { code: 'INTEGRATION_FIELD_REQUIRED', params: { field: field.label } },
+    );
         }
         continue;
       }
@@ -187,7 +189,9 @@ function prepareConfig(
       continue;
     }
     if (raw === '' && field.required) {
-      throw new IntegrationError(`${field.label} is required`, 'MISSING_FIELD');
+      throw new IntegrationError(`${field.label} is required`, 'MISSING_FIELD',
+      { code: 'INTEGRATION_FIELD_REQUIRED', params: { field: field.label } },
+    );
     }
     if (raw !== '') out[field.name] = raw;
   }
@@ -219,7 +223,9 @@ export async function installIntegration(
 
   const adapter = adapterFor(input.slug);
   if (!adapter) {
-    throw new IntegrationError(`no such integration: ${input.slug}`, 'UNKNOWN_ADAPTER');
+    throw new IntegrationError(`no such integration: ${input.slug}`, 'UNKNOWN_ADAPTER',
+      'INTEGRATION_UNKNOWN',
+    );
   }
   const code = input.code.trim() || input.slug;
   const config = prepareConfig(adapter, input.config, {});
@@ -243,7 +249,9 @@ export async function installIntegration(
   // checked again at `beginAuthorisation`, which is where it would become active.
   if (activeOnInstall) {
     const rival = await findCapabilityRival(tx, adapter);
-    if (rival) throw new IntegrationError(rivalMessage(adapter, rival), 'AMBIGUOUS_CAPABILITY');
+    if (rival) throw new IntegrationError(rivalMessage(adapter, rival), 'AMBIGUOUS_CAPABILITY',
+      rivalUserMessage(adapter, rival),
+    );
   }
 
   let inserted;
@@ -312,10 +320,13 @@ export async function installIntegration(
         `${adapter.name} is already connected for this organization. Disconnect it first, ` +
           `or edit the existing connection.`,
         'ALREADY_ACTIVE',
-      );
+      { code: 'INTEGRATION_ALREADY_CONNECTED', params: { name: adapter.name } },
+    );
     }
     if (code23505) {
-      throw new IntegrationError(`the code '${code}' is already used here`, 'DUPLICATE_CODE');
+      throw new IntegrationError(`the code '${code}' is already used here`, 'DUPLICATE_CODE',
+      { code: 'INTEGRATION_CODE_TAKEN', params: { code } },
+    );
     }
     throw err;
   }
@@ -335,12 +346,14 @@ export async function installIntegration(
         `${adapter.name} is already connected for this organization. Disconnect it first, ` +
           `or edit the existing connection.`,
         'ALREADY_ACTIVE',
-      );
+      { code: 'INTEGRATION_ALREADY_CONNECTED', params: { name: adapter.name } },
+    );
     }
     throw new IntegrationError(
       `the code '${code}' belongs to a different integration here` +
         `${row ? ` (${row.integration_slug})` : ''}. Choose another code.`,
       'DUPLICATE_CODE',
+      { code: 'INTEGRATION_CODE_OTHER_INTEGRATION', params: { code } },
     );
   }
   // AC-24. A tenant that connects a ledger has approvals waiting from before it
@@ -381,6 +394,7 @@ export async function updateInstallation(
     throw new IntegrationError(
       `this connection names '${slug}', which this build does not have`,
       'UNKNOWN_ADAPTER',
+      'INTEGRATION_BUILD_LACKS_ADAPTER',
     );
   }
 
@@ -489,6 +503,7 @@ export async function testInstallation(
     throw new IntegrationError(
       `this connection names an integration this build does not have`,
       'UNKNOWN_ADAPTER',
+      'INTEGRATION_BUILD_LACKS_ADAPTER',
     );
   }
 
@@ -576,6 +591,10 @@ export async function resolveCapability(
       `${names} are both connected and can ${capabilityWords(capability)}, so there is ` +
         `no single answer to which one should. Disconnect one of them.`,
       'AMBIGUOUS_CAPABILITY',
+      {
+        code: 'CAPABILITY_AMBIGUOUS',
+        params: { names, jobs: capabilityWords(capability) },
+      },
     );
   }
 
@@ -643,6 +662,10 @@ export async function requireCapability(
         .toLowerCase()
         .replace(/_/g, ' ')}`,
       'NO_CAPABILITY',
+      {
+        code: 'CAPABILITY_NONE',
+        params: { jobs: capability.toLowerCase().replace(/_/g, ' ') },
+      },
     );
   }
   return resolved;

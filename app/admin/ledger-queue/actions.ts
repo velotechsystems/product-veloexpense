@@ -6,7 +6,7 @@
  * `export async function` — see `npm run check:actions`.
  */
 import { redirect } from 'next/navigation';
-import { errorParam } from '@/lib/errors/domain';
+import { errorCodeParam, errorParam } from '@/lib/errors/domain';
 import { revalidatePath } from 'next/cache';
 import { auth } from '@/auth';
 import { withCurrentOrg } from '@/lib/tenant/request';
@@ -168,7 +168,7 @@ export async function cancelFromForm(form: FormData) {
 export async function dryRunFromForm(form: FormData) {
   const id = required(form, 'id');
   const result = await asAdmin((tx) => dryRun(tx, id));
-  if (!result) redirect(`${PAGE}?error=${encodeURIComponent('no such queued post')}`);
+  if (!result) redirect(`${PAGE}?error=${errorCodeParam('QUEUED_POST_NOT_FOUND')}`);
   redirect(`${PAGE}?preview=${encodeURIComponent(JSON.stringify(result))}`);
 }
 

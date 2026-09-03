@@ -117,3 +117,26 @@ export function rivalMessage(adapter: AccountingAdapter, rival: CapabilityRival)
     `report goes to. Disconnect "${rival.label}" first if you are switching.`
   );
 }
+
+/**
+ * The same refusal, as a message code plus its facts.
+ *
+ * VX4-7 part 2c-2. `rivalMessage` stays and is still what goes in the LOG — it
+ * is the diagnostic, and AC-22 is the kind of thing somebody reads a log about.
+ * This is what the screen gets, in the reader's language. Both names and the
+ * overlapping jobs travel, because "two things conflict" without saying which
+ * two is not a refusal an admin can act on.
+ */
+export function rivalUserMessage(
+  adapter: AccountingAdapter,
+  rival: CapabilityRival,
+): { code: 'CAPABILITY_RIVAL'; params: { rival: string; name: string; jobs: string } } {
+  return {
+    code: 'CAPABILITY_RIVAL',
+    params: {
+      rival: rival.label,
+      name: adapter.name,
+      jobs: rival.overlap.map(capabilityWords).join(' and '),
+    },
+  };
+}

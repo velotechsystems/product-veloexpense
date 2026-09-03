@@ -24,6 +24,8 @@
  * right rather than one per caller.
  */
 import type { QueryRunner } from '@/lib/db/client';
+import type { UserMessage } from '@/lib/errors/domain';
+import type { UserMessageCode } from '@/lib/i18n/catalog/errors';
 import { DomainError } from '@/lib/errors/domain';
 import { requireModule } from '@/lib/modules/service';
 
@@ -49,8 +51,9 @@ export class BudgetError extends DomainError {
   constructor(
     message: string,
     readonly code: BudgetErrorCode,
+    userMessage: UserMessageCode | UserMessage | null = null,
   ) {
-    super(message);
+    super(message, userMessage);
     this.name = 'BudgetError';
   }
 }
@@ -189,15 +192,20 @@ export interface NewBudget {
 export async function createBudget(tx: QueryRunner, input: NewBudget): Promise<BudgetView> {
   await requireModule(tx, 'budgets');
   const name = input.name?.trim();
-  if (!name) throw new BudgetError('a budget needs a name', 'INVALID_INPUT');
+  if (!name) throw new BudgetError('a budget needs a name', 'INVALID_INPUT',
+      'BUDGET_NAME_REQUIRED',
+    );
   if (!input.glAccountId) {
     throw new BudgetError(
       'a budget has to name a GL account — it is what makes the number reconcilable',
       'INVALID_INPUT',
+      'BUDGET_NEEDS_ACCOUNT',
     );
   }
   if (!Number.isInteger(input.fiscalYear) || input.fiscalYear < 1900 || input.fiscalYear > 2999) {
-    throw new BudgetError('the fiscal year has to be a whole year like 2026', 'INVALID_INPUT');
+    throw new BudgetError('the fiscal year has to be a whole year like 2026', 'INVALID_INPUT',
+      'BUDGET_YEAR_INVALID',
+    );
   }
 
   let r;
@@ -229,13 +237,15 @@ export async function createBudget(tx: QueryRunner, input: NewBudget): Promise<B
       throw new BudgetError(
         'a budget already exists for that account and scope in that fiscal year — edit it instead',
         'DUPLICATE_SCOPE',
-      );
+      'BUDGET_DUPLICATE_SCOPE',
+    );
     }
     if (code === '23503') {
       throw new BudgetError(
         'that GL account, business unit, department or owner is not in this organization',
         'UNKNOWN_ACCOUNT',
-      );
+      'BUDGET_SCOPE_NOT_IN_ORG',
+    );
     }
     throw err;
   }
@@ -262,7 +272,9 @@ export async function updateBudget(
   };
   if (patch.name !== undefined) {
     const name = patch.name.trim();
-    if (!name) throw new BudgetError('a budget needs a name', 'INVALID_INPUT');
+    if (!name) throw new BudgetError('a budget needs a name', 'INVALID_INPUT',
+      'BUDGET_NAME_REQUIRED',
+    );
     set('name', name);
   }
   // Patch-with-nulls, matching updateReport and updateEmployee: an absent key
@@ -313,15 +325,21 @@ export async function seedMonthlyPeriods(
   await requireModule(tx, 'budgets');
   const months = input.months ?? 12;
   if (!Number.isInteger(months) || months < 1 || months > 53) {
-    throw new BudgetError('a budget year is between 1 and 53 periods', 'INVALID_INPUT');
+    throw new BudgetError('a budget year is between 1 and 53 periods', 'INVALID_INPUT',
+      'BUDGET_PERIOD_COUNT_INVALID',
+    );
   }
   let amount: bigint;
   try {
     amount = BigInt(String(input.amountMinor).trim());
   } catch {
-    throw new BudgetError('the amount must be a whole number of minor units', 'INVALID_INPUT');
+    throw new BudgetError('the amount must be a whole number of minor units', 'INVALID_INPUT',
+      'BUDGET_AMOUNT_NOT_WHOLE',
+    );
   }
-  if (amount < 0n) throw new BudgetError('a budget cannot be negative', 'INVALID_INPUT');
+  if (amount < 0n) throw new BudgetError('a budget cannot be negative', 'INVALID_INPUT',
+      'BUDGET_AMOUNT_NEGATIVE',
+    );
 
   // The month arithmetic is Postgres's, not JavaScript's: `+ interval '1 month'`
   // lands on the last day of a short month by itself, where a date built from
@@ -356,12 +374,15 @@ export function percentToBp(input: string | number): number {
     throw new BudgetError(
       `"${input}" is not a percentage — use a number like 90 or 99.5, with at most two decimals`,
       'INVALID_INPUT',
+      { code: 'BUDGET_THRESHOLD_MALFORMED', params: { given: text } },
     );
   }
   const [whole, fraction = ''] = text.split('.');
   const bp = Number(whole) * 100 + Number(fraction.padEnd(2, '0'));
   if (bp < 1 || bp > 20000) {
-    throw new BudgetError('a threshold is between 0.01% and 200%', 'INVALID_INPUT');
+    throw new BudgetError('a threshold is between 0.01% and 200%', 'INVALID_INPUT',
+      'BUDGET_THRESHOLD_OUT_OF_RANGE',
+    );
   }
   return bp;
 }
@@ -385,7 +406,8 @@ export async function addThreshold(
       throw new BudgetError(
         'that threshold is already configured for this budget',
         'DUPLICATE_THRESHOLD',
-      );
+      'BUDGET_THRESHOLD_DUPLICATE',
+    );
     }
     throw err;
   }

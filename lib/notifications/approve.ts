@@ -35,6 +35,7 @@
  *    see `lib/tenant/context.ts`.
  */
 import { withOrg, withPlatformRead } from '@/lib/tenant/context';
+import { userMessageOrGeneric, type UserMessage } from '@/lib/errors/domain';
 import { formatMinor } from '@/lib/money';
 import { decide, type Decision } from '@/lib/approvals/engine';
 import {
@@ -62,7 +63,11 @@ export type ApproveOutcome =
       receiptCount: number;
     }
   | { kind: 'DONE'; action: Decision; reportId: string; reportTitle: string }
-  | { kind: 'REFUSED'; reason: string; reportId: string | null };
+  // `reason` is a MESSAGE, not a sentence, since part 2c-2 — `/approve` encodes
+  // it and renders it through `ErrorBanner` like every other refusal. Typed as
+  // `UserMessage` rather than `string` so a code that does not exist is a
+  // compile error here instead of a generic banner in production.
+  | { kind: 'REFUSED'; reason: UserMessage; reportId: string | null };
 
 /**
  * What a token is good for, without using it.
@@ -108,10 +113,13 @@ export async function inspectToken(rawToken: string): Promise<ApproveOutcome> {
     if (row.task_status !== 'PENDING') {
       return {
         kind: 'REFUSED',
-        reason:
-          row.task_status === 'CANCELLED'
-            ? 'This report was withdrawn or decided elsewhere, so there is nothing to approve.'
-            : 'This approval step has already been decided.',
+        // Codes, not sentences. These two were already written for a reader —
+        // this file shapes them that way deliberately — which is precisely why
+        // they were the strings on the email-approval page that nothing could
+        // translate.
+        reason: {
+          code: row.task_status === 'CANCELLED' ? 'TASK_WITHDRAWN' : 'TASK_ALREADY_DECIDED',
+        },
         reportId: row.report_id as string,
       };
     }
@@ -203,7 +211,13 @@ export async function decideFromToken(
     // The engine's own message, not a generic one: "this approval step requires
     // you to confirm you reviewed the receipts" is actionable and
     // "could not approve" is not. The token is intact, so the link still works.
-    const reason = err instanceof Error ? err.message : 'Something went wrong';
+    // VX4-7 part 2c-2. `err instanceof Error ? err.message : …` here fed
+    // `/approve?error=…` from a LIB rather than an action, so `check:i18n`'s gate
+    // — which only scanned `app/` — could not see it. `decide()` sits behind this
+    // call and can throw anything the engine, the policy layer or `pg` throws,
+    // and all of it went into a URL on a page a link from an EMAIL opens. The
+    // gate now scans `lib/` too, because that is how this was found at all.
+    const reason = userMessageOrGeneric(err, 'notifications/approve');
     return { kind: 'REFUSED', reason, reportId: await reportIdFor(rawToken) };
   }
 }

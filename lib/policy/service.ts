@@ -18,6 +18,10 @@
  *     cleared, because BLOCK findings must be fixed rather than waved through.
  */
 import type { QueryRunner } from '@/lib/db/client';
+import { enumLabel, SEVERITY_COPY } from '@/lib/i18n/catalog/enums';
+import { DEFAULT_LOCALE } from '@/lib/i18n/locales';
+import type { UserMessage } from '@/lib/errors/domain';
+import type { UserMessageCode } from '@/lib/i18n/catalog/errors';
 import { DomainError } from '@/lib/errors/domain';
 import { getReportWorkbench, type WorkbenchReport } from '@/lib/expenses/service';
 import { buildRateLookup, type RateLookup, type RateRow } from '@/lib/policy/rates';
@@ -62,8 +66,9 @@ export class PolicyError extends DomainError {
   constructor(
     message: string,
     readonly code: PolicyErrorCode,
+    userMessage: UserMessageCode | UserMessage | null = null,
   ) {
-    super(message);
+    super(message, userMessage);
     this.name = 'PolicyError';
   }
 }
@@ -131,7 +136,9 @@ function normalizeParams(kind: RuleKind, params: Record<string, unknown> = {}) {
     const missing = raw === undefined || raw === null || raw === '';
     if (missing) {
       if (spec.required) {
-        throw new PolicyError(`${definition.label} needs ${spec.label}`, 'MISSING_PARAM');
+        throw new PolicyError(`${definition.label} needs ${spec.label}`, 'MISSING_PARAM',
+      { code: 'POLICY_PARAM_REQUIRED', params: { rule: definition.label, field: spec.label } },
+    );
       }
       continue;
     }
@@ -140,9 +147,13 @@ function normalizeParams(kind: RuleKind, params: Record<string, unknown> = {}) {
       try {
         value = typeof raw === 'bigint' ? raw : BigInt(String(raw).trim());
       } catch {
-        throw new PolicyError(`${spec.label} must be a whole number of minor units`, 'INVALID_PARAM');
+        throw new PolicyError(`${spec.label} must be a whole number of minor units`, 'INVALID_PARAM',
+      { code: 'POLICY_PARAM_NOT_WHOLE', params: { field: spec.label } },
+    );
       }
-      if (value < 0n) throw new PolicyError(`${spec.label} cannot be negative`, 'INVALID_PARAM');
+      if (value < 0n) throw new PolicyError(`${spec.label} cannot be negative`, 'INVALID_PARAM',
+      { code: 'POLICY_PARAM_NEGATIVE', params: { field: spec.label } },
+    );
       clean[spec.name] = Number(value);
     } else {
       clean[spec.name] = raw === true || raw === 'true' || raw === 'on';
@@ -152,7 +163,9 @@ function normalizeParams(kind: RuleKind, params: Record<string, unknown> = {}) {
 }
 
 function assertKind(kind: string): RuleKind {
-  if (!isRuleKind(kind)) throw new PolicyError(`unknown rule kind: ${kind}`, 'UNKNOWN_RULE_KIND');
+  if (!isRuleKind(kind)) throw new PolicyError(`unknown rule kind: ${kind}`, 'UNKNOWN_RULE_KIND',
+      'POLICY_RULE_KIND_UNKNOWN',
+    );
   return kind;
 }
 
@@ -168,13 +181,17 @@ async function assertCurrency(tx: QueryRunner, code: string | null): Promise<str
   const upper = code.trim().toUpperCase();
   const r = await tx.query('SELECT code FROM currency WHERE code = $1', [upper]);
   if (r.rows.length === 0) {
-    throw new PolicyError(`unknown currency: ${code}`, 'INVALID_PARAM');
+    throw new PolicyError(`unknown currency: ${code}`, 'INVALID_PARAM',
+      'CURRENCY_UNKNOWN',
+    );
   }
   return upper;
 }
 
 function assertSeverity(severity: string): Severity {
-  if (!isSeverity(severity)) throw new PolicyError(`unknown severity: ${severity}`, 'UNKNOWN_SEVERITY');
+  if (!isSeverity(severity)) throw new PolicyError(`unknown severity: ${severity}`, 'UNKNOWN_SEVERITY',
+      'POLICY_SEVERITY_UNKNOWN',
+    );
   return severity;
 }
 
@@ -197,6 +214,14 @@ function assertSeverityForKind(kind: RuleKind, severity: string): Severity {
     throw new PolicyError(
       `${definition.label} cannot be set to ${checked}: this rule never goes above ${maximum}`,
       'SEVERITY_ABOVE_MAXIMUM',
+      {
+        code: 'POLICY_SEVERITY_ABOVE_MAX',
+        // `enumLabel`, not the bare member. `maximum` is a `Severity`, so passing
+        // it straight through would put "WARNING" in a sentence an admin reads —
+        // which is the defect part 2a spent a whole PR removing from eleven
+        // screens, walking back in through a parameter three PRs later.
+        params: { rule: definition.label, maximum: enumLabel(SEVERITY_COPY, maximum, DEFAULT_LOCALE) },
+      },
     );
   }
   return checked;
@@ -208,11 +233,14 @@ async function assertCategory(tx: QueryRunner, kind: RuleKind, categoryId: strin
     throw new PolicyError(
       `${ruleDefinition(kind).label} applies to the whole report and cannot be scoped to a category`,
       'CATEGORY_NOT_SCOPEABLE',
+      { code: 'POLICY_NOT_CATEGORY_SCOPED', params: { rule: ruleDefinition(kind).label } },
     );
   }
   const r = await tx.query('SELECT id FROM expense_category WHERE id = $1', [categoryId]);
   if (r.rows.length === 0) {
-    throw new PolicyError('category not found in this organization', 'CATEGORY_NOT_FOUND');
+    throw new PolicyError('category not found in this organization', 'CATEGORY_NOT_FOUND',
+      'CATEGORY_UNKNOWN',
+    );
   }
 }
 
@@ -298,7 +326,9 @@ export async function getPolicyCurrency(tx: QueryRunner): Promise<PolicyCurrency
 
 export async function setPolicyCurrency(tx: QueryRunner, code: string): Promise<void> {
   const checked = await assertCurrency(tx, code);
-  if (checked === null) throw new PolicyError('a policy currency is required', 'MISSING_PARAM');
+  if (checked === null) throw new PolicyError('a policy currency is required', 'MISSING_PARAM',
+      'POLICY_CURRENCY_REQUIRED',
+    );
   // `organization` carries no organization_id and so is not RLS-scoped — the
   // session variable is what names the row, and the WHERE is what keeps this from
   // being an update across every tenant.
@@ -380,7 +410,8 @@ export async function createPolicy(tx: QueryRunner, input: NewPolicy): Promise<P
       throw new PolicyError(
         `a ${ruleDefinition(kind).label} rule already exists for that scope — edit it instead`,
         'DUPLICATE_RULE',
-      );
+      { code: 'POLICY_DUPLICATE_SCOPE', params: { rule: ruleDefinition(kind).label } },
+    );
     }
     throw err;
   }
@@ -696,10 +727,13 @@ export async function acknowledgeViolation(
     throw new PolicyError(
       'a blocking violation cannot be acknowledged — it has to be fixed',
       'CANNOT_ACKNOWLEDGE_BLOCK',
+      'VIOLATION_BLOCK_NOT_ACKNOWLEDGEABLE',
     );
   }
   if (!note?.trim()) {
-    throw new PolicyError('an acknowledgement needs a note explaining the exception', 'NOTE_REQUIRED');
+    throw new PolicyError('an acknowledgement needs a note explaining the exception', 'NOTE_REQUIRED',
+      'VIOLATION_NOTE_REQUIRED',
+    );
   }
   await tx.query(
     `UPDATE policy_violation
