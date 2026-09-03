@@ -17,6 +17,7 @@
  * below rather than importing anything else from this file.
  */
 import { redirect } from 'next/navigation';
+import { errorParam } from '@/lib/errors/domain';
 import { revalidatePath } from 'next/cache';
 import { auth } from '@/auth';
 import { withCurrentOrg } from '@/lib/tenant/request';
@@ -120,24 +121,17 @@ export async function pullFromLedgerForm() {
     redirect(`${PAGE}?pulled=${encodeURIComponent(summary)}`);
   } catch (err) {
     if (isRedirect(err)) throw err;
-    if (err instanceof PullError) {
-      const detail = err.detail.length > 0 ? ` (${err.detail.join(', ')})` : '';
-      redirect(`${PAGE}?error=${encodeURIComponent(err.message + detail)}`);
-    }
+    // `err.detail` used to be appended to the message as raw text. It is now
+    // carried by LEDGER_DUPLICATE_NUMBERS' own `numbers` parameter, which is the
+    // same information said once instead of twice.
     fail(err);
   }
 }
 
 /** Turn an AccountError into a query string the page renders; rethrow anything else. */
 function fail(err: unknown): never {
-  if (err instanceof AccountError) {
-    const detail = err.errors.length
-      ? ` (${err.errors
-          .slice(0, 5)
-          .map((e) => `line ${e.lineNumber}: ${e.message}`)
-          .join('; ')}${err.errors.length > 5 ? `; and ${err.errors.length - 5} more` : ''})`
-      : '';
-    redirect(`${PAGE}?error=${encodeURIComponent(err.message + detail)}`);
+  if (err instanceof AccountError || err instanceof PullError) {
+    redirect(`${PAGE}?error=${encodeURIComponent(errorParam(err, 'admin/chart-of-accounts'))}`);
   }
   throw err;
 }

@@ -1,4 +1,6 @@
 import { DomainError } from '@/lib/errors/domain';
+import type { UserMessage } from '@/lib/errors/domain';
+import type { UserMessageCode } from '@/lib/i18n/catalog/errors';
 /**
  * VX3-9a — `IntegrationError`, extracted from `service.ts`.
  *
@@ -43,8 +45,9 @@ export class IntegrationError extends DomainError {
        * picking one — see `resolveCapability`.
        */
       | 'AMBIGUOUS_CAPABILITY',
+    userMessage: UserMessageCode | UserMessage | null = null,
   ) {
-    super(message);
+    super(message, userMessage);
     this.name = 'IntegrationError';
   }
 }

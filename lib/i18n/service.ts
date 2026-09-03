@@ -16,6 +16,8 @@
  * whichever direction it was written.
  */
 import type { QueryRunner } from '@/lib/db/client';
+import type { UserMessage } from '@/lib/errors/domain';
+import type { UserMessageCode } from '@/lib/i18n/catalog/errors';
 import { DomainError } from '@/lib/errors/domain';
 import { append, type AuditActor } from '@/lib/audit/service';
 import { isLocale, SUPPORTED_LOCALES, type Locale } from './locales';
@@ -35,8 +37,10 @@ export interface UserPrefs {
 
 export class LocaleError extends DomainError {
   readonly code: string;
-  constructor(message: string, code: string) {
-    super(message);
+  constructor(message: string, code: string,
+    userMessage: UserMessageCode | UserMessage | null = null,
+  ) {
+    super(message, userMessage);
     this.name = 'LocaleError';
     this.code = code;
   }
@@ -180,10 +184,14 @@ function normaliseZone(value: string | null | undefined): string | null {
 function requireSupportedLocale(value: string | null | undefined, allowNull: boolean): Locale | null {
   if (value === null || value === undefined || value === '') {
     if (allowNull) return null;
-    throw new LocaleError('a locale is required', 'LOCALE_REQUIRED');
+    throw new LocaleError('a locale is required', 'LOCALE_REQUIRED',
+      'LOCALE_REQUIRED',
+    );
   }
   if (!isLocale(value)) {
-    throw new LocaleError(`${value} is not a supported locale`, 'LOCALE_UNSUPPORTED');
+    throw new LocaleError(`${value} is not a supported locale`, 'LOCALE_UNSUPPORTED',
+      { code: 'LOCALE_UNSUPPORTED', params: { given: String(value) } },
+    );
   }
   return value;
 }
@@ -225,7 +233,9 @@ export async function setOrgDefaults(
   const locale = requireSupportedLocale(patch.locale, false);
   const zone = normaliseZone(patch.timeZone);
   if (zone === null) {
-    throw new LocaleError('a timezone is required', 'TIMEZONE_REQUIRED');
+    throw new LocaleError('a timezone is required', 'TIMEZONE_REQUIRED',
+      'TIMEZONE_REQUIRED',
+    );
   }
 
   // Read the previous values FIRST, in the same transaction, because the audit

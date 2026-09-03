@@ -17,10 +17,20 @@ import {
   USER_MESSAGE_CODES,
   isUserMessageCode,
   renderUserMessage,
+  requires,
   unexpectedMessage,
   type UserMessageCode,
 } from '@/lib/i18n/catalog/errors';
-import { DomainError, errorParam, userMessageOf } from '@/lib/errors/domain';
+import {
+  DomainError,
+  assertRenderableParams,
+  decodeUserMessage,
+  encodeUserMessage,
+  errorCodeParam,
+  errorParam,
+  userMessageOf,
+  userMessageOrGeneric,
+} from '@/lib/errors/domain';
 import { DEFAULT_LOCALE, SUPPORTED_LOCALES } from '@/lib/i18n/locales';
 import { missingCopyMarker } from '@/lib/i18n/catalog/enums';
 import { DecisionForbiddenError } from '@/lib/approvals/eligibility';
@@ -49,8 +59,10 @@ describe('every code has copy, in every shipped locale', () => {
     // resolved to the marker would pass the block above if the marker check were
     // ever weakened — and `enums.ts` records that a self-consistent catalogue is
     // the failure mode a coverage test is most likely to miss.
-    expect(renderUserMessage('NOT_A_REAL_CODE', DEFAULT_LOCALE)).toBe('NOT_A_REAL_CODE');
     expect(isUserMessageCode('NOT_A_REAL_CODE')).toBe(false);
+    expect(renderUserMessage('NOT_A_REAL_CODE', DEFAULT_LOCALE)).toBe(
+      unexpectedMessage(DEFAULT_LOCALE),
+    );
   });
 
   it('reads as a sentence to a person, not as a log line', () => {
@@ -62,9 +74,18 @@ describe('every code has copy, in every shipped locale', () => {
       // the `DEFAULT_LOCALE` constant (typed `Locale`, not its literal) the type
       // is `string | undefined`, and a `!` here would be papering over the one
       // thing this block is checking.
-      const text = renderUserMessage(code, DEFAULT_LOCALE);
-      expect(text, code).not.toMatch(/\$\{|\bundefined\b|[a-z]+Id\b|[A-Z]{3,}_[A-Z]/);
-      expect(text, code).toMatch(/^[A-Z]/);
+      // The RAW template, because `renderUserMessage` returns the generic for a
+      // code whose params are absent — which every parameterised code's would be
+      // here, and asserting the generic reads like a sentence thirty times over
+      // proves nothing.
+      const text = ERROR_COPY[code][DEFAULT_LOCALE] ?? '';
+      expect(text, code).not.toMatch(/\$\{|\bundefined\b|[a-z]+Id\b/);
+      // SCREAMING_SNAKE in copy means somebody pasted an enum member in.
+      // `{name}`-style placeholders are fine and are checked separately below.
+      expect(text.replace(/\{\w+\}/g, ''), code).not.toMatch(/[A-Z]{3,}_[A-Z]/);
+      // A leading “ is fine: several of these open by quoting what the person
+      // typed back at them ("“{given}” is not a valid amount").
+      expect(text, code).toMatch(/^[A-Z{“]/);
       expect(text.trim(), code).toMatch(/[.!?]$/);
     }
   });
@@ -72,7 +93,7 @@ describe('every code has copy, in every shipped locale', () => {
   it('names no record id, which is the defect it was written for', () => {
     // A UUID in copy would mean somebody pasted a diagnostic in here.
     for (const code of USER_MESSAGE_CODES) {
-      expect(renderUserMessage(code, DEFAULT_LOCALE), code).not.toMatch(
+      expect(ERROR_COPY[code][DEFAULT_LOCALE] ?? '', code).not.toMatch(
         /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}/i,
       );
     }
@@ -104,10 +125,15 @@ describe('a domain error carries a diagnostic AND, sometimes, reader copy', () =
     // for it would be a guess presented as a fact.
     const err = new DecisionForbiddenError('approval task x does not exist', 'TASK_NOT_FOUND');
     expect(userMessageOf(err)).toBeNull();
-    // A DomainError with no code keeps printing its English — the transitional
-    // branch. When part 2c-2 removes it this assertion becomes 'UNEXPECTED', and
-    // it is here so that change is deliberate rather than noticed in production.
-    expect(errorParam(err, 'test')).toBe('approval task x does not exist');
+    // PART 2c-2 CHANGED THIS. The transitional branch — a DomainError with no
+    // code putting its English in the URL — is gone, so an invariant failure now
+    // reaches the reader as the generic and its message reaches the log. The old
+    // expectation was `'approval task x does not exist'`, and this assertion
+    // existed in 2c-1 so that the change would be deliberate rather than noticed
+    // in production.
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => {});
+    expect(errorParam(err, 'test')).toBe('UNEXPECTED');
+    expect(logged).toHaveBeenCalledOnce();
   });
 
   it('three sentences that share one error code get three message codes', () => {
@@ -117,9 +143,9 @@ describe('a domain error carries a diagnostic AND, sometimes, reader copy', () =
       new DelegationError('give a start date', 'INVALID_RANGE', 'DELEGATION_START_REQUIRED'),
       new DelegationError('give an end date', 'INVALID_RANGE', 'DELEGATION_END_INVALID'),
       new DelegationError('end before start', 'INVALID_RANGE', 'DELEGATION_END_BEFORE_START'),
-    ].map((e) => e.userMessage);
+    ].map((e) => e.userMessage?.code);
     expect(new Set(codes).size).toBe(3);
-    expect(codes.every((c) => c !== null)).toBe(true);
+    expect(codes.every((c) => c !== undefined)).toBe(true);
     // …and the three sentences are actually different, which the codes alone do
     // not prove.
     const said = codes.map((c) => renderUserMessage(c as string, DEFAULT_LOCALE));
@@ -129,8 +155,8 @@ describe('a domain error carries a diagnostic AND, sometimes, reader copy', () =
   it('the plural survives a catalogue that takes no parameters', () => {
     const one = new LifecycleError('…', 'BLOCKED_BY_POLICY', [], 'BLOCKED_BY_POLICY_ONE');
     const many = new LifecycleError('…', 'BLOCKED_BY_POLICY', [], 'BLOCKED_BY_POLICY_MANY');
-    expect(renderUserMessage(one.userMessage!, DEFAULT_LOCALE)).toMatch(/^One blocking/);
-    expect(renderUserMessage(many.userMessage!, DEFAULT_LOCALE)).toMatch(/^Blocking/);
+    expect(renderUserMessage(one.userMessage!.code, DEFAULT_LOCALE)).toMatch(/^One blocking/);
+    expect(renderUserMessage(many.userMessage!.code, DEFAULT_LOCALE)).toMatch(/^Blocking/);
   });
 
   it('every class converted in part 2c extends DomainError', () => {
@@ -185,13 +211,25 @@ describe('errorParam never puts an unexpected exception in a URL', () => {
     expect(text).toMatch(/nothing was saved/i);
   });
 
-  it('does not log for an error it recognises', () => {
+  it('does not log for a refusal somebody was told about', () => {
     // A refused delegation is not an incident, and a log that cries wolf on every
     // mistyped date is a log nobody reads.
     const logged = vi.spyOn(console, 'error').mockImplementation(() => {});
     errorParam(new DelegationError('m', 'INVALID_RANGE', 'DELEGATION_START_REQUIRED'), 'test');
-    errorParam(new DelegationError('m', 'NOT_FOUND'), 'test');
     expect(logged).not.toHaveBeenCalled();
+  });
+
+  it('DOES log a DomainError with no reader copy, which 2c-1 did not', () => {
+    // The other half of deleting the transitional branch, and the half worth
+    // pinning: in 2c-1 this put its English in the URL and logged nothing. Now
+    // the reader gets the generic and the message goes where it is useful — so
+    // an invariant failure that starts happening in production is visible
+    // instead of being quietly readable by whoever hit it.
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => {});
+    expect(errorParam(new DelegationError('delegation not found after insert', 'NOT_FOUND'), 'test'))
+      .toBe('UNEXPECTED');
+    expect(logged).toHaveBeenCalledOnce();
+    expect(logged.mock.calls[0][0]).toContain('[test]');
   });
 });
 
@@ -204,14 +242,16 @@ describe('renderUserMessage', () => {
     }
   });
 
-  it('passes an uncatalogued value through, which is the transitional branch', () => {
-    // Every admin module part 2c-2 has not reached still redirects with its
-    // English. This is what keeps those screens saying what they say today — and
-    // it is the branch to delete when the catalogue is complete, at which point
-    // arbitrary text arriving in a link stops rendering as though the product
-    // said it.
+  it('refuses an uncatalogued value instead of rendering it', () => {
+    // 2c-1 passed this through, which is what kept the then-uncatalogued admin
+    // screens working. Now that they are catalogued, the only thing that can
+    // arrive uncatalogued is a hand-edited link — and rendering arbitrary text
+    // inside the product's own error banner is a thing worth not doing.
     expect(renderUserMessage('a currency code is required', DEFAULT_LOCALE)).toBe(
-      'a currency code is required',
+      unexpectedMessage(DEFAULT_LOCALE),
+    );
+    expect(renderUserMessage('<img src=x onerror=alert(1)>', DEFAULT_LOCALE)).toBe(
+      unexpectedMessage(DEFAULT_LOCALE),
     );
   });
 
@@ -256,6 +296,139 @@ describe('the catalogue and the codes agree', () => {
     ];
     for (const code of producedWithoutAThrow) {
       expect(USER_MESSAGE_CODES).toContain(code);
+    }
+  });
+});
+
+/* ── part 2c-2: the parameter mechanism ────────────────────────────────────── */
+
+describe('parameters travel in the error value', () => {
+  it('a code with no params is just the code', () => {
+    expect(encodeUserMessage({ code: 'SELF_APPROVAL' })).toBe('SELF_APPROVAL');
+    expect(encodeUserMessage({ code: 'SELF_APPROVAL', params: {} })).toBe('SELF_APPROVAL');
+  });
+
+  it('round-trips through the wire format', () => {
+    const wire = encodeUserMessage({
+      code: 'COLOUR_UNREADABLE',
+      params: { hex: '#0284c7', white: '4.10', ink: '4.46', floor: 4.5 },
+    });
+    expect(wire).toMatch(/^COLOUR_UNREADABLE~/);
+    expect(decodeUserMessage(wire)).toEqual({
+      code: 'COLOUR_UNREADABLE',
+      params: { hex: '#0284c7', white: '4.10', ink: '4.46', floor: 4.5 },
+    });
+  });
+
+  it('renders the parameters into the sentence, for the reader', () => {
+    const wire = encodeUserMessage({
+      code: 'COLOUR_UNREADABLE',
+      params: { hex: '#0284c7', white: '4.10', ink: '4.46', floor: 4.5 },
+    });
+    const text = renderUserMessage(wire, DEFAULT_LOCALE);
+    // The three numbers `e2e/branding-flow.spec.ts` asserts, and the actionable
+    // clause a first draft of the catalogue dropped.
+    expect(text).toContain('#0284c7 cannot carry readable text');
+    expect(text).toContain('4.10:1 against white');
+    expect(text).toContain('4.46:1 against dark ink');
+    expect(text).toContain('4.5:1 is needed');
+    expect(text).toContain('Try a deeper or lighter shade of the same hue.');
+  });
+
+  it('REFUSES a record id as a parameter', () => {
+    // Rule 2 from lib/errors/domain.ts, and the reason the mechanism is safe to
+    // have at all: part 2c existed because a UUID reached a screen, and a
+    // parameter channel without this check would be a nicer road in — a URL,
+    // which every proxy in between also logs.
+    expect(() =>
+      assertRenderableParams({ id: '8b1c0f2e-0000-4000-8000-000000000001' }),
+    ).toThrow(/uuid/i);
+    expect(() => assertRenderableParams({ n: 3, code: 'AP-1', hex: '#0284c7' })).not.toThrow();
+  });
+
+  it('degrades to the generic rather than encoding an id', () => {
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => {});
+    expect(
+      encodeUserMessage({
+        code: 'ACCOUNT_NUMBER_TAKEN',
+        params: { number: '8b1c0f2e-0000-4000-8000-000000000001' },
+      }),
+    ).toBe('UNEXPECTED');
+    expect(logged).toHaveBeenCalledOnce();
+  });
+
+  it('survives a truncated or hand-edited params blob', () => {
+    // The value arrives from a URL. A blob that does not decode drops the params
+    // and keeps the code, and the code then degrades to the generic through
+    // `requires` — which still tells the truth that something failed.
+    expect(decodeUserMessage('LOGO_TOO_LARGE~not-base64!!')).toEqual({
+      code: 'LOGO_TOO_LARGE',
+      params: {},
+    });
+    expect(renderUserMessage('LOGO_TOO_LARGE~not-base64!!', DEFAULT_LOCALE)).toBe(
+      unexpectedMessage(DEFAULT_LOCALE),
+    );
+    // Nested and non-scalar values are dropped rather than rendered.
+    const nested = Buffer.from(JSON.stringify({ size: { a: 1 }, limit: 512 }), 'utf8').toString(
+      'base64url',
+    );
+    expect(decodeUserMessage(`LOGO_TOO_LARGE~${nested}`).params).toEqual({ limit: 512 });
+  });
+
+  it('never leaves a hole in a sentence', () => {
+    // `policy-messages.ts` learned the same thing about `String(undefined)`: a
+    // sentence missing its numbers reads as a product bug rather than a data one.
+    const partial = encodeUserMessage({ code: 'LOGO_TOO_LARGE', params: { size: 812 } });
+    expect(renderUserMessage(partial, DEFAULT_LOCALE)).toBe(unexpectedMessage(DEFAULT_LOCALE));
+    expect(requires('LOGO_TOO_LARGE')).toEqual(['size', 'limit']);
+  });
+
+  it('errorCodeParam is for a caller that already has a code', () => {
+    expect(errorCodeParam('QUEUED_POST_NOT_FOUND')).toBe('QUEUED_POST_NOT_FOUND');
+  });
+
+  it('userMessageOrGeneric hands the message over as data', () => {
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => {});
+    expect(userMessageOrGeneric(new DelegationError('m', 'NOT_FOUND', 'DELEGATEE_NOT_IN_ORG'), 't'))
+      .toEqual({ code: 'DELEGATEE_NOT_IN_ORG' });
+    expect(userMessageOrGeneric(new TypeError('boom'), 't')).toEqual({ code: 'UNEXPECTED' });
+    expect(logged).toHaveBeenCalledOnce();
+  });
+});
+
+describe('placeholders and copy agree', () => {
+  it('every locale override uses the same placeholders as the default', () => {
+    // The one thing `requires()` cannot check for itself: it reads the DEFAULT
+    // locale's template, so an override with a different placeholder set would
+    // render a hole for that reader only — the failure mode a single-locale gate
+    // never sees, which is IL-5/IL-6 restated.
+    for (const code of USER_MESSAGE_CODES) {
+      const want = [...requires(code)].sort();
+      for (const locale of SUPPORTED_LOCALES) {
+        const template = ERROR_COPY[code][locale];
+        if (template === undefined) continue;
+        const got = [...new Set([...template.matchAll(/\{(\w+)\}/g)].map((m) => m[1]))].sort();
+        expect(got, `${code} in ${locale}`).toEqual(want);
+      }
+    }
+  });
+
+  it('a parameterised code renders once its params arrive, in every locale', () => {
+    // Fixture values per placeholder name, so this covers all ~30 parameterised
+    // codes without thirty separate tests.
+    const value = (key: string) =>
+      /count|problems|lines|children|categories|position|steps|max|size|limit|length/.test(key)
+        ? 3
+        : 'X';
+    for (const code of USER_MESSAGE_CODES) {
+      const keys = requires(code);
+      if (keys.length === 0) continue;
+      const params = Object.fromEntries(keys.map((k) => [k, value(k)]));
+      for (const locale of SUPPORTED_LOCALES) {
+        const text = renderUserMessage(encodeUserMessage({ code, params }), locale);
+        expect(text, `${code} in ${locale}`).not.toBe(unexpectedMessage(locale));
+        expect(text, `${code} in ${locale}`).not.toContain('{');
+      }
     }
   });
 });

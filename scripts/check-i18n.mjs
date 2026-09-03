@@ -89,34 +89,209 @@ async function readRegistry() {
  */
 const SCAN_ROOTS = ['lib', 'app', 'scripts'];
 
-const ACTION_ERROR_RE = /instanceof Error\s*\?\s*\w+\.message/;
+const RAW_MESSAGE_RE = /instanceof Error\s*\?\s*\w+\.message/;
+const ERROR_QUERY_RE = /[?&]error=\$\{([^}]*)\}/g;
 
 /**
- * VX4-7 part 2c — no action may put an arbitrary exception's message in a URL.
+ * VX4-7 part 2c — nothing an exception carries may reach a person.
+ *
+ * TWO checks, with different scopes, because the first draft of this had one and
+ * it was wrong in both directions.
+ *
+ * ── CHECK A: the raw-message SPELLING, in `app/` only ──────────────────────
  *
  * `err instanceof Error ? err.message : 'Something went wrong'` was the pattern
- * at eleven call sites, and it printed whatever ANY exception carried: a
- * `TypeError` from a bug, a `pg` error carrying a fragment of the statement, an
- * adapter's HTTP body. It also printed our own diagnostics, which interpolate
- * record ids — `user <uuid> may not decide approval task <uuid>` reached the
- * screen of somebody who by definition had no right to that task.
+ * at eleven call sites, and it printed whatever ANY exception carried — a
+ * `TypeError` from a bug, a `pg` error carrying part of the statement, an
+ * adapter's HTTP body — plus our own diagnostics, which interpolate record ids.
+ * `errorParam()` in `lib/errors/domain.ts` is the replacement.
  *
- * `errorParam()` in `lib/errors/domain.ts` is the replacement and the only
- * sanctioned way to build the parameter. This refuses the old shape coming back,
- * because it is the shape somebody writes from memory in the next action file.
+ * Scoped to `app/` on purpose, and NOT widened to `lib/`. Part 2c-2 tried that
+ * and it flagged fifteen sites, most of them correct: `lib/integrations/
+ * dispatch.ts` builds exactly this string to store in a delivery's `last_error`,
+ * and `quickbooks.ts` builds it for an adapter diagnostic. **The pattern is not
+ * the defect — the destination is.** A gate that fails the build on correct code
+ * teaches people to delete gates.
  *
- * A NARROW check on purpose: it does not try to prove every action routes
- * through `errorParam`, which would need the call graph. It refuses the one
- * spelling that caused this, which is the one a person reaches for.
+ * What it still earns its place for is the case with no URL in it at all: 2c-1
+ * found two `setError(err instanceof Error ? err.message : …)` calls in the
+ * receipt drawer, the one client component, which no destination check can see.
+ *
+ * ── CHECK B: the DESTINATION, everywhere ───────────────────────────────────
+ *
+ * Every `?error=${…}` must interpolate `errorParam(...)`. This is the invariant
+ * that actually matters and it does not care which directory the code is in —
+ * which is the point, because part 2c-2 found the raw pattern in
+ * `lib/notifications/approve.ts`, one module BELOW where check A was looking:
+ * it returns `{ kind: 'REFUSED', reason }` and `app/approve/actions.ts` puts
+ * that straight in the URL. Behind `decide()`, which throws whatever the engine,
+ * the policy layer or `pg` throws, on a page opened from a link in an email.
+ *
+ * Found by reading the module rather than by the gate, which is how a gate is
+ * not supposed to find things. Check B is the shape that would have caught it.
  */
 function rawErrorMessage(text, filePath) {
   const rel = relative(repoRoot, filePath);
-  if (!rel.startsWith('app/')) return [];
   const out = [];
-  text.split('\n').forEach((line, i) => {
-    if (ACTION_ERROR_RE.test(line)) out.push({ file: rel, line: i + 1, text: line.trim() });
-  });
+  const lines = text.split('\n');
+
+  // CHECK A — app/ only. See the header on why this is not `lib/` too.
+  if (rel.startsWith('app/')) {
+    lines.forEach((line, i) => {
+      if (RAW_MESSAGE_RE.test(line)) {
+        out.push({ file: rel, line: i + 1, text: line.trim(), why: 'raw exception message' });
+      }
+    });
+  }
+
+  // CHECK B — everywhere. `lib/errors/domain.ts` documents the old spelling in
+  // its own comments, and is where the replacement lives.
+  //
+  // The interpolation usually reads `encodeURIComponent(message)`, where
+  // `message` was assigned from `errorParam` a few lines up — so a literal
+  // substring test rejects correct code. Any identifier the file assigns from
+  // `errorParam(` counts as clean. That is a static approximation and it is the
+  // honest kind: it can be fooled by reassigning such a variable, and it cannot
+  // be fooled by the mistake this exists to catch, which is not routing through
+  // `errorParam` at all.
+  const cleaned = new Set(
+    [...text.matchAll(/(?:const|let|var)\s+(\w+)\s*(?::[^=]+)?=\s*errorParam\(/g)].map((m) => m[1]),
+  );
+  // This file and `lib/errors/domain.ts` both QUOTE the patterns they police.
+  if (rel !== 'lib/errors/domain.ts' && rel !== 'scripts/check-i18n.mjs') {
+    lines.forEach((line, i) => {
+      for (const m of line.matchAll(ERROR_QUERY_RE)) {
+        const ids = [...m[1].matchAll(/[A-Za-z_$][\w$]*/g)].map((x) => x[0]);
+        // Three sanctioned producers, all in `lib/errors/domain.ts`: `errorParam`
+        // (from an exception), `errorCodeParam` (from a code the caller has) and
+        // `encodeUserMessage` (from a `UserMessage` handed over as data).
+        const sanctioned = /error(Param|CodeParam)\(|encodeUserMessage\(/.test(m[1]);
+        if (!sanctioned && !ids.some((id) => cleaned.has(id))) {
+          out.push({
+            file: rel,
+            line: i + 1,
+            text: line.trim(),
+            why: `error= built from \`${m[1].trim()}\` rather than errorParam()`,
+          });
+        }
+      }
+    });
+  }
   return out;
+}
+
+const ERRORS_FILE = join(repoRoot, 'lib', 'i18n', 'catalog', 'errors.ts');
+
+/**
+ * VX4-7 part 2c-2 — a throw site's params must match what its sentence asks for.
+ *
+ * This is part 2b's requirement-3 check, in the only form available here.
+ * `test/i18n-policy-messages.test.ts` can run the REAL rules and inspect the
+ * `data` they emit, because a rule is a pure function of a snapshot. An error is
+ * not: reaching a hundred throw sites means reaching a hundred database states,
+ * so there is nothing to drive.
+ *
+ * What IS available is that both halves are literals in the source. Every
+ * `{ code: 'X', params: { a, b } }` in `lib/` is read here and compared against
+ * the placeholders in `X`'s sentence, in both directions:
+ *
+ *   a key the sentence needs and the site omits  → the reader gets the generic,
+ *     which is the failure this catches. It happened while writing 2c-2: I added
+ *     `{detail}` to COA_IMPORT_HAD_PROBLEMS and the throw site still passed only
+ *     `problems`, so the sentence would have silently degraded for every bad CSV.
+ *   a key the site passes and the sentence ignores → dead weight in a URL, and
+ *     usually the sign of a placeholder that was renamed on one side.
+ *
+ * It cannot see a `params` object built dynamically, and nothing in the repo
+ * does that — if something starts to, this needs the runtime check instead of a
+ * quiet pass. Stated rather than assumed, because a gate that silently stops
+ * covering things is IL-7 again.
+ */
+async function errorMessageParams() {
+  const src = await readFile(ERRORS_FILE, 'utf8');
+  // code -> the placeholders in its default-locale sentence
+  const wants = new Map();
+  for (const m of src.matchAll(/^  (?<code>[A-Z][A-Z0-9_]*): \{\n(?<body>(?:.*\n)*?)  \},$/gm)) {
+    const entry = m.groups.body;
+    const dflt = entry.match(/'en-CA':\s*((?:'(?:[^'\\]|\\.)*'|\s*\+\s*)+)/);
+    if (!dflt) continue;
+    wants.set(m.groups.code, new Set([...dflt[1].matchAll(/\{(\w+)\}/g)].map((p) => p[1])));
+  }
+  if (wants.size === 0) {
+    throw new Error(
+      `parsed no entries out of ${relative(repoRoot, ERRORS_FILE)} — if ERROR_COPY was ` +
+        `reformatted, update this parser; do not delete the check`,
+    );
+  }
+
+  const problems = [];
+  for await (const file of sourceFiles(join(repoRoot, 'lib'))) {
+    const rel = relative(repoRoot, file);
+    if (rel === 'lib/i18n/catalog/errors.ts') continue;
+    const text = await readFile(file, 'utf8');
+    for (const m of text.matchAll(/code:\s*'([A-Z][A-Z0-9_]*)'\s*,\s*params:\s*\{/g)) {
+      const code = m[1];
+      const want = wants.get(code);
+      if (want === undefined) continue; // an unknown code is a tsc error already
+      // A BRACE SCAN, not a regex. These objects run to twenty lines, hold
+      // comments, and interpolate `${…}` inside template literals — the nested
+      // braces defeat any regex short of a parser, and the first version of this
+      // check reported COA_IMPORT_HAD_PROBLEMS as missing a param it passes.
+      // Twice in one gate: fail the build on correct code and people delete it.
+      const open = text.indexOf('{', m.index + m[0].length - 1);
+      let depth = 0;
+      let close = -1;
+      for (let i = open; i < text.length; i += 1) {
+        if (text[i] === '{') depth += 1;
+        else if (text[i] === '}') {
+          depth -= 1;
+          if (depth === 0) {
+            close = i;
+            break;
+          }
+        }
+      }
+      if (close < 0) continue;
+      const body = text.slice(open + 1, close);
+      // Keys are at depth 1 only, and comments are stripped first so a `key:`
+      // inside prose is not read as one.
+      const stripped = body.replace(/\/\/[^\n]*/g, '').replace(/\/\*[\s\S]*?\*\//g, '');
+      const got = new Set();
+      let d = 0;
+      let atKey = true;
+      let token = '';
+      for (const ch of stripped) {
+        if (ch === '{' || ch === '(' || ch === '[') d += 1;
+        else if (ch === '}' || ch === ')' || ch === ']') d -= 1;
+        if (d === 0 && atKey && /[\w$]/.test(ch)) {
+          token += ch;
+          continue;
+        }
+        if (d === 0 && (ch === ':' || ch === ',')) {
+          if (token.trim() !== '') got.add(token.trim());
+          token = '';
+          atKey = ch === ',';
+          continue;
+        }
+        if (d === 0 && /\s/.test(ch)) continue;
+        // anything else at depth 0 means we are inside a value
+        if (token.trim() !== '' && ch !== ':') {
+          atKey = false;
+          token = '';
+        }
+      }
+      if (atKey && token.trim() !== '') got.add(token.trim());
+
+      const line = text.slice(0, m.index).split('\n').length;
+      for (const key of want) {
+        if (!got.has(key)) problems.push({ file: rel, line, code, key, kind: 'missing' });
+      }
+      for (const key of got) {
+        if (!want.has(key)) problems.push({ file: rel, line, code, key, kind: 'unused' });
+      }
+    }
+  }
+  return problems;
 }
 
 const POLICY_MESSAGES_FILE = join(repoRoot, 'lib', 'i18n', 'catalog', 'policy-messages.ts');
@@ -381,6 +556,7 @@ async function main() {
   }
 
   const policyCodes = await policyMessageCodes();
+  const paramProblems = await errorMessageParams();
 
   const all = [];
   const dateInputs = [];
@@ -403,9 +579,29 @@ async function main() {
       `${policyCodes.declared.length} policy message codes`,
   );
 
+  if (paramProblems.length > 0) {
+    console.error(`\n✗ ${paramProblems.length} error message(s) whose params do not match:\n`);
+    for (const p of paramProblems) {
+      console.error(
+        p.kind === 'missing'
+          ? `  ${p.file}:${p.line}  ${p.code} needs {${p.key}} and the throw site omits it`
+          : `  ${p.file}:${p.line}  ${p.code} is passed ${p.key}, which its sentence never uses`,
+      );
+    }
+    console.error(
+      '\nA missing key makes the sentence degrade to the generic — silently, for every\n' +
+        'reader who hits it. An unused one is dead weight in a URL. Both are usually a\n' +
+        'placeholder renamed on one side: see lib/i18n/catalog/errors.ts.\n',
+    );
+    process.exit(1);
+  }
+
   if (rawErrors.length > 0) {
-    console.error(`\n✗ ${rawErrors.length} action(s) putting a raw exception message in a URL:\n`);
-    for (const r of rawErrors) console.error(`  ${r.file}:${r.line}  ${r.text.slice(0, 100)}`);
+    console.error(`\n✗ ${rawErrors.length} site(s) that can put an exception's own text in front of a person:\n`);
+    for (const r of rawErrors) {
+      console.error(`  ${r.file}:${r.line}  ${r.why}`);
+      console.error(`      ${r.text.slice(0, 100)}`);
+    }
     console.error(
       '\n`err instanceof Error ? err.message : …` prints whatever ANY exception carries —\n' +
         'a TypeError from a bug, a pg error carrying part of the statement, and our own\n' +

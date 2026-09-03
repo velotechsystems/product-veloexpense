@@ -20,6 +20,9 @@
  * gets built. Same reasoning as /approvals having no approve buttons in the list.
  */
 import Link from 'next/link';
+import { readerPrefs } from '@/lib/i18n/request';
+import { renderUserMessage } from '@/lib/i18n/catalog/errors';
+import { encodeUserMessage } from '@/lib/errors/domain';
 import { Button } from '@/components/ui/button';
 import { inspectToken } from '@/lib/notifications/approve';
 // Only the action comes from './actions' — see the comment there on why nothing
@@ -132,7 +135,12 @@ export default async function ApprovePage({
     return (
       <Shell>
         <Card title="Nothing to decide" tone="bad">
-          <p>{outcome.reason}</p>
+          {/* The refusal is a message, not a sentence, since part 2c-2 — rendered
+              here in the reader's language. This page is opened from a link in an
+              EMAIL by somebody who may not be signed in, so `readerPrefs()` has
+              no user to resolve: it falls to the company default and then to the
+              constant, which is `resolveLocale`'s pre-auth rung doing its job. */}
+          <p>{renderUserMessage(encodeUserMessage(outcome.reason), (await readerPrefs()).locale)}</p>
           {outcome.reportId ? (
             <p>
               <Link href="/expenses" className="underline underline-offset-4">

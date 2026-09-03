@@ -24,6 +24,7 @@
  * of them (VX2-8's dead form on /approve).
  */
 import { auth } from '@/auth';
+import { errorParam } from '@/lib/errors/domain';
 import { withCurrentOrg } from '@/lib/tenant/request';
 import type { QueryRunner } from '@/lib/db/client';
 import { getEmployeeByEmail, type EmployeeRow } from '@/lib/employees/service';
@@ -91,7 +92,10 @@ export async function getAnalyticsPage(from?: string, to?: string): Promise<Anal
       // A bad range is the reader's typo, not a crash: the form comes back with a
       // sentence rather than the Next error boundary.
       if (err instanceof AnalyticsError) {
-        return { moduleEnabled, summary: null, problem: err.message };
+        // The CODE, rendered by `ErrorBanner` in the reader's locale, rather than
+        // the diagnostic. This one never went through `?error=` — it is returned
+        // as a prop — so it was outside the gate's reach as well.
+        return { moduleEnabled, summary: null, problem: errorParam(err, 'admin/analytics') };
       }
       throw err;
     }

@@ -11,6 +11,8 @@
  * never from a hard-coded 100.
  */
 import { DEFAULT_LOCALE } from '@/lib/i18n/locales';
+import type { UserMessage } from '@/lib/errors/domain';
+import type { UserMessageCode } from '@/lib/i18n/catalog/errors';
 import { DomainError } from '@/lib/errors/domain';
 
 export type MinorAmount = string | number | bigint;
@@ -77,8 +79,10 @@ export function formatMinor(
 }
 
 export class AmountError extends DomainError {
-  constructor(message: string) {
-    super(message);
+  constructor(message: string,
+    userMessage: UserMessageCode | UserMessage | null = null,
+  ) {
+    super(message, userMessage);
     this.name = 'AmountError';
   }
 }
@@ -91,13 +95,22 @@ export class AmountError extends DomainError {
  */
 export function parseAmountToMinor(input: string, minorUnit = 2): bigint {
   const cleaned = input.trim().replace(/[\s,$]/g, '').replace(/,/g, '');
-  if (cleaned === '') throw new AmountError('amount is required');
+  if (cleaned === '') throw new AmountError('amount is required', 'AMOUNT_REQUIRED');
   const match = /^(-?)(\d+)(?:\.(\d+))?$/.exec(cleaned);
-  if (!match) throw new AmountError(`"${input}" is not a valid amount`);
+  if (!match) {
+    throw new AmountError(`"${input}" is not a valid amount`, {
+      code: 'AMOUNT_MALFORMED',
+      params: { given: String(input) },
+    });
+  }
   const [, sign, whole, fraction = ''] = match;
   if (fraction.length > minorUnit) {
     throw new AmountError(
       `"${input}" has more than ${minorUnit} decimal place${minorUnit === 1 ? '' : 's'}`,
+      // Two codes, not a parameter. The plural was computed inline here, and a
+      // parameter whose only job is to pick a wording is a template language
+      // starting up — see lib/errors/domain.ts.
+      minorUnit === 1 ? 'AMOUNT_TOO_MANY_DECIMALS_ONE' : 'AMOUNT_TOO_MANY_DECIMALS_MANY',
     );
   }
   const digits = `${whole}${fraction.padEnd(minorUnit, '0')}`;

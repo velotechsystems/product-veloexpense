@@ -32,7 +32,7 @@ import { withOrg, withPlatformRead } from '@/lib/tenant/context';
 import { decryptSecret, encryptSecret } from '@/lib/crypto/secrets';
 import { adapterFor } from '@/lib/integrations/registry';
 import { IntegrationError } from '@/lib/integrations/errors';
-import { findCapabilityRival, rivalMessage } from '@/lib/integrations/conflicts';
+import { findCapabilityRival, rivalMessage, rivalUserMessage } from '@/lib/integrations/conflicts';
 import { requeueWaitingPosts } from '@/lib/integrations/post-outbox';
 import { OAuthConsentRequired, type AdapterConfig } from '@/lib/integrations/contract';
 import type { QueryRunner } from '@/lib/db/client';
@@ -86,12 +86,14 @@ export async function beginAuthorisation(
     throw new IntegrationError(
       `this connection names '${row.integration_slug}', which this build does not have`,
       'UNKNOWN_ADAPTER',
+      'INTEGRATION_BUILD_LACKS_ADAPTER',
     );
   }
   if (adapter.auth !== 'OAUTH2' || !adapter.authorizeUrl) {
     throw new IntegrationError(
       `${adapter.name} is not connected by authorisation — it takes configuration values`,
       'NOT_OAUTH',
+      { code: 'INTEGRATION_NOT_OAUTH', params: { name: adapter.name } },
     );
   }
 
@@ -100,7 +102,9 @@ export async function beginAuthorisation(
   // to discover a configuration conflict: they have granted a real permission to a
   // connection that will not be activated.
   const rival = await findCapabilityRival(tx, adapter, input.installationId);
-  if (rival) throw new IntegrationError(rivalMessage(adapter, rival), 'AMBIGUOUS_CAPABILITY');
+  if (rival) throw new IntegrationError(rivalMessage(adapter, rival), 'AMBIGUOUS_CAPABILITY',
+      rivalUserMessage(adapter, rival),
+    );
 
   // Fresh secret per attempt. 32 bytes base64url: not guessable, and short enough
   // to survive every URL length limit in the chain.
@@ -171,6 +175,7 @@ export async function completeAuthorisation(input: {
       'this authorisation link is no longer valid. Start the connection again from ' +
         'the integrations screen.',
       'STATE_INVALID',
+      'OAUTH_LINK_INVALID',
     );
   }
   const state = found.rows[0] as {
@@ -206,10 +211,14 @@ export async function completeAuthorisation(input: {
   if (claimed.rowCount !== 1) {
     // The atomic-claim idiom, seventh use in this codebase: two callbacks arriving
     // together, and exactly one may proceed.
-    throw new IntegrationError('this authorisation was already completed', 'STATE_INVALID');
+    throw new IntegrationError('this authorisation was already completed', 'STATE_INVALID',
+      'OAUTH_ALREADY_COMPLETED',
+    );
   }
   if (!claimed.inst) {
-    throw new IntegrationError('the connection this authorisation belongs to is gone', 'NOT_FOUND');
+    throw new IntegrationError('the connection this authorisation belongs to is gone', 'NOT_FOUND',
+      'OAUTH_CONNECTION_GONE',
+    );
   }
 
   const adapter = adapterFor(claimed.inst.integration_slug);
@@ -217,6 +226,7 @@ export async function completeAuthorisation(input: {
     throw new IntegrationError(
       `this connection names '${claimed.inst.integration_slug}', which this build cannot authorise`,
       'UNKNOWN_ADAPTER',
+      'INTEGRATION_BUILD_LACKS_ADAPTER',
     );
   }
 
@@ -311,6 +321,7 @@ export async function freshAuthConfig(
       'this connection needs authorising again — somebody with access to the ' +
         'accounting system has to sign in and approve it.',
       'NEEDS_CONSENT',
+      'OAUTH_NEEDS_REAUTH',
     );
   }
 
@@ -336,12 +347,14 @@ export async function freshAuthConfig(
     throw new IntegrationError(
       `this connection names '${slug}', which this build cannot refresh`,
       'UNKNOWN_ADAPTER',
+      'INTEGRATION_BUILD_LACKS_ADAPTER',
     );
   }
   if (typeof row.oauth_refresh_token !== 'string') {
     throw new IntegrationError(
       'this connection has no refresh token, so it cannot be renewed. Authorise it again.',
       'NEEDS_CONSENT',
+      'OAUTH_NO_REFRESH_TOKEN',
     );
   }
 
@@ -376,7 +389,10 @@ export async function freshAuthConfig(
           [installationId],
         ),
       );
-      throw new IntegrationError(err.message, 'NEEDS_CONSENT');
+      // `err` is an `OAuthConsentRequired` raised by the ADAPTER, so `err.message`
+      // is a far-end service's text. It stays in the diagnostic and leaves the
+      // screen — the one I named in #88 as the first thing 2c-2 should close.
+      throw new IntegrationError(err.message, 'NEEDS_CONSENT', 'OAUTH_NEEDS_CONSENT');
     }
     // Anything else is ambiguous or transient. Leave the row alone so the next
     // attempt tries again — nagging an admin to re-authorise because of a network

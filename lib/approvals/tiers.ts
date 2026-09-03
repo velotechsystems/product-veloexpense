@@ -30,6 +30,8 @@
  * one interface an advanced graph tier would implement.
  */
 import { toBigInt, type MinorAmount } from '@/lib/money';
+import type { UserMessage } from '@/lib/errors/domain';
+import type { UserMessageCode } from '@/lib/i18n/catalog/errors';
 import { DomainError } from '@/lib/errors/domain';
 import type { EmployeeRole } from '@/lib/employees/service';
 
@@ -230,8 +232,9 @@ export class ApprovalConfigError extends DomainError {
   constructor(
     message: string,
     readonly code: ApprovalConfigErrorCode,
+    userMessage: UserMessageCode | UserMessage | null = null,
   ) {
-    super(message);
+    super(message, userMessage);
     this.name = 'ApprovalConfigError';
   }
 }
@@ -319,10 +322,13 @@ export function assertApproverInput(input: NewApprover): void {
     throw new ApprovalConfigError(
       'an approver needs a whole position of 1 or more',
       'INVALID_POSITION',
+      'APPROVER_POSITION_INVALID',
     );
   }
   if (!isApproverKind(input.approverKind)) {
-    throw new ApprovalConfigError(`unknown approver kind: ${input.approverKind}`, 'INVALID_KIND');
+    throw new ApprovalConfigError(`unknown approver kind: ${input.approverKind}`, 'INVALID_KIND',
+      'APPROVER_KIND_UNKNOWN',
+    );
   }
 
   const hasLevel = input.managerLevel != null;
@@ -335,7 +341,8 @@ export function assertApproverInput(input: NewApprover): void {
       throw new ApprovalConfigError(
         `a ${label} approver cannot also name anything else`,
         'INVALID_APPROVER',
-      );
+      { code: 'APPROVER_OVERSPECIFIED', params: { rule: label } },
+    );
     }
   };
 
@@ -345,7 +352,8 @@ export function assertApproverInput(input: NewApprover): void {
         throw new ApprovalConfigError(
           'a manager approver needs a level (1 = the direct manager)',
           'INVALID_MANAGER_LEVEL',
-        );
+      'APPROVER_NEEDS_LEVEL',
+    );
       }
       if (
         !Number.isInteger(input.managerLevel) ||
@@ -355,20 +363,27 @@ export function assertApproverInput(input: NewApprover): void {
         throw new ApprovalConfigError(
           `manager level must be a whole number from 1 to ${MAX_MANAGER_LEVEL}`,
           'INVALID_MANAGER_LEVEL',
-        );
+      { code: 'MANAGER_LEVEL_OUT_OF_RANGE', params: { max: MAX_MANAGER_LEVEL } },
+    );
       }
       only('manager', hasRole, hasUser, hasEmail);
       break;
     case 'ROLE':
-      if (!hasRole) throw new ApprovalConfigError('a role approver needs a role', 'INVALID_ROLE');
+      if (!hasRole) throw new ApprovalConfigError('a role approver needs a role', 'INVALID_ROLE',
+      'APPROVER_NEEDS_ROLE',
+    );
       if (!isApproverRole(input.approverRole as string)) {
-        throw new ApprovalConfigError(`unknown role: ${input.approverRole}`, 'INVALID_ROLE');
+        throw new ApprovalConfigError(`unknown role: ${input.approverRole}`, 'INVALID_ROLE',
+      'ROLE_UNKNOWN',
+    );
       }
       only('role', hasLevel, hasUser, hasEmail);
       break;
     case 'USER':
       if (!hasUser) {
-        throw new ApprovalConfigError('a user approver needs a person', 'INVALID_APPROVER');
+        throw new ApprovalConfigError('a user approver needs a person', 'INVALID_APPROVER',
+      'APPROVER_NEEDS_PERSON',
+    );
       }
       only('user', hasLevel, hasRole, hasEmail);
       break;
@@ -377,7 +392,8 @@ export function assertApproverInput(input: NewApprover): void {
         throw new ApprovalConfigError(
           'an external approver needs an email address',
           'INVALID_EMAIL',
-        );
+      'APPROVER_NEEDS_EMAIL',
+    );
       }
       // Cheap and deliberately loose: a full address grammar rejects valid
       // addresses, and the real gate is that an EMAIL approver cannot act at all
@@ -386,7 +402,8 @@ export function assertApproverInput(input: NewApprover): void {
         throw new ApprovalConfigError(
           `"${input.externalEmail}" does not look like an email address`,
           'INVALID_EMAIL',
-        );
+      { code: 'EMAIL_MALFORMED', params: { given: String(input.externalEmail) } },
+    );
       }
       only('external', hasLevel, hasRole, hasUser);
       break;
@@ -395,7 +412,9 @@ export function assertApproverInput(input: NewApprover): void {
 
 export function assertPolicyInput(input: NewApprovalPolicy): void {
   if (!input.name || input.name.trim() === '') {
-    throw new ApprovalConfigError('a rung needs a name', 'INVALID_NAME');
+    throw new ApprovalConfigError('a rung needs a name', 'INVALID_NAME',
+      'RUNG_NAME_REQUIRED',
+    );
   }
   if (
     !Number.isInteger(input.sequence) ||
@@ -405,16 +424,21 @@ export function assertPolicyInput(input: NewApprovalPolicy): void {
     throw new ApprovalConfigError(
       `sequence must be a whole number from 1 to ${MAX_CONFIGURED_RUNGS}`,
       'INVALID_SEQUENCE',
+      { code: 'RUNG_SEQUENCE_OUT_OF_RANGE', params: { max: MAX_CONFIGURED_RUNGS } },
     );
   }
   if (input.thresholdMinor !== undefined && toBigInt(input.thresholdMinor) < 0n) {
-    throw new ApprovalConfigError('threshold cannot be negative', 'INVALID_THRESHOLD');
+    throw new ApprovalConfigError('threshold cannot be negative', 'INVALID_THRESHOLD',
+      'RUNG_THRESHOLD_NEGATIVE',
+    );
   }
   if (!input.approvers || input.approvers.length === 0) {
     // A rung nobody signs is not "no approval needed", it is a rung that can
     // never complete. Refused at write time rather than discovered by an
     // employee whose report never moves.
-    throw new ApprovalConfigError('a rung needs at least one approver', 'NO_APPROVERS');
+    throw new ApprovalConfigError('a rung needs at least one approver', 'NO_APPROVERS',
+      'RUNG_NEEDS_APPROVER',
+    );
   }
   const positions = new Set<number>();
   for (const approver of input.approvers) {
@@ -423,7 +447,8 @@ export function assertPolicyInput(input: NewApprovalPolicy): void {
       throw new ApprovalConfigError(
         `two approvers share position ${approver.position}`,
         'INVALID_POSITION',
-      );
+      { code: 'APPROVER_POSITION_DUPLICATE', params: { position: approver.position } },
+    );
     }
     positions.add(approver.position);
   }
@@ -476,7 +501,8 @@ export function planApproval(rungs: ApprovalPolicyRow[], totalMinor: MinorAmount
       throw new ApprovalConfigError(
         `approval rung "${rung.name}" has no approver, so it can never be completed — an admin needs to fix the ladder`,
         'RUNG_WITHOUT_APPROVER',
-      );
+      { code: 'RUNG_HAS_NO_APPROVER', params: { name: rung.name } },
+    );
     }
     for (const approver of approvers) {
       steps.push(toStep(rung, approver, steps.length + 1));
@@ -490,6 +516,10 @@ export function planApproval(rungs: ApprovalPolicyRow[], totalMinor: MinorAmount
     throw new ApprovalConfigError(
       `this report would need ${steps.length} approvals, more than the ${MAX_APPROVAL_STEPS} a single report may require — an admin needs to shorten the ladder`,
       'TOO_MANY_STEPS',
+      {
+        code: 'LADDER_TOO_LONG',
+        params: { steps: steps.length, max: MAX_APPROVAL_STEPS },
+      },
     );
   }
 

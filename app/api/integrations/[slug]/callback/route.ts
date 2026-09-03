@@ -33,6 +33,7 @@
  * gets a plain 400 because there is nowhere sensible to send it.
  */
 import { NextResponse, type NextRequest } from 'next/server';
+import { errorParam } from '@/lib/errors/domain';
 import { IntegrationError } from '@/lib/integrations/errors';
 import { completeAuthorisation } from '@/lib/integrations/oauth';
 import { adapterFor } from '@/lib/integrations/registry';
@@ -93,19 +94,22 @@ export async function GET(
   // a normal outcome and it deserves a sentence, not an error page.
   const providerError = sp.get('error');
   if (providerError) {
-    return back(req, {
-      error:
-        sp.get('error_description') ??
-        `The accounting system refused the connection (${providerError}). Nothing was changed.`,
-    });
+    // VX4-7 part 2c-2. This used to render `error_description` — a string the FAR
+    // END puts in the query — inside our own error banner, with the provider's
+    // error code interpolated into the fallback. Both are remote input, so both
+    // go to the log and the admin gets a sentence we wrote.
+    console.error(
+      '[integrations/callback] the provider refused:',
+      providerError,
+      sp.get('error_description'),
+    );
+    return back(req, { error: 'OAUTH_PROVIDER_REFUSED' });
   }
 
   const code = sp.get('code');
   const state = sp.get('state');
   if (!code || !state) {
-    return back(req, {
-      error: 'That authorisation came back incomplete. Start the connection again.',
-    });
+    return back(req, { error: 'OAUTH_CALLBACK_INCOMPLETE' });
   }
 
   // Everything else the far end sent, so an adapter can read a vendor-specific
@@ -137,6 +141,8 @@ export async function GET(
       console.error('[integrations/callback] unexpected error surfaced to a user:', err);
       return back(req, { error: 'UNEXPECTED' });
     }
-    return back(req, { error: err.message });
+    // Every IntegrationError on this path carries reader copy since part 2c-2,
+    // so this is the code rather than the diagnostic.
+    return back(req, { error: errorParam(err, 'integrations/callback') });
   }
 }

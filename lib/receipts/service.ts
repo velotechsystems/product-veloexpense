@@ -19,6 +19,8 @@
  * with one expense per receipt.
  */
 import { randomUUID } from 'node:crypto';
+import type { UserMessage } from '@/lib/errors/domain';
+import type { UserMessageCode } from '@/lib/i18n/catalog/errors';
 import { DomainError } from '@/lib/errors/domain';
 import type { QueryRunner } from '@/lib/db/client';
 import type { Storage } from '@/lib/storage';
@@ -61,8 +63,9 @@ export class ReceiptError extends DomainError {
       | 'NO_RECEIPTS'
       | 'FORBIDDEN'
       | 'REPORT_NOT_EDITABLE',
+    userMessage: UserMessageCode | UserMessage | null = null,
   ) {
-    super(message);
+    super(message, userMessage);
     this.name = 'ReceiptError';
   }
 }
@@ -98,6 +101,10 @@ async function currentOrgId(tx: QueryRunner): Promise<string> {
 async function resolveUploader(tx: QueryRunner, uploaderEmail: string): Promise<string> {
   const r = await tx.query('SELECT id FROM app_user WHERE lower(email) = lower($1) LIMIT 1', [uploaderEmail]);
   if (r.rows.length === 0) {
+    // No user copy: the actor is resolved from the session before any action
+    // runs, so this cannot fire for a real request. Tagging it with
+    // MANAGER_NOT_IN_ORG (as a first pass did) rendered "That manager is not in
+    // this organization" at somebody uploading a receipt.
     throw new ReceiptError('uploader not found in this organization', 'UPLOADER_NOT_FOUND');
   }
   return r.rows[0].id as string;
@@ -180,7 +187,9 @@ export async function createUploadIntent(
   storage: Storage = getStorage(),
 ) {
   if (!(ALLOWED_CONTENT_TYPES as readonly string[]).includes(input.contentType)) {
-    throw new ReceiptError(`unsupported receipt type: ${input.contentType}`, 'UNSUPPORTED_TYPE');
+    throw new ReceiptError(`unsupported receipt type: ${input.contentType}`, 'UNSUPPORTED_TYPE',
+      { code: 'RECEIPT_TYPE_UNSUPPORTED', params: { mime: String(input.contentType) } },
+    );
   }
 
   const organizationId = await currentOrgId(tx);
@@ -218,10 +227,14 @@ export async function confirmUpload(
 ): Promise<ReceiptRow> {
   const receipt = await getReceipt(tx, receiptId);
   if (!receipt) throw new ReceiptError('receipt not found', 'NOT_FOUND');
-  if (receipt.status === 'STORED') throw new ReceiptError('receipt already confirmed', 'ALREADY_STORED');
+  if (receipt.status === 'STORED') throw new ReceiptError('receipt already confirmed', 'ALREADY_STORED',
+      'RECEIPT_ALREADY_CONFIRMED',
+    );
 
   const head = await storage.head(receipt.s3_key);
-  if (!head) throw new ReceiptError('no object was uploaded for this receipt', 'NOT_UPLOADED');
+  if (!head) throw new ReceiptError('no object was uploaded for this receipt', 'NOT_UPLOADED',
+      'RECEIPT_NOTHING_UPLOADED',
+    );
 
   if (head.sizeBytes > MAX_RECEIPT_BYTES) {
     await storage.delete(receipt.s3_key);
@@ -229,6 +242,10 @@ export async function confirmUpload(
     throw new ReceiptError(
       `receipt is ${head.sizeBytes} bytes; the limit is ${MAX_RECEIPT_BYTES}`,
       'TOO_LARGE',
+      {
+        code: 'RECEIPT_TOO_LARGE',
+        params: { size: head.sizeBytes ?? 0, limit: MAX_RECEIPT_BYTES },
+      },
     );
   }
 
@@ -290,7 +307,9 @@ export async function getDownloadUrl(
 ): Promise<string> {
   const receipt = await getReceipt(tx, receiptId);
   if (!receipt) throw new ReceiptError('receipt not found', 'NOT_FOUND');
-  if (receipt.status !== 'STORED') throw new ReceiptError('receipt upload is not complete', 'NOT_STORED');
+  if (receipt.status !== 'STORED') throw new ReceiptError('receipt upload is not complete', 'NOT_STORED',
+      'RECEIPT_UPLOAD_INCOMPLETE',
+    );
   return storage.presignDownload(receipt.s3_key, receipt.filename);
 }
 
@@ -353,7 +372,9 @@ export async function startFromReceipts(
   report: expenses.NewReport,
   receiptIds: string[],
 ) {
-  if (receiptIds.length === 0) throw new ReceiptError('no receipts selected', 'NO_RECEIPTS');
+  if (receiptIds.length === 0) throw new ReceiptError('no receipts selected', 'NO_RECEIPTS',
+      'RECEIPT_NONE_SELECTED',
+    );
 
   const created = await expenses.createReport(tx, submitterEmail, report);
 
@@ -362,7 +383,9 @@ export async function startFromReceipts(
     const receipt = await getReceipt(tx, receiptId);
     if (!receipt) throw new ReceiptError(`receipt ${receiptId} not found`, 'NOT_FOUND');
     if (receipt.status !== 'STORED') {
-      throw new ReceiptError(`receipt ${receipt.filename} is not uploaded yet`, 'NOT_STORED');
+      throw new ReceiptError(`receipt ${receipt.filename} is not uploaded yet`, 'NOT_STORED',
+      { code: 'RECEIPT_NOT_UPLOADED_YET', params: { filename: receipt.filename } },
+    );
     }
     const expense = await expenses.addExpense(tx, created.id, {
       currencyCode: report.currencyCode,

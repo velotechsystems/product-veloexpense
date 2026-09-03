@@ -3635,14 +3635,56 @@ And `check:i18n`'s new gate found two `setError(err instanceof Error ? err.messa
 **receipt drawer** — the one client component in the product, whose failures never went near
 `?error=` and were therefore outside every list this ticket was working from.
 
-**Still open, boarded as VX4-7 part 2c-2:** the ~55 remaining reachable messages, all in admin
-modules (accounts, branding, budgets, integrations, employees, notifications, policy admin, i18n
-admin). They still print their English through `errorParam`'s transitional branch, which is
-`err instanceof DomainError → err.message`. Deleting that branch is what completes IL-11, and it also
-stops arbitrary text arriving in a link from rendering as though the product had said it. One of them
-deserves naming: `AdapterError` can carry text from a far-end ledger's HTTP response, and the
-transitional branch passes it through exactly as today's code does — status quo, not a regression,
-and the first thing 2c-2 should catalogue.
+**IL-11 ✅ CLOSED by part 2c-2.** The admin half is catalogued — 142 message codes in all — and the
+transitional branch is deleted, so **there is no longer any path that puts an exception's own text in
+front of a person**. `errorParam` has two cases now: a code, or the generic plus a log line.
+
+**The 2c-1 no-parameters constraint was walked back for the admin half, deliberately.** Fourteen of
+those messages carry a COMPUTED value the page cannot show — a contrast ratio, a set of in-use
+counts, a size against a limit, the duplicate account numbers a ledger reported. `4.00:1 against
+white and 4.46:1 against dark ink` is the case that settles it: `e2e/branding-flow.spec.ts` asserts
+all three numbers and its comment already said why ("Contrast too low" is not something an admin can
+act on). Parameters travel base64url'd inside the error value itself — `?error=CODE~<blob>` — so all
+twenty `ErrorBanner` call sites and every page reading `searchParams.error` were untouched, and
+`assertRenderableParams` refuses a UUID-shaped value outright.
+
+**`requires` is DERIVED here and DECLARED in `policy-messages.ts`, and the asymmetry has a reason.**
+A policy sentence is a function, and a function's body cannot be inspected for the keys it will reach
+for — that is UD-5 requirement 3. A refusal is a template STRING, so the placeholders are in it. The
+first draft of this file declared them by hand and already had `APPROVER_OVERSPECIFIED` missing from
+the list.
+
+**FOUR disclosure paths that no list contained, each found a different way.**
+
+| Where | What reached a screen | Found by |
+|---|---|---|
+| `lib/notifications/approve.ts:206` | anything `decide()` throws, on a page opened from a link in an EMAIL | reading the module; the gate only scanned `app/` |
+| `lib/accounts/service.ts:213` | a third-party CSV parser's exception text | cataloguing that module |
+| `lib/accounts/service.ts:479` | a **Postgres trigger's** RAISE message, regex-matched then reshaped | cataloguing that module |
+| `app/api/integrations/[slug]/callback/route.ts:96` | **`error_description` straight off the provider's query string** — a remote party choosing the words in our own error banner | the strict renderer, via a FAILING E2E |
+
+The last is the one worth keeping. Making `renderUserMessage` refuse an uncatalogued value turned a
+silent pass-through into `oauth-flow`'s "Deny is a normal outcome" going red — which is the gate
+shape this project keeps rediscovering: the check that fails LOUDLY beats the check that degrades.
+
+**`AdapterError`, named in #88 as the first thing to close, is closed.**
+`throw new IntegrationError(err.message, 'NEEDS_CONSENT')` in `oauth.ts` was passing an adapter's
+`OAuthConsentRequired` text through; it is now `OAUTH_NEEDS_CONSENT` and the far end's words stop at
+the log.
+
+**Two gates, and both were wrong before they were right.** The raw-message check was widened to
+`lib/` and immediately flagged fifteen sites, most of them correct — `lib/integrations/dispatch.ts`
+builds exactly that string for a delivery's `last_error` column. **The pattern is not the defect; the
+destination is.** So it split in two: the spelling check stays `app/`-only (it is what caught the
+receipt drawer, which has no URL at all), and a new destination check requires every `?error=${…}`
+anywhere to come from one of three sanctioned producers. The params check then reported two false
+positives of its own — a trailing shorthand key, and a multi-line object with template braces in it —
+before its regex was replaced with a real brace scan. A gate that fails the build on correct code
+teaches people to delete gates, which is the lesson under both.
+
+**Still open, boarded as VX4-7 part 3 (with the third locale):** IL-5/IL-6 — the crawler pinned to
+one locale. Every catalogue now has a coverage assertion over `SUPPORTED_LOCALES`, so what is left is
+the crawl itself, and UD-3's role-crawl folds into it.
 
 ### AC-24 · Fixing a configuration does not move the queue ✅ CLOSED
 

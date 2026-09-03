@@ -12,6 +12,8 @@
  * getDirectReports, manager-chain resolve, create, update, deactivate.
  */
 import type { QueryRunner } from '@/lib/db/client';
+import type { UserMessage } from '@/lib/errors/domain';
+import type { UserMessageCode } from '@/lib/i18n/catalog/errors';
 import { DomainError } from '@/lib/errors/domain';
 
 const ORG = "current_setting('app.current_org', true)::uuid";
@@ -90,8 +92,9 @@ export class EmployeeError extends DomainError {
       | 'HAS_DIRECT_REPORTS'
       | 'INVALID_ROLE'
       | 'INVALID_STATUS',
+    userMessage: UserMessageCode | UserMessage | null = null,
   ) {
-    super(message);
+    super(message, userMessage);
     this.name = 'EmployeeError';
   }
 }
@@ -212,13 +215,17 @@ export async function getManagerChain(
 
 function assertRole(role: string | null | undefined) {
   if (role != null && !EMPLOYEE_ROLES.includes(role as EmployeeRole)) {
-    throw new EmployeeError(`invalid role: ${role}`, 'INVALID_ROLE');
+    throw new EmployeeError(`invalid role: ${role}`, 'INVALID_ROLE',
+      'ROLE_UNKNOWN',
+    );
   }
 }
 
 function assertStatus(status: string | null | undefined) {
   if (status != null && !EMPLOYEE_STATUSES.includes(status as EmployeeStatus)) {
-    throw new EmployeeError(`invalid employee status: ${status}`, 'INVALID_STATUS');
+    throw new EmployeeError(`invalid employee status: ${status}`, 'INVALID_STATUS',
+      'EMPLOYEE_STATUS_UNKNOWN',
+    );
   }
 }
 
@@ -230,7 +237,9 @@ function assertStatus(status: string | null | undefined) {
 async function assertManagerInOrg(tx: QueryRunner, managerId: string) {
   const r = await tx.query('SELECT id FROM app_user WHERE id = $1 AND deleted_at IS NULL', [managerId]);
   if (r.rows.length === 0) {
-    throw new EmployeeError('manager not found in this organization', 'MANAGER_NOT_FOUND');
+    throw new EmployeeError('manager not found in this organization', 'MANAGER_NOT_FOUND',
+      'MANAGER_NOT_IN_ORG',
+    );
   }
 }
 
@@ -248,7 +257,9 @@ export async function createEmployee(tx: QueryRunner, input: NewEmployee): Promi
 
   const existing = await tx.query('SELECT id FROM app_user WHERE lower(email) = lower($1)', [input.email]);
   if (existing.rows.length > 0) {
-    throw new EmployeeError('an employee with that email already exists', 'EMAIL_TAKEN');
+    throw new EmployeeError('an employee with that email already exists', 'EMAIL_TAKEN',
+      'EMAIL_TAKEN',
+    );
   }
 
   const r = await tx.query(
@@ -291,7 +302,9 @@ export async function updateEmployee(
   if (patch.managerId) {
     await assertManagerInOrg(tx, patch.managerId);
     if (await wouldCycle(tx, employeeId, patch.managerId)) {
-      throw new EmployeeError('that manager would create a reporting cycle', 'MANAGER_CYCLE');
+      throw new EmployeeError('that manager would create a reporting cycle', 'MANAGER_CYCLE',
+      'MANAGER_CYCLE',
+    );
     }
   }
 
@@ -301,7 +314,9 @@ export async function updateEmployee(
       employeeId,
     ]);
     if (taken.rows.length > 0) {
-      throw new EmployeeError('an employee with that email already exists', 'EMAIL_TAKEN');
+      throw new EmployeeError('an employee with that email already exists', 'EMAIL_TAKEN',
+      'EMAIL_TAKEN',
+    );
     }
   }
 
@@ -347,7 +362,9 @@ export async function deactivateEmployee(
   const employee = await getEmployee(tx, employeeId);
   if (!employee) throw new EmployeeError('employee not found', 'NOT_FOUND');
   if (opts.actingEmployeeId && opts.actingEmployeeId === employeeId) {
-    throw new EmployeeError('you cannot deactivate your own account', 'SELF_DEACTIVATE');
+    throw new EmployeeError('you cannot deactivate your own account', 'SELF_DEACTIVATE',
+      'DEACTIVATE_SELF',
+    );
   }
 
   const reports = await getDirectReports(tx, employeeId);
@@ -356,13 +373,16 @@ export async function deactivateEmployee(
       throw new EmployeeError(
         `${reports.length} direct report(s) still report to this employee — choose a new manager first`,
         'HAS_DIRECT_REPORTS',
+        { code: 'EMPLOYEE_HAS_REPORTS', params: { count: reports.length } },
       );
     }
     if (opts.reassignReportsTo) {
       await assertManagerInOrg(tx, opts.reassignReportsTo);
       for (const report of reports) {
         if (await wouldCycle(tx, report.id, opts.reassignReportsTo)) {
-          throw new EmployeeError('that reassignment would create a reporting cycle', 'MANAGER_CYCLE');
+          throw new EmployeeError('that reassignment would create a reporting cycle', 'MANAGER_CYCLE',
+      'REASSIGNMENT_CYCLE',
+    );
         }
       }
     }

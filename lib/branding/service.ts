@@ -18,6 +18,8 @@
  * seventeen older modules that still omit it.)
  */
 import type { QueryRunner } from '@/lib/db/client';
+import type { UserMessage } from '@/lib/errors/domain';
+import type { UserMessageCode } from '@/lib/i18n/catalog/errors';
 import { DomainError } from '@/lib/errors/domain';
 import { append, type AuditActor } from '@/lib/audit/service';
 import {
@@ -43,8 +45,9 @@ export class BrandingError extends DomainError {
   constructor(
     message: string,
     readonly code: BrandingErrorCode,
+    userMessage: UserMessageCode | UserMessage | null = null,
   ) {
-    super(message);
+    super(message, userMessage);
     this.name = 'BrandingError';
   }
 }
@@ -144,6 +147,7 @@ export async function setBrandColor(
     throw new BrandingError(
       `not a colour: ${JSON.stringify(input)} — expected a hex value such as #0f766e`,
       'INVALID_COLOR',
+      { code: 'COLOUR_MALFORMED', params: { given: typeof input === 'string' ? input : String(input) } },
     );
   }
 
@@ -159,6 +163,10 @@ export async function setBrandColor(
         `${ink.toFixed(2)}:1 against dark ink, and ${CONTRAST_FLOOR}:1 is needed for ` +
         `button and badge labels. Try a deeper or lighter shade of the same hue.`,
       'UNREADABLE_COLOR',
+      {
+        code: 'COLOUR_UNREADABLE',
+        params: { hex, white: white.toFixed(2), ink: ink.toFixed(2), floor: CONTRAST_FLOOR },
+      },
     );
   }
 
@@ -209,16 +217,21 @@ export async function setLogo(
       `${mime} is not an accepted logo format — use PNG, JPEG or WebP. ` +
         `SVG is refused because it can carry script into our own pages.`,
       'INVALID_IMAGE',
+      { code: 'LOGO_FORMAT_UNSUPPORTED', params: { mime } },
     );
   }
   if (bytes.length === 0) {
-    throw new BrandingError('the uploaded logo is empty', 'INVALID_IMAGE');
+    throw new BrandingError('the uploaded logo is empty', 'INVALID_IMAGE', 'LOGO_EMPTY');
   }
   if (bytes.length > LOGO_MAX_BYTES) {
     throw new BrandingError(
       `the logo is ${Math.round(bytes.length / 1024)} KiB and the limit is ` +
         `${LOGO_MAX_BYTES / 1024} KiB`,
       'IMAGE_TOO_LARGE',
+      {
+        code: 'LOGO_TOO_LARGE',
+        params: { size: Math.round(bytes.length / 1024), limit: LOGO_MAX_BYTES / 1024 },
+      },
     );
   }
   const sniffed = sniffImageMime(bytes);
@@ -229,6 +242,9 @@ export async function setLogo(
         : `the file was sent as ${mime} but its contents are ${sniffed} — ` +
           `re-export it, or upload it with the right type`,
       'INVALID_IMAGE',
+      sniffed === null
+        ? 'LOGO_NOT_AN_IMAGE'
+        : { code: 'LOGO_TYPE_MISMATCH', params: { mime, sniffed } },
     );
   }
   await updateOrganization(
@@ -268,6 +284,10 @@ export async function setLoginTagline(
     throw new BrandingError(
       `the tagline is ${trimmed.length} characters and the limit is ${TAGLINE_MAX_LENGTH}`,
       'INVALID_TAGLINE',
+      {
+        code: 'TAGLINE_TOO_LONG',
+        params: { length: trimmed.length, limit: TAGLINE_MAX_LENGTH },
+      },
     );
   }
   await updateOrganization(tx, 'login_tagline = $1', [trimmed]);

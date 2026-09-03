@@ -18,6 +18,7 @@
  * is written to be safe to show; it never carries a config value.
  */
 import { redirect } from 'next/navigation';
+import { errorParam } from '@/lib/errors/domain';
 import { revalidatePath } from 'next/cache';
 import { auth } from '@/auth';
 import { withCurrentOrg } from '@/lib/tenant/request';
@@ -81,7 +82,7 @@ function isRedirect(err: unknown): boolean {
 /** Never carries a config value — see the header. */
 function fail(err: unknown): never {
   if (err instanceof IntegrationError) {
-    redirect(`${PAGE}?error=${encodeURIComponent(err.message)}`);
+    redirect(`${PAGE}?error=${encodeURIComponent(errorParam(err, 'admin/integrations'))}`);
   }
   throw err;
 }

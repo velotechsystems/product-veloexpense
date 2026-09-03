@@ -51,6 +51,8 @@
  * ended up aggregating all history on a page nobody thought was expensive.
  */
 import type { QueryRunner } from '@/lib/db/client';
+import type { UserMessage } from '@/lib/errors/domain';
+import type { UserMessageCode } from '@/lib/i18n/catalog/errors';
 import { DomainError } from '@/lib/errors/domain';
 import { convertMinor } from '@/lib/money';
 import { buildRateLookup, type RateLookup, type RateRow } from '@/lib/policy/rates';
@@ -68,8 +70,9 @@ export class AnalyticsError extends DomainError {
   constructor(
     message: string,
     readonly code: AnalyticsErrorCode,
+    userMessage: UserMessageCode | UserMessage | null = null,
   ) {
-    super(message);
+    super(message, userMessage);
     this.name = 'AnalyticsError';
   }
 }
@@ -264,12 +267,14 @@ export async function spendSummary(tx: QueryRunner, range: SpendRange): Promise<
     throw new AnalyticsError(
       'analytics needs a start and an end date — there is deliberately no default range',
       'RANGE_REQUIRED',
+      'ANALYTICS_RANGE_REQUIRED',
     );
   }
   if (range.from > range.to) {
     throw new AnalyticsError(
       `the range ends before it begins (${range.from} to ${range.to})`,
       'RANGE_INVERTED',
+      'ANALYTICS_RANGE_INVERTED',
     );
   }
 
