@@ -3561,10 +3561,39 @@ NOTHING. All 121 passed with the bug and without it, because the calendar-date p
 at all. A defect measurable at the driver in four lines was invisible to 895 tests.
 `test/i18n-dates.db.test.ts` and `test/i18n-format.test.ts` are what that finding bought.
 
-**IL-11 · 157 English server messages, rendered verbatim in the UI.**
+**IL-11 · 157 English server messages, rendered verbatim in the UI.** ⏳ HALF CLOSED (VX4-7 part 2b)
 Literal `message: '…'` strings under `apps/web/src/server`, with 136 UI sites rendering `e.message`
 directly. No gate covers them. Ours has the same exposure and the same choice to make: either error
 copy is catalogued, or it is deliberately English-only and the UI stops printing it raw.
+
+**The choice, settled with John on 2 Sep: catalogue the copy a reader can actually reach.** Measured,
+that is two very different populations. There are **265 throw sites across 26 error classes**, but
+only **~13 code paths** put any of it on a screen (`?error=` redirects from server actions), and the
+messages reachable from those paths number about **87 across 10 modules**. The rest are invariant
+guards for states no UI can produce; cataloguing them would localise text nobody reads and make the
+diff unreviewable.
+
+**Part 2b closed the half a normal employee reads most, which is not an error at all — it is the
+policy-violation sentence.** `policy_violation.message` was English frozen at validation time and
+shown to every later reader: the approver, the auditor, the submitter a month on. It is now rendered
+per reader from `message_code` + `data` (migration `0029`), with the stored sentence kept as the
+audit record — `resolve_note` is somebody's written justification for accepting THAT wording, and a
+template edited later must not rewrite what they agreed to.
+
+Two findings from doing it. First, **`rule_code` is not enough to re-render**: five rule kinds emit
+TEN sentences (a limit finding reads differently when the amount was converted; `RECEIPT_REQUIRED`
+has three shapes; `BUDGET_OVERAGE` emits an overage and a separate FX-floor note). Choosing among
+them at render time means re-deriving, from `data`, the branch the rule already took — so the row
+records the branch instead. Second, **the copy fallback chain must not drive formatting**: the first
+draft passed the resolved COPY locale to `Intl`, so an `en-US` reader inheriting `en-CA` words also
+inherited `en-CA` money — this ticket's own defect, reintroduced inside the fix, and caught by a test
+rather than by review.
+
+**Still open, boarded as VX4-7 part 2c:** the ~87 reachable error messages, and the second half of
+the choice — the UI must stop printing an unrecognised error raw. `app/approvals/actions.ts:80` and
+several siblings do `err instanceof Error ? err.message : …` and put the result in a query string, so
+an *unexpected* internal error's message reaches a URL and a screen, not just a domain error's. That
+is a small information-disclosure gap as well as a localisation one, and the same change closes both.
 
 ### AC-24 · Fixing a configuration does not move the queue ✅ CLOSED
 

@@ -15,7 +15,9 @@
  * detection, fiscal-period close) slots in by adding entries here — no
  * migration, since `expense_policy.kind` is deliberately not a CHECK constraint.
  */
-import { convertMinor, formatMinor, toBigInt, type MinorAmount } from '@/lib/money';
+import { convertMinor, toBigInt, type MinorAmount } from '@/lib/money';
+import { renderPolicyMessage, type PolicyMessageCode } from '@/lib/i18n/catalog/policy-messages';
+import { DEFAULT_LOCALE } from '@/lib/i18n/locales';
 import {
   hasUnconvertible,
   projectedMinor,
@@ -109,6 +111,20 @@ export interface PolicyContext {
 
 export interface Finding {
   ruleCode: RuleKind;
+  /**
+   * Which SENTENCE this is — one per branch, not one per rule. VX4-7 part 2b:
+   * five rule kinds emit ten sentences, so `ruleCode` cannot choose among them
+   * at render time without re-deriving the branch this rule already took.
+   */
+  messageCode: PolicyMessageCode;
+  /**
+   * The sentence in the DEFAULT locale, which `finding()` produces by rendering
+   * `messageCode` + `data` — never by hand. That is what makes the stored
+   * `policy_violation.message` and the per-reader render incapable of
+   * disagreeing: there is one set of words, in
+   * `lib/i18n/catalog/policy-messages.ts`, and this is a snapshot of it. Stored
+   * as the audit record (0029); the screen renders from the code.
+   */
   message: string;
   /** null when the finding is about the report or an expense, not one line. */
   lineItemId: string | null;
@@ -168,8 +184,57 @@ export interface RuleDefinition {
 
 /* ── helpers ───────────────────────────────────────────────────────────────── */
 
-function money(context: PolicyContext, amount: string | number | bigint) {
-  return formatMinor(amount, context.report.currency_code, context.report.minor_unit);
+/**
+ * Build a finding. THE ONLY WAY ONE IS BUILT — the `Finding` object literal does
+ * not appear anywhere below.
+ *
+ * `message` is rendered here from `messageCode` + `data` at the default locale,
+ * so the stored English and the per-reader render cannot drift: they are the
+ * same function of the same inputs. Before part 2b each rule wrote its sentence
+ * inline, which would have made the catalogue a SECOND copy of the copy — and
+ * part 2a is the evidence for how that ends (three sentences quietly reworded
+ * behind a comment claiming a verbatim port).
+ *
+ * It also means a `data` key the sentence needs and the rule forgot is visible
+ * immediately: `message` comes back as `{LIMIT_EXCEEDED}` and every test that
+ * looks at a message fails. That is UD-5 requirement 3 landing at the point of
+ * WRITE as well as the point of read.
+ */
+function finding(
+  ruleCode: RuleKind,
+  messageCode: PolicyMessageCode,
+  parts: {
+    lineItemId: string | null;
+    findingKey: string;
+    severity?: Severity;
+    data: Record<string, unknown>;
+  },
+): Finding {
+  return {
+    ruleCode,
+    messageCode,
+    lineItemId: parts.lineItemId,
+    findingKey: parts.findingKey,
+    ...(parts.severity === undefined ? {} : { severity: parts.severity }),
+    message: renderPolicyMessage(messageCode, parts.data, DEFAULT_LOCALE),
+    data: parts.data,
+  };
+}
+
+/**
+ * The report's own currency and its minor unit, as render inputs.
+ *
+ * These go INTO `data` rather than being looked up when the violation is
+ * displayed, and that is deliberate: a render happens months later, from a row,
+ * with no report loaded and no guarantee the report still says what it did. A
+ * finding is a statement about a moment, so it carries the facts that moment
+ * needs.
+ */
+function reportMoney(context: PolicyContext) {
+  return {
+    currencyCode: context.report.currency_code,
+    minorUnit: context.report.minor_unit,
+  };
 }
 
 /** The currency a rule's thresholds are written in. */
@@ -184,12 +249,19 @@ function minorUnitOf(context: PolicyContext, code: string): number {
   return context.minorUnits[code] ?? 2;
 }
 
-/** Format an amount in a named currency — used for the THRESHOLD, which is not
- *  necessarily in the report's currency. That confusion was the original bug:
- *  `rules.ts` printed a CAD-set limit with the report's currency and it read as
- *  though it had been converted. */
-function moneyIn(amount: MinorAmount, code: string, context: PolicyContext) {
-  return formatMinor(amount, code, minorUnitOf(context, code));
+/**
+ * The THRESHOLD's currency and minor unit, as render inputs.
+ *
+ * A threshold is not necessarily in the report's currency, and conflating the
+ * two was the original PE-1 bug: `rules.ts` printed a CAD-set limit with the
+ * report's currency and it read as though it had been converted. Part 2b keeps
+ * that separation by carrying BOTH pairs in `data`, so the sentence formats each
+ * amount in the currency it is actually denominated in — which is the only way a
+ * reader in another locale gets a correct sentence rather than a
+ * consistent-looking wrong one.
+ */
+function thresholdMoney(context: PolicyContext, code: string) {
+  return { thresholdCurrency: code, thresholdMinorUnit: minorUnitOf(context, code) };
 }
 
 type Comparable =
@@ -238,17 +310,12 @@ function rateMissingFinding(
   miss: { from: string; to: string },
   what: string,
 ): Finding {
-  return {
-    ruleCode,
+  return finding(ruleCode, 'RATE_MISSING', {
     lineItemId,
     findingKey,
     severity: 'INFO',
-    message:
-      `${what} could not be checked against the limit: there is no exchange rate from ` +
-      `${miss.from} to ${miss.to}, so the two amounts are not comparable. ` +
-      `An administrator needs to add one.`,
-    data: { fxRateMissing: true, fromCurrency: miss.from, toCurrency: miss.to },
-  };
+    data: { label: what, fxRateMissing: true, fromCurrency: miss.from, toCurrency: miss.to },
+  });
 }
 
 function threshold(policy: PolicyRow, name = 'thresholdMinor'): bigint | null {
@@ -309,29 +376,33 @@ const PER_TRANSACTION_LIMIT: RuleDefinition = {
           continue;
         }
         if (comparable.amount <= limit) continue;
-        findings.push({
-          ruleCode: 'PER_TRANSACTION_LIMIT',
-          lineItemId: line.id,
-          findingKey: '',
-          // Both currencies are named whenever they differ. A sentence that reads
-          // "is $700.00, over the $500.00 limit" while one is USD and the other
-          // CAD is the sentence that hid this defect in the first place.
-          message:
-            comparable.basis === 'IDENTITY'
-              ? `${label} is ${money(context, amount)}, over the ` +
-                `${moneyIn(limit, limitCurrency, context)} per-transaction limit.`
-              : `${label} is ${money(context, amount)} — ` +
-                `${moneyIn(comparable.amount, limitCurrency, context)} converted — over the ` +
-                `${moneyIn(limit, limitCurrency, context)} per-transaction limit.`,
-          data: {
-            amountMinor: amount.toString(),
-            thresholdMinor: limit.toString(),
-            thresholdCurrency: limitCurrency,
-            convertedMinor: comparable.amount.toString(),
-            rateBasis: comparable.basis,
-            rateAsOf: comparable.asOf,
-          },
-        });
+        // Two CODES rather than one code and a conditional sentence. Both
+        // currencies are named whenever they differ — a sentence reading "is
+        // $700.00, over the $500.00 limit" while one is USD and the other CAD is
+        // the sentence that hid this defect in the first place — and which of the
+        // two shapes applies is a decision this rule is making right now, with
+        // the conversion in hand. Recording it beats re-deriving it from `data`
+        // at render time, months later, in another module.
+        findings.push(
+          finding(
+            'PER_TRANSACTION_LIMIT',
+            comparable.basis === 'IDENTITY' ? 'LIMIT_EXCEEDED' : 'LIMIT_EXCEEDED_CONVERTED',
+            {
+              lineItemId: line.id,
+              findingKey: '',
+              data: {
+                label,
+                ...reportMoney(context),
+                ...thresholdMoney(context, limitCurrency),
+                amountMinor: amount.toString(),
+                thresholdMinor: limit.toString(),
+                convertedMinor: comparable.amount.toString(),
+                rateBasis: comparable.basis,
+                rateAsOf: comparable.asOf,
+              },
+            },
+          ),
+        );
       }
     }
     return findings;
@@ -372,14 +443,19 @@ const RECEIPT_REQUIRED: RuleDefinition = {
       // converting is the difference between a BLOCK that always fires and one a
       // missing reference row can quietly turn into a note.
       if (floor === null) {
-        findings.push({
-          ruleCode: 'RECEIPT_REQUIRED',
-          lineItemId: null,
-          // One finding per expense — this is why finding_key exists.
-          findingKey: expense.id,
-          message: `${expenseLabel(expense)} has no receipt attached.`,
-          data: { expenseId: expense.id, subtotalMinor: subtotal.toString() },
-        });
+        findings.push(
+          finding('RECEIPT_REQUIRED', 'RECEIPT_MISSING', {
+            lineItemId: null,
+            // One finding per expense — this is why finding_key exists.
+            findingKey: expense.id,
+            data: {
+              label: expenseLabel(expense),
+              ...reportMoney(context),
+              expenseId: expense.id,
+              subtotalMinor: subtotal.toString(),
+            },
+          }),
+        );
         continue;
       }
 
@@ -398,28 +474,29 @@ const RECEIPT_REQUIRED: RuleDefinition = {
         continue;
       }
       if (comparable.amount <= floor) continue;
-      findings.push({
-        ruleCode: 'RECEIPT_REQUIRED',
-        lineItemId: null,
-        findingKey: expense.id,
-        message:
+      findings.push(
+        finding(
+          'RECEIPT_REQUIRED',
           comparable.basis === 'IDENTITY'
-            ? `${expenseLabel(expense)} is ${money(context, subtotal)} and has no receipt ` +
-              `attached (receipts required above ${moneyIn(floor, floorCurrency, context)}).`
-            : `${expenseLabel(expense)} is ${money(context, subtotal)} — ` +
-              `${moneyIn(comparable.amount, floorCurrency, context)} converted — and has no ` +
-              `receipt attached (receipts required above ` +
-              `${moneyIn(floor, floorCurrency, context)}).`,
-        data: {
-          expenseId: expense.id,
-          subtotalMinor: subtotal.toString(),
-          thresholdMinor: floor.toString(),
-          thresholdCurrency: floorCurrency,
-          convertedMinor: comparable.amount.toString(),
-          rateBasis: comparable.basis,
-          rateAsOf: comparable.asOf,
-        },
-      });
+            ? 'RECEIPT_MISSING_ABOVE'
+            : 'RECEIPT_MISSING_ABOVE_CONVERTED',
+          {
+            lineItemId: null,
+            findingKey: expense.id,
+            data: {
+              label: expenseLabel(expense),
+              ...reportMoney(context),
+              ...thresholdMoney(context, floorCurrency),
+              expenseId: expense.id,
+              subtotalMinor: subtotal.toString(),
+              thresholdMinor: floor.toString(),
+              convertedMinor: comparable.amount.toString(),
+              rateBasis: comparable.basis,
+              rateAsOf: comparable.asOf,
+            },
+          },
+        ),
+      );
     }
     return findings;
   },
@@ -438,15 +515,21 @@ const CATEGORY_ACTIVE: RuleDefinition = {
     for (const expense of context.expenses) {
       for (const line of expense.lineItems) {
         if (line.category_active !== false) continue;
-        findings.push({
-          ruleCode: 'CATEGORY_ACTIVE',
-          lineItemId: line.id,
-          findingKey: '',
-          message: `${lineLabel(expense, line.description, line.category_label)} is coded to ${
-            line.category_label ?? 'a category'
-          }, which is no longer active. Recode it.`,
-          data: { categoryId: line.category_id },
-        });
+        findings.push(
+          finding('CATEGORY_ACTIVE', 'CATEGORY_INACTIVE', {
+            lineItemId: line.id,
+            findingKey: '',
+            data: {
+              label: lineLabel(expense, line.description, line.category_label),
+              // The `?? 'a category'` fallback used to live in the sentence. It
+              // belongs HERE, where the category row is in hand: a renderer
+              // choosing a noun for absent data is a renderer inventing content,
+              // and it hides that the label was never loaded.
+              categoryLabel: line.category_label ?? 'a category',
+              categoryId: line.category_id,
+            },
+          }),
+        );
       }
     }
     return findings;
@@ -467,16 +550,17 @@ const NON_NEGATIVE_AMOUNT: RuleDefinition = {
       for (const line of expense.lineItems) {
         const amount = toBigInt(line.amount_minor);
         if (amount >= 0n) continue;
-        findings.push({
-          ruleCode: 'NON_NEGATIVE_AMOUNT',
-          lineItemId: line.id,
-          findingKey: '',
-          message: `${lineLabel(expense, line.description, line.category_label)} is ${money(
-            context,
-            amount,
-          )}. Line items cannot be negative.`,
-          data: { amountMinor: amount.toString() },
-        });
+        findings.push(
+          finding('NON_NEGATIVE_AMOUNT', 'NEGATIVE_AMOUNT', {
+            lineItemId: line.id,
+            findingKey: '',
+            data: {
+              label: lineLabel(expense, line.description, line.category_label),
+              ...reportMoney(context),
+              amountMinor: amount.toString(),
+            },
+          }),
+        );
       }
     }
     return findings;
@@ -530,35 +614,38 @@ const BUDGET_OVERAGE: RuleDefinition = {
   evaluate(context) {
     const findings: Finding[] = [];
     for (const budget of context.budgets) {
-      const scope = `${budget.budgetName} (${budget.startsOn} to ${budget.endsOn})`;
-      const amount = (value: bigint) =>
-        formatMinor(value, budget.currencyCode, budget.minorUnit);
+      // The budget's OWN currency and unit, not the report's — every amount in
+      // both sentences below is denominated in the budget, which is the point of
+      // `lib/budgets/service.ts` converting before this rule ever runs.
+      const scope = {
+        budgetName: budget.budgetName,
+        startsOn: budget.startsOn,
+        endsOn: budget.endsOn,
+        currencyCode: budget.currencyCode,
+        minorUnit: budget.minorUnit,
+      };
 
       // The overage, when there is one. Certain even if some spend could not be
       // converted: unconvertible spend can only ADD, so being over stays true.
       const projected = projectedMinor(budget);
       if (budget.amountMinor > 0n && projected > budget.amountMinor) {
-        findings.push({
-          ruleCode: 'BUDGET_OVERAGE',
-          lineItemId: null,
-          findingKey: `${budget.budgetId}|${budget.periodId}`,
-          message:
-            `This report takes ${scope} to ${amount(projected)} against a budget of ` +
-            `${amount(budget.amountMinor)} — over by ${amount(projected - budget.amountMinor)}. ` +
-            `${amount(budget.actualMinor)} is already approved, ${amount(budget.pendingMinor)} ` +
-            `is awaiting a decision, and this report adds ${amount(budget.reportMinor)}.`,
-          data: {
-            budgetId: budget.budgetId,
-            periodId: budget.periodId,
-            currencyCode: budget.currencyCode,
-            amountMinor: budget.amountMinor.toString(),
-            projectedMinor: projected.toString(),
-            overageMinor: (projected - budget.amountMinor).toString(),
-            actualMinor: budget.actualMinor.toString(),
-            pendingMinor: budget.pendingMinor.toString(),
-            reportMinor: budget.reportMinor.toString(),
-          },
-        });
+        findings.push(
+          finding('BUDGET_OVERAGE', 'BUDGET_EXCEEDED', {
+            lineItemId: null,
+            findingKey: `${budget.budgetId}|${budget.periodId}`,
+            data: {
+              ...scope,
+              budgetId: budget.budgetId,
+              periodId: budget.periodId,
+              amountMinor: budget.amountMinor.toString(),
+              projectedMinor: projected.toString(),
+              overageMinor: (projected - budget.amountMinor).toString(),
+              actualMinor: budget.actualMinor.toString(),
+              pendingMinor: budget.pendingMinor.toString(),
+              reportMinor: budget.reportMinor.toString(),
+            },
+          }),
+        );
       }
 
       // A SEPARATE finding, with its own key, so it can coexist with the overage
@@ -567,28 +654,28 @@ const BUDGET_OVERAGE: RuleDefinition = {
       // so is the difference between "I cannot answer" and "you are fine".
       if (!hasUnconvertible(budget)) continue;
       const missing = budget.reportMissingRateFrom;
-      findings.push({
-        ruleCode: 'BUDGET_OVERAGE',
-        lineItemId: null,
-        findingKey: `${budget.budgetId}|${budget.periodId}|fx`,
-        severity: 'INFO',
-        message:
-          `Some spend counted against ${scope} could not be converted into ` +
-          `${budget.currencyCode}, so ${amount(projected)} is a floor rather than a total` +
-          (missing.length > 0
-            ? `. This report has spend in ${missing.join(', ')} with no exchange rate to ` +
-              `${budget.currencyCode}; an administrator needs to add one.`
-            : `. Earlier spend on this budget is affected; an administrator needs to add the ` +
-              `missing exchange rates.`),
-        data: {
-          budgetId: budget.budgetId,
-          periodId: budget.periodId,
-          fxRateMissing: true,
-          toCurrency: budget.currencyCode,
-          reportMissingRateFrom: missing,
-          unconvertibleMinor: budget.unconvertibleMinor.toString(),
-        },
-      });
+      findings.push(
+        finding('BUDGET_OVERAGE', 'BUDGET_FLOOR_FX', {
+          lineItemId: null,
+          findingKey: `${budget.budgetId}|${budget.periodId}|fx`,
+          severity: 'INFO',
+          data: {
+            ...scope,
+            budgetId: budget.budgetId,
+            periodId: budget.periodId,
+            projectedMinor: projected.toString(),
+            fxRateMissing: true,
+            // Kept beside `currencyCode`, which now carries the same value:
+            // `toCurrency` is what the FX-diagnostic half of `data` has always
+            // been called (`rateMissingFinding` writes it too), and an admin
+            // grepping their logs for one missing pair should not have to know
+            // which finding they are looking at.
+            toCurrency: budget.currencyCode,
+            reportMissingRateFrom: missing,
+            unconvertibleMinor: budget.unconvertibleMinor.toString(),
+          },
+        }),
+      );
     }
     return findings;
   },

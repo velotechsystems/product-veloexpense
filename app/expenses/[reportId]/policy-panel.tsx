@@ -14,6 +14,7 @@
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import type { ValidationSummary } from '@/lib/policy/service';
+import { renderViolation } from '@/lib/i18n/catalog/policy-messages';
 import {
   acknowledgeViolationFromForm,
   clearAcknowledgementFromForm,
@@ -72,35 +73,44 @@ export function PolicyPanel({
 
       {open.length > 0 ? (
         <ul className="flex flex-col gap-3">
-          {open.map((violation) => (
-            <li
-              key={violation.id}
-              data-testid="policy-violation"
-              data-severity={violation.severity}
-              className="flex flex-col gap-2 rounded-lg border border-border px-3 py-2"
-            >
-              <div className="flex items-start gap-2">
-                <SeverityBadge severity={violation.severity} locale={locale} />
-                <p className="text-sm">{violation.message}</p>
-              </div>
-              {editable && violation.severity !== 'BLOCK' ? (
-                <form action={acknowledgeViolationFromForm} className="flex flex-wrap gap-2">
-                  <input type="hidden" name="reportId" value={reportId} />
-                  <input type="hidden" name="violationId" value={violation.id} />
-                  <Input
-                    name="note"
-                    required
-                    className="max-w-md flex-1"
-                    placeholder="Why is this exception acceptable?"
-                    aria-label={`Justification for: ${violation.message}`}
-                  />
-                  <Button type="submit" variant="outline" size="sm">
-                    Acknowledge
-                  </Button>
-                </form>
-              ) : null}
-            </li>
-          ))}
+          {open.map((violation) => {
+            // VX4-7 part 2b. NOT `violation.message`, which is the sentence
+            // frozen in the default locale when whoever last saved the report
+            // triggered validation. Rendered once per finding and reused below,
+            // because the acknowledge field's aria-label has to say the same
+            // words the paragraph does — a screen reader hearing a different
+            // sentence than the page shows is the failure this had for free.
+            const message = renderViolation(violation, locale);
+            return (
+              <li
+                key={violation.id}
+                data-testid="policy-violation"
+                data-severity={violation.severity}
+                className="flex flex-col gap-2 rounded-lg border border-border px-3 py-2"
+              >
+                <div className="flex items-start gap-2">
+                  <SeverityBadge severity={violation.severity} locale={locale} />
+                  <p className="text-sm">{message}</p>
+                </div>
+                {editable && violation.severity !== 'BLOCK' ? (
+                  <form action={acknowledgeViolationFromForm} className="flex flex-wrap gap-2">
+                    <input type="hidden" name="reportId" value={reportId} />
+                    <input type="hidden" name="violationId" value={violation.id} />
+                    <Input
+                      name="note"
+                      required
+                      className="max-w-md flex-1"
+                      placeholder="Why is this exception acceptable?"
+                      aria-label={`Justification for: ${message}`}
+                    />
+                    <Button type="submit" variant="outline" size="sm">
+                      Acknowledge
+                    </Button>
+                  </form>
+                ) : null}
+              </li>
+            );
+          })}
         </ul>
       ) : null}
 
@@ -116,7 +126,9 @@ export function PolicyPanel({
                 className="flex flex-wrap items-start justify-between gap-2 rounded-lg border border-dashed border-border px-3 py-2"
               >
                 <div className="min-w-0">
-                  <p className="text-sm text-muted-foreground line-through">{violation.message}</p>
+                  <p className="text-sm text-muted-foreground line-through">
+                    {renderViolation(violation, locale)}
+                  </p>
                   <p className="text-xs text-muted-foreground">
                     {violation.resolve_note}
                     {violation.resolved_by_name ? ` — ${violation.resolved_by_name}` : ''}

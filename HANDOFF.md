@@ -2081,8 +2081,68 @@ shipped.
 | **VX4-3** | **Branding that actually renders** | BR-2 is the surprise: the fields, the admin form and the validation all exist and **nothing reads them**. So the port is the easy half and the render path is net-new — CSS custom properties injected per tenant (BR-3, deriving row/hover shades from the primary rather than hardcoding them), a tenant logo served pre-auth on the `public-icons` route's proven pattern (BR-4), `generateMetadata` instead of a static title (BR-5), and a branded email shell on VX2-8's template layer (BR-6). | 3 |
 | **VX4-5** | **Budgets, tenant-scoped, on our own chart of accounts** | BG-2: `Budget.glAccountId` is a **required** FK into a NetSuite SOAP cache, and their vendor-neutral `Account` table was deleted — so budgets there are uncreatable without NetSuite. **VX3-1 already fixed this for us**; budgets point at `gl_account` and a vendor becomes an alias. Plus BG-1 (tenant column and composite keys on five tables, including an index Prisma cannot express), BG-3 (actuals recomputed over the whole fiscal year on every approval click, with an unbounded FX load → rollup), BG-6 (alert idempotency by mutable marker → our atomic-claim idiom). | 4 |
 | **VX4-6** | **Analytics, tenant-scoped** | The tenancy half is free (above). The work is AN-7 — a missing FX rate is currently summed **as if it were base currency**, unflagged, while the budget code counts unconverted amounts for the same situation — and AN-10: unbounded ranges, no `date` index, and a home page that runs a full-history aggregate for every signed-in user. Plus AN-8's lesson: size the data with a predicate, never with a role check that then queries everything. | 4 |
-| **VX4-7** ⏳ | **Locale: retag `en` → `en-CA`, add `en-US`** — parts 1, 1b, 2a DONE; 2b + 3 open. fr-CA retired until its copy exists (0028) | IL-1: their `en` already formats as en-US (`3/4/2026`, `CA$10,799.00`), so this is a retag **and** an addition, 2 locales to 3 — touching URL segments, stored preferences and every `{ en: … }` Json key, whose arity is hardcoded in ~17 files (IL-7). Also: a company default locale, which does not exist there (IL-2); what a missing key does, decided before the third catalog exists rather than after two blank pages (IL-4); and the date-formatting calls that pass no locale (IL-10). | 3 |
+| **VX4-7** ⏳ | **Locale: retag `en` → `en-CA`, add `en-US`** — parts 1, 1b, 2a, 2b DONE; 2c + 3 open. fr-CA retired until its copy exists (0028) | IL-1: their `en` already formats as en-US (`3/4/2026`, `CA$10,799.00`), so this is a retag **and** an addition, 2 locales to 3 — touching URL segments, stored preferences and every `{ en: … }` Json key, whose arity is hardcoded in ~17 files (IL-7). Also: a company default locale, which does not exist there (IL-2); what a missing key does, decided before the third catalog exists rather than after two blank pages (IL-4); and the date-formatting calls that pass no locale (IL-10). | 3 |
 | **VX4-8** | **Module 12 slices 2–3: fraud detection + control evaluation** | Deferred to this phase since Phase 2 because both are retrospective and need approval history, which now exists. Their versions are driven by `SystemFlag` config (MT-2) and run as unconditional global crons (MT-5), so both land on VX4-1 and VX4-2. | 3 |
+
+### VX4-7 part 2b SHIPPED — a violation says what the READER reads
+
+Baseline measured at HEAD before starting (931 tests / 49 files) and after (**981 / 50**). **49
+Playwright** twice in a row. Migration **`0029`** — run `npm run migrate` after merging.
+
+**What it closes.** `policy_violation.message` was English, frozen at validation time, and shown to
+every later reader — the approver, the auditor, the submitter coming back a month later. It was
+frozen in a second way too: `$1,000.00` had been formatted once, in whatever locale the validating
+request resolved to, which is exactly the mistake part 1b spent a PR establishing must not happen to
+a stored value. Screens now render from `message_code` + `data` in the reader's locale.
+
+**Three decisions worth keeping.**
+
+1. **`rule_code` was not enough, and this is the non-obvious part.** Five rule kinds emit TEN
+   sentences: a limit finding reads differently when the amount had to be converted,
+   `RECEIPT_REQUIRED` has three shapes, and `BUDGET_OVERAGE` emits an overage plus a separate
+   FX-floor note that deliberately coexist (what `finding_key` is for). Picking among them at render
+   time means re-deriving, from `data`, the branch the rule already chose — the same decision made
+   twice, in two places, from different information. `policy_violation.message_code` records the
+   branch instead. Deliberately NOT a CHECK constraint: message codes change with every rule edit, so
+   the constraint would be a migration per sentence — same call VX1-7 made for `expense_policy.kind`.
+
+2. **`message` survives, as the audit record** (settled with John, 2 Sep). `resolve_note` is
+   somebody's written justification for accepting THAT wording, and a template edited six months
+   later must not silently rewrite what they agreed to. It is also the only thing pre-`0029` rows can
+   show — their `data` never carried the labels the sentence interpolates, so there is nothing to
+   backfill from and no honest way to invent one. `message_code = ''` means "show `message`", and
+   `renderViolation()` is the one place that branch is taken.
+
+3. **`message` is now a BYPRODUCT of the catalogue, not a second copy of it.** `finding()` in
+   `rules.ts` renders it at `DEFAULT_LOCALE`, so the stored English and the per-reader render are the
+   same function of the same inputs and cannot drift. Part 2a is the evidence for why that matters:
+   three sentences were quietly reworded behind a comment claiming a verbatim port.
+
+**UD-5 requirement 3 — the interpolated key a static scan cannot see — is closed at three depths.**
+Each code declares a `requires` list; `fields()` refuses a missing key at render (returning a marker,
+never throwing, because IL-4 is a missing key blanking a page); `test/i18n-policy-messages.test.ts`
+runs the REAL rules over fixtures and asserts every declared key is in the `data` they actually emit;
+and `check:i18n` compares the code set in the catalogue against the codes `rules.ts` emits **in both
+directions** — copy with no rule is copy somebody translates and nobody sees.
+
+**The bug this ticket reintroduced inside its own fix.** `renderPolicyMessage`'s first draft passed
+the resolved COPY locale to `Intl`, so an `en-US` reader inheriting `en-CA` words also inherited
+`en-CA` money. Copy falls back; formatting does not — a French reader reading English copy must still
+see `1 300,00 $`. Caught by a test, not by review.
+
+**Sabotages, all verified after a rebuild.** Removing `label` from one rule's `data` fails 10 tests
+across 2 files; passing the copy locale to `Intl` fails 2; deleting a code from the catalogue fails
+the gate AND `tsc` at 3 sites; adding copy no rule emits fails the gate; gutting `message_code` from
+`SELECT_VIOLATION` fails the new e2e; and rendering `violation.message` in the panel fails it too.
+**Note the method**: `playwright.config.ts` serves `npm run start:standalone`, so a source sabotage
+without `npm run build` in between tests the PREVIOUS build and proves nothing — the first attempt at
+the `SELECT_VIOLATION` sabotage came back fully green for exactly that reason.
+
+**Deliberately not in this PR — VX4-7 part 2c.** IL-11's other half: ~87 error messages reachable
+from the ~13 `?error=` paths (out of 265 throw sites across 26 classes; the rest are invariant guards
+no UI can reach), and making the UI stop printing an unrecognised error raw. That second part is also
+a small information-disclosure fix — `app/approvals/actions.ts:80` and siblings put ANY `Error`'s
+message into a query string, not just a domain error's.
 
 ### VX4-7 part 2a SHIPPED — the enum catalogue, and one locale taken back off the shelf
 
