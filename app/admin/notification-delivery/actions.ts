@@ -27,6 +27,7 @@
  * didn't they see it?" — has nowhere to go.
  */
 import { redirect } from 'next/navigation';
+import { errorParam } from '@/lib/errors/domain';
 import { revalidatePath } from 'next/cache';
 import { auth } from '@/auth';
 import { withCurrentOrg } from '@/lib/tenant/request';
@@ -93,7 +94,7 @@ export async function retryDeliveryFromForm(form: FormData) {
       }
     });
   } catch (err) {
-    const message = err instanceof Error ? err.message : 'Something went wrong';
+    const message = errorParam(err, 'admin/notification-delivery');
     redirect(`${PAGE}?error=${encodeURIComponent(message)}`);
   }
   revalidatePath(PAGE);
@@ -125,7 +126,7 @@ export async function drainNowFromForm() {
     await asAdmin(async () => undefined);
     await drainOutbox({ limit: 50, claimedBy: 'admin-button' });
   } catch (err) {
-    const message = err instanceof Error ? err.message : 'Something went wrong';
+    const message = errorParam(err, 'admin/notification-delivery');
     redirect(`${PAGE}?error=${encodeURIComponent(message)}`);
   }
   revalidatePath(PAGE);

@@ -21,6 +21,8 @@
  *      the employee may acknowledge them with a justification instead.
  */
 import type { QueryRunner } from '@/lib/db/client';
+import { DomainError } from '@/lib/errors/domain';
+import type { UserMessageCode } from '@/lib/i18n/catalog/errors';
 import * as policy from '@/lib/policy/service';
 import * as engine from '@/lib/approvals/engine';
 import { recomputeForReport } from '@/lib/budgets/service';
@@ -39,14 +41,15 @@ export type LifecycleErrorCode =
   | 'BLOCKED_BY_POLICY'
   | 'FORBIDDEN';
 
-export class LifecycleError extends Error {
+export class LifecycleError extends DomainError {
   constructor(
     message: string,
     readonly code: LifecycleErrorCode,
     /** The findings that refused a submit, so the UI can list them. */
     readonly violations: policy.ViolationRow[] = [],
+    userMessage: UserMessageCode | null = null,
   ) {
-    super(message);
+    super(message, userMessage);
     this.name = 'LifecycleError';
   }
 }
@@ -128,6 +131,8 @@ export async function submitReport(
     throw new LifecycleError(
       `report ${report.number ?? reportId} is ${report.status}; only a DRAFT can be submitted`,
       'WRONG_STATUS',
+      [],
+      'REPORT_NOT_SUBMITTABLE',
     );
   }
 
@@ -141,6 +146,8 @@ export async function submitReport(
     throw new LifecycleError(
       'this report has no line items — code at least one expense before submitting',
       'EMPTY_REPORT',
+      [],
+      'REPORT_EMPTY',
     );
   }
 
@@ -156,6 +163,12 @@ export async function submitReport(
         : `${blocking.length} blocking policy violations have to be fixed before this report can be submitted.`,
       'BLOCKED_BY_POLICY',
       blocking,
+      // One code per BRANCH, which is how the plural survives a catalogue that
+      // takes no parameters. `POLICY_MESSAGE_CODES` does the same thing for the
+      // converted/unconverted split, and for the same reason: the code that
+      // KNOWS which sentence applies should record it, not leave a renderer to
+      // re-derive it from a count it would have to be handed anyway.
+      blocking.length === 1 ? 'BLOCKED_BY_POLICY_ONE' : 'BLOCKED_BY_POLICY_MANY',
     );
   }
 
@@ -248,6 +261,8 @@ export async function recallReport(
     throw new LifecycleError(
       `report ${report.number ?? reportId} is ${report.status}; only a submitted or returned report can be recalled`,
       'WRONG_STATUS',
+      [],
+      'REPORT_NOT_RECALLABLE',
     );
   }
 
@@ -376,6 +391,8 @@ export async function reimburseReport(
       // theirs omits and which is the first thing anybody asks.
       `report ${report.number ?? reportId} is ${report.status}; only an approved report can be marked reimbursed`,
       'WRONG_STATUS',
+      [],
+      'REPORT_NOT_REIMBURSABLE',
     );
   }
 
@@ -384,6 +401,8 @@ export async function reimburseReport(
     throw new LifecycleError(
       `you cannot mark your own report reimbursed — ask somebody else in finance to release the payment`,
       'FORBIDDEN',
+      [],
+      'REIMBURSE_OWN_REPORT',
     );
   }
 
@@ -405,6 +424,8 @@ export async function reimburseReport(
     throw new LifecycleError(
       `report ${report.number ?? reportId} was reimbursed by somebody else a moment ago`,
       'WRONG_STATUS',
+      [],
+      'REIMBURSE_RACE',
     );
   }
 

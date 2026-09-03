@@ -14,6 +14,7 @@
  * the seed, the importer and Phase 5's provisioning use the other one.
  */
 import { redirect } from 'next/navigation';
+import { errorParam } from '@/lib/errors/domain';
 import { auth } from '@/auth';
 import { withCurrentOrg } from '@/lib/tenant/request';
 import { getEmployeeByEmail, type EmployeeRow } from '@/lib/employees/service';
@@ -120,7 +121,7 @@ async function run(work: () => Promise<void>, changed: string): Promise<never> {
   } catch (err) {
     rethrowRedirect(err);
     redirect(
-      `${PAGE}?error=${encodeURIComponent(err instanceof Error ? err.message : String(err))}`,
+      `${PAGE}?error=${encodeURIComponent(errorParam(err, 'admin/branding'))}`,
     );
   }
   redirect(`${PAGE}?changed=${encodeURIComponent(changed)}`);

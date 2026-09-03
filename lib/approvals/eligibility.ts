@@ -20,6 +20,8 @@
  * authoritative copy of the rule (GAP-AUDIT AP-13).
  */
 import type { QueryRunner } from '@/lib/db/client';
+import { DomainError } from '@/lib/errors/domain';
+import type { UserMessageCode } from '@/lib/i18n/catalog/errors';
 
 export type DecisionRefusal =
   | 'TASK_NOT_FOUND'
@@ -27,12 +29,13 @@ export type DecisionRefusal =
   | 'SELF_APPROVAL'
   | 'NOT_AN_APPROVER';
 
-export class DecisionForbiddenError extends Error {
+export class DecisionForbiddenError extends DomainError {
   constructor(
     message: string,
     readonly code: DecisionRefusal,
+    userMessage: UserMessageCode | null = null,
   ) {
-    super(message);
+    super(message, userMessage);
     this.name = 'DecisionForbiddenError';
   }
 }
@@ -235,12 +238,17 @@ export async function assertCanDecide(
 ): Promise<void> {
   const task = await loadTask(tx, taskId);
   if (!task) {
+    // No user copy, deliberately. A task id that does not resolve is either a
+    // stale link or a tampered one, and "that approval has already been decided"
+    // would be a guess — the generic is the honest answer and the id goes to the
+    // log where it is useful.
     throw new DecisionForbiddenError(`approval task ${taskId} does not exist`, 'TASK_NOT_FOUND');
   }
   if (task.status !== 'PENDING') {
     throw new DecisionForbiddenError(
       `approval task ${taskId} is ${task.status}, not PENDING`,
       'NOT_PENDING',
+      'TASK_ALREADY_DECIDED',
     );
   }
   if (await evaluate(tx, task, actorId, ctx)) return;
@@ -251,10 +259,16 @@ export async function assertCanDecide(
     throw new DecisionForbiddenError(
       `a report may not be approved by the person who submitted it`,
       'SELF_APPROVAL',
+      'SELF_APPROVAL',
     );
   }
+  // The message keeps both ids, because the log is where a support question
+  // gets answered. The SCREEN gets none of them: the person reading this is by
+  // definition not entitled to the task, and telling them its id — and their own
+  // — was both unreadable and more than they should learn.
   throw new DecisionForbiddenError(
     `user ${actorId} may not decide approval task ${taskId}`,
     'NOT_AN_APPROVER',
+    'TASK_NOT_YOURS',
   );
 }

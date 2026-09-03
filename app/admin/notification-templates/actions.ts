@@ -27,6 +27,7 @@
  *     rewording sentences."
  */
 import { redirect } from 'next/navigation';
+import { errorParam } from '@/lib/errors/domain';
 import { revalidatePath } from 'next/cache';
 import { auth } from '@/auth';
 import { withCurrentOrg } from '@/lib/tenant/request';
@@ -103,7 +104,7 @@ export async function setTemplateFromForm(form: FormData) {
       );
     });
   } catch (err) {
-    const message = err instanceof Error ? err.message : 'Something went wrong';
+    const message = errorParam(err, 'admin/notification-templates');
     redirect(`${PAGE}?error=${encodeURIComponent(message)}`);
   }
   revalidatePath(PAGE);

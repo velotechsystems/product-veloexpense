@@ -18,6 +18,7 @@
  * seventeen older modules that still omit it.)
  */
 import type { QueryRunner } from '@/lib/db/client';
+import { DomainError } from '@/lib/errors/domain';
 import { append, type AuditActor } from '@/lib/audit/service';
 import {
   CONTRAST_FLOOR,
@@ -38,7 +39,7 @@ export type BrandingErrorCode =
   | 'IMAGE_TOO_LARGE'
   | 'INVALID_TAGLINE';
 
-export class BrandingError extends Error {
+export class BrandingError extends DomainError {
   constructor(
     message: string,
     readonly code: BrandingErrorCode,

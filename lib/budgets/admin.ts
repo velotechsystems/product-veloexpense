@@ -24,6 +24,7 @@
  * right rather than one per caller.
  */
 import type { QueryRunner } from '@/lib/db/client';
+import { DomainError } from '@/lib/errors/domain';
 import { requireModule } from '@/lib/modules/service';
 
 const ORG = "NULLIF(current_setting('app.current_org', true), '')::uuid";
@@ -44,7 +45,7 @@ export type BudgetErrorCode =
   | 'UNKNOWN_ACCOUNT'
   | 'NO_TENANT';
 
-export class BudgetError extends Error {
+export class BudgetError extends DomainError {
   constructor(
     message: string,
     readonly code: BudgetErrorCode,

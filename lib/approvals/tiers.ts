@@ -30,6 +30,7 @@
  * one interface an advanced graph tier would implement.
  */
 import { toBigInt, type MinorAmount } from '@/lib/money';
+import { DomainError } from '@/lib/errors/domain';
 import type { EmployeeRole } from '@/lib/employees/service';
 
 /** How many approval STEPS may apply to one report (approval_request CHECK). */
@@ -225,7 +226,7 @@ export type ApprovalConfigErrorCode =
   | 'NOT_FOUND'
   | 'SEQUENCE_TAKEN';
 
-export class ApprovalConfigError extends Error {
+export class ApprovalConfigError extends DomainError {
   constructor(
     message: string,
     readonly code: ApprovalConfigErrorCode,

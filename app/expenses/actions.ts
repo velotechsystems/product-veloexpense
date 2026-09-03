@@ -25,6 +25,7 @@
  * "12,34" should get a sentence, not a stack trace.
  */
 import { redirect } from 'next/navigation';
+import { errorParam } from '@/lib/errors/domain';
 import { revalidatePath } from 'next/cache';
 import { auth } from '@/auth';
 import { withCurrentOrg } from '@/lib/tenant/request';
@@ -288,7 +289,7 @@ async function guard(backTo: string, run: () => Promise<void>): Promise<string |
     await run();
     return null;
   } catch (err) {
-    const message = err instanceof Error ? err.message : 'Something went wrong';
+    const message = errorParam(err, 'expenses');
     return `${backTo}${backTo.includes('?') ? '&' : '?'}error=${encodeURIComponent(message)}`;
   }
 }

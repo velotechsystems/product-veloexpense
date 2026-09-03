@@ -21,6 +21,7 @@
  * and the page infers it.
  */
 import { revalidatePath } from 'next/cache';
+import { errorParam } from '@/lib/errors/domain';
 import { redirect } from 'next/navigation';
 import { auth } from '@/auth';
 import { withCurrentOrg } from '@/lib/tenant/request';
@@ -157,7 +158,7 @@ export async function saveLocaleFromForm(form: FormData): Promise<never> {
   } catch (err) {
     rethrowRedirect(err);
     redirect(
-      `${PAGE}?error=${encodeURIComponent(err instanceof Error ? err.message : String(err))}`,
+      `${PAGE}?error=${encodeURIComponent(errorParam(err, 'admin/locale'))}`,
     );
   }
   // `revalidatePath('/', 'layout')` — the ROOT layout, not this page, and the

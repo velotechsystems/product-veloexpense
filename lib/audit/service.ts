@@ -16,6 +16,7 @@
  * three.
  */
 import type { QueryRunner } from '@/lib/db/client';
+import { DomainError } from '@/lib/errors/domain';
 import {
   acquireChainLock,
   computeEntryHash,
@@ -64,7 +65,7 @@ export interface AuditEntryRef {
   prevHash: string | null;
 }
 
-export class AuditError extends Error {
+export class AuditError extends DomainError {
   constructor(message: string) {
     super(message);
     this.name = 'AuditError';

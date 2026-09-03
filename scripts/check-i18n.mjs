@@ -89,6 +89,36 @@ async function readRegistry() {
  */
 const SCAN_ROOTS = ['lib', 'app', 'scripts'];
 
+const ACTION_ERROR_RE = /instanceof Error\s*\?\s*\w+\.message/;
+
+/**
+ * VX4-7 part 2c — no action may put an arbitrary exception's message in a URL.
+ *
+ * `err instanceof Error ? err.message : 'Something went wrong'` was the pattern
+ * at eleven call sites, and it printed whatever ANY exception carried: a
+ * `TypeError` from a bug, a `pg` error carrying a fragment of the statement, an
+ * adapter's HTTP body. It also printed our own diagnostics, which interpolate
+ * record ids — `user <uuid> may not decide approval task <uuid>` reached the
+ * screen of somebody who by definition had no right to that task.
+ *
+ * `errorParam()` in `lib/errors/domain.ts` is the replacement and the only
+ * sanctioned way to build the parameter. This refuses the old shape coming back,
+ * because it is the shape somebody writes from memory in the next action file.
+ *
+ * A NARROW check on purpose: it does not try to prove every action routes
+ * through `errorParam`, which would need the call graph. It refuses the one
+ * spelling that caused this, which is the one a person reaches for.
+ */
+function rawErrorMessage(text, filePath) {
+  const rel = relative(repoRoot, filePath);
+  if (!rel.startsWith('app/')) return [];
+  const out = [];
+  text.split('\n').forEach((line, i) => {
+    if (ACTION_ERROR_RE.test(line)) out.push({ file: rel, line: i + 1, text: line.trim() });
+  });
+  return out;
+}
+
 const POLICY_MESSAGES_FILE = join(repoRoot, 'lib', 'i18n', 'catalog', 'policy-messages.ts');
 const POLICY_RULES_FILE = join(repoRoot, 'lib', 'policy', 'rules.ts');
 
@@ -199,6 +229,12 @@ const COPY_FILES = new Set([
   // shipped locale from the rules' own output, and `policyMessageCodes()` above
   // asserts the code set matches lib/policy/rules.ts in both directions.
   'lib/i18n/catalog/policy-messages.ts',
+  // VX4-7 part 2c. Authored refusals, keyed by the locale they are written in —
+  // third instance of the same case. Coverage here is the plainest of the three:
+  // `Record<UserMessageCode, Copy>` demands an entry per code, `Copy` demands the
+  // default locale, and `test/i18n-errors.test.ts` walks the runtime array to
+  // assert every code resolves in every shipped locale.
+  'lib/i18n/catalog/errors.ts',
 ]);
 
 async function* sourceFiles(root) {
@@ -348,10 +384,15 @@ async function main() {
 
   const all = [];
   const dateInputs = [];
+  const rawErrors = [];
   for (const file of files) {
     const rel = relative(repoRoot, file);
-    if (ALLOWED.has(rel)) continue;
     const text = await readFile(file, 'utf8');
+    // NOT skipped for an ALLOWED file: the allow-list is about locale literals,
+    // and a file being allowed to name `en-CA` says nothing about whether it may
+    // print an exception. Two checks, two questions.
+    rawErrors.push(...rawErrorMessage(text, file));
+    if (ALLOWED.has(rel)) continue;
     all.push(...findings(text, locales, file, COPY_FILES.has(rel)));
     dateInputs.push(...dateInputMisuse(text, file));
   }
@@ -361,6 +402,19 @@ async function main() {
       `scanned ${files.length} files in ${SCAN_ROOTS.join(', ')}; ` +
       `${policyCodes.declared.length} policy message codes`,
   );
+
+  if (rawErrors.length > 0) {
+    console.error(`\n✗ ${rawErrors.length} action(s) putting a raw exception message in a URL:\n`);
+    for (const r of rawErrors) console.error(`  ${r.file}:${r.line}  ${r.text.slice(0, 100)}`);
+    console.error(
+      '\n`err instanceof Error ? err.message : …` prints whatever ANY exception carries —\n' +
+        'a TypeError from a bug, a pg error carrying part of the statement, and our own\n' +
+        'diagnostics, which interpolate record ids. Use errorParam(err, context) from\n' +
+        'lib/errors/domain.ts: it emits a message code for a catalogued refusal and logs\n' +
+        'anything else instead of showing it.\n',
+    );
+    process.exit(1);
+  }
 
   if (policyCodes.missingCopy.length > 0 || policyCodes.orphanCopy.length > 0) {
     console.error('\n✗ policy message codes disagree between the rules and the catalogue:\n');

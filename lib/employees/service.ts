@@ -12,6 +12,7 @@
  * getDirectReports, manager-chain resolve, create, update, deactivate.
  */
 import type { QueryRunner } from '@/lib/db/client';
+import { DomainError } from '@/lib/errors/domain';
 
 const ORG = "current_setting('app.current_org', true)::uuid";
 
@@ -77,7 +78,7 @@ export interface NewEmployee {
 export type EmployeePatch = Partial<NewEmployee>;
 
 /** Thrown for rule violations the UI should surface as a message, not a 500. */
-export class EmployeeError extends Error {
+export class EmployeeError extends DomainError {
   constructor(
     message: string,
     readonly code:

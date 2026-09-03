@@ -1,3 +1,4 @@
+import { DomainError } from '@/lib/errors/domain';
 /**
  * VX3-9a — `IntegrationError`, extracted from `service.ts`.
  *
@@ -10,7 +11,7 @@
  * `import { IntegrationError } from '@/lib/integrations/service'` keeps working.
  */
 
-export class IntegrationError extends Error {
+export class IntegrationError extends DomainError {
   constructor(
     message: string,
     /**

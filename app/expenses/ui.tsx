@@ -9,6 +9,8 @@
  */
 import type { ReportStatus } from '@/lib/expenses/service';
 import { enumLabel, REPORT_STATUS_COPY, SEVERITY_COPY } from '@/lib/i18n/catalog/enums';
+import { renderUserMessage } from '@/lib/i18n/catalog/errors';
+import { readerPrefs } from '@/lib/i18n/request';
 
 export const fieldClass = 'flex flex-col gap-1.5';
 export const labelClass = 'text-sm font-medium text-foreground';
@@ -67,15 +69,36 @@ export function SeverityBadge({ severity, locale }: { severity: string; locale: 
 }
 
 /** Validation failures come back as ?error=… so a plain form post can show them. */
-export function ErrorBanner({ message }: { message?: string }) {
+/**
+ * The one place a `?error=` value becomes words.
+ *
+ * VX4-7 part 2c. It resolves the reader ITSELF rather than taking a `locale`
+ * prop, unlike `StatusBadge` and the rest of this module. Twenty pages render
+ * this component and every one of them would otherwise have to thread a locale
+ * down to it — and MT-3 is that a requirement at the edge is one the next caller
+ * forgets. `readerPrefs()` is wrapped in React's `cache()`, so asking here costs
+ * nothing on a page that already asked.
+ *
+ * An async server component: fine here, because nothing in this file is a client
+ * component and every caller is a page.
+ *
+ * A value that is not a known code passes through unchanged — see
+ * `renderUserMessage`. That is the transitional branch for the admin modules
+ * part 2c-2 has not reached yet, and it is the reason this cannot yet refuse an
+ * arbitrary string arriving in a link.
+ */
+export async function ErrorBanner({ message }: { message?: string }) {
   if (!message) return null;
+  const { locale } = await readerPrefs();
+  const text = renderUserMessage(message, locale);
+  if (!text) return null;
   return (
     <p
       role="alert"
       data-testid="error-banner"
       className="rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive"
     >
-      {message}
+      {text}
     </p>
   );
 }

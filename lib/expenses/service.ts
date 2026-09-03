@@ -21,6 +21,8 @@
  * stay strings until lib/money.ts formats them.
  */
 import type { QueryRunner } from '@/lib/db/client';
+import { DomainError } from '@/lib/errors/domain';
+import type { UserMessageCode } from '@/lib/i18n/catalog/errors';
 import type { Actor } from '@/lib/auth/actor';
 import { accountForCategory } from '@/lib/accounts/service';
 
@@ -46,12 +48,13 @@ export type ExpenseErrorCode =
   | 'CATEGORY_NOT_FOUND'
   | 'CURRENCY_NOT_FOUND';
 
-export class ExpenseError extends Error {
+export class ExpenseError extends DomainError {
   constructor(
     message: string,
     readonly code: ExpenseErrorCode,
+    userMessage: UserMessageCode | null = null,
   ) {
-    super(message);
+    super(message, userMessage);
     this.name = 'ExpenseError';
   }
 }
@@ -199,14 +202,22 @@ function toMinorString(value: number | bigint | string, field: string): string {
   if (typeof value === 'bigint') return value.toString();
   if (typeof value === 'number') {
     if (!Number.isSafeInteger(value)) {
-      throw new ExpenseError(`${field} must be a whole number of minor units`, 'INVALID_AMOUNT');
+      throw new ExpenseError(
+      `${field} must be a whole number of minor units`,
+      'INVALID_AMOUNT',
+      'AMOUNT_NOT_WHOLE_MINOR',
+    );
     }
     return BigInt(value).toString();
   }
   try {
     return BigInt(value.trim()).toString();
   } catch {
-    throw new ExpenseError(`${field} must be a whole number of minor units`, 'INVALID_AMOUNT');
+    throw new ExpenseError(
+      `${field} must be a whole number of minor units`,
+      'INVALID_AMOUNT',
+      'AMOUNT_NOT_WHOLE_MINOR',
+    );
   }
 }
 
@@ -226,6 +237,7 @@ export async function assertDraft(tx: QueryRunner, reportId: string) {
     throw new ExpenseError(
       `report ${report.number ?? reportId} is ${report.status}; only DRAFT reports can be edited`,
       'NOT_DRAFT',
+      'REPORT_NOT_DRAFT',
     );
   }
   return report;
@@ -251,7 +263,11 @@ export async function reportIdForLineItem(tx: QueryRunner, lineItemId: string): 
 async function assertCurrency(tx: QueryRunner, currencyCode: string) {
   const r = await tx.query('SELECT code FROM currency WHERE code = $1', [currencyCode]);
   if (r.rows.length === 0) {
-    throw new ExpenseError(`unknown currency ${currencyCode}`, 'CURRENCY_NOT_FOUND');
+    throw new ExpenseError(
+      `unknown currency ${currencyCode}`,
+      'CURRENCY_NOT_FOUND',
+      'CURRENCY_UNKNOWN',
+    );
   }
 }
 
@@ -259,7 +275,11 @@ async function assertCurrency(tx: QueryRunner, currencyCode: string) {
 async function assertCategory(tx: QueryRunner, categoryId: string) {
   const r = await tx.query('SELECT id FROM expense_category WHERE id = $1', [categoryId]);
   if (r.rows.length === 0) {
-    throw new ExpenseError('category not found in this organization', 'CATEGORY_NOT_FOUND');
+    throw new ExpenseError(
+      'category not found in this organization',
+      'CATEGORY_NOT_FOUND',
+      'CATEGORY_UNKNOWN',
+    );
   }
 }
 
@@ -306,7 +326,7 @@ export function canEditReport(actor: Actor, access: ReportAccess): boolean {
 /** Create a DRAFT report; assigns a per-tenant sequential EXP-###### number. */
 export async function createReport(tx: QueryRunner, submitterEmail: string, input: NewReport) {
   const title = input.title?.trim();
-  if (!title) throw new ExpenseError('title is required', 'INVALID_TITLE');
+  if (!title) throw new ExpenseError('title is required', 'INVALID_TITLE', 'TITLE_REQUIRED');
   await assertCurrency(tx, input.currencyCode);
 
   const org = await tx.query(
@@ -490,7 +510,7 @@ export async function updateReport(tx: QueryRunner, reportId: string, patch: Rep
 
   if (patch.title !== undefined) {
     const title = patch.title.trim();
-    if (!title) throw new ExpenseError('title is required', 'INVALID_TITLE');
+    if (!title) throw new ExpenseError('title is required', 'INVALID_TITLE', 'TITLE_REQUIRED');
     set('title', title);
   }
   if ('purpose' in patch) set('purpose', patch.purpose ?? null);

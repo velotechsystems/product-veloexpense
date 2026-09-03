@@ -24,6 +24,7 @@
  * breaks every submit in the tenant. `encodeApprover` returns '' for one, which
  * the page renders read-only.
  */
+import { DomainError } from '@/lib/errors/domain';
 import {
   APPROVER_ROLES,
   MAX_MANAGER_LEVEL,
@@ -76,7 +77,7 @@ export function approverChoices(people: ApproverPerson[]): ApproverChoice[] {
   return out;
 }
 
-export class ApproverTokenError extends Error {
+export class ApproverTokenError extends DomainError {
   constructor(message: string) {
     super(message);
     this.name = 'ApproverTokenError';

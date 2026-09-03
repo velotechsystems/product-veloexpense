@@ -39,6 +39,7 @@
  * ledger's chart does not cover yet.
  */
 import type { QueryRunner } from '@/lib/db/client';
+import { DomainError } from '@/lib/errors/domain';
 import type { RemoteAccount } from '@/lib/integrations/contract';
 import { requireCapability } from '@/lib/integrations/service';
 import { requireModule } from '@/lib/modules/service';
@@ -57,7 +58,7 @@ export interface PullOutcome {
   pulledAt: Date;
 }
 
-export class PullError extends Error {
+export class PullError extends DomainError {
   constructor(
     message: string,
     readonly code: 'DUPLICATE_NUMBERS' | 'EMPTY' | 'NOT_CONNECTED',

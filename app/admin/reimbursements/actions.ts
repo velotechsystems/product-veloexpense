@@ -27,6 +27,7 @@
  * button can be absent rather than present-and-refusing.
  */
 import { redirect } from 'next/navigation';
+import { errorParam } from '@/lib/errors/domain';
 import { revalidatePath } from 'next/cache';
 import { auth } from '@/auth';
 import { withCurrentOrg } from '@/lib/tenant/request';
@@ -93,7 +94,7 @@ export async function reimburseFromForm(form: FormData) {
       }),
     );
   } catch (err) {
-    const message = err instanceof Error ? err.message : 'Something went wrong';
+    const message = errorParam(err, 'admin/reimbursements');
     redirect(`${PAGE}?error=${encodeURIComponent(message)}`);
   }
   revalidatePath(PAGE);

@@ -29,6 +29,7 @@
  *    a bug, not a delivery problem, and it propagates.
  */
 import type { QueryRunner } from '@/lib/db/client';
+import { DomainError } from '@/lib/errors/domain';
 import { formatMinor } from '@/lib/money';
 import { enqueueDelivery } from '@/lib/notifications/outbox';
 import {
@@ -56,7 +57,7 @@ import {
 
 const ORG = "current_setting('app.current_org', true)::uuid";
 
-export class NotificationError extends Error {
+export class NotificationError extends DomainError {
   constructor(
     message: string,
     readonly code:
