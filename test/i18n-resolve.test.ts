@@ -31,18 +31,18 @@ describe('locale precedence', () => {
   it('the reader wins over everything', () => {
     expect(
       resolveLocale({
-        userLocale: 'fr-CA',
+        userLocale: 'en-US',
         orgLocale: 'en-CA',
-        acceptLanguage: 'en-US,en;q=0.9',
+        acceptLanguage: 'en-CA,en;q=0.9',
       }),
-    ).toBe('fr-CA');
+    ).toBe('en-US');
   });
 
   it('the company answers when the reader has no preference', () => {
     // NULL on `app_user.locale` is a real answer meaning "follow the company",
     // which is what makes an admin changing the default move everybody who never
     // chose. See 0027's column comment.
-    expect(resolveLocale({ userLocale: null, orgLocale: 'fr-CA' })).toBe('fr-CA');
+    expect(resolveLocale({ userLocale: null, orgLocale: 'en-US' })).toBe('en-US');
   });
 
   it('the company outranks the browser', () => {
@@ -53,7 +53,7 @@ describe('locale precedence', () => {
     // and can be held to; a header is whatever browser happens to be open. An
     // employee who genuinely wants French sets their own preference, which is the
     // rung above and wins — as the first test here asserts.
-    expect(resolveLocale({ orgLocale: 'en-CA', acceptLanguage: 'fr-CA,fr;q=0.9' })).toBe('en-CA');
+    expect(resolveLocale({ orgLocale: 'en-CA', acceptLanguage: 'en-US,en;q=0.9' })).toBe('en-CA');
   });
 
   it('the browser answers pre-auth, where it is the only signal there is', () => {
@@ -61,7 +61,7 @@ describe('locale precedence', () => {
     // org from the session and returns NONE without one, and 0023 records that
     // pre-auth tenant resolution waits for Phase 5's host-based tenancy. So on
     // the first screen every user meets, this rung is the whole of localisation.
-    expect(resolveLocale({ acceptLanguage: 'fr-CA' })).toBe('fr-CA');
+    expect(resolveLocale({ acceptLanguage: 'en-US' })).toBe('en-US');
   });
 
   it('falls to the constant when nothing else says anything', () => {
@@ -75,10 +75,10 @@ describe('locale precedence', () => {
     // A row can outlive a locale being retired from the registry, and the reader
     // should then get their company's language rather than an exception on every
     // page. The rung is skipped, not the whole chain.
-    expect(resolveLocale({ userLocale: 'es-MX', orgLocale: 'fr-CA' })).toBe('fr-CA');
+    expect(resolveLocale({ userLocale: 'es-MX', orgLocale: 'en-US' })).toBe('en-US');
     // And the retagged-away bare subtag specifically, which is what any row
     // written before 0027 would contain.
-    expect(resolveLocale({ userLocale: 'en', orgLocale: 'fr-CA' })).toBe('fr-CA');
+    expect(resolveLocale({ userLocale: 'en', orgLocale: 'en-US' })).toBe('en-US');
   });
 });
 
@@ -117,8 +117,8 @@ describe('timezone precedence', () => {
     // request that successfully negotiates a locale from the header still gets
     // the default zone.
     expect(resolveTimeZone({})).toBe(DEFAULT_TIMEZONE);
-    const prefs = resolveReaderPrefs({ acceptLanguage: 'fr-CA' });
-    expect(prefs.locale).toBe('fr-CA');
+    const prefs = resolveReaderPrefs({ acceptLanguage: 'en-US' });
+    expect(prefs.locale).toBe('en-US');
     expect(prefs.timeZone).toBe(DEFAULT_TIMEZONE);
   });
 });
@@ -130,32 +130,42 @@ describe('locale and timezone resolve independently', () => {
     const prefs = resolveReaderPrefs({
       userLocale: null,
       userTimeZone: 'America/Vancouver',
-      orgLocale: 'fr-CA',
+      orgLocale: 'en-US',
       orgTimeZone: 'America/Toronto',
     });
-    expect(prefs).toEqual({ locale: 'fr-CA', timeZone: 'America/Vancouver' });
+    expect(prefs).toEqual({ locale: 'en-US', timeZone: 'America/Vancouver' });
   });
 
   it('a reader who set only a language gets their language and the company clock', () => {
     const prefs = resolveReaderPrefs({
-      userLocale: 'en-US',
+      userLocale: 'en-CA',
       userTimeZone: null,
-      orgLocale: 'fr-CA',
+      orgLocale: 'en-US',
       orgTimeZone: 'America/Toronto',
     });
-    expect(prefs).toEqual({ locale: 'en-US', timeZone: 'America/Toronto' });
+    expect(prefs).toEqual({ locale: 'en-CA', timeZone: 'America/Toronto' });
   });
 });
 
 describe('Accept-Language negotiation', () => {
   it('matches an exact tag', () => {
     expect(negotiateLocale('en-US')).toBe('en-US');
-    expect(negotiateLocale('fr-CA')).toBe('fr-CA');
+    expect(negotiateLocale('en-CA')).toBe('en-CA');
   });
 
   it('is case-insensitive, as the header is', () => {
     expect(negotiateLocale('EN-us')).toBe('en-US');
-    expect(negotiateLocale('fr-ca')).toBe('fr-CA');
+    expect(negotiateLocale('en-ca')).toBe('en-CA');
+  });
+
+  it('does NOT offer a retired locale, however politely asked', () => {
+    // `fr-CA` left SUPPORTED_LOCALES in part 2a (0028). Negotiation reads that
+    // array, so a French browser now falls through to the company default rather
+    // than being handed a language the product cannot speak — which is the whole
+    // point of retiring it rather than shipping it empty.
+    expect(negotiateLocale('fr-CA')).toBeNull();
+    expect(negotiateLocale('fr-CA,fr;q=0.9')).toBeNull();
+    expect(resolveLocale({ orgLocale: 'en-CA', acceptLanguage: 'fr-CA' })).toBe('en-CA');
   });
 
   it('matches a bare language to the house flavour of it', () => {
@@ -165,8 +175,10 @@ describe('Accept-Language negotiation', () => {
     // rather than deciding where authored copy comes from.
     expect(negotiateLocale('en')).toBe('en-CA');
     expect(negotiateLocale('en-GB')).toBe('en-CA');
-    expect(negotiateLocale('fr')).toBe('fr-CA');
-    expect(negotiateLocale('fr-FR')).toBe('fr-CA');
+    // …and a language we do not serve matches nothing, rather than the first
+    // thing in the list. `fr` used to answer `fr-CA` here.
+    expect(negotiateLocale('fr')).toBeNull();
+    expect(negotiateLocale('fr-FR')).toBeNull();
   });
 
   it('prefers an exact match over a higher-q prefix match', () => {
@@ -174,30 +186,30 @@ describe('Accept-Language negotiation', () => {
     // `en-US;q=0.8` by q, but `en-US` is a locale we actually serve and `fr-FR`
     // is not — serving Canadian French to somebody who asked for France French
     // over American English they also asked for is the wrong trade.
-    expect(negotiateLocale('fr-FR;q=0.9,en-US;q=0.8')).toBe('en-US');
+    expect(negotiateLocale('en-GB;q=0.9,en-US;q=0.8')).toBe('en-US');
   });
 
   it('honours q-ordering among exact matches', () => {
-    expect(negotiateLocale('en-US;q=0.4,fr-CA;q=0.9')).toBe('fr-CA');
-    expect(negotiateLocale('fr-CA;q=0.4,en-US;q=0.9')).toBe('en-US');
+    expect(negotiateLocale('en-US;q=0.4,en-CA;q=0.9')).toBe('en-CA');
+    expect(negotiateLocale('en-CA;q=0.4,en-US;q=0.9')).toBe('en-US');
   });
 
   it('keeps header order when q values tie', () => {
-    expect(negotiateLocale('fr-CA,en-US')).toBe('fr-CA');
-    expect(negotiateLocale('en-US,fr-CA')).toBe('en-US');
+    expect(negotiateLocale('en-CA,en-US')).toBe('en-CA');
+    expect(negotiateLocale('en-US,en-CA')).toBe('en-US');
   });
 
   it('treats q=0 as a refusal, not a preference', () => {
     // The one header form that says "not this one". `fr-CA;q=0` must not select
     // French — and with nothing else on offer the answer is null, so the caller
     // falls to the company default or the constant.
-    expect(negotiateLocale('fr-CA;q=0')).toBeNull();
-    expect(negotiateLocale('fr-CA;q=0,en-US;q=0.5')).toBe('en-US');
+    expect(negotiateLocale('en-CA;q=0')).toBeNull();
+    expect(negotiateLocale('en-CA;q=0,en-US;q=0.5')).toBe('en-US');
   });
 
   it('ignores the wildcard rather than treating it as anything', () => {
     expect(negotiateLocale('*')).toBeNull();
-    expect(negotiateLocale('*;q=0.5,fr-CA;q=0.1')).toBe('fr-CA');
+    expect(negotiateLocale('*;q=0.5,en-US;q=0.1')).toBe('en-US');
   });
 
   it('returns null — distinguishably — when nothing matches', () => {
@@ -230,9 +242,9 @@ describe('Accept-Language negotiation', () => {
     // `negotiateLocale` kept q-values in a module-level map, which this would
     // have caught if it ever became async — the map is now a local, and this is
     // the assertion that keeps it one.
-    expect(negotiateLocale('fr-CA;q=0.9,en-US;q=0.1')).toBe('fr-CA');
-    expect(negotiateLocale('en-US;q=0.9,fr-CA;q=0.1')).toBe('en-US');
+    expect(negotiateLocale('en-CA;q=0.9,en-US;q=0.1')).toBe('en-CA');
+    expect(negotiateLocale('en-US;q=0.9,en-CA;q=0.1')).toBe('en-US');
     expect(negotiateLocale('es-MX')).toBeNull();
-    expect(negotiateLocale('fr-CA')).toBe('fr-CA');
+    expect(negotiateLocale('en-CA')).toBe('en-CA');
   });
 });

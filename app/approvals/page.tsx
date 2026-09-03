@@ -15,15 +15,10 @@ import { formatMinor } from '@/lib/money';
 import { getInbox } from './actions';
 import { EmptyRow, ErrorBanner } from '@/app/expenses/ui';
 import { formatInstant } from '@/lib/i18n/format';
+import { enumLabel, INBOX_ROUTE_COPY } from '@/lib/i18n/catalog/enums';
 import { readerPrefs } from '@/lib/i18n/request';
 
 export const dynamic = 'force-dynamic';
-
-const ROUTE_LABEL: Record<string, string> = {
-  ASSIGNED: 'Assigned to you',
-  DELEGATED: 'Covering',
-  ROLE_POOL: 'Your role',
-};
 
 /*
  * `undefined` for `minorUnit` below is DELIBERATE and preserves today's exact
@@ -120,7 +115,7 @@ export default async function ApprovalsPage({
                   </td>
                   <td className="px-3 py-2">
                     <span className="rounded bg-muted px-2 py-0.5 text-xs">
-                      {ROUTE_LABEL[t.route]}
+                      {enumLabel(INBOX_ROUTE_COPY, t.route, prefs.locale)}
                     </span>
                     {t.route === 'DELEGATED' && t.coveringFor ? (
                       <p className="text-xs text-muted-foreground">for {t.coveringFor}</p>

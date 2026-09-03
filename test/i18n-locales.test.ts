@@ -7,13 +7,17 @@
  *
  * ── THE ASSERTION THAT MATTERS MOST HERE ────────────────────────────────────
  *
- * `fr-CA has NO English fallback` is the one that would catch a well-meaning
- * edit. Adding `'en-CA'` to the end of `fr-CA`'s chain looks like defensive
- * programming — "at least the reader sees something" — and it is the single
- * change that would make every missing French string invisible: fluent English
- * appears, nothing logs, and every reviewer reading in English sees a page that
- * works. The gate cannot catch it (the chain is data, not text) and no screen
- * would look wrong. Only this test would fail.
+ * `NO shipped locale falls back across a language boundary`. Adding
+ * `'fr-CA': ['fr-CA', 'en-CA']` looks like defensive programming — "at least the
+ * reader sees something" — and it is the single change that would make every
+ * missing French string invisible: fluent English appears, nothing logs, and
+ * every reviewer reading in English sees a page that works. The gate cannot
+ * catch it (the chain is data, not text) and no screen would look wrong. Only
+ * this test would fail.
+ *
+ * It was written as `fr-CA has NO English fallback` in part 1 and generalised in
+ * part 2a when fr-CA was retired (0028) — the rule is unchanged, but a test that
+ * named a locale we no longer ship would have been asserting about nothing.
  */
 import { describe, it, expect } from 'vitest';
 import {
@@ -27,12 +31,18 @@ import {
 } from '@/lib/i18n/locales';
 
 describe('the registry', () => {
-  it('ships exactly the three locales VX4-7 is about', () => {
-    // Pinned deliberately, like the notification catalogue's event list: a fourth
-    // locale must be a visible decision in a diff, not something that arrives as
-    // a side effect of a translation PR. Adding one here is one line — and the
-    // three assertions below then tell you everything else that needs to move.
-    expect([...SUPPORTED_LOCALES]).toEqual(['en-CA', 'en-US', 'fr-CA']);
+  it('ships exactly the locales whose copy is COMPLETE', () => {
+    // Pinned deliberately, like the notification catalogue's event list: a locale
+    // must be a visible decision in a diff, not something that arrives as a side
+    // effect of a translation PR.
+    //
+    // `fr-CA` was here after part 1 and left in part 2a (0028). This array does
+    // not mean "locales we intend to support" — it means "locales a reader can
+    // be served in", and `test/i18n-enum-catalog.test.ts` enforces the
+    // difference by refusing any locale in this list that is missing copy for a
+    // rendered enum member. Putting fr-CA back is one line here plus its chain
+    // and its name; the suite then goes red until all 86 strings exist.
+    expect([...SUPPORTED_LOCALES]).toEqual(['en-CA', 'en-US']);
   });
 
   it('has no bare language subtag, which is IL-1 itself', () => {
@@ -48,17 +58,24 @@ describe('the registry', () => {
     expect(SUPPORTED_LOCALES as readonly string[]).toContain(DEFAULT_LOCALE);
   });
 
-  it('every locale has a non-empty name, in its own language', () => {
+  it('every locale has a real name, not its tag', () => {
     // `LOCALE_NAMES` is `Record<Locale, string>`, so the compiler already refuses
-    // a MISSING name. It cannot refuse an empty one, and an empty one renders as
-    // a blank `<option>` — a picker with an invisible choice in it.
+    // a MISSING name. It cannot refuse an empty one or a lazy one, and either
+    // renders as a useless `<option>` — blank, or "en-CA" shown to somebody who
+    // does not think in BCP 47.
     for (const locale of SUPPORTED_LOCALES) {
-      expect(localeName(locale).trim().length).toBeGreaterThan(0);
+      const name = localeName(locale);
+      expect(name.trim().length).toBeGreaterThan(0);
+      expect(name, `${locale} has no human name`).not.toBe(locale);
     }
-    // Endonyms, which is the property that makes the picker usable by the person
-    // who needs it: somebody looking at a product in a language they cannot read,
-    // hunting for their own. "French (Canada)" would fail that reader.
-    expect(localeName('fr-CA')).toContain('Français');
+
+    // NOT ASSERTED HERE, and worth saying why rather than leaving a hole: the
+    // ENDONYM rule — that each locale is named in its OWN language, so somebody
+    // looking at a product they cannot read can find their language — has no
+    // demonstrable case while both shipped locales are English. It is stated in
+    // `locales.ts` and becomes testable the moment a non-English locale returns.
+    // Writing `expect(localeName('fr-CA')).toContain('Français')` today would
+    // assert against a retired locale and pass for the wrong reason.
   });
 
   it('names an unknown tag as itself rather than throwing', () => {
@@ -119,14 +136,32 @@ describe('the fallback chain', () => {
     expect([...fallbackChain('en-CA')]).toEqual(['en-CA']);
   });
 
-  it('fr-CA has NO English fallback', () => {
-    // See this file's header. The reason is not symmetry — it is that a fluent
-    // English sentence is invisible to an English-speaking reviewer, so a silent
-    // fallback makes missing French copy permanent, whereas its absence makes it
-    // a bug report that files itself.
-    expect([...fallbackChain('fr-CA')]).toEqual(['fr-CA']);
-    expect(fallbackChain('fr-CA')).not.toContain('en-CA');
-    expect(fallbackChain('fr-CA')).not.toContain('en-US');
+  it('NO shipped locale falls back across a language boundary', () => {
+    // The rule `fr-CA has NO English fallback` used to assert directly. It still
+    // holds and is still the load-bearing one — a fluent English sentence is
+    // invisible to an English-speaking reviewer, so a silent cross-language
+    // fallback makes missing copy permanent — but with only English locales
+    // shipped there is no cross-language edge to point at.
+    //
+    // So it is asserted as the general property instead, which is what the rule
+    // always was: every hop stays inside the same language. That fails the day
+    // somebody adds `'fr-CA': ['fr-CA', 'en-CA']`, which is precisely the
+    // well-meaning edit the rule exists to stop.
+    for (const locale of SUPPORTED_LOCALES) {
+      const language = locale.split('-')[0];
+      for (const hop of fallbackChain(locale)) {
+        expect(hop.split('-')[0], `${locale} falls back to ${hop}`).toBe(language);
+      }
+    }
+  });
+
+  it('a RETIRED locale degrades to the default, rather than throwing', () => {
+    // `fr-CA` is now an UNKNOWN tag, and unknown tags read as the default — see
+    // `fallbackChain`'s own comment about stored values outliving a locale.
+    // Degrading a stranded row to English is right; it is NOT the same as a
+    // shipped locale falling back to English, which the test above forbids. The
+    // difference is whether the product claims to speak the language.
+    expect([...fallbackChain('fr-CA')]).toEqual([...fallbackChain(DEFAULT_LOCALE)]);
   });
 
   it('an unknown tag reads as the default rather than throwing', () => {
@@ -140,7 +175,6 @@ describe('localizedFrom', () => {
   const map = {
     'en-CA': 'Cheque',
     'en-US': 'Check',
-    'fr-CA': 'Chèque',
   };
 
   it('reads the exact locale when it has copy', () => {
@@ -155,8 +189,12 @@ describe('localizedFrom', () => {
     expect(localizedFrom({ 'en-CA': 'Expense report' }, 'en-US')).toBe('Expense report');
   });
 
-  it('gives a French reader NOTHING rather than English', () => {
-    expect(localizedFrom({ 'en-CA': 'Expense report' }, 'fr-CA')).toBeNull();
+  it('gives a reader of an UNAUTHORED shipped locale nothing', () => {
+    // The rule, expressed without a retired locale to lean on: a map that has no
+    // entry reachable from the requested locale's chain returns null, and the
+    // caller shows the missing-copy marker rather than another language.
+    expect(localizedFrom({}, 'en-CA')).toBeNull();
+    expect(localizedFrom({ 'en-US': 'Check' }, 'en-CA')).toBeNull();
   });
 
   it('treats an empty string as absent, not as an answer', () => {

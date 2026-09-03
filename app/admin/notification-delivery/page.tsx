@@ -15,6 +15,7 @@ import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { EmptyRow, ErrorBanner } from '@/app/expenses/ui';
 import { formatInstant } from '@/lib/i18n/format';
+import { enumLabel, DELIVERY_STATUS_COPY } from '@/lib/i18n/catalog/enums';
 import { readerPrefs } from '@/lib/i18n/request';
 import { drainNowFromForm, getQueuePage, retryDeliveryFromForm } from './actions';
 
@@ -172,7 +173,7 @@ export default async function NotificationDeliveryPage({
                     <span
                       className={`rounded border px-2 py-0.5 text-xs ${STATUS_TONE[row.status] ?? ''}`}
                     >
-                      {row.status === 'CANCELLED' ? 'nothing to send' : row.status.toLowerCase()}
+                      {enumLabel(DELIVERY_STATUS_COPY, row.status, prefs.locale)}
                     </span>
                     {row.status === 'SENT' && row.sentAt ? (
                       <p className="mt-0.5 text-xs text-muted-foreground">

@@ -3445,11 +3445,28 @@ the org from the session, and 0023 records that pre-auth tenancy waits for Phase
 first screen every user meets it is the only signal in existence. `e2e/locale-flow.spec.ts` is the
 caller their chain never had.
 
-**IL-4 · A missing key blanks the page, and it has happened twice in production.**
+**IL-4 · A missing key blanks the page, and it has happened twice in production.** ✅ CLOSED (VX4-7 part 2a)
 No `getMessageFallback` or `onError` is configured. Their own crawler records the two shipped bugs:
 *"a missing key raises, the component throws, and the page goes blank"* (`e2e/crawl.spec.ts:48-62`).
 Adding a third locale multiplies that surface. Our equivalent decision — what a missing string does —
 should be made before the third catalog exists, not after.
+
+**Decided before, as asked, and in three layers.** A missing member is a COMPILE error
+(`EnumCopy<TheUnion>` is a `Record` over the union, so the type cannot be written incomplete). A
+member with no copy in a shipped locale fails `test/i18n-enum-catalog.test.ts`, which enumerates the
+ENUM rather than the catalogue's own keys. And if one somehow reached a render, `enumLabel` emits
+`{DRAFT}` — braces and the raw value — which is the rule `catalog.ts` already states for
+placeholders: "`{amont}` in the output is a visible typo somebody fixes, whereas an empty gap reads
+as a product bug and hides the cause". Nothing blanks, and nothing throws.
+
+**And the third-locale decision went the other way.** Part 1 shipped `fr-CA` because the ticket said
+three locales. Cataloguing the enums showed it had no copy anywhere and no route to any — the UI's
+text is English literals in JSX — so a French reader was getting French date and money formatting
+wrapped around English words: partial support that was actually none. Reading enums from a catalogue
+would have turned each of those English words into a marker, which is worse. So `0028` retires it
+until its copy exists, `SUPPORTED_LOCALES` becomes the switch for "this locale is ready", and the
+coverage assertion enforces that a SHIPPED locale is a COMPLETE one. Restoring it is one line, and
+the suite then fails in six places until all 86 strings are authored — verified by sabotage.
 
 **IL-5/IL-6 · Two good CI gates, watching one locale.**
 `check-coverage.mjs` asserts key-for-key parity, matching types and non-emptiness across locales, and
@@ -3844,7 +3861,7 @@ Ours is identical. `app/expenses/page.tsx:63` renders `<h1>Expense reports</h1>`
 `submitter_id = me` unless an ADMIN passes `?scope=all` (`:39`). One word in a heading, plus saying
 so when the admin has widened it. Take it with the next ticket that touches the page.
 
-### UD-5 · Server vocabulary reaching users — three requirements for VX4-7.
+### UD-5 · Server vocabulary reaching users — three requirements for VX4-7. ⏳ reqs 1–2 CLOSED (part 2a)
 
 `a301417b` filed four cosmetic-looking items and then showed they were one: server tokens on screen,
 untranslated, *because they never enter the message catalogue at all* — so no amount of translation

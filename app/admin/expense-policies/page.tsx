@@ -15,6 +15,7 @@ import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { minorToDecimalString } from '@/lib/money';
+import { readerPrefs } from '@/lib/i18n/request';
 import {
   RULE_DEFINITIONS,
   RULE_KINDS,
@@ -59,6 +60,7 @@ export default async function ExpensePoliciesPage({
 }: {
   searchParams: Promise<{ error?: string }>;
 }) {
+  const prefs = await readerPrefs();
   const { error } = await searchParams;
   const { policies, categories, policyCurrency, currencies } = await getPoliciesPage();
   const scopeable = RULE_KINDS.filter((kind) => RULE_DEFINITIONS[kind].supportsCategoryScope);
@@ -172,7 +174,7 @@ export default async function ExpensePoliciesPage({
                     <td className="px-3 py-2">
                       <div className="flex items-center gap-2">
                         <span className="font-medium">{definition.label}</span>
-                        <SeverityBadge severity={p.severity} />
+                        <SeverityBadge severity={p.severity} locale={prefs.locale} />
                       </div>
                       <p className="max-w-md text-xs text-muted-foreground">
                         {definition.description}

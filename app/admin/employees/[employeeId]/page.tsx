@@ -8,6 +8,7 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { Button } from '@/components/ui/button';
+import { readerPrefs } from '@/lib/i18n/request';
 import {
   deactivateEmployeeFromForm,
   getDirectoryOptions,
@@ -25,6 +26,7 @@ export default async function EmployeeDetailPage({
 }: {
   params: Promise<{ employeeId: string }>;
 }) {
+  const prefs = await readerPrefs();
   const { employeeId } = await params;
   const detail = await getEmployeeDetail(employeeId);
   if (!detail) notFound();
@@ -52,6 +54,7 @@ export default async function EmployeeDetailPage({
       <section className={sectionClass}>
         <h2 className="text-lg font-medium">Details</h2>
         <EmployeeForm
+      locale={prefs.locale}
           action={updateEmployeeFromForm}
           options={options}
           employee={employee}

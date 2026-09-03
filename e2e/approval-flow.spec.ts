@@ -28,6 +28,27 @@
  */
 import { test, expect, type APIRequestContext, type Page } from '@playwright/test';
 import { Pool } from 'pg';
+import { DEFAULT_LOCALE } from '@/lib/i18n/locales';
+import { enumLabel, REPORT_STATUS_COPY } from '@/lib/i18n/catalog/enums';
+/**
+ * VX4-7 part 2a: a report's status is asserted through the CATALOGUE, not as the
+ * enum's own spelling.
+ *
+ * These read `toHaveText('SUBMITTED')` until part 2a, which is what the screen
+ * literally showed — the schema's word, shouted, on a page an employee reads.
+ * Now the badge renders catalogued copy ("Submitted"), and pinning the new
+ * STRING here would only move the problem: the assertion would break again the
+ * next time somebody improves the wording, which is exactly the change nobody
+ * should have to touch an e2e for.
+ *
+ * Asserting `enumLabel(REPORT_STATUS_COPY, 'SUBMITTED', DEFAULT_LOCALE)` says
+ * the thing worth saying — THE SCREEN GOES THROUGH THE CATALOGUE — and it cannot
+ * drift. That it does not also check the copy is non-empty is deliberate:
+ * `test/i18n-enum-catalog.test.ts` refuses a blank default for any member, so
+ * the pairing covers both halves and neither test repeats the other.
+ */
+const status = (member: string) => enumLabel(REPORT_STATUS_COPY, member, DEFAULT_LOCALE);
+
 
 /** Per-run id, for the same reason expense-flow.spec.ts has one: the demo tenant
  *  is not reset between runs, and CI retries once. */
@@ -170,7 +191,7 @@ async function createAndSubmit(page: Page) {
   await expect(page.getByTestId('report-total')).toHaveText('$18.50');
 
   await page.getByRole('button', { name: 'Submit for approval' }).click();
-  await expect(page.getByTestId('report-status')).toHaveText('SUBMITTED');
+  await expect(page.getByTestId('report-status')).toHaveText(status('SUBMITTED'));
   return reportUrl;
 }
 
@@ -244,7 +265,7 @@ test('an approver decides from an emailed link, without ever signing in', async 
 
   // And the submitter's own view agrees.
   await page.goto(reportUrl);
-  await expect(page.getByTestId('report-status')).toHaveText('APPROVED');
+  await expect(page.getByTestId('report-status')).toHaveText(status('APPROVED'));
   await expect(page.getByText('SUBMITTED → APPROVED')).toBeVisible();
 });
 

@@ -26,6 +26,7 @@ import { Input } from '@/components/ui/input';
 import { formatMinor } from '@/lib/money';
 import { EmptyRow, ErrorBanner } from '@/app/expenses/ui';
 import { formatInstant } from '@/lib/i18n/format';
+import { enumLabel, POST_STATUS_COPY } from '@/lib/i18n/catalog/enums';
 import { readerPrefs } from '@/lib/i18n/request';
 import {
   cancelFromForm,
@@ -36,15 +37,6 @@ import {
 } from './actions';
 
 export const dynamic = 'force-dynamic';
-
-const STATUS_TEXT: Record<string, string> = {
-  PENDING: 'waiting',
-  POSTED: 'drafted in the ledger',
-  FAILED: 'failed, will retry',
-  DEAD: 'out of attempts',
-  CANCELLED: 'withheld',
-  NEEDS_REVIEW: 'needs review',
-};
 
 /*
  * `undefined` for `minorUnit` below is DELIBERATE and preserves today's exact
@@ -279,7 +271,7 @@ export default async function LedgerQueuePage({
                     </td>
                     <td className="px-3 py-2">
                       <span className={needsReview || row.status === 'DEAD' ? 'text-destructive' : ''}>
-                        {STATUS_TEXT[row.status] ?? row.status}
+                        {enumLabel(POST_STATUS_COPY, row.status, prefs.locale)}
                       </span>
                       {row.attempts > 0 ? (
                         <span className="block text-xs text-muted-foreground">

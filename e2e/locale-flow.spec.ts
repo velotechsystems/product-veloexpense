@@ -180,9 +180,11 @@ test.describe('the locale chain, end to end', () => {
     await expect(page.getByTestId('org-timezone')).toHaveValue('UTC');
     expect(await langOf(page)).toBe(DEFAULT_LOCALE);
 
-    // The comparison table renders ALL THREE locales, so both halves of IL-1 are
-    // on the screen at once: `$10,799.00` for en-CA and `CA$10,799.00` for en-US,
-    // the same amount in the same currency, one row apart.
+    // The comparison table renders every SHIPPED locale, so both halves of IL-1
+    // are on the screen at once: `$10,799.00` for en-CA and `CA$10,799.00` for
+    // en-US, the same amount in the same currency, one row apart. It was three
+    // rows until part 2a retired fr-CA (0028) — the table reads the registry, so
+    // it shrank on its own.
     const sample = await sampleText(page, 'locale-sample');
     expect(sample).toContain('$10,799.00');
     expect(sample).toContain('CA$10,799.00');
@@ -244,7 +246,7 @@ test.describe('the locale chain, end to end', () => {
     await expect(page.getByTestId('sample-caption')).toContainText('America/Vancouver');
     // Every row moved, not just the one in use: the zone is orthogonal to the
     // locale, and a preview that moved only the selected row would be hiding it.
-    for (const name of ['English (Canada)', 'English (United States)', 'Français (Canada)']) {
+    for (const name of ['English (Canada)', 'English (United States)']) {
       await expect(page.getByRole('row').filter({ hasText: name })).toContainText(/3 mars|Mar 3/);
     }
   });
@@ -263,36 +265,41 @@ test.describe('the locale chain, end to end', () => {
       page.getByRole('option', { name: 'Follow the company — English (United States)' }),
     ).toHaveCount(1);
 
-    await page.getByTestId('my-locale').selectOption('fr-CA');
+    // `en-CA` here, because part 2a retired `fr-CA` (0028) until its copy
+    // exists. The company is on `en-US` from the tests above, so picking `en-CA`
+    // is still a reader OVERRIDING their company — which is what this test is
+    // about — and the two are distinguishable on screen by the currency prefix.
+    await page.getByTestId('my-locale').selectOption('en-CA');
     await page.getByRole('button', { name: 'Save' }).click();
     await expect(page.getByText('Saved.')).toBeVisible();
 
     // Rung 1 beats rung 2.
-    expect(await langOf(page)).toBe('fr-CA');
+    expect(await langOf(page)).toBe('en-CA');
     const mine = await sampleText(page, 'my-sample');
-    expect(mine).toContain('mars');
+    expect(mine).toContain('$10,799.00');
+    expect(mine).not.toContain('CA$');
     // The zone is still the COMPANY's, because locale and timezone resolve
     // independently — I set a language, not a clock.
-    expect(mine).toMatch(/Mar(ch)? 3|3 mars/);
+    expect(mine).toMatch(/Mar(ch)? 3/);
 
     // And the company moving no longer moves me.
-    await setCompany('en-CA', 'UTC');
+    await setCompany('en-US', 'UTC');
     await page.goto('/expenses');
-    expect(await langOf(page)).toBe('fr-CA');
+    expect(await langOf(page)).toBe('en-CA');
 
     // Clearing puts me back on the company — permanently, not pinned to whatever
     // the default was on the day I cleared it. `setCompany` below is what proves
     // the difference: a writer that stored the resolved value would leave me on
-    // en-CA when the company moved to fr-CA.
+    // en-US when the company moved to en-CA.
     await page.goto('/preferences');
     await page.getByTestId('my-locale').selectOption('');
     await page.getByRole('button', { name: 'Save' }).click();
     await expect(page.getByText('Saved.')).toBeVisible();
-    expect(await langOf(page)).toBe('en-CA');
+    expect(await langOf(page)).toBe('en-US');
 
-    await setCompany('fr-CA', 'UTC');
+    await setCompany('en-CA', 'UTC');
     await page.goto('/expenses');
-    expect(await langOf(page)).toBe('fr-CA');
+    expect(await langOf(page)).toBe('en-CA');
   });
 
 
