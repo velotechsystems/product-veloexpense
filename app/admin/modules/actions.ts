@@ -12,6 +12,7 @@
  * second customer would have needed.
  */
 import { redirect } from 'next/navigation';
+import { errorParam } from '@/lib/errors/domain';
 import { auth } from '@/auth';
 import { withCurrentOrg } from '@/lib/tenant/request';
 import { getEmployeeByEmail, type EmployeeRow } from '@/lib/employees/service';
@@ -63,7 +64,7 @@ export async function toggleFromForm(form: FormData) {
       throw err;
     }
     redirect(
-      `${PAGE}?error=${encodeURIComponent(err instanceof Error ? err.message : String(err))}`,
+      `${PAGE}?error=${encodeURIComponent(errorParam(err, 'admin/modules'))}`,
     );
   }
   redirect(`${PAGE}?changed=${encodeURIComponent(code)}`);

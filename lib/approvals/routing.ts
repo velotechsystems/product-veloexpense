@@ -14,6 +14,7 @@
  * only ever sees `ResolvedAssignment[]`.
  */
 import type { QueryRunner } from '@/lib/db/client';
+import { DomainError } from '@/lib/errors/domain';
 import type { StepPlan, TaskResolution } from '@/lib/approvals/tiers';
 import type { EmployeeRole } from '@/lib/employees/service';
 
@@ -93,7 +94,7 @@ export type RoutingErrorCode =
  * Routing fails CLOSED. Every one of these codes means "this report does not
  * get approved right now" — never "so approve it anyway".
  */
-export class RoutingError extends Error {
+export class RoutingError extends DomainError {
   constructor(
     message: string,
     readonly code: RoutingErrorCode,

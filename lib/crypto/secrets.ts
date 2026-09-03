@@ -34,6 +34,7 @@
  * VeloExpense has no legacy rows to be tolerant of, so `decryptSecret` REFUSES an
  * unmarked value rather than returning it.
  */
+import { DomainError } from '@/lib/errors/domain';
 import {
   createCipheriv,
   createDecipheriv,
@@ -46,7 +47,7 @@ const IV_BYTES = 12; // GCM standard; 96 bits is what the mode is specified for
 const TAG_BYTES = 16;
 const KEY_BYTES = 32; // AES-256
 
-export class SecretError extends Error {
+export class SecretError extends DomainError {
   constructor(message: string) {
     super(message);
     this.name = 'SecretError';

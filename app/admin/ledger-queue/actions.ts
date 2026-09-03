@@ -6,6 +6,7 @@
  * `export async function` — see `npm run check:actions`.
  */
 import { redirect } from 'next/navigation';
+import { errorParam } from '@/lib/errors/domain';
 import { revalidatePath } from 'next/cache';
 import { auth } from '@/auth';
 import { withCurrentOrg } from '@/lib/tenant/request';
@@ -108,7 +109,7 @@ async function guarded(fn: () => Promise<void>) {
     await fn();
   } catch (err) {
     if (isRedirect(err)) throw err;
-    const message = err instanceof Error ? err.message : 'Something went wrong';
+    const message = errorParam(err, 'admin/ledger-queue');
     redirect(`${PAGE}?error=${encodeURIComponent(message)}`);
   }
   revalidatePath(PAGE);

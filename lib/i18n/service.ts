@@ -16,6 +16,7 @@
  * whichever direction it was written.
  */
 import type { QueryRunner } from '@/lib/db/client';
+import { DomainError } from '@/lib/errors/domain';
 import { append, type AuditActor } from '@/lib/audit/service';
 import { isLocale, SUPPORTED_LOCALES, type Locale } from './locales';
 import { resolveReaderPrefs, type ReaderPrefs } from './resolve';
@@ -32,7 +33,7 @@ export interface UserPrefs {
   timeZone: string | null;
 }
 
-export class LocaleError extends Error {
+export class LocaleError extends DomainError {
   readonly code: string;
   constructor(message: string, code: string) {
     super(message);

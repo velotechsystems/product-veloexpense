@@ -24,6 +24,7 @@
  *    from the tree and a posted line vanished from the income statement.
  */
 import type { QueryRunner } from '@/lib/db/client';
+import { DomainError } from '@/lib/errors/domain';
 import { parseCsv } from '@/lib/accounts/csv';
 import { validateCoaCsv, type ValidatedAccount, type ValidationError } from '@/lib/accounts/validate';
 import { requireModule } from '@/lib/modules/service';
@@ -62,7 +63,7 @@ export interface TemplateRow {
   account_count: number;
 }
 
-export class AccountError extends Error {
+export class AccountError extends DomainError {
   constructor(
     message: string,
     readonly code:

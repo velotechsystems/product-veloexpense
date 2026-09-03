@@ -265,6 +265,7 @@ export default async function ReportWorkbenchPage({
               </div>
               <div className="flex items-center gap-2">
                 <ReceiptDrawer
+                  locale={prefs.locale}
                   expenseId={expense.id}
                   label={expenseLabel}
                   receipts={receipts}

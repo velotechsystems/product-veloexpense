@@ -8,6 +8,7 @@
  * account keeps its old powers until it signs out.
  */
 import type { QueryRunner } from '@/lib/db/client';
+import { DomainError } from '@/lib/errors/domain';
 import { getEmployeeByEmail, type EmployeeRole, type EmployeeRow } from '@/lib/employees/service';
 
 /** The minimum an access predicate needs. EmployeeRow satisfies it. */
@@ -16,7 +17,7 @@ export interface Actor {
   role: EmployeeRole;
 }
 
-export class ForbiddenError extends Error {
+export class ForbiddenError extends DomainError {
   constructor(message = 'forbidden') {
     super(message);
     this.name = 'ForbiddenError';

@@ -1,3 +1,4 @@
+import { DomainError } from '@/lib/errors/domain';
 /**
  * VX3-3 — the accounting-adapter contract.
  *
@@ -172,7 +173,7 @@ export interface OAuthTokens {
  * because of a network blip, and in the other leaves a dead connection retrying
  * forever while reports pile up.
  */
-export class OAuthConsentRequired extends Error {
+export class OAuthConsentRequired extends DomainError {
   constructor(message: string) {
     super(message);
     this.name = 'OAuthConsentRequired';
@@ -299,7 +300,7 @@ export interface AccountingAdapter {
  * and forgetting to costs a human a click rather than costing a company a
  * duplicated bill.
  */
-export class AdapterError extends Error {
+export class AdapterError extends DomainError {
   constructor(
     message: string,
     /** True when the call certainly did NOT reach the far end's handler. */

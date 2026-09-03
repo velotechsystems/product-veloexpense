@@ -51,6 +51,7 @@
  * ended up aggregating all history on a page nobody thought was expensive.
  */
 import type { QueryRunner } from '@/lib/db/client';
+import { DomainError } from '@/lib/errors/domain';
 import { convertMinor } from '@/lib/money';
 import { buildRateLookup, type RateLookup, type RateRow } from '@/lib/policy/rates';
 import { policyCurrencyCode } from '@/lib/policy/service';
@@ -63,7 +64,7 @@ const ON_DATE = `COALESCE(e.txn_date, e.created_at::date)`;
 
 export type AnalyticsErrorCode = 'RANGE_REQUIRED' | 'RANGE_INVERTED';
 
-export class AnalyticsError extends Error {
+export class AnalyticsError extends DomainError {
   constructor(
     message: string,
     readonly code: AnalyticsErrorCode,

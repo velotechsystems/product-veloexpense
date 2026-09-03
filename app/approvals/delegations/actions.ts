@@ -16,6 +16,7 @@
  * logic of its own; if it did, the page and the action could disagree.
  */
 import { redirect } from 'next/navigation';
+import { errorParam } from '@/lib/errors/domain';
 import { revalidatePath } from 'next/cache';
 import { auth } from '@/auth';
 import { withCurrentOrg } from '@/lib/tenant/request';
@@ -132,7 +133,7 @@ async function guard<T>(run: () => Promise<T>): Promise<Outcome<T>> {
   try {
     return { ok: true, value: await run() };
   } catch (err) {
-    const message = err instanceof Error ? err.message : 'Something went wrong';
+    const message = errorParam(err, 'approvals/delegations');
     return { ok: false, redirectTo: `${PAGE}?error=${encodeURIComponent(message)}` };
   }
 }

@@ -19,6 +19,7 @@
  * with one expense per receipt.
  */
 import { randomUUID } from 'node:crypto';
+import { DomainError } from '@/lib/errors/domain';
 import type { QueryRunner } from '@/lib/db/client';
 import type { Storage } from '@/lib/storage';
 import { getStorage } from '@/lib/storage';
@@ -45,7 +46,7 @@ export interface ReceiptRow {
   uploaded_at: Date;
 }
 
-export class ReceiptError extends Error {
+export class ReceiptError extends DomainError {
   constructor(
     message: string,
     readonly code:

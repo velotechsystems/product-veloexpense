@@ -2081,8 +2081,74 @@ shipped.
 | **VX4-3** | **Branding that actually renders** | BR-2 is the surprise: the fields, the admin form and the validation all exist and **nothing reads them**. So the port is the easy half and the render path is net-new — CSS custom properties injected per tenant (BR-3, deriving row/hover shades from the primary rather than hardcoding them), a tenant logo served pre-auth on the `public-icons` route's proven pattern (BR-4), `generateMetadata` instead of a static title (BR-5), and a branded email shell on VX2-8's template layer (BR-6). | 3 |
 | **VX4-5** | **Budgets, tenant-scoped, on our own chart of accounts** | BG-2: `Budget.glAccountId` is a **required** FK into a NetSuite SOAP cache, and their vendor-neutral `Account` table was deleted — so budgets there are uncreatable without NetSuite. **VX3-1 already fixed this for us**; budgets point at `gl_account` and a vendor becomes an alias. Plus BG-1 (tenant column and composite keys on five tables, including an index Prisma cannot express), BG-3 (actuals recomputed over the whole fiscal year on every approval click, with an unbounded FX load → rollup), BG-6 (alert idempotency by mutable marker → our atomic-claim idiom). | 4 |
 | **VX4-6** | **Analytics, tenant-scoped** | The tenancy half is free (above). The work is AN-7 — a missing FX rate is currently summed **as if it were base currency**, unflagged, while the budget code counts unconverted amounts for the same situation — and AN-10: unbounded ranges, no `date` index, and a home page that runs a full-history aggregate for every signed-in user. Plus AN-8's lesson: size the data with a predicate, never with a role check that then queries everything. | 4 |
-| **VX4-7** ⏳ | **Locale: retag `en` → `en-CA`, add `en-US`** — parts 1, 1b, 2a, 2b DONE; 2c + 3 open. fr-CA retired until its copy exists (0028) | IL-1: their `en` already formats as en-US (`3/4/2026`, `CA$10,799.00`), so this is a retag **and** an addition, 2 locales to 3 — touching URL segments, stored preferences and every `{ en: … }` Json key, whose arity is hardcoded in ~17 files (IL-7). Also: a company default locale, which does not exist there (IL-2); what a missing key does, decided before the third catalog exists rather than after two blank pages (IL-4); and the date-formatting calls that pass no locale (IL-10). | 3 |
+| **VX4-7** ⏳ | **Locale: retag `en` → `en-CA`, add `en-US`** — parts 1, 1b, 2a, 2b, 2c-1 DONE; 2c-2 + 3 open. fr-CA retired until its copy exists (0028) | IL-1: their `en` already formats as en-US (`3/4/2026`, `CA$10,799.00`), so this is a retag **and** an addition, 2 locales to 3 — touching URL segments, stored preferences and every `{ en: … }` Json key, whose arity is hardcoded in ~17 files (IL-7). Also: a company default locale, which does not exist there (IL-2); what a missing key does, decided before the third catalog exists rather than after two blank pages (IL-4); and the date-formatting calls that pass no locale (IL-10). | 3 |
 | **VX4-8** | **Module 12 slices 2–3: fraud detection + control evaluation** | Deferred to this phase since Phase 2 because both are retrospective and need approval history, which now exists. Their versions are driven by `SystemFlag` config (MT-2) and run as unconditional global crons (MT-5), so both land on VX4-1 and VX4-2. | 3 |
+
+### VX4-7 part 2c-1 SHIPPED — a thrown error has two audiences, and one string served neither
+
+Baseline measured at HEAD before starting (981 tests / 50 files) and after (**1037 / 51**). **49
+Playwright** twice in a row. No migration.
+
+**The framing IL-11 gave was wrong about our code, and finding that out was most of the ticket.**
+It counts "157 English server messages rendered verbatim" and offers a choice between cataloguing
+error copy and stopping the UI printing it raw. Ours are not English copy awaiting translation —
+they are DIAGNOSTICS. `user ${actorId} may not decide approval task ${taskId}` reached the screen of
+somebody who by definition had no right to that task, through
+`?error=${encodeURIComponent(err.message)}`. Two internal UUIDs, unreadable, and more than they
+should learn. Translating that into French would have been the wrong ticket.
+
+**So the split is by AUDIENCE, not by language.** `message` is for the log — ids, statuses,
+unchanged, still asserted on by the existing tests. `userMessage` is for the screen: a code into
+`lib/i18n/catalog/errors.ts`, **or null**. Null is the load-bearing default. An error nobody decided
+a person should read shows a generic sentence and its real message goes to the server log, so the
+disclosure gap closes by construction rather than by remembering — MT-3, relearned a third time.
+
+**The 2b finding reproduced one layer up, and it is the reason a `code` was not enough.** Nineteen
+classes already carry a typed code union. `DelegationError`'s `INVALID_RANGE` covers three different
+sentences; `LifecycleError`'s `WRONG_STATUS` covers four; `NOT_FOUND` covers both a user's mistake
+and an invariant failure. A caller branching on a code does not need those apart. A person fixing a
+form does. **An error code answers "what kind of failure is this"; a message code answers "what
+should the person be told".** Exactly `rule_code` vs `message_code`, one layer up.
+
+**No parameters in this catalogue, deliberately.** That constraint is what lets a code travel in
+`?error=CODE` with no encoding scheme and be rendered by the PAGE in the reader's locale. A refusal
+is a statement about the action somebody just took, on the screen they took it from, with their own
+input in front of them — "the end date is before the start date" needs no dates in it. Where a
+message wanted a value, the branch became its own code (`BLOCKED_BY_POLICY_ONE`/`_MANY`), which is
+`POLICY_MESSAGE_CODES`' shape. One thing is lost: the blocking-violation count, and the policy panel
+directly below the banner lists every one of them.
+
+**`ErrorBanner` resolves the reader itself** rather than taking a `locale` prop like `StatusBadge`.
+Twenty pages render it, and a prop twenty callers must remember is MT-3 again; `readerPrefs()` is
+`cache()`d, so asking costs nothing on a page that already asked. The receipt drawer is the exception
+and has to be — it is the one CLIENT component, so it takes the locale as a prop. The catalogue being
+pure is what lets it cross that boundary at all.
+
+**TWO THINGS FOUND BY TOOLS, NOT BY THE LIST I WAS WORKING FROM.**
+
+1. **The e2e caught a regression in my own increment.** I converted five classes and left 21
+   extending plain `Error`, so `errorParam`'s fallback swallowed every admin module's message and
+   sent it to the generic. `branding-flow` failed on a contrast message it asserts by text. All 26
+   classes now extend `DomainError` — which is the right end state anyway, and makes the fallback
+   mean "not one of ours" rather than "not one of the five I got to".
+2. **`check:i18n`'s new gate found two sites in the RECEIPT DRAWER**, the single client component in
+   the product. Its failures never went near `?error=`, so it was outside every list this ticket was
+   built from. What it printed was whatever crossed the server-action boundary or came back from an
+   upload — a Next digest string in production, a browser fetch error otherwise. Neither is copy
+   anybody wrote.
+
+**Sabotages, four, each re-run after `npm run build` where Playwright is involved.** Reverting
+`errorParam`'s generic to `err.message` fails 5 tests; a converted class going back to `extends
+Error` fails 2 tests AND `tsc`; the old `err instanceof Error ? err.message` pattern in an action
+fails the gate by name and line; `ErrorBanner` rendering the raw parameter fails `expense-flow`.
+
+**Deliberately not in this PR — part 2c-2.** The ~55 remaining reachable messages, all admin-facing.
+They still print their English through the transitional branch (`err instanceof DomainError →
+err.message`), which is what keeps those screens saying what they say today. Deleting that branch
+completes IL-11 and also stops arbitrary text in a link rendering as though the product said it.
+**Name `AdapterError` when you do**: it can carry text from a far-end ledger's HTTP response, and the
+transitional branch passes it through exactly as today's code does — status quo rather than a
+regression, and the first thing 2c-2 should catalogue.
 
 ### VX4-7 part 2b SHIPPED — a violation says what the READER reads
 

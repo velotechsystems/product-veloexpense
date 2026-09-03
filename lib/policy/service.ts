@@ -18,6 +18,7 @@
  *     cleared, because BLOCK findings must be fixed rather than waved through.
  */
 import type { QueryRunner } from '@/lib/db/client';
+import { DomainError } from '@/lib/errors/domain';
 import { getReportWorkbench, type WorkbenchReport } from '@/lib/expenses/service';
 import { buildRateLookup, type RateLookup, type RateRow } from '@/lib/policy/rates';
 import {
@@ -57,7 +58,7 @@ export type PolicyErrorCode =
   /** No tenant context, so there is no policy currency to evaluate against. */
   | 'NO_TENANT';
 
-export class PolicyError extends Error {
+export class PolicyError extends DomainError {
   constructor(
     message: string,
     readonly code: PolicyErrorCode,

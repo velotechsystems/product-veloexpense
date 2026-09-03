@@ -10,6 +10,7 @@
  * is structural rather than a filter somebody could forget.
  */
 import { redirect } from 'next/navigation';
+import { errorParam } from '@/lib/errors/domain';
 import { revalidatePath } from 'next/cache';
 import { auth } from '@/auth';
 import { withCurrentOrg } from '@/lib/tenant/request';
@@ -115,7 +116,7 @@ async function guard(run: () => Promise<void>): Promise<string | null> {
     await run();
     return null;
   } catch (err) {
-    const message = err instanceof Error ? err.message : 'Something went wrong';
+    const message = errorParam(err, 'notifications');
     return `${PAGE}?error=${encodeURIComponent(message)}`;
   }
 }
@@ -178,7 +179,7 @@ export async function setPreferenceFromForm(form: FormData) {
       );
     });
   } catch (err) {
-    const message = err instanceof Error ? err.message : 'Something went wrong';
+    const message = errorParam(err, 'notifications');
     redirect(`${back}?error=${encodeURIComponent(message)}`);
   }
   revalidatePath(back);

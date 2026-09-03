@@ -1,3 +1,4 @@
+import { DomainError } from '@/lib/errors/domain';
 /**
  * VX4-1 — `ModuleDisabledError`, in a leaf module.
  *
@@ -7,7 +8,7 @@
  * its own refusal. A leaf everybody can import costs nothing and cannot cycle.
  */
 
-export class ModuleDisabledError extends Error {
+export class ModuleDisabledError extends DomainError {
   constructor(
     readonly moduleCode: string,
     /** What the module is called, so the message names it the way a screen does. */

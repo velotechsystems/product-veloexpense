@@ -33,6 +33,7 @@
  * gets a plain 400 because there is nowhere sensible to send it.
  */
 import { NextResponse, type NextRequest } from 'next/server';
+import { IntegrationError } from '@/lib/integrations/errors';
 import { completeAuthorisation } from '@/lib/integrations/oauth';
 import { adapterFor } from '@/lib/integrations/registry';
 import { appOrigin } from '@/lib/notifications/email';
@@ -121,12 +122,21 @@ export async function GET(
       notice: `${result.adapterName} is connected. Use "Test" to check it before relying on it.`,
     });
   } catch (err) {
-    // The message is written to be read by the admin who just pressed a button —
-    // `oauth.ts` shapes them that way on purpose, including keeping "unknown",
-    // "already used" and "expired" indistinguishable so the wording cannot be used
-    // to probe for valid states.
-    return back(req, {
-      error: err instanceof Error ? err.message : 'That authorisation could not be completed.',
-    });
+    // `oauth.ts` writes IntegrationError's messages to be read by the admin who
+    // just pressed a button, including keeping "unknown", "already used" and
+    // "expired" indistinguishable so the wording cannot be used to probe for
+    // valid states. Those are surfaced as they are.
+    //
+    // VX4-7 part 2c narrowed the guard from `instanceof Error`. This handler
+    // wraps a call into an adapter, an HTTP client and the database, so the
+    // catch-all was reachable by anything any of them throws — a `TypeError`
+    // from a bug, or a `pg` error carrying a fragment of the statement — and all
+    // of it went into a query string and onto an admin's screen. The message now
+    // goes to the log and the admin gets the generic.
+    if (!(err instanceof IntegrationError)) {
+      console.error('[integrations/callback] unexpected error surfaced to a user:', err);
+      return back(req, { error: 'UNEXPECTED' });
+    }
+    return back(req, { error: err.message });
   }
 }

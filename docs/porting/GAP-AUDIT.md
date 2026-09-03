@@ -3589,11 +3589,60 @@ draft passed the resolved COPY locale to `Intl`, so an `en-US` reader inheriting
 inherited `en-CA` money — this ticket's own defect, reintroduced inside the fix, and caught by a test
 rather than by review.
 
-**Still open, boarded as VX4-7 part 2c:** the ~87 reachable error messages, and the second half of
-the choice — the UI must stop printing an unrecognised error raw. `app/approvals/actions.ts:80` and
-several siblings do `err instanceof Error ? err.message : …` and put the result in a query string, so
-an *unexpected* internal error's message reaches a URL and a screen, not just a domain error's. That
-is a small information-disclosure gap as well as a localisation one, and the same change closes both.
+**Part 2c-1 closed the disclosure half and the employee-and-approver copy, and found that IL-11's
+framing was wrong about our code.** The messages are not English *copy* awaiting translation. They
+are DIAGNOSTICS, and three of them read:
+
+```
+approval task ${taskId} does not exist
+user ${actorId} may not decide approval task ${taskId}
+report ${reportId} not found
+```
+
+Every one reached a screen through `?error=${encodeURIComponent(err.message)}`. Somebody who is not
+an approver, following a stale link, was shown the task's UUID and their own. Translating that
+sentence into French would have been the wrong ticket.
+
+So the split is not English-vs-French but audience: `message` is for the LOG (ids, statuses,
+unchanged, still asserted on by tests), and a new `userMessage` — a code into
+`lib/i18n/catalog/errors.ts`, or **null** — is for the SCREEN. Null is the important default: an
+error nobody decided a person should read shows a generic sentence and its real message goes to the
+server log, so the disclosure gap closes BY CONSTRUCTION rather than by remembering. That is MT-3's
+lesson, now relearned three times.
+
+**The 2b finding reproduced one layer up.** Nineteen of the 26 classes already carry a typed `code`
+union, and it is not enough — for exactly the reason `rule_code` was not enough for a violation.
+`DelegationError`'s `INVALID_RANGE` covers three different sentences ("give a start date", "give an
+end date, or leave it open-ended", "the end date is before the start date"), because a CALLER
+branching on the code does not need to tell them apart and a READER does. `LifecycleError`'s
+`WRONG_STATUS` covers four. And `NOT_FOUND` covers both "that person is not in this organization",
+which a user caused and can fix, and "delegation not found after insert", which no user should ever
+see. **An error code answers "what kind of failure is this"; a message code answers "what should the
+person be told".**
+
+**The catalogue takes NO parameters, deliberately** — that is what lets a code travel in
+`?error=CODE` and be rendered by the page in the reader's locale with no encoding scheme. Where a
+message wanted a value the branch became its own code (`BLOCKED_BY_POLICY_ONE`/`_MANY`), the same
+one-code-per-branch shape `POLICY_MESSAGE_CODES` uses. A refusal is a statement about the action the
+person just took, on the screen they took it from, with their own input still in front of them: "the
+end date is before the start date" needs no dates in it. The one place information is lost is the
+blocking-violation count, and the policy panel directly below the banner enumerates them.
+
+**Two things the work found that no list contained.** The e2e caught that converting five classes and
+not the other 21 sent every admin screen's message to the generic — so all 26 now extend
+`DomainError`, which is the right end state and makes `errorParam`'s fallback mean "not one of ours".
+And `check:i18n`'s new gate found two `setError(err instanceof Error ? err.message : …)` calls in the
+**receipt drawer** — the one client component in the product, whose failures never went near
+`?error=` and were therefore outside every list this ticket was working from.
+
+**Still open, boarded as VX4-7 part 2c-2:** the ~55 remaining reachable messages, all in admin
+modules (accounts, branding, budgets, integrations, employees, notifications, policy admin, i18n
+admin). They still print their English through `errorParam`'s transitional branch, which is
+`err instanceof DomainError → err.message`. Deleting that branch is what completes IL-11, and it also
+stops arbitrary text arriving in a link from rendering as though the product had said it. One of them
+deserves naming: `AdapterError` can carry text from a far-end ledger's HTTP response, and the
+transitional branch passes it through exactly as today's code does — status quo, not a regression,
+and the first thing 2c-2 should catalogue.
 
 ### AC-24 · Fixing a configuration does not move the queue ✅ CLOSED
 

@@ -11,6 +11,7 @@
  * never from a hard-coded 100.
  */
 import { DEFAULT_LOCALE } from '@/lib/i18n/locales';
+import { DomainError } from '@/lib/errors/domain';
 
 export type MinorAmount = string | number | bigint;
 
@@ -75,7 +76,7 @@ export function formatMinor(
   }
 }
 
-export class AmountError extends Error {
+export class AmountError extends DomainError {
   constructor(message: string) {
     super(message);
     this.name = 'AmountError';

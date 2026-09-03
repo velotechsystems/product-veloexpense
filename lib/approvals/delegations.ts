@@ -27,6 +27,8 @@
  *    somebody is away and cannot fix it.
  */
 import type { QueryRunner } from '@/lib/db/client';
+import { DomainError } from '@/lib/errors/domain';
+import type { UserMessageCode } from '@/lib/i18n/catalog/errors';
 import { append as auditAppend } from '@/lib/audit/service';
 import { DELEGATION_SCOPES, type DelegationScope } from '@/lib/approvals/tiers';
 import type { EmployeeRow } from '@/lib/employees/service';
@@ -42,12 +44,13 @@ export type DelegationErrorCode =
   | 'ALREADY_REVOKED'
   | 'DELEGATEE_UNAVAILABLE';
 
-export class DelegationError extends Error {
+export class DelegationError extends DomainError {
   constructor(
     message: string,
     readonly code: DelegationErrorCode,
+    userMessage: UserMessageCode | null = null,
   ) {
-    super(message);
+    super(message, userMessage);
     this.name = 'DelegationError';
   }
 }
@@ -182,24 +185,41 @@ export async function createDelegation(
     throw new DelegationError(
       'only an administrator can delegate somebody else’s approvals',
       'FORBIDDEN',
+      'DELEGATE_FOR_SOMEBODY_ELSE',
     );
   }
   if (fromUserId === input.toUserId) {
-    throw new DelegationError('you cannot delegate your approvals to yourself', 'SELF_DELEGATION');
+    throw new DelegationError(
+      'you cannot delegate your approvals to yourself',
+      'SELF_DELEGATION',
+      'DELEGATE_TO_SELF',
+    );
   }
   const scope = input.scope ?? 'ALL';
   if (!(DELEGATION_SCOPES as readonly string[]).includes(scope)) {
-    throw new DelegationError(`unknown delegation scope: ${scope}`, 'INVALID_SCOPE');
+    throw new DelegationError(
+      `unknown delegation scope: ${scope}`,
+      'INVALID_SCOPE',
+      'DELEGATION_SCOPE_UNKNOWN',
+    );
   }
   if (!DATE_ONLY.test(input.startsOn)) {
-    throw new DelegationError('give a start date', 'INVALID_RANGE');
+    throw new DelegationError('give a start date', 'INVALID_RANGE', 'DELEGATION_START_REQUIRED');
   }
   const endsOn = input.endsOn ?? null;
   if (endsOn !== null && !DATE_ONLY.test(endsOn)) {
-    throw new DelegationError('give an end date, or leave it open-ended', 'INVALID_RANGE');
+    throw new DelegationError(
+      'give an end date, or leave it open-ended',
+      'INVALID_RANGE',
+      'DELEGATION_END_INVALID',
+    );
   }
   if (endsOn !== null && endsOn < input.startsOn) {
-    throw new DelegationError('the end date is before the start date', 'INVALID_RANGE');
+    throw new DelegationError(
+      'the end date is before the start date',
+      'INVALID_RANGE',
+      'DELEGATION_END_BEFORE_START',
+    );
   }
 
   // Handing your approvals to somebody who has left, or who is themselves away,
@@ -211,12 +231,20 @@ export async function createDelegation(
     [input.toUserId],
   );
   if (to.rows.length === 0) {
-    throw new DelegationError('that person is not in this organization', 'NOT_FOUND');
+    throw new DelegationError(
+      'that person is not in this organization',
+      'NOT_FOUND',
+      'DELEGATEE_NOT_IN_ORG',
+    );
   }
   if (to.rows[0].deleted_at !== null || to.rows[0].employee_status !== 'ACTIVE') {
     throw new DelegationError(
       `${to.rows[0].name} is not active, so approvals sent to them would go nowhere`,
       'DELEGATEE_UNAVAILABLE',
+      // The NAME stays in the log message and leaves the screen: the person
+      // picked it from a select two seconds ago, so the copy loses nothing they
+      // do not already have in front of them, and gains a code that travels.
+      'DELEGATEE_INACTIVE',
     );
   }
 
@@ -278,11 +306,19 @@ export async function revokeDelegation(
   const current = await getDelegation(tx, id);
   if (!current) throw new DelegationError('delegation not found', 'NOT_FOUND');
   if (current.revoked_at !== null) {
-    throw new DelegationError('that delegation was already revoked', 'ALREADY_REVOKED');
+    throw new DelegationError(
+      'that delegation was already revoked',
+      'ALREADY_REVOKED',
+      'DELEGATION_ALREADY_REVOKED',
+    );
   }
   const mine = current.from_user_id === actor.id || current.created_by_id === actor.id;
   if (!mine && actor.role !== 'ADMIN') {
-    throw new DelegationError('that delegation is not yours to revoke', 'FORBIDDEN');
+    throw new DelegationError(
+      'that delegation is not yours to revoke',
+      'FORBIDDEN',
+      'DELEGATION_NOT_YOURS',
+    );
   }
 
   await tx.query(

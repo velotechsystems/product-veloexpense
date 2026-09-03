@@ -30,6 +30,8 @@
  *    predicates drifted apart — see GAP-AUDIT AP-15. One question, one answer.
  */
 import type { QueryRunner } from '@/lib/db/client';
+import { DomainError } from '@/lib/errors/domain';
+import type { UserMessageCode } from '@/lib/i18n/catalog/errors';
 import { append as auditAppend, type AuditActor } from '@/lib/audit/service';
 import { enqueuePost } from '@/lib/integrations/post-outbox';
 import { recomputeForReport } from '@/lib/budgets/service';
@@ -57,12 +59,13 @@ export type ApprovalEngineErrorCode =
   | 'STEP_UNROUTABLE'
   | 'EXTERNAL_DECISION_UNSUPPORTED';
 
-export class ApprovalEngineError extends Error {
+export class ApprovalEngineError extends DomainError {
   constructor(
     message: string,
     readonly code: ApprovalEngineErrorCode,
+    userMessage: UserMessageCode | null = null,
   ) {
-    super(message);
+    super(message, userMessage);
     this.name = 'ApprovalEngineError';
   }
 }
@@ -110,6 +113,7 @@ export async function openRun(
     throw new ApprovalEngineError(
       `report ${report.number ?? reportId} is ${report.status}; a run opens on SUBMITTED`,
       'WRONG_STATUS',
+      'REPORT_NOT_AWAITING_APPROVAL',
     );
   }
 
@@ -122,6 +126,7 @@ export async function openRun(
   if (open.rows.length > 0) {
     throw new ApprovalEngineError(
       `report ${report.number ?? reportId} already has a running approval`,
+      'RUN_ALREADY_OPEN',
       'RUN_ALREADY_OPEN',
     );
   }
@@ -244,11 +249,16 @@ export async function decide(
   }
   const task = t.rows[0];
   if (task.status !== 'PENDING') {
-    throw new ApprovalEngineError(`approval task ${taskId} is already decided`, 'ALREADY_DECIDED');
+    throw new ApprovalEngineError(
+      `approval task ${taskId} is already decided`,
+      'ALREADY_DECIDED',
+      'TASK_ALREADY_DECIDED',
+    );
   }
   if (task.request_status !== 'RUNNING') {
     throw new ApprovalEngineError(
       `the approval run for report ${task.report_number} is ${task.request_status}`,
+      'RUN_NOT_RUNNING',
       'RUN_NOT_RUNNING',
     );
   }
@@ -262,6 +272,7 @@ export async function decide(
   if (needsAck && input.receiptViewAcknowledged !== true) {
     throw new ApprovalEngineError(
       'this approval step requires you to confirm you reviewed the receipts',
+      'RECEIPT_ACK_REQUIRED',
       'RECEIPT_ACK_REQUIRED',
     );
   }
@@ -291,7 +302,11 @@ export async function decide(
     ],
   );
   if (claimed.rowCount !== 1) {
-    throw new ApprovalEngineError(`approval task ${taskId} is already decided`, 'ALREADY_DECIDED');
+    throw new ApprovalEngineError(
+      `approval task ${taskId} is already decided`,
+      'ALREADY_DECIDED',
+      'TASK_ALREADY_DECIDED',
+    );
   }
 
   const actor = await actorOf(tx, actorId);
@@ -314,6 +329,7 @@ export async function decide(
       // means it was written wrong, and guessing is worse than refusing.
       throw new ApprovalEngineError(
         `the stored ladder for report ${task.report_number} has no step ${task.step + 1}`,
+        'STEP_UNROUTABLE',
         'STEP_UNROUTABLE',
       );
     }
@@ -706,6 +722,7 @@ async function materializeStep(
       throw new ApprovalEngineError(
         `step ${step.step} of report ${task.report_number} can no longer be routed (${err.code}); ` +
           `fix the approval ladder or the reporting line and try again`,
+        'STEP_UNROUTABLE',
         'STEP_UNROUTABLE',
       );
     }

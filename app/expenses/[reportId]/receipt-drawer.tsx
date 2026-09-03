@@ -17,6 +17,7 @@
  * Constants come from lib/receipts/constants (not the service, which imports pg).
  */
 import { useState, useTransition } from 'react';
+import { renderUserMessage } from '@/lib/i18n/catalog/errors';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { MAX_RECEIPT_BYTES, RECEIPT_ACCEPT, formatBytes } from '@/lib/receipts/constants';
@@ -42,15 +43,26 @@ export function ReceiptDrawer({
   receipts,
   inbox,
   editable,
+  locale,
 }: {
   expenseId: string;
   label: string;
   receipts: ReceiptSummary[];
   inbox: ReceiptSummary[];
   editable: boolean;
+  /**
+   * Threaded from the page, unlike `ErrorBanner` which resolves the reader
+   * itself. It has to be: this is the one CLIENT component in the workbench, so
+   * it cannot call `readerPrefs()` — that reads a session and a database. The
+   * catalogue it renders from is pure, which is what lets it cross at all.
+   */
+  locale: string;
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
+  // A message CODE, not a sentence — rendered at the bottom of this component
+  // in the reader's locale, so the two spellings of "it failed" below cannot
+  // drift from each other or from the rest of the product.
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [pending, startTransition] = useTransition();
@@ -62,7 +74,8 @@ export function ReceiptDrawer({
       await work();
       startTransition(() => router.refresh());
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Something went wrong');
+      console.error('[receipt-drawer] action failed:', err);
+      setError('RECEIPT_ACTION_FAILED');
     } finally {
       setBusy(false);
     }
@@ -104,7 +117,8 @@ export function ReceiptDrawer({
       else window.location.assign(url);
     } catch (err) {
       tab?.close();
-      setError(err instanceof Error ? err.message : 'Could not open the receipt');
+      console.error('[receipt-drawer] could not open a receipt:', err);
+      setError('RECEIPT_OPEN_FAILED');
     }
   };
 
@@ -140,7 +154,7 @@ export function ReceiptDrawer({
                 role="alert"
                 className="rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive"
               >
-                {error}
+                {renderUserMessage(error, locale)}
               </p>
             ) : null}
 
