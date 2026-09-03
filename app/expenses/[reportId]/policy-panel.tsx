@@ -25,10 +25,13 @@ export function PolicyPanel({
   reportId,
   summary,
   editable,
+  locale,
 }: {
   reportId: string;
   summary: ValidationSummary;
   editable: boolean;
+  /** Sync component — the page resolves the reader once and threads it down. */
+  locale: string;
 }) {
   const { violations, counts, blocking } = summary;
   const open = violations.filter((v) => v.resolved_at === null);
@@ -41,9 +44,9 @@ export function PolicyPanel({
           <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
             Policy
           </h2>
-          {counts.BLOCK > 0 ? <SeverityBadge severity="BLOCK" /> : null}
-          {counts.WARNING > 0 ? <SeverityBadge severity="WARNING" /> : null}
-          {counts.INFO > 0 ? <SeverityBadge severity="INFO" /> : null}
+          {counts.BLOCK > 0 ? <SeverityBadge severity="BLOCK" locale={locale} /> : null}
+          {counts.WARNING > 0 ? <SeverityBadge severity="WARNING" locale={locale} /> : null}
+          {counts.INFO > 0 ? <SeverityBadge severity="INFO" locale={locale} /> : null}
         </div>
         {editable ? (
           <form action={revalidateFromForm}>
@@ -77,7 +80,7 @@ export function PolicyPanel({
               className="flex flex-col gap-2 rounded-lg border border-border px-3 py-2"
             >
               <div className="flex items-start gap-2">
-                <SeverityBadge severity={violation.severity} />
+                <SeverityBadge severity={violation.severity} locale={locale} />
                 <p className="text-sm">{violation.message}</p>
               </div>
               {editable && violation.severity !== 'BLOCK' ? (

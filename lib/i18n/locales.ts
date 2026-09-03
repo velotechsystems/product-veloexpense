@@ -82,7 +82,7 @@
  * a gate that stops watching the locale you just added, and it fails OPEN:
  * everything passes, because the new locale is not in the loop.
  */
-export const SUPPORTED_LOCALES = ['en-CA', 'en-US', 'fr-CA'] as const;
+export const SUPPORTED_LOCALES = ['en-CA', 'en-US'] as const;
 export type Locale = (typeof SUPPORTED_LOCALES)[number];
 
 /**
@@ -112,12 +112,26 @@ export function isLocale(value: unknown): value is Locale {
  *   words that genuinely differ. An `en-US` catalogue with one entry in it is
  *   the intended steady state, not an unfinished one.
  *
- *   `fr-CA` answers only for itself, AND THIS IS THE LOAD-BEARING ONE. It does
- *   NOT fall back to English. A French reader who hits an unauthored string must
- *   see the missing-copy marker, not a fluent English sentence — because English
- *   here looks deliberate, reads as "this part of the product is English", and
- *   is invisible to everyone reviewing in English. The marker is a bug report
- *   that files itself; a silent English fallback is a bug that ships forever.
+ * `fr-CA` USED TO BE HERE, answering only for itself with no English fallback,
+ * and that rule was the load-bearing one: a French reader hitting an unauthored
+ * string must see the missing-copy marker rather than a fluent English sentence,
+ * because English there looks deliberate, reads as "this part of the product is
+ * English", and is invisible to everyone reviewing in English.
+ *
+ * VX4-7 part 2a took the rule seriously enough to act on it. Cataloguing the
+ * rendered enums showed that `fr-CA` had NO copy anywhere and no route to any —
+ * the UI's text is English literals in JSX — so French readers were getting
+ * French date and money formatting wrapped around English words, which looked
+ * like partial support and was none. Reading those enums from a catalogue would
+ * have turned every one of those English words into a marker.
+ *
+ * So the rule stands and the LIST changed instead: this array now means "locales
+ * whose copy is complete", `0028` shrinks the database CHECK to match, and
+ * `test/i18n-enum-catalog.test.ts` refuses a locale in this array that is
+ * missing copy for any rendered enum member. Restoring `fr-CA` is one line here
+ * plus one in `FALLBACK_CHAIN` and `LOCALE_NAMES` — and the suite then goes red
+ * until all 86 strings are authored, which is the forcing function that was
+ * missing when it shipped empty.
  *
  * If a future caller ever does need English rather than nothing — IL-9's shape,
  * an email a locked-out user must be able to read at all costs — it passes
@@ -128,7 +142,6 @@ export function isLocale(value: unknown): value is Locale {
 const FALLBACK_CHAIN: Record<Locale, readonly Locale[]> = {
   'en-CA': ['en-CA'],
   'en-US': ['en-US', 'en-CA'],
-  'fr-CA': ['fr-CA'],
 };
 
 /**
@@ -152,7 +165,6 @@ const FALLBACK_CHAIN: Record<Locale, readonly Locale[]> = {
 const LOCALE_NAMES: Record<Locale, string> = {
   'en-CA': 'English (Canada)',
   'en-US': 'English (United States)',
-  'fr-CA': 'Français (Canada)',
 };
 
 export function localeName(locale: string): string {

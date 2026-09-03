@@ -2081,8 +2081,85 @@ shipped.
 | **VX4-3** | **Branding that actually renders** | BR-2 is the surprise: the fields, the admin form and the validation all exist and **nothing reads them**. So the port is the easy half and the render path is net-new — CSS custom properties injected per tenant (BR-3, deriving row/hover shades from the primary rather than hardcoding them), a tenant logo served pre-auth on the `public-icons` route's proven pattern (BR-4), `generateMetadata` instead of a static title (BR-5), and a branded email shell on VX2-8's template layer (BR-6). | 3 |
 | **VX4-5** | **Budgets, tenant-scoped, on our own chart of accounts** | BG-2: `Budget.glAccountId` is a **required** FK into a NetSuite SOAP cache, and their vendor-neutral `Account` table was deleted — so budgets there are uncreatable without NetSuite. **VX3-1 already fixed this for us**; budgets point at `gl_account` and a vendor becomes an alias. Plus BG-1 (tenant column and composite keys on five tables, including an index Prisma cannot express), BG-3 (actuals recomputed over the whole fiscal year on every approval click, with an unbounded FX load → rollup), BG-6 (alert idempotency by mutable marker → our atomic-claim idiom). | 4 |
 | **VX4-6** | **Analytics, tenant-scoped** | The tenancy half is free (above). The work is AN-7 — a missing FX rate is currently summed **as if it were base currency**, unflagged, while the budget code counts unconverted amounts for the same situation — and AN-10: unbounded ranges, no `date` index, and a home page that runs a full-history aggregate for every signed-in user. Plus AN-8's lesson: size the data with a predicate, never with a role check that then queries everything. | 4 |
-| **VX4-7** ⏳ | **Locale: retag `en` → `en-CA`, add `en-US`** — parts 1 + 1b DONE, parts 2/3 open | IL-1: their `en` already formats as en-US (`3/4/2026`, `CA$10,799.00`), so this is a retag **and** an addition, 2 locales to 3 — touching URL segments, stored preferences and every `{ en: … }` Json key, whose arity is hardcoded in ~17 files (IL-7). Also: a company default locale, which does not exist there (IL-2); what a missing key does, decided before the third catalog exists rather than after two blank pages (IL-4); and the date-formatting calls that pass no locale (IL-10). | 3 |
+| **VX4-7** ⏳ | **Locale: retag `en` → `en-CA`, add `en-US`** — parts 1, 1b, 2a DONE; 2b + 3 open. fr-CA retired until its copy exists (0028) | IL-1: their `en` already formats as en-US (`3/4/2026`, `CA$10,799.00`), so this is a retag **and** an addition, 2 locales to 3 — touching URL segments, stored preferences and every `{ en: … }` Json key, whose arity is hardcoded in ~17 files (IL-7). Also: a company default locale, which does not exist there (IL-2); what a missing key does, decided before the third catalog exists rather than after two blank pages (IL-4); and the date-formatting calls that pass no locale (IL-10). | 3 |
 | **VX4-8** | **Module 12 slices 2–3: fraud detection + control evaluation** | Deferred to this phase since Phase 2 because both are retrospective and need approval history, which now exists. Their versions are driven by `SystemFlag` config (MT-2) and run as unconditional global crons (MT-5), so both land on VX4-1 and VX4-2. | 3 |
+
+### VX4-7 part 2a SHIPPED — the enum catalogue, and one locale taken back off the shelf
+
+Baseline measured at HEAD before starting (916 tests / 48 files) and after (931 / 49). 47 Playwright
+twice in a row. Migration `0028`.
+
+**`lib/i18n/catalog/enums.ts` — 16 rendered enums, 82 members, one render boundary.** It replaces
+four hand-rolled label maps that disagreed about their own shape (one had copy with a raw fallback,
+one had only colours, one used `row.status.toLowerCase()` as a substitute for copy) and eight sites
+that rendered the SCREAMING_SNAKE value straight into the page. "This report is REIMBURSED and can
+no longer be edited" was on a screen an employee reads.
+
+The scope estimate in the ticket was 20 unions / 86 members. Measured, it is 16 / 82: `APPROVER_KINDS`
+is only ever a predicate (`a.approver_kind === 'EMAIL'`), and task/request statuses are not rendered
+at all. Cataloguing an enum nobody sees would make the coverage assertion claim more than it should.
+
+**UD-5 req 1 is a TYPE, not just a test.** Each catalogue is `EnumCopy<TheUnion>` = `Record<TheUnion,
+Copy>`, so a member added to a union and forgotten here does not compile. `Copy` requires `en-CA` and
+permits the rest, which is the fallback chain expressed as a type: the default has nowhere to fall
+back to, so a missing one is missing everywhere.
+
+**UD-5 req 2 is why `test/i18n-enum-catalog.test.ts` imports the runtime arrays separately.** The
+catalogue imports every union with `import type` — partly to stay pure (`REPORT_STATUSES` lives in a
+module that imports `pg`), and partly because it means the catalogue CANNOT enumerate itself. The
+test imports the arrays from the modules that own them and audits the catalogue against them.
+`Object.keys(REPORT_STATUS_COPY)` would look almost identical and prove nothing.
+
+#### `fr-CA` came back off the shelf, and that is the decision worth reviewing
+
+Part 1 shipped three locales. Cataloguing showed `fr-CA` had no copy anywhere and no route to any, so
+a French reader got French date and money formatting around English words — partial support that was
+none. Reading enums from a catalogue would have turned each of those English words into a
+missing-copy marker, i.e. made it visibly worse.
+
+John's call: retire it until its copy exists. `SUPPORTED_LOCALES` now means "locales a reader can be
+served in", `0028` shrinks the CHECK constraints to match and REFUSES to run if any tenant or user is
+actually sitting on `fr-CA` (0027's precedent — where a migration cannot know what somebody meant, it
+stops and says so), and the coverage assertion enforces that a shipped locale is a complete one.
+
+**Sabotage-verified, because it is the whole point:** putting `fr-CA` back with an empty catalogue
+fails SIX tests across three files, including the enum coverage one. The forcing function that was
+missing when it shipped empty now exists.
+
+One distinction the tests now have to keep straight, and it took a wrong assertion to find: a
+RETIRED locale degrades to English (unknown tags read as the default chain — `fallbackChain`'s own
+comment about stored values outliving a locale), while a SHIPPED locale with no copy gets the marker.
+Both are right. The rule that a shipped locale must not fall back across a language boundary is now
+asserted as that general property rather than by naming `fr-CA`, so it still fails the day somebody
+writes `'fr-CA': ['fr-CA', 'en-CA']`.
+
+#### Three copy regressions I nearly shipped while claiming I had not
+
+The catalogue's first draft replaced the four existing maps with tidier-looking words and carried a
+comment saying the wording was "ported verbatim". It was not — I wrote new strings and then asserted
+fidelity I had never checked. `ledger-flow` caught it; the other two were found by then going back to
+`git show HEAD:` for every map I had replaced.
+
+- **`POSTED` was 'drafted in the ledger', not 'Posted'.** The material one. VX3-4 creates a DRAFT
+  bill at the far end, so "Posted" claims a journal entry exists — to the person whose job is knowing
+  whether one does.
+- **`DELEGATED` was 'Covering', not 'Delegated to you'.** What an approver would actually say.
+- **`IN_APP` was 'In-app', not 'In the app'.**
+
+The one place the copy IS an improvement rather than a port is the delivery status, where the
+previous code was `row.status.toLowerCase()` — which showed an admin the word 'dead' for a delivery
+that ran out of attempts. That file now says so explicitly, because the other five are ports and the
+difference should not have to be inferred.
+
+**The e2e assertions moved to the catalogue rather than to the new strings.** `toHaveText('SUBMITTED')`
+became `toHaveText(status('SUBMITTED'))`, which asserts THE SCREEN GOES THROUGH THE CATALOGUE and
+cannot drift when somebody improves the wording. That it does not also check the copy is non-empty is
+deliberate — the unit test refuses a blank default for any member, so the pair covers both halves
+without either repeating the other.
+
+**Still open for part 2b:** policy-violation messages re-rendered per reader from `rule_code` + the
+`data` jsonb (populated at every emit site already, so no backfill), the per-class error copy across
+~26 classes, and UD-5 req 3's runtime assertion for interpolated keys.
 
 ### VX4-7 part 1b SHIPPED — the render pass, and a root cause one layer below the ticket
 

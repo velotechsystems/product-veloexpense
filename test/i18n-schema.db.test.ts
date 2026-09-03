@@ -14,7 +14,7 @@
  * ── THE ASSERTION THIS FILE EXISTS FOR ──────────────────────────────────────
  *
  * `the CHECK constraint accepts exactly SUPPORTED_LOCALES` is the whole reason
- * a duplicated list is acceptable at all. 0027 has to restate the three tags
+ * a duplicated list is acceptable at all. 0027 and 0028 have to restate the tags
  * because SQL cannot import TypeScript, and the alternative — no constraint —
  * was rejected when 0021 and 0023 both refused to put a company setting in
  * jsonb. So the copy is made safe instead of avoided: this test reads the
@@ -170,7 +170,9 @@ describe('0027 — the columns mean what the registry means', () => {
     // years believing it meant Canadian English, and it is what any row written
     // before 0027 would contain — so the column refusing it is what stops the
     // old spelling coming back through an importer.
-    for (const bad of ['en', 'fr', 'en-ca', 'en_CA', 'fr-FR', '']) {
+    // `fr-CA` joins this list in part 2a: it was accepted after 0027 and is
+    // refused after 0028, which is the retirement expressed as a constraint.
+    for (const bad of ['en', 'fr', 'en-ca', 'en_CA', 'fr-FR', 'fr-CA', '']) {
       await expect(
         admin.query(`UPDATE organization SET default_locale = $1 WHERE id = $2`, [bad, orgId]),
       ).rejects.toThrow(/organization_default_locale_supported/);
@@ -266,12 +268,12 @@ describe('0027 — the timezone trigger', () => {
 describe('precedence, from real rows', () => {
   it('a reader with no preferences follows the company', async () => {
     await admin.query(
-      `UPDATE organization SET default_locale = 'fr-CA', default_timezone = 'America/Toronto'
+      `UPDATE organization SET default_locale = 'en-US', default_timezone = 'America/Toronto'
         WHERE id = $1`,
       [orgId],
     );
     const prefs = await withOrg(orgId, (tx) => loadReaderPrefs(tx, readerId));
-    expect(prefs).toEqual({ locale: 'fr-CA', timeZone: 'America/Toronto' });
+    expect(prefs).toEqual({ locale: 'en-US', timeZone: 'America/Toronto' });
     await reset();
   });
 
@@ -283,15 +285,15 @@ describe('precedence, from real rows', () => {
     const before = await withOrg(orgId, (tx) => loadReaderPrefs(tx, readerId));
     expect(before.locale).toBe(DEFAULT_LOCALE);
 
-    await admin.query(`UPDATE organization SET default_locale = 'fr-CA' WHERE id = $1`, [orgId]);
+    await admin.query(`UPDATE organization SET default_locale = 'en-US' WHERE id = $1`, [orgId]);
     const after = await withOrg(orgId, (tx) => loadReaderPrefs(tx, readerId));
-    expect(after.locale).toBe('fr-CA');
+    expect(after.locale).toBe('en-US');
     await reset();
   });
 
   it('and does NOT move a reader who chose', async () => {
     await admin.query(`UPDATE app_user SET locale = 'en-US' WHERE id = $1`, [readerId]);
-    await admin.query(`UPDATE organization SET default_locale = 'fr-CA' WHERE id = $1`, [orgId]);
+    await admin.query(`UPDATE organization SET default_locale = 'en-US' WHERE id = $1`, [orgId]);
     const prefs = await withOrg(orgId, (tx) => loadReaderPrefs(tx, readerId));
     expect(prefs.locale).toBe('en-US');
     await reset();
@@ -302,7 +304,7 @@ describe('precedence, from real rows', () => {
     // hands it both rungs rather than short-circuiting once it has seen any user
     // preference. A Vancouver employee at a Toronto company that runs in French.
     await admin.query(
-      `UPDATE organization SET default_locale = 'fr-CA', default_timezone = 'America/Toronto'
+      `UPDATE organization SET default_locale = 'en-US', default_timezone = 'America/Toronto'
         WHERE id = $1`,
       [orgId],
     );
@@ -310,7 +312,7 @@ describe('precedence, from real rows', () => {
       readerId,
     ]);
     const prefs = await withOrg(orgId, (tx) => loadReaderPrefs(tx, readerId));
-    expect(prefs).toEqual({ locale: 'fr-CA', timeZone: 'America/Vancouver' });
+    expect(prefs).toEqual({ locale: 'en-US', timeZone: 'America/Vancouver' });
     await reset();
   });
 
@@ -329,7 +331,7 @@ describe('precedence, from real rows', () => {
       readerId,
     ]);
     await admin.query(
-      `UPDATE organization SET default_locale = 'fr-CA', default_timezone = 'America/Halifax'
+      `UPDATE organization SET default_locale = 'en-US', default_timezone = 'America/Halifax'
         WHERE id = $1`,
       [orgId],
     );
@@ -352,7 +354,7 @@ describe('precedence, from real rows', () => {
     // no row. Returning defaults rather than throwing is deliberate — this runs on
     // the render path of every page, and knowing how to format a date is not a
     // permission. `requireActor` is what refuses the request.
-    await admin.query(`UPDATE app_user SET locale = 'fr-CA' WHERE id = $1`, [otherTenantUserId]);
+    await admin.query(`UPDATE app_user SET locale = 'en-US' WHERE id = $1`, [otherTenantUserId]);
     const prefs = await withOrg(orgId, (tx) => loadReaderPrefs(tx, otherTenantUserId));
     expect(prefs).toEqual({ locale: DEFAULT_LOCALE, timeZone: DEFAULT_TIMEZONE });
     await reset();
@@ -362,13 +364,18 @@ describe('precedence, from real rows', () => {
     // Pre-auth, where the header is the only signal. A signed-in reader's stored
     // or company locale must beat it — asserted here against real rows because
     // the pure test can only assert the function.
+    // The header asks for a locale we DO serve, so the pre-auth rung can answer
+    // it. Part 1 used `fr-CA` here; part 2a retired that locale, and a header
+    // naming an unserved language now negotiates to null — which would make this
+    // pass for the wrong reason, since the default is also what a failed
+    // negotiation returns.
     const signedOut = await withOrg(orgId, (tx) =>
-      loadReaderPrefsByEmail(tx, 'nobody@loc.test', 'fr-CA,fr;q=0.9'),
+      loadReaderPrefsByEmail(tx, 'nobody@loc.test', 'en-US,en;q=0.9'),
     );
-    expect(signedOut.locale).toBe('fr-CA');
+    expect(signedOut.locale).toBe('en-US');
 
     const signedIn = await withOrg(orgId, (tx) =>
-      loadReaderPrefsByEmail(tx, 'reader@loc.test', 'fr-CA,fr;q=0.9'),
+      loadReaderPrefsByEmail(tx, 'reader@loc.test', 'en-US,en;q=0.9'),
     );
     expect(signedIn.locale).toBe(DEFAULT_LOCALE);
     await reset();
@@ -378,10 +385,10 @@ describe('precedence, from real rows', () => {
 describe('the service writes', () => {
   it('sets and reads the company defaults', async () => {
     await withOrg(orgId, (tx) =>
-      setOrgDefaults(tx, orgId, actorRow(), { locale: 'fr-CA', timeZone: 'America/Toronto' }),
+      setOrgDefaults(tx, orgId, actorRow(), { locale: 'en-US', timeZone: 'America/Toronto' }),
     );
     const defaults = await withOrg(orgId, (tx) => getOrgDefaults(tx, orgId));
-    expect(defaults).toEqual({ locale: 'fr-CA', timeZone: 'America/Toronto' });
+    expect(defaults).toEqual({ locale: 'en-US', timeZone: 'America/Toronto' });
     await reset();
   });
 
@@ -421,8 +428,8 @@ describe('the service writes', () => {
     });
 
     // And the reader is now back on the company's answer, permanently.
-    await admin.query(`UPDATE organization SET default_locale = 'fr-CA' WHERE id = $1`, [orgId]);
-    expect((await withOrg(orgId, (tx) => loadReaderPrefs(tx, readerId))).locale).toBe('fr-CA');
+    await admin.query(`UPDATE organization SET default_locale = 'en-US' WHERE id = $1`, [orgId]);
+    expect((await withOrg(orgId, (tx) => loadReaderPrefs(tx, readerId))).locale).toBe('en-US');
     await reset();
   });
 
@@ -441,7 +448,7 @@ describe('the service writes', () => {
     // so it orders unambiguously where two `clock_timestamp()` values could tie.
     const mark = await highWaterMark();
     await withOrg(orgId, (tx) =>
-      setOrgDefaults(tx, orgId, actorRow(), { locale: 'fr-CA', timeZone: 'America/Toronto' }),
+      setOrgDefaults(tx, orgId, actorRow(), { locale: 'en-US', timeZone: 'America/Toronto' }),
     );
 
     const { rows } = await admin.query<{ action: string; details: Record<string, unknown> }>(
@@ -452,7 +459,7 @@ describe('the service writes', () => {
     expect(rows[0].action).toBe('ORG_LOCALE_CHANGED');
     expect(rows[0].details).toMatchObject({
       fromLocale: DEFAULT_LOCALE,
-      toLocale: 'fr-CA',
+      toLocale: 'en-US',
       fromTimeZone: 'UTC',
       toTimeZone: 'America/Toronto',
     });

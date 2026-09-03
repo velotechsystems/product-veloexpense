@@ -120,7 +120,16 @@ const ALLOWED = new Set([
  * locale — is not a text property and cannot be scanned for. It is asserted
  * against the template registry as the source of truth in part 2 (UD-5 req 1/2).
  */
-const COPY_FILES = new Set(['lib/notifications/catalog.ts']);
+const COPY_FILES = new Set([
+  'lib/notifications/catalog.ts',
+  // VX4-7 part 2a. The enum catalogue is authored copy keyed by the locale each
+  // string is written in — the same case, and it is caught by this gate for the
+  // same good reason. What it needs instead of a text scan is COVERAGE, which is
+  // not a text property: `test/i18n-enum-catalog.test.ts` asserts every rendered
+  // enum member resolves in every shipped locale, enumerating the enums rather
+  // than the catalogue's own keys.
+  'lib/i18n/catalog/enums.ts',
+]);
 
 async function* sourceFiles(root) {
   let entries;

@@ -15,6 +15,27 @@
  * Storage is scripts/e2e-storage.mjs. Both are started by playwright.config.ts.
  */
 import { test, expect, type Page } from '@playwright/test';
+import { DEFAULT_LOCALE } from '@/lib/i18n/locales';
+import { enumLabel, REPORT_STATUS_COPY } from '@/lib/i18n/catalog/enums';
+/**
+ * VX4-7 part 2a: a report's status is asserted through the CATALOGUE, not as the
+ * enum's own spelling.
+ *
+ * These read `toHaveText('SUBMITTED')` until part 2a, which is what the screen
+ * literally showed — the schema's word, shouted, on a page an employee reads.
+ * Now the badge renders catalogued copy ("Submitted"), and pinning the new
+ * STRING here would only move the problem: the assertion would break again the
+ * next time somebody improves the wording, which is exactly the change nobody
+ * should have to touch an e2e for.
+ *
+ * Asserting `enumLabel(REPORT_STATUS_COPY, 'SUBMITTED', DEFAULT_LOCALE)` says
+ * the thing worth saying — THE SCREEN GOES THROUGH THE CATALOGUE — and it cannot
+ * drift. That it does not also check the copy is non-empty is deliberate:
+ * `test/i18n-enum-catalog.test.ts` refuses a blank default for any member, so
+ * the pairing covers both halves and neither test repeats the other.
+ */
+const status = (member: string) => enumLabel(REPORT_STATUS_COPY, member, DEFAULT_LOCALE);
+
 
 /**
  * Report titles are stamped with a per-run id. The e2e runs against the seeded
@@ -88,7 +109,7 @@ test('a blocking violation stops the submit until the receipt is attached', asyn
   await page.getByRole('button', { name: 'Submit for approval' }).click();
   // Not getByRole('alert') — Next renders a route announcer with that role too.
   await expect(page.getByTestId('error-banner')).toContainText(/blocking policy violation/i);
-  await expect(page.getByTestId('report-status')).toHaveText('DRAFT');
+  await expect(page.getByTestId('report-status')).toHaveText(status('DRAFT'));
 
   await uploadReceipt(page);
 
@@ -97,7 +118,7 @@ test('a blocking violation stops the submit until the receipt is attached', asyn
   await expect(page.getByTestId('policy-clean')).toBeVisible();
 
   await page.getByRole('button', { name: 'Submit for approval' }).click();
-  await expect(page.getByTestId('report-status')).toHaveText('SUBMITTED');
+  await expect(page.getByTestId('report-status')).toHaveText(status('SUBMITTED'));
 
   // Submitted reports are frozen — the editing affordances are gone.
   await expect(page.getByRole('button', { name: 'Add line item' })).toHaveCount(0);
@@ -108,7 +129,7 @@ test('a blocking violation stops the submit until the receipt is attached', asyn
   await expect(page.getByText('DRAFT → SUBMITTED')).toBeVisible();
 
   await page.getByRole('button', { name: 'Recall to draft' }).click();
-  await expect(page.getByTestId('report-status')).toHaveText('DRAFT');
+  await expect(page.getByTestId('report-status')).toHaveText(status('DRAFT'));
   await expect(page.getByText('SUBMITTED → DRAFT')).toBeVisible();
 });
 
@@ -131,13 +152,13 @@ test('a warning is acknowledged with a justification and does not block', async 
   // A warning never blocked submission in the first place — Module 9 has it
   // propagate to the approver instead.
   await page.getByRole('button', { name: 'Submit for approval' }).click();
-  await expect(page.getByTestId('report-status')).toHaveText('SUBMITTED');
+  await expect(page.getByTestId('report-status')).toHaveText(status('SUBMITTED'));
 });
 
 test('the report list shows what was just submitted', async ({ page }) => {
   await page.goto('/expenses');
   const row = page.getByRole('row', { name: new RegExp(`E2E over-limit dinner ${RUN}`) });
-  await expect(row).toContainText('SUBMITTED');
+  await expect(row).toContainText(status('SUBMITTED'));
   await expect(row).toContainText('$600.00');
   await expect(row).toContainText('EXP-');
 });

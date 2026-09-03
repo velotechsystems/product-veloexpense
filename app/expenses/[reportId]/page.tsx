@@ -52,6 +52,7 @@ import {
   textareaClass,
 } from '../ui';
 import { formatCalendarDate, formatInstant, toDateInputValue } from '@/lib/i18n/format';
+import { enumLabel, REPORT_STATUS_COPY } from '@/lib/i18n/catalog/enums';
 import { readerPrefs } from '@/lib/i18n/request';
 import { ReceiptDrawer, type ReceiptSummary } from './receipt-drawer';
 import { PolicyPanel } from './policy-panel';
@@ -98,7 +99,7 @@ export default async function ReportWorkbenchPage({
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-3">
             <h1 className="text-2xl font-semibold tracking-tight">{report.title}</h1>
-            <StatusBadge status={report.status} />
+            <StatusBadge status={report.status} locale={prefs.locale} />
           </div>
           <div className="text-right">
             <div className="text-2xl font-semibold tabular-nums" data-testid="report-total">
@@ -118,12 +119,18 @@ export default async function ReportWorkbenchPage({
 
       {!editable ? (
         <p className="rounded-lg border border-border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
-          This report is {report.status} and can no longer be edited.
+          This report is {enumLabel(REPORT_STATUS_COPY, report.status, prefs.locale).toLowerCase()} and
+          can no longer be edited.
           {readiness.canRecall ? ' Recall it to a draft to make changes.' : ''}
         </p>
       ) : null}
 
-      <LifecycleBar reportId={report.id} status={report.status} readiness={readiness} />
+      <LifecycleBar
+        reportId={report.id}
+        status={report.status}
+        readiness={readiness}
+        locale={prefs.locale}
+      />
 
       {/* VX2-4: shown only when this person actually has a decision to make on
           this report. The panel and the mutation behind it both come from
@@ -142,7 +149,12 @@ export default async function ReportWorkbenchPage({
         />
       ) : null}
 
-      <PolicyPanel reportId={report.id} summary={validation} editable={editable} />
+      <PolicyPanel
+        reportId={report.id}
+        summary={validation}
+        editable={editable}
+        locale={prefs.locale}
+      />
 
       {editable && uncodedExpenseCount > 0 ? (
         <p className="rounded-lg border border-border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">

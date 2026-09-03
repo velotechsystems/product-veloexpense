@@ -12,6 +12,27 @@
  */
 import { expect, type APIRequestContext, type Browser, type Page } from '@playwright/test';
 import { Pool } from 'pg';
+import { DEFAULT_LOCALE } from '@/lib/i18n/locales';
+import { enumLabel, REPORT_STATUS_COPY } from '@/lib/i18n/catalog/enums';
+/**
+ * VX4-7 part 2a: a report's status is asserted through the CATALOGUE, not as the
+ * enum's own spelling.
+ *
+ * These read `toHaveText('SUBMITTED')` until part 2a, which is what the screen
+ * literally showed — the schema's word, shouted, on a page an employee reads.
+ * Now the badge renders catalogued copy ("Submitted"), and pinning the new
+ * STRING here would only move the problem: the assertion would break again the
+ * next time somebody improves the wording, which is exactly the change nobody
+ * should have to touch an e2e for.
+ *
+ * Asserting `enumLabel(REPORT_STATUS_COPY, 'SUBMITTED', DEFAULT_LOCALE)` says
+ * the thing worth saying — THE SCREEN GOES THROUGH THE CATALOGUE — and it cannot
+ * drift. That it does not also check the copy is non-empty is deliberate:
+ * `test/i18n-enum-catalog.test.ts` refuses a blank default for any member, so
+ * the pairing covers both halves and neither test repeats the other.
+ */
+const status = (member: string) => enumLabel(REPORT_STATUS_COPY, member, DEFAULT_LOCALE);
+
 
 export const CONTROL = `http://127.0.0.1:${process.env.E2E_LEDGER_CONTROL_PORT ?? 9412}`;
 export const LEDGER = `http://127.0.0.1:${process.env.E2E_LEDGER_PORT ?? 9411}`;
@@ -222,7 +243,7 @@ export async function submitAndApprove(
   await page.getByRole('button', { name: 'Add line item' }).click();
 
   await page.getByRole('button', { name: 'Submit for approval' }).click();
-  await expect(page.getByTestId('report-status')).toHaveText('SUBMITTED');
+  await expect(page.getByTestId('report-status')).toHaveText(status('SUBMITTED'));
 
   // ── the decision, in the APPROVER's session ───────────────────────────────
   const approver = await browser.newContext({ storageState: APPROVER_STATE });
@@ -256,7 +277,7 @@ export async function submitAndApprove(
     await approve.click();
     // `decideFromForm` redirects back to `/expenses/<id>`, so the status the
     // approver is looking at is the report's own.
-    await expect(approverPage.getByTestId('report-status')).toHaveText('APPROVED');
+    await expect(approverPage.getByTestId('report-status')).toHaveText(status('APPROVED'));
   } finally {
     await approver.close();
   }

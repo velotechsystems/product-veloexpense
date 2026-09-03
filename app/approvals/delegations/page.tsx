@@ -38,6 +38,7 @@ import {
   selectClass,
 } from '@/app/expenses/ui';
 import { formatInstant, toDateInputValue } from '@/lib/i18n/format';
+import { enumLabel, DELEGATION_SCOPE_COPY } from '@/lib/i18n/catalog/enums';
 import type { ReaderPrefs } from '@/lib/i18n/resolve';
 import { readerPrefs } from '@/lib/i18n/request';
 import {
@@ -367,7 +368,7 @@ function DelegationTable({
                       {row.ends_on ?? 'open-ended'}
                     </td>
                     <td className="px-3 py-2">
-                      {row.scope === 'ALL' ? 'Everything' : 'Expense reports'}
+                      {enumLabel(DELEGATION_SCOPE_COPY, row.scope, prefs.locale)}
                       {row.note ? (
                         <p className="text-xs text-muted-foreground">{row.note}</p>
                       ) : null}

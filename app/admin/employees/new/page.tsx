@@ -4,11 +4,13 @@
  */
 import Link from 'next/link';
 import { createEmployeeFromForm, getDirectoryOptions } from '../actions';
+import { readerPrefs } from '@/lib/i18n/request';
 import { EmployeeForm } from '../employee-form';
 
 export const dynamic = 'force-dynamic';
 
 export default async function NewEmployeePage() {
+  const prefs = await readerPrefs();
   const options = await getDirectoryOptions();
 
   return (
@@ -23,7 +25,8 @@ export default async function NewEmployeePage() {
         </p>
       </header>
 
-      <EmployeeForm action={createEmployeeFromForm} options={options} submitLabel="Create employee" />
+      <EmployeeForm
+      locale={prefs.locale} action={createEmployeeFromForm} options={options} submitLabel="Create employee" />
     </div>
   );
 }

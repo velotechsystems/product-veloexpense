@@ -15,15 +15,23 @@ import type { ReportStatus } from '@/lib/expenses/service';
 import { recallReportFromForm, submitReportFromForm } from '../actions';
 import { StatusBadge, cardClass } from '../ui';
 import { formatInstant } from '@/lib/i18n/format';
+import {
+  enumLabel,
+  REPORT_STATUS_COPY,
+  TRANSITION_ACTION_COPY,
+} from '@/lib/i18n/catalog/enums';
 import type { ReaderPrefs } from '@/lib/i18n/resolve';
 
 export function LifecycleBar({
   reportId,
   status,
+  locale,
   readiness,
 }: {
   reportId: string;
   status: ReportStatus;
+  /** Sync component; the page resolves the reader once. */
+  locale: string;
   readiness: { canSubmit: boolean; canRecall: boolean; reasons: string[] };
 }) {
   return (
@@ -32,7 +40,7 @@ export function LifecycleBar({
         <div className="flex items-center gap-2">
           <span className="text-sm font-medium">Status</span>
           <span data-testid="report-status">
-            <StatusBadge status={status} />
+            <StatusBadge status={status} locale={locale} />
           </span>
         </div>
         {readiness.reasons.length > 0 ? (
@@ -81,9 +89,12 @@ export function ReportHistory({
       <ul className="flex flex-col gap-2 text-sm">
         {events.map((event) => (
           <li key={event.id} className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
-            <span className="font-medium">{event.action}</span>
+            <span className="font-medium">
+              {enumLabel(TRANSITION_ACTION_COPY, event.action, prefs.locale)}
+            </span>
             <span className="text-muted-foreground">
-              {event.from_status} → {event.to_status}
+              {enumLabel(REPORT_STATUS_COPY, event.from_status, prefs.locale)} →{' '}
+              {enumLabel(REPORT_STATUS_COPY, event.to_status, prefs.locale)}
             </span>
             <span className="text-muted-foreground">
               by {event.actor_name ?? event.actor_email} on {formatInstant(event.created_at, prefs)}

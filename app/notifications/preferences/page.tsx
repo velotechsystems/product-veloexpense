@@ -22,21 +22,18 @@
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { ErrorBanner } from '@/app/expenses/ui';
+import { enumLabel, CHANNEL_COPY } from '@/lib/i18n/catalog/enums';
+import { readerPrefs } from '@/lib/i18n/request';
 import { getPreferencesPage, setPreferenceFromForm } from '../actions';
 
 export const dynamic = 'force-dynamic';
-
-const CHANNEL_LABEL: Record<string, string> = {
-  IN_APP: 'In-app',
-  EMAIL: 'Email',
-  SLACK: 'Slack',
-};
 
 export default async function NotificationPreferencesPage({
   searchParams,
 }: {
   searchParams: Promise<{ error?: string }>;
 }) {
+  const prefs = await readerPrefs();
   const { error } = await searchParams;
   const { grid } = await getPreferencesPage();
 
@@ -83,7 +80,7 @@ export default async function NotificationPreferencesPage({
                   <input type="hidden" name="eventType" value={event.eventType} />
                   <input type="hidden" name="channel" value={cell.channel} />
                   <div className="flex items-baseline gap-2">
-                    <span className="text-sm font-medium">{CHANNEL_LABEL[cell.channel]}</span>
+                    <span className="text-sm font-medium">{enumLabel(CHANNEL_COPY, cell.channel, prefs.locale)}</span>
                     {cell.deliverable ? null : (
                       <span className="text-xs text-muted-foreground">
                         no delivery until email and Slack ship

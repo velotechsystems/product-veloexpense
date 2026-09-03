@@ -26,6 +26,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { EmptyRow, ErrorBanner } from '@/app/expenses/ui';
 import { formatInstant } from '@/lib/i18n/format';
+import { enumLabel, CAPABILITY_COPY } from '@/lib/i18n/catalog/enums';
 import { readerPrefs } from '@/lib/i18n/request';
 import {
   connectFromForm,
@@ -226,8 +227,12 @@ export default async function IntegrationsPage({
                       </p>
                     </td>
                     <td className="px-3 py-2 text-xs text-muted-foreground">
+                      {/* Was `.toLowerCase().replace(/_/g, ' ')` — string surgery
+                          standing in for copy, which turns POST_EXPENSE_REPORT
+                          into "post expense report" and cannot ever say
+                          "Pull the chart of accounts". */}
                       {(i.adapter?.capabilities ?? [])
-                        .map((c) => c.toLowerCase().replace(/_/g, ' '))
+                        .map((c) => enumLabel(CAPABILITY_COPY, c, prefs.locale))
                         .join(', ') || '—'}
                     </td>
                     <td className="px-3 py-2 text-muted-foreground">

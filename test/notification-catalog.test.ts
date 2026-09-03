@@ -255,24 +255,32 @@ describe('renderContent', () => {
     ).toBe('Check sent');
   });
 
-  it('gives a French reader NOTHING rather than English — INVERTED in VX4-7', () => {
-    // This assertion used to read:
+  it('gives a reader of an unauthored SHIPPED locale nothing — INVERTED in VX4-7', () => {
+    // In part 1 this assertion read, before being inverted:
     //
     //     expect(renderContent({ body: { en: 'Hi' } }, 'fr-CA', {})?.body).toBe('Hi');
     //
-    // i.e. it PINNED the behaviour this ticket deliberately removed. Under the
-    // old single-hop fallback a French reader was guaranteed an English sentence
-    // whenever French copy was missing, and `lib/i18n/locales.ts` argues at
-    // length why that is the worst available outcome: fluent English is
-    // invisible to everyone reviewing in English, reads as "this part of the
-    // product is English", and therefore ships forever. Returning null makes the
-    // caller drop to shipped copy or show a missing-copy marker — a bug report
-    // that files itself.
+    // i.e. it PINNED the single-hop fallback that guaranteed a French reader an
+    // English sentence whenever French copy was missing — the worst available
+    // outcome, because fluent English is invisible to everyone reviewing in
+    // English and therefore ships forever.
     //
-    // Retagging `en` to `en-CA` here without flipping the expectation would have
-    // left the old promise in place and quietly failed the ticket.
-    expect(renderContent({ body: { 'en-CA': 'Hi' } }, 'fr-CA', {})).toBeNull();
-    expect(renderContent({ body: { 'en-US': 'Hi' } }, 'fr-CA', {})).toBeNull();
+    // Part 2a retired `fr-CA` (0028), which changes what the demonstration can
+    // use but not the rule. `fr-CA` is now an UNKNOWN tag and degrades to the
+    // default's chain, so asserting null on it would fail — and asserting the
+    // English fallback on it would look like the old promise coming back.
+    //
+    // So the rule is asserted on a SHIPPED locale with nowhere to fall back to.
+    // `en-CA` is the end of every chain, so copy it cannot reach is copy the
+    // reader does not get.
+    expect(renderContent({ body: { 'en-US': 'Hi' } }, 'en-CA', {})).toBeNull();
+    expect(renderContent({ body: {} }, 'en-CA', {})).toBeNull();
+
+    // And the OTHER half, which must be told apart from it: a RETIRED locale
+    // degrades to English rather than to nothing, because a stored value that
+    // outlived its locale should still render. Claiming to speak a language and
+    // failing to is the thing forbidden; rendering a stranded row is not.
+    expect(renderContent({ body: { 'en-CA': 'Hi' } }, 'fr-CA', {})?.body).toBe('Hi');
   });
 
   it('returns null for a miss, so the caller can drop to shipped copy', () => {

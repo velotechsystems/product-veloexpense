@@ -148,7 +148,7 @@ export default async function ExpenseReportsPage({
                     <td className="px-4 py-3">{r.submitter_name ?? r.submitter_email}</td>
                   ) : null}
                   <td className="px-4 py-3">
-                    <StatusBadge status={r.status} />
+                    <StatusBadge status={r.status} locale={prefs.locale} />
                   </td>
                   <td className="px-4 py-3 text-muted-foreground">{r.expense_count}</td>
                   <td className="px-4 py-3 text-muted-foreground">{r.receipt_count}</td>

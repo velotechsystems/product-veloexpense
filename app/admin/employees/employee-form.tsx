@@ -6,6 +6,11 @@
  * keep in sync. Button/Input come from the vendored lib-ui-kit registry.
  */
 import { Button } from '@/components/ui/button';
+import {
+  enumLabel,
+  EMPLOYEE_ROLE_COPY,
+  EMPLOYEE_STATUS_COPY,
+} from '@/lib/i18n/catalog/enums';
 import { Input } from '@/components/ui/input';
 import {
   EMPLOYEE_ROLES,
@@ -30,11 +35,14 @@ export function EmployeeForm({
   options,
   employee,
   submitLabel,
+  locale,
 }: {
   action: (formData: FormData) => Promise<void>;
   options: Options;
   employee?: EmployeeRow;
   submitLabel: string;
+  /** Sync component — the page resolves the reader once and threads it down. */
+  locale: string;
 }) {
   const managerChoices = options.managers.filter((m) => m.id !== employee?.id);
 
@@ -76,7 +84,7 @@ export function EmployeeForm({
           >
             {EMPLOYEE_ROLES.map((role) => (
               <option key={role} value={role}>
-                {role}
+                {enumLabel(EMPLOYEE_ROLE_COPY, role, locale)}
               </option>
             ))}
           </select>
@@ -94,7 +102,7 @@ export function EmployeeForm({
           >
             {EMPLOYEE_STATUSES.map((status) => (
               <option key={status} value={status}>
-                {status}
+                {enumLabel(EMPLOYEE_STATUS_COPY, status, locale)}
               </option>
             ))}
           </select>

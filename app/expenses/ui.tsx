@@ -8,6 +8,7 @@
  * against the same tokens (see the handoff note).
  */
 import type { ReportStatus } from '@/lib/expenses/service';
+import { enumLabel, REPORT_STATUS_COPY, SEVERITY_COPY } from '@/lib/i18n/catalog/enums';
 
 export const fieldClass = 'flex flex-col gap-1.5';
 export const labelClass = 'text-sm font-medium text-foreground';
@@ -26,14 +27,23 @@ const STATUS_TONE: Record<ReportStatus, string> = {
   REIMBURSED: 'border-border text-foreground',
 };
 
-export function StatusBadge({ status }: { status: ReportStatus }) {
+/**
+ * VX4-7 part 2a: the badge takes a LOCALE now, and renders copy rather than the
+ * enum value.
+ *
+ * `{status}` put `REIMBURSED` on the screen — the schema's word, in the schema's
+ * shouting case, on a page an employee reads. The tone map above stays as it is
+ * and is deliberately NOT catalogued: a colour is not copy, it does not vary by
+ * locale, and moving it would put a Tailwind class list in a translation file.
+ */
+export function StatusBadge({ status, locale }: { status: ReportStatus; locale: string }) {
   return (
     <span
       className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-medium ${
         STATUS_TONE[status] ?? 'border-border text-muted-foreground'
       }`}
     >
-      {status}
+      {enumLabel(REPORT_STATUS_COPY, status, locale)}
     </span>
   );
 }
@@ -44,14 +54,14 @@ const SEVERITY_TONE: Record<string, string> = {
   INFO: 'border-border text-muted-foreground',
 };
 
-export function SeverityBadge({ severity }: { severity: string }) {
+export function SeverityBadge({ severity, locale }: { severity: string; locale: string }) {
   return (
     <span
       className={`inline-flex shrink-0 items-center rounded-full border px-2 py-0.5 text-xs font-medium ${
         SEVERITY_TONE[severity] ?? SEVERITY_TONE.INFO
       }`}
     >
-      {severity}
+      {enumLabel(SEVERITY_COPY, severity, locale)}
     </span>
   );
 }
