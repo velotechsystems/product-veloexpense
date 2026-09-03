@@ -74,6 +74,7 @@ import { DEFAULT_LOCALE, fallbackChain, isLocale, type Locale } from '../locales
 import { formatCalendarDate } from '../format';
 import { formatMinor } from '@/lib/money';
 import { missingCopyMarker } from './enums';
+import { pseudoIfEnabled } from '../pseudo';
 
 /**
  * Every sentence a rule can emit. One per BRANCH, not one per rule — see the
@@ -450,7 +451,12 @@ export function renderPolicyMessage(
     const renderer = definition.copy[target];
     if (renderer === undefined) continue;
     try {
-      return renderer(fields(code, data, reader), reader);
+      // The SECOND place the pseudo-locale is applied. These renderers are
+      // functions rather than locale-keyed strings, so they never reach
+      // `localizedFrom` — a sentence assembled here would have been the one
+      // surface the crawl could not see, which is exactly the kind of gap
+      // IL-5/IL-6 is about.
+      return pseudoIfEnabled(renderer(fields(code, data, reader), reader));
     } catch {
       // A MessageDataError means this ROW cannot satisfy this sentence, which no
       // other locale will fix — walking on would just repeat the failure in

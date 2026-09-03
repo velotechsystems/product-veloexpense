@@ -22,6 +22,11 @@
  * see whether the wording they are reading is theirs.
  */
 import Link from 'next/link';
+import {
+  enumLabel,
+  EVENT_TYPE_COPY,
+  NOTIFICATION_WORDING_COPY,
+} from '@/lib/i18n/catalog/enums';
 import { Button } from '@/components/ui/button';
 import { EmptyRow, ErrorBanner } from '@/app/expenses/ui';
 import { formatInstant } from '@/lib/i18n/format';
@@ -146,8 +151,20 @@ export default async function NotificationsPage({
                         )}
                       </p>
                       <p className="mt-0.5 text-xs text-muted-foreground">
-                        {row.eventType}
-                        {row.fromTemplate ? ' · your wording' : ' · shipped wording'}
+                        {/* VX4-7 part 3. Was `{row.eventType}` — the RAW enum
+                            member, on a screen every employee reads. Part 2a
+                            built EVENT_TYPE_COPY and moved eleven screens onto
+                            it; this site was missed, and no gate could see it
+                            because rendering an enum directly is a valid
+                            program. The pseudo-locale crawl found it by being
+                            the only plain-English string in a bracketed page. */}
+                        {enumLabel(EVENT_TYPE_COPY, row.eventType, prefs.locale)}
+                        {' · '}
+                        {enumLabel(
+                          NOTIFICATION_WORDING_COPY,
+                          row.fromTemplate ? 'TEMPLATE' : 'SHIPPED',
+                          prefs.locale,
+                        )}
                       </p>
                     </td>
                     <td className="px-3 py-2 text-muted-foreground">

@@ -34,6 +34,7 @@ import { enumLabel, REPORT_STATUS_COPY } from '@/lib/i18n/catalog/enums';
 const status = (member: string) => enumLabel(REPORT_STATUS_COPY, member, DEFAULT_LOCALE);
 
 
+
 export const CONTROL = `http://127.0.0.1:${process.env.E2E_LEDGER_CONTROL_PORT ?? 9412}`;
 export const LEDGER = `http://127.0.0.1:${process.env.E2E_LEDGER_PORT ?? 9411}`;
 export const WORKER_SECRET = process.env.WORKER_SECRET ?? 'e2e-worker-secret';
@@ -48,6 +49,10 @@ export const WORKER_SECRET = process.env.WORKER_SECRET ?? 'e2e-worker-secret';
  * and the first version of the ledger spec approved as the submitter anyway.
  */
 export const APPROVER_STATE = 'e2e/.auth/approver.json';
+/** VX4-7 part 3 — the roles the crawl signs in as. */
+export const ADMIN_STATE = 'e2e/.auth/state.json';
+export const MANAGER_STATE = 'e2e/.auth/manager.json';
+export const EMPLOYEE_STATE = 'e2e/.auth/employee.json';
 
 /**
  * A KNOWN-EMPTY integration state for the tenants a spec is about to use.

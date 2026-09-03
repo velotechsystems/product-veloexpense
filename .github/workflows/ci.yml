@@ -233,6 +233,18 @@ jobs:
       - name: End-to-end happy path (Playwright)
         run: npx playwright test
 
+      # VX4-7 part 3 — IL-5/IL-6. Upstream's equivalent crawler sets
+      # `const LOCALE = 'en'` and runs NIGHTLY, which is the audit's finding: a
+      # guard watching one of three locales, on a schedule nobody reads. This
+      # runs PER PR, and in a pseudo-locale, so it can answer the question the
+      # static gate cannot — is this string coming from a catalogue at all.
+      #
+      # Its own config and its own server, on shifted ports: the pseudo flag is
+      # read once at boot (lib/i18n/pseudo.ts explains why), so it cannot share
+      # the server above. About twenty seconds.
+      - name: Pseudo-locale crawl (per PR, not nightly)
+        run: npm run e2e:crawl
+
       # VX2-10. The board asks for "chain verification runs on every build", and
       # until now it did not: `verifyChain` is exercised by test/audit.db.test.ts
       # and by VX2-9's suite, over rows those suites wrote themselves. This runs

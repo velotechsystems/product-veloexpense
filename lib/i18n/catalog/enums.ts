@@ -245,6 +245,24 @@ export const RECEIPT_STATUS_COPY: EnumCopy<ReceiptStatus> = {
  * locale to the registry and finishing its copy, and for a stored value from an
  * enum member that no longer exists.
  */
+/**
+ * Which wording a notification was sent with — the tenant's template, or ours.
+ *
+ * VX4-7 part 3. Not a database enum, which is why it had no catalogue: it is a
+ * boolean on the row (`fromTemplate`) rendered as ` · your wording` /
+ * ` · shipped wording`, inline in the JSX. Catalogued now for two reasons — it
+ * is copy an employee reads on every notification, and being PER ROW it made
+ * `/notifications`' un-catalogued count scale with how many notifications
+ * exist, so the pseudo crawl's ceiling for that page could not be a stable
+ * number. Cataloguing it fixes the page and the measurement at once.
+ */
+export type NotificationWording = 'TEMPLATE' | 'SHIPPED';
+
+export const NOTIFICATION_WORDING_COPY: EnumCopy<NotificationWording> = {
+  TEMPLATE: { 'en-CA': 'your wording' },
+  SHIPPED: { 'en-CA': 'shipped wording' },
+};
+
 export function missingCopyMarker(value: string): string {
   return `{${value}}`;
 }
