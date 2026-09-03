@@ -74,7 +74,18 @@ export interface ViolationRow {
   policy_id: string | null;
   rule_code: RuleKind;
   severity: Severity;
+  /**
+   * VX4-7 part 2b. The sentence AS WRITTEN at validation time, in the default
+   * locale — the audit record, not the display path. Screens go through
+   * `renderViolation(row, locale)`, which prefers `message_code` + `data`.
+   */
   message: string;
+  /**
+   * Which sentence this is, for rendering in the reader's locale. `''` on any
+   * row written before migration `0029` — those can only show `message`, because
+   * their `data` never carried the labels the sentence interpolates.
+   */
+  message_code: string;
   finding_key: string;
   data: Record<string, unknown>;
   resolved_at: Date | null;
@@ -449,7 +460,7 @@ export async function ensureDefaultPolicies(tx: QueryRunner): Promise<number> {
 
 const SELECT_VIOLATION = `
   SELECT v.id, v.report_id, v.line_item_id, v.policy_id, v.rule_code, v.severity, v.message,
-         v.finding_key, v.data, v.resolved_at, v.resolved_by_id, u.display_name AS resolved_by_name,
+         v.message_code, v.finding_key, v.data, v.resolved_at, v.resolved_by_id, u.display_name AS resolved_by_name,
          v.resolve_note, v.created_at
     FROM policy_violation v
     LEFT JOIN app_user u ON u.id = v.resolved_by_id`;
@@ -547,6 +558,7 @@ export async function validateReport(
     {
       policy: PolicyRow;
       message: string;
+      messageCode: string;
       lineItemId: string | null;
       findingKey: string;
       data: Record<string, unknown>;
@@ -562,6 +574,7 @@ export async function validateReport(
       desired.set(key, {
         policy,
         message: finding.message,
+        messageCode: finding.messageCode,
         lineItemId: finding.lineItemId,
         findingKey: finding.findingKey,
         data: finding.data,
@@ -607,10 +620,24 @@ export async function validateReport(
     const clearResolution = want.severity === 'BLOCK' && row.resolved_at !== null;
     await tx.query(
       `UPDATE policy_violation
-          SET severity = $2, message = $3, data = $4::jsonb, policy_id = $5
+          SET severity = $2, message = $3, data = $4::jsonb, policy_id = $5,
+              message_code = $6
               ${clearResolution ? ', resolved_at = NULL, resolved_by_id = NULL, resolve_note = NULL' : ''}
         WHERE id = $1`,
-      [row.id, want.severity, want.message, JSON.stringify(want.data), want.policy.id],
+      // `message_code` is refreshed alongside `message` and `data`, and it has to
+      // be: a re-validation can move a finding BETWEEN shapes — an FX rate gets
+      // added and LIMIT_EXCEEDED_CONVERTED becomes LIMIT_EXCEEDED — while the
+      // identity (rule, scope, findingKey) stays the same, so the row is updated
+      // rather than replaced. Refreshing the data but not the code is how a row
+      // ends up rendering a sentence its own facts no longer fit.
+      [
+        row.id,
+        want.severity,
+        want.message,
+        JSON.stringify(want.data),
+        want.policy.id,
+        want.messageCode,
+      ],
     );
   }
 
@@ -619,8 +646,8 @@ export async function validateReport(
     await tx.query(
       `INSERT INTO policy_violation
          (organization_id, report_id, line_item_id, policy_id, rule_code, severity, message,
-          finding_key, data)
-       VALUES (${ORG}, $1, $2, $3, $4, $5, $6, $7, $8::jsonb)`,
+          message_code, finding_key, data)
+       VALUES (${ORG}, $1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb)`,
       [
         reportId,
         want.lineItemId,
@@ -632,6 +659,7 @@ export async function validateReport(
         // run nobody looks at. A test caught it.
         want.severity,
         want.message,
+        want.messageCode,
         want.findingKey,
         JSON.stringify(want.data),
       ],

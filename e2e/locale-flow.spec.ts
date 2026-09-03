@@ -119,6 +119,7 @@ async function sampleText(page: Page, testid: string): Promise<string> {
  */
 const DATED = '2026-03-04';
 let reportId: string | null = null;
+let violationReportId: string | null = null;
 
 async function makeDatedReport(): Promise<string> {
   const p = pool();
@@ -142,6 +143,35 @@ async function makeDatedReport(): Promise<string> {
   } finally {
     await p.end();
   }
+}
+
+/**
+ * A report with one $600 line and no receipt, through the UI.
+ *
+ * Through the UI on purpose, unlike `makeDatedReport` above: a policy violation
+ * only exists because `validateReport` ran inside the transaction that saved the
+ * line, so a row inserted with SQL would have no findings to render and this
+ * test would pass by having nothing to look at.
+ */
+async function makeViolatingReport(page: Page): Promise<string> {
+  await page.goto('/expenses/new');
+  await page.getByLabel('Title').fill('Locale violation check');
+  await page.getByRole('button', { name: 'Create draft' }).click();
+  await expect(page).toHaveURL(/\/expenses\/[0-9a-f-]{36}$/);
+
+  await page.getByLabel('Merchant').first().fill('Le Bistro');
+  await page.getByRole('button', { name: 'Add expense' }).click();
+  await expect(page.getByRole('heading', { name: 'Le Bistro' })).toBeVisible();
+
+  await page.locator('select[id^="categoryId-"]').selectOption({ label: 'Meals & Entertainment' });
+  await page.locator('input[id^="description-"]').fill('Client dinner');
+  // $600 clears the starter $500 per-transaction limit, which is the WARNING
+  // that renders MONEY — the whole point of the assertion below.
+  await page.locator('input[id^="amount-"]').fill('600.00');
+  await page.getByRole('button', { name: 'Add line item' }).click();
+
+  const url = new URL(page.url());
+  return url.pathname.split('/').pop() as string;
 }
 
 async function dropDatedReport(id: string) {
@@ -169,6 +199,7 @@ test.describe('the locale chain, end to end', () => {
     await setCompany(DEFAULT_LOCALE, 'UTC');
     await clearMine();
     if (reportId) await dropDatedReport(reportId);
+    if (violationReportId) await dropDatedReport(violationReportId);
   });
 
   test('the admin screen shows the company default, and the page says so in lang', async ({
@@ -395,4 +426,92 @@ test.describe('the locale chain, end to end', () => {
    * calls `setOrgDefaults` with `'en'` and reads the message — and the column's
    * CHECK is asserted there too, against the constraint's own definition.
    */
+});
+
+/**
+ * VX4-7 part 2b — the sentence a policy violation says is the READER's, not the
+ * one frozen when somebody else pressed save.
+ *
+ * Its own describe block, with its own company/user reset, because the block
+ * above is serial and ends with the tenant on `en-US`/`America/Vancouver` — an
+ * assertion whose premise is another test's leftover state is the thing the
+ * handoff's note 3 is about.
+ *
+ * ── WHY THIS EXISTS WHEN 50 UNIT TESTS ALREADY COVER THE RENDER ─────────────
+ *
+ * They cover `renderPolicyMessage`. They cannot cover the two joins between it
+ * and a reader: that `listViolations` actually SELECTs `message_code` (a column
+ * missing from the query renders every row from the frozen English and every
+ * unit test still passes), and that the panel threads the resolved locale down
+ * rather than a constant. Part 1 shipped `revalidatePath` only because an e2e
+ * found the layout going stale; this is the same class of gap.
+ */
+test.describe('a violation is written for the reader, not for whoever saved it', () => {
+  test.describe.configure({ mode: 'serial' });
+
+  test.beforeAll(async () => {
+    await setCompany(DEFAULT_LOCALE, 'UTC');
+    await clearMine();
+  });
+
+  test.afterAll(async () => {
+    await setCompany(DEFAULT_LOCALE, 'UTC');
+    await clearMine();
+  });
+
+  test('the same stored finding reads in en-CA and in en-US money', async ({ page }) => {
+    violationReportId = await makeViolatingReport(page);
+
+    const warning = page.locator('[data-testid="policy-violation"][data-severity="WARNING"]');
+    await expect(warning).toHaveCount(1);
+
+    // en-CA: a Canadian reader looking at Canadian dollars gets a bare symbol.
+    await expect(warning.first()).toContainText(
+      'Client dinner is $600.00, over the $500.00 per-transaction limit.',
+    );
+
+    // Now the SAME ROW, to a different reader. Nothing about the report changes
+    // — no save, no re-validation — which is what makes this a render test and
+    // not a write test.
+    await page.goto('/preferences');
+    await page.getByTestId('my-locale').selectOption('en-US');
+    await page.getByRole('button', { name: 'Save' }).click();
+    await expect(page.getByText('Saved.')).toBeVisible();
+
+    await page.goto(`/expenses/${violationReportId}`);
+    await expect(warning.first()).toContainText(
+      'Client dinner is CA$600.00, over the CA$500.00 per-transaction limit.',
+    );
+    // And explicitly NOT the other one, because `toContainText` on a sentence
+    // that is a prefix of the other would pass either way round.
+    await expect(warning.first()).not.toContainText('is $600.00,');
+
+    // Back, so the assertion is about the reader and not about a one-way door.
+    await page.goto('/preferences');
+    await page.getByTestId('my-locale').selectOption('en-CA');
+    await page.getByRole('button', { name: 'Save' }).click();
+    await expect(page.getByText('Saved.')).toBeVisible();
+
+    await page.goto(`/expenses/${violationReportId}`);
+    await expect(warning.first()).toContainText('over the $500.00 per-transaction limit.');
+  });
+
+  test('the acknowledge field describes what the reader can see', async ({ page }) => {
+    // The aria-label and the paragraph must be the same sentence. They were
+    // separately interpolated before part 2b, so a render change could have
+    // moved one and not the other — a screen reader hearing a different sentence
+    // than the page shows.
+    await page.goto('/preferences');
+    await page.getByTestId('my-locale').selectOption('en-US');
+    await page.getByRole('button', { name: 'Save' }).click();
+    await expect(page.getByText('Saved.')).toBeVisible();
+
+    await page.goto(`/expenses/${violationReportId}`);
+    const warning = page.locator('[data-testid="policy-violation"][data-severity="WARNING"]').first();
+    const shown = (await warning.locator('p').first().textContent())?.trim();
+    await expect(warning.getByPlaceholder('Why is this exception acceptable?')).toHaveAttribute(
+      'aria-label',
+      `Justification for: ${shown}`,
+    );
+  });
 });
