@@ -1208,4 +1208,76 @@ describe('RLS tenant isolation', () => {
     ).rejects.toThrow();
   });
 
+  /* ── fraud flags (VX4-8 part 2, migration 0031) ───────────────────────────
+   *
+   * Here because CI's RLS-isolation-COVERAGE guard requires it — a new tenant
+   * table nobody exercises here is a policy nobody has checked. Same reason
+   * `budget` and `budget_period` were added on PR #77.
+   */
+  it('fraud flags are tenant-isolated, and a flag cannot name another tenant\'s report', async () => {
+    const reportOf = async (org: string, title: string) => {
+      const r = await withOrg(org, (tx) =>
+        tx.query('SELECT id FROM expense_report WHERE title = $1', [title]),
+      );
+      return r.rows[0].id as string;
+    };
+    const reportA = await reportOf(orgA, 'Ledger report A');
+    const reportB = await reportOf(orgB, 'Ledger report B');
+
+    for (const [org, reportId, key] of [
+      [orgA, reportA, 'DUPLICATE:a'],
+      [orgB, reportB, 'DUPLICATE:b'],
+    ] as const) {
+      await withOrg(org, (tx) =>
+        tx.query(
+          `INSERT INTO fraud_flag (organization_id, rule_code, message_code, report_id, finding_key)
+           VALUES ($1, 'DUPLICATE', 'DUPLICATE_SAME_REPORT', $2, $3)`,
+          [org, reportId, key],
+        ),
+      );
+    }
+
+    const seen = async (org: string) =>
+      withOrg(org, async (tx) => {
+        const r = await tx.query('SELECT finding_key FROM fraud_flag ORDER BY finding_key');
+        return r.rows.map((row) => row.finding_key as string);
+      });
+    expect(await seen(orgA)).toEqual(['DUPLICATE:a']);
+    expect(await seen(orgB)).toEqual(['DUPLICATE:b']);
+    const blind = await withoutOrg((tx) => tx.query('SELECT count(*)::int AS n FROM fraud_flag'));
+    expect(blind.rows[0].n).toBe(0);
+
+    // THE SAME finding_key in both tenants is legal, and that is the point of
+    // scoping the unique key to the organization. Upstream's `dedupeKey` is
+    // globally unique; this insert is the one their schema would refuse.
+    await withOrg(orgA, (tx) =>
+      tx.query(
+        `INSERT INTO fraud_flag (organization_id, rule_code, message_code, report_id, finding_key)
+         VALUES ($1, 'DUPLICATE', 'DUPLICATE_SAME_REPORT', $2, 'DUPLICATE:shared')`,
+        [orgA, reportA],
+      ),
+    );
+    await expect(
+      withOrg(orgB, (tx) =>
+        tx.query(
+          `INSERT INTO fraud_flag (organization_id, rule_code, message_code, report_id, finding_key)
+           VALUES ($1, 'DUPLICATE', 'DUPLICATE_SAME_REPORT', $2, 'DUPLICATE:shared')`,
+          [orgB, reportB],
+        ),
+      ),
+    ).resolves.toBeDefined();
+
+    // TN-1: the composite FK refuses another tenant's report even though the
+    // referential check runs with RLS bypassed.
+    await expect(
+      withOrg(orgA, (tx) =>
+        tx.query(
+          `INSERT INTO fraud_flag (organization_id, rule_code, message_code, report_id, finding_key)
+           VALUES ($1, 'DUPLICATE', 'DUPLICATE_SAME_REPORT', $2, 'DUPLICATE:smuggled')`,
+          [orgA, reportB],
+        ),
+      ),
+    ).rejects.toThrow();
+  });
+
 });

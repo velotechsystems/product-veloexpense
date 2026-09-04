@@ -190,6 +190,45 @@ const ANALYTICS: ModuleDefinition = {
 };
 
 /**
+ * COMPLIANCE — Module 12: the retrospective fraud rules (VX4-8 part 2) and, next,
+ * the periodic control evaluation.
+ *
+ * ── WHY THIS IS A MODULE AND NOT ALWAYS ON ─────────────────────────────────
+ *
+ * Everything under it is RETROSPECTIVE. A tenant without it still gets policy at
+ * submit, approval routing, and every gate that refuses something in the moment;
+ * what they do not get is a queue of findings about what already happened. That
+ * is a coherent product for a ten-person company and an obviously-wanted one for
+ * a regulated finance team, which is the test for whether something should be a
+ * module rather than a setting.
+ *
+ * It is also the module GAP-AUDIT predicted this ticket would need: upstream runs
+ * both slices as unconditional global crons (MT-5) driven by a global `SystemFlag`
+ * (MT-2), so every tenant gets everybody's schedule and everybody's thresholds.
+ *
+ * ── ONE GATE, ON THE SCAN ──────────────────────────────────────────────────
+ *
+ * `runFraudScan` is the only writer and the only entry point, so it is the only
+ * thing gated. The detectors in `lib/fraud/rules.ts` are exported for tests and
+ * for the scan; they only READ, over rows RLS already scopes to the tenant, and
+ * gating each one would be four copies of a check that the single caller already
+ * makes — MT-3 in the other direction.
+ */
+const COMPLIANCE: ModuleDefinition = {
+  code: 'compliance',
+  name: 'Compliance',
+  description:
+    'Retrospective fraud detection: duplicate charges, unusual amounts, reports that ' +
+    'trip policy repeatedly, and approvals concentrated on one pair of people. Findings ' +
+    'go to a review queue — nothing is blocked, refused or reported to anybody ' +
+    'automatically. Without this module every report still goes through policy and ' +
+    'approval; nothing is looked at again afterwards.',
+  available: true,
+  gates: ['lib/fraud/scan.ts#runFraudScan'],
+  ungated: {},
+};
+
+/**
  * The two the Plan names and nothing implements. Declared, unavailable, and
  * gating nothing — see the header on why they are here at all.
  */
@@ -212,7 +251,7 @@ const DECLARED_ONLY: ModuleDefinition[] = [
   },
 ];
 
-const MODULES: ModuleDefinition[] = [ACCOUNTING, BUDGETS, ANALYTICS, ...DECLARED_ONLY];
+const MODULES: ModuleDefinition[] = [ACCOUNTING, BUDGETS, ANALYTICS, COMPLIANCE, ...DECLARED_ONLY];
 
 /** Every declared module, available or not. Stable order, for a screen. */
 export function listModules(): ModuleDefinition[] {

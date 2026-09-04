@@ -296,6 +296,8 @@ async function errorMessageParams() {
 
 const POLICY_MESSAGES_FILE = join(repoRoot, 'lib', 'i18n', 'catalog', 'policy-messages.ts');
 const POLICY_RULES_FILE = join(repoRoot, 'lib', 'policy', 'rules.ts');
+const FRAUD_MESSAGES_FILE = join(repoRoot, 'lib', 'i18n', 'catalog', 'fraud-messages.ts');
+const FRAUD_RULES_FILE = join(repoRoot, 'lib', 'fraud', 'rules.ts');
 
 /**
  * VX4-7 part 2b — the message codes in the catalogue and the codes the rules
@@ -314,23 +316,31 @@ const POLICY_RULES_FILE = join(repoRoot, 'lib', 'policy', 'rules.ts');
  * an import resolving to a stale artifact hands the gate a plausible list that
  * is not the one in the repo.
  */
-async function policyMessageCodes() {
-  const catalogueSrc = await readFile(POLICY_MESSAGES_FILE, 'utf8');
-  const array = /export const POLICY_MESSAGE_CODES = \[([^\]]+)\] as const;/.exec(catalogueSrc);
+/**
+ * PARAMETERISED IN VX4-8 PART 2, not copied.
+ *
+ * A second catalogue (`fraud-messages.ts`) needed exactly this scan against
+ * exactly this call shape. A second copy of it would be two regexes to keep in
+ * step — UD-9's hand-kept correspondence, in the one file whose whole job is
+ * catching those. The call sites below are the only difference between the two.
+ */
+async function messageCodesFor({ label, catalogueFile, arrayName, rulesFile }) {
+  const catalogueSrc = await readFile(catalogueFile, 'utf8');
+  const array = new RegExp(`export const ${arrayName} = \\[([^\\]]+)\\] as const;`).exec(catalogueSrc);
   if (!array) {
     throw new Error(
-      `could not read POLICY_MESSAGE_CODES out of ${relative(repoRoot, POLICY_MESSAGES_FILE)} — ` +
+      `could not read ${arrayName} out of ${relative(repoRoot, catalogueFile)} — ` +
         `if the declaration was reformatted, update this regex; do not delete the check`,
     );
   }
   const declared = [...array[1].matchAll(/'([^']+)'/g)].map((m) => m[1]);
-  if (declared.length === 0) throw new Error('POLICY_MESSAGE_CODES parsed as empty');
+  if (declared.length === 0) throw new Error(`${arrayName} parsed as empty`);
 
   // Every code named as the second argument to `finding(...)`, which is the ONLY
   // way rules.ts builds a Finding — enforced by the object literal being gone
   // from that file, and by `test/i18n-policy-messages.test.ts` driving the real
   // rules and asserting all ten codes are reachable.
-  const rulesSrc = await readFile(POLICY_RULES_FILE, 'utf8');
+  const rulesSrc = await readFile(rulesFile, 'utf8');
   const emitted = new Set();
   // The first argument is the RULE code and may be a variable, not a literal —
   // `rateMissingFinding` forwards the caller's `ruleCode`, which is how
@@ -346,11 +356,14 @@ async function policyMessageCodes() {
   }
   if (emitted.size === 0) {
     throw new Error(
-      `found no finding(RULE, CODE, …) calls in ${relative(repoRoot, POLICY_RULES_FILE)} — ` +
+      `found no finding(RULE, CODE, …) calls in ${relative(repoRoot, rulesFile)} — ` +
         `if findings are built another way now, update this scan; do not delete the check`,
     );
   }
   return {
+    label,
+    rulesFile: relative(repoRoot, rulesFile),
+    catalogueFile: relative(repoRoot, catalogueFile),
     orphanCopy: declared.filter((c) => !emitted.has(c)),
     missingCopy: [...emitted].filter((c) => !declared.includes(c)),
     declared,
@@ -410,6 +423,12 @@ const COPY_FILES = new Set([
   // default locale, and `test/i18n-errors.test.ts` walks the runtime array to
   // assert every code resolves in every shipped locale.
   'lib/i18n/catalog/errors.ts',
+  // VX4-8 part 2. Fourth instance, and the guarantee is the same as
+  // policy-messages': the type demands the default locale, `messageCodesFor`
+  // above asserts the code set matches lib/fraud/rules.ts in both directions,
+  // and `test/i18n-fraud-messages.test.ts` renders every code in every shipped
+  // locale from the detectors' own output.
+  'lib/i18n/catalog/fraud-messages.ts',
 ]);
 
 async function* sourceFiles(root) {
@@ -555,7 +574,20 @@ async function main() {
     process.exit(2);
   }
 
-  const policyCodes = await policyMessageCodes();
+  const codeSets = [
+    await messageCodesFor({
+      label: 'policy',
+      catalogueFile: POLICY_MESSAGES_FILE,
+      arrayName: 'POLICY_MESSAGE_CODES',
+      rulesFile: POLICY_RULES_FILE,
+    }),
+    await messageCodesFor({
+      label: 'fraud',
+      catalogueFile: FRAUD_MESSAGES_FILE,
+      arrayName: 'FRAUD_MESSAGE_CODES',
+      rulesFile: FRAUD_RULES_FILE,
+    }),
+  ];
   const paramProblems = await errorMessageParams();
 
   const all = [];
@@ -576,7 +608,7 @@ async function main() {
   console.log(
     `check:i18n — registry: ${locales.join(', ')} (default ${defaultLocale}); ` +
       `scanned ${files.length} files in ${SCAN_ROOTS.join(', ')}; ` +
-      `${policyCodes.declared.length} policy message codes`,
+      codeSets.map((c) => `${c.declared.length} ${c.label} message codes`).join('; '),
   );
 
   if (paramProblems.length > 0) {
@@ -612,18 +644,21 @@ async function main() {
     process.exit(1);
   }
 
-  if (policyCodes.missingCopy.length > 0 || policyCodes.orphanCopy.length > 0) {
-    console.error('\n✗ policy message codes disagree between the rules and the catalogue:\n');
-    for (const c of policyCodes.missingCopy) {
-      console.error(`  ${c}  emitted by lib/policy/rules.ts, no copy in the catalogue`);
+  for (const set of codeSets) {
+    if (set.missingCopy.length === 0 && set.orphanCopy.length === 0) continue;
+    console.error(
+      `\n✗ ${set.label} message codes disagree between the rules and the catalogue:\n`,
+    );
+    for (const c of set.missingCopy) {
+      console.error(`  ${c}  emitted by ${set.rulesFile}, no copy in the catalogue`);
     }
-    for (const c of policyCodes.orphanCopy) {
+    for (const c of set.orphanCopy) {
       console.error(`  ${c}  copy exists, no rule emits it`);
     }
     console.error(
-      '\nA code with no copy renders as {THE_CODE} on a report somebody is reading.\n' +
+      '\nA code with no copy renders as {THE_CODE} in front of somebody reading it.\n' +
         'A code no rule emits is copy that will be translated and never shown.\n' +
-        'Add the entry to POLICY_MESSAGES, or delete it — see lib/i18n/catalog/policy-messages.ts.\n',
+        `Add the entry, or delete it — see ${set.catalogueFile}.\n`,
     );
     process.exit(1);
   }
