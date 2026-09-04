@@ -2109,6 +2109,75 @@ shipped.
 | **VX4-7** ⏳ | **Locale: retag `en` → `en-CA`, add `en-US`** — parts 1 → 3 DONE. **VX4-7 CLOSED** (IL-1, IL-2, IL-4, IL-5/6, IL-7, IL-10, IL-11, UD-3, UD-5). fr-CA retired until its copy exists (0028) | IL-1: their `en` already formats as en-US (`3/4/2026`, `CA$10,799.00`), so this is a retag **and** an addition, 2 locales to 3 — touching URL segments, stored preferences and every `{ en: … }` Json key, whose arity is hardcoded in ~17 files (IL-7). Also: a company default locale, which does not exist there (IL-2); what a missing key does, decided before the third catalog exists rather than after two blank pages (IL-4); and the date-formatting calls that pass no locale (IL-10). | 3 |
 | **VX4-8** | **Module 12 slices 2–3: fraud detection + control evaluation** | ✅ **CLOSED** at part 4 (#96) — UD-8, four detectors, six controls, the review queue, two scheduled routes. **PHASE 4 COMPLETE.** | Deferred to this phase since Phase 2 because both are retrospective and need approval history, which now exists. Their versions are driven by `SystemFlag` config (MT-2) and run as unconditional global crons (MT-5), so both land on VX4-1 and VX4-2. | 3 |
 
+### UD-2 + UD-4 + UD-9 SHIPPED — the last three upstream ports, and a third correspondence nobody had listed
+
+**PR #99.** No migration. New: `lib/integrations/coding.ts` · `test/submit-coding.db.test.ts` ·
+`test/ddl-correspondence.db.test.ts`. Changed: `lib/expenses/lifecycle.ts` ·
+`lib/integrations/post-outbox.ts` · `lib/i18n/catalog/errors.ts` (2 codes) · `app/expenses/page.tsx`
+· `app/admin/branding/page.tsx` · `lib/receipts/constants.ts` · `test/ledger-post.db.test.ts`.
+
+**UD-2 — A REPORT THAT CANNOT POST WAS SUBMITTABLE.** `submitReport` checked status, line-item count
+and the policy rules. **Nothing checked that a line had a GL account.** So a category with no
+`gl_account_id` — nullable since `0014` on the reasoning that "the employee filing the expense is not
+who fixes it" — passed submit, passed approval, and surfaced days later in the ledger queue to an
+operator who did not file it and also cannot fix it. `Workbench.uncodedExpenseCount` counts expenses
+with no LINE ITEMS, which is a different thing that reads like this one.
+
+**John's call, 4 Sep: refuse at submit.** The employee cannot fix an unmapped category, so being
+blocked is a dead end for them — but it is an immediate, visible dead end next to somebody who will
+escalate within minutes, and the alternative failure lands late on a person who can do even less
+about it. The refusal names the categories and says an administrator has to map them.
+
+**Two conditions that are not optional, both ported:** only when a ledger is CONNECTED (a tenant with
+no integration has nothing to be coded FOR, and refusing there would conjure a rule out of an absent
+integration), and BEFORE the policy pass (a fact about the report, not a judgement about it).
+`capabilityAvailability` rather than `requireCapability`, because it already answers the two awkward
+cases correctly: module off is `connected: false`, and TWO connected ledgers (AC-22) is
+`connected: true` — the coding is required whichever one wins. Both have their own test.
+
+**A SABOTAGE DISPROVED A CLAIM IN MY OWN COMMENT, AGAIN, AND THE FIX WAS A MISSING TEST ELSEWHERE.**
+`coding.ts` said the order of `coalesce(line, category)` mattered there. It does not: that function
+asks only whether EITHER is present, and `coalesce(a,b) IS NULL` is the same question as
+`coalesce(b,a) IS NULL`. Flipping it passed all twelve tests, correctly. The order IS load-bearing
+where the coalesce picks the account NUMBER — `dispatch.loadPostable` and `dryRun` — because flipping
+it there changes which account the money lands in, silently, for every report whose category was
+re-mapped after it was filed. **Nothing pinned that**; `test/ledger-post.db.test.ts` now does, and
+flipping the order there fails it.
+
+**UD-4 — the list heading.** `/expenses` said "Expense reports" over a list scoped to the reader.
+Worth recording that the sub-line ALREADY said "submitted by you": the scope was disclosed, in the
+place people skip, which makes upstream's A6 finding sharper rather than weaker. The heading now says
+"Your expense reports" / "All expense reports". One string for one string, so the pseudo-locale
+ratchet for `/expenses` stays at 19 — verified, not assumed.
+
+**UD-9 — one of the two was already closed, and a third was live.**
+  · `lib/receipts/constants.ts` promised its list was "kept in step with the UI's file-picker accept
+    list". It is not a copy and has not been since VX1-6 — `RECEIPT_ACCEPT` is derived and the drawer
+    imports it. The comment was the only thing that had drifted. Replaced rather than deleted,
+    because a stale promise is an invitation to create the copy it describes.
+  · **The one nobody had listed:** `LOGO_MIME_TYPES` says it "mirrors
+    `organization_logo_mime_raster`" (code-to-DDL), and `app/admin/branding/page.tsx` had the same
+    three strings typed out AGAIN in an `accept="…"` attribute. Three copies of one list, and the
+    worst failure is the quiet one: a file picker offering a type the database refuses is a rejected
+    upload with no explanation on the screen that offered it. The page now derives its list.
+  · `findingIdentity` "must match migration 0006's unique index exactly" — guarded.
+
+**BOTH GUARDS TEST BEHAVIOUR, NOT TEXT.** A test that reads `pg_get_constraintdef` and compares it to
+a list written in the test is a FOURTH copy — IL-7's shape, the thing `check:i18n` exists to avoid.
+So: the identity is tested by what it means (two findings differing only OUTSIDE the identity must
+collide; differing in any component of it must coexist — including the NULL line item the index
+coalesces, since NULL never equals NULL in SQL and without the coalesce reconciliation would grow a
+duplicate on every save), and the mime list by asking the database to accept every member and refuse
+everything else. Neither file names a column.
+
+**THREE CONSTRAINTS ON ONE FACT, found by the test failing three times.** A logo is `logo_bytes`,
+`logo_mime` and `logo_updated_at`, with a constraint per pairing, and both of the others fire BEFORE
+the raster check. The first two versions of that test were failing on the wrong constraint — which is
+why the expectation names `organization_logo_mime_raster` rather than just asserting a rejection.
+
+**Verified in the harness:** 1356 vitest / 62 files · 135 Playwright · 18 pseudo-crawl (/expenses
+still 19) · build · `check:actions`, `check:i18n`, `check:vendor`, `check:admin`. Six sabotage runs.
+
 ### UD-11 + UD-1 SHIPPED — an edit is now auditable, and the wire is now assertable
 
 **PR #98.** No migration. New: `lib/audit/diff.ts` · `test/audit-diff.test.ts` ·

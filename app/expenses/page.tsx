@@ -63,7 +63,25 @@ export default async function ExpenseReportsPage({
     <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 p-6">
       <header className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Expense reports</h1>
+          {/*
+            UD-4. Upstream's A6: a manager opened this list looking for a
+            colleague's submission, found their own reports, and concluded it had
+            not arrived — it was in the approvals queue the whole time. *"A list
+            whose scope is invisible gets read as the whole set."*
+
+            The sub-line below has always said "submitted by you", which is worth
+            noting because it makes the finding sharper rather than weaker: the
+            scope was disclosed and it was disclosed in the place people skip.
+            The scope belongs in the HEADING, and the sub-line keeps saying it
+            too — this is a disclosure, and redundancy in a disclosure costs
+            nothing when the whole defect is somebody not reading the second line.
+
+            One string in the DOM either way, so the pseudo-locale ratchet for
+            /expenses does not move (VX4-10 owns cataloguing this page's chrome).
+          */}
+          <h1 className="text-2xl font-semibold tracking-tight">
+            {orgWide ? 'All expense reports' : 'Your expense reports'}
+          </h1>
           <p className="text-sm text-muted-foreground">
             {total} {total === 1 ? 'report' : 'reports'}
             {orgWide ? ' across your organization' : ' submitted by you'}

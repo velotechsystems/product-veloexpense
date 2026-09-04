@@ -21,7 +21,7 @@
  *      the employee may acknowledge them with a justification instead.
  */
 import type { QueryRunner } from '@/lib/db/client';
-import { DomainError } from '@/lib/errors/domain';
+import { DomainError, type UserMessage } from '@/lib/errors/domain';
 import type { UserMessageCode } from '@/lib/i18n/catalog/errors';
 import * as policy from '@/lib/policy/service';
 import * as engine from '@/lib/approvals/engine';
@@ -29,6 +29,8 @@ import { recomputeForReport } from '@/lib/budgets/service';
 import type { ReportStatus } from '@/lib/expenses/service';
 import { append as auditAppend } from '@/lib/audit/service';
 import { notify, reportPayload } from '@/lib/notifications/service';
+import { capabilityAvailability } from '@/lib/integrations/service';
+import { uncodedCategories, uncodedDiagnostic } from '@/lib/integrations/coding';
 
 const ORG = "current_setting('app.current_org', true)::uuid";
 
@@ -38,6 +40,7 @@ export type LifecycleErrorCode =
   | 'NOT_FOUND'
   | 'WRONG_STATUS'
   | 'EMPTY_REPORT'
+  | 'UNCODED'
   | 'BLOCKED_BY_POLICY'
   | 'FORBIDDEN';
 
@@ -47,7 +50,14 @@ export class LifecycleError extends DomainError {
     readonly code: LifecycleErrorCode,
     /** The findings that refused a submit, so the UI can list them. */
     readonly violations: policy.ViolationRow[] = [],
-    userMessage: UserMessageCode | null = null,
+    /**
+     * A bare code, or a code WITH parameters. `DomainError` has accepted both
+     * since VX4-7 part 2c; this class narrowed it to a bare code, which UD-2's
+     * refusal is the first one here to need — it names the categories that have
+     * no GL account, and a refusal that does not name them is one an employee can
+     * only escalate by guessing.
+     */
+    userMessage: UserMessageCode | UserMessage | null = null,
   ) {
     super(message, userMessage);
     this.name = 'LifecycleError';
@@ -149,6 +159,39 @@ export async function submitReport(
       [],
       'REPORT_EMPTY',
     );
+  }
+
+  // ── UD-2: is this coded well enough to post? ─────────────────────────────
+  //
+  // BEFORE the policy pass, deliberately. This is a fact about the report, not a
+  // judgement about it, and somebody fixing coding should not have to read past a
+  // policy warning to learn the report cannot post at all.
+  //
+  // ONLY WHEN A LEDGER IS CONNECTED. The requirement comes from the integration;
+  // a tenant with none has nothing to be coded FOR, and refusing a submission
+  // there would conjure a rule out of an absent integration.
+  // `capabilityAvailability` rather than `requireCapability` because this must not
+  // throw for the two awkward cases: the accounting module being off answers
+  // `connected: false` (no gate), and two connected ledgers answers
+  // `connected: true` (AC-22 — something is connected, too much of it, and the
+  // coding is required whichever one wins).
+  const ledger = await capabilityAvailability(tx, 'POST_EXPENSE_REPORT');
+  if (ledger.connected) {
+    const uncoded = await uncodedCategories(tx, reportId);
+    if (uncoded.length > 0) {
+      throw new LifecycleError(
+        `report ${report.number ?? reportId} cannot post: ${uncodedDiagnostic(uncoded)}`,
+        'UNCODED',
+        [],
+        {
+          // One code per branch, as with BLOCKED_BY_POLICY below. The labels are
+          // the parameter because the category is what somebody fixes — and they
+          // are labels, not ids, so `assertRenderableParams` accepts them.
+          code: uncoded.length === 1 ? 'SUBMIT_UNCODED_ONE' : 'SUBMIT_UNCODED_MANY',
+          params: { categories: uncoded.map((u) => u.label).join(', ') },
+        },
+      );
+    }
   }
 
   // Re-run rather than read: the stored findings could predate a rule change.
