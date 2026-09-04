@@ -80,7 +80,11 @@ beforeAll(async () => {
   await waitForSink();
 
   await admin.query('TRUNCATE app_user, organization CASCADE');
-  const o = await admin.query("INSERT INTO organization (slug,name) VALUES ('real','Real') RETURNING id");
+  // UD-8: AUTOMATIC explicitly; see test/posting-trigger.db.test.ts for the
+  // AP_QUEUE half. The default for a new organization is now AP_QUEUE.
+  const o = await admin.query(
+    "INSERT INTO organization (slug,name,posting_trigger) VALUES ('real','Real','AUTOMATIC') RETURNING id",
+  );
   orgId = o.rows[0].id;
 
   // VX4-1: ABSENCE MEANS OFF. Entitled HERE and not at the end of this hook,

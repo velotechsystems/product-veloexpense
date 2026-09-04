@@ -162,6 +162,13 @@ export const POST_STATUS_COPY: EnumCopy<PostStatus> = {
   // that screen. Recasing them is a cosmetic decision, and not one to smuggle
   // into a localisation change.
   PENDING: { 'en-CA': 'waiting' },
+  // UD-8. Three statuses on this screen now mean something close to "not sent",
+  // and the copy has to keep them apart because the operator's next action
+  // differs in each: PENDING the system will send on its own, HELD needs a person
+  // to say go, CANCELLED somebody already said no. So this one names WHO has to
+  // act rather than describing the row's condition — 'held' alone would read as a
+  // synonym of 'withheld', which is the status directly below it.
+  HELD: { 'en-CA': 'waiting for someone to send it' },
   POSTED: { 'en-CA': 'drafted in the ledger' },
   FAILED: { 'en-CA': 'failed, will retry' },
   DEAD: { 'en-CA': 'out of attempts' },

@@ -56,6 +56,7 @@ import { EMPLOYEE_ROLES, EMPLOYEE_STATUSES } from '@/lib/employees/service';
 import { SEVERITIES, RULE_KINDS } from '@/lib/policy/rules';
 import { CHANNELS, EVENT_TYPES } from '@/lib/notifications/catalog';
 import { CAPABILITIES } from '@/lib/integrations/contract';
+import { POST_STATUSES } from '@/lib/integrations/post-outbox';
 import { DELEGATION_SCOPES } from '@/lib/approvals/tiers';
 
 /**
@@ -93,9 +94,12 @@ const CATALOGUES: {
   },
   {
     name: 'PostStatus',
-    members: ['PENDING', 'POSTED', 'FAILED', 'DEAD', 'CANCELLED', 'NEEDS_REVIEW'],
+    // Was a hand-copied list until VX4-8 part 1, when adding HELD made it stale
+    // and this file's own stale-copy check said so. `POST_STATUSES` now exists
+    // for exactly this reason.
+    members: POST_STATUSES,
     copy: POST_STATUS_COPY,
-    fromArray: false,
+    fromArray: true,
   },
   {
     name: 'DeliveryStatus',
@@ -177,6 +181,7 @@ describe('every rendered enum member has copy, in every locale we ship', () => {
       Channel: CHANNELS,
       EventType: EVENT_TYPES,
       Capability: CAPABILITIES,
+      PostStatus: POST_STATUSES,
       DelegationScope: DELEGATION_SCOPES,
     };
     for (const [name, array] of Object.entries(owned)) {
