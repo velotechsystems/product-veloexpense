@@ -29,10 +29,6 @@
 import { redirect } from 'next/navigation';
 import { errorParam } from '@/lib/errors/domain';
 import { revalidatePath } from 'next/cache';
-import { auth } from '@/auth';
-import { withCurrentOrg } from '@/lib/tenant/request';
-import type { QueryRunner } from '@/lib/db/client';
-import { getEmployeeByEmail, type EmployeeRow } from '@/lib/employees/service';
 import { verifyEmailTransport } from '@/lib/notifications/email';
 import { drainOutbox } from '@/lib/notifications/dispatch';
 import {
@@ -41,22 +37,9 @@ import {
   retryNow,
   type DeliveryStatus,
 } from '@/lib/notifications/outbox';
+import { asAdmin, asAdminPage } from '@/lib/auth/admin-guard';
 
 const PAGE = '/admin/notification-delivery';
-
-async function asAdmin<T>(fn: (tx: QueryRunner, actor: EmployeeRow) => Promise<T>): Promise<T> {
-  const session = await auth();
-  const email = session?.user?.email;
-  if (!email) throw new Error('unauthenticated');
-  return withCurrentOrg(async (tx) => {
-    const actor = await getEmployeeByEmail(tx, email);
-    if (!actor) throw new Error('forbidden: no employee record in this organization');
-    if (actor.role !== 'ADMIN' || actor.deleted_at !== null) {
-      throw new Error('forbidden: admin role required');
-    }
-    return fn(tx, actor);
-  });
-}
 
 export async function getQueuePage(status?: string) {
   const filter = (
@@ -65,7 +48,7 @@ export async function getQueuePage(status?: string) {
     ? (status as DeliveryStatus)
     : 'UNSETTLED';
   const [page, transport] = await Promise.all([
-    asAdmin(async (tx) => ({
+    asAdminPage(async (tx) => ({
       rows: await listQueue(tx, { status: filter }),
       summary: await queueSummary(tx),
     })),

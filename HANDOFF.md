@@ -243,6 +243,19 @@ back to Phase 1 — it happened once, and was recovered by checking the feature 
 READS are fine (`git --no-optional-locks log/status/diff`); branch switching and fetching belong in
 John's own terminal, where `gh` is authenticated as `Velotechsys`.
 
+**`--no-optional-locks` IS NOT OPTIONAL, AND HERE IS WHAT IT COSTS.** A plain
+`git status` takes `.git/index.lock` to refresh the index, and the mount forbids `unlink` — so it
+warns (`unable to unlink '.git/index.lock': Operation not permitted`) and **leaves a zero-byte lock
+file behind that this session cannot delete**. Everything on the agent side keeps working, because
+reads only warn. The next thing John runs does not: `git add` and `git commit` both fail with
+"Another git process seems to be running in this repository". That happened on VX4-9 — the commit
+block failed, the branch was pushed still pointing at `main`, and `gh pr create` refused with "No
+commits between main and …". Recovery is one line **in John's terminal** (`rm -f .git/index.lock`,
+then re-run the add/commit/push); the agent cannot do it, and `device_request_delete_permission`
+would prompt for delete rights over the whole `velotechsystems` tree to remove one empty file.
+So: every git invocation from the device shell starts `git --no-optional-locks`. This was already
+written down one paragraph up and was not followed, which is the same failure mode as PR #90.
+
 ## 4. Standard per-ticket loop
 ```bash
 git fetch origin
@@ -2096,6 +2109,99 @@ shipped.
 | **VX4-7** ⏳ | **Locale: retag `en` → `en-CA`, add `en-US`** — parts 1 → 3 DONE. **VX4-7 CLOSED** (IL-1, IL-2, IL-4, IL-5/6, IL-7, IL-10, IL-11, UD-3, UD-5). fr-CA retired until its copy exists (0028) | IL-1: their `en` already formats as en-US (`3/4/2026`, `CA$10,799.00`), so this is a retag **and** an addition, 2 locales to 3 — touching URL segments, stored preferences and every `{ en: … }` Json key, whose arity is hardcoded in ~17 files (IL-7). Also: a company default locale, which does not exist there (IL-2); what a missing key does, decided before the third catalog exists rather than after two blank pages (IL-4); and the date-formatting calls that pass no locale (IL-10). | 3 |
 | **VX4-8** | **Module 12 slices 2–3: fraud detection + control evaluation** | ✅ **CLOSED** at part 4 (#96) — UD-8, four detectors, six controls, the review queue, two scheduled routes. **PHASE 4 COMPLETE.** | Deferred to this phase since Phase 2 because both are retrospective and need approval history, which now exists. Their versions are driven by `SystemFlag` config (MT-2) and run as unconditional global crons (MT-5), so both land on VX4-1 and VX4-2. | 3 |
 
+### VX4-9 SHIPPED — one admin gate, two exits, and a claim of mine the sabotage disproved
+
+**PR #97.** No migration. New: `lib/auth/admin-guard.ts` · `app/forbidden.tsx` ·
+`scripts/check-admin-gate.mjs` · `test/admin-gate.db.test.ts`. Changed: all fifteen
+`app/admin/**/actions.ts` · `lib/auth/actor.ts` · `lib/i18n/catalog/errors.ts` (4 codes) ·
+`next.config.ts` · `e2e/crawl.spec.ts` · `package.json` · `.github/workflows/ci.yml`.
+
+**WHAT WAS BROKEN WAS THE REFUSAL, NOT THE AUTHORIZATION.** `e2e/crawl.spec.ts` (VX4-7 part 3) found
+all fifteen `/admin/*` pages answering **HTTP 500** to a MANAGER or an EMPLOYEE, true since VX1-2.
+Nothing leaked — the gate threw before the page rendered. Two other things were wrong, and they have
+different audiences, which is why the fix has two halves:
+
+- **the person** got Next's error boundary ("Application error") for an ordinary permission denial;
+- **the operator** got a 500 in the logs every time the product worked correctly, which is how a real
+  500 goes unnoticed.
+
+**TWO EXITS, DELIBERATELY NOT ONE FUNCTION WITH A FLAG.** `asAdminPage` calls Next's `forbidden()` →
+`app/forbidden.tsx` with a **403**. `asAdmin` throws `ForbiddenError` carrying a catalogued message
+code, so a form shows a sentence. They cannot be merged: `forbidden()` throws a control-flow error
+Next must catch, and every admin action is wrapped in a `guarded()` that catches everything and
+redirects — a page-shaped refusal inside an action would be swallowed and shown as the generic.
+
+**A PAGE THAT SAYS NO, NOT A REDIRECT** (John's call, 4 Sep). Somebody following a colleague's link
+lands somewhere else with no explanation and concludes the link was wrong. The copy names the CLASS
+of screen, never the page — a refusal should not be a directory — and offers no request-access button,
+because there is no request-access flow to hang it on.
+
+**THE SECOND `ForbiddenError` I ALMOST SHIPPED.** The first draft of `admin-guard.ts` declared its own
+`ForbiddenError extends DomainError` and resolved the actor with its own `getEmployeeByEmail`. Both
+already existed in `lib/auth/actor.ts` (VX1-10). Two classes of the same name, both `DomainError`,
+differing only in which file imported them — fine until the first `instanceof`. And the private
+resolver **skipped `requireActor`'s `deleted_at` clause**, so a DEACTIVATED employee would have passed
+`asMember` here while being refused everywhere else. Caught by reading the two non-admin action files
+the gate does *not* cover. `admin-guard` now builds on `requireActor`; `isActiveAdmin` lives in
+`actor.ts`, both because it belongs beside the membership predicate and because `admin-guard` imports
+`@/auth`, whose next-auth runtime **vitest cannot load** — a predicate no unit test can reach is one
+that loses its `deleted_at` clause and nobody notices.
+
+**IN SCOPE, SAID PLAINLY:** `requireActor`'s two refusals had no `userMessage`, so a withdrawn invite
+or a deactivated account reached every employee surface as the generic. Both now carry codes
+(`NOT_A_MEMBER_HERE`, `ACCOUNT_DEACTIVATED`). Same predicate, same access decision — only the sentence
+changed. **Not** in scope: `app/expenses/actions.ts` and `app/receipts/actions.ts` keep their own
+`asActor` over `requireActor`. That is the MEMBER gate, and folding it in would have made this a
+refactor of the employee surfaces.
+
+**`scripts/check-admin-gate.mjs` — four properties, and check D is the one that matters.** A: each of
+`asAdmin`/`asAdminPage`/`asMember`/`isActiveAdmin` declared in exactly one file. B: every admin actions
+module imports the gate. C: nothing under `app/admin/` reads the session itself (`from '@/auth'`) — a
+token outlives a demotion, the row does not. E: no bare `throw new Error('forbidden…')` there. **D:
+the exit matches the caller** — the PAGE says which each import is (`<form action={name}>` vs
+`await name(…)`), and the gate reached must match, following calls within the module. A, B, C and E
+would all pass a new page that gated its read with `asAdmin` and went straight back to 500.
+
+**THE GUARD'S OWN FIRST DRAFT FAILED ON CORRECT CODE, TWICE**, which is worth recording because this
+project keeps naming the failure mode ("a gate that fails the build on correct code teaches people to
+delete gates"). It classified reads-vs-writes by NAME (`…FromForm`) — and `pullFromLedgerForm` is a
+form action whose name ends `Form`. And it scanned one level deep, so the four `expense-policies`
+writes that gate in the function they delegate to were all reported ungated. Both were the guard being
+wrong about working code, and both were fixed in the guard.
+
+**THE SABOTAGE RUN DISPROVED A CLAIM IN MY OWN COMMENT.** `next.config.ts` said that if a future Next
+dropped `experimental.authInterrupts`, "fifteen pages fail at build". Flipping the flag to `false`:
+`npm run build` **succeeds**, and `forbidden()` throws at request time — a 500, this exact bug quietly
+restored. The comment now says so, and names what actually guards it: the crawl, which goes red on all
+thirty refusal cases. Eight sabotages in total; the other seven each failed exactly what they should,
+including deleting `app/forbidden.tsx`, where the **403 assertion still passed and only the sentence
+assertion failed** — which is the point of asserting both audiences separately.
+
+**`e2e/crawl.spec.ts`: the `test.fail(true, 'VX4-9: …')` is DELETED, not skipped.** Playwright reports
+"expected to fail but passed", so fixing the bug turned the file red and forced somebody back to the
+line. The refusal assertion is now exact — 403, plus `forbidden-reason` rendered, plus still on the URL
+they asked for — rather than a disjunction of "redirected, or said something denial-shaped".
+
+**TWO THINGS FOUND AND LEFT ALONE, FLAGGED RATHER THAN FOLDED IN:**
+
+1. `app/admin/employees/actions.ts` exports `getMyDirectReports` and `getMyManagerChain`, and **nothing
+   imports either**. They are dead exports in a `'use server'` module, so they are registered server
+   actions reachable by anyone who can guess an action id. No leak — both return only the caller's own
+   reporting tree — but they are the only reason `asMember` is exported from the guard at all.
+2. `createEmployeeFromForm` and friends `throw new Error('email is required')`. Bare Errors, so a
+   person gets "something went wrong on our side" for a blank field. Same shape as IL-11, on the
+   validation path rather than the authorization one. VX4-10 territory.
+
+**Verified in the harness:** 1296 vitest / 58 files · 135 Playwright · 18 pseudo-crawl · `npm run
+build` · `check:actions`, `check:i18n`, `check:vendor`, `check:admin` all OK. `check:harness` fails in
+the harness by design (it has both harness edits applied) and passes on the committed tree.
+
+**A trap worth writing down: the db suites TRUNCATE the seed out from under Playwright.**
+`test/admin-gate.db.test.ts` truncates `app_user, organization CASCADE` like every other db suite, so
+running vitest and then Playwright without `npm run seed` in between fails in `auth.setup.ts` with
+"admin@demo.test is missing from the 'demo' tenant". One sabotage result was inconclusive for exactly
+this reason before I noticed — a failure for the wrong reason is as misleading as a pass for one.
+
 ### VX4-8 part 4 SHIPPED — the review queue, the routes, and VX4-8 CLOSED
 
 Four PRs had shipped four detectors, six controls, four tables and two runners, and **nothing ran
@@ -2412,14 +2518,16 @@ now has a per-page ceiling that can only go down. Boarded as **VX4-10**; catalog
    an ADMIN.** Four phases, thirteen specs, and no page in this product had ever been loaded as a
    non-admin. Authorization is INTACT (nothing leaks; the page never renders), but an ordinary
    permission denial is indistinguishable from the product being broken, and monitoring sees a 500
-   every time the product works correctly. **Boarded as VX4-9**, not fixed here by John's call: the
-   fix is a shared helper plus a refusal path across fifteen pages, and redirect-vs-403 is a product
-   decision. `e2e/crawl.spec.ts` marks it `test.fail()`, so it goes RED the day it is fixed.
+   every time the product works correctly. **Boarded as VX4-9** and **CLOSED there (#97)** — one
+   shared gate with two exits, a 403 refusal page, and `check:admin`. Not fixed in this ticket by
+   John's call: redirect-vs-403 was a product decision, and folding it into a localisation PR would
+   have buried it. `e2e/crawl.spec.ts` marked it `test.fail()`, which did its job — the day the 500
+   was fixed the file went red and the marker had to be deleted.
 
-   Related and worth its own line: **`asAdmin` is copy-pasted into fourteen action files.** All
-   fourteen predicates were diffed and are identical, so there is no hole today — said plainly,
-   because "fourteen copies of an authorization check" invites the opposite assumption. It is fourteen
-   places for the next one to diverge.
+   Related and worth its own line: **`asAdmin` was copy-pasted into fourteen action files.** All
+   fourteen predicates were diffed and were identical, so there was no hole — said plainly,
+   because "fourteen copies of an authorization check" invites the opposite assumption. It was fourteen
+   places for the next one to diverge, and VX4-9 found the fifteenth had already diverged in shape.
 
 **THREE BUGS IN MY OWN WORK, ALL CAUGHT BY ASSERTIONS RATHER THAN REVIEW.**
 The accent table mapped `t`, `T` and `Q` to themselves — a third of English passed through

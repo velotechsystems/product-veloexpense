@@ -29,33 +29,16 @@
 import { redirect } from 'next/navigation';
 import { errorParam } from '@/lib/errors/domain';
 import { revalidatePath } from 'next/cache';
-import { auth } from '@/auth';
-import { withCurrentOrg } from '@/lib/tenant/request';
-import type { QueryRunner } from '@/lib/db/client';
-import { getEmployeeByEmail, type EmployeeRow } from '@/lib/employees/service';
 import { append as auditAppend } from '@/lib/audit/service';
 import { REPORT_PLACEHOLDERS, RESERVED_PLACEHOLDERS } from '@/lib/notifications/catalog';
 import { listTemplates, setTemplate } from '@/lib/notifications/service';
+import { asAdmin, asAdminPage } from '@/lib/auth/admin-guard';
 
 const PAGE = '/admin/notification-templates';
 
-async function asAdmin<T>(fn: (tx: QueryRunner, actor: EmployeeRow) => Promise<T>): Promise<T> {
-  const session = await auth();
-  const email = session?.user?.email;
-  if (!email) throw new Error('unauthenticated');
-  return withCurrentOrg(async (tx) => {
-    const actor = await getEmployeeByEmail(tx, email);
-    if (!actor) throw new Error('forbidden: no employee record in this organization');
-    if (actor.role !== 'ADMIN' || actor.deleted_at !== null) {
-      throw new Error('forbidden: admin role required');
-    }
-    return fn(tx, actor);
-  });
-}
-
 /** The placeholders a template may use, for the screen to list. */
 export async function getTemplatesPage() {
-  return asAdmin(async (tx) => ({
+  return asAdminPage(async (tx) => ({
     templates: await listTemplates(tx, 'IN_APP'),
     placeholders: [...RESERVED_PLACEHOLDERS, ...REPORT_PLACEHOLDERS],
   }));

@@ -23,27 +23,10 @@
  * every export as a server action, and one it cannot wrap makes it register NONE
  * of them (VX2-8's dead form on /approve).
  */
-import { auth } from '@/auth';
 import { errorParam } from '@/lib/errors/domain';
-import { withCurrentOrg } from '@/lib/tenant/request';
-import type { QueryRunner } from '@/lib/db/client';
-import { getEmployeeByEmail, type EmployeeRow } from '@/lib/employees/service';
 import { isModuleEnabled } from '@/lib/modules/service';
 import { AnalyticsError, spendSummary, type SpendSummary } from '@/lib/analytics/service';
-
-async function asAdmin<T>(fn: (tx: QueryRunner, actor: EmployeeRow) => Promise<T>): Promise<T> {
-  const session = await auth();
-  const email = session?.user?.email;
-  if (!email) throw new Error('unauthenticated');
-  return withCurrentOrg(async (tx) => {
-    const actor = await getEmployeeByEmail(tx, email);
-    if (!actor) throw new Error('forbidden: no employee record in this organization');
-    if (actor.role !== 'ADMIN' || actor.deleted_at !== null) {
-      throw new Error('forbidden: admin role required');
-    }
-    return fn(tx, actor);
-  });
-}
+import { asAdminPage } from '@/lib/auth/admin-guard';
 
 /**
  * NOT EXPORTED, and `npm run check:actions` is why.
@@ -79,7 +62,7 @@ interface AnalyticsPage {
  * no other caller can reintroduce it.
  */
 export async function getAnalyticsPage(from?: string, to?: string): Promise<AnalyticsPage> {
-  return asAdmin(async (tx) => {
+  return asAdminPage(async (tx) => {
     const moduleEnabled = await isModuleEnabled(tx, 'analytics');
     if (!moduleEnabled) return { moduleEnabled, summary: null, problem: null };
     try {

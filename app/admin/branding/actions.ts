@@ -15,10 +15,7 @@
  */
 import { redirect } from 'next/navigation';
 import { errorParam } from '@/lib/errors/domain';
-import { auth } from '@/auth';
-import { withCurrentOrg } from '@/lib/tenant/request';
-import { getEmployeeByEmail, type EmployeeRow } from '@/lib/employees/service';
-import type { QueryRunner } from '@/lib/db/client';
+import { type EmployeeRow } from '@/lib/employees/service';
 import { brandCss } from '@/lib/branding/css';
 import {
   clearLogo,
@@ -28,22 +25,9 @@ import {
   setLoginTagline,
   setLogo,
 } from '@/lib/branding/service';
+import { asAdmin, asAdminPage } from '@/lib/auth/admin-guard';
 
 const PAGE = '/admin/branding';
-
-async function asAdmin<T>(fn: (tx: QueryRunner, actor: EmployeeRow) => Promise<T>): Promise<T> {
-  const session = await auth();
-  const email = session?.user?.email;
-  if (!email) throw new Error('unauthenticated');
-  return withCurrentOrg(async (tx) => {
-    const actor = await getEmployeeByEmail(tx, email);
-    if (!actor) throw new Error('forbidden: no employee record in this organization');
-    if (actor.role !== 'ADMIN' || actor.deleted_at !== null) {
-      throw new Error('forbidden: admin role required');
-    }
-    return fn(tx, actor);
-  });
-}
 
 const auditActor = (a: EmployeeRow) => ({
   id: a.id,
@@ -76,7 +60,7 @@ interface BrandingView {
 }
 
 export async function getBrandingPage(): Promise<BrandingView> {
-  return asAdmin(async (tx) => {
+  return asAdminPage(async (tx) => {
     const b = await getBranding(tx);
     const rendered = brandCss(b.brandColor);
     return {

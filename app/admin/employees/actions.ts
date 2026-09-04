@@ -13,51 +13,22 @@
  */
 import { redirect } from 'next/navigation';
 import { revalidatePath } from 'next/cache';
-import { auth } from '@/auth';
-import { withCurrentOrg } from '@/lib/tenant/request';
-import type { QueryRunner } from '@/lib/db/client';
 import * as svc from '@/lib/employees/service';
-
-async function sessionEmail(): Promise<string> {
-  const session = await auth();
-  const email = session?.user?.email;
-  if (!email) throw new Error('unauthenticated');
-  return email;
-}
-
-/** Runs fn as the signed-in employee, whoever they are. */
-async function asMember<T>(fn: (tx: QueryRunner, actor: svc.EmployeeRow) => Promise<T>): Promise<T> {
-  const email = await sessionEmail();
-  return withCurrentOrg(async (tx) => {
-    const actor = await svc.getEmployeeByEmail(tx, email);
-    if (!actor) throw new Error('forbidden: no employee record in this organization');
-    return fn(tx, actor);
-  });
-}
-
-/** Runs fn only if the signed-in employee is an active ADMIN of this tenant. */
-async function asAdmin<T>(fn: (tx: QueryRunner, actor: svc.EmployeeRow) => Promise<T>): Promise<T> {
-  return asMember(async (tx, actor) => {
-    if (actor.role !== 'ADMIN' || actor.deleted_at !== null) {
-      throw new Error('forbidden: admin role required');
-    }
-    return fn(tx, actor);
-  });
-}
+import { asAdmin, asAdminPage, asMember } from '@/lib/auth/admin-guard';
 
 /* ── reads ─────────────────────────────────────────────────────────────────── */
 
 export async function listEmployees(filter: svc.EmployeeListFilter = {}) {
-  return asAdmin((tx) => svc.listEmployees(tx, filter));
+  return asAdminPage((tx) => svc.listEmployees(tx, filter));
 }
 
 export async function getEmployee(employeeId: string) {
-  return asAdmin((tx) => svc.getEmployee(tx, employeeId));
+  return asAdminPage((tx) => svc.getEmployee(tx, employeeId));
 }
 
 /** Employee detail for the admin page: the record, its chain and its reports. */
 export async function getEmployeeDetail(employeeId: string) {
-  return asAdmin(async (tx) => {
+  return asAdminPage(async (tx) => {
     const employee = await svc.getEmployee(tx, employeeId);
     if (!employee) return null;
     const managerChain = await svc.getManagerChain(tx, employeeId);
@@ -67,7 +38,7 @@ export async function getEmployeeDetail(employeeId: string) {
 }
 
 export async function getDirectoryOptions() {
-  return asAdmin((tx) => svc.getDirectoryOptions(tx));
+  return asAdminPage((tx) => svc.getDirectoryOptions(tx));
 }
 
 /** Any signed-in user may read their own reporting tree (managers included). */

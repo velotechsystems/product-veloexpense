@@ -19,10 +19,7 @@
 import { redirect } from 'next/navigation';
 import { errorParam } from '@/lib/errors/domain';
 import { revalidatePath } from 'next/cache';
-import { auth } from '@/auth';
-import { withCurrentOrg } from '@/lib/tenant/request';
 import type { QueryRunner } from '@/lib/db/client';
-import { getEmployeeByEmail, type EmployeeRow } from '@/lib/employees/service';
 import { PullError, pullFromLedger } from '@/lib/accounts/pull';
 import { capabilityAvailability } from '@/lib/integrations/service';
 import { isModuleEnabled } from '@/lib/modules/service';
@@ -41,22 +38,9 @@ import {
   renameAccount,
   setCategoryAccount,
 } from '@/lib/accounts/service';
+import { asAdmin, asAdminPage } from '@/lib/auth/admin-guard';
 
 const PAGE = '/admin/chart-of-accounts';
-
-async function asAdmin<T>(fn: (tx: QueryRunner, actor: EmployeeRow) => Promise<T>): Promise<T> {
-  const session = await auth();
-  const email = session?.user?.email;
-  if (!email) throw new Error('unauthenticated');
-  return withCurrentOrg(async (tx) => {
-    const actor = await getEmployeeByEmail(tx, email);
-    if (!actor) throw new Error('forbidden: no employee record in this organization');
-    if (actor.role !== 'ADMIN' || actor.deleted_at !== null) {
-      throw new Error('forbidden: admin role required');
-    }
-    return fn(tx, actor);
-  });
-}
 
 /**
  * `canPull`, plus the sentence for the case where more than one ledger could.
@@ -73,7 +57,7 @@ async function pullAvailability(
 }
 
 export async function getChartPage() {
-  return asAdmin(async (tx) => {
+  return asAdminPage(async (tx) => {
     const accounts = await listAccounts(tx, { includeInactive: true });
     return {
       accounts,

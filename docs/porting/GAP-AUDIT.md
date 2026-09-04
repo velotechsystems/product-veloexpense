@@ -3912,7 +3912,7 @@ mechanism starts at UD-1 again under its own date heading.
 | `836af348` who sends an approved report is a setting | `postingTrigger`: AP_QUEUE vs AUTOMATIC | **Product question for John.** UD-8 |
 | `9be674ac` fire CD on `published` | their release plumbing | Not applicable — ours is `velotechsystems/infra-ci-cd@v1` |
 | `12bfbfa8` a read-only date field stops offering a picker | their design system | Not applicable. Its TEST lesson is UD-10 |
-| `ce053ccd` crawl every page as every role | a technique, and the two bugs it found | **ADOPTED — VX4-7 part 3.** `e2e/crawl.spec.ts`. Found that every session `auth.setup.ts` minted was an ADMIN (four phases, no page ever loaded as MANAGER or EMPLOYEE), and then that all 15 `/admin/*` pages answer **HTTP 500** to a non-admin — boarded VX4-9. UD-3 |
+| `ce053ccd` crawl every page as every role | a technique, and the two bugs it found | **ADOPTED — VX4-7 part 3.** `e2e/crawl.spec.ts`. Found that every session `auth.setup.ts` minted was an ADMIN (four phases, no page ever loaded as MANAGER or EMPLOYEE), and then that all 15 `/admin/*` pages answer **HTTP 500** to a non-admin — boarded VX4-9, **closed there (#97)**: one shared gate with a 403 refusal page, plus `check:admin`, which also polices which exit each caller takes. UD-3 |
 | `704880cc` see the override amount while you type it | travel module | Not applicable |
 | `96883724` a mixed-currency report shows how it adds up | a reconciliation hidden in a hover tooltip | Not applicable today — single-currency per report (VX1-6). Revisit if that is lifted |
 | `28ba5f65` the update-in-place button says it overwrites | their VCC module | Not applicable |

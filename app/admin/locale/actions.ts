@@ -23,28 +23,13 @@
 import { revalidatePath } from 'next/cache';
 import { errorParam } from '@/lib/errors/domain';
 import { redirect } from 'next/navigation';
-import { auth } from '@/auth';
-import { withCurrentOrg } from '@/lib/tenant/request';
-import { getEmployeeByEmail, type EmployeeRow } from '@/lib/employees/service';
+import { type EmployeeRow } from '@/lib/employees/service';
 import type { QueryRunner } from '@/lib/db/client';
 import { localeName, SUPPORTED_LOCALES } from '@/lib/i18n/locales';
 import { getOrgDefaults, listTimeZones, setOrgDefaults } from '@/lib/i18n/service';
+import { asAdmin, asAdminPage } from '@/lib/auth/admin-guard';
 
 const PAGE = '/admin/locale';
-
-async function asAdmin<T>(fn: (tx: QueryRunner, actor: EmployeeRow) => Promise<T>): Promise<T> {
-  const session = await auth();
-  const email = session?.user?.email;
-  if (!email) throw new Error('unauthenticated');
-  return withCurrentOrg(async (tx) => {
-    const actor = await getEmployeeByEmail(tx, email);
-    if (!actor) throw new Error('forbidden: no employee record in this organization');
-    if (actor.role !== 'ADMIN' || actor.deleted_at !== null) {
-      throw new Error('forbidden: admin role required');
-    }
-    return fn(tx, actor);
-  });
-}
 
 const auditActor = (a: EmployeeRow) => ({
   id: a.id,
@@ -92,7 +77,7 @@ interface LocalePageView {
 const SAMPLE_INSTANT = new Date(Date.UTC(2026, 2, 4, 2, 30));
 
 export async function getLocalePage(): Promise<LocalePageView> {
-  return asAdmin(async (tx) => {
+  return asAdminPage(async (tx) => {
     const defaults = await getOrgDefaults(tx, await orgIdOf(tx));
     const zones = await listTimeZones(tx);
     return {

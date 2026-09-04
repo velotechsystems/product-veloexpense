@@ -13,30 +13,13 @@
  */
 import { redirect } from 'next/navigation';
 import { errorParam } from '@/lib/errors/domain';
-import { auth } from '@/auth';
-import { withCurrentOrg } from '@/lib/tenant/request';
-import { getEmployeeByEmail, type EmployeeRow } from '@/lib/employees/service';
 import { listEntitlements, setEntitlement } from '@/lib/modules/service';
-import type { QueryRunner } from '@/lib/db/client';
+import { asAdmin, asAdminPage } from '@/lib/auth/admin-guard';
 
 const PAGE = '/admin/modules';
 
-async function asAdmin<T>(fn: (tx: QueryRunner, actor: EmployeeRow) => Promise<T>): Promise<T> {
-  const session = await auth();
-  const email = session?.user?.email;
-  if (!email) throw new Error('unauthenticated');
-  return withCurrentOrg(async (tx) => {
-    const actor = await getEmployeeByEmail(tx, email);
-    if (!actor) throw new Error('forbidden: no employee record in this organization');
-    if (actor.role !== 'ADMIN' || actor.deleted_at !== null) {
-      throw new Error('forbidden: admin role required');
-    }
-    return fn(tx, actor);
-  });
-}
-
 export async function getModulesPage() {
-  return asAdmin(async (tx) => ({ entitlements: await listEntitlements(tx) }));
+  return asAdminPage(async (tx) => ({ entitlements: await listEntitlements(tx) }));
 }
 
 export async function toggleFromForm(form: FormData) {
