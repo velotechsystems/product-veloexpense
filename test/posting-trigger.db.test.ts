@@ -256,7 +256,12 @@ describe('changing the setting', () => {
     const audit = await admin.query(
       `SELECT action, details FROM audit_entry
         WHERE organization_id = $1 AND action = 'LEDGER_POSTING_TRIGGER_CHANGED'
-        ORDER BY id DESC LIMIT 1`,
+        -- ORDER BY sequence, not id: audit_entry.id is a random uuid, so
+        -- ordering by it picks an arbitrary row. Shipped in part 1 and corrected
+        -- in part 4, where the same mistake was caught by running one file five
+        -- times in a row. (No backticks in this comment: it is inside a template
+        -- literal, which is a trap ExpenseOS's own fraud SQL warns about.)
+        ORDER BY sequence DESC LIMIT 1`,
       [orgId],
     );
     expect(audit.rows).toHaveLength(1);

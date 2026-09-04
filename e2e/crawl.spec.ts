@@ -62,6 +62,7 @@ const PAGES = [
   '/admin/approval-ladder',
   '/admin/budgets',
   '/admin/chart-of-accounts',
+  '/admin/compliance',
   '/admin/branding',
   '/admin/locale',
   '/admin/integrations',

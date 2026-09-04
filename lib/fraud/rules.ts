@@ -148,6 +148,40 @@ function finding(
   };
 }
 
+/**
+ * A flag raised by a PERSON, built here rather than where it is written.
+ *
+ * `lib/fraud/review.ts` is what inserts it, and putting the construction there
+ * would have been the obvious placement. It is here because
+ * `scripts/check-i18n.mjs` finds every fraud message code by scanning THIS FILE
+ * for `finding(RULE, CODE, …)` — a code emitted from anywhere else is a code the
+ * gate cannot see, and it would report `MANUAL_FLAG` as orphan copy. Part 2
+ * discovered that constraint by tripping over it rather than by reasoning about
+ * it, which is the better way round.
+ *
+ * The `findingKey` is the one in this file NOT derived from what was found: two
+ * people can legitimately raise the same concern about the same report, and
+ * neither should overwrite the other. So it carries the raiser and a timestamp,
+ * and every manual flag is its own row by construction.
+ */
+export function manualFinding(input: {
+  note: string;
+  severity: FraudSeverity;
+  reportId: string | null;
+  subjectUserId: string | null;
+  raisedBy: string;
+}): Finding {
+  return finding(FRAUD_RULES.manual, 'MANUAL_FLAG', {
+    severity: input.severity,
+    key: [input.raisedBy, new Date().toISOString()],
+    // The person's sentence, and nothing else. `f.text` refuses a blank one.
+    data: { note: input.note },
+    evidence: { raisedBy: input.raisedBy, manual: true },
+    reportId: input.reportId,
+    subjectUserId: input.subjectUserId,
+  });
+}
+
 /* ── configuration ─────────────────────────────────────────────────────────── */
 
 export interface FraudConfig {

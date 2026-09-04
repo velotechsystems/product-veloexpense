@@ -2094,7 +2094,91 @@ shipped.
 | **VX4-5** | **Budgets, tenant-scoped, on our own chart of accounts** | BG-2: `Budget.glAccountId` is a **required** FK into a NetSuite SOAP cache, and their vendor-neutral `Account` table was deleted — so budgets there are uncreatable without NetSuite. **VX3-1 already fixed this for us**; budgets point at `gl_account` and a vendor becomes an alias. Plus BG-1 (tenant column and composite keys on five tables, including an index Prisma cannot express), BG-3 (actuals recomputed over the whole fiscal year on every approval click, with an unbounded FX load → rollup), BG-6 (alert idempotency by mutable marker → our atomic-claim idiom). | 4 |
 | **VX4-6** | **Analytics, tenant-scoped** | The tenancy half is free (above). The work is AN-7 — a missing FX rate is currently summed **as if it were base currency**, unflagged, while the budget code counts unconverted amounts for the same situation — and AN-10: unbounded ranges, no `date` index, and a home page that runs a full-history aggregate for every signed-in user. Plus AN-8's lesson: size the data with a predicate, never with a role check that then queries everything. | 4 |
 | **VX4-7** ⏳ | **Locale: retag `en` → `en-CA`, add `en-US`** — parts 1 → 3 DONE. **VX4-7 CLOSED** (IL-1, IL-2, IL-4, IL-5/6, IL-7, IL-10, IL-11, UD-3, UD-5). fr-CA retired until its copy exists (0028) | IL-1: their `en` already formats as en-US (`3/4/2026`, `CA$10,799.00`), so this is a retag **and** an addition, 2 locales to 3 — touching URL segments, stored preferences and every `{ en: … }` Json key, whose arity is hardcoded in ~17 files (IL-7). Also: a company default locale, which does not exist there (IL-2); what a missing key does, decided before the third catalog exists rather than after two blank pages (IL-4); and the date-formatting calls that pass no locale (IL-10). | 3 |
-| **VX4-8** ⏳ | **Module 12 slices 2–3: fraud detection + control evaluation** — parts 1–3 DONE (UD-8, the four detectors, the six controls). The UI is all that is left: nothing runs either slice yet — no route, no button, no schedule | Deferred to this phase since Phase 2 because both are retrospective and need approval history, which now exists. Their versions are driven by `SystemFlag` config (MT-2) and run as unconditional global crons (MT-5), so both land on VX4-1 and VX4-2. | 3 |
+| **VX4-8** | **Module 12 slices 2–3: fraud detection + control evaluation** | ✅ **CLOSED** at part 4 (#96) — UD-8, four detectors, six controls, the review queue, two scheduled routes. **PHASE 4 COMPLETE.** | Deferred to this phase since Phase 2 because both are retrospective and need approval history, which now exists. Their versions are driven by `SystemFlag` config (MT-2) and run as unconditional global crons (MT-5), so both land on VX4-1 and VX4-2. | 3 |
+
+### VX4-8 part 4 SHIPPED — the review queue, the routes, and VX4-8 CLOSED
+
+Four PRs had shipped four detectors, six controls, four tables and two runners, and **nothing ran
+any of it.** This is the PR that makes it reachable: `/admin/compliance`, two scheduled routes, the
+verdict path, manual flags, and the two threshold forms.
+
+**Migration 0033 adds a `platform_read` policy on `module_entitlement`, and the absence it fills was
+not an oversight.** Every other scheduled job here moves WORK and finds its tenants by reading its
+own due rows — `duePosts`, the notification drain. Compliance has no work table; the scan IS the
+work, and the only thing that says whether a tenant should get one is the entitlement. All four
+existing hatches are on work tables, so **there was no sanctioned way for a platform task to
+enumerate tenants at all**, which made a scheduled scan unbuildable rather than merely unwritten.
+SELECT only, `enabled = true` only. Making the scan admin-only was the alternative and was rejected:
+MT-5's finding against upstream is that their scan is an unconditional global cron, and the fix is a
+cron that respects entitlements, not the removal of the cron.
+
+**A verdict is a conditional write and is not reversible.** `RESOLVED`/`DISMISSED`/`ESCALATED`, with
+`ON CONFLICT`-style protection so two reviewers produce one verdict and one refusal — and the
+refusal says which of "somebody got there first" and "that does not exist" happened, because they
+lead to different next actions. There is no un-dismiss: if a dismissal was wrong the honest repair is
+a NEW flag with a person's name on it, which is what `raiseManualFlag` is for.
+
+**A dismissal requires a note; the other two verdicts do not.** `RESOLVED` means it was real and
+dealt with, `ESCALATED` means somebody else is looking, `DISMISSED` means a finding about somebody's
+expenses was set aside — the one an auditor asks about. Same call VX1-7 made for acknowledging a
+policy violation.
+
+**`manualFinding()` lives in `lib/fraud/rules.ts`, not in `review.ts` where it is used.** Not
+shuffling: `check:i18n` finds every fraud message code by scanning that one file, so a code emitted
+anywhere else is a code the gate cannot see. Part 2 discovered that by having `MANUAL_FLAG` refused
+as orphan copy.
+
+**Five things caught during the build, and every one of them by a gate this project already had:**
+
+1. **`check:actions` refused the build** — `app/admin/compliance/actions.ts` exported an
+   `interface`. That is VX2-10 exactly: Next registers each export as a server action, cannot wrap a
+   type, and rather than failing registers NONE of the module's actions. Every form on the new page
+   would have posted an id the server had never heard of, and the only symptom would have been
+   "Failed to find Server Action" in a browser.
+2. **`test/module-gates.test.ts` refused the two SWEEPS** — exports in a gated file that were
+   neither gated nor exempted. Correct, and the answer is an exemption with the reason: a sweep
+   cannot be gated on a tenant, because it is the thing that decides which tenants there are.
+3. **`fraud_flag_subject_chk` (0031) caught a product gap.** The raise form shipped "Report id
+   (optional)", so the first manual flag from the screen violated the CHECK and the person got the
+   generic "something went wrong". A flag with nothing to open is not queue work — the field is now
+   required and there is a catalogued refusal that says what to do. Defaulting the subject to the
+   RAISER was the tempting one-liner and would have filed a concern naming the person who reported
+   it.
+4. **`Record<FraudMessageCode, …>` caught the missing `MANUAL_FLAG` definition** the moment the code
+   came back into the array.
+5. **`check:i18n` and the enum-catalogue guard** between them forced the four new severity/status
+   vocabularies to be derived from runtime arrays rather than retyped.
+
+**A flaky test of my own, found by running one file five times.** `audit_entry.id` is
+`gen_random_uuid()`, so `ORDER BY id DESC LIMIT 1` returns an ARBITRARY row, not the latest. Four
+unrelated sabotage runs each failed the same audit assertion, which is what finally exposed it.
+`sequence` is the chain's monotonic column and is what "latest" means. **The same mistake shipped in
+part 1** (`test/posting-trigger.db.test.ts`) and is corrected here.
+
+**And two sabotages that failed NOTHING, which is the more useful outcome.** Removing the
+subject requirement and removing the sweep's module filter both left the suite green. The surviving
+tests were the finding: the subject rule had only e2e coverage, and the sweep's second tenant had no
+entitlement row at all, so a filter-less query could not have returned it either way. Both gaps are
+now closed by tests that fail when the rule is removed.
+
+**E2E lessons worth keeping, all from one spec:**
+- `click()` returns when the click is dispatched, NOT when the server action's revalidation has
+  re-rendered. Two line items landed on one expense because the locator resolved before the second
+  entry existed. Counting the forms is what makes the wait real.
+- **An assertion that waits for the value you just typed proves nothing.** The threshold test
+  asserted the field held 45 right after typing 45; it passed instantly against the pre-navigation
+  DOM, the next `fill('')` was lost to the redirect, and the failure surfaced two lines later
+  pointing at the wrong thing. `goto` between steps is what makes the assertion mean something.
+- A flag's sentence is made of the merchant and the amount, not the report title, so the merchant
+  has to be stamped per run — the demo tenant is not reset and CI retries once.
+- A `<summary>` has no button role.
+
+**VX4-11 boarded — the duplicate and outlier rules need `txn_date`, and the form does not insist on
+one.** Both rules bound on `expense.txn_date`; an entry with none is invisible to them. The
+add-expense form collects a date and does not require it, so a tenant whose people skip it gets no
+duplicate detection at all with nothing on any screen saying so. Found by this ticket's e2e, which
+failed for exactly that reason before the date was filled in. The fix is a product decision —
+require the date, or fall back to `created_at` — and is not this PR's.
 
 ### VX4-8 part 3 SHIPPED — Module 12 slice 3: control evaluation
 

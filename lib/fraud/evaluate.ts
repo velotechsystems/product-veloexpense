@@ -29,7 +29,7 @@
  * The RUN is FAILED only when it cannot be completed at all.
  */
 import { withOrg } from '@/lib/tenant/context';
-import { requireModule } from '@/lib/modules/service';
+import { organizationsWithModule, requireModule } from '@/lib/modules/service';
 import {
   CONTROL_CHECKS,
   DEFAULT_CONTROL_CONFIG,
@@ -40,9 +40,13 @@ import {
   type Period,
 } from '@/lib/fraud/controls';
 
+/** Every value `control_evaluation_run.status` can hold. See FLAG_STATUSES. */
+export const CONTROL_RUN_STATUSES = ['RUNNING', 'COMPLETED', 'FAILED'] as const;
+export type ControlRunStatus = (typeof CONTROL_RUN_STATUSES)[number];
+
 export interface EvaluateResult {
   runId: string;
-  status: 'COMPLETED' | 'FAILED';
+  status: Extract<ControlRunStatus, 'COMPLETED' | 'FAILED'>;
   findings: number;
   perControl: Record<string, number>;
   /**
@@ -184,4 +188,51 @@ export async function runControlEvaluation(
       config: cfg,
     };
   }
+}
+
+/**
+ * Every entitled tenant, one after another — what the scheduled route calls.
+ *
+ * Same shape and the same three arguments as `scanAllTenants`: per-tenant
+ * config, one tenant's failure does not stop the rest, and sequential because
+ * these are heavy queries on a shared pool.
+ *
+ * A tenant whose RUN failed is not an entry in `failed` here — it has a FAILED
+ * run row of its own, which is the durable record and the one a screen shows.
+ * `failed` is for tenants that could not get that far at all.
+ */
+export interface EvaluateSweepResult {
+  organizations: number;
+  runs: number;
+  findings: number;
+  failedRuns: number;
+  failed: Array<{ organizationId: string; error: string }>;
+}
+
+export async function evaluateAllTenants(
+  opts: EvaluateOptions = {},
+): Promise<EvaluateSweepResult> {
+  const orgs = await organizationsWithModule('compliance');
+  const out: EvaluateSweepResult = {
+    organizations: 0,
+    runs: 0,
+    findings: 0,
+    failedRuns: 0,
+    failed: [],
+  };
+  for (const orgId of orgs) {
+    try {
+      const result = await runControlEvaluation(orgId, opts);
+      out.organizations += 1;
+      out.runs += 1;
+      out.findings += result.findings;
+      if (result.status === 'FAILED') out.failedRuns += 1;
+    } catch (err) {
+      out.failed.push({
+        organizationId: orgId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+  return out;
 }

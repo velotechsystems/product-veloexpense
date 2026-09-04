@@ -32,12 +32,16 @@ import {
   ACCOUNT_SOURCE_COPY,
   CAPABILITY_COPY,
   CHANNEL_COPY,
+  CONTROL_RUN_STATUS_COPY,
+  CONTROL_SEVERITY_COPY,
   DECISION_COPY,
   DELEGATION_SCOPE_COPY,
   DELIVERY_STATUS_COPY,
   EMPLOYEE_ROLE_COPY,
   EMPLOYEE_STATUS_COPY,
   EVENT_TYPE_COPY,
+  FRAUD_FLAG_STATUS_COPY,
+  FRAUD_SEVERITY_COPY,
   INBOX_ROUTE_COPY,
   POST_STATUS_COPY,
   RECEIPT_STATUS_COPY,
@@ -57,6 +61,10 @@ import { SEVERITIES, RULE_KINDS } from '@/lib/policy/rules';
 import { CHANNELS, EVENT_TYPES } from '@/lib/notifications/catalog';
 import { CAPABILITIES } from '@/lib/integrations/contract';
 import { POST_STATUSES } from '@/lib/integrations/post-outbox';
+import { FRAUD_SEVERITIES } from '@/lib/fraud/rules';
+import { CONTROL_SEVERITIES } from '@/lib/fraud/controls';
+import { FLAG_STATUSES } from '@/lib/fraud/review';
+import { CONTROL_RUN_STATUSES } from '@/lib/fraud/evaluate';
 import { DELEGATION_SCOPES } from '@/lib/approvals/tiers';
 
 /**
@@ -99,6 +107,30 @@ const CATALOGUES: {
     // for exactly this reason.
     members: POST_STATUSES,
     copy: POST_STATUS_COPY,
+    fromArray: true,
+  },
+  {
+    name: 'FraudSeverity',
+    members: FRAUD_SEVERITIES,
+    copy: FRAUD_SEVERITY_COPY,
+    fromArray: true,
+  },
+  {
+    name: 'FlagStatus',
+    members: FLAG_STATUSES,
+    copy: FRAUD_FLAG_STATUS_COPY,
+    fromArray: true,
+  },
+  {
+    name: 'ControlSeverity',
+    members: CONTROL_SEVERITIES,
+    copy: CONTROL_SEVERITY_COPY,
+    fromArray: true,
+  },
+  {
+    name: 'ControlRunStatus',
+    members: CONTROL_RUN_STATUSES,
+    copy: CONTROL_RUN_STATUS_COPY,
     fromArray: true,
   },
   {
@@ -182,6 +214,10 @@ describe('every rendered enum member has copy, in every locale we ship', () => {
       EventType: EVENT_TYPES,
       Capability: CAPABILITIES,
       PostStatus: POST_STATUSES,
+      FraudSeverity: FRAUD_SEVERITIES,
+      FlagStatus: FLAG_STATUSES,
+      ControlSeverity: CONTROL_SEVERITIES,
+      ControlRunStatus: CONTROL_RUN_STATUSES,
       DelegationScope: DELEGATION_SCOPES,
     };
     for (const [name, array] of Object.entries(owned)) {

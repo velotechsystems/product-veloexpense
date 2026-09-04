@@ -42,6 +42,11 @@ const SAMPLE: Record<string, unknown> = {
   submitterName: 'Sam Submitter',
   pairApprovals: 10,
   totalApprovals: 10,
+  // MANUAL_FLAG, added in part 4. The coverage walk failed the moment the code
+  // came back — "MANUAL_FLAG in en-CA: expected '{MANUAL_FLAG}' not to match" —
+  // which is this file doing its job: a code with no data to render from is a
+  // code that renders as the marker.
+  note: 'Tip from the Vancouver office about this vendor.',
 };
 
 describe('coverage', () => {
@@ -137,5 +142,17 @@ describe('a row that cannot satisfy its sentence', () => {
 
   it('an unknown code is a marker, not a throw', () => {
     expect(renderFraudMessage('NO_SUCH_CODE', SAMPLE, DEFAULT_LOCALE)).toMatch(/^\{.*\}$/);
+  });
+});
+
+describe('a person\'s own words', () => {
+  it('MANUAL_FLAG renders the note unchanged, with no narration around it', () => {
+    // The screen says who raised it and when; a renderer adding "A reviewer
+    // noted:" would be a renderer editing somebody's sentence.
+    expect(renderFraudMessage('MANUAL_FLAG', SAMPLE, DEFAULT_LOCALE)).toBe(SAMPLE.note);
+  });
+
+  it('and refuses a blank one — the accessor is the guard', () => {
+    expect(renderFraudMessage('MANUAL_FLAG', { note: '   ' }, DEFAULT_LOCALE)).toMatch(/^\{.*\}$/);
   });
 });

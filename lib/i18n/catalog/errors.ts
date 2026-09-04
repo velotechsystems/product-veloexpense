@@ -216,6 +216,13 @@ export const USER_MESSAGE_CODES = [
   'RECEIPT_UPLOAD_INCOMPLETE',
   'RECEIPT_NONE_SELECTED',
   'RECEIPT_NOT_UPLOADED_YET',
+
+  /* ── VX4-8 part 4: reviewing a fraud flag ─────────────────────────────── */
+  'FRAUD_FLAG_NOT_FOUND',
+  'FRAUD_FLAG_ALREADY_REVIEWED',
+  'FRAUD_DISMISS_NEEDS_NOTE',
+  'FRAUD_FLAG_NEEDS_NOTE',
+  'FRAUD_FLAG_NEEDS_SUBJECT',
 ] as const;
 export type UserMessageCode = (typeof USER_MESSAGE_CODES)[number];
 
@@ -904,6 +911,31 @@ export const ERROR_COPY: Record<UserMessageCode, Copy> = {
   },
   RECEIPT_NOT_UPLOADED_YET: {
     'en-CA': '{filename} has not finished uploading yet.',
+  },
+
+  /* ── VX4-8 part 4: reviewing a fraud flag ─────────────────────────────── */
+  FRAUD_FLAG_NOT_FOUND: {
+    'en-CA': 'That flag no longer exists — it may have been removed with its report.',
+  },
+  FRAUD_FLAG_ALREADY_REVIEWED: {
+    // Names the outcome rather than blaming the reader: two people working a
+    // queue is the system being used, not a mistake either of them made.
+    'en-CA':
+      'Somebody has already recorded a decision on that flag. Reload the page to see it.',
+  },
+  FRAUD_DISMISS_NEEDS_NOTE: {
+    // WHY, not just what. A dismissal is the one verdict an auditor asks about,
+    // and a person told only "a note is required" writes "n/a".
+    'en-CA':
+      'Say why you are setting this aside — a dismissal is the one decision here that ' +
+      'somebody may ask about later.',
+  },
+  FRAUD_FLAG_NEEDS_NOTE: {
+    'en-CA': 'Write what the concern is — a flag with nothing on it is one nobody can action.',
+  },
+  FRAUD_FLAG_NEEDS_SUBJECT: {
+    'en-CA':
+      'Say which report this is about. A flag with no subject has nothing for a reviewer to open.',
   },
 };
 

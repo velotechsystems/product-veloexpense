@@ -332,6 +332,9 @@ async function main() {
   // VX4-6a: available as of this ticket. Enabled here so the demo tenant matches
   // what the build can serve — the screen arrives in 6b and will find it on.
   await seedModule(demoId, 'analytics');
+  // VX4-8 part 4. The demo tenant gets compliance so `/admin/compliance` has
+  // something to show and `e2e/compliance-flow.spec.ts` has a tenant to sweep.
+  await seedModule(demoId, 'compliance');
   await seedReferenceData(demoId);
   // FOUR users, not three. `owner@demo.test` was added when VX2-3 made a submit
   // open an approval run: submitting routes the ladder, and admin@demo.test —
@@ -374,6 +377,10 @@ async function main() {
   await seedModule(secondId, 'accounting');
   await seedModule(secondId, 'budgets');
   await seedModule(secondId, 'analytics');
+  // The SECOND tenant gets it too, so the scheduled sweep touches more than one
+  // organization — a per-tenant sweep tested against one tenant proves nothing
+  // about the loop.
+  await seedModule(secondId, 'compliance');
   await seedReferenceData(secondId, 'Second Co Ltd.');
   await seedUser(secondId, 'owner@second.test', 'Second Owner', { role: 'ADMIN', title: 'Owner' });
   await seedUser(secondId, 'admin@second.test', 'Second Admin', { role: 'ADMIN', title: 'Controller' });
