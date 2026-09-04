@@ -25,10 +25,138 @@
 import type { QueryRunner } from '@/lib/db/client';
 import { withPlatformRead } from '@/lib/tenant/context';
 import { backoffSecondsFor, isExhausted, CLAIM_TIMEOUT_SECONDS } from '@/lib/outbox/policy';
+import { append as auditAppend, type AuditActor } from '@/lib/audit/service';
 
 const ORG = "current_setting('app.current_org', true)::uuid";
 
-export type PostStatus = 'PENDING' | 'POSTED' | 'FAILED' | 'DEAD' | 'CANCELLED' | 'NEEDS_REVIEW';
+/**
+ * A RUNTIME ARRAY, and the type derived from it — not a hand-written union with
+ * the members retyped somewhere else.
+ *
+ * `test/i18n-enum-catalog.test.ts` keeps a `CATALOGUES` list whose entries carry
+ * either an exported array or a hand-copied member list, and it has its own test
+ * saying a union WITH an array must use it. `PostStatus` had no array, so its
+ * members were retyped there — and adding HELD failed that file's stale-copy
+ * check, which is the correspondence going stale exactly as UD-9 predicts of a
+ * hand-kept copy. Exporting the array turns the copy into a derivation, and
+ * migration 0030's CHECK is then testable against this same list.
+ */
+export const POST_STATUSES = [
+  /** Due work. The poller may take it. */
+  'PENDING',
+  /**
+   * UD-8. Enqueued by an approval in an AP_QUEUE organization, and waiting for a
+   * person to send it. NOT a failure and NOT a decision against posting — those
+   * are FAILED and CANCELLED, and conflating any two of the three is how an
+   * operator ends up retrying something that was never attempted.
+   *
+   * Unreachable by the poller twice over, neither of them added by 0030: `0017`'s
+   * `platform_read` policy matches PENDING/FAILED only, so `duePosts` cannot see
+   * the row at all; and `claimPost` re-asserts the same pair in its conditional
+   * write.
+   */
+  'HELD',
+  /** Drafted at the far end. Terminal and successful. */
+  'POSTED',
+  /** Tried, refused or lost, still retryable. */
+  'FAILED',
+  /** Out of attempts. */
+  'DEAD',
+  /** An operator withheld it. */
+  'CANCELLED',
+  /** The ledger accepted it and recording that failed. Never retried automatically. */
+  'NEEDS_REVIEW',
+] as const;
+
+export type PostStatus = (typeof POST_STATUSES)[number];
+
+/* ── UD-8: who sends an approved report ───────────────────────────────────── */
+
+/**
+ * The setting lives here, next to the one behaviour it changes: which status
+ * `enqueuePost` writes. It is not a general settings module and should not become
+ * one — a second reader of this value would be a sign the semantics have leaked.
+ *
+ * THIS UNION IS THE SOURCE OF TRUTH and migration 0030's CHECK constraint is a
+ * second copy of it. `test/posting-trigger.db.test.ts` asserts the two are equal
+ * in both directions, per 0027's rule: a duplicated list with a test is fine, a
+ * duplicated list without one fails open.
+ */
+export const POSTING_TRIGGERS = ['AP_QUEUE', 'AUTOMATIC'] as const;
+export type PostingTrigger = (typeof POSTING_TRIGGERS)[number];
+
+export function isPostingTrigger(value: unknown): value is PostingTrigger {
+  return typeof value === 'string' && (POSTING_TRIGGERS as readonly string[]).includes(value);
+}
+
+export async function getPostingTrigger(tx: QueryRunner): Promise<PostingTrigger> {
+  const r = await tx.query(`SELECT posting_trigger FROM organization WHERE id = ${ORG}`);
+  if (r.rowCount !== 1) throw new Error('no organization in scope');
+  // The CHECK constraint guarantees this, so the guard is about a column read
+  // through a connection that somehow bypassed it — it returns a value, never a
+  // silent widening of the type.
+  const value = r.rows[0].posting_trigger as string;
+  if (!isPostingTrigger(value)) throw new Error(`unknown posting_trigger: ${value}`);
+  return value;
+}
+
+/**
+ * ADMIN-gated at the action layer, and AUDITED HERE rather than there.
+ *
+ * The house pattern for an organization-level setting — `lib/i18n/service.ts`'s
+ * `setOrgDefaults` and `lib/branding/service.ts` both do exactly this — and the
+ * reason is MT-3 once more: an audit row written by the caller is an audit row the
+ * next caller forgets. It also puts the read-before-write in the one place that
+ * can guarantee it shares a transaction with the write, so `from -> to` cannot be
+ * a lie about a value that changed in between.
+ *
+ * The detail is `from -> to`, not `to`, per UD-11: "who changed this, from what"
+ * is the question an auditor actually asks, and it costs one SELECT.
+ *
+ * Audited against the ORGANIZATION, not a report. A standing policy decision is
+ * one event; an auditor asking why forty reports sat for a week needs to find the
+ * day somebody changed this, not forty identical rows.
+ *
+ * Returns the previous value, so a caller can say what it did — or `null` when
+ * nothing changed, which is not audited at all. A settings form re-submitted
+ * unchanged is not an event.
+ */
+export async function setPostingTrigger(
+  tx: QueryRunner,
+  actor: AuditActor,
+  trigger: PostingTrigger,
+): Promise<PostingTrigger | null> {
+  const before = await getPostingTrigger(tx);
+  if (before === trigger) return null;
+
+  const { rows } = await tx.query<{ id: string }>(
+    `UPDATE organization
+        SET posting_trigger = $1, updated_at = now()
+      WHERE id = ${ORG}
+      RETURNING id`,
+    [trigger],
+  );
+  const orgId = rows[0]?.id;
+  if (!orgId) throw new Error('no organization in scope');
+
+  await auditAppend(tx, actor, {
+    action: 'LEDGER_POSTING_TRIGGER_CHANGED',
+    entityType: 'organization',
+    entityId: orgId,
+    details: {
+      from: before,
+      to: trigger,
+      // Stated in the audit row because the screen states it too, and because the
+      // absence of a release is the surprising half: switching to AUTOMATIC does
+      // NOT post what is already held. Those rows were approved under a rule that
+      // said a person decides, and posting a week of them because a setting
+      // changed is the "wrong posting in a general ledger" this setting exists to
+      // prevent.
+      releasedHeldRows: 0,
+    },
+  });
+  return before;
+}
 
 export interface PostRow {
   id: string;
@@ -67,12 +195,66 @@ const SELECT_POST = `
  * harmless, not fatal, or adding a caller becomes a way to break approval.
  */
 export async function enqueuePost(tx: QueryRunner, reportId: string): Promise<void> {
+  // ── UD-8: the STATUS is decided HERE, not by the caller ───────────────────
+  //
+  // `lib/approvals/engine.ts` calls this on the transition and knows nothing
+  // about posting triggers, which is deliberate and is MT-3: "a gate at the edge
+  // is a gate the next caller forgets". The same argument moved
+  // `requeueWaitingPosts` out of an admin action and into the service layer three
+  // paragraphs of comment further down this file. A second caller that decided
+  // the status itself could decide it differently.
+  //
+  // TWO STATEMENTS, and the tempting one-statement version is wrong. Selecting
+  // the trigger inside the INSERT —
+  //
+  //     INSERT INTO integration_post (…, status)
+  //     SELECT ${ORG}, $1, $2, CASE WHEN o.posting_trigger = 'AP_QUEUE' …
+  //       FROM organization o WHERE o.id = ${ORG}
+  //
+  // — inserts NOTHING when that SELECT returns no row, which is what happens if
+  // the tenant context is unset. Today that case fails loudly on the NOT NULL
+  // organization_id; the clever version turns it into a silent no-op, and a
+  // silently un-enqueued approval is precisely the bug AC-6 records upstream
+  // paying for. One extra SELECT inside the approving transaction is the cheaper
+  // half of that trade.
+  const trigger = await getPostingTrigger(tx);
+  const status: PostStatus = trigger === 'AP_QUEUE' ? 'HELD' : 'PENDING';
   await tx.query(
-    `INSERT INTO integration_post (organization_id, report_id, idempotency_key)
-     VALUES (${ORG}, $1, $2)
+    `INSERT INTO integration_post (organization_id, report_id, idempotency_key, status)
+     VALUES (${ORG}, $1, $2, $3)
      ON CONFLICT (organization_id, report_id) DO NOTHING`,
-    [reportId, `veloexpense-report-${reportId}`],
+    [reportId, `veloexpense-report-${reportId}`, status],
   );
+}
+
+/**
+ * UD-8 — a person releases a held post. HELD → PENDING, due immediately.
+ *
+ * Deliberately NOT folded into `retryNow`, which accepts FAILED/DEAD/
+ * NEEDS_REVIEW/CANCELLED. Those four are all "this was tried, or was refused, and
+ * an operator is overriding that"; `retryNow` resets `attempts` to zero and
+ * clears `posted_at` and `external_id` because there is something to reset. A
+ * HELD row has none of that history — releasing it is the FIRST thing that has
+ * ever happened to it. Sharing a function would make the audit trail say a report
+ * was retried when it had never been attempted, which is a sentence an auditor
+ * would have to unpick.
+ *
+ * Conditional write, seventh appearance of the idiom: `rowCount !== 1` means the
+ * row was not HELD when this landed — released by somebody else a moment earlier,
+ * or withheld. That is a refusal, not a silent success.
+ */
+export async function releaseHold(tx: QueryRunner, id: string): Promise<void> {
+  const r = await tx.query(
+    `UPDATE integration_post
+        SET status = 'PENDING', next_attempt_at = clock_timestamp(),
+            claimed_at = NULL, claimed_by = NULL, updated_at = clock_timestamp()
+      WHERE id = $1 AND status = 'HELD'
+      RETURNING id`,
+    [id],
+  );
+  if (r.rowCount !== 1) {
+    throw new Error('that post is not held — it may have been released already');
+  }
 }
 
 /**
@@ -101,6 +283,7 @@ export async function queueSummary(tx: QueryRunner): Promise<Record<PostStatus, 
   const r = await tx.query('SELECT status, count(*)::int AS n FROM integration_post GROUP BY status');
   const out: Record<PostStatus, number> = {
     PENDING: 0,
+    HELD: 0,
     POSTED: 0,
     FAILED: 0,
     DEAD: 0,

@@ -43,8 +43,14 @@ const REDIRECT = 'https://velo.test/api/integrations/stub-oauth/callback';
 beforeAll(async () => {
   await admin.query('TRUNCATE app_user, organization CASCADE');
   const o = await admin.query(
-    `INSERT INTO organization (slug, name)
-     VALUES ('oauth-co','OAuth Co'), ('oauth-co-2','OAuth Co 2') RETURNING id, slug`,
+    // UD-8: AUTOMATIC stated explicitly. This suite asserts that an authorised
+    // adapter can actually POST, so it needs the enqueue to produce due work; the
+    // column's new default (AP_QUEUE) would hold every row and the assertion would
+    // pass or fail for the wrong reason. `test/posting-trigger.db.test.ts` owns
+    // the AP_QUEUE half.
+    `INSERT INTO organization (slug, name, posting_trigger)
+     VALUES ('oauth-co','OAuth Co','AUTOMATIC'), ('oauth-co-2','OAuth Co 2','AUTOMATIC')
+     RETURNING id, slug`,
   );
   orgId = o.rows.find((r) => r.slug === 'oauth-co').id;
   otherOrgId = o.rows.find((r) => r.slug === 'oauth-co-2').id;

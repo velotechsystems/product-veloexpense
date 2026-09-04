@@ -32,7 +32,9 @@ import {
   cancelFromForm,
   dryRunFromForm,
   getQueuePage,
+  releaseFromForm,
   retryFromForm,
+  savePostingTriggerFromForm,
   sendNowFromForm,
 } from './actions';
 
@@ -80,8 +82,13 @@ export default async function LedgerQueuePage({
   } catch {
     previewed = null;
   }
-  const { rows, summary, connected, problem, problemKind } = await getQueuePage();
+  const { rows, summary, connected, problem, problemKind, postingTrigger } = await getQueuePage();
   const waiting = summary.PENDING + summary.FAILED;
+  // HELD is counted SEPARATELY and never folded into `waiting`, which is the whole
+  // point of UD-8: rows the system will send on its own and rows waiting on a
+  // person are two different backlogs with two different people to chase. A single
+  // number would hide the one this setting exists to make visible.
+  const held = summary.HELD;
 
   return (
     <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 p-6">
@@ -91,7 +98,7 @@ export default async function LedgerQueuePage({
           <p className="text-sm text-muted-foreground">
             {rows.length === 0
               ? 'Nothing has been queued yet'
-              : `${waiting} waiting · ${summary.POSTED} drafted · ${summary.NEEDS_REVIEW} need review · ${summary.DEAD} out of attempts`}
+              : `${waiting} waiting${held > 0 ? ` · ${held} for you to send` : ''} · ${summary.POSTED} drafted · ${summary.NEEDS_REVIEW} need review · ${summary.DEAD} out of attempts`}
           </p>
         </div>
         <Link href="/admin/integrations" className="text-sm underline underline-offset-4">
@@ -111,6 +118,52 @@ export default async function LedgerQueuePage({
       ) : null}
 
       <ErrorBanner message={error} />
+
+      {/*
+        UD-8 — who sends an approved report. On this screen rather than
+        /admin/integrations because this is where the setting's effect is: a queue
+        of held rows is either the product working as configured or a backlog
+        nobody is clearing, and this value is the difference.
+      */}
+      <section className="flex flex-col gap-2 rounded-lg border border-border p-4">
+        <h2 className="text-lg font-medium">Who sends an approved report</h2>
+        <form action={savePostingTriggerFromForm} className="flex flex-wrap items-center gap-3">
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="radio"
+              name="postingTrigger"
+              value="AP_QUEUE"
+              defaultChecked={postingTrigger === 'AP_QUEUE'}
+            />
+            Somebody here sends it
+          </label>
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="radio"
+              name="postingTrigger"
+              value="AUTOMATIC"
+              defaultChecked={postingTrigger === 'AUTOMATIC'}
+            />
+            Approval sends it
+          </label>
+          <Button type="submit" size="sm" variant="outline">
+            Save
+          </Button>
+        </form>
+        <p className="text-sm text-muted-foreground">
+          A report parked in this queue is recoverable; a bill drafted in the ledger by mistake is
+          a conversation with whoever posts it.{' '}
+          {held > 0 ? (
+            <>
+              <strong className="font-medium text-foreground">
+                Switching to &ldquo;approval sends it&rdquo; does not send the {held} already
+                waiting.
+              </strong>{' '}
+              Those were approved while a person was meant to decide, so they keep waiting for one.
+            </>
+          ) : null}
+        </p>
+      </section>
 
       {previewed ? (
         <section className="flex flex-col gap-2 rounded-lg border border-border p-4">
@@ -246,7 +299,10 @@ export default async function LedgerQueuePage({
           <tbody>
             {rows.length === 0 ? (
               <EmptyRow colSpan={5}>
-                Nothing queued. An approved report is added here automatically.
+                Nothing queued. An approved report is added here automatically
+                {postingTrigger === 'AP_QUEUE'
+                  ? ', and waits for somebody here to send it.'
+                  : ' and is sent on its own.'}
               </EmptyRow>
             ) : (
               rows.map((row) => {
@@ -297,6 +353,14 @@ export default async function LedgerQueuePage({
                         <Button form={`dry-${row.id}`} type="submit" size="sm" variant="outline">
                           Preview
                         </Button>
+                        {row.status === 'HELD' ? (
+                          // One button for one intent — it releases the hold AND
+                          // sends, because "I have decided this should go" is a
+                          // single decision. See `releaseFromForm`.
+                          <Button form={`release-${row.id}`} type="submit" size="sm">
+                            Send to the ledger
+                          </Button>
+                        ) : null}
                         {row.status === 'PENDING' || row.status === 'FAILED' ? (
                           <Button form={`send-${row.id}`} type="submit" size="sm" variant="outline">
                             Send now
@@ -340,6 +404,9 @@ export default async function LedgerQueuePage({
       {rows.map((row) => (
         <div key={row.id} className="hidden">
           <form id={`dry-${row.id}`} action={dryRunFromForm}>
+            <input type="hidden" name="id" value={row.id} />
+          </form>
+          <form id={`release-${row.id}`} action={releaseFromForm}>
             <input type="hidden" name="id" value={row.id} />
           </form>
           <form id={`send-${row.id}`} action={sendNowFromForm}>

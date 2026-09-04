@@ -15,10 +15,28 @@ import { Pool } from 'pg';
 
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 
+/**
+ * UD-8: the demo tenant posts on approval, stated EXPLICITLY rather than taken
+ * from the column default — which is now AP_QUEUE for a new organization.
+ *
+ * This is a deliberate divergence from what a real new tenant gets, and the
+ * reason is that the seed is the fixture for the whole e2e suite. Ten specs
+ * across VX3-4, VX3-9 and VX4-1 approve a report and then assert something about
+ * what reached the ledger; under AP_QUEUE every one of them would be asserting
+ * about a row nobody released, and the ledger-queue screen's main path would
+ * never be exercised. `e2e/ap-queue.spec.ts` flips this tenant to AP_QUEUE and
+ * covers the other half, which is a better division than making eight specs
+ * press a release button that is not their subject.
+ *
+ * Set on the UPDATE branch too: a re-seed after somebody flipped the setting in
+ * the UI must put the fixture back, or the suite's behaviour depends on what the
+ * last person clicked.
+ */
 async function upsertOrg(client, slug, name) {
   const r = await client.query(
-    `INSERT INTO organization (slug, name) VALUES ($1, $2)
-       ON CONFLICT (slug) DO UPDATE SET name = EXCLUDED.name
+    `INSERT INTO organization (slug, name, posting_trigger) VALUES ($1, $2, 'AUTOMATIC')
+       ON CONFLICT (slug) DO UPDATE SET name = EXCLUDED.name,
+                                        posting_trigger = EXCLUDED.posting_trigger
      RETURNING id`,
     [slug, name],
   );

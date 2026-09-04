@@ -60,9 +60,28 @@ const { open: OPEN, close: CLOSE } = PSEUDO_MARKERS;
  * which is the regression worth catching, and the actual count is printed on
  * every run so a drop is visible to anyone reading the output.
  */
+/**
+ * Where the ratchet measures, when that is not the page itself. See the note in
+ * the ratchet test. The nonce matches no title and no EXP number, so the table is
+ * empty and the count is chrome plus the empty state — all of it copy.
+ */
+const RATCHET_PATH: Record<string, string> = {
+  '/expenses': '/expenses?q=zzz-no-report-has-this-in-its-title',
+};
+
 const CHROME_CEILING: Record<string, number> = {
-  '/expenses': 44,
+  // Measured on the filtered, empty table — see RATCHET_PATH above. Was 44 while
+  // report rows were being counted, and would have risen with every spec that
+  // files one.
+  '/expenses': 19,
   '/approvals': 15,
+  // STILL DATA-DEPENDENT, stated rather than left to be discovered. This page
+  // lists notification rows and the count moves with them: 30 at the moment,
+  // against a ceiling measured at 42 on a fuller database. The headroom is what
+  // keeps it green, which is exactly the weakness `/expenses` just demonstrated —
+  // it is here because no filter on this screen produces an empty list, and it is
+  // worth a ticket rather than a clever selector. Any page added here with rows
+  // needs a RATCHET_PATH or the same caveat.
   '/notifications': 42,
   '/preferences': 10,
   '/admin/expense-policies': 46,
@@ -70,7 +89,9 @@ const CHROME_CEILING: Record<string, number> = {
 };
 
 /**
- * 176 un-catalogued strings across six screens, as of part 3.
+ * 161 un-catalogued strings across six screens — 176 as first measured in part 3,
+ * corrected in VX4-8 part 1 when `/expenses` turned out to be counting report
+ * titles as though they were copy.
  *
  * That is the number the product's UI chrome was missing. Boarded as VX4-10 —
  * cataloguing it is a bigger job than all three of parts 2a–2c put together
@@ -179,7 +200,34 @@ test.describe('the pseudo-locale crawl', () => {
     });
 
     test(`${path} — the un-catalogued count has not grown`, async ({ page }) => {
-      await page.goto(path);
+      // MEASURED ON A PAGE WITH NO ROWS, where the page has rows at all.
+      //
+      // VX4-8 part 1 is what found this, and the way it found it is the point:
+      // that ticket added an e2e that approves two reports, and `/expenses` went
+      // from 44 un-catalogued strings to 50 without a single string of copy
+      // changing. Report titles, numbers and merchants are USER DATA — no
+      // catalogue will ever contain them — so counting them made this ceiling a
+      // measure of how many reports the suite happened to create, and every
+      // future spec that files one would have pushed it up again.
+      //
+      // Excluding `<tbody>` wholesale was tried first and measured: it takes the
+      // six-page total from 176 to 92, because 84 of those strings are genuine
+      // un-catalogued CHROME living in table cells — `/admin/expense-policies`
+      // alone drops 46 → 28. That is hiding 84 real findings to stabilise one
+      // page, so it was rejected.
+      //
+      // Filtering to an empty table keeps every chrome string and drops only the
+      // data. The sibling test above still loads the page UNFILTERED, because its
+      // job is to check the badges that only exist when there are rows.
+      //
+      // WHAT THIS GIVES UP, stated rather than left to be found: a hardcoded
+      // string that appears only inside a `/expenses` table ROW is now invisible
+      // to this count. The trade is worth taking — the baseline drops from 44 to
+      // 19, so the gate is TIGHTER on everything it can still see, and a
+      // sabotage adding one hardcoded line to the page chrome fails it at 20 —
+      // but a row-only string is a real hole, and `enumLabel` call sites inside
+      // rows are covered by the badge test above rather than by this one.
+      await page.goto(RATCHET_PATH[path] ?? path);
       const plain = unbracketed(await visibleStrings(page));
       const ceiling = CHROME_CEILING[path];
       expect(

@@ -2094,7 +2094,62 @@ shipped.
 | **VX4-5** | **Budgets, tenant-scoped, on our own chart of accounts** | BG-2: `Budget.glAccountId` is a **required** FK into a NetSuite SOAP cache, and their vendor-neutral `Account` table was deleted — so budgets there are uncreatable without NetSuite. **VX3-1 already fixed this for us**; budgets point at `gl_account` and a vendor becomes an alias. Plus BG-1 (tenant column and composite keys on five tables, including an index Prisma cannot express), BG-3 (actuals recomputed over the whole fiscal year on every approval click, with an unbounded FX load → rollup), BG-6 (alert idempotency by mutable marker → our atomic-claim idiom). | 4 |
 | **VX4-6** | **Analytics, tenant-scoped** | The tenancy half is free (above). The work is AN-7 — a missing FX rate is currently summed **as if it were base currency**, unflagged, while the budget code counts unconverted amounts for the same situation — and AN-10: unbounded ranges, no `date` index, and a home page that runs a full-history aggregate for every signed-in user. Plus AN-8's lesson: size the data with a predicate, never with a role check that then queries everything. | 4 |
 | **VX4-7** ⏳ | **Locale: retag `en` → `en-CA`, add `en-US`** — parts 1 → 3 DONE. **VX4-7 CLOSED** (IL-1, IL-2, IL-4, IL-5/6, IL-7, IL-10, IL-11, UD-3, UD-5). fr-CA retired until its copy exists (0028) | IL-1: their `en` already formats as en-US (`3/4/2026`, `CA$10,799.00`), so this is a retag **and** an addition, 2 locales to 3 — touching URL segments, stored preferences and every `{ en: … }` Json key, whose arity is hardcoded in ~17 files (IL-7). Also: a company default locale, which does not exist there (IL-2); what a missing key does, decided before the third catalog exists rather than after two blank pages (IL-4); and the date-formatting calls that pass no locale (IL-10). | 3 |
-| **VX4-8** | **Module 12 slices 2–3: fraud detection + control evaluation** | Deferred to this phase since Phase 2 because both are retrospective and need approval history, which now exists. Their versions are driven by `SystemFlag` config (MT-2) and run as unconditional global crons (MT-5), so both land on VX4-1 and VX4-2. | 3 |
+| **VX4-8** ⏳ | **Module 12 slices 2–3: fraud detection + control evaluation** — part 1 (UD-8, the posting trigger) DONE; slices 2–3 next | Deferred to this phase since Phase 2 because both are retrospective and need approval history, which now exists. Their versions are driven by `SystemFlag` config (MT-2) and run as unconditional global crons (MT-5), so both land on VX4-1 and VX4-2. | 3 |
+
+### VX4-8 part 1 SHIPPED — UD-8: who sends an approved report
+
+**John's call, 4 Sep.** `posting_trigger` is a per-org column (a COLUMN, per VX4-2's closure and
+AC-21) with two values. **New organizations default to `AP_QUEUE`; every organization that existed
+before migration 0030 was backfilled to `AUTOMATIC`.** The safe default is for people who have not
+chosen yet — it is not a decision to make on behalf of people who already did, and a single
+`DEFAULT 'AP_QUEUE'` would have stopped posting for every running tenant on deploy day with nothing
+on any screen saying so. That is why `0030` is two statements, and why
+`test/posting-trigger.db.test.ts` guards the shape of the DDL against a future "simplification".
+
+**`HELD` is a queue status, not an absent row.** The obvious implementation — withhold the enqueue —
+breaks AC-7 (the enqueue is a row in the approving transaction, which is why there is no cron sweep)
+and creates a second source of truth for "approved and waiting", which is AC-14's shape. So the row
+exists, is listed, and **is unreachable by the poller twice over, neither guard added by this
+ticket**: `0017`'s `platform_read` policy matches `PENDING/FAILED`, and `claimPost` re-asserts the
+same pair. Both were sabotaged separately; each fails a different test, which is what proves they
+are independent rather than one guard written twice.
+
+**`enqueuePost` decides the status, not its caller** (MT-3), and it does so in TWO statements. The
+one-statement version — SELECT the trigger inside the INSERT — inserts zero rows when the tenant
+context is missing and returns happily, turning a loud failure into a silently un-enqueued approval.
+
+**The seeded demo tenant is `AUTOMATIC`, stated explicitly in `scripts/seed.mjs`,** because ten specs
+approve a report and then assert something reached the ledger. `e2e/ap-queue.spec.ts` flips it and
+covers the other half, and restores it in `afterAll` — with `workers: 1`, a spec that leaves the
+fixture changed breaks whichever file runs next.
+
+**Three test suites now set `posting_trigger = 'AUTOMATIC'` on their own org** (`ledger-post`,
+`veloledger-sink`, `integration-oauth`). Their subject is what happens after a row is due; under the
+new default every row would be HELD and every assertion about posting vacuous.
+
+**`PostStatus` gained a runtime array (`POST_STATUSES`).** `test/i18n-enum-catalog.test.ts` kept a
+hand-copied member list for it, adding HELD made that copy stale, and the file's own stale-copy check
+said so — UD-9's shape exactly. The list is now derived, and `0030`'s status CHECK is tested against
+the same array in both directions.
+
+**Two corrections to my own earlier work, found by this ticket:**
+
+1. **`e2e/pseudo-crawl.spec.ts`'s ratchet was counting user data.** `/expenses` went 44 → 50 because
+   this ticket's e2e approves two reports — report titles are not copy and no catalogue will ever
+   hold them, so the ceiling was measuring how many reports the suite had created. Excluding
+   `<tbody>` was tried and **measured**: it drops the six-page total from 176 to 92, hiding 84
+   genuine un-catalogued chrome strings to stabilise one page, so it was rejected. The ratchet now
+   measures `/expenses` filtered to an empty table (`RATCHET_PATH`), which takes its baseline from 44
+   to **19** — a tighter gate, verified by a sabotage that adds one hardcoded line and fails it at
+   20. What it gives up: a hardcoded string appearing only inside a `/expenses` row is now invisible
+   to the count. `/notifications` is still data-dependent with headroom, and says so.
+2. **`npm run e2e:crawl` depends on the main e2e having run first.** Its "the server really is in
+   pseudo mode" guard reads `/expenses`, and a freshly seeded tenant has no reports, so nothing is
+   bracketed and the guard fails. CI's step order makes this true today; nothing states it. Run the
+   suite before the crawl locally, or the failure looks like a pseudo-locale bug.
+
+**Not done here:** switching to AUTOMATIC deliberately does NOT release what is already held. Those
+reports were approved while a person was meant to decide. The screen says so and a test asserts it.
 
 ### VX4-7 part 3 SHIPPED — the crawl, and VX4-7 CLOSED
 

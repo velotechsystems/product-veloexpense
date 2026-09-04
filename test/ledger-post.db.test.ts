@@ -87,7 +87,12 @@ async function connectStub() {
 beforeAll(async () => {
   await admin.query('TRUNCATE app_user, organization CASCADE');
   const o = await admin.query(
-    "INSERT INTO organization (slug, name) VALUES ('post-co','Post Co') RETURNING id",
+    // UD-8: AUTOMATIC stated explicitly — this suite is about what happens AFTER a
+    // report is enqueued, and the column's new default (AP_QUEUE) would make every
+    // row HELD and every assertion about posting vacuous.
+    // `test/posting-trigger.db.test.ts` owns the other setting.
+    "INSERT INTO organization (slug, name, posting_trigger)"
+      + " VALUES ('post-co','Post Co','AUTOMATIC') RETURNING id",
   );
   orgId = o.rows[0].id;
 
