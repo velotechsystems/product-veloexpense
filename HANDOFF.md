@@ -230,7 +230,11 @@ may be copied back to the device wholesale — patch them in place. VX4-7 part 3
 commit; CI has no browser at that path, so all 123 specs failed to launch with
 `browserType.launch: Failed to launch chromium because executable doesn't exist`. The habit that
 prevents it: before shipping, `md5` every modified file on both sides and patch, don't copy, any
-that differ.
+that differ. **And `npm run check:harness` now enforces it** — `scripts/check-harness-leak.mjs`,
+first step in CI, fails the build on a harness path in committed source, on a Playwright config that
+pins a browser binary, and on a `next/font/google` import whose loader is never called (the font stub
+is a deletion, so that contradiction is the only trace it leaves). It is NOT in `npm run e2e`: the
+harness has both edits applied and is correct when it does.
 
 ### The device shell has no GitHub credentials, and its `main` is ancient
 `git fetch` fails there ("could not read Username for 'https://github.com'"), and the local `main`
