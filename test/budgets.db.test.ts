@@ -33,6 +33,7 @@ import { decide } from '@/lib/approvals/engine';
 import { loadBudgetSnapshots } from '@/lib/budgets/service';
 import * as alertsLib from '@/lib/budgets/alerts';
 import * as budgetAdmin from '@/lib/budgets/admin';
+import { TEST_ACTOR } from './support/audit-actor';
 
 const admin = new Pool({
   connectionString: process.env.ADMIN_DATABASE_URL ?? process.env.DATABASE_URL,
@@ -173,8 +174,8 @@ async function draft(amountMinor = 1800): Promise<string> {
       title: `Budget test ${Math.random().toString(36).slice(2, 8)}`,
       currencyCode: 'CAD',
     });
-    const e = await expenses.addExpense(tx, r.id, { currencyCode: 'CAD', merchant: 'Taxi' });
-    await expenses.addLineItem(tx, e.id, { categoryId, amountMinor });
+    const e = await expenses.addExpense(tx, TEST_ACTOR, r.id, { currencyCode: 'CAD', merchant: 'Taxi' });
+    await expenses.addLineItem(tx, TEST_ACTOR, e.id, { categoryId, amountMinor });
     return r.id as string;
   });
 }
@@ -472,8 +473,8 @@ async function draftIn(currencyCode: string, amountMinor: number): Promise<strin
       title: `Budget fx ${Math.random().toString(36).slice(2, 8)}`,
       currencyCode,
     });
-    const e = await expenses.addExpense(tx, r.id, { currencyCode, merchant: 'Taxi' });
-    await expenses.addLineItem(tx, e.id, { categoryId, amountMinor });
+    const e = await expenses.addExpense(tx, TEST_ACTOR, r.id, { currencyCode, merchant: 'Taxi' });
+    await expenses.addLineItem(tx, TEST_ACTOR, e.id, { categoryId, amountMinor });
     return r.id as string;
   });
 }

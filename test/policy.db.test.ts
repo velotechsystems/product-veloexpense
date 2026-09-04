@@ -14,6 +14,7 @@ import { Pool } from 'pg';
 import { withOrg, withoutOrg } from '@/lib/tenant/context';
 import * as expenses from '@/lib/expenses/service';
 import * as policy from '@/lib/policy/service';
+import { TEST_ACTOR } from './support/audit-actor';
 
 const admin = new Pool({
   connectionString: process.env.ADMIN_DATABASE_URL ?? process.env.DATABASE_URL,
@@ -31,11 +32,11 @@ async function draft(amountMinor: number, opts: { categoryId?: string; withRecei
       title: 'Policy subject',
       currencyCode: 'CAD',
     });
-    const expense = await expenses.addExpense(tx, report.id, {
+    const expense = await expenses.addExpense(tx, TEST_ACTOR, report.id, {
       currencyCode: 'CAD',
       merchant: 'Test Merchant',
     });
-    const line = await expenses.addLineItem(tx, expense.id, {
+    const line = await expenses.addLineItem(tx, TEST_ACTOR, expense.id, {
       categoryId: opts.categoryId ?? mealsId,
       amountMinor,
     });
@@ -62,8 +63,8 @@ async function draftIn(currencyCode: string, amountMinor: number) {
       title: `Policy subject ${currencyCode}`,
       currencyCode,
     });
-    const expense = await expenses.addExpense(tx, report.id, { currencyCode, merchant: 'M' });
-    const line = await expenses.addLineItem(tx, expense.id, {
+    const expense = await expenses.addExpense(tx, TEST_ACTOR, report.id, { currencyCode, merchant: 'M' });
+    const line = await expenses.addLineItem(tx, TEST_ACTOR, expense.id, {
       categoryId: mealsId,
       amountMinor,
     });
@@ -199,7 +200,7 @@ describe('policy rules', () => {
       await tx.query('DELETE FROM expense_policy');
       await policy.createPolicy(tx, { kind: 'RECEIPT_REQUIRED', severity: 'WARNING', params: {} });
       const report = await expenses.getReport(tx, reportId);
-      await expenses.addExpense(tx, report!.report.id, { currencyCode: 'CAD', merchant: 'Second' });
+      await expenses.addExpense(tx, TEST_ACTOR, report!.report.id, { currencyCode: 'CAD', merchant: 'Second' });
       return policy.validateReport(tx, reportId);
     });
     // Two receipt-less expenses => two findings. ExpenseOS's (ruleCode,
@@ -283,7 +284,7 @@ describe('re-validation', () => {
     expect(acknowledged.violations[0].resolved_by_name).toBe('P');
 
     const fixed = await withOrg(orgId, async (tx) => {
-      await expenses.updateLineItem(tx, lineId, { amountMinor: 1000 });
+      await expenses.updateLineItem(tx, TEST_ACTOR, lineId, { amountMinor: 1000 });
       return policy.validateReport(tx, reportId);
     });
     expect(fixed.violations).toHaveLength(0);

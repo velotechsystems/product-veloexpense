@@ -27,6 +27,7 @@ import { tieredRouter } from '@/lib/approvals/resolver';
 import { RoutingError, type RoutingSubject } from '@/lib/approvals/routing';
 import { canDecide, assertCanDecide, DecisionForbiddenError } from '@/lib/approvals/eligibility';
 import { IMPLICIT_STEP, type StepPlan } from '@/lib/approvals/tiers';
+import { TEST_ACTOR } from './support/audit-actor';
 
 /**
  * Fail with a sentence, not with pg's default-connection error.
@@ -149,11 +150,11 @@ async function mkTask(
       title: 'Decidable',
       currencyCode: 'CAD',
     });
-    const expense = await expenses.addExpense(tx, report.id, {
+    const expense = await expenses.addExpense(tx, TEST_ACTOR, report.id, {
       currencyCode: 'CAD',
       merchant: 'M',
     });
-    await expenses.addLineItem(tx, expense.id, { categoryId, amountMinor: 1000 });
+    await expenses.addLineItem(tx, TEST_ACTOR, expense.id, { categoryId, amountMinor: 1000 });
     const req = await tx.query(
       `INSERT INTO approval_request
          (organization_id, report_id, policy_snapshot, status, current_step, total_steps,

@@ -29,6 +29,7 @@ import * as expenses from '@/lib/expenses/service';
 import type { Actor } from '@/lib/auth/actor';
 // Shared with the browser via lib/receipts/constants (this module imports pg).
 import { ALLOWED_CONTENT_TYPES, MAX_RECEIPT_BYTES } from './constants';
+import type { AuditActor } from '@/lib/audit/service';
 
 export { ALLOWED_CONTENT_TYPES, MAX_RECEIPT_BYTES };
 
@@ -366,8 +367,18 @@ export async function removeReceipt(
  * items stay empty — the employee codes the amounts in the workbench (VX1-6),
  * and OCR/extraction is a later phase.
  */
+/**
+ * UD-11: the actor is separate from `submitterEmail` even though every caller
+ * today passes the same person. They are different facts — who performed this,
+ * and whose report it is — and this is the one path in the product that creates
+ * expenses on a report from OUTSIDE `app/expenses/actions.ts`. It is also the
+ * measured argument against auditing at the edge: had the audit gone in the
+ * actions file, the receipt-first flow would have created expenses with no audit
+ * row from the day it shipped.
+ */
 export async function startFromReceipts(
   tx: QueryRunner,
+  actor: AuditActor,
   submitterEmail: string,
   report: expenses.NewReport,
   receiptIds: string[],
@@ -387,7 +398,7 @@ export async function startFromReceipts(
       { code: 'RECEIPT_NOT_UPLOADED_YET', params: { filename: receipt.filename } },
     );
     }
-    const expense = await expenses.addExpense(tx, created.id, {
+    const expense = await expenses.addExpense(tx, actor, created.id, {
       currencyCode: report.currencyCode,
       notes: `From receipt ${receipt.filename}`,
     });

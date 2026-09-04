@@ -14,6 +14,7 @@ import { withOrg } from '@/lib/tenant/context';
 import { MemoryStorage } from '@/lib/storage';
 import * as expenses from '@/lib/expenses/service';
 import * as svc from '@/lib/receipts/service';
+import { TEST_ACTOR } from './support/audit-actor';
 
 const admin = new Pool({ connectionString: process.env.ADMIN_DATABASE_URL ?? process.env.DATABASE_URL });
 const storage = new MemoryStorage();
@@ -39,7 +40,7 @@ beforeAll(async () => {
     ]);
     const report = await expenses.createReport(tx, UPLOADER, { title: 'Trip', currencyCode: 'CAD' });
     reportId = report.id;
-    const expense = await expenses.addExpense(tx, reportId, { currencyCode: 'CAD', merchant: 'Cafe' });
+    const expense = await expenses.addExpense(tx, TEST_ACTOR, reportId, { currencyCode: 'CAD', merchant: 'Cafe' });
     expenseId = expense.id;
   });
 
@@ -196,6 +197,7 @@ describe('receipt-first', () => {
       const b = await upload(tx, 'cab.jpg', 'image/jpeg');
       const started = await svc.startFromReceipts(
         tx,
+        TEST_ACTOR,
         UPLOADER,
         { title: 'Toronto trip', currencyCode: 'CAD' },
         [a.confirmed.id, b.confirmed.id],
@@ -220,7 +222,9 @@ describe('receipt-first', () => {
 
   it('refuses an empty selection', async () => {
     await expect(
-      withOrg(orgA, (tx) => svc.startFromReceipts(tx, UPLOADER, { title: 'Empty', currencyCode: 'CAD' }, [])),
+      withOrg(orgA, (tx) =>
+        svc.startFromReceipts(tx, TEST_ACTOR, UPLOADER, { title: 'Empty', currencyCode: 'CAD' }, []),
+      ),
     ).rejects.toMatchObject({ code: 'NO_RECEIPTS' });
   });
 });

@@ -35,6 +35,7 @@ import * as policy from '@/lib/policy/service';
 import * as lifecycle from '@/lib/expenses/lifecycle';
 import { listBusinessUnits, type EmployeeRow } from '@/lib/employees/service';
 import { requireActor, ForbiddenError } from '@/lib/auth/actor';
+import { auditActorOf } from '@/lib/audit/service';
 import { canReadReport, decidableTaskForReport } from '@/lib/approvals/inbox';
 import { parseAmountToMinor } from '@/lib/money';
 
@@ -201,60 +202,60 @@ export async function createReport(input: svc.NewReport) {
 }
 
 export async function updateReport(reportId: string, patch: svc.ReportPatch) {
-  return onReport(reportId, async (tx) => {
-    const updated = await svc.updateReport(tx, reportId, patch);
+  return onReport(reportId, async (tx, actor) => {
+    const updated = await svc.updateReport(tx, auditActorOf(actor), reportId, patch);
     await policy.validateReport(tx, reportId);
     return updated;
   });
 }
 
 export async function deleteReport(reportId: string) {
-  return onReport(reportId, (tx) => svc.deleteReport(tx, reportId));
+  return onReport(reportId, (tx, actor) => svc.deleteReport(tx, auditActorOf(actor), reportId));
 }
 
 export async function addExpense(reportId: string, input: svc.NewExpense) {
-  return onReport(reportId, async (tx) => {
-    const created = await svc.addExpense(tx, reportId, input);
+  return onReport(reportId, async (tx, actor) => {
+    const created = await svc.addExpense(tx, auditActorOf(actor), reportId, input);
     await policy.validateReport(tx, reportId);
     return created;
   });
 }
 
 export async function updateExpense(expenseId: string, patch: svc.ExpensePatch) {
-  return onExpense(expenseId, async (tx, _actor, reportId) => {
-    const updated = await svc.updateExpense(tx, expenseId, patch);
+  return onExpense(expenseId, async (tx, actor, reportId) => {
+    const updated = await svc.updateExpense(tx, auditActorOf(actor), expenseId, patch);
     await policy.validateReport(tx, reportId);
     return updated;
   });
 }
 
 export async function removeExpense(expenseId: string) {
-  return onExpense(expenseId, async (tx, _actor, reportId) => {
-    await svc.removeExpense(tx, expenseId);
+  return onExpense(expenseId, async (tx, actor, reportId) => {
+    await svc.removeExpense(tx, auditActorOf(actor), expenseId);
     await policy.validateReport(tx, reportId);
     return reportId;
   });
 }
 
 export async function addLineItem(expenseId: string, input: svc.NewLineItem) {
-  return onExpense(expenseId, async (tx, _actor, reportId) => {
-    const created = await svc.addLineItem(tx, expenseId, input);
+  return onExpense(expenseId, async (tx, actor, reportId) => {
+    const created = await svc.addLineItem(tx, auditActorOf(actor), expenseId, input);
     await policy.validateReport(tx, reportId);
     return created;
   });
 }
 
 export async function updateLineItem(lineItemId: string, patch: svc.LineItemPatch) {
-  return onLineItem(lineItemId, async (tx, _actor, reportId) => {
-    const updated = await svc.updateLineItem(tx, lineItemId, patch);
+  return onLineItem(lineItemId, async (tx, actor, reportId) => {
+    const updated = await svc.updateLineItem(tx, auditActorOf(actor), lineItemId, patch);
     await policy.validateReport(tx, reportId);
     return updated;
   });
 }
 
 export async function removeLineItem(lineItemId: string) {
-  return onLineItem(lineItemId, async (tx, _actor, reportId) => {
-    await svc.removeLineItem(tx, lineItemId);
+  return onLineItem(lineItemId, async (tx, actor, reportId) => {
+    await svc.removeLineItem(tx, auditActorOf(actor), lineItemId);
     await policy.validateReport(tx, reportId);
     return reportId;
   });

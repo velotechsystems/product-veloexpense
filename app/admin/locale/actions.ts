@@ -23,19 +23,14 @@
 import { revalidatePath } from 'next/cache';
 import { errorParam } from '@/lib/errors/domain';
 import { redirect } from 'next/navigation';
-import { type EmployeeRow } from '@/lib/employees/service';
 import type { QueryRunner } from '@/lib/db/client';
 import { localeName, SUPPORTED_LOCALES } from '@/lib/i18n/locales';
 import { getOrgDefaults, listTimeZones, setOrgDefaults } from '@/lib/i18n/service';
 import { asAdmin, asAdminPage } from '@/lib/auth/admin-guard';
+import { auditActorOf } from '@/lib/audit/service';
 
 const PAGE = '/admin/locale';
 
-const auditActor = (a: EmployeeRow) => ({
-  id: a.id,
-  name: a.display_name ?? a.email,
-  role: a.role,
-});
 
 interface LocalePageView {
   locale: string;
@@ -138,7 +133,7 @@ export async function saveLocaleFromForm(form: FormData): Promise<never> {
   try {
     await asAdmin(async (tx, actor) => {
       const orgId = await orgIdOf(tx);
-      await setOrgDefaults(tx, orgId, auditActor(actor), { locale, timeZone });
+      await setOrgDefaults(tx, orgId, auditActorOf(actor), { locale, timeZone });
     });
   } catch (err) {
     rethrowRedirect(err);

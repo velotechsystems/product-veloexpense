@@ -15,7 +15,6 @@
 import { redirect } from 'next/navigation';
 import { revalidatePath } from 'next/cache';
 import { errorParam } from '@/lib/errors/domain';
-import { type EmployeeRow } from '@/lib/employees/service';
 import { FRAUD_SEVERITIES, loadFraudConfig, type FraudSeverity } from '@/lib/fraud/rules';
 import { runFraudScan } from '@/lib/fraud/scan';
 import { loadControlConfig } from '@/lib/fraud/controls';
@@ -30,14 +29,10 @@ import {
 import { listRuns, runFindings } from '@/lib/fraud/runs';
 import { isModuleEnabled } from '@/lib/modules/service';
 import { asAdmin, asAdminPage } from '@/lib/auth/admin-guard';
+import { auditActorOf } from '@/lib/audit/service';
 
 const PAGE = '/admin/compliance';
 
-const auditActor = (a: EmployeeRow) => ({
-  id: a.id,
-  name: a.display_name ?? a.email,
-  role: a.role,
-});
 
 function isRedirect(err: unknown): boolean {
   return (
@@ -123,7 +118,7 @@ export async function reviewFlagFromForm(form: FormData) {
     // MT-3: the rule belongs beside the write, not in whichever form posts to it.
     const note = (form.get('note') as string | null) ?? null;
     await asAdmin((tx, actor) =>
-      recordVerdict(tx, auditActor(actor), { flagId, verdict, note }),
+      recordVerdict(tx, auditActorOf(actor), { flagId, verdict, note }),
     );
   });
 }
@@ -137,7 +132,7 @@ export async function raiseFlagFromForm(form: FormData) {
     }
     const reportId = (form.get('reportId') as string | null)?.trim() || null;
     await asAdmin((tx, actor) =>
-      raiseManualFlag(tx, auditActor(actor), {
+      raiseManualFlag(tx, auditActorOf(actor), {
         note,
         severity: severity as FraudSeverity,
         reportId,

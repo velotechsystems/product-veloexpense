@@ -7,6 +7,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { Pool } from 'pg';
 import { withOrg } from '@/lib/tenant/context';
 import * as svc from '@/lib/expenses/service';
+import { TEST_ACTOR } from './support/audit-actor';
 
 const admin = new Pool({ connectionString: process.env.ADMIN_DATABASE_URL ?? process.env.DATABASE_URL });
 
@@ -35,9 +36,9 @@ describe('expense service', () => {
   it('creates a numbered report, adds lines, recomputes total', async () => {
     const result = await withOrg(orgId, async (tx) => {
       const report = await svc.createReport(tx, 'u@acme.test', { title: 'Trip', currencyCode: 'CAD' });
-      const expense = await svc.addExpense(tx, report.id, { currencyCode: 'CAD', merchant: 'Cafe' });
-      await svc.addLineItem(tx, expense.id, { categoryId, amountMinor: 1500 });
-      await svc.addLineItem(tx, expense.id, { categoryId, amountMinor: 2500 });
+      const expense = await svc.addExpense(tx, TEST_ACTOR, report.id, { currencyCode: 'CAD', merchant: 'Cafe' });
+      await svc.addLineItem(tx, TEST_ACTOR, expense.id, { categoryId, amountMinor: 1500 });
+      await svc.addLineItem(tx, TEST_ACTOR, expense.id, { categoryId, amountMinor: 2500 });
       const full = await svc.getReport(tx, report.id);
       return { number: report.number, total: String(full!.report.total_minor), lines: full!.lineItems.length };
     });
@@ -54,9 +55,9 @@ describe('expense service', () => {
   it('removing a line recomputes the total', async () => {
     const total = await withOrg(orgId, async (tx) => {
       const report = await svc.createReport(tx, 'u@acme.test', { title: 'Removable', currencyCode: 'CAD' });
-      const expense = await svc.addExpense(tx, report.id, { currencyCode: 'CAD' });
-      const li = await svc.addLineItem(tx, expense.id, { categoryId, amountMinor: 999 });
-      await svc.removeLineItem(tx, li.id);
+      const expense = await svc.addExpense(tx, TEST_ACTOR, report.id, { currencyCode: 'CAD' });
+      const li = await svc.addLineItem(tx, TEST_ACTOR, expense.id, { categoryId, amountMinor: 999 });
+      await svc.removeLineItem(tx, TEST_ACTOR, li.id);
       const full = await svc.getReport(tx, report.id);
       return String(full!.report.total_minor);
     });
@@ -89,10 +90,10 @@ describe('expense workbench (VX1-6)', () => {
   it('composes the editor payload with per-expense subtotals and receipts', async () => {
     const view = await withOrg(orgId, async (tx) => {
       const report = await svc.createReport(tx, 'u@acme.test', { title: 'Workbench', currencyCode: 'CAD' });
-      const coded = await svc.addExpense(tx, report.id, { currencyCode: 'CAD', merchant: 'Hotel' });
-      await svc.addLineItem(tx, coded.id, { categoryId, amountMinor: 12000, description: 'Room' });
-      await svc.addLineItem(tx, coded.id, { categoryId, amountMinor: 1560, taxMinor: 200 });
-      await svc.addExpense(tx, report.id, { currencyCode: 'CAD', merchant: 'Uncoded' });
+      const coded = await svc.addExpense(tx, TEST_ACTOR, report.id, { currencyCode: 'CAD', merchant: 'Hotel' });
+      await svc.addLineItem(tx, TEST_ACTOR, coded.id, { categoryId, amountMinor: 12000, description: 'Room' });
+      await svc.addLineItem(tx, TEST_ACTOR, coded.id, { categoryId, amountMinor: 1560, taxMinor: 200 });
+      await svc.addExpense(tx, TEST_ACTOR, report.id, { currencyCode: 'CAD', merchant: 'Uncoded' });
       await tx.query(
         `INSERT INTO receipt (organization_id, expense_id, s3_key, filename, content_type, size_bytes, status, uploaded_by_id)
          VALUES ($1, $2, 'org/x/receipts/1/a.pdf', 'a.pdf', 'application/pdf', 10, 'STORED', $3)`,
@@ -119,9 +120,9 @@ describe('expense workbench (VX1-6)', () => {
         purpose: 'Kickoff',
         currencyCode: 'CAD',
       });
-      await svc.updateReport(tx, report.id, { title: 'Renamed' }); // purpose untouched
+      await svc.updateReport(tx, TEST_ACTOR, report.id, { title: 'Renamed' }); // purpose untouched
       const kept = await svc.getReport(tx, report.id);
-      await svc.updateReport(tx, report.id, { purpose: null }); // purpose cleared
+      await svc.updateReport(tx, TEST_ACTOR, report.id, { purpose: null }); // purpose cleared
       const cleared = await svc.getReport(tx, report.id);
       return { kept: kept!.report, cleared: cleared!.report };
     });
@@ -133,8 +134,8 @@ describe('expense workbench (VX1-6)', () => {
   it('carries a currency change down to the report expenses', async () => {
     const currencies = await withOrg(orgId, async (tx) => {
       const report = await svc.createReport(tx, 'u@acme.test', { title: 'FX', currencyCode: 'CAD' });
-      await svc.addExpense(tx, report.id, { currencyCode: 'CAD' });
-      await svc.updateReport(tx, report.id, { currencyCode: 'USD' });
+      await svc.addExpense(tx, TEST_ACTOR, report.id, { currencyCode: 'CAD' });
+      await svc.updateReport(tx, TEST_ACTOR, report.id, { currencyCode: 'USD' });
       const view = await svc.getReportWorkbench(tx, report.id);
       return {
         report: view!.report.currency_code,
@@ -147,9 +148,9 @@ describe('expense workbench (VX1-6)', () => {
   it('edits a line item and recomputes the total', async () => {
     const total = await withOrg(orgId, async (tx) => {
       const report = await svc.createReport(tx, 'u@acme.test', { title: 'Editable', currencyCode: 'CAD' });
-      const expense = await svc.addExpense(tx, report.id, { currencyCode: 'CAD' });
-      const line = await svc.addLineItem(tx, expense.id, { categoryId, amountMinor: 1000 });
-      await svc.updateLineItem(tx, line.id, { amountMinor: 2575, description: 'Corrected' });
+      const expense = await svc.addExpense(tx, TEST_ACTOR, report.id, { currencyCode: 'CAD' });
+      const line = await svc.addLineItem(tx, TEST_ACTOR, expense.id, { categoryId, amountMinor: 1000 });
+      await svc.updateLineItem(tx, TEST_ACTOR, line.id, { amountMinor: 2575, description: 'Corrected' });
       const view = await svc.getReportWorkbench(tx, report.id);
       return String(view!.report.total_minor);
     });
@@ -159,14 +160,14 @@ describe('expense workbench (VX1-6)', () => {
   it('removing an expense drops its lines but returns its receipts to the inbox', async () => {
     const result = await withOrg(orgId, async (tx) => {
       const report = await svc.createReport(tx, 'u@acme.test', { title: 'Removable', currencyCode: 'CAD' });
-      const expense = await svc.addExpense(tx, report.id, { currencyCode: 'CAD' });
-      await svc.addLineItem(tx, expense.id, { categoryId, amountMinor: 4200 });
+      const expense = await svc.addExpense(tx, TEST_ACTOR, report.id, { currencyCode: 'CAD' });
+      await svc.addLineItem(tx, TEST_ACTOR, expense.id, { categoryId, amountMinor: 4200 });
       const receipt = await tx.query(
         `INSERT INTO receipt (organization_id, expense_id, s3_key, filename, content_type, size_bytes, status, uploaded_by_id)
          VALUES ($1, $2, 'org/x/receipts/2/b.pdf', 'b.pdf', 'application/pdf', 10, 'STORED', $3) RETURNING id`,
         [orgId, expense.id, userId],
       );
-      await svc.removeExpense(tx, expense.id);
+      await svc.removeExpense(tx, TEST_ACTOR, expense.id);
       const view = await svc.getReportWorkbench(tx, report.id);
       const orphan = await tx.query('SELECT expense_id FROM receipt WHERE id = $1', [receipt.rows[0].id]);
       return {
@@ -181,24 +182,24 @@ describe('expense workbench (VX1-6)', () => {
   it('refuses every edit once the report has left DRAFT', async () => {
     await withOrg(orgId, async (tx) => {
       const report = await svc.createReport(tx, 'u@acme.test', { title: 'Locked', currencyCode: 'CAD' });
-      const expense = await svc.addExpense(tx, report.id, { currencyCode: 'CAD' });
-      const line = await svc.addLineItem(tx, expense.id, { categoryId, amountMinor: 100 });
+      const expense = await svc.addExpense(tx, TEST_ACTOR, report.id, { currencyCode: 'CAD' });
+      const line = await svc.addLineItem(tx, TEST_ACTOR, expense.id, { categoryId, amountMinor: 100 });
       await tx.query("UPDATE expense_report SET status = 'SUBMITTED' WHERE id = $1", [report.id]);
 
-      await expect(svc.updateReport(tx, report.id, { title: 'Nope' })).rejects.toThrow(/only DRAFT/);
-      await expect(svc.addExpense(tx, report.id, { currencyCode: 'CAD' })).rejects.toThrow(/only DRAFT/);
-      await expect(svc.addLineItem(tx, expense.id, { categoryId, amountMinor: 1 })).rejects.toThrow(/only DRAFT/);
-      await expect(svc.updateLineItem(tx, line.id, { amountMinor: 2 })).rejects.toThrow(/only DRAFT/);
-      await expect(svc.removeLineItem(tx, line.id)).rejects.toThrow(/only DRAFT/);
-      await expect(svc.removeExpense(tx, expense.id)).rejects.toThrow(/only DRAFT/);
+      await expect(svc.updateReport(tx, TEST_ACTOR, report.id, { title: 'Nope' })).rejects.toThrow(/only DRAFT/);
+      await expect(svc.addExpense(tx, TEST_ACTOR, report.id, { currencyCode: 'CAD' })).rejects.toThrow(/only DRAFT/);
+      await expect(svc.addLineItem(tx, TEST_ACTOR, expense.id, { categoryId, amountMinor: 1 })).rejects.toThrow(/only DRAFT/);
+      await expect(svc.updateLineItem(tx, TEST_ACTOR, line.id, { amountMinor: 2 })).rejects.toThrow(/only DRAFT/);
+      await expect(svc.removeLineItem(tx, TEST_ACTOR, line.id)).rejects.toThrow(/only DRAFT/);
+      await expect(svc.removeExpense(tx, TEST_ACTOR, expense.id)).rejects.toThrow(/only DRAFT/);
     });
   });
 
   it('rejects an amount that is not whole minor units', async () => {
     await withOrg(orgId, async (tx) => {
       const report = await svc.createReport(tx, 'u@acme.test', { title: 'Bad amount', currencyCode: 'CAD' });
-      const expense = await svc.addExpense(tx, report.id, { currencyCode: 'CAD' });
-      await expect(svc.addLineItem(tx, expense.id, { categoryId, amountMinor: 12.5 })).rejects.toThrow(
+      const expense = await svc.addExpense(tx, TEST_ACTOR, report.id, { currencyCode: 'CAD' });
+      await expect(svc.addLineItem(tx, TEST_ACTOR, expense.id, { categoryId, amountMinor: 12.5 })).rejects.toThrow(
         /whole number of minor units/,
       );
     });
