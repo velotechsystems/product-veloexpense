@@ -14,11 +14,8 @@
  */
 import { redirect } from 'next/navigation';
 import { revalidatePath } from 'next/cache';
-import { auth } from '@/auth';
 import { errorParam } from '@/lib/errors/domain';
-import { withCurrentOrg } from '@/lib/tenant/request';
-import type { QueryRunner } from '@/lib/db/client';
-import { getEmployeeByEmail, type EmployeeRow } from '@/lib/employees/service';
+import { type EmployeeRow } from '@/lib/employees/service';
 import { FRAUD_SEVERITIES, loadFraudConfig, type FraudSeverity } from '@/lib/fraud/rules';
 import { runFraudScan } from '@/lib/fraud/scan';
 import { loadControlConfig } from '@/lib/fraud/controls';
@@ -30,24 +27,11 @@ import {
   raiseManualFlag,
   recordVerdict,
 } from '@/lib/fraud/review';
-import { listRuns, runFindings, type RunRow } from '@/lib/fraud/runs';
+import { listRuns, runFindings } from '@/lib/fraud/runs';
 import { isModuleEnabled } from '@/lib/modules/service';
+import { asAdmin, asAdminPage } from '@/lib/auth/admin-guard';
 
 const PAGE = '/admin/compliance';
-
-async function asAdmin<T>(fn: (tx: QueryRunner, actor: EmployeeRow) => Promise<T>): Promise<T> {
-  const session = await auth();
-  const email = session?.user?.email;
-  if (!email) throw new Error('unauthenticated');
-  return withCurrentOrg(async (tx) => {
-    const actor = await getEmployeeByEmail(tx, email);
-    if (!actor) throw new Error('forbidden: no employee record in this organization');
-    if (actor.role !== 'ADMIN' || actor.deleted_at !== null) {
-      throw new Error('forbidden: admin role required');
-    }
-    return fn(tx, actor);
-  });
-}
 
 const auditActor = (a: EmployeeRow) => ({
   id: a.id,
@@ -97,7 +81,7 @@ function required(form: FormData, key: string): string {
  * anyway.
  */
 export async function getCompliancePage(runId?: string) {
-  return asAdmin(async (tx) => {
+  return asAdminPage(async (tx) => {
     // ASKED UNGATED, and that is the AC-22 pattern rather than an oversight: a
     // gated read would make "this module is off" indistinguishable from "nothing
     // has been found", and the screen's job is to say which.

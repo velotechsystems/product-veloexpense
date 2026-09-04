@@ -10,34 +10,17 @@
 import { redirect } from 'next/navigation';
 import { errorParam } from '@/lib/errors/domain';
 import { revalidatePath } from 'next/cache';
-import { auth } from '@/auth';
-import { withCurrentOrg } from '@/lib/tenant/request';
-import type { QueryRunner } from '@/lib/db/client';
-import { getEmployeeByEmail, type EmployeeRow } from '@/lib/employees/service';
 import { listCategories, listCurrencies } from '@/lib/expenses/service';
 import * as policy from '@/lib/policy/service';
 import { parseAmountToMinor } from '@/lib/money';
+import { asAdmin, asAdminPage } from '@/lib/auth/admin-guard';
 
 const PAGE = '/admin/expense-policies';
-
-async function asAdmin<T>(fn: (tx: QueryRunner, actor: EmployeeRow) => Promise<T>): Promise<T> {
-  const session = await auth();
-  const email = session?.user?.email;
-  if (!email) throw new Error('unauthenticated');
-  return withCurrentOrg(async (tx) => {
-    const actor = await getEmployeeByEmail(tx, email);
-    if (!actor) throw new Error('forbidden: no employee record in this organization');
-    if (actor.role !== 'ADMIN' || actor.deleted_at !== null) {
-      throw new Error('forbidden: admin role required');
-    }
-    return fn(tx, actor);
-  });
-}
 
 /* ── reads ─────────────────────────────────────────────────────────────────── */
 
 export async function getPoliciesPage() {
-  return asAdmin(async (tx) => ({
+  return asAdminPage(async (tx) => ({
     policies: await policy.listPolicies(tx),
     categories: await listCategories(tx, { includeInactive: true }),
     // VX3-2 / PE-1. `currencies` backs the two selects; `policyCurrency` also

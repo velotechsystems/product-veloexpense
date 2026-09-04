@@ -28,34 +28,17 @@
 import { redirect } from 'next/navigation';
 import { errorParam } from '@/lib/errors/domain';
 import { revalidatePath } from 'next/cache';
-import { auth } from '@/auth';
-import { withCurrentOrg } from '@/lib/tenant/request';
-import type { QueryRunner } from '@/lib/db/client';
-import { getEmployeeByEmail, type EmployeeRow } from '@/lib/employees/service';
 import * as approvals from '@/lib/approvals/service';
 import { approverChoices, decodeApproverList } from '@/lib/approvals/approver-token';
 import { parseAmountToMinor } from '@/lib/money';
+import { asAdmin, asAdminPage } from '@/lib/auth/admin-guard';
 
 const PAGE = '/admin/approval-ladder';
-
-async function asAdmin<T>(fn: (tx: QueryRunner, actor: EmployeeRow) => Promise<T>): Promise<T> {
-  const session = await auth();
-  const email = session?.user?.email;
-  if (!email) throw new Error('unauthenticated');
-  return withCurrentOrg(async (tx) => {
-    const actor = await getEmployeeByEmail(tx, email);
-    if (!actor) throw new Error('forbidden: no employee record in this organization');
-    if (actor.role !== 'ADMIN' || actor.deleted_at !== null) {
-      throw new Error('forbidden: admin role required');
-    }
-    return fn(tx, actor);
-  });
-}
 
 /* ── reads ─────────────────────────────────────────────────────────────────── */
 
 export async function getLadderPage() {
-  return asAdmin(async (tx) => {
+  return asAdminPage(async (tx) => {
     const rungs = await approvals.listPolicies(tx);
     const people = await tx.query(
       `SELECT id, email, display_name FROM app_user
@@ -102,8 +85,6 @@ function approversFrom(form: FormData) {
     form.getAll('approver').filter((v): v is string => typeof v === 'string'),
   );
 }
-
-
 
 async function guard(run: () => Promise<void>): Promise<string | null> {
   try {

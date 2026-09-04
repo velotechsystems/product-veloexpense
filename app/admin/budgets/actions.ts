@@ -17,36 +17,20 @@
 import { redirect } from 'next/navigation';
 import { errorParam } from '@/lib/errors/domain';
 import { revalidatePath } from 'next/cache';
-import { auth } from '@/auth';
-import { withCurrentOrg } from '@/lib/tenant/request';
-import type { QueryRunner } from '@/lib/db/client';
-import { getEmployeeByEmail, listDepartments, type EmployeeRow } from '@/lib/employees/service';
+import { listDepartments } from '@/lib/employees/service';
 import { listCurrencies } from '@/lib/expenses/service';
 import { listPostableAccounts } from '@/lib/accounts/service';
 import { isModuleEnabled } from '@/lib/modules/service';
 import * as budgets from '@/lib/budgets/admin';
 import { parseAmountToMinor } from '@/lib/money';
+import { asAdmin, asAdminPage } from '@/lib/auth/admin-guard';
 
 const PAGE = '/admin/budgets';
-
-async function asAdmin<T>(fn: (tx: QueryRunner, actor: EmployeeRow) => Promise<T>): Promise<T> {
-  const session = await auth();
-  const email = session?.user?.email;
-  if (!email) throw new Error('unauthenticated');
-  return withCurrentOrg(async (tx) => {
-    const actor = await getEmployeeByEmail(tx, email);
-    if (!actor) throw new Error('forbidden: no employee record in this organization');
-    if (actor.role !== 'ADMIN' || actor.deleted_at !== null) {
-      throw new Error('forbidden: admin role required');
-    }
-    return fn(tx, actor);
-  });
-}
 
 /* ── reads ─────────────────────────────────────────────────────────────────── */
 
 export async function getBudgetsPage() {
-  return asAdmin(async (tx) => ({
+  return asAdminPage(async (tx) => ({
     // UNGATED on purpose (VX4-1 / MT-3): the page has to be able to say WHY it is
     // empty, and a gated read would make an off module indistinguishable from a
     // tenant that has not made a budget yet.

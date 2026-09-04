@@ -104,6 +104,21 @@ jobs:
       - name: Locale registry guard (no locale tag outside the registry)
         run: npm run check:i18n
 
+      # VX4-9. Fifteen copies of an eight-line admin gate, and `e2e/crawl.spec.ts`
+      # found what that costs: every /admin page answered HTTP 500 to a manager,
+      # because the copies threw a bare Error inside a server component. The
+      # predicate was never wrong — the REFUSAL was indistinguishable from a
+      # fault, for the person and for whoever reads the logs.
+      #
+      # This checks four properties the fix depends on staying true: the gate is
+      # declared in one file, every admin actions module imports it, nothing under
+      # app/admin reads the session token instead of the database row, and — the
+      # one that actually prevents a recurrence — each caller gets the right exit:
+      # a page read through `asAdminPage` (renders a 403), a form action through
+      # `asAdmin` (throws a catalogued sentence). Needs no build and no database.
+      - name: Admin-gate guard (one gate, and the right exit per caller)
+        run: npm run check:admin
+
       # Build first: Next 16 generates .next/types/** (e.g. LayoutProps) that the
       # standalone `tsc --noEmit` typecheck depends on.
       - name: Build

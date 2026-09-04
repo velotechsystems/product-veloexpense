@@ -223,6 +223,12 @@ export const USER_MESSAGE_CODES = [
   'FRAUD_DISMISS_NEEDS_NOTE',
   'FRAUD_FLAG_NEEDS_NOTE',
   'FRAUD_FLAG_NEEDS_SUBJECT',
+
+  /* ── VX4-9: the admin gate's own refusals ─────────────────────────────── */
+  'SIGN_IN_REQUIRED',
+  'NOT_A_MEMBER_HERE',
+  'ACCOUNT_DEACTIVATED',
+  'ADMIN_ONLY',
 ] as const;
 export type UserMessageCode = (typeof USER_MESSAGE_CODES)[number];
 
@@ -936,6 +942,38 @@ export const ERROR_COPY: Record<UserMessageCode, Copy> = {
   FRAUD_FLAG_NEEDS_SUBJECT: {
     'en-CA':
       'Say which report this is about. A flag with no subject has nothing for a reviewer to open.',
+  },
+
+  /* ── VX4-9: the admin gate's own refusals ─────────────────────────────── */
+  //
+  // These three replace a bare `Error('forbidden: admin role required')`, which
+  // `errorParam` correctly refused to show and turned into the generic
+  // "something went wrong on our side" — so a manager who submitted an admin
+  // form was told the product had broken. IL-11's shape on the write path.
+  SIGN_IN_REQUIRED: {
+    'en-CA': 'Your session has ended. Sign in again to carry on.',
+  },
+  NOT_A_MEMBER_HERE: {
+    // The honest reading of "signed in, but no employee record in this tenant":
+    // almost always an invite withdrawn between signing in and clicking.
+    'en-CA':
+      'Your account is not a member of this organization. If it should be, ask an ' +
+      'administrator to invite you again.',
+  },
+  ACCOUNT_DEACTIVATED: {
+    // `requireActor` has refused a deactivated account since VX1-10; until now it
+    // did so with a diagnostic nobody could show, so the person was told the
+    // product had broken rather than that their account had been turned off.
+    'en-CA':
+      'This account has been deactivated. Ask an administrator of your organization to ' +
+      'reactivate it.',
+  },
+  ADMIN_ONLY: {
+    // Says WHOSE it is and what to do, not just "denied". A person refused with
+    // no route forward asks a colleague, and the colleague guesses.
+    'en-CA':
+      'That is an administrator screen. Ask an administrator of your organization if you ' +
+      'need something changed there.',
   },
 };
 
