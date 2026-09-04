@@ -59,6 +59,25 @@ jobs:
       - name: Install dependencies
         run: npm install --no-audit --no-fund
 
+      # PR #90's own postmortem. This repo is worked from two machines, and the
+      # cloud harness needs two local edits it must never commit: a browser path
+      # in playwright.config.ts, and the next/font calls stubbed out in
+      # app/layout.tsx (its egress blocks fonts.googleapis.com). #90 copied the
+      # config back instead of patching it, shipped
+      # `executablePath: '/opt/pw-browsers/...'`, and every one of the 123 specs
+      # died at launch — after CI had spent twelve minutes getting to them.
+      #
+      # A written rule already covered that and was not followed, which is the
+      # argument for a gate. FIRST in the job on purpose: it needs no build, no
+      # database and no browser, it finishes in under a second, and the failure
+      # it catches is the one that otherwise wastes the entire run.
+      #
+      # NOT in `npm run e2e`, deliberately — the harness has both edits applied
+      # and is working correctly when it does, so running this there would fail
+      # the build on a correct working copy.
+      - name: Harness-leak guard (no build environment in the commit)
+        run: npm run check:harness
+
       # VX3-7. The Plan asks for one adapter contract "so QuickBooks/Xero/Sage are
       # repeatable; avoid per-vendor special cases leaking into core". VX3-8's diff
       # is the real acceptance test for that, but it runs ONCE, on the day somebody
