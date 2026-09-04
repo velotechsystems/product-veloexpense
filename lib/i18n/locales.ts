@@ -5,6 +5,11 @@
  * script and a CI gate all need this list, and none of them should drag a
  * connection pool along to get it.
  *
+ * Part 3 added the file's ONE import, `./pseudo`, which imports nothing itself
+ * and reads a single environment variable at load. Noted here rather than left
+ * for somebody to notice, because "no imports" was the claim and it is now
+ * "one, and here is why it does not cost the property".
+ *
  * Ported from ExpenseOS `packages/i18n/src/locales.ts` (pinned 5a11a647), whose
  * header is the reason this file exists at all: "single source of truth for
  * which locales the app supports. Adding a locale here cascades through …".
@@ -69,6 +74,8 @@
  * `@formatjs/intl-localematcher` AND `negotiator`. Two dependencies for one
  * header parse; `resolve.ts` does BCP-47 Lookup in about twenty lines.
  */
+
+import { pseudoIfEnabled } from './pseudo';
 
 /**
  * Every locale the product serves. Adding one here cascades through the
@@ -206,6 +213,11 @@ export function localizedFrom<T = string>(map: unknown, locale: string): T | nul
     const value = m[tag];
     if (value === undefined || value === null) continue;
     if (typeof value === 'string' && value.length === 0) continue;
+    // VX4-7 part 3. ONE OF TWO PLACES the pseudo-locale is applied, and this is
+    // the one that covers the enum catalogue, the refusal catalogue and the
+    // notification templates — everything keyed by a locale tag goes through
+    // here. A no-op unless PSEUDO_LOCALE=1 was set when the process started.
+    if (typeof value === 'string') return pseudoIfEnabled(value) as T;
     return value as T;
   }
   return null;

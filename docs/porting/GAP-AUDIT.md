@@ -3468,12 +3468,37 @@ until its copy exists, `SUPPORTED_LOCALES` becomes the switch for "this locale i
 coverage assertion enforces that a SHIPPED locale is a COMPLETE one. Restoring it is one line, and
 the suite then fails in six places until all 86 strings are authored — verified by sabotage.
 
-**IL-5/IL-6 · Two good CI gates, watching one locale.**
+**IL-5/IL-6 · Two good CI gates, watching one locale.** ✅ CLOSED (VX4-7 part 3)
 `check-coverage.mjs` asserts key-for-key parity, matching types and non-emptiness across locales, and
 `check-used-keys.mjs` resolves literal keys against the default catalog; both run on every PR
 (`.github/workflows/ci.yml:99-106`). But the only thing that catches an *interpolated* missing key is
 the crawler, which sets `const LOCALE = 'en'` (`e2e/crawl.spec.ts:23`) and runs **nightly**, not per
 PR. A guard that watches one of three locales is the shape of guard this project keeps finding.
+
+**Ours runs PER PR, in a PSEUDO-LOCALE, and answers a question their crawler cannot.** Parts 2a–2c
+closed the coverage half properly — three catalogues, each asserted over `SUPPORTED_LOCALES` rather
+than over its own keys. What none of that can answer is the question a translator asks first: *is this
+string coming from a catalogue at all?* A hardcoded `<h2>Add line item</h2>` satisfies every gate in
+the repo — it has no key to be missing and no locale to be absent from, and `check:i18n` cannot see it
+because a string that is not localised looks exactly like one that does not need to be.
+
+`PSEUDO_LOCALE=1` makes catalogue text visually distinct — `⟦Ŝûƀmîttéd⟧` beside a plain `Add line
+item` — so the question becomes an observation a crawler can make. It is a TRANSFORM, not a member of
+`SUPPORTED_LOCALES`: no migration, no picker entry, no tenant can select it, and **no request can turn
+it on** (read once at boot, which is why the crawl needs its own config and server). John's call on
+3 Sep, against shipping invented French: a real third locale is 223 authored strings plus a data
+backfill, and `0028` already argues that a locale nobody has read is worse than an honest gap.
+
+**What it measured.** 176 un-catalogued strings across six screens — the product's UI chrome, which
+was never localised and never claimed to be. That is now a number with a per-page ceiling that can
+only go down, rather than "some of it". Boarded as **VX4-10**.
+
+**What it FOUND, on its first green run:** `app/notifications/page.tsx` rendered `{row.eventType}` —
+the raw enum member — on a screen every employee reads. Part 2a built `EVENT_TYPE_COPY` and moved
+eleven screens onto it; this site was missed, no gate could see it (rendering an enum directly is a
+valid program), and `e2e/approval-flow.spec.ts` had been matching that row by the literal `'APPROVED'`
+for four phases, so the test was pinned to the defect. Fixing the render broke the spec, which is the
+correct order of events.
 
 **IL-7 · Localised DB content is a two-key Json map, and the "two" is hardcoded in ~17 files.** ✅ CLOSED (VX4-7 part 1)
 `getLocalized(field, locale, fallback)` returns `map[locale] ?? map[fallback] ?? null`
@@ -3682,9 +3707,8 @@ positives of its own — a trailing shorthand key, and a multi-line object with 
 before its regex was replaced with a real brace scan. A gate that fails the build on correct code
 teaches people to delete gates, which is the lesson under both.
 
-**Still open, boarded as VX4-7 part 3 (with the third locale):** IL-5/IL-6 — the crawler pinned to
-one locale. Every catalogue now has a coverage assertion over `SUPPORTED_LOCALES`, so what is left is
-the crawl itself, and UD-3's role-crawl folds into it.
+**IL-5/IL-6 and UD-3 both closed by VX4-7 part 3** — see IL-5/IL-6 above for the pseudo-locale crawl,
+and `e2e/crawl.spec.ts` for the role crawl and the two findings it produced.
 
 ### AC-24 · Fixing a configuration does not move the queue ✅ CLOSED
 
@@ -3888,7 +3912,7 @@ mechanism starts at UD-1 again under its own date heading.
 | `836af348` who sends an approved report is a setting | `postingTrigger`: AP_QUEUE vs AUTOMATIC | **Product question for John.** UD-8 |
 | `9be674ac` fire CD on `published` | their release plumbing | Not applicable — ours is `velotechsystems/infra-ci-cd@v1` |
 | `12bfbfa8` a read-only date field stops offering a picker | their design system | Not applicable. Its TEST lesson is UD-10 |
-| `ce053ccd` crawl every page as every role | a technique, and the two bugs it found | **Adopt the technique.** UD-3 |
+| `ce053ccd` crawl every page as every role | a technique, and the two bugs it found | **ADOPTED — VX4-7 part 3.** `e2e/crawl.spec.ts`. Found that every session `auth.setup.ts` minted was an ADMIN (four phases, no page ever loaded as MANAGER or EMPLOYEE), and then that all 15 `/admin/*` pages answer **HTTP 500** to a non-admin — boarded VX4-9. UD-3 |
 | `704880cc` see the override amount while you type it | travel module | Not applicable |
 | `96883724` a mixed-currency report shows how it adds up | a reconciliation hidden in a hover tooltip | Not applicable today — single-currency per report (VX1-6). Revisit if that is lifted |
 | `28ba5f65` the update-in-place button says it overwrites | their VCC module | Not applicable |

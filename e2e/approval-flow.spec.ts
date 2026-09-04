@@ -29,7 +29,7 @@
 import { test, expect, type APIRequestContext, type Page } from '@playwright/test';
 import { Pool } from 'pg';
 import { DEFAULT_LOCALE } from '@/lib/i18n/locales';
-import { enumLabel, REPORT_STATUS_COPY } from '@/lib/i18n/catalog/enums';
+import { enumLabel, EVENT_TYPE_COPY, REPORT_STATUS_COPY } from '@/lib/i18n/catalog/enums';
 /**
  * VX4-7 part 2a: a report's status is asserted through the CATALOGUE, not as the
  * enum's own spelling.
@@ -48,6 +48,19 @@ import { enumLabel, REPORT_STATUS_COPY } from '@/lib/i18n/catalog/enums';
  * the pairing covers both halves and neither test repeats the other.
  */
 const status = (member: string) => enumLabel(REPORT_STATUS_COPY, member, DEFAULT_LOCALE);
+
+/**
+ * The same idea for a notification's event type.
+ *
+ * VX4-7 part 3. The row assertion below used to read `new RegExp('APPROVED')` —
+ * the RAW enum member — and passed for four phases because the notifications
+ * page was rendering it. Part 2a catalogued `EVENT_TYPE_COPY` and moved eleven
+ * screens onto it; that site was missed, and no gate could see it, because
+ * rendering an enum directly is a valid program. The pseudo-locale crawl found
+ * it, the fix broke this line, and that is the correct order of events: a test
+ * pinned to a defect should fail when the defect is fixed.
+ */
+const event = (member: string) => enumLabel(EVENT_TYPE_COPY, member, DEFAULT_LOCALE);
 
 
 /** Per-run id, for the same reason expense-flow.spec.ts has one: the demo tenant
@@ -273,7 +286,8 @@ test('the submitter is notified in-app, and by mail', async ({ page, request }) 
   await drain(request);
 
   await page.goto('/notifications');
-  const row = page.getByRole('row', { name: new RegExp('APPROVED') });
+  // Through the catalogue, not the raw member — see `event` above.
+  const row = page.getByRole('row', { name: new RegExp(event('APPROVED')) });
   await expect(row.first()).toContainText(TITLE);
 
   // The same event went out by email as well, to the submitter this time.

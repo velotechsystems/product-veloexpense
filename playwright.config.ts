@@ -57,6 +57,12 @@ const LEDGER_ENTITY_ID =
 const WORKER_SECRET = process.env.WORKER_SECRET ?? 'e2e-worker-secret';
 
 const APP_ENV = {
+  // `E2E_PORT` chose the port Playwright PROBES but never the one the server
+  // LISTENS on, so it only looked configurable — `node .next/standalone/server.js`
+  // reads `PORT` and defaulted to 3000 either way. Latent until part 3 needed a
+  // second server on a second port for the pseudo crawl, at which point the
+  // webServer just timed out.
+  PORT: String(PORT),
   AUTH_SECRET: process.env.AUTH_SECRET ?? 'e2e-test-only-not-a-real-secret',
   AUTH_URL: BASE_URL,
   DATABASE_URL: process.env.DATABASE_URL ?? '',
@@ -76,6 +82,14 @@ const APP_ENV = {
   //   SMTP_HOST      unset -> the console transport, so nothing is sent
   //   WORKER_SECRET  unset -> the drain route refuses everything, fail-closed
   APP_URL: BASE_URL,
+
+  // VX4-7 part 3. Off here and ON in `playwright.pseudo.config.ts`, which is
+  // the whole reason that second config exists: `lib/i18n/pseudo.ts` reads this
+  // ONCE at boot, deliberately, so one server cannot serve both the normal
+  // specs and the pseudo-locale crawl. Passed explicitly rather than inherited
+  // from the shell so that a developer with it exported does not silently turn
+  // the normal suite into a pseudo run.
+  PSEUDO_LOCALE: process.env.E2E_PSEUDO === '1' ? '1' : '0',
   SMTP_HOST: '127.0.0.1',
   SMTP_PORT: String(SMTP_PORT),
   SMTP_FROM: 'veloexpense@e2e.test',
@@ -102,6 +116,12 @@ const APP_ENV = {
 
 export default defineConfig({
   testDir: './e2e',
+  // The pseudo crawl needs a server booted with PSEUDO_LOCALE=1, so it has its
+  // own config and is excluded here. Without this line it would run against a
+  // normal server and pass by finding nothing bracketed anywhere — a spec that
+  // reports success because it was pointed at the wrong build, which is the
+  // failure mode part 2b's sabotage discipline exists for.
+  testIgnore: /pseudo-crawl\.spec\.ts/,
   // The DB suites and the e2e share one database; never interleave them.
   fullyParallel: false,
   workers: 1,

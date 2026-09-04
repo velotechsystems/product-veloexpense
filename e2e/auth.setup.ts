@@ -61,6 +61,25 @@ const E2E_ORG_SLUG = 'demo';
  * approve — AP-14, the person at the top of a chain cannot approve their own spend.
  * `admin@second.test` reports to `owner@second.test` (scripts/seed.mjs).
  */
+/**
+ * VX4-7 part 3 — the two roles nothing has ever signed in as.
+ *
+ * Every session this file minted before now was an ADMIN: `admin@demo.test`,
+ * `owner@demo.test` and `admin@second.test` all have `role = 'ADMIN'` in the
+ * seed. So thirteen specs, ninety-odd assertions and four phases of work have
+ * never once loaded a page as a MANAGER or as an EMPLOYEE — which is UD-3's
+ * finding restated as a fact about our own suite rather than upstream's.
+ *
+ * UD-3 is `ce053ccd` in the delta review: "crawl every page as every role", a
+ * technique the audit marks **Adopt**, and its note is that it found two real
+ * bugs upstream. It could not have found them here, because half the roles had
+ * no way to open a page.
+ */
+const MANAGER_EMAIL = 'manager@demo.test';
+const EMPLOYEE_EMAIL = 'employee@demo.test';
+const MANAGER_STATE_PATH = path.join('e2e', '.auth', 'manager.json');
+const EMPLOYEE_STATE_PATH = path.join('e2e', '.auth', 'employee.json');
+
 const SECOND_ORG_SLUG = 'second';
 const SECOND_ADMIN_EMAIL = 'admin@second.test';
 const SECOND_STATE_PATH = path.join('e2e', '.auth', 'second.json');
@@ -149,4 +168,12 @@ setup('mint a session cookie for the approver', async () => {
 
 setup('mint a session cookie for the second tenant admin', async () => {
   await mintSession(SECOND_ORG_SLUG, SECOND_ADMIN_EMAIL, SECOND_STATE_PATH);
+});
+
+setup('mint a session cookie for a manager', async () => {
+  await mintSession(E2E_ORG_SLUG, MANAGER_EMAIL, MANAGER_STATE_PATH);
+});
+
+setup('mint a session cookie for an employee', async () => {
+  await mintSession(E2E_ORG_SLUG, EMPLOYEE_EMAIL, EMPLOYEE_STATE_PATH);
 });
