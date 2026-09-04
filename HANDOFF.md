@@ -2094,7 +2094,77 @@ shipped.
 | **VX4-5** | **Budgets, tenant-scoped, on our own chart of accounts** | BG-2: `Budget.glAccountId` is a **required** FK into a NetSuite SOAP cache, and their vendor-neutral `Account` table was deleted — so budgets there are uncreatable without NetSuite. **VX3-1 already fixed this for us**; budgets point at `gl_account` and a vendor becomes an alias. Plus BG-1 (tenant column and composite keys on five tables, including an index Prisma cannot express), BG-3 (actuals recomputed over the whole fiscal year on every approval click, with an unbounded FX load → rollup), BG-6 (alert idempotency by mutable marker → our atomic-claim idiom). | 4 |
 | **VX4-6** | **Analytics, tenant-scoped** | The tenancy half is free (above). The work is AN-7 — a missing FX rate is currently summed **as if it were base currency**, unflagged, while the budget code counts unconverted amounts for the same situation — and AN-10: unbounded ranges, no `date` index, and a home page that runs a full-history aggregate for every signed-in user. Plus AN-8's lesson: size the data with a predicate, never with a role check that then queries everything. | 4 |
 | **VX4-7** ⏳ | **Locale: retag `en` → `en-CA`, add `en-US`** — parts 1 → 3 DONE. **VX4-7 CLOSED** (IL-1, IL-2, IL-4, IL-5/6, IL-7, IL-10, IL-11, UD-3, UD-5). fr-CA retired until its copy exists (0028) | IL-1: their `en` already formats as en-US (`3/4/2026`, `CA$10,799.00`), so this is a retag **and** an addition, 2 locales to 3 — touching URL segments, stored preferences and every `{ en: … }` Json key, whose arity is hardcoded in ~17 files (IL-7). Also: a company default locale, which does not exist there (IL-2); what a missing key does, decided before the third catalog exists rather than after two blank pages (IL-4); and the date-formatting calls that pass no locale (IL-10). | 3 |
-| **VX4-8** ⏳ | **Module 12 slices 2–3: fraud detection + control evaluation** — part 1 (UD-8) and part 2 (slice 2, the four detectors) DONE; slice 3 (control evaluation) and the review UI next | Deferred to this phase since Phase 2 because both are retrospective and need approval history, which now exists. Their versions are driven by `SystemFlag` config (MT-2) and run as unconditional global crons (MT-5), so both land on VX4-1 and VX4-2. | 3 |
+| **VX4-8** ⏳ | **Module 12 slices 2–3: fraud detection + control evaluation** — parts 1–3 DONE (UD-8, the four detectors, the six controls). The UI is all that is left: nothing runs either slice yet — no route, no button, no schedule | Deferred to this phase since Phase 2 because both are retrospective and need approval history, which now exists. Their versions are driven by `SystemFlag` config (MT-2) and run as unconditional global crons (MT-5), so both land on VX4-1 and VX4-2. | 3 |
+
+### VX4-8 part 3 SHIPPED — Module 12 slice 3: control evaluation
+
+Six periodic checks, ported from `packages/fraud/src/{controls,evaluate}.ts` at `5a11a647`.
+**Two of upstream's eight are omitted, not stubbed** — `TRAVEL_WITHOUT_APPROVAL` and
+`TRAVEL_BUDGET_OVERRUN` belong to the travel module, which this product declares and does not
+implement, and a control that can only ever return zero findings reads as passing.
+
+**A control evaluation is not a fraud scan, and the schema says so.** A run is a SNAPSHOT: findings
+are written once, belong to their run, and are never revised. There is no review workflow — you do
+not dismiss a control deficiency, you fix it and the next run stops reporting it. That is why these
+rows are `control_finding` and not more rows in `fraud_flag`, which has a status, a reviewer and a
+dedupe key precisely because a fraud flag IS queue work.
+
+**`control_finding.subject_id` has NO foreign key, and it is the only unenforced tenant reference in
+this schema.** A run is handed to an auditor as "the evaluation we ran in Q3"; it must not lose rows
+or change meaning because the report or category it describes was later renamed or deleted.
+`subject_label` is the handle as it was at run time. Migration `0032` says this out loud next to
+TN-1 and `0019`, and `test/rls-isolation.test.ts` asserts both halves — the run reference IS
+composite and refuses another tenant's run; the subject id accepts an arbitrary uuid.
+
+**The runner does NOT share one transaction with its work, and that reverses VX3-4's argument on
+purpose.** `enqueuePost` is a row in the approving transaction so that it cannot be half-done; a run
+row is written FIRST, in `RUNNING`, and closed at the end, so that a crashed evaluation still
+exists. An outbox row is a promise that must be kept or not made; a run row is a record of an
+ATTEMPT, and an attempt that failed is the most important thing it can say. `lib/fraud/evaluate.ts`
+carries that comparison in its header so the next reader does not "fix" one into the other.
+
+**The gate sits with the FIRST WRITE**, not at the top of the function: refusing after the run row
+was opened would leave a `RUNNING` row nobody will ever close. There is a test, and moving the gate
+two lines later is one of the six sabotages.
+
+**Three things the port changed:**
+
+- **The return-note check reads a COLUMN, not the audit log.** Upstream's comment calls it "the one
+  control whose evidence is the audit trail itself", because their note lives only in
+  `Audit.details.note`. `0007` gave us `expense_report_event.note`, so the check is a column
+  comparison rather than three jsonb null-shapes.
+- **The FX check has no AP-override clause.** No such column exists here, and inventing one to make
+  the port symmetrical would be building a feature inside a compliance check. Their both-directions
+  rate test IS kept, because their own comment records what one direction cost: reports that convert
+  perfectly well reported as CRITICAL, contradicting the total printed on the report itself.
+- **The receipt-view half of `APPROVED_WITHOUT_RECEIPT` is still not implemented, but for a
+  different reason than theirs.** Upstream has no data for it. We DO — VX2-1's
+  `require_receipt_view_ack` and `approval_task.receipt_view_acknowledged_at` — and it is
+  deliberately not checked, because it is a per-rung SETTING: a tenant that never turned it on has
+  no acknowledgement to be missing, and reporting every approval there as a deficiency would be
+  reporting a configuration choice as a failure. "The rung demanded an acknowledgement and none was
+  recorded" is a real seventh control and belongs to a ticket that can think about it.
+
+**A defect of my own, caught before it shipped.** The first draft of `checkGlMappingGaps` summed
+`li.amount_minor` per category and labelled the total with the organization's policy currency. Line
+items carry their EXPENSE's currency, so a category used on a CAD report and a USD one would have
+produced a number that is neither — **AN-7 exactly**, reintroduced one ticket after the one that
+fixed it. The control now reports the line-item COUNT and puts the currencies involved in the
+evidence; the sentence quotes no money at all, and a test asserts `data` has no `amountMinor`.
+
+**And a real bug `tsc` could not see.** `checkReturnsWithoutNote` queried `ev.occurred_at` — the name
+upstream's audit table uses — and a column name inside a template literal is just a string. The
+suite failed with "column ev.occurred_at does not exist". That is the argument for these six checks
+being db tests rather than unit tests over a mocked runner, and it is written into the file.
+
+**Fixture notes worth keeping:** the FX group needs a THIRD currency (CHF, inserted by the suite),
+because `currency` ships only CAD and USD and the seed ships a USD→CAD rate — so with those two,
+"no rate for this pair" is unreachable and the first version of that group asserted one finding and
+got none. Deleting the seeded rate was the other option and is worse: `fx_rate` is not
+tenant-scoped, so a suite that removes a row removes it for every suite sharing the database.
+
+**Still nothing runs either slice.** No route, no button, no schedule. That is the whole of the next
+PR, which also brings the review queue, `MANUAL_FLAG`, and the two threshold forms.
 
 ### VX4-8 part 2 SHIPPED — Module 12 slice 2: the four fraud detectors
 

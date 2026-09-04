@@ -208,11 +208,17 @@ const ANALYTICS: ModuleDefinition = {
  *
  * ── ONE GATE, ON THE SCAN ──────────────────────────────────────────────────
  *
- * `runFraudScan` is the only writer and the only entry point, so it is the only
- * thing gated. The detectors in `lib/fraud/rules.ts` are exported for tests and
- * for the scan; they only READ, over rows RLS already scopes to the tenant, and
- * gating each one would be four copies of a check that the single caller already
- * makes — MT-3 in the other direction.
+ * `runFraudScan` (slice 2) and `runControlEvaluation` (slice 3) are the only
+ * writers and the only entry points, so they are the only things gated. The
+ * detectors in `lib/fraud/rules.ts` and the checks in `lib/fraud/controls.ts` are
+ * exported for tests and for their runners; they only READ, over rows RLS already
+ * scopes to the tenant, and gating each one would be ten copies of a check the
+ * two callers already make — MT-3 in the other direction.
+ *
+ * `runControlEvaluation`'s gate sits with its FIRST WRITE rather than at the top
+ * of the function, and that is not fussiness: it opens a `RUNNING` run row before
+ * any check executes, so refusing after that point would leave a run nobody will
+ * ever close.
  */
 const COMPLIANCE: ModuleDefinition = {
   code: 'compliance',
@@ -224,7 +230,7 @@ const COMPLIANCE: ModuleDefinition = {
     'automatically. Without this module every report still goes through policy and ' +
     'approval; nothing is looked at again afterwards.',
   available: true,
-  gates: ['lib/fraud/scan.ts#runFraudScan'],
+  gates: ['lib/fraud/scan.ts#runFraudScan', 'lib/fraud/evaluate.ts#runControlEvaluation'],
   ungated: {},
 };
 
