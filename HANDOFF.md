@@ -2094,7 +2094,71 @@ shipped.
 | **VX4-5** | **Budgets, tenant-scoped, on our own chart of accounts** | BG-2: `Budget.glAccountId` is a **required** FK into a NetSuite SOAP cache, and their vendor-neutral `Account` table was deleted — so budgets there are uncreatable without NetSuite. **VX3-1 already fixed this for us**; budgets point at `gl_account` and a vendor becomes an alias. Plus BG-1 (tenant column and composite keys on five tables, including an index Prisma cannot express), BG-3 (actuals recomputed over the whole fiscal year on every approval click, with an unbounded FX load → rollup), BG-6 (alert idempotency by mutable marker → our atomic-claim idiom). | 4 |
 | **VX4-6** | **Analytics, tenant-scoped** | The tenancy half is free (above). The work is AN-7 — a missing FX rate is currently summed **as if it were base currency**, unflagged, while the budget code counts unconverted amounts for the same situation — and AN-10: unbounded ranges, no `date` index, and a home page that runs a full-history aggregate for every signed-in user. Plus AN-8's lesson: size the data with a predicate, never with a role check that then queries everything. | 4 |
 | **VX4-7** ⏳ | **Locale: retag `en` → `en-CA`, add `en-US`** — parts 1 → 3 DONE. **VX4-7 CLOSED** (IL-1, IL-2, IL-4, IL-5/6, IL-7, IL-10, IL-11, UD-3, UD-5). fr-CA retired until its copy exists (0028) | IL-1: their `en` already formats as en-US (`3/4/2026`, `CA$10,799.00`), so this is a retag **and** an addition, 2 locales to 3 — touching URL segments, stored preferences and every `{ en: … }` Json key, whose arity is hardcoded in ~17 files (IL-7). Also: a company default locale, which does not exist there (IL-2); what a missing key does, decided before the third catalog exists rather than after two blank pages (IL-4); and the date-formatting calls that pass no locale (IL-10). | 3 |
-| **VX4-8** ⏳ | **Module 12 slices 2–3: fraud detection + control evaluation** — part 1 (UD-8, the posting trigger) DONE; slices 2–3 next | Deferred to this phase since Phase 2 because both are retrospective and need approval history, which now exists. Their versions are driven by `SystemFlag` config (MT-2) and run as unconditional global crons (MT-5), so both land on VX4-1 and VX4-2. | 3 |
+| **VX4-8** ⏳ | **Module 12 slices 2–3: fraud detection + control evaluation** — part 1 (UD-8) and part 2 (slice 2, the four detectors) DONE; slice 3 (control evaluation) and the review UI next | Deferred to this phase since Phase 2 because both are retrospective and need approval history, which now exists. Their versions are driven by `SystemFlag` config (MT-2) and run as unconditional global crons (MT-5), so both land on VX4-1 and VX4-2. | 3 |
+
+### VX4-8 part 2 SHIPPED — Module 12 slice 2: the four fraud detectors
+
+Ported from `packages/fraud/src/{rules,scan}.ts` at `5a11a647`. All four of upstream's design
+constraints survive unchanged, including the one worth repeating: **a rule produces a finding, never
+a verdict.** Nothing here changes a report's state, blocks a payment or tells an employee anything —
+"automated fraud accusations are how you get a wrongful-accusation problem instead of a fraud
+problem."
+
+**What the port had to change, and why:**
+
+- **Their `Expense` carries `ownerId`, `amountMinor` and `date`; ours carries none of the first
+  two.** Here an expense belongs to a report (which has the `submitter_id`) and the MONEY is on
+  `expense_line_item`, because a split is the normal case. Every rule that talks about "this
+  person's expense of $X" is expressed over a per-expense total computed from its lines. Same rule,
+  different arithmetic. It also means an expense with NO lines has no amount — VX1-5's receipt-first
+  flow makes those — and they are excluded rather than treated as zero, which would make every
+  receiptless entry a duplicate of every other. There is a test for exactly that.
+- **No stored English sentence.** `FraudFlag.reason` upstream is a rendered sentence with a record
+  id interpolated into it. That is `policy_violation.message` again, three weeks after `0029`
+  removed it. `fraud_flag` has `message_code` + `data`, rendered per reader by
+  `lib/i18n/catalog/fraud-messages.ts`, and no uuid reaches a person.
+- **`finding_key` is tenant-scoped.** Their `dedupeKey` is globally unique, so two organizations
+  share a namespace. Nothing collides in practice because every key embeds uuids — the kind of
+  safety that holds until somebody keys on a month and a rule code, as their SOD rule nearly does.
+- **Config is per tenant.** Theirs is a global `systemFlag` (MT-2), so one tenant's noisy week
+  retunes everybody's scan. `organization.fraud_config` is the same values, per org, with every
+  field validated and falling back on its own — a scan that dies on a bad number reports nothing,
+  which looks exactly like a scan that found nothing.
+- **`DUPLICATE` is one rule and TWO sentences.** A duplicate inside one report is usually one dinner
+  entered twice; across two reports it is the pattern worth opening both for. Fourth time in this
+  port that a code designed for a CALLER has been coarser than what a READER needs.
+- **External approvers are excluded from the concentration rule.** VX2-1 admits an EMAIL approver
+  with no `app_user` row; a finding naming somebody with no record here is not actionable and
+  `subject_user_id` could not point at them.
+
+**The reconciliation is ONE statement, and its third case is a database rule.** Upstream does
+`findUnique` → `create`/`update` per finding, so between their read of `status` and their write, a
+reviewer pressing Dismiss loses. Here: `ON CONFLICT (organization_id, finding_key) DO UPDATE … WHERE
+fraud_flag.status = 'ACTIVE'`. A flag somebody has already ruled on matches no `WHERE`, so it is not
+written and not returned — suppression with no read, no race, and no branch a future edit can forget.
+`RETURNING (xmax = 0)` separates created from refreshed; what comes back with nothing was suppressed.
+
+**A failing rule is RETURNED, not logged.** Upstream `console.warn`s and carries on, so a rule that
+has been throwing for a month looks exactly like a rule finding nothing.
+
+**New module: `compliance`,** gated on `runFraudScan` in the service layer. The detectors are not
+individually gated — they only read, over rows RLS already scopes, and four copies of a check the
+single caller makes is MT-3 in the other direction.
+
+**Two things the gates caught during the build, both worth recording:**
+
+1. **`check:i18n` refused `MANUAL_FLAG`** — a sentence for a person-raised flag, written before the
+   action that raises one exists. "Copy exists, no rule emits it" is the gate being exactly right;
+   copy that ships ahead of its emitter gets translated and never shown. It arrives with part 3.
+2. **`test/i18n-enum-catalog.test.ts`-style coverage caught a fixture, not a bug**: the combined
+   render test only produced a same-report duplicate, so `DUPLICATE_OTHER_REPORT` was unreachable
+   and the both-directions assertion failed. That assertion exists because part 2b shipped codes
+   that matched and a sentence that still could not render.
+
+**A known weakness in `check:i18n`'s message, not its verdict.** The ternary scan only counts codes
+that are already declared, so a TYPO inside `cond ? 'A' : 'B'` is reported as "copy exists, no rule
+emits it" rather than as the typo. The build still fails; the sentence points at the wrong file.
+Inherited from part 2b and left alone rather than re-engineered inside a port.
 
 ### VX4-8 part 1 SHIPPED — UD-8: who sends an approved report
 

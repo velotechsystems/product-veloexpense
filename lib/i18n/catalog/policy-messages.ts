@@ -71,8 +71,6 @@
  * labels in its `data`, so it can only be shown as what it already says.
  */
 import { DEFAULT_LOCALE, fallbackChain, isLocale, type Locale } from '../locales';
-import { formatCalendarDate } from '../format';
-import { formatMinor } from '@/lib/money';
 import { missingCopyMarker } from './enums';
 import { pseudoIfEnabled } from '../pseudo';
 
@@ -98,105 +96,27 @@ export function isPolicyMessageCode(value: string): value is PolicyMessageCode {
   return (POLICY_MESSAGE_CODES as readonly string[]).includes(value);
 }
 
-/** The `data` jsonb as it comes back from Postgres. Values are unknown by construction. */
-export type MessageData = Record<string, unknown>;
+/* ── the shared machinery, extracted in VX4-8 part 2 ───────────────────────── */
 
 /**
- * Thrown by `fields()` when a declared key is absent. Never escapes
- * `renderPolicyMessage` — see requirement 3, depth 1 — but the tests catch it
- * deliberately, which is how a missing key becomes a failure rather than a
- * sentence with a hole in it.
+ * `MessageData`, `MessageDataError`, `Fields`, `fields` and the `Renderer` /
+ * `MessageCopy` types moved to `message-data.ts` when `fraud-messages.ts` needed
+ * the same refusal rules. Re-exported here so every existing importer — and
+ * `test/i18n-policy-messages.test.ts`, which asserts on `MessageDataError` — is
+ * unaffected. `PolicyCopy` stays as the local name for `MessageCopy`; the
+ * catalogues below read better for it.
  */
-export class MessageDataError extends Error {
-  constructor(
-    readonly code: string,
-    readonly key: string,
-  ) {
-    super(`policy message ${code} needs data.${key}, which is not in the row`);
-    this.name = 'MessageDataError';
-  }
-}
+export {
+  MessageDataError,
+  fields,
+  type MessageData,
+  type Fields,
+  type Renderer,
+} from '@/lib/i18n/catalog/message-data';
+import { fields, type MessageData } from '@/lib/i18n/catalog/message-data';
+import type { MessageCopy } from '@/lib/i18n/catalog/message-data';
 
-/**
- * Typed, checked access to one row's `data`.
- *
- * Every accessor REFUSES rather than coercing. `String(undefined)` is the
- * failure mode this exists to prevent: it produces "undefined is $700.00, over
- * the undefined limit", which is a sentence, renders fine, and tells a reader
- * nothing while looking like it worked.
- */
-export interface Fields {
-  /** A user-supplied string — a line description, a merchant, a budget name. */
-  text(key: string): string;
-  /** A minor-unit amount formatted in the READER's locale. */
-  money(amountKey: string, currencyKey: string, unitKey: string): string;
-  /** A calendar date (no timezone — part 1b), formatted in the reader's locale. */
-  date(key: string): string;
-  /** A list of currency codes. Empty is a legitimate answer, so it does not throw. */
-  list(key: string): string[];
-}
-
-function fields(code: string, data: MessageData, locale: Locale): Fields {
-  const need = (key: string): unknown => {
-    const value = data[key];
-    if (value === undefined || value === null) throw new MessageDataError(code, key);
-    return value;
-  };
-  return {
-    text(key) {
-      const value = need(key);
-      // '' is a real answer for an optional label, but it is not a real answer
-      // for a key the catalogue DECLARED it needs — the rule should have put a
-      // fallback in (`lineLabel` already does, returning 'this line item').
-      const s = String(value);
-      // TRIMMED, not just checked against ''. A merchant of '   ' renders as
-      // "   is $700.00, over the …" — a sentence with a hole in it that reads
-      // like a product bug rather than a data one, which is precisely what this
-      // accessor exists to stop.
-      if (s.trim() === '') throw new MessageDataError(code, key);
-      return s;
-    },
-    money(amountKey, currencyKey, unitKey) {
-      const amount = need(amountKey);
-      const currency = String(need(currencyKey));
-      const unit = Number(need(unitKey));
-      if (!Number.isInteger(unit) || unit < 0 || unit > 8) {
-        throw new MessageDataError(code, unitKey);
-      }
-      // `formatMinor` takes a bigint-able; the column stores these as strings
-      // because JSON has no bigint and `lib/money` refuses floats.
-      return formatMinor(amount as string, currency, unit, locale);
-    },
-    date(key) {
-      // NUMERIC, not `formatCalendarDate`'s `dateStyle: 'medium'` default. Two
-      // reasons, and the second is the load-bearing one. A budget period is a
-      // RANGE inside a sentence ("(2026-01-01 to 2026-03-31)"), where numeric
-      // reads as bounds and "Jan 1, 2026 to Mar 31, 2026" reads as prose. And
-      // medium renders `en-CA` as "Jan 1, 2026", which would silently change the
-      // ported sentence; numeric gives `en-CA` the `2026-01-01` it already had
-      // and `en-US` the `01/01/2026` it should have had all along.
-      return formatCalendarDate(String(need(key)), locale, {
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit',
-      });
-    },
-    list(key) {
-      const value = data[key];
-      if (!Array.isArray(value)) return [];
-      return value.map((item) => String(item));
-    },
-  };
-}
-
-type Renderer = (f: Fields, locale: Locale) => string;
-
-/**
- * One sentence's copy. The default locale is REQUIRED and the rest are
- * overrides — identical asymmetry to `Copy` in `enums.ts`, and for the identical
- * reason: `en-CA` is where copy is authored and has nowhere to fall back to.
- */
-export type PolicyCopy = { [DEFAULT_LOCALE]: Renderer } & Partial<Record<Locale, Renderer>>;
+export type PolicyCopy = MessageCopy;
 
 export interface MessageDefinition {
   /**
