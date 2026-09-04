@@ -33,6 +33,7 @@
 import type { QueryRunner } from '@/lib/db/client';
 import { append as auditAppend, type AuditActor } from '@/lib/audit/service';
 import { ModuleDisabledError } from '@/lib/modules/errors';
+import { withPlatformRead } from '@/lib/tenant/context';
 import { listModules, moduleFor, type ModuleDefinition } from '@/lib/modules/registry';
 import { requeueWaitingPosts } from '@/lib/integrations/post-outbox';
 
@@ -74,6 +75,34 @@ export async function isModuleEnabled(tx: QueryRunner, code: string): Promise<bo
  * Called at the TOP of a gated function, before any write and before any
  * expensive read, so a refusal costs one indexed lookup.
  */
+/**
+ * Every organization with this module enabled, across tenants.
+ *
+ * FOR SCHEDULED WORK ONLY, and the shape is the point: it answers "who is
+ * entitled to this", not "who exists". Reached through `withPlatformRead`, whose
+ * `module_entitlement` policy (0033) is SELECT-only and matches enabled rows
+ * only — so this function cannot see a disabled entitlement and cannot write.
+ *
+ * Every other scheduled job in this product finds its tenants by reading its own
+ * due rows (`duePosts`, the notification drain). Compliance has no work table —
+ * the scan IS the work — so this is the equivalent, and migration 0033 explains
+ * at length why nothing needed it before.
+ *
+ * NOT for a request path. A screen already knows its tenant, and asking this
+ * question from one would be asking it with the tenant guard switched off.
+ */
+export async function organizationsWithModule(code: string): Promise<string[]> {
+  return withPlatformRead(async (tx) => {
+    const r = await tx.query(
+      `SELECT organization_id FROM module_entitlement
+        WHERE module_code = $1
+        ORDER BY organization_id`,
+      [code],
+    );
+    return r.rows.map((row) => row.organization_id as string);
+  });
+}
+
 export async function requireModule(tx: QueryRunner, code: string): Promise<void> {
   if (await isModuleEnabled(tx, code)) return;
   const definition = moduleFor(code);

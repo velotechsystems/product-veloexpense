@@ -231,7 +231,24 @@ const COMPLIANCE: ModuleDefinition = {
     'approval; nothing is looked at again afterwards.',
   available: true,
   gates: ['lib/fraud/scan.ts#runFraudScan', 'lib/fraud/evaluate.ts#runControlEvaluation'],
-  ungated: {},
+  ungated: {
+    // The two SWEEPS, added in part 4 and caught immediately by
+    // `test/module-gates.test.ts` — "these exports live in a gated file and are
+    // neither gated nor exempted". Exactly the right complaint, and the answer is
+    // an exemption rather than a gate.
+    //
+    // Each one asks `organizationsWithModule('compliance')` for its tenant list
+    // and then calls the gated function once per tenant. Gating the sweep itself
+    // would need a tenant to gate ON, and the sweep is the thing that decides
+    // which tenants there are — so the check would be either meaningless (which
+    // org?) or a second, weaker copy of the entitlement question the list already
+    // answers. The per-tenant gate inside is the real one, and a tenant that
+    // loses its entitlement mid-sweep is refused by it.
+    'lib/fraud/scan.ts#scanAllTenants':
+      'sweep: selects entitled tenants, then calls the gated runFraudScan per tenant',
+    'lib/fraud/evaluate.ts#evaluateAllTenants':
+      'sweep: selects entitled tenants, then calls the gated runControlEvaluation per tenant',
+  },
 };
 
 /**

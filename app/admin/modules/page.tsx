@@ -57,6 +57,11 @@ export default async function ModulesPage({
           <Link href="/admin/analytics" className="text-sm underline underline-offset-4">
             Analytics
           </Link>
+          {/* VX4-8 part 4, and the note above is why: a module made available with
+              nothing pointing at its surface is a surface nobody finds. */}
+          <Link href="/admin/compliance" className="text-sm underline underline-offset-4">
+            Compliance
+          </Link>
         </div>
       </header>
 

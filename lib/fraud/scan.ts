@@ -41,13 +41,17 @@
  * findings that come back with nothing at all are the suppressed ones.
  */
 import type { QueryRunner } from '@/lib/db/client';
-import { requireModule } from '@/lib/modules/service';
+import { withOrg } from '@/lib/tenant/context';
+import { organizationsWithModule } from '@/lib/modules/service';
+import { loadFraudConfig } from '@/lib/fraud/rules';
+
 import {
   DETECTORS,
   type Finding,
   type FraudConfig,
   type FraudRuleCode,
 } from '@/lib/fraud/rules';
+import { requireModule } from '@/lib/modules/service';
 
 const ORG = "current_setting('app.current_org', true)::uuid";
 
@@ -162,4 +166,67 @@ export async function runFraudScan(
   }
 
   return result;
+}
+
+/**
+ * Every entitled tenant, one after another — what the scheduled route calls.
+ *
+ * ── PER TENANT, WITH THAT TENANT'S OWN THRESHOLDS ───────────────────────────
+ *
+ * The point of the whole arrangement, and MT-5's finding against upstream in one
+ * function: theirs is an unconditional global cron reading a global config, so
+ * every tenant gets everybody's schedule and everybody's idea of an outlier.
+ * `organizationsWithModule` supplies the entitled list and `loadFraudConfig` is
+ * read inside each tenant's own transaction.
+ *
+ * ONE TENANT'S FAILURE DOES NOT STOP THE REST, and it is REPORTED. A scan that
+ * dies on tenant three leaves tenants four onward silently unscanned, which is
+ * the same "looks like nothing was found" shape this module keeps guarding
+ * against — one level up from `runFraudScan`'s per-rule handling.
+ *
+ * SEQUENTIAL, deliberately. These are heavy read-mostly queries and the pool is
+ * shared with everybody's requests; a fan-out that ran fifty tenants at once
+ * would turn a nightly job into an outage. There is no ordering requirement, so
+ * this is purely about not being the loudest thing on the database.
+ */
+export interface ScanSweepResult {
+  organizations: number;
+  created: number;
+  refreshed: number;
+  suppressed: number;
+  failed: Array<{ organizationId: string; error: string }>;
+}
+
+export async function scanAllTenants(): Promise<ScanSweepResult> {
+  const orgs = await organizationsWithModule('compliance');
+  const out: ScanSweepResult = {
+    organizations: 0,
+    created: 0,
+    refreshed: 0,
+    suppressed: 0,
+    failed: [],
+  };
+  for (const orgId of orgs) {
+    try {
+      const result = await withOrg(orgId, async (tx) => {
+        const cfg = await loadFraudConfig(tx);
+        return runFraudScan(tx, cfg);
+      });
+      out.organizations += 1;
+      out.created += result.created;
+      out.refreshed += result.refreshed;
+      out.suppressed += result.suppressed;
+      // A RULE that failed is already in `result.failed`; a tenant whose whole
+      // scan failed is the entry below. Both are surfaced, at their own level.
+      for (const f of result.failed) {
+        out.failed.push({ organizationId: orgId, error: `${f.code}: ${f.error}` });
+      }
+    } catch (err) {
+      out.failed.push({
+        organizationId: orgId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+  return out;
 }

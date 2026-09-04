@@ -644,8 +644,15 @@ describe('every finding can actually be said', () => {
       }
     }
 
-    // Every code the catalogue carries was reachable from a real detector. The
-    // check:i18n gate compares the SETS; this proves the data can reach them.
-    expect([...seen].sort()).toEqual([...FRAUD_MESSAGE_CODES].sort());
+    // Every code a DETECTOR can emit was reachable from real data. The
+    // `check:i18n` gate compares the SETS; this proves the data can reach them.
+    //
+    // MANUAL_FLAG is excluded because no detector emits it — a person does, and
+    // `test/fraud-review.db.test.ts` covers that path. Written as a subtraction
+    // from the catalogue rather than as its own list, so a SEVENTH code added to
+    // the catalogue without a detector fails here instead of being quietly
+    // absent.
+    const detectable = FRAUD_MESSAGE_CODES.filter((c) => c !== 'MANUAL_FLAG');
+    expect([...seen].sort()).toEqual([...detectable].sort());
   });
 });

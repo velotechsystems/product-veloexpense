@@ -47,6 +47,10 @@ import type { ReportStatus } from '@/lib/expenses/service';
 import type { TransitionAction } from '@/lib/expenses/lifecycle';
 import type { Severity, RuleKind } from '@/lib/policy/rules';
 import type { PostStatus } from '@/lib/integrations/post-outbox';
+import type { FraudSeverity } from '@/lib/fraud/rules';
+import type { ControlSeverity } from '@/lib/fraud/controls';
+import type { FlagStatus } from '@/lib/fraud/review';
+import type { ControlRunStatus } from '@/lib/fraud/evaluate';
 import type { Capability } from '@/lib/integrations/contract';
 import type { DeliveryStatus } from '@/lib/notifications/outbox';
 import type { Channel, EventType } from '@/lib/notifications/catalog';
@@ -174,6 +178,54 @@ export const POST_STATUS_COPY: EnumCopy<PostStatus> = {
   DEAD: { 'en-CA': 'out of attempts' },
   CANCELLED: { 'en-CA': 'withheld' },
   NEEDS_REVIEW: { 'en-CA': 'needs review' },
+};
+
+/* ── compliance (VX4-8) ───────────────────────────────────────────────────── */
+
+/**
+ * THREE SEVERITY VOCABULARIES NOW EXIST and the copy is where the difference
+ * becomes visible to a person, so it is worth saying which is which:
+ * `policy_severity` (INFO/WARNING/BLOCK) says whether a report may be submitted,
+ * `fraud_severity` (LOW/MEDIUM/HIGH) says how much a reviewer should care about a
+ * transaction, and `control_severity` (INFO/WARNING/CRITICAL) says whether a
+ * control is operating. Migrations 0031 and 0032 argue for keeping them apart;
+ * these words are what stop a reader having to know that.
+ */
+export const FRAUD_SEVERITY_COPY: EnumCopy<FraudSeverity> = {
+  // Not "low/medium/high" alone. A severity badge that only ranks tells a reviewer
+  // the order to work in and nothing about what the ranking means; these say what
+  // the rule actually claims, which is the difference between a queue somebody
+  // works and a queue somebody sorts.
+  LOW: { 'en-CA': 'worth knowing' },
+  MEDIUM: { 'en-CA': 'worth checking' },
+  HIGH: { 'en-CA': 'worth opening' },
+};
+
+export const FRAUD_FLAG_STATUS_COPY: EnumCopy<FlagStatus> = {
+  ACTIVE: { 'en-CA': 'open' },
+  // 'dealt with' rather than 'resolved': the flag is not what got fixed, and
+  // "resolved" invites reading it as "the concern was unfounded" — which is what
+  // DISMISSED means and is a different decision.
+  RESOLVED: { 'en-CA': 'dealt with' },
+  DISMISSED: { 'en-CA': 'set aside' },
+  ESCALATED: { 'en-CA': 'escalated' },
+};
+
+export const CONTROL_SEVERITY_COPY: EnumCopy<ControlSeverity> = {
+  // These are an AUDITOR's words, not a developer's, because a control
+  // evaluation is the one artefact here read by somebody outside the company.
+  INFO: { 'en-CA': 'incomplete' },
+  WARNING: { 'en-CA': 'drifting' },
+  CRITICAL: { 'en-CA': 'would be a finding' },
+};
+
+export const CONTROL_RUN_STATUS_COPY: EnumCopy<ControlRunStatus> = {
+  RUNNING: { 'en-CA': 'running' },
+  COMPLETED: { 'en-CA': 'completed' },
+  // NOT 'failed' alone. A failed run is the state migration 0032 exists to make
+  // visible — "no findings" and "never finished" must not read alike — so the
+  // word says the run did not finish rather than that it found problems.
+  FAILED: { 'en-CA': 'did not finish' },
 };
 
 export const CAPABILITY_COPY: EnumCopy<Capability> = {

@@ -55,12 +55,11 @@ export const FRAUD_MESSAGE_CODES = [
   'AMOUNT_OUTLIER',
   'VIOLATION_DENSITY',
   'APPROVER_CONCENTRATION',
-  // MANUAL_FLAG — a person's own words on a flag they raised — arrives with the
-  // review UI in part 3, together with the action that emits it. Written here
-  // first and taken out again: `check:i18n` failed the build with "copy exists,
-  // no rule emits it", which is the gate being exactly right. Copy that ships
-  // ahead of its emitter is copy that gets translated and never shown, and
-  // nothing but the gate would have said so.
+  // Written in part 2, REMOVED by part 2 because `check:i18n` said "copy exists,
+  // no rule emits it", and back here in part 4 alongside `manualFinding()` — the
+  // emitter it was waiting for. The round trip is the gate working: copy that
+  // ships ahead of its emitter gets translated and never shown.
+  'MANUAL_FLAG',
 ] as const;
 
 export type FraudMessageCode = (typeof FRAUD_MESSAGE_CODES)[number];
@@ -144,6 +143,26 @@ export const FRAUD_MESSAGES: Record<FraudMessageCode, FraudMessageDefinition> = 
       'en-CA': (f) =>
         `${f.count('violatedExpenses')} of ${f.count('expenses')} entries on this report have ` +
         `unresolved policy violations (${f.count('violations')} in total).`,
+    },
+  },
+
+  /**
+   * A PERSON'S OWN WORDS, and the one message here the catalogue does not supply.
+   *
+   * Said plainly rather than left to be inferred from a code that looks like the
+   * others: the renderer passes the note through and refuses an empty one.
+   * `f.text` already refuses blank and whitespace-only, so the guard is the
+   * accessor rather than a branch — and `raiseManualFlag` refuses it earlier
+   * still, so a blank one cannot be stored at all.
+   *
+   * NOT wrapped in "A reviewer noted:" or anything like it. The screen says who
+   * raised it and when; a renderer adding narration around somebody's sentence is
+   * a renderer editing it.
+   */
+  MANUAL_FLAG: {
+    requires: ['note'],
+    copy: {
+      'en-CA': (f) => f.text('note'),
     },
   },
 

@@ -1360,4 +1360,67 @@ describe('RLS tenant isolation', () => {
     ).resolves.toBeDefined();
   });
 
+  /* ── the module_entitlement hatch (VX4-8 part 4, migration 0033) ──────────
+   *
+   * The fourth `platform_read` policy, and the first on something that is not a
+   * work table — a scheduled compliance scan has no due row to find its tenants
+   * by, so it asks which tenants are entitled. Asserted here because a hatch
+   * nobody exercises is a hatch nobody has checked, and because the interesting
+   * half is what it CANNOT see.
+   */
+  it('a platform task can list entitled tenants, and nothing else', async () => {
+    // Both tenants have `accounting` from the fixture; give A a disabled one.
+    await admin.query(
+      `INSERT INTO module_entitlement (organization_id, module_code, enabled)
+       VALUES ($1, 'compliance', false)
+       ON CONFLICT (organization_id, module_code) DO UPDATE SET enabled = false`,
+      [orgA],
+    );
+    await admin.query(
+      `INSERT INTO module_entitlement (organization_id, module_code, enabled, enabled_at)
+       VALUES ($1, 'compliance', true, clock_timestamp())
+       ON CONFLICT (organization_id, module_code) DO UPDATE SET enabled = true`,
+      [orgB],
+    );
+
+    const seen = await withPlatformRead(async (tx) => {
+      const r = await tx.query(
+        `SELECT organization_id FROM module_entitlement WHERE module_code = 'compliance'`,
+      );
+      return r.rows.map((row) => row.organization_id as string);
+    });
+    // ENABLED ONLY. A's disabled row is invisible even to the hatch, so a
+    // platform task cannot count who turned something off.
+    expect(seen).toEqual([orgB]);
+
+    // AND IT CANNOT WRITE — but not by throwing, which is what the first version
+    // of this test asserted and got wrong.
+    //
+    // The 0033 policy is `FOR SELECT`, so it grants nothing to an UPDATE; the
+    // `tenant_isolation` policy is the one that applies, and with no
+    // `app.current_org` its USING clause matches no row. So the statement
+    // SUCCEEDS and changes nothing. That is the correct outcome and the more
+    // useful thing to know: a forbidden write under RLS is a no-op, not an error,
+    // so code that checks only for a thrown exception would believe it had
+    // written. `rowCount` is what says otherwise — which is why every write in
+    // this codebase that must affect a row checks it (`claimPost`, `releaseHold`,
+    // `recordVerdict`).
+    const attempted = await withPlatformRead((tx) =>
+      tx.query(`UPDATE module_entitlement SET enabled = false WHERE organization_id = $1`, [orgB]),
+    );
+    expect(attempted.rowCount).toBe(0);
+    const unchanged = await admin.query(
+      `SELECT enabled FROM module_entitlement
+        WHERE organization_id = $1 AND module_code = 'compliance'`,
+      [orgB],
+    );
+    expect(unchanged.rows[0].enabled).toBe(true);
+
+    // With no tenant context and no hatch, nothing at all.
+    const blind = await withoutOrg((tx) =>
+      tx.query('SELECT count(*)::int AS n FROM module_entitlement'),
+    );
+    expect(blind.rows[0].n).toBe(0);
+  });
+
 });
