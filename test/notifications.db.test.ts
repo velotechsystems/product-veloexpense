@@ -30,6 +30,7 @@ import * as lifecycle from '@/lib/expenses/lifecycle';
 import * as approvals from '@/lib/approvals/service';
 import { decide } from '@/lib/approvals/engine';
 import { DEFAULT_LOCALE, shippedBody, templateKeyFor } from '@/lib/notifications/catalog';
+import { TEST_ACTOR } from './support/audit-actor';
 import {
   listInbox,
   listSubjectActivity,
@@ -84,11 +85,11 @@ async function submitted(amountMinor = 1000, title = 'Trip') {
       title,
       currencyCode: 'CAD',
     });
-    const expense = await expenses.addExpense(tx, report.id, {
+    const expense = await expenses.addExpense(tx, TEST_ACTOR, report.id, {
       currencyCode: 'CAD',
       merchant: 'M',
     });
-    await expenses.addLineItem(tx, expense.id, { categoryId, amountMinor });
+    await expenses.addLineItem(tx, TEST_ACTOR, expense.id, { categoryId, amountMinor });
     return report.id as string;
   });
   const { approval } = await withOrg(orgId, (tx) =>

@@ -15,7 +15,6 @@
  */
 import { redirect } from 'next/navigation';
 import { errorParam } from '@/lib/errors/domain';
-import { type EmployeeRow } from '@/lib/employees/service';
 import { brandCss } from '@/lib/branding/css';
 import {
   clearLogo,
@@ -26,14 +25,10 @@ import {
   setLogo,
 } from '@/lib/branding/service';
 import { asAdmin, asAdminPage } from '@/lib/auth/admin-guard';
+import { auditActorOf } from '@/lib/audit/service';
 
 const PAGE = '/admin/branding';
 
-const auditActor = (a: EmployeeRow) => ({
-  id: a.id,
-  name: a.display_name ?? a.email,
-  role: a.role,
-});
 
 /**
  * NOT exported, and `check:actions` is why — it caught this on CI rather than in
@@ -118,7 +113,7 @@ export async function saveColorFromForm(form: FormData): Promise<never> {
   const reset = form.get('reset') !== null;
   const raw = reset ? null : String(form.get('brandColor') ?? '');
   return run(
-    () => asAdmin((tx, actor) => setBrandColor(tx, auditActor(actor), raw)).then(() => undefined),
+    () => asAdmin((tx, actor) => setBrandColor(tx, auditActorOf(actor), raw)).then(() => undefined),
     reset ? 'reset' : 'colour',
   );
 }
@@ -126,7 +121,7 @@ export async function saveColorFromForm(form: FormData): Promise<never> {
 export async function saveTaglineFromForm(form: FormData): Promise<never> {
   const raw = String(form.get('loginTagline') ?? '');
   return run(
-    () => asAdmin((tx, actor) => setLoginTagline(tx, auditActor(actor), raw)).then(() => undefined),
+    () => asAdmin((tx, actor) => setLoginTagline(tx, auditActorOf(actor), raw)).then(() => undefined),
     'tagline',
   );
 }
@@ -141,10 +136,10 @@ export async function saveLogoFromForm(form: FormData): Promise<never> {
     // buffer is bounded by a CHECK and not by hope. The size is re-checked in the
     // service against the same constant.
     const bytes = Buffer.from(await file.arrayBuffer());
-    await asAdmin((tx, actor) => setLogo(tx, auditActor(actor), bytes, file.type));
+    await asAdmin((tx, actor) => setLogo(tx, auditActorOf(actor), bytes, file.type));
   }, 'logo');
 }
 
 export async function clearLogoFromForm(): Promise<never> {
-  return run(() => asAdmin((tx, actor) => clearLogo(tx, auditActor(actor))), 'logo');
+  return run(() => asAdmin((tx, actor) => clearLogo(tx, auditActorOf(actor))), 'logo');
 }

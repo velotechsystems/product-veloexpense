@@ -19,6 +19,7 @@ import { withOrg } from '@/lib/tenant/context';
 import * as expenses from '@/lib/expenses/service';
 import * as approvals from '@/lib/approvals/service';
 import { ApprovalConfigError } from '@/lib/approvals/tiers';
+import { TEST_ACTOR } from './support/audit-actor';
 
 const admin = new Pool({
   connectionString: process.env.ADMIN_DATABASE_URL ?? process.env.DATABASE_URL,
@@ -38,11 +39,11 @@ async function draft(amountMinor = 1000) {
       title: 'Approvable',
       currencyCode: 'CAD',
     });
-    const expense = await expenses.addExpense(tx, report.id, {
+    const expense = await expenses.addExpense(tx, TEST_ACTOR, report.id, {
       currencyCode: 'CAD',
       merchant: 'Merchant',
     });
-    await expenses.addLineItem(tx, expense.id, { categoryId, amountMinor });
+    await expenses.addLineItem(tx, TEST_ACTOR, expense.id, { categoryId, amountMinor });
     return { reportId: report.id as string, expenseId: expense.id as string };
   });
 }

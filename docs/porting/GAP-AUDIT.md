@@ -3922,7 +3922,7 @@ mechanism starts at UD-1 again under its own date heading.
 
 ---
 
-### UD-1 · The currency IS on our wire, and no test would notice if it left. [checked]
+### UD-1 · The currency IS on our wire, and no test would notice if it left. [CLOSED — #98]
 
 Their `buildCardTransactionBody` emitted no `currency`, so NetSuite used the subsidiary's base
 currency at face value: a USD 74.19 charge became CAD 74.19, silently, on every foreign-currency
@@ -3945,7 +3945,8 @@ ledger-flow.spec.ts` does not assert it either.
 
 **Do:** capture bodies in that stub and assert what reaches the wire — the currency, the account
 numbers, and the idempotency key, all three being fields whose absence is silent rather than loud.
-Half a day. Also sweep the payload for their `1ab1bf19` class while there: every field we send is a
+Half a day. **DONE in #98**, and the premise was confirmed by deleting the field: before that PR,
+removing `currency: report.currencyCode` from the adapter failed no test in the suite. Also sweep the payload for their `1ab1bf19` class while there: every field we send is a
 string, a number, a minor-unit string or an account NUMBER — no VeloExpense UUID goes into a typed
 field we do not own, `idempotencyKey` being deliberately namespaced and ours to define.
 
@@ -4095,7 +4096,7 @@ AC-19), `check:actions` discarding its own finding, and `innerText()` answering 
 non-rendered element. Same family, new mechanism: **an assertion whose subject swallows the failure
 it is testing for.**
 
-### UD-11 · An edit is audited NOWHERE here, which is worse than their defect. [checked]
+### UD-11 · An edit is audited NOWHERE here, which is worse than their defect. [CLOSED — #98]
 
 `78e7b7b4` upgraded `details: { fields: Object.keys(input) }` — the keys the CLIENT SENT, on editors
 that post their whole model, so a row could not tell *"corrected the amount"* from *"opened it and

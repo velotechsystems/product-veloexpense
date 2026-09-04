@@ -68,14 +68,47 @@ function report(numbers: Array<string | null>): PostableReport {
 type Responses = Record<string, unknown>;
 
 let calls: string[] = [];
+/**
+ * UD-1 — the stub records BODIES, and until this ticket it did not.
+ *
+ * ExpenseOS `9f67f533` fixed a body builder that dropped `currency`, so NetSuite
+ * took the subsidiary's base currency at face value and a USD 74.19 charge posted
+ * as CAD 74.19, silently, on every foreign-currency charge since that poster
+ * shipped. Their commit names the reason it survived: *"the report fixture had
+ * carried `currency: 'CAD'` through a test that never asserted it arrived, which
+ * is exactly what let a dead field look alive for a month."*
+ *
+ * OUR ADAPTER IS CORRECT — `currencyCode` is a required field on
+ * `PostableReport`, so it cannot go missing from the CONTRACT the way theirs went
+ * missing from a per-vendor builder, and both implementing adapters send it. The
+ * gap was ours all the same and it was measured, not assumed: this stub recorded
+ * `calls.push(tool)` and nothing else, so deleting `currency: report.currencyCode`
+ * from `veloledger.ts` failed no test in the suite. `e2e/ledger-flow.spec.ts` did
+ * not assert it either.
+ *
+ * So bodies are captured, and the three fields whose ABSENCE IS SILENT rather
+ * than loud are asserted: the currency, the account numbers, and the idempotency
+ * key. Each of them fails the far end late, in somebody else's system, in a way
+ * that looks like a ledger problem rather than ours.
+ */
+let bodies: Record<string, Record<string, unknown>> = {};
+
+const bodyOf = (tool: string): Record<string, unknown> => {
+  expect(Object.keys(bodies), `${tool} was never called`).toContain(tool);
+  return bodies[tool];
+};
 
 function stubLedger(responses: Responses, status = 200) {
   calls = [];
+  bodies = {};
   vi.stubGlobal(
     'fetch',
-    vi.fn(async (url: string) => {
+    vi.fn(async (url: string, init?: { body?: string }) => {
       const tool = String(url).split('/api/v1/')[1];
       calls.push(tool);
+      bodies[tool] = init?.body
+        ? (JSON.parse(init.body) as Record<string, unknown>)
+        : ({} as Record<string, unknown>);
       return {
         ok: status < 400,
         status,
@@ -89,6 +122,7 @@ const PERIOD = { periodId: '33333333-3333-4333-8333-333333333333' };
 
 beforeEach(() => {
   calls = [];
+  bodies = {};
 });
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -180,6 +214,96 @@ describe('postExpenseReport pre-flights account numbers', () => {
       veloLedgerAdapter.postExpenseReport!(CONFIG, report([null])),
     ).rejects.toThrow(/no GL account/);
     expect(calls).toEqual(['resolve_period']);
+  });
+});
+
+/**
+ * UD-1 — WHAT REACHES THE WIRE.
+ *
+ * These are the fields whose absence is SILENT. A missing description is obvious
+ * to the first person who opens the bill; a missing currency is a number that
+ * looks right, in the wrong denomination, discovered at a month-end reconciliation
+ * — which is how upstream's went unnoticed for a month across every
+ * foreign-currency charge.
+ */
+describe('the posted body carries what the far end cannot infer', () => {
+  const postOk = async (numbers: Array<string | null> = ['68100'], over: Partial<PostableReport> = {}) => {
+    stubLedger({
+      resolve_period: PERIOD,
+      list_accounts: { accounts: [{ number: '68100' }, { number: '68200' }] },
+      draft_bill: { billId: 'b-9' },
+    });
+    return veloLedgerAdapter.postExpenseReport!(CONFIG, { ...report(numbers), ...over });
+  };
+
+  it('NAMES THE CURRENCY, which the ledger would otherwise assume', async () => {
+    // The assertion that did not exist. Deleting `currency: report.currencyCode`
+    // from `veloledger.ts` previously failed nothing in this suite — measured, by
+    // deleting it. Their entity's base currency is not our report's currency, and
+    // a bill with no currency is booked at face value in whatever the subsidiary
+    // uses.
+    await postOk(['68100'], { currencyCode: 'USD' });
+    expect(bodyOf('draft_bill').currency).toBe('USD');
+  });
+
+  it('sends the report currency even when it is the common case', async () => {
+    // Pinned separately from the USD case on purpose: a builder that hardcoded
+    // 'CAD' would pass the fixture's default and fail the line above, and one that
+    // dropped the field would pass neither. Both mistakes are now visible.
+    await postOk();
+    expect(bodyOf('draft_bill').currency).toBe('CAD');
+  });
+
+  it('sends every line its ACCOUNT NUMBER, the one it pre-flighted', async () => {
+    // The pre-flight checks numbers against their chart and then the body has to
+    // carry the same ones. A guard that validates a value the payload does not
+    // send is decoration — and this adapter's whole reason for the pre-flight is
+    // that `draft_bill` does not validate them.
+    await postOk(['68100', '68200']);
+    const lines = bodyOf('draft_bill').lines as Array<Record<string, unknown>>;
+    expect(lines.map((l) => l.expenseAccountNumber)).toEqual(['68100', '68200']);
+  });
+
+  it('sends the IDEMPOTENCY KEY, which is the only thing stopping a double-post', async () => {
+    // AC-8's shape: an ambiguous failure is retried, and the far end refusing a
+    // repeat of this key is what makes that safe. Absent, a retry after a timeout
+    // drafts a second bill for the same report — a double liability.
+    await postOk();
+    expect(bodyOf('draft_bill').idempotencyKey).toBe(
+      'veloexpense-report-22222222-2222-4222-8222-222222222222',
+    );
+  });
+
+  /**
+   * The `1ab1bf19` sweep the audit asked for while we were here: no VeloExpense
+   * UUID may sit in a typed field belonging to somebody else's schema. Their
+   * incident was an id put where the far end expected its own.
+   *
+   * `idempotencyKey` is the deliberate exception — it is namespaced
+   * (`veloexpense-report-…`), it is ours to define, and it is opaque to them.
+   */
+  it('puts no VeloExpense id into a field we do not own', async () => {
+    await postOk(['68100', '68200']);
+    const body = bodyOf('draft_bill');
+    const UUID = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
+    const OURS_TO_DEFINE = new Set(['idempotencyKey']);
+    // entityId and periodId are THEIR uuids, echoed back from their own config and
+    // their own resolve_period. Those are not ours and are not what this checks.
+    const THEIRS = new Set(['entityId', 'periodId']);
+    const offenders: string[] = [];
+    const walk = (value: unknown, path: string) => {
+      if (typeof value === 'string') {
+        const key = path.split('.').pop() ?? path;
+        if (UUID.test(value) && !OURS_TO_DEFINE.has(key) && !THEIRS.has(key)) offenders.push(path);
+        return;
+      }
+      if (Array.isArray(value)) return value.forEach((v, i) => walk(v, `${path}[${i}]`));
+      if (value && typeof value === 'object') {
+        for (const [k, v] of Object.entries(value)) walk(v, path ? `${path}.${k}` : k);
+      }
+    };
+    walk(body, '');
+    expect(offenders, `a VeloExpense id reached ${offenders.join(', ')}`).toEqual([]);
   });
 });
 

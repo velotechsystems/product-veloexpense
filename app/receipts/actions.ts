@@ -30,6 +30,7 @@ import { auth } from '@/auth';
 import { withCurrentOrg } from '@/lib/tenant/request';
 import type { QueryRunner } from '@/lib/db/client';
 import { requireActor, ForbiddenError } from '@/lib/auth/actor';
+import { auditActorOf } from '@/lib/audit/service';
 import type { EmployeeRow } from '@/lib/employees/service';
 import {
   canEditReport,
@@ -218,7 +219,7 @@ export async function startFromReceipts(report: NewReport, receiptIds: string[])
         throw new ForbiddenError('forbidden: one of those receipts is not yours');
       }
     }
-    const created = await svc.startFromReceipts(tx, actor.email, report, receiptIds);
+    const created = await svc.startFromReceipts(tx, auditActorOf(actor), actor.email, report, receiptIds);
     await policy.validateReport(tx, created.report.id);
     return created;
   });

@@ -18,6 +18,7 @@ import * as approvals from '@/lib/approvals/service';
 import { decide } from '@/lib/approvals/engine';
 import { canDecide } from '@/lib/approvals/eligibility';
 import { canReadReport, listInbox, resolveDecidableTask } from '@/lib/approvals/inbox';
+import { TEST_ACTOR } from './support/audit-actor';
 
 const ADMIN_URL = process.env.ADMIN_DATABASE_URL ?? process.env.DATABASE_URL;
 if (!ADMIN_URL) {
@@ -57,11 +58,11 @@ async function submitted(amountMinor = 1000) {
       title: 'Inbox',
       currencyCode: 'CAD',
     });
-    const expense = await expenses.addExpense(tx, report.id, {
+    const expense = await expenses.addExpense(tx, TEST_ACTOR, report.id, {
       currencyCode: 'CAD',
       merchant: 'M',
     });
-    await expenses.addLineItem(tx, expense.id, { categoryId, amountMinor });
+    await expenses.addLineItem(tx, TEST_ACTOR, expense.id, { categoryId, amountMinor });
     return report.id as string;
   });
   const { approval } = await withOrg(orgId, (tx) =>

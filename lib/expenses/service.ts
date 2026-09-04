@@ -25,8 +25,86 @@ import { DomainError } from '@/lib/errors/domain';
 import type { UserMessageCode } from '@/lib/i18n/catalog/errors';
 import type { Actor } from '@/lib/auth/actor';
 import { accountForCategory } from '@/lib/accounts/service';
+import { append as auditAppend, type AuditActor } from '@/lib/audit/service';
+import { auditDiff, auditSnapshot } from '@/lib/audit/diff';
 
 const ORG = "current_setting('app.current_org', true)::uuid";
+
+/**
+ * UD-11 — every edit in this file is audited, and the actor is a REQUIRED
+ * parameter of every one of them.
+ *
+ * ── WHY THE ACTOR IS A PARAMETER AND NOT AMBIENT ────────────────────────────
+ *
+ * The alternative considered (and rejected with John, 4 Sep) was an
+ * `app.current_actor` GUC alongside `app.current_org`, which would have cost no
+ * call-site churn at all. Two reasons against, and the second is the real one:
+ *
+ *  1. Enforcement moves from the compiler to run time. With a required
+ *     parameter, an edit path that does not audit does not COMPILE — the
+ *     property this file needs, since the whole finding was that eight write
+ *     paths silently recorded nothing for four phases.
+ *  2. The failure mode of the ambient version is the bad one. An edit running
+ *     outside the guard would throw INSIDE the user's transaction, rolling back
+ *     their edit over a logging detail. That is AU-5, and upstream's own commit
+ *     message warns about exactly it.
+ *
+ * The cost is real and was paid: ~68 test call sites gained one argument.
+ *
+ * ── WHAT AN AUDITED WRITE LOOKS LIKE ────────────────────────────────────────
+ *
+ * Read the row, write it, diff the two rows (NOT the patch — see
+ * `lib/audit/diff.ts`), append inside the same transaction. A save that changed
+ * nothing still appends, with `unchanged: true`: "opened it and pressed Save" is
+ * a different event from "corrected the amount", and telling them apart is most
+ * of what makes an edit log readable.
+ */
+const AUDIT = {
+  reportEdited: 'REPORT_EDITED',
+  reportDeleted: 'REPORT_DELETED',
+  expenseAdded: 'EXPENSE_ADDED',
+  expenseEdited: 'EXPENSE_EDITED',
+  expenseRemoved: 'EXPENSE_REMOVED',
+  lineItemAdded: 'LINE_ITEM_ADDED',
+  lineItemEdited: 'LINE_ITEM_EDITED',
+  lineItemRemoved: 'LINE_ITEM_REMOVED',
+} as const;
+
+/**
+ * The audit row for an edit to something that hangs off a report.
+ *
+ * `report_id` rides in `details` rather than being inferred from `entity_id`
+ * later: an auditor's first question is "what happened to report EXP-000123",
+ * and answering it should not require joining to a row that may since have been
+ * deleted.
+ */
+async function auditEdit(
+  tx: QueryRunner,
+  actor: AuditActor,
+  action: string,
+  entityType: 'Expense' | 'ExpenseLineItem',
+  entityId: string,
+  reportId: string,
+  before: Record<string, unknown>,
+  after: Record<string, unknown>,
+): Promise<void> {
+  await auditAppend(tx, actor, {
+    action,
+    entityType,
+    entityId,
+    details: { report_id: reportId, ...auditDiff(before, after) },
+  });
+}
+
+/** The row as it stands, or `{}` for a row that does not exist yet. */
+async function rowById(
+  tx: QueryRunner,
+  table: 'expense_report' | 'expense' | 'expense_line_item',
+  id: string,
+): Promise<Record<string, unknown>> {
+  const r = await tx.query(`SELECT * FROM ${table} WHERE id = $1`, [id]);
+  return (r.rows[0] as Record<string, unknown> | undefined) ?? {};
+}
 
 export const REPORT_STATUSES = [
   'DRAFT',
@@ -498,8 +576,14 @@ export async function getReportWorkbench(
   };
 }
 
-export async function updateReport(tx: QueryRunner, reportId: string, patch: ReportPatch) {
+export async function updateReport(
+  tx: QueryRunner,
+  actor: AuditActor,
+  reportId: string,
+  patch: ReportPatch,
+) {
   await assertDraft(tx, reportId);
+  const before = await rowById(tx, 'expense_report', reportId);
 
   const sets: string[] = [];
   const values: unknown[] = [reportId];
@@ -519,7 +603,19 @@ export async function updateReport(tx: QueryRunner, reportId: string, patch: Rep
     await assertCurrency(tx, patch.currencyCode);
     set('currency_code', patch.currencyCode);
   }
-  if (sets.length === 0) return requireReport(tx, reportId);
+  // A patch that names no column is still a save somebody performed, and it is
+  // audited as one — `unchanged: true`. Returning early WITHOUT an entry is what
+  // makes an edit log unable to tell an edit from a visit.
+  if (sets.length === 0) {
+    const unchangedRow = await requireReport(tx, reportId);
+    await auditAppend(tx, actor, {
+      action: AUDIT.reportEdited,
+      entityType: 'ExpenseReport',
+      entityId: reportId,
+      details: auditDiff(before, before),
+    });
+    return unchangedRow;
+  }
 
   const r = await tx.query(
     `UPDATE expense_report SET ${sets.join(', ')}, updated_at = now()
@@ -529,23 +625,69 @@ export async function updateReport(tx: QueryRunner, reportId: string, patch: Rep
 
   // Single-currency MVP: the report's currency is the report's currency, so a
   // change carries down rather than leaving mixed-currency children behind.
+  //
+  // THIS IS THE WRITE NO ROW DIFF CAN SEE, so it is counted and recorded by hand.
+  // One click here rewrites N rows in another table; an auditor reading
+  // "currency_code: CAD -> USD" on the report should not have to infer that
+  // twelve expenses moved with it. `RETURNING id` rather than a count query
+  // because the statement already knows.
+  let cascaded: number | null = null;
   if (patch.currencyCode !== undefined) {
-    await tx.query('UPDATE expense SET currency_code = $2, updated_at = now() WHERE report_id = $1', [
-      reportId,
-      patch.currencyCode,
-    ]);
+    const kids = await tx.query(
+      'UPDATE expense SET currency_code = $2, updated_at = now() WHERE report_id = $1 RETURNING id',
+      [reportId, patch.currencyCode],
+    );
+    cascaded = kids.rowCount ?? kids.rows.length;
   }
+
+  const after = (r.rows[0] as Record<string, unknown> | undefined) ?? {};
+  await auditAppend(tx, actor, {
+    action: AUDIT.reportEdited,
+    entityType: 'ExpenseReport',
+    entityId: reportId,
+    details: {
+      ...auditDiff(before, after),
+      ...(cascaded === null ? {} : { cascaded_expense_currency: cascaded }),
+    },
+  });
   return r.rows[0] ?? null;
 }
 
-export async function deleteReport(tx: QueryRunner, reportId: string) {
+/**
+ * A deletion is the edit an auditor asks about most — "who deleted the $4,000
+ * line" — and it is the one upstream's port does not cover, because their commit
+ * was about edit mutations. The row is right there before the DELETE, so the
+ * snapshot is free; afterwards it is gone for good.
+ */
+export async function deleteReport(tx: QueryRunner, actor: AuditActor, reportId: string) {
   await assertDraft(tx, reportId);
-  await tx.query("DELETE FROM expense_report WHERE id = $1 AND status = 'DRAFT'", [reportId]);
+  const before = await rowById(tx, 'expense_report', reportId);
+  const r = await tx.query(
+    "DELETE FROM expense_report WHERE id = $1 AND status = 'DRAFT' RETURNING id",
+    [reportId],
+  );
+  // Conditional-write idiom: `assertDraft` ran, but a concurrent submit between
+  // the two statements would leave this deleting nothing — and an audit row for a
+  // deletion that did not happen is worse than none.
+  if ((r.rowCount ?? 0) !== 1) {
+    throw new ExpenseError('report is no longer a draft', 'NOT_DRAFT', 'REPORT_NOT_DRAFT');
+  }
+  await auditAppend(tx, actor, {
+    action: AUDIT.reportDeleted,
+    entityType: 'ExpenseReport',
+    entityId: reportId,
+    details: { deleted: auditSnapshot(before) },
+  });
 }
 
 /* ── expenses ──────────────────────────────────────────────────────────────── */
 
-export async function addExpense(tx: QueryRunner, reportId: string, input: NewExpense) {
+export async function addExpense(
+  tx: QueryRunner,
+  actor: AuditActor,
+  reportId: string,
+  input: NewExpense,
+) {
   await assertDraft(tx, reportId);
   await assertCurrency(tx, input.currencyCode);
   const r = await tx.query(
@@ -559,12 +701,24 @@ export async function addExpense(tx: QueryRunner, reportId: string, input: NewEx
       input.notes ?? null,
     ],
   );
+  await auditAppend(tx, actor, {
+    action: AUDIT.expenseAdded,
+    entityType: 'Expense',
+    entityId: r.rows[0].id as string,
+    details: { report_id: reportId, added: auditSnapshot(r.rows[0] as Record<string, unknown>) },
+  });
   return r.rows[0];
 }
 
-export async function updateExpense(tx: QueryRunner, expenseId: string, patch: ExpensePatch) {
+export async function updateExpense(
+  tx: QueryRunner,
+  actor: AuditActor,
+  expenseId: string,
+  patch: ExpensePatch,
+) {
   const reportId = await reportIdForExpense(tx, expenseId);
   await assertDraft(tx, reportId);
+  const before = await rowById(tx, 'expense', expenseId);
 
   const sets: string[] = [];
   const values: unknown[] = [expenseId];
@@ -576,14 +730,16 @@ export async function updateExpense(tx: QueryRunner, expenseId: string, patch: E
   if ('txnDate' in patch) set('txn_date', patch.txnDate ?? null);
   if ('notes' in patch) set('notes', patch.notes ?? null);
   if (sets.length === 0) {
-    const current = await tx.query('SELECT * FROM expense WHERE id = $1', [expenseId]);
-    return current.rows[0] ?? null;
+    await auditEdit(tx, actor, AUDIT.expenseEdited, 'Expense', expenseId, reportId, before, before);
+    return Object.keys(before).length === 0 ? null : before;
   }
 
   const r = await tx.query(
     `UPDATE expense SET ${sets.join(', ')}, updated_at = now() WHERE id = $1 RETURNING *`,
     values,
   );
+  const after = (r.rows[0] as Record<string, unknown> | undefined) ?? {};
+  await auditEdit(tx, actor, AUDIT.expenseEdited, 'Expense', expenseId, reportId, before, after);
   return r.rows[0] ?? null;
 }
 
@@ -592,17 +748,39 @@ export async function updateExpense(tx: QueryRunner, expenseId: string, patch: E
  * detaches its receipts (ON DELETE SET NULL) — they return to the uploader's
  * inbox rather than being destroyed with the row that referenced them.
  */
-export async function removeExpense(tx: QueryRunner, expenseId: string) {
+export async function removeExpense(tx: QueryRunner, actor: AuditActor, expenseId: string) {
   const reportId = await reportIdForExpense(tx, expenseId);
   await assertDraft(tx, reportId);
+  // The line items go with it (FK ON DELETE CASCADE), so they are snapshotted
+  // too: deleting one expense can remove a dozen amounts, and "the expense was
+  // deleted" does not tell an auditor what was on it.
+  const before = await rowById(tx, 'expense', expenseId);
+  const lines = await tx.query('SELECT * FROM expense_line_item WHERE expense_id = $1', [expenseId]);
   await tx.query('DELETE FROM expense WHERE id = $1', [expenseId]);
+  await auditAppend(tx, actor, {
+    action: AUDIT.expenseRemoved,
+    entityType: 'Expense',
+    entityId: expenseId,
+    details: {
+      report_id: reportId,
+      deleted: auditSnapshot(before),
+      deleted_line_items: (lines.rows as Record<string, unknown>[]).map((row) =>
+        auditSnapshot(row),
+      ),
+    },
+  });
   await recomputeReportTotal(tx, reportId);
   return reportId;
 }
 
 /* ── line items ────────────────────────────────────────────────────────────── */
 
-export async function addLineItem(tx: QueryRunner, expenseId: string, input: NewLineItem) {
+export async function addLineItem(
+  tx: QueryRunner,
+  actor: AuditActor,
+  expenseId: string,
+  input: NewLineItem,
+) {
   const reportId = await reportIdForExpense(tx, expenseId);
   await assertDraft(tx, reportId);
   await assertCategory(tx, input.categoryId);
@@ -628,13 +806,29 @@ export async function addLineItem(tx: QueryRunner, expenseId: string, input: New
       glAccountId,
     ],
   );
+  await auditAppend(tx, actor, {
+    action: AUDIT.lineItemAdded,
+    entityType: 'ExpenseLineItem',
+    entityId: r.rows[0].id as string,
+    details: {
+      report_id: reportId,
+      expense_id: expenseId,
+      added: auditSnapshot(r.rows[0] as Record<string, unknown>),
+    },
+  });
   await recomputeReportTotal(tx, reportId);
   return r.rows[0];
 }
 
-export async function updateLineItem(tx: QueryRunner, lineItemId: string, patch: LineItemPatch) {
+export async function updateLineItem(
+  tx: QueryRunner,
+  actor: AuditActor,
+  lineItemId: string,
+  patch: LineItemPatch,
+) {
   const reportId = await reportIdForLineItem(tx, lineItemId);
   await assertDraft(tx, reportId);
+  const before = await rowById(tx, 'expense_line_item', lineItemId);
 
   const sets: string[] = [];
   const values: unknown[] = [lineItemId];
@@ -655,8 +849,17 @@ export async function updateLineItem(tx: QueryRunner, lineItemId: string, patch:
   if (patch.taxMinor !== undefined) set('tax_minor', toMinorString(patch.taxMinor, 'tax'));
   if ('description' in patch) set('description', patch.description ?? null);
   if (sets.length === 0) {
-    const current = await tx.query('SELECT * FROM expense_line_item WHERE id = $1', [lineItemId]);
-    return current.rows[0] ?? null;
+    await auditEdit(
+      tx,
+      actor,
+      AUDIT.lineItemEdited,
+      'ExpenseLineItem',
+      lineItemId,
+      reportId,
+      before,
+      before,
+    );
+    return Object.keys(before).length === 0 ? null : before;
   }
 
   const r = await tx.query(
@@ -664,14 +867,36 @@ export async function updateLineItem(tx: QueryRunner, lineItemId: string, patch:
       WHERE id = $1 RETURNING *`,
     values,
   );
+  // The row diff is what makes `gl_account_id` visible here. It is re-stamped
+  // when the category changes (AC-10) and named by no caller, so a patch-shaped
+  // diff would record a re-coding without recording the account the money moved
+  // to — which is the one column an accountant would actually check.
+  const after = (r.rows[0] as Record<string, unknown> | undefined) ?? {};
+  await auditEdit(
+    tx,
+    actor,
+    AUDIT.lineItemEdited,
+    'ExpenseLineItem',
+    lineItemId,
+    reportId,
+    before,
+    after,
+  );
   await recomputeReportTotal(tx, reportId);
   return r.rows[0] ?? null;
 }
 
-export async function removeLineItem(tx: QueryRunner, lineItemId: string) {
+export async function removeLineItem(tx: QueryRunner, actor: AuditActor, lineItemId: string) {
   const reportId = await reportIdForLineItem(tx, lineItemId);
   await assertDraft(tx, reportId);
+  const before = await rowById(tx, 'expense_line_item', lineItemId);
   await tx.query('DELETE FROM expense_line_item WHERE id = $1', [lineItemId]);
+  await auditAppend(tx, actor, {
+    action: AUDIT.lineItemRemoved,
+    entityType: 'ExpenseLineItem',
+    entityId: lineItemId,
+    details: { report_id: reportId, deleted: auditSnapshot(before) },
+  });
   await recomputeReportTotal(tx, reportId);
   return reportId;
 }

@@ -2109,6 +2109,85 @@ shipped.
 | **VX4-7** ⏳ | **Locale: retag `en` → `en-CA`, add `en-US`** — parts 1 → 3 DONE. **VX4-7 CLOSED** (IL-1, IL-2, IL-4, IL-5/6, IL-7, IL-10, IL-11, UD-3, UD-5). fr-CA retired until its copy exists (0028) | IL-1: their `en` already formats as en-US (`3/4/2026`, `CA$10,799.00`), so this is a retag **and** an addition, 2 locales to 3 — touching URL segments, stored preferences and every `{ en: … }` Json key, whose arity is hardcoded in ~17 files (IL-7). Also: a company default locale, which does not exist there (IL-2); what a missing key does, decided before the third catalog exists rather than after two blank pages (IL-4); and the date-formatting calls that pass no locale (IL-10). | 3 |
 | **VX4-8** | **Module 12 slices 2–3: fraud detection + control evaluation** | ✅ **CLOSED** at part 4 (#96) — UD-8, four detectors, six controls, the review queue, two scheduled routes. **PHASE 4 COMPLETE.** | Deferred to this phase since Phase 2 because both are retrospective and need approval history, which now exists. Their versions are driven by `SystemFlag` config (MT-2) and run as unconditional global crons (MT-5), so both land on VX4-1 and VX4-2. | 3 |
 
+### UD-11 + UD-1 SHIPPED — an edit is now auditable, and the wire is now assertable
+
+**PR #98.** No migration. New: `lib/audit/diff.ts` · `test/audit-diff.test.ts` ·
+`test/expense-audit.db.test.ts` · `test/support/audit-actor.ts`. Changed: `lib/expenses/service.ts`
+· `lib/receipts/service.ts` · `lib/audit/service.ts` · `app/expenses/actions.ts` ·
+`app/receipts/actions.ts` · three admin actions files · `test/veloledger-adapter.test.ts` · thirteen
+db suites (one argument each).
+
+**UD-11: THE QUESTION AN AUDIT TRAIL EXISTS TO ANSWER WAS UNANSWERABLE.** `lib/expenses/service.ts`
+contained no audit append at all. `recordEvent` covers TRANSITIONS only (SUBMIT, RECALL, APPROVE,
+REJECT, RETURN, REIMBURSE), so for every expense, report header and line item, *"who changed this
+line's amount, from what, and when"* had no answer. Upstream `78e7b7b4` fixed a WEAKER version of
+this — their rows said `{ fields: Object.keys(input) }`, the keys the client sent — so we were a step
+behind a defect.
+
+**WHERE THIS DIVERGES FROM THE PORT, AND WHY OURS CAN.** Theirs diffs the PATCH against the row, and
+their header is honest that "a mutation that quietly writes a column it did not list stays invisible
+here". Every write in our service ends in `RETURNING *`, so ours diffs the ROW BEFORE against the ROW
+AFTER. Two columns no caller ever names become visible: `gl_account_id`, re-stamped when a category
+changes (AC-10) — the one column an accountant would check on a re-coding — and `title`, which is
+TRIMMED on the way in, so a patch diff records what was typed rather than what was stored.
+
+**WHAT ROW-VS-ROW STILL CANNOT SEE, and the first draft of my own comment claimed it could:** a write
+that lands on ANOTHER TABLE. Changing a report's currency cascades to every child expense
+(single-currency MVP), and no diff of the report row shows it. That one is counted and recorded by
+hand (`cascaded_expense_currency`), and the comment now says so.
+
+**THE ACTOR IS A REQUIRED PARAMETER — John's call, 4 Sep.** The alternative was an `app.current_actor`
+GUC beside `app.current_org`, which would have cost no call-site churn. Rejected for two reasons, the
+second being the real one: enforcement would move from the compiler to run time, and the failure mode
+is the bad one — an edit outside the guard throws INSIDE the user's transaction and rolls back their
+edit over a logging detail (AU-5, which upstream's own commit warns about). The price was ~70 test
+call sites gaining one `TEST_ACTOR` argument. **Also measured, and it is why auditing at the edge was
+rejected outright:** `lib/receipts/service.ts` calls `addExpense` from outside
+`app/expenses/actions.ts`, so an edge-level audit would have shipped the receipt-first flow with no
+audit row on day one.
+
+**DELETIONS ARE AUDITED, WHICH THE PORT DOES NOT COVER.** "Who deleted the $4,000 line" is the
+question an auditor asks first, and the row is right there before the DELETE. `removeExpense` also
+snapshots the line items that go down with it by CASCADE — they leave no statement of their own, and
+"the expense was deleted" does not say what was on it. `deleteReport` gained the conditional-write
+idiom while it was being touched: `assertDraft` ran, but a concurrent submit would leave the DELETE
+matching nothing, and an audit row for a deletion that did not happen is worse than none.
+
+**UD-1: THE CURRENCY IS ON OUR WIRE AND NOTHING PINNED IT.** Upstream's `9f67f533` dropped `currency`
+from a body builder and NetSuite took the subsidiary's base currency at face value — USD 74.19 posted
+as CAD 74.19, silently, on every foreign-currency charge for a month. **Our adapter is correct** —
+`currencyCode` is required on `PostableReport`, so it cannot vanish from the CONTRACT the way theirs
+vanished from a per-vendor builder. The gap was the test, exactly as their commit describes it: our
+stub recorded `calls.push(tool)` and no bodies, so **deleting `currency: report.currencyCode` failed
+nothing** — measured by deleting it. Bodies are now captured and three fields whose absence is silent
+rather than loud are asserted: currency, account numbers, idempotency key. Plus their `1ab1bf19`
+sweep: no VeloExpense UUID in a field we do not own, `idempotencyKey` being the namespaced exception.
+
+**EIGHT EXISTING TESTS BROKE, AND THAT WAS THE CORRECT ORDER OF EVENTS.**
+`approval-engine.db.test.ts` asserts the tenant's audit chain EXHAUSTIVELY, which was only true while
+edits recorded nothing — its fixture builds a report, so `EXPENSE_ADDED` and `LINE_ITEM_ADDED` now
+appear. Same shape as VX4-7 part 2a, where `approval-flow.spec.ts` was pinned to the raw-enum render.
+Fixed by purging the chain at the end of the fixture rather than filtering action names out of the
+helper — a filter is a hand-kept list that goes stale the next time an action is added.
+
+**TWO SABOTAGE FINDINGS, ONE OF THEM ABOUT MY SABOTAGE.**
+  · Deleting `addExpense`'s audit append failed NOTHING — 1329 passed with a whole write path
+    recording nothing, because every test drove line items and report headers. The surviving tests
+    were the finding; there is now at least one assertion per audited action, and a ninth test naming
+    all eight across one report's life so a NEW unaudited path never appears in it.
+  · The follow-up sweep then reported 0 failures for all eight actions, which was **my measurement
+    being broken, not the tests**: the script produced a syntax error, so vitest never collected and
+    printed "no tests" — zero `×` lines. UD-10's family exactly. Re-run with `tsc --noEmit` as a gate
+    on the sabotage itself, every action fails 2-3 tests.
+
+**Verified in the harness:** 1334 vitest / 60 files · 135 Playwright · 18 pseudo-crawl · build ·
+`check:actions`, `check:i18n`, `check:vendor`, `check:admin`. Twelve sabotage runs.
+
+**FLAGGED, NOT FIXED:** the 15 audit action strings in this codebase are bare literals with no
+registry — `append` takes `action: string`. This ticket added 8 more. A typo'd action is a row nobody
+queries, and the fix that would make a registry load-bearing rather than decorative is typing
+`AuditInput.action` as a union, which touches every existing call site. Its own small ticket.
+
 ### VX4-9 SHIPPED — one admin gate, two exits, and a claim of mine the sabotage disproved
 
 **PR #97.** No migration. New: `lib/auth/admin-guard.ts` · `app/forbidden.tsx` ·

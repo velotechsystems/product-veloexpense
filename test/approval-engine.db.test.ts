@@ -19,6 +19,7 @@ import * as approvals from '@/lib/approvals/service';
 import { decide, openRun, ApprovalEngineError } from '@/lib/approvals/engine';
 import { verifyChain } from '@/lib/audit/verify';
 import { DecisionForbiddenError } from '@/lib/approvals/eligibility';
+import { TEST_ACTOR } from './support/audit-actor';
 
 const ADMIN_URL = process.env.ADMIN_DATABASE_URL ?? process.env.DATABASE_URL;
 if (!ADMIN_URL) {
@@ -37,20 +38,43 @@ let financeId: string;
 let bystanderId: string;
 const SUBMITTER = 'sub@engine.test';
 
-/** A DRAFT with one coded line at `amountMinor`, ready to submit. */
+/**
+ * A DRAFT with one coded line at `amountMinor`, ready to submit.
+ *
+ * The chain is purged AFTER seeding, not only in `beforeEach`. UD-11 made
+ * building this fixture an audited act — `addExpense` and `addLineItem` now
+ * append `EXPENSE_ADDED` and `LINE_ITEM_ADDED` — and every `auditActions()`
+ * assertion below states the chain EXHAUSTIVELY, which was true only for as long
+ * as an edit recorded nothing. Eight of them failed the moment edits were
+ * audited, which is the correct order of events: the tests were pinned to the
+ * gap, the same way `approval-flow.spec.ts` was pinned to the raw-enum render in
+ * VX4-7 part 2a.
+ *
+ * Purging beats filtering the setup's actions out of `auditActions()`: a filter
+ * is a hand-kept list of action names that goes stale the next time an edit
+ * action is added, and this suite is not the place that would notice.
+ */
 async function draft(amountMinor = 1000) {
-  return withOrg(orgId, async (tx) => {
+  const reportId = await withOrg(orgId, async (tx) => {
     const report = await expenses.createReport(tx, SUBMITTER, {
       title: 'Engine',
       currencyCode: 'CAD',
     });
-    const expense = await expenses.addExpense(tx, report.id, {
+    const expense = await expenses.addExpense(tx, TEST_ACTOR, report.id, {
       currencyCode: 'CAD',
       merchant: 'M',
     });
-    await expenses.addLineItem(tx, expense.id, { categoryId, amountMinor });
+    await expenses.addLineItem(tx, TEST_ACTOR, expense.id, { categoryId, amountMinor });
     return report.id as string;
   });
+  // One statement, one pooled connection — the trap `beforeEach` documents.
+  await admin.query(
+    `BEGIN;
+     SELECT set_config('app.audit_purge', 'on', true);
+     DELETE FROM audit_entry;
+     COMMIT;`,
+  );
+  return reportId;
 }
 
 /** Submit, which now opens the run in the same transaction. */

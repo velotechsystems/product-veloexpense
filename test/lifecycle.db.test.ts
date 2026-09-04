@@ -13,6 +13,7 @@ import { withOrg } from '@/lib/tenant/context';
 import * as expenses from '@/lib/expenses/service';
 import * as policy from '@/lib/policy/service';
 import * as lifecycle from '@/lib/expenses/lifecycle';
+import { TEST_ACTOR } from './support/audit-actor';
 
 const admin = new Pool({
   connectionString: process.env.ADMIN_DATABASE_URL ?? process.env.DATABASE_URL,
@@ -29,11 +30,11 @@ async function draft(amountMinor = 1000) {
       title: 'Submittable',
       currencyCode: 'CAD',
     });
-    const expense = await expenses.addExpense(tx, report.id, {
+    const expense = await expenses.addExpense(tx, TEST_ACTOR, report.id, {
       currencyCode: 'CAD',
       merchant: 'Merchant',
     });
-    const line = await expenses.addLineItem(tx, expense.id, { categoryId, amountMinor });
+    const line = await expenses.addLineItem(tx, TEST_ACTOR, expense.id, { categoryId, amountMinor });
     return { reportId: report.id as string, expenseId: expense.id as string, lineId: line.id as string };
   });
 }
@@ -107,7 +108,7 @@ describe('submit', () => {
         title: 'Empty',
         currencyCode: 'CAD',
       });
-      await expenses.addExpense(tx, report.id, { currencyCode: 'CAD' });
+      await expenses.addExpense(tx, TEST_ACTOR, report.id, { currencyCode: 'CAD' });
       return report.id as string;
     });
     await withOrg(orgId, async (tx) => {
@@ -128,7 +129,7 @@ describe('submit', () => {
     });
 
     const after = await withOrg(orgId, async (tx) => {
-      await expenses.updateLineItem(tx, lineId, { amountMinor: 1000 });
+      await expenses.updateLineItem(tx, TEST_ACTOR, lineId, { amountMinor: 1000 });
       return lifecycle.submitReport(tx, reportId, userId);
     });
     expect(after.report.status).toBe('SUBMITTED');
@@ -199,10 +200,10 @@ describe('submit', () => {
     await withOrg(orgId, async (tx) => {
       await tx.query('DELETE FROM expense_policy');
       await lifecycle.submitReport(tx, reportId, userId);
-      await expect(expenses.updateReport(tx, reportId, { title: 'Nope' })).rejects.toThrow(/only DRAFT/);
-      await expect(expenses.addLineItem(tx, expenseId, { categoryId, amountMinor: 1 })).rejects.toThrow(/only DRAFT/);
-      await expect(expenses.removeLineItem(tx, lineId)).rejects.toThrow(/only DRAFT/);
-      await expect(expenses.deleteReport(tx, reportId)).rejects.toThrow(/only DRAFT/);
+      await expect(expenses.updateReport(tx, TEST_ACTOR, reportId, { title: 'Nope' })).rejects.toThrow(/only DRAFT/);
+      await expect(expenses.addLineItem(tx, TEST_ACTOR, expenseId, { categoryId, amountMinor: 1 })).rejects.toThrow(/only DRAFT/);
+      await expect(expenses.removeLineItem(tx, TEST_ACTOR, lineId)).rejects.toThrow(/only DRAFT/);
+      await expect(expenses.deleteReport(tx, TEST_ACTOR, reportId)).rejects.toThrow(/only DRAFT/);
     });
   });
 });
@@ -230,7 +231,7 @@ describe('recall', () => {
       await tx.query('DELETE FROM expense_policy');
       await lifecycle.submitReport(tx, reportId, userId);
       await lifecycle.recallReport(tx, reportId, userId);
-      await expenses.updateLineItem(tx, lineId, { amountMinor: 2200 });
+      await expenses.updateLineItem(tx, TEST_ACTOR, lineId, { amountMinor: 2200 });
       return lifecycle.submitReport(tx, reportId, userId);
     });
     expect(result.report.status).toBe('SUBMITTED');

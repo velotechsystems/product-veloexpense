@@ -43,6 +43,25 @@ export interface AuditActor {
   role: string;
 }
 
+/**
+ * An `app_user` row as the actor that wrote something (UD-11).
+ *
+ * There were three byte-identical copies of this — `app/admin/branding`,
+ * `app/admin/locale`, `app/admin/ledger-queue` — and this ticket needed a fourth.
+ * Three copies of a four-line helper is not the sin fifteen copies of an
+ * authorization gate was, but the fix is one line and the alternative was to make
+ * it four: `display_name ?? email` is a POLICY (what an auditor's export calls a
+ * person who never set a display name) and it should have one answer.
+ */
+export function auditActorOf(row: {
+  id: string;
+  email: string;
+  display_name: string | null;
+  role: string;
+}): AuditActor {
+  return { id: row.id, name: row.display_name ?? row.email, role: row.role };
+}
+
 export interface AuditInput {
   action: string;
   entityType?: string | null;
