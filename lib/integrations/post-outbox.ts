@@ -26,6 +26,7 @@ import type { QueryRunner } from '@/lib/db/client';
 import { withPlatformRead } from '@/lib/tenant/context';
 import { backoffSecondsFor, isExhausted, CLAIM_TIMEOUT_SECONDS } from '@/lib/outbox/policy';
 import { append as auditAppend, type AuditActor } from '@/lib/audit/service';
+import { uncodedCategories } from '@/lib/integrations/coding';
 
 const ORG = "current_setting('app.current_org', true)::uuid";
 
@@ -581,16 +582,16 @@ export async function dryRun(tx: QueryRunner, postId: string): Promise<DryRun | 
 
   const problems: string[] = [];
   if (lines.rows.length === 0) problems.push('The report has no line items.');
-  const unmapped = [
-    ...new Set(
-      lines.rows
-        .filter((l) => l.gl_account_number === null)
-        .map((l) => l.category_label as string),
-    ),
-  ];
-  if (unmapped.length > 0) {
+  // UD-2: the definition of "coded" comes from `lib/integrations/coding.ts`, which
+  // `submitReport` now uses as well. It used to be computed here from this
+  // function's own SELECT — the same `coalesce`, which is the good case and not
+  // the durable one. A gate and a poster that disagree about coding is a report
+  // that passes submit and then cannot post, which is the bug UD-2 closes.
+  const uncoded = await uncodedCategories(tx, row.report_id as string);
+  if (uncoded.length > 0) {
     problems.push(
-      `These categories have no GL account, so a bill line cannot name one: ${unmapped.join(', ')}.`,
+      `These categories have no GL account, so a bill line cannot name one: ` +
+        `${uncoded.map((u) => u.label).join(', ')}.`,
     );
   }
   if (row.report_status !== 'APPROVED' && row.report_status !== 'REIMBURSED') {

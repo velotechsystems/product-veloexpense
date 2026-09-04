@@ -34,6 +34,12 @@ import {
   saveLogoFromForm,
   saveTaglineFromForm,
 } from './actions';
+// UD-9. The accept list used to be typed out here as
+// `accept="image/png,image/jpeg,image/webp"` — a third copy of a list that the
+// database CHECKs (`organization_logo_mime_raster`) and the service mirrors. A
+// file picker that offers a type the database refuses is a rejected upload with
+// no explanation on the screen that offered it.
+import { LOGO_MIME_TYPES } from '@/lib/branding/service';
 
 export const dynamic = 'force-dynamic';
 
@@ -158,7 +164,7 @@ export default async function BrandingPage({
           <input
             type="file"
             name="logo"
-            accept="image/png,image/jpeg,image/webp"
+            accept={LOGO_MIME_TYPES.join(',')}
             className="text-sm"
           />
           <Button type="submit" size="sm">

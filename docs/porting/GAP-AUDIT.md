@@ -3950,7 +3950,7 @@ removing `currency: report.currencyCode` from the adapter failed no test in the 
 string, a number, a minor-unit string or an account NUMBER — no VeloExpense UUID goes into a typed
 field we do not own, `idempotencyKey` being deliberately namespaced and ours to define.
 
-### UD-2 · Our postability pre-flight also runs weeks too late. [checked]
+### UD-2 · Our postability pre-flight also runs weeks too late. [CLOSED — #99]
 
 Theirs asked "is this coded well enough to post" only of an APPROVED report, so on dev **all 200
 approved reports refused**, every one for missing coding, and nothing stopped more arriving. The fix
@@ -3996,7 +3996,7 @@ and 31 specs — none of which opens every route as every role. `12bfbfa8` came 
 and is the argument for it: *a control that only breaks for the role nobody tests as*. Cheap; fold
 into VX4-7's e2e or take it as a standalone half-day.
 
-### UD-4 · `/expenses` does not say whose reports it is showing. [checked]
+### UD-4 · `/expenses` does not say whose reports it is showing. [CLOSED — #99]
 
 Their A6: a manager opened the list looking for a colleague's submission, found their own reports,
 and concluded it had not arrived — it was in the approvals queue the whole time. *"A list whose scope
@@ -4073,7 +4073,7 @@ unposted report is exactly what our queue lists, and `dryRun` already previews t
 whole change on that side is withholding the enqueue, plus a per-org column (a COLUMN, per VX4-2's
 closure and AC-21). **Not boarded. It is a decision about how finance operates, not a porting gap.**
 
-### UD-9 · Two hand-kept correspondences, recorded not fixed. [checked]
+### UD-9 · Two hand-kept correspondences, recorded not fixed. [CLOSED — #99, and there were three]
 
 `ce8e64aa`'s cause was a list annotated *"(mirrors the router's SUBJECT_TYPES)"* — *"which is what a
 hand-kept copy says right up until it stops mirroring anything"* — plus a cast that asserted the very
@@ -4083,6 +4083,22 @@ our tree make the same promise: `lib/receipts/constants.ts:8` ("kept in step wit
 file-picker accept list") and `lib/policy/rules.ts:651` ("must match migration 0006's unique index
 exactly"). The first is low-stakes; the second is a code-to-DDL correspondence of exactly the kind our
 guard pattern exists for. Neither is urgent; both are cheaper to close than to discover.
+
+**WHAT #99 FOUND WHEN IT WENT TO CLOSE THEM — this entry was wrong in both directions.**
+
+1. **The receipts one is not a correspondence and has not been since VX1-6.** `RECEIPT_ACCEPT` is
+   DERIVED from `ALLOWED_CONTENT_TYPES` and `receipt-drawer.tsx` imports it. Nothing is kept in step
+   by hand; the comment was the only thing that had drifted. It is now corrected rather than deleted,
+   because a stale promise tells the next reader a copy exists to maintain.
+2. **There was a THIRD, unlisted, and it is the worst of them.** `LOGO_MIME_TYPES`
+   (`lib/branding/service.ts:56`) says it "mirrors `organization_logo_mime_raster`" — code-to-DDL —
+   and `app/admin/branding/page.tsx` had the same three strings typed out AGAIN as
+   `accept="image/png,image/jpeg,image/webp"`. Three copies of one list, with the quiet failure at
+   the end of it: a file picker that offers a type the database refuses is a rejected upload with no
+   explanation on the screen that offered it. The page now derives its list from the constant, and
+   `test/ddl-correspondence.db.test.ts` guards the constant against the CHECK — by asking the
+   database to accept every member and refuse everything else, rather than restating the constraint
+   text, which would have been a fourth copy.
 
 ### UD-10 · Another check that cannot fail, for the house list.
 

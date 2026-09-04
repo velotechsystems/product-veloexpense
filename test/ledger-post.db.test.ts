@@ -524,6 +524,53 @@ describe('the dry run (VX3-6)', () => {
     expect(result?.lines[0].glAccountNumber).toBeNull();
   });
 
+  /**
+   * AC-10's actual guarantee, and nothing pinned it until a sabotage went looking.
+   *
+   * The account is SNAPSHOTTED on the line when the line is filed; the category's
+   * current account is only a fallback for a line written before `0014`. So
+   * `coalesce(line, category)` — in that order — is what makes a report post to
+   * the account it was coded to when it was filed, rather than to wherever its
+   * category points months later.
+   *
+   * The order is load-bearing HERE and immaterial in `lib/integrations/coding.ts`,
+   * which only asks whether either is present: `coalesce(a,b) IS NULL` is the same
+   * question as `coalesce(b,a) IS NULL`. Flipping the order there failed no test
+   * and correctly so. Flipping it here changes which account the money lands in,
+   * silently, months after anyone would connect the two.
+   */
+  it('posts to the account the line was CODED to, not the category as it stands now', async () => {
+    await connectStub();
+    const reportId = await approvedReport('re-mapped since');
+    expect(reportId).toBeTruthy();
+
+    // The admin re-points the category at a different account after the fact.
+    const moved = await withOrg(orgId, (tx) =>
+      tx.query(
+        `INSERT INTO gl_account (organization_id, number, name, type, is_postable, source)
+         VALUES ($1,'68999','Travel (new)','expense',true,'MANUAL') RETURNING id`,
+        [orgId],
+      ),
+    );
+    await admin.query('UPDATE expense_category SET gl_account_id = $1 WHERE id = $2', [
+      moved.rows[0].id,
+      categoryId,
+    ]);
+
+    const queue = await withOrg(orgId, (tx) => outbox.listQueue(tx));
+    const result = await withOrg(orgId, (tx) => outbox.dryRun(tx, queue[0].id));
+    expect(result?.lines[0].glAccountNumber).toBe('68100');
+
+    // And the same account is what actually reaches the ledger.
+    await postOne(orgId, queue[0].id);
+    expect(stub.posted()[0].report.lines[0].glAccountNumber).toBe('68100');
+
+    await admin.query('UPDATE expense_category SET gl_account_id = $1 WHERE id = $2', [
+      accountId,
+      categoryId,
+    ]);
+  });
+
   it('says so when it has already been sent', async () => {
     await connectStub();
     await approvedReport('already gone');

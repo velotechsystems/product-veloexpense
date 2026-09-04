@@ -49,6 +49,9 @@ export const USER_MESSAGE_CODES = [
   'REPORT_EMPTY',
   'BLOCKED_BY_POLICY_ONE',
   'BLOCKED_BY_POLICY_MANY',
+  /* UD-2: the report cannot post because its coding is incomplete. */
+  'SUBMIT_UNCODED_ONE',
+  'SUBMIT_UNCODED_MANY',
   'REPORT_NOT_SUBMITTABLE',
   'REPORT_NOT_RECALLABLE',
   'REPORT_NOT_REIMBURSABLE',
@@ -287,6 +290,37 @@ export const ERROR_COPY: Record<UserMessageCode, Copy> = {
     // half — a person told "this report is empty" still has to guess what to add.
     'en-CA': 'This report has no line items — code at least one expense before submitting.',
   },
+  /* ── UD-2 ─────────────────────────────────────────────────────────────────
+   *
+   * One code per BRANCH, the same shape as BLOCKED_BY_POLICY_ONE/MANY below and
+   * for the same reason: the code that KNOWS which sentence applies should record
+   * it, rather than leaving a renderer to re-derive a plural from a count it
+   * would have to be handed anyway.
+   *
+   * `{categories}` is a list of category LABELS — the thing somebody fixes, and
+   * not an identifier, so it passes `assertRenderableParams`. It is the whole
+   * point of the message: "your report cannot be posted" without naming what
+   * needs mapping is a refusal an employee can only escalate by guessing.
+   *
+   * Both sentences say WHO fixes it. The employee cannot: a category's GL
+   * account is admin-owned (`0014` made it nullable precisely because "the
+   * employee filing the expense is not who fixes it"), so a refusal that does
+   * not name the administrator leaves the person staring at a screen they have
+   * no permission to change.
+   */
+  SUBMIT_UNCODED_ONE: {
+    'en-CA':
+      'This report cannot be sent to the accounting system yet: the category {categories} has ' +
+      'no account assigned. Ask an administrator to map it on the chart-of-accounts screen, ' +
+      'then submit again.',
+  },
+  SUBMIT_UNCODED_MANY: {
+    'en-CA':
+      'This report cannot be sent to the accounting system yet: these categories have no ' +
+      'account assigned — {categories}. Ask an administrator to map them on the ' +
+      'chart-of-accounts screen, then submit again.',
+  },
+
   BLOCKED_BY_POLICY_ONE: {
     'en-CA': 'One blocking policy violation has to be fixed before this report can be submitted.',
   },
