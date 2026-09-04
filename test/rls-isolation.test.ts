@@ -1280,4 +1280,84 @@ describe('RLS tenant isolation', () => {
     ).rejects.toThrow();
   });
 
+  /* ── control evaluation (VX4-8 part 3, migration 0032) ────────────────────
+   *
+   * Two more tenant tables, here for the coverage guard. The interesting one is
+   * `control_finding.subject_id`, which has NO foreign key on purpose — a run is
+   * a snapshot handed to an auditor and must not lose rows when its subject is
+   * deleted. So the isolation assertion for it is RLS ONLY, and that is worth
+   * asserting explicitly rather than assuming: the composite FK that protects
+   * every other reference in this schema is deliberately absent here, and RLS is
+   * all there is.
+   */
+  it('control runs and their findings are tenant-isolated', async () => {
+    const runs: Record<string, string> = {};
+    for (const [org, label] of [
+      [orgA, 'A'],
+      [orgB, 'B'],
+    ] as const) {
+      runs[label] = await withOrg(org, async (tx) => {
+        const r = await tx.query(
+          `INSERT INTO control_evaluation_run
+             (organization_id, period_start, period_end)
+           VALUES ($1, now() - interval '90 days', now()) RETURNING id`,
+          [org],
+        );
+        const runId = r.rows[0].id as string;
+        await tx.query(
+          `INSERT INTO control_finding
+             (organization_id, run_id, control_code, severity, subject_type, subject_label,
+              message_code)
+           VALUES ($1, $2, 'GL_MAPPING_GAP', 'INFO', 'expense_category', $3, 'GL_MAPPING_GAP')`,
+          [org, runId, `cat-${label}`],
+        );
+        return runId;
+      });
+    }
+
+    const seen = async (org: string) =>
+      withOrg(org, async (tx) => {
+        const r = await tx.query('SELECT subject_label FROM control_finding');
+        return r.rows.map((row) => row.subject_label as string);
+      });
+    expect(await seen(orgA)).toEqual(['cat-A']);
+    expect(await seen(orgB)).toEqual(['cat-B']);
+    const blind = await withoutOrg((tx) =>
+      tx.query('SELECT count(*)::int AS n FROM control_finding'),
+    );
+    expect(blind.rows[0].n).toBe(0);
+    const blindRuns = await withoutOrg((tx) =>
+      tx.query('SELECT count(*)::int AS n FROM control_evaluation_run'),
+    );
+    expect(blindRuns.rows[0].n).toBe(0);
+
+    // The run reference IS composite and enforced — it is our own row, not a
+    // subject that may legitimately disappear.
+    await expect(
+      withOrg(orgA, (tx) =>
+        tx.query(
+          `INSERT INTO control_finding
+             (organization_id, run_id, control_code, severity, subject_type, message_code)
+           VALUES ($1, $2, 'GL_MAPPING_GAP', 'INFO', 'expense_category', 'GL_MAPPING_GAP')`,
+          [orgA, runs.B],
+        ),
+      ),
+    ).rejects.toThrow();
+
+    // And a finding's subject id is NOT constrained, by design: an arbitrary uuid
+    // is accepted, because a snapshot has to survive its subject.
+    await expect(
+      withOrg(orgA, (tx) =>
+        tx.query(
+          `INSERT INTO control_finding
+             (organization_id, run_id, control_code, severity, subject_type, subject_id,
+              message_code)
+           VALUES ($1, $2, 'STALE_DRAFT', 'WARNING', 'expense_report',
+                   '00000000-0000-4000-8000-00000000dead', 'STALE_DRAFT')`,
+          [orgA, runs.A],
+        ),
+      ),
+    ).resolves.toBeDefined();
+  });
+
 });

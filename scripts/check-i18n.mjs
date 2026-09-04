@@ -298,6 +298,8 @@ const POLICY_MESSAGES_FILE = join(repoRoot, 'lib', 'i18n', 'catalog', 'policy-me
 const POLICY_RULES_FILE = join(repoRoot, 'lib', 'policy', 'rules.ts');
 const FRAUD_MESSAGES_FILE = join(repoRoot, 'lib', 'i18n', 'catalog', 'fraud-messages.ts');
 const FRAUD_RULES_FILE = join(repoRoot, 'lib', 'fraud', 'rules.ts');
+const CONTROL_MESSAGES_FILE = join(repoRoot, 'lib', 'i18n', 'catalog', 'control-messages.ts');
+const CONTROL_RULES_FILE = join(repoRoot, 'lib', 'fraud', 'controls.ts');
 
 /**
  * VX4-7 part 2b — the message codes in the catalogue and the codes the rules
@@ -429,6 +431,8 @@ const COPY_FILES = new Set([
   // and `test/i18n-fraud-messages.test.ts` renders every code in every shipped
   // locale from the detectors' own output.
   'lib/i18n/catalog/fraud-messages.ts',
+  // VX4-8 part 3. Fifth instance, same guarantee.
+  'lib/i18n/catalog/control-messages.ts',
 ]);
 
 async function* sourceFiles(root) {
@@ -586,6 +590,15 @@ async function main() {
       catalogueFile: FRAUD_MESSAGES_FILE,
       arrayName: 'FRAUD_MESSAGE_CODES',
       rulesFile: FRAUD_RULES_FILE,
+    }),
+    // Third caller, and the one that paid for parameterising this in part 2:
+    // `controlFinding(CODE, MESSAGE_CODE, …)` is the same call shape, so the
+    // scan needed no new regex.
+    await messageCodesFor({
+      label: 'control',
+      catalogueFile: CONTROL_MESSAGES_FILE,
+      arrayName: 'CONTROL_MESSAGE_CODES',
+      rulesFile: CONTROL_RULES_FILE,
     }),
   ];
   const paramProblems = await errorMessageParams();
