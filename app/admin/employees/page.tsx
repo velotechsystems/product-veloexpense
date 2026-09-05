@@ -9,7 +9,10 @@
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { listEmployees } from './actions';
+import { ErrorBanner } from '@/app/expenses/ui';
+import { listEmployees, listLiveInvites, revokeInviteFromForm } from './actions';
+import { enumLabel, EMPLOYEE_ROLE_COPY } from '@/lib/i18n/catalog/enums';
+import { readerPrefs } from '@/lib/i18n/request';
 import { EMPLOYEE_STATUSES, type EmployeeStatus } from '@/lib/employees/service';
 
 export const dynamic = 'force-dynamic';
@@ -26,11 +29,28 @@ const badgeClass =
 export default async function EmployeeDirectoryPage({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string; status?: string; deactivated?: string; page?: string }>;
+  searchParams: Promise<{
+    q?: string;
+    status?: string;
+    deactivated?: string;
+    page?: string;
+    invited?: string;
+    withdrawn?: string;
+    error?: string;
+  }>;
 }) {
   const sp = await searchParams;
   const page = Math.max(Number(sp.page ?? '1') || 1, 1);
   const includeDeactivated = sp.deactivated === '1';
+
+  const pendingInvites = await listLiveInvites();
+  const { locale, timeZone } = await readerPrefs();
+  // The reader's locale and zone, as every other date on an admin screen — a
+  // date rendered in the server's zone is a date that is wrong for somebody.
+  const expiryFormat = new Intl.DateTimeFormat(locale, {
+    dateStyle: 'medium',
+    timeZone,
+  });
 
   const { employees, total } = await listEmployees({
     search: sp.q ?? null,
@@ -60,9 +80,75 @@ export default async function EmployeeDirectoryPage({
           </p>
         </div>
         <Button asChild>
-          <Link href="/admin/employees/new">New employee</Link>
+          <Link href="/admin/employees/invite">Invite someone</Link>
         </Button>
       </header>
+
+      <ErrorBanner message={sp.error} />
+      {sp.invited === 'first' || sp.invited === 'again' ? (
+        <p className="rounded-lg border border-primary/40 bg-primary/5 px-3 py-2 text-sm text-primary">
+          {sp.invited === 'again'
+            ? 'That address already had an invitation open, so we sent a fresh one — the earlier link has stopped working.'
+            : 'Invitation sent. They appear here once they sign in and accept it.'}
+        </p>
+      ) : null}
+      {sp.withdrawn === '1' ? (
+        <p className="rounded-lg border border-border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
+          Invitation withdrawn. That link no longer works.
+        </p>
+      ) : null}
+
+      {/* VX5-3 — the pending list.
+        *
+        * It exists because the directory below no longer contains people who
+        * have not arrived, which is the whole point of the ticket and would
+        * otherwise read as an admin's invitation vanishing. Live invitations
+        * only: an accepted one is a person in the table below, and a revoked or
+        * expired one is a decision already taken. */}
+      {pendingInvites.length > 0 ? (
+        <section className="flex flex-col gap-2">
+          <h2 className="text-sm font-medium text-foreground">
+            Invited, not yet signed in ({pendingInvites.length})
+          </h2>
+          <div className="overflow-x-auto rounded-xl border border-border">
+            <table className="w-full text-sm">
+              <thead className="bg-muted/40 text-left text-xs text-muted-foreground">
+                <tr>
+                  <th className="px-3 py-2 font-medium">Email</th>
+                  <th className="px-3 py-2 font-medium">Role</th>
+                  <th className="px-3 py-2 font-medium">Invited by</th>
+                  <th className="px-3 py-2 font-medium">Expires</th>
+                  <th className="px-3 py-2" />
+                </tr>
+              </thead>
+              <tbody>
+                {pendingInvites.map((invite) => (
+                  <tr className="border-t border-border" key={invite.id}>
+                    <td className="px-3 py-2">{invite.email}</td>
+                    <td className="px-3 py-2">
+                      {enumLabel(EMPLOYEE_ROLE_COPY, invite.role, locale)}
+                    </td>
+                    <td className="px-3 py-2 text-muted-foreground">
+                      {invite.invitedByName ?? '—'}
+                    </td>
+                    <td className="px-3 py-2 text-muted-foreground">
+                      {expiryFormat.format(invite.expiresAt)}
+                    </td>
+                    <td className="px-3 py-2 text-right">
+                      <form action={revokeInviteFromForm}>
+                        <input name="inviteId" type="hidden" value={invite.id} />
+                        <Button size="sm" type="submit" variant="outline">
+                          Withdraw
+                        </Button>
+                      </form>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      ) : null}
 
       <form className="flex flex-wrap items-end gap-3" action="/admin/employees">
         <div className="flex flex-col gap-1.5">

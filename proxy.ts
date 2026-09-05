@@ -18,6 +18,14 @@ import { NextResponse, type NextRequest } from 'next/server';
 //                                       The credential is the mailed token, and
 //                                       `0035`'s policies are what police it.
 //
+// VX5-3 adds a fourth, and it carries NO credential at all:
+//   /invite/accept                      it names the tenant and hands somebody to
+//                                       SSO. The invitation is accepted by the
+//                                       identity provider verifying the address,
+//                                       in `lib/auth/resolve-sso-user.ts` — not
+//                                       here. Public because an invited person
+//                                       has no session yet, by definition.
+//
 // TWO PLACES, AND EITHER ONE ALONE IS ENOUGH — MEASURED, NOT ASSUMED. The
 // `matcher` decides whether middleware runs at all; `PUBLIC` is what runs when
 // it does. `/signup` is in both, as `/login` and `/approve` already were, and a
@@ -36,6 +44,7 @@ const PUBLIC = [
   /^\/api\/auth/,
   /^\/approve/,
   /^\/signup/,
+  /^\/invite/,
   /^\/api\/internal\//,
   /^\/_next\//,
   /^\/favicon\.ico$/,
@@ -57,5 +66,5 @@ export function proxy(req: NextRequest) {
 }
 
 export const config = {
-  matcher: ['/((?!api/auth|api/internal|_next/static|_next/image|favicon.ico|login|approve|signup).*)'],
+  matcher: ['/((?!api/auth|api/internal|_next/static|_next/image|favicon.ico|login|approve|signup|invite).*)'],
 };
