@@ -3990,6 +3990,69 @@ Two tenants, side by side, with **different modules enabled, different branding,
 locales** — one on `fr-CA`, one on `en-US` — each seeing only its own analytics and budgets, proved in
 a browser. The Phase-3 exit criterion took the same shape and it is what found AC-19, AC-22 and AC-23.
 
+## 5b. PHASE 5 BOARD — drafted 5 Sep 2026, from the audit and three decisions of John's
+
+**There is no Phase-5 tickets document**, the same as Phase 3 and Phase 4, and the Drive folder does
+not mount from a Cowork session (§6). The board comes from `docs/porting/GAP-AUDIT.md` ON-1..ON-4 and
+from three answers John gave on 5 Sep. **Read ON-1 first: it changes what kind of phase this is.**
+
+### The one fact that shapes everything
+
+**ExpenseOS has no tenant.** Not "a partial implementation" — the only occurrence of `tenantId` in
+their 1900-line schema is a comment saying a future model would add one. No organization is ever
+created anywhere in their source. So unlike Phases 1–4, **there is nothing to port and nothing to be
+warned by**: no upstream design to disagree with, and no upstream defect already found for us. Every
+decision here is ours, which is the argument for the audit being short and the board being explicit.
+
+### The three decisions (John, 5 Sep 2026)
+
+1. **OPEN SELF-SERVE.** Anyone with a working email creates an organization and becomes its first
+   administrator, after verifying the address. Chosen over a gated request queue and over invite-only
+   provisioning, because it is what the Plan's Phase 5 means and because it forces the unlit path
+   into the light: what a tenant with no categories, no policies, no approvers and no chart of
+   accounts can actually do.
+2. **INVITE ONLY for joining an existing organization.** Not upstream's domain allowlist — see ON-2
+   for why that shape is a hole here rather than a convenience. Verified domain claim is a real
+   improvement for a large rollout and is boarded separately, behind proof of domain control.
+3. **HOST-BASED TENANCY AFTER SIGNUP WORKS.** BR-8/ON-4 is a certificate and a DNS change with
+   passkey validation hanging off it; it is a bad thing to debug while also deciding what signup does.
+
+### The tickets
+
+| # | Ticket | Why it is this shape | Days |
+|---|---|---|---|
+| **VX5-1** | **The organization, self-served** | The interesting part is not the form. **Every write in this codebase runs inside `withOrg`**, and creating an organization is the one write that cannot — there is no `app.current_org` yet. That needs a deliberate platform-level path, in the shape `0033`'s `platform_read` and `app.platform_task` already established for scheduled jobs, rather than a connection that quietly bypasses RLS. First user becomes ADMIN; the org gets its slug here, which VX5-5 later turns into a host. | 4 |
+| **VX5-2** | **Email verification that is actually verification** | A token with an expiry, single-use, consumed by the conditional-write idiom (`WHERE … used_at IS NULL`, `rowCount !== 1`) so two clicks on one link cannot both succeed. Resend needs rate limiting, and open self-serve means the abuse surface is real rather than theoretical: a signup endpoint anybody can POST to. | 2 |
+| **VX5-3** | **Invites** | ON-3's four outcomes, minus Google: an invite that is sent, one that is accepted, an address that is ALREADY a member (refused, naming them), and one already invited (resend, not a second row). Carries a role, expires, and is revocable. This is the only way into an existing tenant, per decision 2, so it is also the phase's security boundary. | 3 |
+| **VX5-4** | **What a brand-new tenant can actually do** | The `blank` seed tenant is the specification and it has existed since VX0-9 for exactly this. A fresh org has no categories, no policies, no approval ladder, no chart of accounts and no ledger — so today it can create a report it cannot code, cannot submit and cannot post, and every screen shows an empty table rather than saying what to do next. Decide what is PROVISIONED (`DEFAULT_POLICIES` exists and the seed deliberately does not apply it; VX3-1's CoA template exists) versus what is offered as a first-run task list. | 3 |
+| **VX5-5** | **Host-based tenancy (VX4-4 + BR-8/ON-4)** | Subdomain resolves the tenant before sign-in. The teeth: a WILDCARD certificate where the CDK stack currently issues one for a single host, `WEBAUTHN_RP_ID` moved to the apex or **every existing passkey stops validating the day a tenant moves**, and `APP_URL` stops being a module-level constant — which NT-14 and AC-23 already pay a round trip for. | 4 |
+| **VX5-6** | **Pre-auth branding** | BR-4 built the logo route and VX4-3 the render path, both deliberately post-auth because nothing identified a tenant before sign-in. VX5-5 changes that, and this is the follow-through: a customer's people stop seeing a Velotech login page. Small, and only after VX5-5. | 1 |
+
+**~17 dev-days across six tickets.** Build order is the table order; VX5-6 depends on VX5-5, VX5-3
+depends on VX5-1, and VX5-4 can start as soon as VX5-1 lands.
+
+### Boarded, not in the phase, and easy to lose
+
+Both were set aside deliberately in earlier phases and neither has a ticket yet:
+
+- **PE-9 — 17 application-side copies of the tenant expression omit the `NULLIF`.** Not a leak: every
+  site is reached through `withOrg`, and off that path the query fails closed either way. What it
+  costs is legibility — the first caller to arrive without a tenant gets `22P02 invalid input syntax
+  for type uuid: ""` instead of a refusal naming the problem, which is the wrong error to hand a
+  scheduled job. **Phase 5 makes it likelier to matter**, because VX5-1 introduces the first write
+  path that legitimately runs without a tenant. Half a day plus a guard so the eighteenth copy cannot
+  be written.
+- **Audit-retention purge as a job.** Per-org retention is already a column and `0010` already has the
+  `app.audit_purge` hatch; what does not exist is the thing that runs. It boards with VX0-8's
+  scheduled-job fan-out rather than under settings.
+
+### VX4-10 is still open, and the argument for its timing
+
+161 un-catalogued UI strings across six screens, with a per-page ceiling the pseudo-locale crawl
+already enforces. **After Phase 5, not before:** onboarding adds a whole flow of new copy, so
+cataloguing now means raising the ratchet again afterwards, and it touches every screen, which
+conflicts with anything else in flight.
+
 ## 6. Planning docs (in the ExpenseOS Google-Drive folder, `Specifications_and_Planning/`)
 - `VeloExpense-Port-and-Build-Plan.docx` (7-phase plan + ExpenseOS→VeloExpense sync strategy)
 - `ExpenseOS-vs-VeloExpense-Differences-Chart-rev2.docx`
