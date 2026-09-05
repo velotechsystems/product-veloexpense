@@ -254,8 +254,10 @@ describe('accepting — and what the token does NOT do', () => {
 
   it('a second acceptance creates nothing and no second member', async () => {
     await issue();
-    expect(await acceptForVerifiedEmail(orgId, INVITEE)).not.toBeNull();
-    expect(await acceptForVerifiedEmail(orgId, INVITEE)).toBeNull();
+    expect((await acceptForVerifiedEmail(orgId, INVITEE))!.kind).toBe('ACCEPTED');
+    // Not null any more, and not a second acceptance either: see the
+    // ALREADY_A_MEMBER cases above.
+    expect((await acceptForVerifiedEmail(orgId, INVITEE))!.kind).toBe('ALREADY_A_MEMBER');
     const members = await admin.query(
       'SELECT count(*)::int AS n FROM app_user WHERE lower(email) = lower($1)',
       [INVITEE],
@@ -276,7 +278,20 @@ describe('accepting — and what the token does NOT do', () => {
    * What is asserted is the outcome, not the mechanism: both callers succeed,
    * they are the SAME person, and exactly one member exists.
    */
-  it('two simultaneous acceptances both succeed, and make one member', async () => {
+  it('two simultaneous acceptances both succeed, and exactly one of them accepts', async () => {
+    /* THE FIRST VERSION OF THIS TEST WAS WRONG, AND CI SAID SO.
+     *
+     * It asserted both calls returned a member. That is true of ONE of the two
+     * interleavings — the one where the inserts overlap and the loser is caught
+     * on `app_user`'s UNIQUE. Eight consecutive local runs produced only that
+     * one. CI produced the other on its first: the loser arrived strictly after
+     * the winner had committed, found no live invitation, and got `null`.
+     *
+     * `null` was the wrong answer, so the CODE changed too — the loser now
+     * reports `ALREADY_A_MEMBER`. What this test asserts is the invariant that
+     * holds whichever way the race falls, which is what a concurrency test is
+     * allowed to assert: both callers end up with the same member, there is one
+     * member, and exactly ONE of them did the accepting. */
     await issue();
     const [a, b] = await Promise.all([
       acceptForVerifiedEmail(orgId, INVITEE),
@@ -285,6 +300,10 @@ describe('accepting — and what the token does NOT do', () => {
     expect(a).not.toBeNull();
     expect(b).not.toBeNull();
     expect(a!.userId).toBe(b!.userId);
+
+    // One accepted; the other found itself already in. Which is which depends on
+    // the schedule, and asserting that would be asserting the schedule.
+    expect([a!.kind, b!.kind].sort()).toEqual(['ACCEPTED', 'ALREADY_A_MEMBER']);
 
     const members = await admin.query(
       'SELECT count(*)::int AS n FROM app_user WHERE lower(email) = lower($1)',
@@ -295,6 +314,47 @@ describe('accepting — and what the token does NOT do', () => {
       'SELECT count(*)::int AS n FROM invite WHERE accepted_at IS NOT NULL',
     );
     expect(accepted.rows[0].n).toBe(1);
+    // And ONE audit row. The loser did nothing, so it recorded nothing — this is
+    // what would fail if the recovery path ever started auditing an acceptance
+    // it did not perform.
+    const audited = await admin.query(
+      "SELECT count(*)::int AS n FROM audit_entry WHERE action = 'INVITE_ACCEPTED'",
+    );
+    expect(audited.rows[0].n).toBe(1);
+  });
+
+  /* The interleaving CI hit, forced rather than raced — this is the branch a
+   * concurrent test can only reach by luck, and it is reachable on purpose when
+   * the second call simply starts later. */
+  it('a caller arriving after somebody else accepted is told they are already in', async () => {
+    await issue();
+    const first = await acceptForVerifiedEmail(orgId, INVITEE);
+    expect(first!.kind).toBe('ACCEPTED');
+
+    const second = await acceptForVerifiedEmail(orgId, INVITEE);
+    expect(second, 'a member arriving late is not denied').not.toBeNull();
+    expect(second!.kind).toBe('ALREADY_A_MEMBER');
+    expect(second!.userId).toBe(first!.userId);
+
+    // Nothing was accepted twice and nothing was audited twice.
+    const audited = await admin.query(
+      "SELECT count(*)::int AS n FROM audit_entry WHERE action = 'INVITE_ACCEPTED'",
+    );
+    expect(audited.rows[0].n).toBe(1);
+  });
+
+  it('somebody who was never invited and is not a member gets nothing', async () => {
+    // The recovery must not become "anybody who asks twice is let in".
+    expect(await acceptForVerifiedEmail(orgId, 'stranger@acme.test')).toBeNull();
+  });
+
+  it('a DEACTIVATED member is not handed back by the recovery', async () => {
+    await issue();
+    const joined = await acceptForVerifiedEmail(orgId, INVITEE);
+    await admin.query('UPDATE app_user SET deleted_at = clock_timestamp() WHERE id = $1', [
+      joined!.userId,
+    ]);
+    expect(await acceptForVerifiedEmail(orgId, INVITEE)).toBeNull();
   });
 
   it('a genuine failure is not swallowed by the retry', async () => {

@@ -415,6 +415,20 @@ export function maskEmail(email: string): string {
 }
 
 export interface AcceptedInvite {
+  /**
+   * WHICH of the two happened, and it is a discriminator rather than a detail.
+   *
+   * `ACCEPTED` — a live invitation was consumed by this call, and `INVITE_ACCEPTED`
+   *              was written.
+   * `ALREADY_A_MEMBER` — there was no live invitation, and this verified address
+   *              is an active member anyway. Nothing was consumed and nothing was
+   *              audited, because nothing happened.
+   *
+   * The second exists because of a race CI found and a local run did not: two
+   * sign-ins for one address, and the loser arrives after the winner has
+   * committed. See `acceptForVerifiedEmail`'s header.
+   */
+  kind: 'ACCEPTED' | 'ALREADY_A_MEMBER';
   userId: string;
   organizationId: string;
   email: string;
@@ -458,7 +472,35 @@ export async function acceptForVerifiedEmail(
 ): Promise<AcceptedInvite | null> {
   const email = verifiedEmail.trim();
   try {
-    return await acceptOnce(organizationId, email);
+    const accepted = await acceptOnce(organizationId, email);
+    if (accepted !== null) return accepted;
+    /* ── NO LIVE INVITATION. ARE THEY ALREADY IN? ───────────────────────────
+     *
+     * This is the OTHER half of the double sign-in, and it is the half a local
+     * run did not produce. Two tabs, or a double-click:
+     *
+     *   tab A  ── reads: not a member ── accepts ── COMMITS ──┐
+     *   tab B  ── reads: not a member ─────────────────────────── accepts: the
+     *                                                             invitation is
+     *                                                             gone
+     *
+     * When B's insert overlaps A's, the loser hits `app_user`'s UNIQUE and the
+     * catch below handles it. When B arrives strictly AFTER A commits, there is
+     * no conflict to catch — the invitation is simply no longer live, and the
+     * old code returned null, which `resolveSsoUser` turns into a DENIED
+     * sign-in for somebody who became a member a moment ago.
+     *
+     * CI hit this interleaving on the first run; eight consecutive local runs
+     * hit only the other one. That is the honest reason the branch exists: a
+     * slower machine is a different schedule, and a race that "passes locally"
+     * has been measured on exactly one of its orderings.
+     *
+     * `ALREADY_A_MEMBER` rather than `ACCEPTED`, and nothing is audited here,
+     * because nothing happened — the other request did the accepting and wrote
+     * the audit row. Exactly one `INVITE_ACCEPTED` per invitation, whichever way
+     * the race falls, which is what `test/invites.db.test.ts` asserts.
+     */
+    return await existingMember(organizationId, email);
   } catch (err) {
     /* ── THE SAME PERSON, TWICE AT ONCE ─────────────────────────────────────
      *
@@ -487,22 +529,33 @@ export async function acceptForVerifiedEmail(
      * the error you mean is how the next reader knows what this is for.
      */
     if (!isDuplicateMember(err)) throw err;
-    const member = await withOrg(organizationId, (tx) =>
-      tx.query(
-        `SELECT id, email, role FROM app_user
-          WHERE lower(email) = lower($1) AND deleted_at IS NULL`,
-        [email],
-      ),
-    );
-    if (member.rows.length === 0) throw err;
-    const row = member.rows[0] as { id: string; email: string; role: string };
-    return {
-      userId: row.id,
-      organizationId,
-      email: row.email,
-      role: row.role as EmployeeRole,
-    };
+    const member = await existingMember(organizationId, email);
+    if (member === null) throw err;
+    return member;
   }
+}
+
+/** The active member for a verified address, or null. */
+async function existingMember(
+  organizationId: string,
+  email: string,
+): Promise<AcceptedInvite | null> {
+  const r = await withOrg(organizationId, (tx) =>
+    tx.query(
+      `SELECT id, email, role FROM app_user
+        WHERE lower(email) = lower($1) AND deleted_at IS NULL`,
+      [email],
+    ),
+  );
+  if (r.rows.length === 0) return null;
+  const row = r.rows[0] as { id: string; email: string; role: string };
+  return {
+    kind: 'ALREADY_A_MEMBER',
+    userId: row.id,
+    organizationId,
+    email: row.email,
+    role: row.role as EmployeeRole,
+  };
 }
 
 /** 23505 from Postgres, or `createEmployee`'s own pre-check losing the same race. */
@@ -604,6 +657,7 @@ async function acceptOnce(
     );
 
     return {
+      kind: 'ACCEPTED',
       userId,
       organizationId,
       email: invite.email as string,

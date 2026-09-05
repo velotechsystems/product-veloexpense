@@ -4074,6 +4074,35 @@ leaves reports behind. Same family as the traps this codebase keeps finding — 
 because something else ran first. CI is green in its own order (150 Playwright, then 18 crawl), so
 this is not a regression and not this ticket. Boarded.
 
+**CI caught a race my own test asserted wrongly — and a real defect behind it (on the VX5-4 branch, but VX5-3's code).**
+
+`test/invites.db.test.ts`'s "two simultaneous acceptances" asserted BOTH callers get a member. That
+is true of one of the two interleavings — the one where the inserts overlap and the loser is caught
+on `app_user`'s UNIQUE. **Eight consecutive local runs produced only that ordering; CI produced the
+other on its first run**, where the loser arrives strictly after the winner has committed, finds no
+live invitation, and got `null`.
+
+`null` was the wrong answer, not just an untested one: `resolveSsoUser` turns it into a DENIED
+sign-in for somebody who became a member a moment earlier. Two tabs, or a double-click on
+"Sign in to accept", and one of them is refused.
+
+So `acceptForVerifiedEmail` now returns a discriminated result — `ACCEPTED` when a live invitation was
+consumed, `ALREADY_A_MEMBER` when there was none and the verified address is an active member anyway.
+The loser audits nothing, because it did nothing: exactly one `INVITE_ACCEPTED` per invitation,
+whichever way the race falls. The recovery is narrow — a deactivated member is still refused, and
+somebody who was never invited still gets nothing.
+
+The test now asserts the invariant that holds on BOTH orderings (same member, one member, exactly one
+acceptance, one audit row) rather than the schedule — and the interleaving CI hit is covered
+separately by forcing it sequentially, which is the only way to reach that branch on purpose.
+
+**The lesson, written down because it will recur:** a concurrency test that passes locally has been
+measured on one of its orderings. A slower machine is a different schedule. Assert the invariant, not
+the outcome — and when a race test fails in CI, check whether the code is wrong before the test is.
+
+**Sabotage, 3 runs.** No recovery on the null path → 2. The recovery hands back anybody, deactivated
+included → 3. The loser reports `ACCEPTED` and audits → 3.
+
 ### VX5-3 SHIPPED — the invite, and a bug that meant nobody could sign in at all
 
 **PR #NNN.** Migration `0036`. New: `lib/invites/service.ts` · `app/admin/employees/invite/page.tsx`
