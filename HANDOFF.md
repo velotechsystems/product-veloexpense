@@ -3990,6 +3990,65 @@ Two tenants, side by side, with **different modules enabled, different branding,
 locales** — one on `fr-CA`, one on `en-US` — each seeing only its own analytics and budgets, proved in
 a browser. The Phase-3 exit criterion took the same shape and it is what found AC-19, AC-22 and AC-23.
 
+### VX5-1 SHIPPED — the one write that cannot start inside a tenant
+
+**PR #102.** Migration `0034`. New: `lib/onboarding/slug.ts` · `lib/onboarding/provision.ts` ·
+`test/onboarding-slug.test.ts` · `test/onboarding-provision.db.test.ts`. Changed:
+`lib/audit/actions.ts` (1 action) · `lib/i18n/catalog/errors.ts` (4 codes).
+
+**IT SHIPS WITH NO CALLER, ON PURPOSE.** A provisioning endpoint anybody can POST to — creating
+tenants from addresses nobody has proven they hold — is the abuse surface VX5-2 exists to close.
+Shipping the mechanism first and the door second means there is never a commit where the door is
+open. `createOrganization` is exported, tested, and reachable from nothing.
+
+**ONE TRANSACTION, WHICH BECOMES THE TENANT PARTWAY THROUGH.** Every write in this codebase runs
+inside `withOrg`; creating an organization has no id to set, because the row being written is where
+the id comes from. The obvious shape — `withoutOrg` for the org, then `withOrg` for the administrator
+— is two transactions, and anything failing between them leaves an **organization with no users**:
+nobody can sign into it (`resolveSsoUser` finds no row), nobody can be invited into it (that needs an
+administrator), and its slug is taken forever. So it is one transaction that calls `set_config` on
+itself after the INSERT that produces the id. Transaction-local, so a rollback takes it with it.
+
+**Not a new escape hatch, and worth saying why:** `organization` is not a tenant table — no
+`organization_id`, no policy, since `0001` — so inserting into it bypasses nothing. The connection is
+still `veloapp` under FORCE RLS, and the `app_user` insert is an ordinary tenant-scoped write that
+succeeds only because the GUC names the org it belongs to. No `app.platform_task`, no ADMIN
+connection, no `SET ROLE`. The only new capability is choosing WHEN the tenant becomes known.
+
+**ADMIN by construction, not by argument.** An organization whose first user is an EMPLOYEE is one
+nobody can administer, invite into or configure — a dead tenant created by a typo in a parameter.
+
+**The genesis row of every chain is now the tenant coming into being**, written by the person it made
+an administrator. There is no earlier state for an auditor to wonder about.
+
+**`0034` — the slug is a hostname, so the database says what one is.** It has been `text NOT NULL
+UNIQUE` since `0001`; VX5-5 makes it a subdomain and VX5-1 is the first path that lets a member of the
+public choose one. A DNS-label CHECK, because the same column is written by the form, the seed, a test
+fixture and provisioning — a rule enforced at one of those is a rule the other three can break. The
+underscore is the case worth knowing: legal in a DNS record, illegal in a hostname, discovered by a
+certificate failing to issue rather than a form failing to submit.
+
+**The RESERVED list is in code, deliberately.** The shape of a hostname never changes; which names the
+platform keeps for itself changes the first time somebody adds a marketing subdomain, and a CHECK
+would make each of those a migration. Three groups, and the third is the one that gets forgotten:
+what we serve, infrastructure names, and **names a tenant could impersonate us with** — `billing`,
+`security`, `support`. A person receiving mail from `billing.veloexpense.com` has no way to know it is
+a customer's tenant.
+
+**A TEST OF MINE THAT PASSED WHILE PROVING NOTHING.** The atomicity test forced its failure with a
+300-character email — and `app_user.email` is unbounded `text`, so nothing failed and the rollback it
+asserted never happened. It passed. Replaced with a fault injected in the database (a temporary CHECK
+on one address), which is where such a failure would actually come from; the sabotage that splits the
+function into two transactions now fails it, and the two-transaction shape is exactly what this
+ticket rejects.
+
+**Verified in the harness:** 1393 vitest / 64 files · 135 Playwright · 18 pseudo-crawl · build ·
+`check:actions`, `check:i18n`, `check:vendor`, `check:admin` · the RLS-coverage query still finds no
+tenant table without FORCE RLS. Three sabotage runs.
+
+**Next: VX5-2**, which is the door — email verification, and the first caller `createOrganization`
+will have.
+
 ## 5b. PHASE 5 BOARD — drafted 5 Sep 2026, from the audit and three decisions of John's
 
 **There is no Phase-5 tickets document**, the same as Phase 3 and Phase 4, and the Drive folder does
