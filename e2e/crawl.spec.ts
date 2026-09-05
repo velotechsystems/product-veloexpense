@@ -57,7 +57,7 @@ const PAGES = [
   '/preferences',
   '/admin/modules',
   '/admin/employees',
-  '/admin/employees/new',
+  '/admin/employees/invite',
   '/admin/expense-policies',
   '/admin/approval-ladder',
   '/admin/budgets',
@@ -79,6 +79,9 @@ const PAGES = [
  *                   spec that owns it.
  *   `/approve`     — reached by a signed token from an email, not by a signed-in
  *                   person; `oauth-flow` and the token specs own it.
+ *   `/signup`, `/signup/verify`, `/invite/accept` — same reason: reached with no
+ *                   session, from a link in a mailbox. `signup-flow.spec.ts` and
+ *                   `invite-flow.spec.ts` own them.
  *   `/expenses/[reportId]`, `/admin/employees/[employeeId]` — need an id, so
  *                   they are crawled below from what each role can actually see,
  *                   which is a better test than a fixture id anyway.

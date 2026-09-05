@@ -4000,6 +4000,90 @@ Two tenants, side by side, with **different modules enabled, different branding,
 locales** — one on `fr-CA`, one on `en-US` — each seeing only its own analytics and budgets, proved in
 a browser. The Phase-3 exit criterion took the same shape and it is what found AC-19, AC-22 and AC-23.
 
+### VX5-3 SHIPPED — the invite, and a bug that meant nobody could sign in at all
+
+**PR #NNN.** Migration `0036`. New: `lib/invites/service.ts` · `app/admin/employees/invite/page.tsx`
+· `app/invite/accept/page.tsx` · `test/invites.db.test.ts` · `e2e/invite-flow.spec.ts`. Changed:
+`lib/auth/resolve-sso-user.ts` · `lib/employees/service.ts` · `lib/tenant/context.ts`
+(`withInviteLookup`) · `lib/audit/actions.ts` (5 actions) · `lib/i18n/catalog/errors.ts` (5 codes) ·
+`app/admin/employees/{actions.ts,page.tsx,employee-form.tsx}` · `proxy.ts` ·
+`test/rls-isolation.test.ts` · `e2e/crawl.spec.ts`. **Deleted: `app/admin/employees/new/`.**
+
+**The door that was open.** "Invite-only" described the login page and nothing else. `resolveSsoUser`
+signs somebody in when an `app_user` row exists for (org, verified email) — so the grant of access was
+`INSERT INTO app_user`, and `createEmployee` did that from an admin form with no email to the person
+and no record they had never arrived. Two doors, one invisible. **`/admin/employees/new` is deleted**
+(the e2e asserts a 404, because a route taken off the nav is still a route); the form is now
+`/admin/employees/invite`, and the `app_user` row appears at acceptance. The directory therefore only
+contains people who have actually arrived — which matters because `app_user` is read by the manager
+picker, the reporting line and every approval ladder.
+
+**THE TOKEN IS NOT WHAT GRANTS ACCESS**, and this is the design rather than an omission.
+`acceptForVerifiedEmail(organizationId, verifiedEmail)` takes no token. The link carries the tenant
+and is revocable and expiring; the grant is bound to an email Google or Microsoft verified moments
+earlier, in `resolveSsoUser`. So a link forwarded to a colleague or pasted into a chat grants nothing
+— the holder would need the invited mailbox as an SSO identity, which is the same thing as being the
+invited person. It also means the link is optional: somebody who lost the email can sign in at
+`/login` with their org's web address and it works. Stronger than `0035`'s signup token, and it can
+be: a signup has neither a tenant nor an identity provider in the picture, and an invite has both.
+
+**`/invite/accept` therefore has no button that accepts.** It names the tenant (the only thing that
+lets somebody tell it from a copy) and shows a MASKED address — `n••••@acme.test`, a FIXED number of
+dots after the suite caught the first version publishing the hidden length. It exists to say
+"which mailbox" and to fail a dead link before a round trip through an identity provider.
+
+**One gate, not two.** `app.invite_lookup` answers ONE question — which tenant is this token in —
+after which everything runs under `tenant_isolation`. `0035` needed two GUCs because a signup has no
+tenant and its narrow SELECT policy made the consuming UPDATE impossible; an invite has a tenant, so
+`action_token`'s simpler shape applies. Not `app.platform_task`: that flag is held by long-running
+background paths, this one for a single statement in a single sign-in.
+
+**A BUG OLDER THAN THIS TICKET: SSO could not sign ANYBODY in.** `resolveSsoUser` read `app_user`
+inside `withoutOrg`, called in its own header "a sanctioned cross-tenant read". It is not one, and
+`lib/tenant/context.ts` says so explicitly — `withoutOrg` still connects as `veloapp` under FORCE
+RLS, so with `app.current_org` unset every policy compares against NULL and the table returns **zero
+rows**. Every SSO sign-in was denied, for everybody. Nothing caught it because `e2e/auth.setup.ts`
+mints session cookies directly with `next-auth/jwt` (SSO is unrunnable in CI), so the browser suite
+has never been through `signIn`, and there was no unit test on the file. The first test written
+against it failed, and that is how it surfaced. Fixed with no new hatch: `organization` has no tenant
+column, so the slug resolves with no context, and `app_user` is then read inside the tenant.
+
+**Two gaps folded in, at John's explicit instruction** (flagged as adjacent, not smuggled):
+`deleted_at` is now checked at the door — a deactivated person used to complete OAuth and hold a real
+session until `requireActor` refused them one step later; and `onSsoDenied` writes `SIGN_IN_DENIED`
+to the tenant's audit log instead of a `console.warn`, because with joining invite-only a refused
+attempt is the shape somebody probing a tenant takes. An unknown slug still writes nothing — an audit
+log belongs to an organization.
+
+**A third defect, found by deleting a route.** With `/admin/employees/new` gone the path fell through
+to `/admin/employees/[employeeId]` with the id `new`, Postgres answered `invalid input syntax for
+type uuid`, and the page 500ed. General, and present since VX1-2 — any hand-edited id did it; the
+static route was hiding it. `getEmployee` now treats a non-uuid id as not found, guarded in the
+SERVICE rather than the page for MT-3's reason.
+
+**The race, run rather than reasoned about.** A sabotage disabling `acceptOnce`'s `rowCount !== 1`
+guard failed NO test. Running two concurrent acceptances showed why: the loser never reaches it — it
+hits `app_user`'s UNIQUE one statement earlier and got back a raw `duplicate key … 23505`, which
+inside NextAuth's `signIn` callback is an opaque failure page for somebody who double-clicked. Now
+caught and resolved to the member the other transaction just made, narrowly. The `rowCount` guard
+stays with the depth honestly labelled — `markConsumed`'s situation, and the same answer.
+
+**PE-9 is not repeated here.** `lib/invites/service.ts` uses the `NULLIF`-guarded tenant expression,
+unlike the seventeen copies that omit it, because this module is reached from `resolveSsoUser` — the
+closest thing this product has to a caller with no tenant.
+
+**Sabotage, 10 runs.** Accept by token instead of by verified email → 1. Mask scales with length → 2.
+Retry removed → 1. `withoutOrg` restored → 2. `deleted_at` unchecked → 1. Revoked still grants → 1.
+Hatch not live-only → 2. One-live-per-address index dropped → 8. `getEmployee` id guard removed → 2
+e2e. **And one that failed nothing and was right to**: removing the `isDuplicateMember` narrowing,
+because the retry can only return a member it actually found — the narrowing is the belt, the empty
+read is the braces, and only the braces are pinned. Written up in the file rather than papered over.
+
+**Still not covered, and deliberately:** acceptance through a real identity provider. There is no
+Google in CI, so the grant is proved in `test/invites.db.test.ts` against a real database and
+`e2e/invite-flow.spec.ts` proves the wiring around it. A browser test claiming to cover acceptance
+would have to fake the verified email — the one input the whole design rests on not being fakeable.
+
 ### VX5-2b SHIPPED — the pages, and the seam a first sign-in should not have
 
 **PR #NNN.** No migration. New: `app/signup/page.tsx` · `app/signup/actions.ts` · `app/signup/ui.tsx`

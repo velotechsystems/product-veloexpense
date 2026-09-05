@@ -136,6 +136,32 @@ export async function withSignupConsume<T>(fn: (tx: QueryRunner) => Promise<T>):
   });
 }
 
+/**
+ * VX5-3 — the invite lookup, and it is the NARROW kind, not the signup kind.
+ *
+ * One question, asked once, by a person who is signing in and has no session
+ * yet: which tenant is this invite token in? After that the caller switches into
+ * that tenant with `withOrg` and everything else — reading the invite, creating
+ * the member, marking it accepted — happens under `tenant_isolation`.
+ *
+ * So there is no second gate here and there cannot need to be. `0035` needed one
+ * because a signup has no tenant to fall back on, and its narrow SELECT policy
+ * made the consuming UPDATE impossible. An invite has a tenant. The acceptance
+ * UPDATE runs under `tenant_isolation`, which does not narrow on `accepted_at`,
+ * and Postgres has no objection.
+ *
+ * Not `app.platform_task`, though the policy has the same shape as
+ * `action_token`'s. That flag is set by the delivery poller and the approve-link
+ * handler, both long-running background paths; this one is set for a single
+ * statement inside a single sign-in. `0036`'s header has the argument.
+ */
+export async function withInviteLookup<T>(fn: (tx: QueryRunner) => Promise<T>): Promise<T> {
+  return transaction(async (tx) => {
+    await tx.query("SELECT set_config('app.invite_lookup', 'on', true)");
+    return fn(tx);
+  });
+}
+
 export async function withPlatformRead<T>(fn: (tx: QueryRunner) => Promise<T>): Promise<T> {
   return transaction(async (tx) => {
     await tx.query("SELECT set_config('app.platform_task', 'on', true)");

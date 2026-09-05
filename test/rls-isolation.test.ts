@@ -11,6 +11,7 @@ import { Pool } from 'pg';
 import {
   withOrg,
   withoutOrg,
+  withInviteLookup,
   withPlatformRead,
   withSignupContext,
 } from '@/lib/tenant/context';
@@ -1549,6 +1550,113 @@ describe('RLS tenant isolation', () => {
     expect(deleted.rowCount).toBe(0);
 
     await admin.query('DELETE FROM signup');
+  });
+
+  /* ── invitations (VX5-3, migration 0036) ──────────────────────────────────
+   *
+   * `invite` is tenant data, unlike `signup` — an invitation belongs to the
+   * organization that sent it — so the ordinary claim applies and is asserted
+   * first: org A cannot see org B's.
+   *
+   * The interesting half is the HATCH. `app.invite_lookup` exists so that
+   * somebody signing in with no session can be told which tenant their token
+   * belongs to, which means it can, by construction, see live invites in EVERY
+   * organization. `resolveInviteTenant`'s rule is that the caller takes nothing
+   * from it but the tenant id — and a rule in a comment is a rule until somebody
+   * reads one more column. What can be asserted, and is, is that the hatch shows
+   * only LIVE rows and cannot write.
+   */
+  it('invitations are tenant-isolated, and a cross-tenant one is refused', async () => {
+    const [inviterA] = (
+      await withOrg(orgA, (tx) => tx.query('SELECT id FROM app_user LIMIT 1'))
+    ).rows.map((r) => r.id as string);
+    const [inviterB] = (
+      await withOrg(orgB, (tx) => tx.query('SELECT id FROM app_user LIMIT 1'))
+    ).rows.map((r) => r.id as string);
+
+    const mint = async (org: string, inviter: string, email: string, hash: string) =>
+      withOrg(org, (tx) =>
+        tx.query(
+          `INSERT INTO invite (organization_id, email, token_hash, role, invited_by_id, expires_at)
+           VALUES ($1, $2, $3, 'EMPLOYEE', $4, clock_timestamp() + interval '7 days')
+           RETURNING id`,
+          [org, email, hash, inviter],
+        ),
+      );
+    const a = await mint(orgA, inviterA, 'newcomer@a.test', 'a'.repeat(64));
+    await mint(orgB, inviterB, 'newcomer@b.test', 'b'.repeat(64));
+
+    for (const [org, expected] of [
+      [orgA, 'newcomer@a.test'],
+      [orgB, 'newcomer@b.test'],
+    ] as const) {
+      const seen = await withOrg(org, (tx) => tx.query('SELECT email FROM invite'));
+      expect(seen.rows.map((r) => r.email)).toEqual([expected]);
+    }
+
+    // Not by token hash either: knowing another tenant's token is not a way to
+    // read their invitation from inside your own.
+    const byHash = await withOrg(orgB, (tx) =>
+      tx.query('SELECT count(*)::int AS n FROM invite WHERE token_hash = $1', ['a'.repeat(64)]),
+    );
+    expect(byHash.rows[0].n).toBe(0);
+
+    // WITH CHECK refuses an invitation written into another tenant.
+    await expect(
+      withOrg(orgA, (tx) =>
+        tx.query(
+          `INSERT INTO invite (organization_id, email, token_hash, role, invited_by_id, expires_at)
+           VALUES ($1, 'smuggled@b.test', $2, 'ADMIN', $3, clock_timestamp() + interval '7 days')`,
+          [orgB, 'c'.repeat(64), inviterB],
+        ),
+      ),
+    ).rejects.toThrow(/row-level security/i);
+
+    // And TN-1: the composite FK refuses another tenant's inviter even inside
+    // the right organization, because referential integrity is checked with RLS
+    // BYPASSED and a plain `REFERENCES app_user(id)` would have accepted it.
+    await expect(
+      withOrg(orgA, (tx) =>
+        tx.query(
+          `INSERT INTO invite (organization_id, email, token_hash, role, invited_by_id, expires_at)
+           VALUES ($1, 'crossed@a.test', $2, 'EMPLOYEE', $3, clock_timestamp() + interval '7 days')`,
+          [orgA, 'd'.repeat(64), inviterB],
+        ),
+      ),
+    ).rejects.toThrow(/foreign key|violates/i);
+
+    /* ── the hatch ──────────────────────────────────────────────────────────*/
+    // It sees both tenants' live invitations, which is the price of answering
+    // "which tenant is this token in" before any tenant is known.
+    const live = await withInviteLookup((tx) =>
+      tx.query('SELECT count(*)::int AS n FROM invite'),
+    );
+    expect(live.rows[0].n).toBe(2);
+
+    // But only LIVE ones. Revoke A's and it leaves the hatch's view entirely —
+    // the same "unknown, spent and expired are one case" the policy exists for.
+    await withOrg(orgA, (tx) =>
+      tx.query('UPDATE invite SET revoked_at = clock_timestamp() WHERE id = $1', [a.rows[0].id]),
+    );
+    const afterRevoke = await withInviteLookup((tx) =>
+      tx.query('SELECT organization_id FROM invite'),
+    );
+    expect(afterRevoke.rows.map((r) => r.organization_id)).toEqual([orgB]);
+
+    // AND IT CANNOT WRITE. `invite_lookup` is FOR SELECT, so an UPDATE falls to
+    // `tenant_isolation`, which matches nothing with no `app.current_org` — a
+    // silent no-op rather than an error, which is why `rowCount` is the
+    // assertion and a thrown exception is not.
+    const attempted = await withInviteLookup((tx) =>
+      tx.query("UPDATE invite SET role = 'ADMIN' WHERE organization_id = $1", [orgB]),
+    );
+    expect(attempted.rowCount).toBe(0);
+
+    // With no context and no hatch, nothing at all.
+    const blind = await withoutOrg((tx) => tx.query('SELECT count(*)::int AS n FROM invite'));
+    expect(blind.rows[0].n).toBe(0);
+
+    await admin.query('DELETE FROM invite');
   });
 
 });

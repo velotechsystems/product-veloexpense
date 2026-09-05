@@ -155,7 +155,27 @@ export async function listEmployees(
   return { employees: r.rows as EmployeeRow[], total };
 }
 
+/**
+ * A record id that is not a uuid is NOT FOUND, not a crash.
+ *
+ * VX5-3 found this by deleting `/admin/employees/new`: the path then fell
+ * through to `/admin/employees/[employeeId]` with `employeeId = 'new'`, Postgres
+ * answered `invalid input syntax for type uuid`, and the page rendered a 500.
+ * The static route had been hiding it, but the defect was general — any
+ * hand-edited or stale id in that URL did the same thing, and had since VX1-2.
+ *
+ * That is VX4-9's lesson arriving from a different direction: a refusal that
+ * looks like a crash buries the 500s that mean something, and monitoring cannot
+ * tell "somebody followed a dead bookmark" from "the database is down".
+ *
+ * The guard is HERE and not on the page, for MT-3's reason — a gate at the edge
+ * is a gate the next caller forgets. `getEmployee` is where every caller already
+ * looks, and they all already handle `null`.
+ */
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export async function getEmployee(tx: QueryRunner, employeeId: string): Promise<EmployeeRow | null> {
+  if (!UUID.test(employeeId)) return null;
   const r = await tx.query(`${SELECT_EMPLOYEE} WHERE u.id = $1`, [employeeId]);
   return (r.rows[0] as EmployeeRow) ?? null;
 }

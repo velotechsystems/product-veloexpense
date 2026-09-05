@@ -8,13 +8,23 @@
  *
  * Authorization: the directory is ADMIN-only. The acting user's role is read
  * from app_user INSIDE the tenant transaction — never from the session token —
- * so a stale or forged claim cannot grant access. Managers can still read their
- * own reporting tree through the two `...ForSelf` actions.
+ * so a stale or forged claim cannot grant access.
+ *
+ * VX5-3 removed `getMyDirectReports` and `getMyManagerChain`. They were exported
+ * from a `'use server'` module with no call site anywhere in the tree, which
+ * makes them live HTTP endpoints reachable by anyone who can guess an action id
+ * rather than dead code. No leak — both returned only the caller's own reporting
+ * tree — but an endpoint nothing calls is an endpoint nobody is maintaining, and
+ * they were boarded as a loose end from #97. Whatever screen wanted them can
+ * declare them again when it exists.
  */
 import { redirect } from 'next/navigation';
 import { revalidatePath } from 'next/cache';
 import * as svc from '@/lib/employees/service';
-import { asAdmin, asAdminPage, asMember } from '@/lib/auth/admin-guard';
+import * as invites from '@/lib/invites/service';
+import { errorParam } from '@/lib/errors/domain';
+import { asAdmin, asAdminPage } from '@/lib/auth/admin-guard';
+import { auditActorOf } from '@/lib/audit/service';
 
 /* ── reads ─────────────────────────────────────────────────────────────────── */
 
@@ -41,19 +51,35 @@ export async function getDirectoryOptions() {
   return asAdminPage((tx) => svc.getDirectoryOptions(tx));
 }
 
-/** Any signed-in user may read their own reporting tree (managers included). */
-export async function getMyDirectReports() {
-  return asMember((tx, actor) => svc.getDirectReports(tx, actor.id));
-}
-
-export async function getMyManagerChain() {
-  return asMember((tx, actor) => svc.getManagerChain(tx, actor.id));
-}
-
 /* ── writes (typed) ────────────────────────────────────────────────────────── */
 
-export async function createEmployee(input: svc.NewEmployee) {
-  return asAdmin((tx) => svc.createEmployee(tx, input));
+/**
+ * VX5-3 — `createEmployee` IS GONE, and its absence is the ticket.
+ *
+ * It wrote an `app_user` row from an admin form, and an `app_user` row is what
+ * `resolveSsoUser` matches on — so that action WAS the grant of access, with no
+ * email to the person and no record that they had never arrived. The product
+ * said "invite-only" and meant it about the login page only.
+ *
+ * Inviting is now the only way in. The `app_user` row appears when somebody
+ * accepts, which is what keeps the directory a list of people who are actually
+ * here — and `app_user` is read by the manager picker, the reporting line and
+ * every approval ladder.
+ *
+ * `svc.createEmployee` still exists and is still the one place that knows how to
+ * make a member; `lib/invites/service.ts` calls it at acceptance. What is gone is
+ * the path from an admin form to it.
+ */
+export async function inviteEmployee(input: invites.NewInvite) {
+  return asAdmin((tx, actor) => invites.sendInvite(tx, auditActorOf(actor), input));
+}
+
+export async function revokeInvite(inviteId: string) {
+  return asAdmin((tx, actor) => invites.revokeInvite(tx, auditActorOf(actor), inviteId));
+}
+
+export async function listLiveInvites() {
+  return asAdminPage((tx) => invites.listLiveInvites(tx));
 }
 
 export async function updateEmployee(employeeId: string, patch: svc.EmployeePatch) {
@@ -95,12 +121,56 @@ function employeeFromForm(form: FormData): svc.EmployeePatch {
   };
 }
 
-export async function createEmployeeFromForm(form: FormData) {
-  const email = text(form, 'email');
-  if (!email) throw new Error('email is required');
-  const created = await createEmployee({ ...employeeFromForm(form), email });
+/**
+ * As `app/preferences/actions.ts`: a `redirect()` is a THROW, and a bare catch
+ * around one swallows the navigation.
+ */
+function rethrowRedirect(err: unknown): void {
+  if (
+    typeof err === 'object' &&
+    err !== null &&
+    'digest' in err &&
+    typeof (err as { digest?: unknown }).digest === 'string' &&
+    (err as { digest: string }).digest.startsWith('NEXT_REDIRECT')
+  ) {
+    throw err;
+  }
+}
+
+export async function inviteEmployeeFromForm(form: FormData): Promise<never> {
+  const fields = employeeFromForm(form);
+  let resent = false;
+  try {
+    const issued = await inviteEmployee({
+      email: text(form, 'email') ?? '',
+      role: fields.role ?? 'EMPLOYEE',
+      displayName: fields.displayName,
+      title: fields.title,
+      managerId: fields.managerId,
+      departmentId: fields.departmentId,
+      businessUnitId: fields.businessUnitId,
+      legalEntityId: fields.legalEntityId,
+    });
+    resent = issued.resent;
+  } catch (err) {
+    rethrowRedirect(err);
+    redirect(`/admin/employees/invite?error=${encodeURIComponent(errorParam(err, 'invite'))}`);
+  }
   revalidatePath('/admin/employees');
-  redirect(`/admin/employees/${created.id}`);
+  redirect(`/admin/employees?invited=${resent ? 'again' : 'first'}`);
+}
+
+export async function revokeInviteFromForm(form: FormData): Promise<never> {
+  const inviteId = text(form, 'inviteId');
+  if (!inviteId) throw new Error('inviteId is required');
+  try {
+    await revokeInvite(inviteId);
+  } catch (err) {
+    rethrowRedirect(err);
+    redirect(`/admin/employees?error=${encodeURIComponent(errorParam(err, 'invite-revoke'))}`);
+  }
+  revalidatePath('/admin/employees');
+  redirect('/admin/employees?withdrawn=1');
 }
 
 export async function updateEmployeeFromForm(form: FormData) {

@@ -36,6 +36,7 @@ export function EmployeeForm({
   employee,
   submitLabel,
   locale,
+  showStatus = true,
 }: {
   action: (formData: FormData) => Promise<void>;
   options: Options;
@@ -43,6 +44,13 @@ export function EmployeeForm({
   submitLabel: string;
   /** Sync component — the page resolves the reader once and threads it down. */
   locale: string;
+  /**
+   * VX5-3. The invite form reuses this one and hides Status, because an invited
+   * person is not ON_LEAVE or DEACTIVATED — they have not arrived. A select that
+   * cannot affect anything is worse than a missing one: somebody sets it, and it
+   * is silently discarded.
+   */
+  showStatus?: boolean;
 }) {
   const managerChoices = options.managers.filter((m) => m.id !== employee?.id);
 
@@ -90,23 +98,25 @@ export function EmployeeForm({
           </select>
         </div>
 
-        <div className={fieldClass}>
-          <label className={labelClass} htmlFor="employeeStatus">
-            Status
-          </label>
-          <select
-            id="employeeStatus"
-            name="employeeStatus"
-            className={selectClass}
-            defaultValue={employee?.employee_status ?? 'ACTIVE'}
-          >
-            {EMPLOYEE_STATUSES.map((status) => (
-              <option key={status} value={status}>
-                {enumLabel(EMPLOYEE_STATUS_COPY, status, locale)}
-              </option>
-            ))}
-          </select>
-        </div>
+        {showStatus ? (
+          <div className={fieldClass}>
+            <label className={labelClass} htmlFor="employeeStatus">
+              Status
+            </label>
+            <select
+              id="employeeStatus"
+              name="employeeStatus"
+              className={selectClass}
+              defaultValue={employee?.employee_status ?? 'ACTIVE'}
+            >
+              {EMPLOYEE_STATUSES.map((status) => (
+                <option key={status} value={status}>
+                  {enumLabel(EMPLOYEE_STATUS_COPY, status, locale)}
+                </option>
+              ))}
+            </select>
+          </div>
+        ) : null}
 
         <div className={fieldClass}>
           <label className={labelClass} htmlFor="managerId">

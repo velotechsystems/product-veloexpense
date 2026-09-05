@@ -63,6 +63,13 @@ export const USER_MESSAGE_CODES = [
   'ORG_SLUG_SHAPE',
   'ORG_SLUG_RESERVED',
   'ORG_SLUG_TAKEN',
+
+  /* VX5-3: invites — the only way into a tenant that is not founding one. */
+  'INVITE_EMAIL',
+  'INVITE_LINK_DEAD',
+  'INVITE_ALREADY_MEMBER',
+  'INVITE_NOT_LIVE',
+  'INVITE_NOT_FOR_YOU',
   'REPORT_NOT_SUBMITTABLE',
   'REPORT_NOT_RECALLABLE',
   'REPORT_NOT_REIMBURSABLE',
@@ -388,6 +395,46 @@ export const ERROR_COPY: Record<UserMessageCode, Copy> = {
   },
   ORG_SLUG_TAKEN: {
     'en-CA': 'That web address is already in use. Choose another one.',
+  },
+
+  /* ── VX5-3: invites ───────────────────────────────────────────────────────
+   *
+   * Two readers again, and further apart than anywhere else in this catalogue.
+   * `INVITE_EMAIL`, `INVITE_ALREADY_MEMBER` and `INVITE_NOT_LIVE` are read by an
+   * ADMIN looking at their own directory. `INVITE_LINK_DEAD` and
+   * `INVITE_NOT_FOR_YOU` are read by somebody who does not have an account and
+   * may never have heard of this product.
+   */
+  INVITE_EMAIL: {
+    'en-CA': 'Enter the work email address to invite.',
+  },
+  INVITE_LINK_DEAD: {
+    // ONE sentence for four cases — unknown, expired, revoked, already accepted —
+    // because `0036`'s policy makes them one case, and because telling somebody
+    // WHICH would say whether an invitation they hold ever existed. `ask again`
+    // rather than `start again`: unlike a signup, they cannot fix this alone.
+    'en-CA':
+      'That invitation is no longer valid — it may have expired, been withdrawn, or already ' +
+      'been used. Ask whoever invited you to send a new one.',
+  },
+  INVITE_ALREADY_MEMBER: {
+    'en-CA': 'That person is already in your organization.',
+  },
+  INVITE_NOT_LIVE: {
+    // Reads after a race: the admin pressed Withdraw on a list drawn a moment
+    // before, and the invitation was accepted in between. Says what happened
+    // rather than that the button failed, because the outcome is not an error —
+    // the person is in.
+    'en-CA': 'That invitation is no longer pending — it was accepted or withdrawn already.',
+  },
+  INVITE_NOT_FOR_YOU: {
+    // The one that has to be careful. Somebody signed in with the wrong work
+    // account, which is the likeliest way this flow fails for an honest person —
+    // so it names the fix. It must NOT name the invited address: this is rendered
+    // to whoever just signed in, and they are, by construction, not that person.
+    'en-CA':
+      'That invitation was sent to a different address. Sign in with the work account it ' +
+      'was sent to, or ask for a new invitation.',
   },
 
   BLOCKED_BY_POLICY_ONE: {

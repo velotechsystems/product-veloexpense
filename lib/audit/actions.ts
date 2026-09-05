@@ -106,6 +106,17 @@ export const AUDIT_ACTIONS = [
   /* compliance — VX4-8 */
   'FRAUD_FLAG_RAISED',
 
+  /* membership — VX5-3. The invite is the only way into a tenant now, so this
+   * family is the whole story of how anybody but the founder got here. Both ends
+   * of an invitation are recorded, and so is a refusal: with joining invite-only,
+   * a DENIED sign-in is the shape a stranger probing a tenant takes, and until
+   * this ticket the only trace of one was a `console.warn`. */
+  'INVITE_SENT',
+  'INVITE_RESENT',
+  'INVITE_REVOKED',
+  'INVITE_ACCEPTED',
+  'SIGN_IN_DENIED',
+
   /* branding — VX4-3. The odd family; see the header. */
   'branding.color.set',
   'branding.color.clear',
