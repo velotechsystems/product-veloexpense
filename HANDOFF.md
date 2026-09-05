@@ -4000,6 +4000,109 @@ Two tenants, side by side, with **different modules enabled, different branding,
 locales** — one on `fr-CA`, one on `en-US` — each seeing only its own analytics and budgets, proved in
 a browser. The Phase-3 exit criterion took the same shape and it is what found AC-19, AC-22 and AC-23.
 
+### VX5-4 SHIPPED — what a tenant can do on the day it exists
+
+**PR #NNN.** No migration. New: `lib/onboarding/starter.ts` · `lib/onboarding/setup.ts` ·
+`app/actions.ts` · `test/onboarding-starter.db.test.ts` · `e2e/home-flow.spec.ts`. Changed:
+`lib/onboarding/provision.ts` · **`app/page.tsx` (rewritten)**.
+
+**The defect, found by walking rather than by reading.** A tenant created by `createOrganization`
+was taken through the first thing anybody does with an expense product:
+
+```
+createReport   OK
+addExpense     OK
+addLineItem    THREW ExpenseError CATEGORY_NOT_FOUND
+```
+
+A line item must name a category, `expense_category` is tenant data, and a new tenant had none. **A
+customer who had just signed up could not record a single expense.** Not a rough edge — the product
+did not work. `seedStarterCategories` runs inside `createOrganization`'s transaction (a tenant whose
+categories failed to write is the same half-existing state VX5-1 refuses for the admin row), and the
+count rides on the `ORGANIZATION_CREATED` genesis row rather than getting an action of its own.
+
+**Six categories and nothing else, and the line is the ticket's whole argument.** The same walk
+turned up no approval ladder, no spend policy, no legal entities, no chart of accounts — none of them
+seeded. A category list is structurally required and is edited on day one anyway; an approval route
+or a per-meal limit is a STATEMENT ABOUT HOW SOMEBODY'S COMPANY WORKS, and a new tenant quietly
+acquiring one that Velotech chose is what a finance team should not discover in an audit. Those go on
+a checklist that says what is missing and invents nothing.
+
+**The founder still cannot submit, deliberately.** Alone in their tenant they are the only active
+administrator, so step 1 has no eligible approver and `allow_sole_approver_self_approval` is false.
+That default stays — segregation of duties is the right answer for an expense product, and `0013`
+already argues it. What was missing was anybody TELLING them: the wall said "the submitter is the
+tenant's only active administrator", which is accurate and arrives at the worst possible moment.
+`APPROVER` is now the first checklist item, before they have written anything. A test asserts the
+refusal, so turning that default on becomes a deliberate act with a failing test attached.
+
+`APPROVER` counts **two or more** admins/managers, not one: the founder IS an admin, so "an approver
+exists" would be satisfied by the person who cannot approve their own report.
+
+**`app/page.tsx` was the unmodified `create-next-app` scaffold** — the Next.js logo, "To get started,
+edit the page.tsx file", links to Vercel templates — served to every signed-in customer, and in
+`e2e/crawl.spec.ts`'s page list for four phases. The crawl never caught it because a crawl asserts a
+page RENDERS and that one did. It is now the setup checklist plus a way into the product, and
+`e2e/home-flow.spec.ts` asserts on CONTENT, including that the scaffold's own strings are gone.
+
+**The checklist is admin work, and `/` never asks for it on an employee's behalf** — `app/actions.ts`
+splits the member read from the admin read, so a non-admin never gets a refusal page for something
+that was never theirs. `lib/onboarding/setup.ts` returns KEYS AND COUNTS and no English; the
+sentences are `Record<SetupItem, …>` on the page, so adding an item without copy is a compile error
+(the `EnumCopy` pattern, IL-7's rule).
+
+**Two bad tests written and fixed before they shipped.** The e2e first wrapped everything in
+`if (await panel.isVisible())` — it would have passed on a page with no checklist at all. The
+replacement named three specific outstanding items, passed alone, and FAILED in the full suite,
+because the expense-policy specs create rules in the demo tenant and it is never reset between files:
+"outstanding" is a property of what ran first, not of the seed. It now reads `setupStatus` and
+asserts the panel shows exactly what the service reports — while `setupStatus`'s own logic is pinned
+separately in `test/onboarding-starter.db.test.ts`, so neither test checks itself against itself.
+
+**Sabotage, 7 runs.** No seeding at creation → 6. Seeding overwrites a renamed category → 1.
+`APPROVER` satisfied by one → 6. Deactivated people counted → 1. The `scripts/seed.mjs` duplicate
+drifts → 1 (the list is hand-kept there because plain node cannot import TS; a test pins it, which is
+UD-9's lesson). Checklist shown to an employee → 1 e2e. The scaffold restored → 3 e2e. Plus one on
+the fixed test itself: making the panel list DONE items too → 1 e2e, which is what says the rewritten
+assertion still bites.
+
+**FLAGGED, NOT FIXED — the pseudo-crawl's own guard is order-dependent.** `e2e/pseudo-crawl.spec.ts`'s
+"the server really is in pseudo mode" visits `/expenses` and requires bracketed text. Run on a
+freshly seeded database it FAILS, because the seed creates no expense reports and the page has no
+catalogued strings to bracket; it passes in CI only because the full Playwright suite runs first and
+leaves reports behind. Same family as the traps this codebase keeps finding — an assertion that holds
+because something else ran first. CI is green in its own order (150 Playwright, then 18 crawl), so
+this is not a regression and not this ticket. Boarded.
+
+**CI caught a race my own test asserted wrongly — and a real defect behind it (on the VX5-4 branch, but VX5-3's code).**
+
+`test/invites.db.test.ts`'s "two simultaneous acceptances" asserted BOTH callers get a member. That
+is true of one of the two interleavings — the one where the inserts overlap and the loser is caught
+on `app_user`'s UNIQUE. **Eight consecutive local runs produced only that ordering; CI produced the
+other on its first run**, where the loser arrives strictly after the winner has committed, finds no
+live invitation, and got `null`.
+
+`null` was the wrong answer, not just an untested one: `resolveSsoUser` turns it into a DENIED
+sign-in for somebody who became a member a moment earlier. Two tabs, or a double-click on
+"Sign in to accept", and one of them is refused.
+
+So `acceptForVerifiedEmail` now returns a discriminated result — `ACCEPTED` when a live invitation was
+consumed, `ALREADY_A_MEMBER` when there was none and the verified address is an active member anyway.
+The loser audits nothing, because it did nothing: exactly one `INVITE_ACCEPTED` per invitation,
+whichever way the race falls. The recovery is narrow — a deactivated member is still refused, and
+somebody who was never invited still gets nothing.
+
+The test now asserts the invariant that holds on BOTH orderings (same member, one member, exactly one
+acceptance, one audit row) rather than the schedule — and the interleaving CI hit is covered
+separately by forcing it sequentially, which is the only way to reach that branch on purpose.
+
+**The lesson, written down because it will recur:** a concurrency test that passes locally has been
+measured on one of its orderings. A slower machine is a different schedule. Assert the invariant, not
+the outcome — and when a race test fails in CI, check whether the code is wrong before the test is.
+
+**Sabotage, 3 runs.** No recovery on the null path → 2. The recovery hands back anybody, deactivated
+included → 3. The loser reports `ACCEPTED` and audits → 3.
+
 ### VX5-3 SHIPPED — the invite, and a bug that meant nobody could sign in at all
 
 **PR #NNN.** Migration `0036`. New: `lib/invites/service.ts` · `app/admin/employees/invite/page.tsx`

@@ -60,6 +60,7 @@ import { transaction } from '@/lib/db/client';
 import { DomainError } from '@/lib/errors/domain';
 import type { UserMessageCode } from '@/lib/i18n/catalog/errors';
 import { append as auditAppend } from '@/lib/audit/service';
+import { seedStarterCategories } from '@/lib/onboarding/starter';
 import { checkSlug, type SlugRefusal } from '@/lib/onboarding/slug';
 
 export type ProvisionErrorCode = SlugRefusal | 'SLUG_TAKEN' | 'NAME_REQUIRED' | 'EMAIL_REQUIRED';
@@ -167,6 +168,16 @@ export async function createOrganization(
     // has a genesis row, and the genesis row is the tenant coming into being,
     // written by the person it made an administrator. There is no earlier state
     // for an auditor to wonder about.
+    /* VX5-4 — the tenant can RUN when it is handed over.
+     *
+     * Inside this transaction on purpose. A tenant whose categories failed to
+     * write is a tenant where nobody can record an expense, which is the same
+     * class of half-existing this function's header refuses for the admin row.
+     *
+     * Categories and nothing else: everything else a new tenant lacks is a
+     * POLICY, and `lib/onboarding/starter.ts` argues the line. */
+    const seededCategories = await seedStarterCategories(tx);
+
     await auditAppend(
       tx,
       { id: adminUserId, name: input.adminName?.trim() || adminEmail, role: 'ADMIN' },
@@ -174,7 +185,12 @@ export async function createOrganization(
         action: 'ORGANIZATION_CREATED',
         entityType: 'organization',
         entityId: organizationId,
-        details: { slug, name, admin_email: adminEmail },
+        // The seeded count rides on the genesis row rather than getting an
+        // action of its own: it is part of the tenant coming into being, not a
+        // separate event, and an auditor asking "where did these six categories
+        // come from" finds the answer on the row that says where everything
+        // came from.
+        details: { slug, name, admin_email: adminEmail, seeded_categories: seededCategories },
       },
     );
 
