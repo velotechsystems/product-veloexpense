@@ -53,6 +53,16 @@ Two separate codebases:
 - **Shared libs are VENDORED, not npm deps.** Copy the lib's `src/` into the app and pin the commit. `@velotech/auth-kit` is vendored at `src/auth-kit/` (pinned `e1db5c1`). `@velotech/ui` tokens are vendored at `app/velotech-tokens.css` + `app/tailwind-v4.css`; components come via `npx shadcn add https://velotechsystems.github.io/lib-ui-kit/r/<name>.json`.
 - **Git flow: this repo uses MERGE-COMMIT PRs (not squash).** So stacked branches are simple: `git fetch origin && git checkout -b <next> origin/main`. Always fetch before branching (local `origin/main` goes stale between merges).
 - **Every new tenant table** must have RLS + be added to the isolation test, and **every FK it points at another tenant table must be composite** (above). Three CI guards fail the build otherwise: RLS coverage, isolation-suite coverage, and the tenant-FK guard.
+  - **They are three separate steps and passing one proves nothing about the next.** The first
+    two both select tables carrying `organization_id`; the first asks the DATABASE whether RLS is
+    ENABLEd and FORCEd, the second greps `test/rls-isolation.test.ts` for the table's NAME. VX5-2
+    was pushed after running only the first, and CI answered `Tenant tables absent from
+    test/rls-isolation.test.ts: signup`. Run all three locally, from the workflow's own SQL.
+  - The column is what the guards key on, not the tenancy. `signup` carries `organization_id`
+    to record which tenant it BECAME and has no tenant policy at all — deliberately, so no tenant
+    can see one. The guards cannot express that, so the suite says it instead: the `signup` case
+    asserts invisibility from every org including its own, which is the assertion that fails if a
+    later migration "fixes" the missing policy by adding one.
 - **NO VENDOR NAME OUTSIDE `lib/integrations/<vendor>.ts`.** Not in a table, a column, a type, a
   CHECK literal, a shared enum, a constant, an audit action or a permission slug. Core resolves an
   integration by CAPABILITY — `resolveCapability(tx, 'POST_EXPENSE_REPORT')` — and vendor-specific
