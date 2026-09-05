@@ -177,6 +177,43 @@ function escapeHtml(s: string): string {
     .replace(/"/g, '&quot;');
 }
 
+/**
+ * What a confirmation link can show BEFORE anybody acts on it.
+ *
+ * `/signup/verify` renders a QUESTION on the GET and only creates the tenant on
+ * the POST, for the reason `app/approve/page.tsx` gives about its own GET: mail
+ * clients and corporate link scanners fetch every URL in a message. This token
+ * creates an organization and is single-use, so a scanner acting on the GET
+ * would provision somebody's company before they had read the email — and then
+ * hand them a dead link to a tenant they never made.
+ *
+ * So the GET needs to read a signup WITHOUT consuming it, which is this.
+ *
+ * Returns the organization name and the address asked for, and DELIBERATELY NOT
+ * the email: the page has no use for it, and a link forwarded to a colleague
+ * should not tell them whose address started this.
+ *
+ * Runs under the same narrow gate as `verifySignup`, so unknown, consumed and
+ * expired are the same one case here too — `null`. The two cannot disagree about
+ * whether a link is alive, because neither of them decides: `signup_read_live`
+ * does.
+ */
+export async function peekSignup(
+  rawToken: string,
+): Promise<{ organizationName: string; slug: string } | null> {
+  const tokenHash = hashToken(rawToken.trim());
+  return withSignupContext(async (tx) => {
+    const r = await tx.query(
+      'SELECT organization_name, slug FROM signup WHERE token_hash = $1',
+      [tokenHash],
+    );
+    const row = r.rows[0] as { organization_name: string; slug: string } | undefined;
+    return row === undefined
+      ? null
+      : { organizationName: row.organization_name, slug: row.slug };
+  });
+}
+
 export interface VerifiedSignup extends ProvisionedOrganization {
   email: string;
 }
