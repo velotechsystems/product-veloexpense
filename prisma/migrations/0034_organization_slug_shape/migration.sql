@@ -1,0 +1,43 @@
+-- VeloExpense 0034 — the slug is a hostname, so the database says what one is (VX5-1).
+--
+-- ── WHY A CONSTRAINT AND NOT A VALIDATOR ────────────────────────────────────
+--
+-- `organization.slug` has been `text NOT NULL UNIQUE` since `0001`, where its
+-- comment already said "used by org-slug SSO login". VX5-5 turns it into a
+-- SUBDOMAIN, and VX5-1 is the first path that lets a member of the public choose
+-- one. Those two facts together are why the shape belongs here rather than in the
+-- signup form: a slug reaches the column from the form, from `scripts/seed.mjs`,
+-- from a test fixture, and — Phase 5's whole point — from provisioning. A rule
+-- enforced at one of those four is a rule three of them can break.
+--
+-- Same argument `0023` makes for the logo mime and `0014` for account numbers:
+-- the route's validation is the courtesy, the database refusing the row is the
+-- defence.
+--
+-- ── THE SHAPE IS A DNS LABEL, EXACTLY ───────────────────────────────────────
+--
+--   · lowercase a-z, 0-9 and hyphen only. No underscore: it is legal in a DNS
+--     record and illegal in a hostname, which is the kind of difference that is
+--     discovered by a certificate failing to issue.
+--   · must start and end alphanumeric — a leading or trailing hyphen is not a
+--     valid label, and `-x.veloexpense.com` fails to resolve rather than failing
+--     to validate.
+--   · 63 characters, the DNS label maximum.
+--
+-- Every existing slug satisfies this: the seed's `demo`, `second` and `blank`,
+-- and every suite's `<name>-co`. Checked before writing the constraint rather
+-- than after, because a migration that fails on existing rows is one somebody
+-- edits the data to get past.
+--
+-- ── WHAT IS DELIBERATELY *NOT* HERE ─────────────────────────────────────────
+--
+-- The RESERVED list — `www`, `api`, `app`, `admin`, `login` and the rest — is in
+-- `lib/onboarding/slug.ts`, not in a CHECK. The shape of a hostname is a
+-- permanent fact and belongs in the schema; which names the platform needs for
+-- itself is a product decision that will change the first time somebody adds a
+-- marketing subdomain, and a CHECK constraint would make each of those a
+-- migration. `test/onboarding-slug.test.ts` is what keeps the code list honest.
+
+ALTER TABLE organization
+    ADD CONSTRAINT organization_slug_shape
+        CHECK (slug ~ '^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$');

@@ -55,6 +55,12 @@ export const USER_MESSAGE_CODES = [
   /* VX4-11: an expense with no transaction date. */
   'SUBMIT_UNDATED_ONE',
   'SUBMIT_UNDATED_MANY',
+
+  /* VX5-1: creating an organization. */
+  'ORG_NAME_REQUIRED',
+  'ORG_SLUG_SHAPE',
+  'ORG_SLUG_RESERVED',
+  'ORG_SLUG_TAKEN',
   'REPORT_NOT_SUBMITTABLE',
   'REPORT_NOT_RECALLABLE',
   'REPORT_NOT_REIMBURSABLE',
@@ -342,6 +348,32 @@ export const ERROR_COPY: Record<UserMessageCode, Copy> = {
     'en-CA':
       '{count} expenses on this report have no date. Add the date each was incurred — dates are ' +
       'used to match duplicates and to put the spend in the right period.',
+  },
+
+  /* ── VX5-1: signup ────────────────────────────────────────────────────────
+   *
+   * These reach somebody who has no account yet, which is a reader this
+   * catalogue has never had before: everything else here is shown to a person
+   * already inside a tenant. So they name the field and say what to do, and none
+   * of them mentions a slug — the word is ours, not theirs. "Web address" is
+   * what the thing IS to the person choosing it.
+   */
+  ORG_NAME_REQUIRED: {
+    'en-CA': 'Give your organization a name — it is what your people will see when they sign in.',
+  },
+  ORG_SLUG_SHAPE: {
+    'en-CA':
+      'A web address can use lowercase letters, numbers and hyphens only, and must start and end ' +
+      'with a letter or number.',
+  },
+  ORG_SLUG_RESERVED: {
+    // Not "invalid": it is a perfectly good address that is not available, and
+    // telling somebody their choice was invalid when it was taken sends them
+    // looking for the mistake they made.
+    'en-CA': 'That web address is reserved. Choose another one.',
+  },
+  ORG_SLUG_TAKEN: {
+    'en-CA': 'That web address is already in use. Choose another one.',
   },
 
   BLOCKED_BY_POLICY_ONE: {

@@ -57,6 +57,9 @@
 import { VERDICTS, type Verdict } from '@/lib/fraud/review';
 
 export const AUDIT_ACTIONS = [
+  /* the tenant itself — VX5-1. The genesis row of every chain. */
+  'ORGANIZATION_CREATED',
+
   /* the report and its contents — UD-11 (#98) */
   'REPORT_EDITED',
   'REPORT_DELETED',
