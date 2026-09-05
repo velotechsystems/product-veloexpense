@@ -19,6 +19,7 @@ import { decide } from '@/lib/approvals/engine';
 import { canDecide } from '@/lib/approvals/eligibility';
 import { canReadReport, listInbox, resolveDecidableTask } from '@/lib/approvals/inbox';
 import { TEST_ACTOR } from './support/audit-actor';
+import { TODAY } from './support/dates';
 
 const ADMIN_URL = process.env.ADMIN_DATABASE_URL ?? process.env.DATABASE_URL;
 if (!ADMIN_URL) {
@@ -58,7 +59,7 @@ async function submitted(amountMinor = 1000) {
       title: 'Inbox',
       currencyCode: 'CAD',
     });
-    const expense = await expenses.addExpense(tx, TEST_ACTOR, report.id, {
+    const expense = await expenses.addExpense(tx, TEST_ACTOR, report.id, { txnDate: TODAY,
       currencyCode: 'CAD',
       merchant: 'M',
     });

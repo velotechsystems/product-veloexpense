@@ -227,6 +227,13 @@ export async function submitAndApprove(
   await page.getByRole('button', { name: 'Create draft' }).click();
 
   await page.getByLabel('Merchant').first().fill('Beck Taxi');
+  // VX4-11: the date is REQUIRED on the form, and `submitReport` refuses a report
+  // holding an undated expense — so the shared helper every ledger, module and
+  // AP-queue spec builds its report with has to supply one.
+  //
+  // TODAY, not a fixed date — see the note in e2e/budget-flow.spec.ts: the date
+  // decides which fiscal period the spend lands in.
+  await page.locator('#new-txnDate').fill(new Date().toISOString().slice(0, 10));
   await page.getByRole('button', { name: 'Add expense' }).click();
   await expect(page.getByRole('heading', { name: 'Beck Taxi' })).toBeVisible();
 

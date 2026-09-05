@@ -31,6 +31,7 @@ import * as approvals from '@/lib/approvals/service';
 import { decide } from '@/lib/approvals/engine';
 import { DEFAULT_LOCALE, shippedBody, templateKeyFor } from '@/lib/notifications/catalog';
 import { TEST_ACTOR } from './support/audit-actor';
+import { TODAY } from './support/dates';
 import {
   listInbox,
   listSubjectActivity,
@@ -85,7 +86,7 @@ async function submitted(amountMinor = 1000, title = 'Trip') {
       title,
       currencyCode: 'CAD',
     });
-    const expense = await expenses.addExpense(tx, TEST_ACTOR, report.id, {
+    const expense = await expenses.addExpense(tx, TEST_ACTOR, report.id, { txnDate: TODAY,
       currencyCode: 'CAD',
       merchant: 'M',
     });

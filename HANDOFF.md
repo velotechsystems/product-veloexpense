@@ -2109,6 +2109,72 @@ shipped.
 | **VX4-7** ⏳ | **Locale: retag `en` → `en-CA`, add `en-US`** — parts 1 → 3 DONE. **VX4-7 CLOSED** (IL-1, IL-2, IL-4, IL-5/6, IL-7, IL-10, IL-11, UD-3, UD-5). fr-CA retired until its copy exists (0028) | IL-1: their `en` already formats as en-US (`3/4/2026`, `CA$10,799.00`), so this is a retag **and** an addition, 2 locales to 3 — touching URL segments, stored preferences and every `{ en: … }` Json key, whose arity is hardcoded in ~17 files (IL-7). Also: a company default locale, which does not exist there (IL-2); what a missing key does, decided before the third catalog exists rather than after two blank pages (IL-4); and the date-formatting calls that pass no locale (IL-10). | 3 |
 | **VX4-8** | **Module 12 slices 2–3: fraud detection + control evaluation** | ✅ **CLOSED** at part 4 (#96) — UD-8, four detectors, six controls, the review queue, two scheduled routes. **PHASE 4 COMPLETE.** | Deferred to this phase since Phase 2 because both are retrospective and need approval history, which now exists. Their versions are driven by `SystemFlag` config (MT-2) and run as unconditional global crons (MT-5), so both land on VX4-1 and VX4-2. | 3 |
 
+### VX4-11 + the audit-action registry SHIPPED — and a fixture date that expired overnight
+
+**PR #100.** No migration. New: `lib/audit/actions.ts` · `test/support/dates.ts`. Changed:
+`lib/expenses/lifecycle.ts` · `lib/audit/service.ts` · `lib/i18n/catalog/errors.ts` (2 codes) ·
+`app/expenses/[reportId]/page.tsx` · four pass-through audit helpers · fifteen db suites · six e2e
+specs.
+
+**VX4-11 — THE DETECTORS COULD NOT SEE AN UNDATED EXPENSE.** `txn_date` is nullable (0003) and the
+form collected it without insisting, so a tenant whose people skipped it got **no duplicate detection
+at all** and nothing said so: the duplicate and outlier rules both bound on the column, and an
+expense with none is invisible to them rather than reported by them.
+
+**Required at SUBMIT, not at the column** — John's call was "require the date", and the receipt-first
+flow decides where. `startFromReceipts` creates one expense per uploaded receipt before anybody has
+opened it, and the person coding it later is the first who knows the date; a NOT NULL column would
+have to invent a value there. A draft may be incomplete, a submitted report may not. `required` on
+the form is the nudge; `submitReport` is the rule.
+
+**Unconditional, unlike UD-2's coding gate.** That one is conditional on a connected ledger because
+the requirement comes from the integration. This one is not: the date orders the report, attributes
+spend to a period for analytics and budgets, goes on the ledger wire, and is what the detectors key
+on. And unlike an unmapped category — admin-owned, a dead end for the employee — this is a fact the
+person filing has in front of them, so the refusal is one they can act on. It is reported BEFORE the
+coding gate for the same reason.
+
+**THE FIXTURE DATE THAT EXPIRED OVERNIGHT, and it is this ticket's own subject.** ~32 fixtures needed
+a date. The first attempt hardcoded `2026-08-15`; every suite passed. The clock rolled to 5 Sep and
+twenty-three budget assertions started reading 0 instead of 1800 — `budgets.db.test.ts` builds its
+period as `current_date - 20 … current_date + 20`, so the literal that had been the window's first
+day was suddenly one day OUTSIDE it, the spend fell in no period, and nothing about the failure
+pointed at a date. **A fixed fixture date against a relative period is a test that expires.**
+`test/support/dates.ts` is now the one answer (TODAY), with that story in its header. The e2e hit the
+same wall first — a hardcoded date there broke `budget-flow`'s overage warning, and
+`compliance-flow` had already got it right.
+
+**A PRE-EXISTING FLAKE OF MINE, FIXED WHILE IT WAS VISIBLE.** `compliance-flow`'s threshold test
+failed once in a full run and passed twice alone. Cause: `click()` returns when the click is
+dispatched, not when the server action's POST finishes, so the following `goto` could race the
+redirect. From #96, and the same trap this session already hit once. Now waits for the POST response.
+Two consecutive clean full runs.
+
+**THE AUDIT-ACTION REGISTRY (flagged in #98) — and what typing it found.** Fifteen bare literals
+across nine modules, `append` taking `action: string`, eight more added by #98. A typo'd action is
+not an error: it inserts happily into an append-only table and nobody's query finds it again.
+`lib/audit/actions.ts` is the list, `AuditInput.action` is typed `AuditAction`, and
+`FRAUD_FLAG_<VERDICT>` is a template literal type derived from `VERDICTS` so a fourth verdict follows
+automatically.
+
+**The list I built by grepping was WRONG, and the compiler said so on the first run: nine actions
+missing.** Five pass through helpers typed `action: string` (`auditBranding`, `auditPrefs`,
+`auditPostAction`, and my own `auditEdit` from #98), two more sit in a ternary spanning lines. A grep
+sees none of those. That is the argument for the registry restated as evidence — the method that
+produces an incomplete list is the method a list without a compiler is maintained by. (My first
+`isAuditAction` also re-listed the three verdicts in a regex, three lines under the type that derives
+them. Fixed before it shipped.)
+
+**FLAGGED, NOT RENAMED:** everything is SCREAMING_SNAKE except branding, which writes
+`branding.color.set` and five siblings. First time the names have sat in one list. An audit action is
+written into rows that cannot be updated, so changing the spelling splits every historical query in
+two — doing that as a side effect of adding a registry is exactly the quiet decision this codebase
+keeps writing guards against. One edit in `lib/audit/actions.ts` whenever it is wanted.
+
+**Verified in the harness:** 1362 vitest / 62 files · 135 Playwright (twice) · 18 pseudo-crawl
+(/expenses still 19) · build · `check:actions`, `check:i18n`, `check:vendor`, `check:admin`. Three
+sabotage runs, one of which the compiler caught with "Did you mean 'REPORT_EDITED'?".
+
 ### UD-2 + UD-4 + UD-9 SHIPPED — the last three upstream ports, and a third correspondence nobody had listed
 
 **PR #99.** No migration. New: `lib/integrations/coding.ts` · `test/submit-coding.db.test.ts` ·
@@ -2427,12 +2493,17 @@ now closed by tests that fail when the rule is removed.
   has to be stamped per run — the demo tenant is not reset and CI retries once.
 - A `<summary>` has no button role.
 
+**VX4-11 — CLOSED in #100.** The account below is what it looked like when it was boarded:
+
 **VX4-11 boarded — the duplicate and outlier rules need `txn_date`, and the form does not insist on
 one.** Both rules bound on `expense.txn_date`; an entry with none is invisible to them. The
 add-expense form collects a date and does not require it, so a tenant whose people skip it gets no
 duplicate detection at all with nothing on any screen saying so. Found by this ticket's e2e, which
 failed for exactly that reason before the date was filled in. The fix is a product decision —
-require the date, or fall back to `created_at` — and is not this PR's.
+require the date, or fall back to `created_at` — and is not this PR's. **John chose require, 5 Sep**:
+`created_at` is a fact about the data entry, not the purchase, so falling back turns a gap that is
+silent-but-honest into coverage that is quietly wrong. Gated at SUBMIT rather than at the column, so
+the receipt-first flow can still create an expense before anybody knows its date.
 
 ### VX4-8 part 3 SHIPPED — Module 12 slice 3: control evaluation
 

@@ -306,6 +306,11 @@ export default async function ReportWorkbenchPage({
                     id={`txnDate-${expense.id}`}
                     name="txnDate"
                     type="date"
+                    // VX4-11. `required` is the nudge, not the rule: a DRAFT may
+                    // still hold a dateless expense (the receipt-first flow
+                    // creates them), and the browser check is skippable anyway.
+                    // `submitReport` is what actually refuses — see its comment.
+                    required
                     // NOT `formatCalendarDate` — see `toDateInputValue`. A localised
                     // value here is silently rejected by the browser and the
                     // field renders EMPTY, so saving the form clears the date.
@@ -538,7 +543,8 @@ export default async function ReportWorkbenchPage({
               <label className={labelClass} htmlFor="new-txnDate">
                 Date
               </label>
-              <Input id="new-txnDate" name="txnDate" type="date" />
+              {/* VX4-11: see the note on the edit form's date field above. */}
+              <Input id="new-txnDate" name="txnDate" type="date" required />
             </div>
             <div className={fieldClass}>
               <label className={labelClass} htmlFor="new-notes">

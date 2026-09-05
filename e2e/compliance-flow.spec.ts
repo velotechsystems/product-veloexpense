@@ -224,9 +224,33 @@ test.describe('compliance', () => {
      */
     const field = () => page.getByLabel('Duplicate window (days)');
 
+    /**
+     * AND WAIT FOR THE POST, which the first version did not.
+     *
+     * `click()` returns as soon as the click is dispatched, not when the server
+     * action finishes — so the `goto` on the next line could start while the
+     * action's POST was still in flight, and the redirect that followed would
+     * replace the page `goto` had just loaded. Green almost always; red on a
+     * loaded machine, which is how it failed once in a full-suite run and then
+     * passed on its own twice.
+     *
+     * A server action POSTs to the page's own URL, so waiting for that response
+     * is waiting for the save to have actually happened. Same family as the trap
+     * this test's header already describes — an assertion that outruns the thing
+     * it is asserting about.
+     */
+    const save = async () => {
+      await Promise.all([
+        page.waitForResponse(
+          (r) => r.request().method() === 'POST' && r.url().includes('/admin/compliance'),
+        ),
+        page.getByRole('button', { name: 'Save thresholds' }).click(),
+      ]);
+    };
+
     await page.goto('/admin/compliance');
     await field().fill('45');
-    await page.getByRole('button', { name: 'Save thresholds' }).click();
+    await save();
     await page.goto('/admin/compliance');
     await expect(field()).toHaveValue('45');
 
@@ -234,7 +258,7 @@ test.describe('compliance', () => {
     // default rather than an empty box, which is how a person can tell which they
     // are looking at.
     await field().fill('');
-    await page.getByRole('button', { name: 'Save thresholds' }).click();
+    await save();
     await page.goto('/admin/compliance');
     await expect(field()).toHaveValue('3');
   });

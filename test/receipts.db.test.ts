@@ -15,6 +15,7 @@ import { MemoryStorage } from '@/lib/storage';
 import * as expenses from '@/lib/expenses/service';
 import * as svc from '@/lib/receipts/service';
 import { TEST_ACTOR } from './support/audit-actor';
+import { TODAY } from './support/dates';
 
 const admin = new Pool({ connectionString: process.env.ADMIN_DATABASE_URL ?? process.env.DATABASE_URL });
 const storage = new MemoryStorage();
@@ -40,7 +41,7 @@ beforeAll(async () => {
     ]);
     const report = await expenses.createReport(tx, UPLOADER, { title: 'Trip', currencyCode: 'CAD' });
     reportId = report.id;
-    const expense = await expenses.addExpense(tx, TEST_ACTOR, reportId, { currencyCode: 'CAD', merchant: 'Cafe' });
+    const expense = await expenses.addExpense(tx, TEST_ACTOR, reportId, { txnDate: TODAY, currencyCode: 'CAD', merchant: 'Cafe' });
     expenseId = expense.id;
   });
 

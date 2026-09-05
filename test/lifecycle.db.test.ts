@@ -14,6 +14,9 @@ import * as expenses from '@/lib/expenses/service';
 import * as policy from '@/lib/policy/service';
 import * as lifecycle from '@/lib/expenses/lifecycle';
 import { TEST_ACTOR } from './support/audit-actor';
+import { errorParam, userMessageOf } from '@/lib/errors/domain';
+import { renderUserMessage } from '@/lib/i18n/catalog/errors';
+import { TODAY } from './support/dates';
 
 const admin = new Pool({
   connectionString: process.env.ADMIN_DATABASE_URL ?? process.env.DATABASE_URL,
@@ -30,7 +33,7 @@ async function draft(amountMinor = 1000) {
       title: 'Submittable',
       currencyCode: 'CAD',
     });
-    const expense = await expenses.addExpense(tx, TEST_ACTOR, report.id, {
+    const expense = await expenses.addExpense(tx, TEST_ACTOR, report.id, { txnDate: TODAY,
       currencyCode: 'CAD',
       merchant: 'Merchant',
     });
@@ -86,6 +89,63 @@ describe('submit', () => {
     expect(result.report.submitted_at).not.toBeNull();
   });
 
+  /**
+   * VX4-11. `txn_date` is nullable and the form collected it without insisting, so
+   * a tenant whose people skipped it got NO duplicate detection at all and nothing
+   * said so — `lib/fraud/rules.ts`'s duplicate and outlier detectors both bound on
+   * the column, and an undated expense is invisible to them rather than reported
+   * by them.
+   *
+   * The gate is at SUBMIT rather than on the column, because `startFromReceipts`
+   * creates one expense per uploaded receipt before anybody knows the date. A
+   * draft may be incomplete; a submitted report may not.
+   */
+  it('REFUSES a submit while an expense has no date', async () => {
+    const { reportId, expenseId } = await draft();
+    await withOrg(orgId, async (tx) => {
+      await tx.query('DELETE FROM expense_policy');
+      await tx.query('UPDATE expense SET txn_date = NULL WHERE id = $1', [expenseId]);
+    });
+    const err = await withOrg(orgId, (tx) => lifecycle.submitReport(tx, reportId, userId)).catch(
+      (e: unknown) => e,
+    );
+    expect((err as lifecycle.LifecycleError).code).toBe('UNDATED');
+    expect(userMessageOf(err)?.code).toBe('SUBMIT_UNDATED_ONE');
+    // Still a DRAFT — a refused submit must not half-happen.
+    const after = await admin.query('SELECT status FROM expense_report WHERE id = $1', [reportId]);
+    expect(after.rows[0].status).toBe('DRAFT');
+  });
+
+  it('counts them, and the plural is a different sentence', async () => {
+    const { reportId, expenseId } = await draft();
+    await withOrg(orgId, async (tx) => {
+      await tx.query('DELETE FROM expense_policy');
+      await tx.query('UPDATE expense SET txn_date = NULL WHERE id = $1', [expenseId]);
+      // A second undated expense, with a line so the report stays submittable on
+      // every other count.
+      const e = await expenses.addExpense(tx, TEST_ACTOR, reportId, { currencyCode: 'CAD' });
+      await expenses.addLineItem(tx, TEST_ACTOR, e.id, { categoryId, amountMinor: 500 });
+    });
+    const err = await withOrg(orgId, (tx) => lifecycle.submitReport(tx, reportId, userId)).catch(
+      (e: unknown) => e,
+    );
+    const user = userMessageOf(err);
+    expect(user?.code).toBe('SUBMIT_UNDATED_MANY');
+    expect(user?.params).toMatchObject({ count: '2' });
+    // The count reaches the reader through `errorParam`'s encoding, which is the
+    // only path a message takes to a screen.
+    expect(renderUserMessage(errorParam(err, 'test'), 'en-CA')).toContain('2 expenses');
+  });
+
+  it('lets a dated report through — the gate is the date, not the submit', async () => {
+    const { reportId } = await draft();
+    const result = await withOrg(orgId, async (tx) => {
+      await tx.query('DELETE FROM expense_policy');
+      return lifecycle.submitReport(tx, reportId, userId);
+    });
+    expect(result.report.status).toBe('SUBMITTED');
+  });
+
   it('writes one audit row recording what the gate saw', async () => {
     const { reportId } = await draft(4200);
     const events = await withOrg(orgId, async (tx) => {
@@ -108,7 +168,7 @@ describe('submit', () => {
         title: 'Empty',
         currencyCode: 'CAD',
       });
-      await expenses.addExpense(tx, TEST_ACTOR, report.id, { currencyCode: 'CAD' });
+      await expenses.addExpense(tx, TEST_ACTOR, report.id, { txnDate: TODAY, currencyCode: 'CAD' });
       return report.id as string;
     });
     await withOrg(orgId, async (tx) => {

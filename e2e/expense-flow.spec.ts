@@ -58,6 +58,10 @@ async function createReportWithLine(page: Page, title: string, amount: string) {
   await expect(page).toHaveURL(/\/expenses\/[0-9a-f-]{36}$/);
 
   await page.getByLabel('Merchant').first().fill('Test Cafe');
+  // VX4-11: the date is REQUIRED on the form now, and `submitReport` refuses a
+  // report holding an undated expense. Every helper that builds one has to say
+  // when it happened — which is the point of the ticket, arriving here first.
+  await page.locator('#new-txnDate').fill(new Date().toISOString().slice(0, 10));
   await page.getByRole('button', { name: 'Add expense' }).click();
   await expect(page.getByRole('heading', { name: 'Test Cafe' })).toBeVisible();
 

@@ -52,6 +52,9 @@ export const USER_MESSAGE_CODES = [
   /* UD-2: the report cannot post because its coding is incomplete. */
   'SUBMIT_UNCODED_ONE',
   'SUBMIT_UNCODED_MANY',
+  /* VX4-11: an expense with no transaction date. */
+  'SUBMIT_UNDATED_ONE',
+  'SUBMIT_UNDATED_MANY',
   'REPORT_NOT_SUBMITTABLE',
   'REPORT_NOT_RECALLABLE',
   'REPORT_NOT_REIMBURSABLE',
@@ -319,6 +322,26 @@ export const ERROR_COPY: Record<UserMessageCode, Copy> = {
       'This report cannot be sent to the accounting system yet: these categories have no ' +
       'account assigned — {categories}. Ask an administrator to map them on the ' +
       'chart-of-accounts screen, then submit again.',
+  },
+
+  /* ── VX4-11 ───────────────────────────────────────────────────────────────
+   *
+   * A COUNT rather than a list of merchants, which is where this differs from
+   * SUBMIT_UNCODED above. Two reasons: an expense is not required to have a
+   * merchant, so half a list could read "and (no merchant)"; and unlike an
+   * unmapped category — which lives on a screen the employee cannot reach — every
+   * undated expense is on the page they are already looking at, with its date
+   * field sitting empty. The count tells them how many to look for.
+   */
+  SUBMIT_UNDATED_ONE: {
+    'en-CA':
+      'One expense on this report has no date. Add the date it was incurred — it is used to ' +
+      'match duplicates and to put the spend in the right period.',
+  },
+  SUBMIT_UNDATED_MANY: {
+    'en-CA':
+      '{count} expenses on this report have no date. Add the date each was incurred — dates are ' +
+      'used to match duplicates and to put the spend in the right period.',
   },
 
   BLOCKED_BY_POLICY_ONE: {

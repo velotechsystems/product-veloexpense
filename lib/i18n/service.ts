@@ -22,6 +22,7 @@ import { DomainError } from '@/lib/errors/domain';
 import { append, type AuditActor } from '@/lib/audit/service';
 import { isLocale, SUPPORTED_LOCALES, type Locale } from './locales';
 import { resolveReaderPrefs, type ReaderPrefs } from './resolve';
+import type { AuditAction } from '@/lib/audit/actions';
 
 /** What the company has chosen, for the admin screen. */
 export interface OrgDefaults {
@@ -215,7 +216,7 @@ function requireSupportedLocale(value: string | null | undefined, allowNull: boo
 async function auditPrefs(
   tx: QueryRunner,
   actor: AuditActor,
-  action: string,
+  action: AuditAction,
   entityId: string,
   details: Record<string, unknown>,
 ): Promise<void> {

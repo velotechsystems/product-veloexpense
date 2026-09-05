@@ -18,6 +18,7 @@ import * as receipts from '@/lib/receipts/service';
 import * as lifecycle from '@/lib/expenses/lifecycle';
 import type { Actor } from '@/lib/auth/actor';
 import { TEST_ACTOR } from './support/audit-actor';
+import { TODAY } from './support/dates';
 
 const admin = new Pool({
   connectionString: process.env.ADMIN_DATABASE_URL ?? process.env.DATABASE_URL,
@@ -46,7 +47,7 @@ async function draftWithReceipt() {
       title: 'Access subject',
       currencyCode: 'CAD',
     });
-    const expense = await expenses.addExpense(tx, TEST_ACTOR, report.id, { currencyCode: 'CAD' });
+    const expense = await expenses.addExpense(tx, TEST_ACTOR, report.id, { txnDate: TODAY, currencyCode: 'CAD' });
     await expenses.addLineItem(tx, TEST_ACTOR, expense.id, { categoryId, amountMinor: 1000 });
     const receipt = await tx.query(
       `INSERT INTO receipt (organization_id, expense_id, s3_key, filename, content_type,

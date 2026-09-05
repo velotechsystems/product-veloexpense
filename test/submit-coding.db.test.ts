@@ -37,6 +37,7 @@ import { uncodedCategories, uncodedDiagnostic } from '@/lib/integrations/coding'
 import { renderUserMessage } from '@/lib/i18n/catalog/errors';
 import { errorParam, userMessageOf } from '@/lib/errors/domain';
 import { TEST_ACTOR } from './support/audit-actor';
+import { TODAY } from './support/dates';
 
 const admin = new Pool({
   connectionString: process.env.ADMIN_DATABASE_URL ?? process.env.DATABASE_URL,
@@ -71,7 +72,7 @@ async function draftOn(categoryId: string, amountMinor = 5000) {
       title: `Trip ${Math.random().toString(36).slice(2, 8)}`,
       currencyCode: 'CAD',
     });
-    const expense = await svc.addExpense(tx, TEST_ACTOR, report.id, {
+    const expense = await svc.addExpense(tx, TEST_ACTOR, report.id, { txnDate: TODAY,
       currencyCode: 'CAD',
       merchant: 'Beck Taxi',
     });
@@ -291,6 +292,21 @@ describe('the submit gate', () => {
     const err = await submit(reportId).catch((e: unknown) => e);
     expect((err as lifecycle.LifecycleError).code).toBe('UNCODED');
     expect((err as lifecycle.LifecycleError).code).not.toBe('BLOCKED_BY_POLICY');
+  });
+
+  /**
+   * VX4-11 vs UD-2, and the order is deliberate. A missing DATE is a fact the
+   * person filing has in front of them; an unmapped CATEGORY is admin-owned and a
+   * dead end for them. So the one they can act on is reported first — being told
+   * to go and ask an administrator, only to be told afterwards that you also
+   * forgot the dates, is two trips for one submit.
+   */
+  it('reports a missing DATE before an unmapped category', async () => {
+    await connectLedger();
+    const { reportId } = await draftOn(unmappedCategoryId);
+    await admin.query('UPDATE expense SET txn_date = NULL WHERE report_id = $1', [reportId]);
+    const err = await submit(reportId).catch((e: unknown) => e);
+    expect((err as lifecycle.LifecycleError).code).toBe('UNDATED');
   });
 
   /**

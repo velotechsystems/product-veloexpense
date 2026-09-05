@@ -23,6 +23,7 @@ import * as svc from '@/lib/expenses/service';
 import { auditActorOf } from '@/lib/audit/service';
 import { verifyChain } from '@/lib/audit/verify';
 import type { AuditActor } from '@/lib/audit/service';
+import { TODAY } from './support/dates';
 
 const admin = new Pool({
   connectionString: process.env.ADMIN_DATABASE_URL ?? process.env.DATABASE_URL,
@@ -69,7 +70,7 @@ async function seedReport(): Promise<{ reportId: string; expenseId: string; line
       currencyCode: 'CAD',
       purpose: 'Client visit',
     });
-    const expense = await svc.addExpense(tx, owner, report.id, {
+    const expense = await svc.addExpense(tx, owner, report.id, { txnDate: TODAY,
       currencyCode: 'CAD',
       merchant: 'Adobe',
     });
@@ -235,7 +236,7 @@ describe('an edit records what changed, and from what', () => {
     // The write no row diff can see. One click, N rows in `expense`.
     const { reportId } = await seedReport();
     await withOrg(orgId, async (tx) => {
-      await svc.addExpense(tx, owner, reportId, { currencyCode: 'CAD', merchant: 'Second' });
+      await svc.addExpense(tx, owner, reportId, { txnDate: TODAY, currencyCode: 'CAD', merchant: 'Second' });
     });
     await clearChain();
     await withOrg(orgId, (tx) => svc.updateReport(tx, owner, reportId, { currencyCode: 'USD' }));
@@ -275,7 +276,7 @@ describe('every audited write actually writes', () => {
   it('records EXPENSE_ADDED, with what was added', async () => {
     const { reportId } = await seedReport();
     const expenseId = await withOrg(orgId, async (tx) => {
-      const e = await svc.addExpense(tx, owner, reportId, {
+      const e = await svc.addExpense(tx, owner, reportId, { txnDate: TODAY,
         currencyCode: 'CAD',
         merchant: 'Air Canada',
       });
@@ -335,7 +336,7 @@ describe('every audited write actually writes', () => {
     const { reportId } = await seedReport();
     await withOrg(orgId, async (tx) => {
       await svc.updateReport(tx, owner, reportId, { title: 'Renamed' });
-      const e = await svc.addExpense(tx, owner, reportId, { currencyCode: 'CAD' });
+      const e = await svc.addExpense(tx, owner, reportId, { txnDate: TODAY, currencyCode: 'CAD' });
       await svc.updateExpense(tx, owner, e.id, { merchant: 'Beck' });
       const l = await svc.addLineItem(tx, owner, e.id, { categoryId, amountMinor: 500 });
       await svc.updateLineItem(tx, owner, l.id, { amountMinor: 600 });

@@ -28,6 +28,7 @@ import { RoutingError, type RoutingSubject } from '@/lib/approvals/routing';
 import { canDecide, assertCanDecide, DecisionForbiddenError } from '@/lib/approvals/eligibility';
 import { IMPLICIT_STEP, type StepPlan } from '@/lib/approvals/tiers';
 import { TEST_ACTOR } from './support/audit-actor';
+import { TODAY } from './support/dates';
 
 /**
  * Fail with a sentence, not with pg's default-connection error.
@@ -150,7 +151,7 @@ async function mkTask(
       title: 'Decidable',
       currencyCode: 'CAD',
     });
-    const expense = await expenses.addExpense(tx, TEST_ACTOR, report.id, {
+    const expense = await expenses.addExpense(tx, TEST_ACTOR, report.id, { txnDate: TODAY,
       currencyCode: 'CAD',
       merchant: 'M',
     });

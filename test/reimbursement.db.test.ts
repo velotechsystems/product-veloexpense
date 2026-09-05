@@ -27,6 +27,7 @@ import { decide } from '@/lib/approvals/engine';
 import { verifyChain } from '@/lib/audit/verify';
 import { listInbox } from '@/lib/notifications/service';
 import { TEST_ACTOR } from './support/audit-actor';
+import { TODAY } from './support/dates';
 
 const ADMIN_URL = process.env.ADMIN_DATABASE_URL ?? process.env.DATABASE_URL;
 if (!ADMIN_URL) {
@@ -65,7 +66,7 @@ async function approved(amountMinor = 125000, title = 'Zurich', submitterEmail =
       title,
       currencyCode: 'CAD',
     });
-    const expense = await expenses.addExpense(tx, TEST_ACTOR, report.id, {
+    const expense = await expenses.addExpense(tx, TEST_ACTOR, report.id, { txnDate: TODAY,
       currencyCode: 'CAD',
       merchant: 'M',
     });
@@ -272,7 +273,7 @@ describe('what it refuses', () => {
         title: 'Waiting',
         currencyCode: 'CAD',
       });
-      const e = await expenses.addExpense(tx, TEST_ACTOR, rep.id, { currencyCode: 'CAD', merchant: 'M' });
+      const e = await expenses.addExpense(tx, TEST_ACTOR, rep.id, { txnDate: TODAY, currencyCode: 'CAD', merchant: 'M' });
       await expenses.addLineItem(tx, TEST_ACTOR, e.id, { categoryId, amountMinor: 1000 });
       return rep.id as string;
     });

@@ -201,6 +201,16 @@ test('an over-budget report warns without blocking, and the alert reaches the ow
   await expect(page).toHaveURL(/\/expenses\/[0-9a-f-]{36}$/);
 
   await page.getByLabel('Merchant').first().fill('Budget Cafe');
+  // VX4-11: the date is REQUIRED on the form now, and `submitReport` refuses a
+  // report holding an undated expense. Every helper that builds one has to say
+  // when it happened — which is the point of the ticket, arriving here first.
+  //
+  // TODAY, not a fixed date. A hardcoded 2026-08-15 was the first attempt and it
+  // broke `budget-flow`: the date decides which FISCAL PERIOD the spend lands in,
+  // so a past date moved the expense outside the budget under test and the
+  // overage warning correctly did not fire. That is the ticket's own subject
+  // demonstrating itself, and `compliance-flow` already had it right.
+  await page.locator('#new-txnDate').fill(new Date().toISOString().slice(0, 10));
   await page.getByRole('button', { name: 'Add expense' }).click();
   await expect(page.getByRole('heading', { name: 'Budget Cafe' })).toBeVisible();
 
