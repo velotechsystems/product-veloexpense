@@ -56,7 +56,9 @@ export const USER_MESSAGE_CODES = [
   'SUBMIT_UNDATED_ONE',
   'SUBMIT_UNDATED_MANY',
 
-  /* VX5-1: creating an organization. */
+  /* VX5-1: creating an organization. VX5-2: getting there. */
+  'SIGNUP_EMAIL',
+  'SIGNUP_LINK_DEAD',
   'ORG_NAME_REQUIRED',
   'ORG_SLUG_SHAPE',
   'ORG_SLUG_RESERVED',
@@ -358,6 +360,18 @@ export const ERROR_COPY: Record<UserMessageCode, Copy> = {
    * of them mentions a slug — the word is ours, not theirs. "Web address" is
    * what the thing IS to the person choosing it.
    */
+  SIGNUP_EMAIL: {
+    'en-CA': 'Enter the email address you want to sign in with.',
+  },
+  SIGNUP_LINK_DEAD: {
+    // ONE sentence for three cases — unknown, already used, expired — because
+    // `0035`'s policy makes them one case (the row is not visible) and because
+    // telling somebody WHICH would say whether a token they hold ever existed.
+    // "Start again" is the only action, whichever it was.
+    'en-CA':
+      'That confirmation link is no longer valid — it may have expired or already been used. ' +
+      'Start again and we will send a new one.',
+  },
   ORG_NAME_REQUIRED: {
     'en-CA': 'Give your organization a name — it is what your people will see when they sign in.',
   },

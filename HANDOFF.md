@@ -53,6 +53,16 @@ Two separate codebases:
 - **Shared libs are VENDORED, not npm deps.** Copy the lib's `src/` into the app and pin the commit. `@velotech/auth-kit` is vendored at `src/auth-kit/` (pinned `e1db5c1`). `@velotech/ui` tokens are vendored at `app/velotech-tokens.css` + `app/tailwind-v4.css`; components come via `npx shadcn add https://velotechsystems.github.io/lib-ui-kit/r/<name>.json`.
 - **Git flow: this repo uses MERGE-COMMIT PRs (not squash).** So stacked branches are simple: `git fetch origin && git checkout -b <next> origin/main`. Always fetch before branching (local `origin/main` goes stale between merges).
 - **Every new tenant table** must have RLS + be added to the isolation test, and **every FK it points at another tenant table must be composite** (above). Three CI guards fail the build otherwise: RLS coverage, isolation-suite coverage, and the tenant-FK guard.
+  - **They are three separate steps and passing one proves nothing about the next.** The first
+    two both select tables carrying `organization_id`; the first asks the DATABASE whether RLS is
+    ENABLEd and FORCEd, the second greps `test/rls-isolation.test.ts` for the table's NAME. VX5-2
+    was pushed after running only the first, and CI answered `Tenant tables absent from
+    test/rls-isolation.test.ts: signup`. Run all three locally, from the workflow's own SQL.
+  - The column is what the guards key on, not the tenancy. `signup` carries `organization_id`
+    to record which tenant it BECAME and has no tenant policy at all — deliberately, so no tenant
+    can see one. The guards cannot express that, so the suite says it instead: the `signup` case
+    asserts invisibility from every org including its own, which is the assertion that fails if a
+    later migration "fixes" the missing policy by adding one.
 - **NO VENDOR NAME OUTSIDE `lib/integrations/<vendor>.ts`.** Not in a table, a column, a type, a
   CHECK literal, a shared enum, a constant, an audit action or a permission slug. Core resolves an
   integration by CAPABILITY — `resolveCapability(tx, 'POST_EXPENSE_REPORT')` — and vendor-specific
@@ -3989,6 +3999,67 @@ inside VX4-1 rather than staying deferred.
 Two tenants, side by side, with **different modules enabled, different branding, and different
 locales** — one on `fr-CA`, one on `en-US` — each seeing only its own analytics and budgets, proved in
 a browser. The Phase-3 exit criterion took the same shape and it is what found AC-19, AC-22 and AC-23.
+
+### VX5-2 SHIPPED — the door, and two things Postgres taught me by refusing
+
+**PR #103.** Migration `0035`. New: `lib/onboarding/signup.ts` · `test/signup.db.test.ts`. Changed:
+`lib/tenant/context.ts` (2 contexts) · `lib/i18n/catalog/errors.ts` (2 codes).
+
+**THE TENANT IS CREATED AT VERIFICATION, NOT AT REQUEST.** A tenant created at request time is a
+tenant created from an address nobody has proven they hold, and cleaning those up afterwards means
+deciding which half-used organizations are real. It also means an unverified request **cannot squat a
+name**: the slug on a signup row is what was ASKED for, and `organization`'s UNIQUE constraint decides
+at verification. First to verify wins; the loser is told the name is taken.
+
+**ONE LIVE SIGNUP PER ADDRESS, AS A CONSTRAINT RATHER THAN A COUNTER.** A partial UNIQUE index on
+`lower(email) WHERE consumed_at IS NULL` makes a second live signup impossible to write, so asking
+again is a RESEND — new token, new expiry, same row — and the old token dies the moment the new one
+is written. Better behaviour than a counter and a stronger guarantee, because it cannot be raced.
+What it does NOT limit, said so nobody reads more into it: one address, not one sender. A thousand
+addresses is a job for the edge.
+
+**POSTGRES WILL NOT LET AN UPDATE MOVE A ROW OUT OF VIEW, and that broke the first design.**
+`signup_read_live` narrows SELECT to unconsumed and unexpired rows — 0012's lesson, where "unknown",
+"already used" and "expired" become ONE case, a row that is not there. Setting `consumed_at` then
+takes the row out of that view, and **Postgres refuses an UPDATE whose new row is not visible under
+the table's SELECT policies**, the same rule a view's WITH CHECK OPTION enforces. It reports it as
+`new row violates row-level security policy`, which names the wrong half — the WITH CHECK passed.
+
+So **consumption has its own gate**: `app.signup_consume`, whose SELECT policy can see the row it is
+about to write and nothing more useful than that. `action_token` never hit this because it consumes
+under `tenant_isolation`, which does not narrow on `consumed_at` — the structural difference between
+a credential inside a tenant and one that predates it, which `0035`'s header had already named before
+it bit.
+
+**And RESEND needed a third policy**, found the same way: `ON CONFLICT … DO UPDATE` is an UPDATE, and
+there was no UPDATE policy under the request gate at all. `signup_resend`'s WITH CHECK says
+`consumed_at IS NULL` on both sides, so it can revive a pending signup — including an expired one, a
+resend after lunch should work — and can never be used to consume one.
+
+**A SABOTAGE PROVED A GUARD OF MINE UNREACHABLE, AND TWO ATTEMPTS TO TEST IT WERE WORSE THAN NOTHING.**
+Deleting `AND consumed_at IS NULL` from `markConsumed` failed no test and cannot be made to: the
+policy answers first, and `verifySignup` looks the token up under the NARROW gate, where a consumed
+row is invisible, so it throws before reaching the clause. The first replacement test asserted that a
+WHERE clause written IN THE TEST filtered rows — this codebase's "assertion whose subject swallows
+the failure" family. The second would have meant exporting a private function for a test to reach.
+Both deleted. The clause stays, with the depth honestly labelled in a comment: 0012's two-guards rule
+is about the day somebody simplifies the first one.
+
+**No outbox, and why:** `notification_delivery` is tenant-scoped, and there is no tenant when a
+verification email is sent. So `sendEmail` directly, no automatic retry — with RESEND as a button
+rather than a background job, which works because the person is standing there. The mail is plain and
+unbranded on purpose: `email-shell.ts` renders a TENANT's colours, and there is no tenant yet.
+
+**One sentence for three refusals.** `SIGNUP_LINK_DEAD` covers unknown, used and expired, because the
+policy makes them one case and because telling somebody WHICH would say whether a token they hold
+ever existed. "Start again" is the only action either way.
+
+**Verified in the harness:** 1416 vitest / 65 files · 135 Playwright · 18 pseudo-crawl · build ·
+`check:actions`, `check:i18n`, `check:vendor`, `check:admin`. Four sabotage runs.
+
+**Still no route.** `startSignup` and `verifySignup` are exported and reachable from nothing; the
+pages are VX5-4's, alongside what a brand-new tenant can actually do — because a signup that lands
+somebody on an empty product is not finished.
 
 ### VX5-1 SHIPPED — the one write that cannot start inside a tenant
 

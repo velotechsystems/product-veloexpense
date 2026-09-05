@@ -8,7 +8,12 @@
  */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { Pool } from 'pg';
-import { withOrg, withoutOrg, withPlatformRead } from '@/lib/tenant/context';
+import {
+  withOrg,
+  withoutOrg,
+  withPlatformRead,
+  withSignupContext,
+} from '@/lib/tenant/context';
 
 // Admin (superuser) connection for setup/teardown only. veloapp deliberately
 // cannot TRUNCATE (RLS/privilege), so reset state via ADMIN_DATABASE_URL
@@ -1421,6 +1426,129 @@ describe('RLS tenant isolation', () => {
       tx.query('SELECT count(*)::int AS n FROM module_entitlement'),
     );
     expect(blind.rows[0].n).toBe(0);
+  });
+
+  /* ── the signup, which has no tenant at all (VX5-2, migration 0035) ───────
+   *
+   * `signup` carries `organization_id`, so both CI guards demand it appear
+   * here. What it does NOT carry is a `tenant_isolation` policy, and that is
+   * deliberate: a signup row is PLATFORM data — an email address belonging to
+   * somebody who is not a customer yet and may never be — so the claim being
+   * asserted below is stronger than isolation. Not "org A cannot see org B's
+   * signup" but "NO tenant can see ANY signup, including the one that created
+   * it".
+   *
+   * That distinction is the reason this block exists rather than a line in the
+   * table list. The coverage guard can prove a table is named; it cannot tell
+   * the difference between a table whose tenant policy is absent on purpose and
+   * one whose tenant policy somebody forgot. The assertions here are what says
+   * which of the two this is — and they are what would fail if a later
+   * migration "fixed" the omission by adding a tenant policy.
+   *
+   * The gates themselves — that `app.signup_task` finds a live row and cannot
+   * consume it, that `app.signup_consume` can — are exercised in
+   * test/signup.db.test.ts. This block is only about who is shut out.
+   */
+  it('signups belong to no tenant: invisible from every org, including their own', async () => {
+    const liveHash = 'a'.repeat(64);
+    const consumedHash = 'b'.repeat(64);
+
+    // Two rows, written as superuser so the fixture does not depend on the very
+    // gates under test. One PENDING and one CONSUMED — and the consumed one
+    // names orgA, which is the interesting row: orgA exists BECAUSE of it.
+    await admin.query(
+      `INSERT INTO signup (email, organization_name, slug, token_hash, expires_at)
+       VALUES ('pending@x.com', 'Pending Co', 'pending-co', $1, clock_timestamp() + interval '1 day')`,
+      [liveHash],
+    );
+    await admin.query(
+      `INSERT INTO signup (email, organization_name, slug, token_hash, expires_at,
+                           consumed_at, organization_id)
+       VALUES ('founder@x.com', 'Org A', 'org-a', $1, clock_timestamp() + interval '1 day',
+               clock_timestamp(), $2)`,
+      [consumedHash, orgA],
+    );
+
+    // POSITIVE CONTROL FIRST. Every count below is zero, and a zero is also what
+    // a fixture that failed to insert would produce — so prove the rows are
+    // there and findable by the one context entitled to find them before
+    // reading anything into the zeros.
+    const underGate = await withSignupContext((tx) =>
+      tx.query('SELECT count(*)::int AS n FROM signup'),
+    );
+    expect(underGate.rows[0].n).toBe(1); // the live one; consumed rows leave the gate's view
+
+    // ── the claim ──
+    // orgA is the tenant that this signup created. It still cannot see it.
+    const fromOwnOrg = await withOrg(orgA, (tx) =>
+      tx.query('SELECT count(*)::int AS n FROM signup WHERE organization_id = $1', [orgA]),
+    );
+    expect(fromOwnOrg.rows[0].n).toBe(0);
+
+    for (const org of [orgA, orgB]) {
+      const seen = await withOrg(org, (tx) =>
+        tx.query('SELECT count(*)::int AS n FROM signup'),
+      );
+      expect(seen.rows[0].n).toBe(0);
+    }
+
+    // Not by email either — a tenant cannot probe for whether an address has
+    // signed up, which is the shape a leak here would actually take.
+    const probed = await withOrg(orgB, (tx) =>
+      tx.query('SELECT count(*)::int AS n FROM signup WHERE email = $1', ['pending@x.com']),
+    );
+    expect(probed.rows[0].n).toBe(0);
+
+    // No context, nothing.
+    const blind = await withoutOrg((tx) => tx.query('SELECT count(*)::int AS n FROM signup'));
+    expect(blind.rows[0].n).toBe(0);
+
+    // AND NOT THROUGH THE OTHER HATCH. `app.platform_task` is set by the
+    // delivery poller and the approve-link handler; 0035 deliberately did not
+    // reuse it. This is the assertion that would fail if somebody later widened
+    // that flag instead of adding a new one.
+    const viaPlatform = await withPlatformRead((tx) =>
+      tx.query('SELECT count(*)::int AS n FROM signup'),
+    );
+    expect(viaPlatform.rows[0].n).toBe(0);
+
+    // ── and no tenant may write one ──
+    // INSERT throws: with no policy granting INSERT under `app.current_org`,
+    // the WITH CHECK of every applicable policy fails.
+    await expect(
+      withOrg(orgA, (tx) =>
+        tx.query(
+          `INSERT INTO signup (email, organization_name, slug, token_hash, expires_at)
+           VALUES ('smuggled@x.com', 'Smuggled', 'smuggled', $1,
+                   clock_timestamp() + interval '1 day')`,
+          ['c'.repeat(64)],
+        ),
+      ),
+    ).rejects.toThrow(/row-level security/i);
+
+    // UPDATE does NOT throw — it matches nothing and reports it, the same no-op
+    // the module_entitlement hatch shows above. A caller checking only for an
+    // exception would believe it had consumed somebody's signup.
+    const attempted = await withOrg(orgA, (tx) =>
+      tx.query('UPDATE signup SET consumed_at = clock_timestamp() WHERE token_hash = $1', [
+        liveHash,
+      ]),
+    );
+    expect(attempted.rowCount).toBe(0);
+    const stillPending = await admin.query(
+      'SELECT consumed_at FROM signup WHERE token_hash = $1',
+      [liveHash],
+    );
+    expect(stillPending.rows[0].consumed_at).toBeNull();
+
+    // DELETE likewise: there is no DELETE policy at all, for anyone. A signup is
+    // consumed or it expires; nothing removes it but the retention job.
+    const deleted = await withOrg(orgA, (tx) =>
+      tx.query('DELETE FROM signup WHERE token_hash = $1', [liveHash]),
+    );
+    expect(deleted.rowCount).toBe(0);
+
+    await admin.query('DELETE FROM signup');
   });
 
 });

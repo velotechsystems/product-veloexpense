@@ -82,6 +82,60 @@ export async function withoutOrg<T>(fn: (tx: QueryRunner) => Promise<T>): Promis
  * NOTHING from a row you found this way except its `organization_id`, then do the
  * real work inside `withOrg(that id)`. Two callers exist. Keep it that way.
  */
+/**
+ * VX5-2 — the signup window, which is the only context with no tenant AT ALL.
+ *
+ * `withPlatformRead` above is read-only on two tables, and its rule for callers
+ * is "take nothing but the organization_id, then do the real work inside
+ * withOrg". A signup cannot follow that rule: there is no organization_id to
+ * take, because creating one is the point.
+ *
+ * So this sets a DIFFERENT flag, `app.signup_task`, which `0035` grants on ONE
+ * table and nowhere else. Reusing `app.platform_task` would have widened the
+ * existing hatch — the delivery poller and the approve-link handler both set it
+ * — from "two tables, read-only" to "and it can also write signups". A flag
+ * that does one thing is a flag whose blast radius can be read off its name.
+ *
+ * The narrowing that pays for the write permission is in the policies, not here:
+ * the SELECT sees only live rows, and the UPDATE can only touch a row that is
+ * still live, so a second click cannot consume a signup the first one took.
+ *
+ * Transaction-local, like the other two, so it cannot outlive the work.
+ */
+export async function withSignupContext<T>(fn: (tx: QueryRunner) => Promise<T>): Promise<T> {
+  return transaction(async (tx) => {
+    await tx.query("SELECT set_config('app.signup_task', 'on', true)");
+    return fn(tx);
+  });
+}
+
+/**
+ * VX5-2 — the second signup gate, and it exists because Postgres said so.
+ *
+ * `withSignupContext` above sees only LIVE signups, which is what makes a token
+ * lookup safe: unknown, consumed and expired are one case, a row that is not
+ * there. That same narrowing makes CONSUMING a token impossible — setting
+ * `consumed_at` takes the row out of view, and Postgres refuses an UPDATE whose
+ * new row is not visible under the table's SELECT policies, exactly as a view's
+ * WITH CHECK OPTION does. It reports that as "new row violates row-level
+ * security policy", which names the wrong half: the WITH CHECK passed.
+ *
+ * So consumption gets its own flag, whose SELECT policy can see the row it is
+ * about to write and NOTHING more useful than that. Set for one statement, in
+ * `markConsumed`, and transaction-local like the rest.
+ *
+ * `action_token` needs no equivalent because it consumes under
+ * `tenant_isolation`, which does not narrow on `consumed_at`. This table has no
+ * tenant policy to fall back on — that is the whole difference between a
+ * credential inside a tenant and one that predates it.
+ */
+export async function withSignupConsume<T>(fn: (tx: QueryRunner) => Promise<T>): Promise<T> {
+  return transaction(async (tx) => {
+    await tx.query("SELECT set_config('app.signup_consume', 'on', true)");
+    return fn(tx);
+  });
+}
+
 export async function withPlatformRead<T>(fn: (tx: QueryRunner) => Promise<T>): Promise<T> {
   return transaction(async (tx) => {
     await tx.query("SELECT set_config('app.platform_task', 'on', true)");
