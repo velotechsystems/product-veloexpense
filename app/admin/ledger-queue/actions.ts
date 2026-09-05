@@ -25,6 +25,7 @@ import { append as auditAppend } from '@/lib/audit/service';
 import { postOne } from '@/lib/integrations/dispatch';
 import { capabilityAvailability } from '@/lib/integrations/service';
 import { asAdmin, asAdminPage } from '@/lib/auth/admin-guard';
+import type { AuditAction } from '@/lib/audit/actions';
 
 const PAGE = '/admin/ledger-queue';
 
@@ -66,7 +67,7 @@ export async function getQueuePage() {
 async function auditPostAction(
   tx: QueryRunner,
   actor: EmployeeRow,
-  action: string,
+  action: AuditAction,
   postId: string,
   details: Record<string, unknown>,
 ): Promise<void> {

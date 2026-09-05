@@ -42,6 +42,7 @@ import {
 import { addBusinessDays, TOKEN_TTL_BUSINESS_DAYS } from '@/lib/notifications/action-tokens';
 import { decideFromToken, inspectToken } from '@/lib/notifications/approve';
 import { TEST_ACTOR } from './support/audit-actor';
+import { TODAY } from './support/dates';
 
 const ADMIN_URL = process.env.ADMIN_DATABASE_URL ?? process.env.DATABASE_URL;
 if (!ADMIN_URL) {
@@ -73,7 +74,7 @@ async function mkUser(email: string, role: string, managerId: string | null = nu
 async function submitted(amountMinor = 250000, title = 'Munich') {
   const reportId = await withOrg(orgId, async (tx) => {
     const report = await expenses.createReport(tx, SUBMITTER, { title, currencyCode: 'CAD' });
-    const expense = await expenses.addExpense(tx, TEST_ACTOR, report.id, {
+    const expense = await expenses.addExpense(tx, TEST_ACTOR, report.id, { txnDate: TODAY,
       currencyCode: 'CAD',
       merchant: 'M',
     });

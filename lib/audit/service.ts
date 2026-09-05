@@ -16,6 +16,7 @@
  * three.
  */
 import type { QueryRunner } from '@/lib/db/client';
+import type { AuditAction } from '@/lib/audit/actions';
 import { DomainError } from '@/lib/errors/domain';
 import {
   acquireChainLock,
@@ -63,7 +64,13 @@ export function auditActorOf(row: {
 }
 
 export interface AuditInput {
-  action: string;
+  /**
+   * TYPED, not `string`, and that is the whole point of `lib/audit/actions.ts`.
+   * A registry the compiler does not consult is decoration: it would still accept
+   * `action: 'REPROT_EDITED'`, which inserts happily into an append-only table and
+   * is then wrong for good, because nobody's query finds it again to notice.
+   */
+  action: AuditAction;
   entityType?: string | null;
   entityId?: string | null;
   /**

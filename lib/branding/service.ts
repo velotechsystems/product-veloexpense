@@ -22,6 +22,7 @@ import type { UserMessage } from '@/lib/errors/domain';
 import type { UserMessageCode } from '@/lib/i18n/catalog/errors';
 import { DomainError } from '@/lib/errors/domain';
 import { append, type AuditActor } from '@/lib/audit/service';
+import type { AuditAction } from '@/lib/audit/actions';
 import {
   CONTRAST_FLOOR,
   contrastRatio,
@@ -303,7 +304,7 @@ export async function setLoginTagline(
 async function auditBranding(
   tx: QueryRunner,
   actor: AuditActor,
-  action: string,
+  action: AuditAction,
   details: Record<string, unknown>,
 ): Promise<void> {
   const org = await tx.query(`SELECT ${ORG} AS id`);

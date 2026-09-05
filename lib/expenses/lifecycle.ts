@@ -40,6 +40,7 @@ export type LifecycleErrorCode =
   | 'NOT_FOUND'
   | 'WRONG_STATUS'
   | 'EMPTY_REPORT'
+  | 'UNDATED'
   | 'UNCODED'
   | 'BLOCKED_BY_POLICY'
   | 'FORBIDDEN';
@@ -158,6 +159,43 @@ export async function submitReport(
       'EMPTY_REPORT',
       [],
       'REPORT_EMPTY',
+    );
+  }
+
+  // ── VX4-11: does every expense say WHEN it happened? ─────────────────────
+  //
+  // `txn_date` is nullable (0003) and the form collected it without insisting, so
+  // a tenant whose people skipped it got **no duplicate detection at all** and
+  // nothing on any screen said so: `lib/fraud/rules.ts`'s duplicate and outlier
+  // detectors both bound on `txn_date`, and an expense with none is invisible to
+  // them rather than reported by them. Found by VX4-8's own e2e, which failed for
+  // exactly this reason until the date was filled in.
+  //
+  // REQUIRED AT SUBMIT, NOT AT THE COLUMN, and the receipt-first flow is why: the
+  // `startFromReceipts` path (`lib/receipts/service.ts`) creates one expense per
+  // uploaded receipt before anybody has opened it, and the person coding it later
+  // is the first one who knows the date. A NOT NULL column would have to invent a
+  // value there. A DRAFT may be incomplete; a submitted report may not.
+  //
+  // UNCONDITIONAL, unlike the coding gate below. That one is conditional on a
+  // connected ledger because the requirement comes from the integration. This one
+  // is not: the date orders the report, attributes the spend to a period for
+  // analytics and budgets, goes on the ledger wire, and is what the detectors key
+  // on. And unlike an unmapped category — admin-owned, so being blocked is a dead
+  // end for the employee — this is a fact the person filing has in front of them.
+  const undated = await tx.query(
+    `SELECT count(*)::int AS n FROM expense WHERE report_id = $1 AND txn_date IS NULL`,
+    [reportId],
+  );
+  const undatedCount = undated.rows[0].n as number;
+  if (undatedCount > 0) {
+    throw new LifecycleError(
+      `report ${report.number ?? reportId} has ${undatedCount} expense(s) with no transaction date`,
+      'UNDATED',
+      [],
+      undatedCount === 1
+        ? 'SUBMIT_UNDATED_ONE'
+        : { code: 'SUBMIT_UNDATED_MANY', params: { count: String(undatedCount) } },
     );
   }
 

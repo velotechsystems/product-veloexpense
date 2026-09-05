@@ -192,6 +192,10 @@ async function createAndSubmit(page: Page) {
   const reportUrl = page.url();
 
   await page.getByLabel('Merchant').first().fill('Taxi');
+  // VX4-11: the date is REQUIRED on the form now, and `submitReport` refuses a
+  // report holding an undated expense. Every helper that builds one has to say
+  // when it happened — which is the point of the ticket, arriving here first.
+  await page.locator('#new-txnDate').fill(new Date().toISOString().slice(0, 10));
   await page.getByRole('button', { name: 'Add expense' }).click();
   await expect(page.getByRole('heading', { name: 'Taxi' })).toBeVisible();
 

@@ -23,6 +23,7 @@ import { withOrg } from '@/lib/tenant/context';
 import { transaction } from '@/lib/db/client';
 import { append, AuditError } from '@/lib/audit/service';
 import { verifyChain } from '@/lib/audit/verify';
+import type { AuditAction } from '@/lib/audit/actions';
 
 const ADMIN_URL = process.env.ADMIN_DATABASE_URL ?? process.env.DATABASE_URL;
 if (!ADMIN_URL) {
@@ -405,15 +406,27 @@ async function tamper(sql: string, params: unknown[] = []) {
   });
 }
 
+/**
+ * An action name for a test that is about the CHAIN, not about the action.
+ *
+ * `AuditInput.action` is typed as `AuditAction` (the registry, #100) so a typo in
+ * production is a compile error. These tests deliberately use names no product
+ * code writes — 'X', 'A_ONE', 'ONE' — because what they pin is that hashing,
+ * ordering, tenant isolation and the BigInt refusal do not care WHICH action a
+ * row carries. Saying that with a named helper rather than a bare `as` makes the
+ * intent legible: this is a deliberate escape, not an unfixed type error.
+ */
+const arbitraryAction = (name: string) => name as AuditAction;
+
 describe('append', () => {
   it('writes a genesis row and then links to it', async () => {
     await clearChain();
     const first = await withOrg(orgId, (tx) =>
-      append(tx, { ...ADA, id: actorId }, { action: 'REPORT_SUBMITTED' }),
+      append(tx, { ...ADA, id: actorId }, { action: arbitraryAction('REPORT_SUBMITTED') }),
     );
     expect(first.prevHash).toBeNull();
     const second = await withOrg(orgId, (tx) =>
-      append(tx, { ...ADA, id: actorId }, { action: 'REPORT_APPROVED' }),
+      append(tx, { ...ADA, id: actorId }, { action: arbitraryAction('REPORT_APPROVED') }),
     );
     expect(second.prevHash).toBe(first.entryHash);
     const v = await withOrg(orgId, (tx) => verifyChain(tx));
@@ -429,11 +442,11 @@ describe('append', () => {
      * forbids. See GAP-AUDIT AU-1.
      */
     await clearChain();
-    await withOrg(orgId, (tx) => append(tx, { ...ADA, id: actorId }, { action: 'A_ONE' }));
-    await withOrg(orgId, (tx) => append(tx, { ...ADA, id: actorId }, { action: 'A_TWO' }));
+    await withOrg(orgId, (tx) => append(tx, { ...ADA, id: actorId }, { action: arbitraryAction('A_ONE') }));
+    await withOrg(orgId, (tx) => append(tx, { ...ADA, id: actorId }, { action: arbitraryAction('A_TWO') }));
     const b = await withOrg(otherOrgId, (tx) =>
       append(tx, { id: null, email: 'ext@vendor.test', name: 'Ext', role: 'EXTERNAL' }, {
-        action: 'B_ONE',
+        action: arbitraryAction('B_ONE'),
       }),
     );
     // B's first row is a GENESIS row, not a link onto A's head.
@@ -457,7 +470,7 @@ describe('append', () => {
         tx,
         { id: null, email: 'ext@vendor.test', name: 'External Signer', role: 'EXTERNAL' },
         {
-          action: 'REPORT_APPROVED',
+          action: arbitraryAction('REPORT_APPROVED'),
           entityType: 'expense_report',
           entityId: '00000000-0000-4000-8000-00000000000a',
           // Keys deliberately out of alphabetical order, and an amount as a
@@ -477,7 +490,7 @@ describe('append', () => {
     await expect(
       withOrg(orgId, (tx) =>
         append(tx, { ...ADA, id: actorId }, {
-          action: 'X',
+          action: arbitraryAction('X'),
           details: { totalMinor: 100000n } as unknown as Record<string, unknown>,
         }),
       ),
@@ -492,14 +505,14 @@ describe('append', () => {
     const bad = (actor: Parameters<typeof append>[1], input: Parameters<typeof append>[2]) =>
       withOrg(orgId, (tx) => append(tx, actor, input));
     await expect(
-      bad({ id: actorId, email: 'both@x.test', name: 'N', role: 'ADMIN' }, { action: 'X' }),
+      bad({ id: actorId, email: 'both@x.test', name: 'N', role: 'ADMIN' }, { action: arbitraryAction('X') }),
     ).rejects.toBeInstanceOf(AuditError);
-    await expect(bad({ id: null, name: 'N', role: 'ADMIN' }, { action: 'X' })).rejects.toBeInstanceOf(
+    await expect(bad({ id: null, name: 'N', role: 'ADMIN' }, { action: arbitraryAction('X') })).rejects.toBeInstanceOf(
       AuditError,
     );
-    await expect(bad({ ...ADA, id: actorId }, { action: '  ' })).rejects.toBeInstanceOf(AuditError);
+    await expect(bad({ ...ADA, id: actorId }, { action: arbitraryAction('  ') })).rejects.toBeInstanceOf(AuditError);
     await expect(
-      bad({ ...ADA, id: actorId }, { action: 'X', entityType: 'expense_report' }),
+      bad({ ...ADA, id: actorId }, { action: arbitraryAction('X'), entityType: 'expense_report' }),
     ).rejects.toBeInstanceOf(AuditError);
   });
 
@@ -507,7 +520,7 @@ describe('append', () => {
     // An audit append with no app.current_org is a caller bug. Saying so beats
     // an RLS policy violation, which is what would happen otherwise.
     await expect(
-      transaction((tx) => append(tx, { ...ADA, id: actorId }, { action: 'X' })),
+      transaction((tx) => append(tx, { ...ADA, id: actorId }, { action: arbitraryAction('X') })),
     ).rejects.toThrow(/no tenant context/);
   });
 });
@@ -515,11 +528,11 @@ describe('append', () => {
 describe('verifyChain', () => {
   it('detects an edited row and names it', async () => {
     await clearChain();
-    await withOrg(orgId, (tx) => append(tx, { ...ADA, id: actorId }, { action: 'ONE' }));
+    await withOrg(orgId, (tx) => append(tx, { ...ADA, id: actorId }, { action: arbitraryAction('ONE') }));
     const target = await withOrg(orgId, (tx) =>
-      append(tx, { ...ADA, id: actorId }, { action: 'TWO' }),
+      append(tx, { ...ADA, id: actorId }, { action: arbitraryAction('TWO') }),
     );
-    await withOrg(orgId, (tx) => append(tx, { ...ADA, id: actorId }, { action: 'THREE' }));
+    await withOrg(orgId, (tx) => append(tx, { ...ADA, id: actorId }, { action: arbitraryAction('THREE') }));
 
     await tamper('UPDATE audit_entry SET action = $2 WHERE id = $1', [target.id, 'TAMPERED']);
 
@@ -538,11 +551,11 @@ describe('verifyChain', () => {
     // The chain's whole job. Sequence contiguity would NOT catch this reliably —
     // gaps are normal — so the prev_hash link is what does the work.
     await clearChain();
-    await withOrg(orgId, (tx) => append(tx, { ...ADA, id: actorId }, { action: 'ONE' }));
+    await withOrg(orgId, (tx) => append(tx, { ...ADA, id: actorId }, { action: arbitraryAction('ONE') }));
     const middle = await withOrg(orgId, (tx) =>
-      append(tx, { ...ADA, id: actorId }, { action: 'TWO' }),
+      append(tx, { ...ADA, id: actorId }, { action: arbitraryAction('TWO') }),
     );
-    await withOrg(orgId, (tx) => append(tx, { ...ADA, id: actorId }, { action: 'THREE' }));
+    await withOrg(orgId, (tx) => append(tx, { ...ADA, id: actorId }, { action: arbitraryAction('THREE') }));
 
     await tamper('DELETE FROM audit_entry WHERE id = $1', [middle.id]);
 
@@ -559,9 +572,9 @@ describe('verifyChain', () => {
      */
     await clearChain();
     const one = await withOrg(orgId, (tx) =>
-      append(tx, { ...ADA, id: actorId }, { action: 'ONE' }),
+      append(tx, { ...ADA, id: actorId }, { action: arbitraryAction('ONE') }),
     );
-    await withOrg(orgId, (tx) => append(tx, { ...ADA, id: actorId }, { action: 'TWO' }));
+    await withOrg(orgId, (tx) => append(tx, { ...ADA, id: actorId }, { action: arbitraryAction('TWO') }));
 
     await tamper('DELETE FROM audit_entry WHERE id = $1', [one.id]);
 
@@ -593,12 +606,12 @@ describe('verifyChain', () => {
     // prev_hash. Without that, a verify of rows 2..3 would happily accept a
     // forged row 2.
     await clearChain();
-    await withOrg(orgId, (tx) => append(tx, { ...ADA, id: actorId }, { action: 'ONE' }));
+    await withOrg(orgId, (tx) => append(tx, { ...ADA, id: actorId }, { action: arbitraryAction('ONE') }));
     const two = await withOrg(orgId, (tx) =>
-      append(tx, { ...ADA, id: actorId }, { action: 'TWO' }),
+      append(tx, { ...ADA, id: actorId }, { action: arbitraryAction('TWO') }),
     );
     const three = await withOrg(orgId, (tx) =>
-      append(tx, { ...ADA, id: actorId }, { action: 'THREE' }),
+      append(tx, { ...ADA, id: actorId }, { action: arbitraryAction('THREE') }),
     );
 
     expect(
@@ -618,7 +631,9 @@ describe('verifyChain', () => {
     // skips a row would either double-count or break the prev_hash link.
     await clearChain();
     for (let i = 0; i < 7; i += 1) {
-      await withOrg(orgId, (tx) => append(tx, { ...ADA, id: actorId }, { action: `E${i}` }));
+      await withOrg(orgId, (tx) =>
+        append(tx, { ...ADA, id: actorId }, { action: arbitraryAction(`E${i}`) }),
+      );
     }
     expect(await withOrg(orgId, (tx) => verifyChain(tx, { batchSize: 2 }))).toMatchObject({
       ok: true,

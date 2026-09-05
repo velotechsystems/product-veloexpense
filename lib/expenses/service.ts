@@ -27,6 +27,7 @@ import type { Actor } from '@/lib/auth/actor';
 import { accountForCategory } from '@/lib/accounts/service';
 import { append as auditAppend, type AuditActor } from '@/lib/audit/service';
 import { auditDiff, auditSnapshot } from '@/lib/audit/diff';
+import type { AuditAction } from '@/lib/audit/actions';
 
 const ORG = "current_setting('app.current_org', true)::uuid";
 
@@ -81,7 +82,7 @@ const AUDIT = {
 async function auditEdit(
   tx: QueryRunner,
   actor: AuditActor,
-  action: string,
+  action: AuditAction,
   entityType: 'Expense' | 'ExpenseLineItem',
   entityId: string,
   reportId: string,

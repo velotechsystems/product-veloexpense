@@ -15,6 +15,7 @@ import { withOrg, withoutOrg } from '@/lib/tenant/context';
 import * as expenses from '@/lib/expenses/service';
 import * as policy from '@/lib/policy/service';
 import { TEST_ACTOR } from './support/audit-actor';
+import { TODAY } from './support/dates';
 
 const admin = new Pool({
   connectionString: process.env.ADMIN_DATABASE_URL ?? process.env.DATABASE_URL,
@@ -32,7 +33,7 @@ async function draft(amountMinor: number, opts: { categoryId?: string; withRecei
       title: 'Policy subject',
       currencyCode: 'CAD',
     });
-    const expense = await expenses.addExpense(tx, TEST_ACTOR, report.id, {
+    const expense = await expenses.addExpense(tx, TEST_ACTOR, report.id, { txnDate: TODAY,
       currencyCode: 'CAD',
       merchant: 'Test Merchant',
     });
@@ -63,7 +64,7 @@ async function draftIn(currencyCode: string, amountMinor: number) {
       title: `Policy subject ${currencyCode}`,
       currencyCode,
     });
-    const expense = await expenses.addExpense(tx, TEST_ACTOR, report.id, { currencyCode, merchant: 'M' });
+    const expense = await expenses.addExpense(tx, TEST_ACTOR, report.id, { txnDate: TODAY, currencyCode, merchant: 'M' });
     const line = await expenses.addLineItem(tx, TEST_ACTOR, expense.id, {
       categoryId: mealsId,
       amountMinor,
@@ -200,7 +201,7 @@ describe('policy rules', () => {
       await tx.query('DELETE FROM expense_policy');
       await policy.createPolicy(tx, { kind: 'RECEIPT_REQUIRED', severity: 'WARNING', params: {} });
       const report = await expenses.getReport(tx, reportId);
-      await expenses.addExpense(tx, TEST_ACTOR, report!.report.id, { currencyCode: 'CAD', merchant: 'Second' });
+      await expenses.addExpense(tx, TEST_ACTOR, report!.report.id, { txnDate: TODAY, currencyCode: 'CAD', merchant: 'Second' });
       return policy.validateReport(tx, reportId);
     });
     // Two receipt-less expenses => two findings. ExpenseOS's (ruleCode,

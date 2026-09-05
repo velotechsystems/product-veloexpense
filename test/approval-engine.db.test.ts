@@ -20,6 +20,7 @@ import { decide, openRun, ApprovalEngineError } from '@/lib/approvals/engine';
 import { verifyChain } from '@/lib/audit/verify';
 import { DecisionForbiddenError } from '@/lib/approvals/eligibility';
 import { TEST_ACTOR } from './support/audit-actor';
+import { TODAY } from './support/dates';
 
 const ADMIN_URL = process.env.ADMIN_DATABASE_URL ?? process.env.DATABASE_URL;
 if (!ADMIN_URL) {
@@ -60,7 +61,7 @@ async function draft(amountMinor = 1000) {
       title: 'Engine',
       currencyCode: 'CAD',
     });
-    const expense = await expenses.addExpense(tx, TEST_ACTOR, report.id, {
+    const expense = await expenses.addExpense(tx, TEST_ACTOR, report.id, { txnDate: TODAY,
       currencyCode: 'CAD',
       merchant: 'M',
     });
