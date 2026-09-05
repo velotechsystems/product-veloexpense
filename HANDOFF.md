@@ -4000,6 +4000,73 @@ Two tenants, side by side, with **different modules enabled, different branding,
 locales** — one on `fr-CA`, one on `en-US` — each seeing only its own analytics and budgets, proved in
 a browser. The Phase-3 exit criterion took the same shape and it is what found AC-19, AC-22 and AC-23.
 
+### VX5-2b SHIPPED — the pages, and the seam a first sign-in should not have
+
+**PR #NNN.** No migration. New: `app/signup/page.tsx` · `app/signup/actions.ts` · `app/signup/ui.tsx`
+· `app/signup/verify/page.tsx` · `app/signup/verify/actions.ts` · `app/login/login-screen.tsx` ·
+`e2e/signup-flow.spec.ts`. Changed: `proxy.ts` · `app/login/page.tsx` · `lib/onboarding/signup.ts`
+(`peekSignup`) · `test/signup.db.test.ts`.
+
+Numbered **2b rather than VX5-3** on purpose: it finishes VX5-2 rather than displacing invites, so
+the board's numbering still means what it said.
+
+**Why it jumped the queue.** VX5-1 and VX5-2 both shipped deliberately headless, and #103 left
+`startSignup` mailing a link to `/signup/verify` — a route that did not exist. Two tickets of
+unreachable code is where a third becomes a habit, and no unit test can reach the wiring that
+actually breaks in production: whether middleware lets a stranger in, whether the form's field names
+match what the action reads, whether the link in the email points anywhere. `e2e/signup-flow.spec.ts`
+is the deliverable; the pages are what it needed in order to exist.
+
+**The GET asks, the POST creates.** `app/approve/page.tsx` had this argument first and it applies
+here with more force. Mail clients and corporate link scanners fetch every URL in a message. A bare
+GET on a verification link means Outlook provisions somebody's company before they read the email —
+and the token is single-use, so the human then gets "that link is no longer valid" for a tenant they
+never made, with no way to start again (the address has a consumed signup and the slug is taken).
+So the GET renders a question. It reads the signup through **`peekSignup`**, a non-consuming read
+under the same narrow gate `verifySignup` uses — the two cannot disagree about whether a link is
+alive, because neither decides: `signup_read_live` does, and `test/signup.db.test.ts` asserts that
+agreement across all four cases (live, unknown, consumed, expired). The e2e proves the property
+directly: GET the link twice, and the organization count is still zero.
+
+**`/login` became a server component.** Verification ends by sending somebody to
+`/login?org=<their new web address>`; without this they read their slug on one screen and retype it
+on the next, on the first sign-in of their first day. The SSO handoff is unchanged, moved to
+`app/login/login-screen.tsx`. Done with a prop rather than `useSearchParams()` because the latter
+needs a Suspense boundary around the whole screen to prerender. `checkSlug` validates `?org=` before
+it is prefilled, and `setSsoOrgCookie` still validates on the way in — same rule at both ends.
+
+**The web address is optional on the form.** Blank derives it with `slugify`. Most people have no
+opinion about a URL slug and should not need one to sign up. It is still not a reservation: the
+`organization` UNIQUE constraint decides at verification, which is VX5-2's design, not a gap.
+
+**What a refusal loses.** A redirect drops what they typed; they retype three fields. That is the
+house pattern (`/preferences`, `/admin/locale`), and the alternative — round-tripping the values
+through the query string — would put somebody's email in a URL that every proxy in between logs.
+Repopulating without that means client state, which this product has nowhere else. Named as a cost,
+not left as an oversight.
+
+**`proxy.ts`: two places, and either one alone is enough.** `/signup` is listed in `PUBLIC` and in
+the `matcher`, as `/login` and `/approve` already were. A sabotage sweep measured what that
+redundancy is worth: removing it from `PUBLIC` alone fails nothing, removing it from the `matcher`
+alone fails nothing, removing it from both fails five e2e assertions. **No test can tell the two
+apart and none can be written to** — the comment in `proxy.ts` is the only thing between a later
+reader and the reasonable conclusion that one of them is dead code, which it is right up until
+somebody deletes the other one.
+
+**Not added to either crawl**, following the precedent `e2e/crawl.spec.ts` states for `/login` and
+`/approve`: a page reached without a session is owned by the spec that drives it, and
+`e2e/signup-flow.spec.ts` owns this one. It is the **only spec in the suite that runs signed out**
+(`test.use({ storageState: { cookies: [], origins: [] } })`) — with a session cookie present,
+`/signup` would render whether or not middleware let it through, so the middleware change would be
+untested. Its UI strings are un-catalogued English, like `/login`'s and `/approve`'s; that is VX4-10.
+
+**No drain.** Signup mail does not go through the outbox — `notification_delivery` is tenant-scoped
+and there is no tenant yet — so the sink has the message as soon as the POST returns.
+
+**Sabotage (7 runs).** Public entry removed from `PUBLIC` only → passes; from the `matcher` only →
+passes; from both → 5 failures. GET calls `verifySignup` → 2 failures. `?created=` echoed without
+`checkSlug` → 1. The sign-in button drops the slug → 1. `/login` stops seeding the field → 1.
+
 ### VX5-2 SHIPPED — the door, and two things Postgres taught me by refusing
 
 **PR #103.** Migration `0035`. New: `lib/onboarding/signup.ts` · `test/signup.db.test.ts`. Changed:

@@ -12,6 +12,7 @@ import { createHash } from 'node:crypto';
 import {
   recordSignup,
   verifySignup,
+  peekSignup,
   SignupError,
   SIGNUP_TTL_MINUTES,
 } from '@/lib/onboarding/signup';
@@ -179,6 +180,102 @@ describe('verifying', () => {
     // The token is NOT burnt: the person can pick another name and try again.
     const row = await signupRow(REQUEST.email);
     expect(row.consumed_at).toBeNull();
+  });
+});
+
+/* ── VX5-2b: what the confirmation PAGE may read before anybody acts ────────
+ *
+ * `/signup/verify` renders a question on the GET and only creates the tenant on
+ * the POST, because link scanners fetch every URL in a message. That needs a
+ * read that does not consume — and the thing worth testing about it is not that
+ * it reads, but that it agrees with `verifySignup` about which links are alive
+ * and stays quiet about everything else.
+ */
+describe('peeking at a signup, which is what the confirm page does', () => {
+  it('names the organization and the address asked for, and NOT the email', async () => {
+    const started = await recordSignup(REQUEST);
+    const seen = await peekSignup(started.token);
+    expect(seen).toEqual({
+      organizationName: REQUEST.organizationName,
+      slug: REQUEST.slug,
+    });
+    // Belt and braces: `toEqual` above already fails on an extra key, but the
+    // email is the specific thing that must never be here — a link forwarded to
+    // a colleague should not tell them whose address started this.
+    expect(JSON.stringify(seen)).not.toContain(REQUEST.email);
+  });
+
+  it('does not consume: the row is still live and still verifiable after', async () => {
+    const started = await recordSignup(REQUEST);
+    await peekSignup(started.token);
+    await peekSignup(started.token);
+    const row = await signupRow(REQUEST.email);
+    expect(row.consumed_at).toBeNull();
+    const verified = await verifySignup(started.token);
+    expect(verified.slug).toBe(REQUEST.slug);
+  });
+
+  it('is null for a token nobody issued', async () => {
+    expect(await peekSignup('not-a-token')).toBeNull();
+  });
+
+  it('is null once the link has been used — the page cannot offer a spent one', async () => {
+    const started = await recordSignup(REQUEST);
+    await verifySignup(started.token);
+    expect(await peekSignup(started.token)).toBeNull();
+  });
+
+  it('is null for an expired link, by the same policy verification obeys', async () => {
+    const started = await recordSignup(REQUEST);
+    await admin.query(
+      "UPDATE signup SET expires_at = clock_timestamp() - interval '1 second' WHERE id = $1",
+      [started.signupId],
+    );
+    expect(await peekSignup(started.token)).toBeNull();
+  });
+
+  /* The claim that makes the other four worth having: the page and the action
+   * cannot disagree about whether a link is alive, because NEITHER decides —
+   * `signup_read_live` does, and both of them read through it. A peek that said
+   * yes where `verifySignup` said no would mean a button that fails on press. */
+  it('agrees with verification on every case, alive or dead', async () => {
+    const cases: Array<[string, () => Promise<string>, boolean]> = [
+      ['live', async () => (await recordSignup(REQUEST)).token, true],
+      ['unknown', async () => 'nobody-issued-this', false],
+      [
+        'consumed',
+        async () => {
+          const s = await recordSignup(REQUEST);
+          await verifySignup(s.token);
+          return s.token;
+        },
+        false,
+      ],
+      [
+        'expired',
+        async () => {
+          const s = await recordSignup(REQUEST);
+          await admin.query(
+            "UPDATE signup SET expires_at = clock_timestamp() - interval '1 second' WHERE id = $1",
+            [s.signupId],
+          );
+          return s.token;
+        },
+        false,
+      ],
+    ];
+    for (const [name, make, alive] of cases) {
+      await admin.query('TRUNCATE signup, app_user, organization CASCADE');
+      const token = await make();
+      const peeked = (await peekSignup(token)) !== null;
+      const verifies = await verifySignup(token).then(
+        () => true,
+        () => false,
+      );
+      expect(`${name}: peek=${peeked} verify=${verifies}`).toBe(
+        `${name}: peek=${alive} verify=${alive}`,
+      );
+    }
   });
 });
 
