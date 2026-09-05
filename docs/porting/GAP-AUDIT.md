@@ -4143,6 +4143,77 @@ but it means every diff has to survive `canonical()`, which is the BigInt trap a
 The regression guard must be a **database** test: the "from" side comes out of the row itself, and a
 stubbed read would prove only that the code reads something. ~1–1.5 days.
 
+## ON — self-serve onboarding (Phase 5). Audited 5 Sep 2026 at `5a11a647`.
+
+There is no Phase-5 tickets document, the same as Phase 3 and Phase 4, and the Drive folder does not
+mount from a Cowork session (see HANDOFF §6). So this audit and the board it feeds ARE the
+specification, and the first finding is the one that shapes the phase.
+
+### ON-1 · There is nothing to port. The tenant does not exist upstream. [checked]
+
+Searched at the pin for onboarding, signup, provisioning, tenant and registration across the whole
+tree: **two files match, and both are a Google Directory invite helper.** There is no `Organization`
+model, no `Tenant` model, and no organization ever gets created — `createOrganization` and
+`organization.create` appear nowhere in their source.
+
+The whole of their multi-tenancy is one COMMENT, in `packages/db/prisma/schema.prisma:1903`:
+
+> `/// per Module (unique). A future tenant model adds` `tenantId` `here only.`
+
+That is the single occurrence of `tenantId` in a 1900-line schema, and it is MT-1 stated from the
+other end. **ExpenseOS is a single-tenant application that has been described as a multi-tenant one.**
+Phase 5 is therefore greenfield in the way BR-1 predicted, and the risk shifts accordingly: there is
+no upstream design to disagree with, and equally no upstream mistakes to be warned by.
+
+### ON-2 · Their first sign-in AUTO-PROVISIONS, on a domain list, for one provider only. [checked]
+
+`apps/web/src/server/auth.ts`'s `signIn` callback ends its Google branch by CREATING the user:
+
+> `// First-time Google sign-in: create a new user with the` `employee` `system role`
+> `const created = await db.user.create({ … roleId: SYSTEM_ROLE_IDS.employee })`
+
+gated by `policy.allowedDomains` — a list an admin edits on a settings screen. In a single-tenant
+product that is defensible and even pleasant: everyone at the company signs in and works.
+
+**Ported unchanged into a multi-tenant product it is a hole**, and it is worth being precise about
+which one. The code has no answer to WHICH TENANT the new user belongs to, so any version of it must
+key on something; the only thing it holds is the email domain. That makes control of a domain's mail —
+or a typo in one tenant's allowed-domain list — into entry to that tenant's expense data. It is the
+same reason `0014` made a category's GL account nullable rather than guessed: a system that must not
+guess should refuse instead.
+
+**And the gate is per-provider.** The domain check sits inside the Google branch. The password and
+passkey providers return earlier, having checked only that the local user exists and is not
+soft-deleted — so a policy an admin believes is "only people from our domain" never runs for two of
+their three sign-in methods. Nothing is wrong today because those providers do not provision; the
+defect is latent and it is one refactor away from live.
+
+**VeloExpense's answer, settled with John 5 Sep: INVITE ONLY.** An administrator invites an address
+and nothing else grants entry. Domain claim was considered and deferred — it is a better experience
+for a 200-person rollout, and it is only safe with real proof of domain control, which is its own
+ticket rather than a checkbox.
+
+### ON-3 · The invite helper's OUTCOMES are the part worth porting. [checked]
+
+`packages/integrations-google/src/invite.ts` is coupled to Google Directory and most of it does not
+apply to us. Its header is the port:
+
+> *"The outcome is deliberately not a boolean. Four things can happen and they need different
+> sentences on screen"* — synced · created-unsynced · created-not-in-directory · exists.
+
+Two of those are ours in some form: **the person is already here** (refused, and it NAMES who, because
+"creating a second row for one human is how a picker ends up listing the same person twice"), and **the
+row exists but is not filled in yet**, which for us is an invite that has been sent and not accepted.
+A boolean return would collapse both into "no" and leave an admin guessing which.
+
+### ON-4 · Host-based tenancy has infrastructure teeth. [carried from BR-8]
+
+Not re-audited; recorded here so the Phase-5 board carries it. `APP_URL` is a module-level constant,
+the CDK stack derives every origin from one `config.domainName` and issues a certificate for that
+exact host **with no wildcard**, and `WEBAUTHN_RP_ID` is pinned to the host — so **every passkey stops
+validating when a tenant moves subdomain** unless the RP id is the apex. That is a certificate change
+and a DNS change, which is why the board puts it after signup works rather than before.
+
 ### Moving the pin
 
 The baseline tags live in the ExpenseOS repo and this session cannot push there. Once the ports above
