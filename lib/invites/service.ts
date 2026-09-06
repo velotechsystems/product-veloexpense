@@ -46,7 +46,7 @@ import { DomainError } from '@/lib/errors/domain';
 import type { UserMessageCode } from '@/lib/i18n/catalog/errors';
 import { append as auditAppend, type AuditActor } from '@/lib/audit/service';
 import { getBranding } from '@/lib/branding/service';
-import { sendEmail, appOrigin } from '@/lib/notifications/email';
+import { sendEmail, originForTenant } from '@/lib/notifications/email';
 import { emailShell } from '@/lib/notifications/email-shell';
 import {
   EMPLOYEE_ROLES,
@@ -227,7 +227,10 @@ export async function sendInvite(
 ): Promise<IssuedInvite> {
   const issued = await issueInvite(tx, actor, input);
   const branding = await getBranding(tx);
-  const origin = appOrigin();
+  // VX5-5: the TENANT's origin. An invitation to join Acme should land on Acme's
+  // address, where the host and the session they are about to create agree.
+  const slug = await tenantSlug(tx);
+  const origin = originForTenant(slug);
   const link = `${origin ?? ''}/invite/accept?token=${encodeURIComponent(issued.token)}`;
 
   await sendEmail({
@@ -250,6 +253,12 @@ export async function sendInvite(
     }),
   });
   return issued;
+}
+
+/** This tenant's slug, for the links its mail carries. */
+async function tenantSlug(tx: QueryRunner): Promise<string> {
+  const r = await tx.query(`SELECT slug FROM organization WHERE id = ${ORG}`);
+  return (r.rows[0]?.slug as string | undefined) ?? '';
 }
 
 function escapeHtml(s: string): string {

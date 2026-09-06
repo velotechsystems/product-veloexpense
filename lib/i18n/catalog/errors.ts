@@ -70,6 +70,9 @@ export const USER_MESSAGE_CODES = [
   'INVITE_ALREADY_MEMBER',
   'INVITE_NOT_LIVE',
   'INVITE_NOT_FOR_YOU',
+
+  /* VX5-5: the address names one tenant and the session belongs to another. */
+  'WRONG_TENANT_HOST',
   'REPORT_NOT_SUBMITTABLE',
   'REPORT_NOT_RECALLABLE',
   'REPORT_NOT_REIMBURSABLE',
@@ -426,6 +429,16 @@ export const ERROR_COPY: Record<UserMessageCode, Copy> = {
     // rather than that the button failed, because the outcome is not an error —
     // the person is in.
     'en-CA': 'That invitation is no longer pending — it was accepted or withdrawn already.',
+  },
+  WRONG_TENANT_HOST: {
+    // Says WHAT happened and WHAT to do, and names neither organization. The
+    // reader is signed in to one of them, so telling them that one is safe — but
+    // the sentence is also rendered on a host somebody else chose, and confirming
+    // "yes, acme is a customer of ours" to whoever typed it is an oracle this
+    // page has no reason to be.
+    'en-CA':
+      'This web address belongs to a different organization than the one you are signed in to. ' +
+      'Sign out and sign in again to use it.',
   },
   INVITE_NOT_FOR_YOU: {
     // The one that has to be careful. Somebody signed in with the wrong work

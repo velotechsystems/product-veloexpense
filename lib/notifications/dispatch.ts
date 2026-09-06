@@ -36,6 +36,7 @@ import { placeholderValuesFrom } from '@/lib/notifications/catalog';
 import { renderMessage } from '@/lib/notifications/service';
 import {
   appOrigin,
+  originForTenant,
   fromAddress,
   sendEmail,
   type EmailMessage,
@@ -210,7 +211,18 @@ export async function prepareEmail(
     locale: prefs.locale,
   });
 
-  const origin = appOrigin();
+  // VX5-5: the TENANT's origin, not the deployment's. `prepareEmail` already runs
+  // inside `withOrg(job.organizationId)`, so the slug is the tenant this message
+  // is about, by construction — the same reasoning the branding read below has.
+  // An approve link that lands on the tenant's own address arrives where the host
+  // and the reader's session already agree.
+  // `prepareEmail` runs inside the tenant transaction already, so the current
+  // org is the tenant this message is about — read it the way every other
+  // tenant-scoped statement in this file does rather than threading an id in.
+  const slugRow = await tx.query(
+    "SELECT slug FROM organization WHERE id = NULLIF(current_setting('app.current_org', true), '')::uuid",
+  );
+  const origin = originForTenant((slugRow.rows[0]?.slug as string | undefined) ?? '');
   const reportUrl = origin ? `${origin}/expenses/${row.subject_id}` : null;
 
   // VX4-3 part 3. One extra read per email, in the SAME transaction — `prepareEmail`

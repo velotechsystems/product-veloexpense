@@ -40,6 +40,8 @@ import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { brandingForRender } from "@/lib/branding/request";
 import { readerPrefs } from "@/lib/i18n/request";
+import { hostTenantMismatch } from "@/lib/tenant/request";
+import { WrongTenantHost } from "@/app/wrong-tenant-host";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -85,6 +87,7 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
   // `readerPrefs()` is `cache()`d and `brandingForRender()` above already reads
   // the session, so this adds no query to the request: see lib/i18n/request.ts.
   const { locale } = await readerPrefs();
+  const mismatch = await hostTenantMismatch();
 
   return (
     <html
@@ -100,7 +103,14 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
           />
         )}
       </head>
-      <body className="min-h-full flex flex-col">{children}</body>
+      <body className="min-h-full flex flex-col">
+        {/* VX5-5. The GUARD is in `withCurrentOrg`, on the path to the data, and
+            it throws — route handlers never see a layout, so a check that lived
+            only here would be a check the next caller forgets (MT-3). This is
+            for the READER: a person who followed a colleague's link gets a
+            sentence and a way out instead of a thrown error. */}
+        {mismatch === null ? children : <WrongTenantHost locale={locale} />}
+      </body>
     </html>
   );
 }
