@@ -329,6 +329,28 @@ describe('a tenant provisioned end to end', () => {
     expect(await withOrg(org, (tx) => tenantMayWrite(tx))).toBe(false);
   });
 
+  it('a CANCELLED tenant may NOT write, and this was a live bug', async () => {
+    // `liveSubscription` excludes CANCELLED, so `tenantMayWrite` used to fall
+    // through to the no-subscription branch and permit everything — a customer
+    // who cancelled kept full write access. Caught by the gate's own test, fixed
+    // by `effectiveStatus`, and pinned here as well because the two absences it
+    // separates are easy to re-merge.
+    const org = (
+      await admin.query(
+        "INSERT INTO organization (slug, name) VALUES ('bill-cancelled','Cancelled') RETURNING id",
+      )
+    ).rows[0].id as string;
+    await withOrg(org, (tx) => startTrial(tx));
+    await withOrg(org, (tx) =>
+      tx.query(
+        `UPDATE subscription SET status = 'CANCELLED', cancelled_at = clock_timestamp(),
+                                 trial_ends_at = NULL`,
+      ),
+    );
+
+    expect(await withOrg(org, (tx) => tenantMayWrite(tx))).toBe(false);
+  });
+
   it('a PAST_DUE tenant MAY write, and this is the entry most likely to be "fixed"', async () => {
     // A card that expired on a Friday is not a reason to stop a finance team
     // working on Monday. The provider's dunning escalates to LAPSED, and that is

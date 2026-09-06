@@ -32,6 +32,7 @@ import { notify, reportPayload } from '@/lib/notifications/service';
 import { capabilityAvailability } from '@/lib/integrations/service';
 import { uncodedCategories, uncodedDiagnostic } from '@/lib/integrations/coding';
 import { ORG } from '@/lib/tenant/sql';
+import { assertTenantMayWrite } from '@/lib/billing/gate';
 
 
 export type TransitionAction = 'SUBMIT' | 'RECALL' | 'APPROVE' | 'REJECT' | 'RETURN' | 'REIMBURSE';
@@ -137,6 +138,12 @@ export async function submitReport(
   reportId: string,
   actorId: string,
 ): Promise<SubmitResult> {
+  // VX5-11. BEFORE the status check and before the policy pass, because a tenant
+  // whose subscription has lapsed should be told THAT rather than being walked
+  // through validation whose outcome cannot matter. Same ordering argument UD-2
+  // makes for the GL-coding gate: check the fact before the judgement.
+  await assertTenantMayWrite(tx, 'submit a report');
+
   const report = await requireReport(tx, reportId);
   if (report.status !== 'DRAFT') {
     throw new LifecycleError(
@@ -454,6 +461,12 @@ export async function reimburseReport(
   actorId: string,
   input: ReimburseInput = {},
 ): Promise<ReimburseResult> {
+  // VX5-11. Reimbursement is not in John's three words ("submit, approve or
+  // post") and is gated anyway, stated here rather than assumed: it records that
+  // money left the company, which is the same family as the other three and the
+  // one a reader would be most surprised to find open.
+  await assertTenantMayWrite(tx, 'mark a report reimbursed');
+
   const r = await tx.query(
     `SELECT rep.id, rep.number, rep.title, rep.status, rep.submitter_id,
             rep.total_minor, rep.currency_code,

@@ -64,6 +64,9 @@ const PAGES = [
   '/admin/chart-of-accounts',
   '/admin/compliance',
   '/admin/branding',
+  // VX5-11. Added by hand because this list is deliberately not a glob: a route
+  // added without a thought about who may see it should fail this file.
+  '/admin/billing',
   '/admin/locale',
   '/admin/integrations',
   '/admin/ledger-queue',

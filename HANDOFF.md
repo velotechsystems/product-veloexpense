@@ -383,6 +383,66 @@ no upstream mistakes to be warned by.
   `page.content()` across every crawled page. This unblocks **VX4-10**, which lowers the ratchet's
   ceilings and could not be trusted while the ratchet could pass measuring nothing.
 
+#### VX5-11 SHIPPED — the write gate, the billing screen, and a hole in my own design
+
+**No migration.** New: `lib/billing/gate.ts` · `app/admin/billing/{page.tsx,actions.ts}` ·
+`test/billing-gate.db.test.ts`. Changed: `lib/expenses/lifecycle.ts` · `lib/approvals/engine.ts` ·
+`lib/integrations/post-outbox.ts` · `lib/billing/service.ts` · `lib/i18n/catalog/errors.ts` ·
+`scripts/seed.mjs` · `e2e/crawl.spec.ts` · `test/billing.db.test.ts`.
+
+**A LIVE BUG IN VX5-8/VX5-11, FOUND BY THE GATE'S OWN TEST.** `liveSubscription` filters
+`status <> 'CANCELLED'` — correct for "what are they on", since a customer who left is on nothing.
+But the gate consulted it, so **a CANCELLED tenant looked like a tenant with NO subscription**, which
+`canWriteWithoutSubscription` deliberately permits. A customer who cancelled kept full write access
+indefinitely. `canWrite('CANCELLED')` was already correct and already tested; nothing could reach it.
+Fixed with `effectiveStatus`, which separates the two absences that matter: **never subscribed**
+(no row — every pre-0037 tenant and `blank` in the seed; permitted, because refusing takes every
+existing customer offline on deploy) from **cancelled** (a row that says they left; refused).
+Sabotage confirms it: reverting the gate to `liveSubscription` fails exactly the CANCELLED case.
+
+**WHERE I NARROWED JOHN'S DECISION, stated because it is interpretation and not instruction.** He
+chose "read-only", described as *cannot submit, approve or post*. The gate implements that sentence,
+so **a lapsed tenant can still edit DRAFTS**. A draft has no financial effect, and blocking one turns
+a billing lapse into lost work — a much worse thing to do over an expired card than withholding a
+submit button. `recallReport` is also ungated: refusing an undo is how read-only becomes a trap.
+
+**FIVE GATED PATHS**, listed once in `GATED_ACTIONS` and driven by the test: `submitReport`,
+`decide`, `reimburseReport`, `releaseHold`, `retryNow`. Reimbursement is not in John's three words and
+is gated anyway — it records that money left the company. The automatic ledger drain is NOT gated:
+work already accepted before a lapse still finishes.
+
+**`PAST_DUE` WRITES.** Third time this is written down, because it is the entry a future reader will
+"fix": a card that failed on a Friday must not halt an approval queue on Monday, and the provider's
+dunning is what escalates to LAPSED.
+
+**THE SEED NOW STARTS TRIALS FOR ITS FIXTURES**, found by querying rather than reading: no seeded
+tenant had a subscription, because the seed builds fixtures with `upsertOrg` rather than through
+`createOrganization`, where `startTrial` lives. `demo` gets TEAM (both meters, so a screen tested
+against it renders a quantity), `second` gets STARTER, and **`blank` deliberately keeps none** — it is
+the fixture for the pre-0037 tenant, and `test/billing-gate.db.test.ts` needs one to prove that
+absence still writes.
+
+**THE SCREEN SHOWS QUANTITIES AND NO AMOUNTS.** Deliberate, per 0038's header: money is the
+provider's arithmetic, and printing our own multiplication beside theirs is how two numbers that
+should agree start not to. It also has no "change plan" and no "cancel" — both belong to a provider
+that is not connected, and building the half that gets thrown away would create a window where our
+row and theirs disagree.
+
+**`/admin/billing` was added to `e2e/crawl.spec.ts` by hand**, because that list is deliberately not a
+glob: "a route added without a thought about who may see it should fail this file". Playwright is now
+**161 + 18**.
+
+**NOT covered by the pseudo-locale crawl.** `e2e/pseudo-crawl.spec.ts` walks six pages and this is not
+one, so the new screen's chrome is outside the ratchet entirely. Not a regression — the ratchet never
+covered every page — but **VX4-10 should add it with a measured ceiling** rather than assume the
+ratchet already sees it.
+
+**CONTAINER-ONLY FACT, for the next session.** `e2e/host-tenancy.spec.ts` launches its own browser via
+`chromium.launch({ executablePath: process.env.PW_CHROMIUM_PATH })` and FAILS in the cloud harness
+with "Executable doesn't exist" unless `PW_CHROMIUM_PATH` is set. In the container that is
+`/opt/pw-browsers/chromium-1194/chrome-linux/chrome`. It is not a code defect and CI is unaffected;
+it cost twenty minutes of chasing a phantom regression, so it is written down here.
+
 #### VX5-9 SHIPPED — metering: what a tenant is billed for
 
 **Migration `0038`.** New: `lib/billing/metering.ts` · `app/api/internal/billing/meter/route.ts` ·

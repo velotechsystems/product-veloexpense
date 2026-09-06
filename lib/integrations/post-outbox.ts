@@ -28,6 +28,7 @@ import { backoffSecondsFor, isExhausted, CLAIM_TIMEOUT_SECONDS } from '@/lib/out
 import { append as auditAppend, type AuditActor } from '@/lib/audit/service';
 import { uncodedCategories } from '@/lib/integrations/coding';
 import { ORG } from '@/lib/tenant/sql';
+import { assertTenantMayWrite } from '@/lib/billing/gate';
 
 
 /**
@@ -245,6 +246,10 @@ export async function enqueuePost(tx: QueryRunner, reportId: string): Promise<vo
  * or withheld. That is a refusal, not a silent success.
  */
 export async function releaseHold(tx: QueryRunner, id: string): Promise<void> {
+  // VX5-11. Releasing a held post is what actually sends a report to the ledger
+  // under AP_QUEUE, so it is the "post" in "submit, approve or post".
+  await assertTenantMayWrite(tx, 'release a held post');
+
   const r = await tx.query(
     `UPDATE integration_post
         SET status = 'PENDING', next_attempt_at = clock_timestamp(),
@@ -484,6 +489,11 @@ export async function requeueWaitingPosts(tx: QueryRunner): Promise<number> {
 
 /** An operator's decision that a DEAD or NEEDS_REVIEW row should be tried again. */
 export async function retryNow(tx: QueryRunner, id: string): Promise<void> {
+  // VX5-11. A manual retry re-attempts a post, so it is the same act as releasing
+  // one. NOTE that the automatic drain is NOT gated — see the note on
+  // `duePosts`: work already accepted before a lapse still finishes.
+  await assertTenantMayWrite(tx, 'retry a failed post');
+
   // Attempts are RESET, so a human retry gets a full budget rather than one more
   // go — same choice as VX2-8's `retryNow`. `last_error` is KEPT: it is the only
   // record of why the row was stuck, and clearing it on retry loses the diagnosis
