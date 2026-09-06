@@ -477,52 +477,23 @@ async function seedReferenceData(orgId, entityName = 'Demo Co Inc.') {
 
 
 /**
- * VX5-11 — give a fixture tenant a subscription.
+ * VX5-19 — NO FIXTURE SUBSCRIPTIONS, and the reversal is the point.
  *
- * THE GAP THIS CLOSES, and it was found by querying rather than by reading: no
- * seeded tenant had one. The seed builds its fixtures with `upsertOrg` directly
- * rather than through `createOrganization`, so `startTrial` — which VX5-8 put
- * inside that function's transaction — never ran for them. `demo`, `second` and
- * `blank` all came back `(NONE)`.
+ * VX5-11 added `seedSubscription`, because no seeded tenant had one and the
+ * billing screen had nothing to render. That was the right fix for the wrong
+ * architecture: this product does not start subscriptions any more. The VeloTech
+ * platform does, and a fixture tenant minting its own would be the seed asserting
+ * a fact only the platform can state.
  *
- * Nothing was broken by it: "absence is not lapse", so the fixtures kept working
- * and metering correctly skipped them. What it cost was the next ticket. The
- * billing screen would have had nothing to render for `demo`, and its e2e would
- * have had to mint a subscription for itself — which is the "a spec that arranges
- * the world it asserts about" shape that has already produced false-green tests
- * here.
+ * So every seeded tenant is now UNMIRRORED — no `subscription` row — which is
+ * also what a real tenant looks like until the platform is configured and asked.
+ * The fixture matches production rather than flattering it.
  *
- * `blank` DELIBERATELY KEEPS NONE. It is the fixture for the pre-0037 tenant, and
- * `test/billing-gate.db.test.ts` needs one to prove that a tenant with no
- * subscription may still write — the property that stops the deploy taking every
- * existing customer offline. A seed that gave every tenant a subscription would
- * leave that path with no fixture at all.
- *
- * Raw SQL rather than importing `startTrial`, because this is a `.mjs` script and
- * cannot import the TypeScript service — the same constraint that stopped 0009
- * seeding a ledger. The status/trial pairing 0037's CHECK enforces is written out
- * explicitly here so the two cannot drift silently.
+ * What this costs, stated rather than discovered: `/admin/billing` on the demo
+ * tenant shows its "nothing is being billed" state, and `test/billing.db.test.ts`
+ * builds its own mirrors through `mirrorEntitlement`. Both are better than a seed
+ * that pretends the platform said something it never did.
  */
-async function seedSubscription(orgId, planCode) {
-  const client = await pool.connect();
-  try {
-    await client.query('BEGIN');
-    await client.query("SELECT set_config('app.current_org', $1, true)", [orgId]);
-    await client.query(
-      `INSERT INTO subscription (organization_id, plan_code, status, trial_ends_at)
-         SELECT $1, code, 'TRIALING', clock_timestamp() + make_interval(days => trial_days)
-           FROM billing_plan WHERE code = $2 AND active AND trial_days > 0
-       ON CONFLICT DO NOTHING`,
-      [orgId, planCode],
-    );
-    await client.query('COMMIT');
-  } catch (err) {
-    await client.query('ROLLBACK');
-    throw err;
-  } finally {
-    client.release();
-  }
-}
 
 async function main() {
   // Before the pool is used for anything else. The environment check needs no
@@ -564,10 +535,6 @@ async function main() {
   await seedUser(demoId, 'manager@demo.test', 'Demo Manager', { role: 'MANAGER', title: 'Finance Manager' });
   await seedUser(demoId, 'employee@demo.test', 'Demo Employee', { role: 'EMPLOYEE', title: 'Analyst' });
   await seedReportingLine(demoId);
-  // TEAM rather than the STARTER default, so the fixture exercises a plan with
-  // BOTH meters — a flat component and a per-seat one. A screen tested only
-  // against a flat plan would never render a quantity.
-  await seedSubscription(demoId, 'TEAM');
 
   // ── VX3-9a: a SECOND populated tenant, on a DIFFERENT ledger ───────────────
   //
@@ -602,7 +569,6 @@ async function main() {
   await seedReferenceData(secondId, 'Second Co Ltd.');
   await seedUser(secondId, 'owner@second.test', 'Second Owner', { role: 'ADMIN', title: 'Owner' });
   await seedUser(secondId, 'admin@second.test', 'Second Admin', { role: 'ADMIN', title: 'Controller' });
-  await seedSubscription(secondId, 'STARTER');
   await seedReportingLine(secondId, {
     entityName: 'Second Co Ltd.',
     // Two people: the controller reports to the owner, so the owner can approve

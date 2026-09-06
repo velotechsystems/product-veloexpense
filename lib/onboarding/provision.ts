@@ -61,7 +61,6 @@ import { DomainError } from '@/lib/errors/domain';
 import type { UserMessageCode } from '@/lib/i18n/catalog/errors';
 import { append as auditAppend } from '@/lib/audit/service';
 import { seedStarterCategories } from '@/lib/onboarding/starter';
-import { startTrial } from '@/lib/billing/service';
 import { checkSlug, type SlugRefusal } from '@/lib/onboarding/slug';
 
 export type ProvisionErrorCode = SlugRefusal | 'SLUG_TAKEN' | 'NAME_REQUIRED' | 'EMAIL_REQUIRED';
@@ -179,15 +178,19 @@ export async function createOrganization(
      * POLICY, and `lib/onboarding/starter.ts` argues the line. */
     const seededCategories = await seedStarterCategories(tx);
 
-    /* VX5-8 — the tenant starts its trial in the same transaction, and for the
-     * same reason as the two writes above it.
+    /* VX5-19 — NO TRIAL IS STARTED HERE, and its absence is the decision.
      *
-     * A tenant with no subscription is one no billing sweep will ever pick up and
-     * no screen can describe. Doing it here rather than in a follow-up write means
-     * there is no window in which a customer exists and is unbillable — and no
-     * repair path to write for the rows created during that window, which is the
-     * kind of thing that is cheap now and a data migration later. */
-    const trial = await startTrial(tx);
+     * VX5-8 called `startTrial` in this transaction, on the reasoning that a
+     * tenant which exists and is unbillable is a half-existing state. That
+     * reasoning was right and the conclusion was wrong: this product does not
+     * decide what anybody pays. The VeloTech platform owns billing across the
+     * suite, starts the trial, and this tenant's entitlement is MIRRORED here
+     * when the platform is asked (`lib/billing/entitlements.ts`).
+     *
+     * A tenant created through VeloExpense's own signup may therefore have no
+     * platform Account at all — the platform answers `not_found` — and that is a
+     * legitimate state meaning nobody is billing it. It writes normally; see
+     * `canWriteWithoutSubscription`. */
 
     await auditAppend(
       tx,
@@ -206,12 +209,6 @@ export async function createOrganization(
           name,
           admin_email: adminEmail,
           seeded_categories: seededCategories,
-          // On the genesis row for the reason the categories are: the trial is
-          // part of the tenant coming into being, not a separate event, and
-          // "when did this customer's clock start" is a question an auditor asks
-          // of the row that says where everything came from.
-          plan_code: trial.planCode,
-          trial_ends_at: trial.trialEndsAt?.toISOString() ?? null,
         },
       },
     );

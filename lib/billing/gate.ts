@@ -48,8 +48,7 @@
  */
 import type { QueryRunner } from '@/lib/db/client';
 import { DomainError } from '@/lib/errors/domain';
-import { canWrite, canWriteWithoutSubscription } from '@/lib/billing/plans';
-import { effectiveStatus } from '@/lib/billing/service';
+import { tenantMayWrite } from '@/lib/billing/service';
 
 /**
  * The write paths a lapsed tenant may not take.
@@ -91,12 +90,16 @@ export class BillingLapsedError extends DomainError {
  * builds its tenants after 0037.
  */
 export async function assertTenantMayWrite(tx: QueryRunner, action: GatedAction): Promise<void> {
-  // `effectiveStatus`, NOT `liveSubscription`, and the difference was a live bug
-  // this file's own test caught: `liveSubscription` excludes CANCELLED rows, so a
-  // customer who had cancelled looked like a tenant with no subscription — which
-  // is the one absence that is deliberately permitted. They kept full write
-  // access. `effectiveStatus` separates "never subscribed" from "left".
-  const status = await effectiveStatus(tx);
-  const permitted = status === null ? canWriteWithoutSubscription() : canWrite(status);
-  if (!permitted) throw new BillingLapsedError(action);
+  // The decision lives in `tenantMayWrite`, which prefers the PLATFORM's own
+  // `readOnly` verdict over anything derived here — see its comment. Two things
+  // it keeps that this file used to own:
+  //
+  //   · CANCELLED is not the same absence as NEVER MIRRORED. A bug VX5-11's test
+  //     caught: `liveSubscription` excludes cancelled rows, so a customer who had
+  //     left looked like one nobody bills, which is the permitted case. They kept
+  //     full write access.
+  //   · Never mirrored PERMITS. After 0039 that is most tenants — this product no
+  //     longer starts its own trials — so answering "no" there would take the
+  //     whole customer base offline on deploy.
+  if (!(await tenantMayWrite(tx))) throw new BillingLapsedError(action);
 }

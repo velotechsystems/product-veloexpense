@@ -1,262 +1,235 @@
 /**
- * VX5-8 — the subscription schema and the plan catalogue.
+ * VX5-19 — the subscription mirror.
  *
- * The pure rules are in `test/billing-plans.test.ts`, which needs no database.
- * This file is for the claims only a real Postgres can make: the CHECK
- * constraints, the partial unique index, and `startTrial` landing inside
- * `createOrganization`'s transaction.
+ * Replaces VX5-8's suite, most of which tested a plan catalogue that migration
+ * 0039 deleted. What is left is the part that was always this product's business:
+ * copying the platform's answer without editorialising, and refusing to write
+ * anything when there is no answer to copy.
  *
- * ── ONE THING THIS FILE IS CAREFUL ABOUT ────────────────────────────────────
+ * ── THE ASSERTION THIS FILE IS REALLY ABOUT ────────────────────────────────
  *
- * Several assertions below are that the DATABASE refuses something. Each is
- * written against the constraint's effect, not its name — `rejects.toThrow(/check
- * constraint/i)` rather than matching `subscription_trial_has_end`. A test that
- * names a constraint passes for the wrong reason the day somebody renames it and
- * fails for the wrong reason the day somebody adds a second one.
+ * A platform OUTAGE must not stop a paying customer working. Every `skipped` case
+ * below is a different route to that same claim: a mirror that already says
+ * ACTIVE keeps saying ACTIVE when the platform cannot be reached, because writing
+ * a refusal on an error is how a billing integration becomes a single point of
+ * failure with an invoice attached.
  */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { Pool } from 'pg';
 import { withOrg } from '@/lib/tenant/context';
-import { type QueryRunner } from '@/lib/db/client';
 import { createOrganization } from '@/lib/onboarding/provision';
 import {
-  listPlans,
+  effectiveStatus,
   liveSubscription,
-  startTrial,
+  mirrorEntitlement,
   tenantMayWrite,
-  DEFAULT_PLAN_CODE,
 } from '@/lib/billing/service';
+import type { EntitlementResult, PlatformEntitlement } from '@/lib/billing/entitlements';
 
 const admin = new Pool({
   connectionString: process.env.ADMIN_DATABASE_URL ?? process.env.DATABASE_URL,
 });
 
-let orgId: string;
+/** A platform entitlement, with the shape the platform actually returns. */
+function entitlement(over: Partial<PlatformEntitlement> = {}): EntitlementResult {
+  return {
+    state: 'ok',
+    entitlement: {
+      accountId: 'acc-1',
+      product: 'veloexpense',
+      hasSubscription: true,
+      status: 'active',
+      planName: 'Team',
+      planSlug: 'team',
+      features: {},
+      limits: {},
+      billingCycle: 'month',
+      inTrial: false,
+      trialEndsAt: null,
+      currentPeriodEnd: null,
+      readOnly: false,
+      ...over,
+    },
+  };
+}
 
-/**
- * A `QueryRunner` over the admin pool, for the catalogue reads only.
- *
- * Deliberately not `withOrg`: the point of those two cases is that `billing_plan`
- * needs NO tenant context, and running them inside one would prove the opposite of
- * what they claim. Typed rather than an inline object literal because
- * `QueryRunner`'s `query` is generic and an arrow shorthand loses that.
- */
-const adminRunner: QueryRunner = {
-  query: ((text: string, params?: unknown[]) => admin.query(text, params)) as QueryRunner['query'],
-};
+async function newOrg(slug: string): Promise<string> {
+  const r = await admin.query(
+    'INSERT INTO organization (slug, name) VALUES ($1, $2) RETURNING id',
+    [slug, slug],
+  );
+  return r.rows[0].id as string;
+}
 
 beforeAll(async () => {
   await admin.query('TRUNCATE organization RESTART IDENTITY CASCADE');
-  const r = await admin.query(
-    "INSERT INTO organization (slug, name) VALUES ('bill-co','Bill Co') RETURNING id",
-  );
-  orgId = r.rows[0].id as string;
 });
 
 afterAll(async () => {
   await admin.end();
 });
 
-describe('the plan catalogue', () => {
-  it('is readable with no tenant context at all — it is global reference data', async () => {
-    // Not `withOrg`. `billing_plan` has no `organization_id`, so it carries no
-    // policy, exactly like `currency`. A tenant that cannot read the catalogue
-    // cannot be shown what it is paying for.
-    const plans = await listPlans(adminRunner);
+describe('mirroring what the platform said', () => {
+  it('copies plan, status, trial and the platform’s own readOnly verdict', async () => {
+    const org = await newOrg('mir-basic');
+    const ends = '2026-10-01T00:00:00.000Z';
 
-    expect(plans.map((p) => p.code)).toEqual(['STARTER', 'TEAM', 'SCALE']);
-    expect(plans.every((p) => p.currencyCode === 'CAD')).toBe(true);
-  });
-
-  it('carries components, and money comes back as bigint rather than Number', async () => {
-    const plans = await listPlans(adminRunner);
-    const team = plans.find((p) => p.code === 'TEAM');
-
-    expect(team).toBeDefined();
-    // Base fee plus per seat — the shape a single `meter` column could not express,
-    // which is why the component table exists.
-    expect(team!.components.map((c) => c.meter).sort()).toEqual(['SEAT', 'TENANT']);
-
-    const seat = team!.components.find((c) => c.meter === 'SEAT')!;
-    expect(typeof seat.unitAmountMinor).toBe('bigint');
-    expect(seat.unitAmountMinor).toBe(900n);
-    expect(seat.includedUnits).toBe(10);
-  });
-
-  it('refuses to attach a CARD component, because nothing here can count a card', async () => {
-    // The constraint that keeps a meter expressible without being billable. Drop
-    // it in the migration that lands VCC — until then this is what stops an
-    // invoice line that is always zero, which reads exactly like a customer who
-    // owes nothing.
-    await expect(
-      admin.query(
-        `INSERT INTO billing_plan_component (plan_code, meter, unit_amount_minor)
-         VALUES ('TEAM', 'CARD', 500)`,
+    const out = await withOrg(org, (tx) =>
+      mirrorEntitlement(
+        tx,
+        entitlement({ status: 'trialing', inTrial: true, trialEndsAt: ends, readOnly: false }),
       ),
-    ).rejects.toThrow(/check constraint/i);
-  });
-
-  it('refuses a meter outside the vocabulary', async () => {
-    await expect(
-      admin.query(
-        `INSERT INTO billing_plan_component (plan_code, meter, unit_amount_minor)
-         VALUES ('TEAM', 'MILEAGE', 500)`,
-      ),
-    ).rejects.toThrow(/check constraint/i);
-  });
-});
-
-describe('starting a trial', () => {
-  it('creates a TRIALING subscription with an end date from the plan', async () => {
-    const started = await withOrg(orgId, (tx) => startTrial(tx));
-
-    expect(started.planCode).toBe(DEFAULT_PLAN_CODE);
-    expect(started.status).toBe('TRIALING');
-    expect(started.trialEndsAt).toBeInstanceOf(Date);
-
-    // 30 days, from `billing_plan.trial_days` rather than from a constant in the
-    // service — the assertion is deliberately loose at the edges because
-    // `clock_timestamp()` and a DST boundary are not worth a flaky test.
-    const days = (started.trialEndsAt!.getTime() - Date.now()) / 86_400_000;
-    expect(days).toBeGreaterThan(29);
-    expect(days).toBeLessThan(31);
-  });
-
-  it('is visible only inside its own tenant', async () => {
-    const other = await admin.query(
-      "INSERT INTO organization (slug, name) VALUES ('bill-other','Other') RETURNING id",
     );
-    const otherId = other.rows[0].id as string;
+    expect(out.state).toBe('written');
 
-    const mine = await withOrg(orgId, (tx) => liveSubscription(tx));
-    const theirs = await withOrg(otherId, (tx) => liveSubscription(tx));
-
-    expect(mine?.planCode).toBe('STARTER');
-    expect(theirs).toBeNull();
+    const sub = await withOrg(org, (tx) => liveSubscription(tx));
+    expect(sub?.status).toBe('TRIALING');
+    expect(sub?.planCode).toBe('team');
+    expect(sub?.planName).toBe('Team');
+    expect(sub?.readOnly).toBe(false);
+    expect(sub?.trialEndsAt?.toISOString()).toBe(ends);
+    // The age of the answer, not just the answer.
+    expect(sub?.mirroredAt).toBeInstanceOf(Date);
   });
 
-  it('refuses a second live subscription for the same tenant', async () => {
-    // The partial unique index, not a check in application code. Two live
-    // subscriptions is the state that would make every later question — which
-    // plan, which period, how much — ambiguous.
-    await expect(withOrg(orgId, (tx) => startTrial(tx))).rejects.toThrow(/duplicate key|unique/i);
-  });
-
-  it('refuses a plan that does not exist, by name', async () => {
-    const other = await admin.query(
-      "INSERT INTO organization (slug, name) VALUES ('bill-noplan','No Plan') RETURNING id",
-    );
-    await expect(
-      withOrg(other.rows[0].id as string, (tx) => startTrial(tx, { planCode: 'NOPE' })),
-    ).rejects.toThrow(/no active plan 'NOPE'/);
-  });
-
-  it('refuses an INACTIVE plan too — a withdrawn price is not for sale', async () => {
-    await admin.query("UPDATE billing_plan SET active = false WHERE code = 'SCALE'");
-    const other = await admin.query(
-      "INSERT INTO organization (slug, name) VALUES ('bill-retired','Retired') RETURNING id",
-    );
-    try {
-      await expect(
-        withOrg(other.rows[0].id as string, (tx) => startTrial(tx, { planCode: 'SCALE' })),
-      ).rejects.toThrow(/no active plan 'SCALE'/);
-    } finally {
-      await admin.query("UPDATE billing_plan SET active = true WHERE code = 'SCALE'");
+  it('maps the platform’s vocabulary onto ours, including its one-L "canceled"', async () => {
+    for (const [platform, ours] of [
+      ['active', 'ACTIVE'],
+      ['trialing', 'TRIALING'],
+      ['past_due', 'PAST_DUE'],
+      ['suspended', 'SUSPENDED'],
+    ] as const) {
+      const org = await newOrg(`mir-map-${platform.replace('_', '-')}`);
+      await withOrg(org, (tx) =>
+        mirrorEntitlement(tx, entitlement({ status: platform, trialEndsAt: null })),
+      );
+      expect((await withOrg(org, (tx) => liveSubscription(tx)))?.status).toBe(ours);
     }
-  });
-});
 
-describe('the constraints that make an impossible row impossible', () => {
-  it('refuses TRIALING with no trial end, and a trial end on anything else', async () => {
-    const org = (
-      await admin.query(
-        "INSERT INTO organization (slug, name) VALUES ('bill-checks','Checks') RETURNING id",
-      )
-    ).rows[0].id as string;
-
-    // TRIALING must say when the trial ends.
-    await expect(
-      admin.query(
-        `INSERT INTO subscription (organization_id, plan_code, status)
-         VALUES ($1, 'STARTER', 'TRIALING')`,
-        [org],
-      ),
-    ).rejects.toThrow(/check constraint/i);
-
-    // And an ACTIVE row may not carry one — two claims about the same tenant,
-    // where whichever code reads it first would have to pick.
-    await expect(
-      admin.query(
-        `INSERT INTO subscription (organization_id, plan_code, status, trial_ends_at)
-         VALUES ($1, 'STARTER', 'ACTIVE', clock_timestamp() + interval '30 days')`,
-        [org],
-      ),
-    ).rejects.toThrow(/check constraint/i);
+    // `canceled` is the platform's spelling and Stripe's; ours is CANCELLED.
+    // A silent no-match here would leave a departed customer writing.
+    const org = await newOrg('mir-map-canceled');
+    await withOrg(org, (tx) => mirrorEntitlement(tx, entitlement({ status: 'canceled' })));
+    expect(await withOrg(org, (tx) => effectiveStatus(tx))).toBe('CANCELLED');
   });
 
-  it('refuses half a provider linkage', async () => {
-    const org = (
-      await admin.query(
-        "INSERT INTO organization (slug, name) VALUES ('bill-provider','Provider') RETURNING id",
-      )
-    ).rows[0].id as string;
-
-    // A provider with no customer reference is a row a reconciliation job would
-    // have to guess about. All three or none.
-    await expect(
-      admin.query(
-        `INSERT INTO subscription (organization_id, plan_code, status, provider)
-         VALUES ($1, 'STARTER', 'ACTIVE', 'some-provider')`,
-        [org],
-      ),
-    ).rejects.toThrow(/check constraint/i);
-
-    // All three is fine.
-    await expect(
-      admin.query(
-        `INSERT INTO subscription
-           (organization_id, plan_code, status, provider, provider_customer_ref,
-            provider_subscription_ref)
-         VALUES ($1, 'STARTER', 'ACTIVE', 'some-provider', 'cus_x', 'sub_x')`,
-        [org],
-      ),
-    ).resolves.toBeDefined();
-  });
-
-  it('a cancelled row does not block a new subscription, and is kept', async () => {
-    const org = (
-      await admin.query(
-        "INSERT INTO organization (slug, name) VALUES ('bill-again','Again') RETURNING id",
-      )
-    ).rows[0].id as string;
-
-    await withOrg(org, (tx) => startTrial(tx));
-    await withOrg(org, (tx) =>
-      tx.query(
-        `UPDATE subscription SET status = 'CANCELLED', cancelled_at = clock_timestamp(),
-                                 trial_ends_at = NULL`,
-      ),
-    );
-
-    // The customer comes back. The partial index is what allows this; a plain
-    // UNIQUE would have made returning impossible without deleting the record of
-    // what they used to pay.
-    const again = await withOrg(org, (tx) => startTrial(tx, { planCode: 'TEAM' }));
-    expect(again.status).toBe('TRIALING');
+  it('updates the same row rather than accumulating one per answer', async () => {
+    const org = await newOrg('mir-update');
+    await withOrg(org, (tx) => mirrorEntitlement(tx, entitlement({ status: 'trialing', trialEndsAt: '2026-10-01T00:00:00.000Z' })));
+    await withOrg(org, (tx) => mirrorEntitlement(tx, entitlement({ status: 'active', planSlug: 'scale', planName: 'Scale' })));
 
     const rows = await withOrg(org, (tx) =>
-      tx.query('SELECT status FROM subscription ORDER BY created_at'),
+      tx.query('SELECT status, plan_code FROM subscription'),
     );
-    expect(rows.rows.map((r) => r.status)).toEqual(['CANCELLED', 'TRIALING']);
-
-    // And `liveSubscription` sees only the live one.
-    const live = await withOrg(org, (tx) => liveSubscription(tx));
-    expect(live?.planCode).toBe('TEAM');
+    expect(rows.rows).toHaveLength(1);
+    expect(rows.rows[0].status).toBe('ACTIVE');
+    expect(rows.rows[0].plan_code).toBe('scale');
   });
 });
 
-describe('a tenant provisioned end to end', () => {
-  it('createOrganization starts the trial in the same transaction', async () => {
+describe('what is deliberately NOT mirrored', () => {
+  it('an ERROR writes nothing and leaves a good mirror alone — the outage case', async () => {
+    const org = await newOrg('mir-error');
+    await withOrg(org, (tx) => mirrorEntitlement(tx, entitlement({ status: 'active' })));
+
+    const out = await withOrg(org, (tx) =>
+      mirrorEntitlement(tx, { state: 'error', message: 'platform request failed' }),
+    );
+
+    expect(out).toEqual({ state: 'skipped', reason: 'error' });
+    // THE CLAIM THIS FILE EXISTS FOR: the platform being down does not stop a
+    // paying customer working.
+    expect((await withOrg(org, (tx) => liveSubscription(tx)))?.status).toBe('ACTIVE');
+    expect(await withOrg(org, (tx) => tenantMayWrite(tx))).toBe(true);
+  });
+
+  it('DISABLED writes nothing — an unconfigured deployment is not a billed one', async () => {
+    const org = await newOrg('mir-disabled');
+    const out = await withOrg(org, (tx) => mirrorEntitlement(tx, { state: 'disabled' }));
+
+    expect(out).toEqual({ state: 'skipped', reason: 'disabled' });
+    expect(await withOrg(org, (tx) => liveSubscription(tx))).toBeNull();
+    expect(await withOrg(org, (tx) => tenantMayWrite(tx))).toBe(true);
+  });
+
+  it('NOT_FOUND writes nothing — a tenant from our own signup is a real case', async () => {
+    const org = await newOrg('mir-notfound');
+    const out = await withOrg(org, (tx) => mirrorEntitlement(tx, { state: 'not_found' }));
+
+    expect(out).toEqual({ state: 'skipped', reason: 'not_found' });
+    expect(await withOrg(org, (tx) => tenantMayWrite(tx))).toBe(true);
+  });
+
+  it('an account with no subscription writes nothing', async () => {
+    const org = await newOrg('mir-nosub');
+    const out = await withOrg(org, (tx) =>
+      mirrorEntitlement(tx, entitlement({ hasSubscription: false, status: null })),
+    );
+    expect(out.state).toBe('skipped');
+    expect(await withOrg(org, (tx) => liveSubscription(tx))).toBeNull();
+  });
+
+  it('an UNRECOGNISED status is skipped rather than guessed at', async () => {
+    // A platform that adds a sixth status must make this product fall back to
+    // permitting, not silently map it onto the nearest refusal.
+    const org = await newOrg('mir-unknown');
+    const out = await withOrg(org, (tx) =>
+      mirrorEntitlement(tx, entitlement({ status: 'dormant' })),
+    );
+
+    expect(out.state).toBe('skipped');
+    expect(out.reason).toMatch(/unrecognised platform status "dormant"/);
+    expect(await withOrg(org, (tx) => tenantMayWrite(tx))).toBe(true);
+  });
+});
+
+describe('who may write', () => {
+  it('the platform’s readOnly WINS over anything derived from the status', async () => {
+    // The whole point of consuming a verdict instead of deriving one: a customer
+    // who is read-only in VeloLedger and writable here is a support call nobody
+    // can explain. PAST_DUE would be writable by our own rule; the platform says
+    // otherwise, and the platform is the one that bills them.
+    const org = await newOrg('write-verdict');
+    await withOrg(org, (tx) =>
+      mirrorEntitlement(tx, entitlement({ status: 'past_due', readOnly: true })),
+    );
+    expect(await withOrg(org, (tx) => tenantMayWrite(tx))).toBe(false);
+  });
+
+  it('and the reverse — a status we would refuse, that the platform permits', async () => {
+    const org = await newOrg('write-verdict-open');
+    await withOrg(org, (tx) =>
+      mirrorEntitlement(tx, entitlement({ status: 'suspended', readOnly: false })),
+    );
+    expect(await withOrg(org, (tx) => tenantMayWrite(tx))).toBe(true);
+  });
+
+  it('falls back to our own rule when the platform sent no verdict', async () => {
+    const org = await newOrg('write-fallback');
+    await withOrg(org, (tx) => mirrorEntitlement(tx, entitlement({ status: 'active' })));
+    await withOrg(org, (tx) => tx.query('UPDATE subscription SET read_only = NULL'));
+
+    expect(await withOrg(org, (tx) => tenantMayWrite(tx))).toBe(true);
+  });
+
+  it('a CANCELLED tenant may not write, and that was a live bug', async () => {
+    // `liveSubscription` excludes CANCELLED, so `tenantMayWrite` used to fall
+    // through to the no-subscription branch and permit everything. Caught by the
+    // gate's own test in #114; the two absences it separates are easy to re-merge.
+    const org = await newOrg('write-cancelled');
+    await withOrg(org, (tx) => mirrorEntitlement(tx, entitlement({ status: 'canceled' })));
+
+    expect(await withOrg(org, (tx) => tenantMayWrite(tx))).toBe(false);
+  });
+
+  it('a tenant with NO mirror may write — which after 0039 is most of them', async () => {
+    const org = await newOrg('write-unmirrored');
+    expect(await withOrg(org, (tx) => tenantMayWrite(tx))).toBe(true);
+  });
+});
+
+describe('a tenant provisioned through our own signup', () => {
+  it('gets NO subscription, because this product no longer starts trials', async () => {
     const created = await createOrganization({
       name: 'Provisioned Inc',
       slug: 'provisioned',
@@ -264,107 +237,28 @@ describe('a tenant provisioned end to end', () => {
       adminName: 'A Founder',
     });
 
+    // VX5-8 started a trial here. The platform owns that now, and a tenant the
+    // operator console never provisioned legitimately has no Account at all.
     const sub = await withOrg(created.organizationId, (tx) => liveSubscription(tx));
+    expect(sub).toBeNull();
 
-    // The claim that matters: a customer who has just signed up is billable. Not
-    // "a follow-up job will get to it" — there is no window in which a tenant
-    // exists and no sweep would ever find it.
-    expect(sub).not.toBeNull();
-    expect(sub!.status).toBe('TRIALING');
-    expect(sub!.planCode).toBe(DEFAULT_PLAN_CODE);
-    // Nobody is paying yet, so there is no provider record anywhere. Null rather
-    // than an empty string, so "not yet" and "none" are not the same value.
-    expect(sub!.provider).toBeNull();
+    // And it works normally, which is the property that stops this deploy taking
+    // the existing customer base offline.
+    expect(await withOrg(created.organizationId, (tx) => tenantMayWrite(tx))).toBe(true);
   });
 
-  it('and the genesis audit row records the plan and the trial end', async () => {
+  it('and the genesis audit row no longer claims a plan it did not choose', async () => {
     const org = await admin.query("SELECT id FROM organization WHERE slug = 'provisioned'");
-    const orgId2 = org.rows[0].id as string;
-
-    const entry = await withOrg(orgId2, (tx) =>
+    const entry = await withOrg(org.rows[0].id as string, (tx) =>
       tx.query(
         `SELECT details FROM audit_entry
           WHERE action = 'ORGANIZATION_CREATED' ORDER BY sequence LIMIT 1`,
       ),
     );
-
     const details = entry.rows[0].details as Record<string, unknown>;
-    expect(details.plan_code).toBe(DEFAULT_PLAN_CODE);
-    // "When did this customer's clock start" is answered by the row that says
-    // where everything else came from, rather than by a separate event.
-    expect(typeof details.trial_ends_at).toBe('string');
-  });
-
-  it('a trialing tenant may write; there is no gate yet, but the answer is right', async () => {
-    const org = await admin.query("SELECT id FROM organization WHERE slug = 'provisioned'");
-    const mayWrite = await withOrg(org.rows[0].id as string, (tx) => tenantMayWrite(tx));
-    expect(mayWrite).toBe(true);
-  });
-
-  it('a tenant with NO subscription may write — absence is not lapse', async () => {
-    // Every tenant created before 0037 is in this state. Answering "no" here
-    // would take every existing customer offline on the deploy that ships the
-    // write gate, which is why `canWriteWithoutSubscription` is a named decision
-    // rather than a `?? false`.
-    const org = (
-      await admin.query(
-        "INSERT INTO organization (slug, name) VALUES ('bill-legacy','Legacy') RETURNING id",
-      )
-    ).rows[0].id as string;
-
-    expect(await withOrg(org, (tx) => tenantMayWrite(tx))).toBe(true);
-  });
-
-  it('a LAPSED tenant may not write', async () => {
-    const org = (
-      await admin.query(
-        "INSERT INTO organization (slug, name) VALUES ('bill-lapsed','Lapsed') RETURNING id",
-      )
-    ).rows[0].id as string;
-    await withOrg(org, (tx) => startTrial(tx));
-    await withOrg(org, (tx) =>
-      tx.query("UPDATE subscription SET status = 'LAPSED', trial_ends_at = NULL"),
-    );
-
-    expect(await withOrg(org, (tx) => tenantMayWrite(tx))).toBe(false);
-  });
-
-  it('a CANCELLED tenant may NOT write, and this was a live bug', async () => {
-    // `liveSubscription` excludes CANCELLED, so `tenantMayWrite` used to fall
-    // through to the no-subscription branch and permit everything — a customer
-    // who cancelled kept full write access. Caught by the gate's own test, fixed
-    // by `effectiveStatus`, and pinned here as well because the two absences it
-    // separates are easy to re-merge.
-    const org = (
-      await admin.query(
-        "INSERT INTO organization (slug, name) VALUES ('bill-cancelled','Cancelled') RETURNING id",
-      )
-    ).rows[0].id as string;
-    await withOrg(org, (tx) => startTrial(tx));
-    await withOrg(org, (tx) =>
-      tx.query(
-        `UPDATE subscription SET status = 'CANCELLED', cancelled_at = clock_timestamp(),
-                                 trial_ends_at = NULL`,
-      ),
-    );
-
-    expect(await withOrg(org, (tx) => tenantMayWrite(tx))).toBe(false);
-  });
-
-  it('a PAST_DUE tenant MAY write, and this is the entry most likely to be "fixed"', async () => {
-    // A card that expired on a Friday is not a reason to stop a finance team
-    // working on Monday. The provider's dunning escalates to LAPSED, and that is
-    // where function stops.
-    const org = (
-      await admin.query(
-        "INSERT INTO organization (slug, name) VALUES ('bill-pastdue','Past Due') RETURNING id",
-      )
-    ).rows[0].id as string;
-    await withOrg(org, (tx) => startTrial(tx));
-    await withOrg(org, (tx) =>
-      tx.query("UPDATE subscription SET status = 'PAST_DUE', trial_ends_at = NULL"),
-    );
-
-    expect(await withOrg(org, (tx) => tenantMayWrite(tx))).toBe(true);
+    expect(details.plan_code).toBeUndefined();
+    expect(details.trial_ends_at).toBeUndefined();
+    // What it does still record is what this product actually did.
+    expect(details.seeded_categories).toBe(6);
   });
 });

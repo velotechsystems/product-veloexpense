@@ -383,6 +383,85 @@ no upstream mistakes to be warned by.
   `page.content()` across every crawled page. This unblocks **VX4-10**, which lowers the ratchet's
   ceilings and could not be trusted while the ratchet could pass measuring nothing.
 
+#### VX5-19 SHIPPED — the platform owns billing; VeloExpense mirrors it. THIS UNDOES MY OWN MISTAKE.
+
+**Migration `0039`.** New: `lib/billing/entitlements.ts`. Rewritten: `lib/billing/plans.ts` ·
+`lib/billing/service.ts` · `test/billing.db.test.ts`. Changed: `lib/billing/gate.ts` ·
+`lib/billing/metering.ts` · `lib/onboarding/provision.ts` · `app/admin/billing/*` ·
+`scripts/seed.mjs` · `test/billing-gate.db.test.ts` · `test/billing-plans.test.ts` ·
+`test/metering.db.test.ts`.
+
+**READ THIS BEFORE ADDING ANYTHING TO `lib/billing`.** VeloExpense does not own billing. The VeloTech
+platform — the VeloCRM-hosted billing service — holds ONE `subscription_plans` catalogue with a
+`product` dimension, mints the Stripe Products and Prices, runs checkout, provisions tenants, owns the
+revenue view, and answers `GET /api/v1/platform/entitlements?product=<p>` for every product in the
+suite. `product-veloledger/lib/entitlements/index.ts` says it in one line: *"VeloLedger does not own
+billing."* The same is now true here.
+
+**WHAT 0037 GOT WRONG.** It gave VeloExpense its own `billing_plan` and `billing_plan_component`,
+including `unit_amount_minor` — a PRICE. That was a second price list for the same customers in a
+different database, maintained by hand. It is the defect this project spent the week fixing elsewhere
+(UD-9's three hand-kept copies; UD-1's currency nothing asserted), and 0038's own header argues that
+an invoice table here "would be a second copy of somebody else's record, drifting from it" — while
+0037 had already done it with prices. **Both tables dropped.** Nothing to preserve: no deployment ran
+them against real customers and the rows were placeholder prices I invented.
+
+**WHAT REPLACES THEM.** `organization.account_id` — the platform's Account UUID, the only platform
+identifier this product stores, ported from VeloLedger's `0051` with its reasoning. `subscription`
+survives, **demoted from source of truth to a MIRROR**: `mirrored_at` says when the platform last
+answered, `read_only` carries the platform's own verdict, `plan_name` replaces what the dropped
+catalogue used to supply, and the status CHECK widened to hold `SUSPENDED`.
+
+**WHY MIRROR AT ALL, WHEN VeloLedger STORES NOTHING.** Their client is a read-through with a 60s
+cache used for display and "(future) gating". **Ours gates today**, inside the transaction that guards
+every submit, approval and payment. An HTTP call there would put a network round trip inside a
+database transaction and make every write fail when the platform hiccups — trading a billing outage
+for an operations outage. So the entitlement is fetched OUTSIDE the write path and written to the
+mirror; the gate reads the mirror.
+
+**IT FAILS OPEN, EVERYWHERE.** `disabled`, `not_found`, `error` and an unrecognised status all write
+NOTHING and say which. The `error` case is the one that matters: writing a refusal when the platform
+did not answer would let a platform OUTAGE stop a paying customer working. A stale mirror still saying
+ACTIVE is the correct thing to keep. **No mirror at all permits** — and after 0039 that is MOST
+tenants, because this product no longer starts trials.
+
+**THE PLATFORM'S `readOnly` WINS** over anything derived from a status. VX5-11 derived it, which meant
+this product held an opinion about what `past_due` permits that the platform's other consumers might
+not share — a customer read-only in VeloLedger and writable here is a support call nobody can explain.
+`canWrite` remains the fallback for a row with no verdict.
+
+**THE ONE-L TRAP.** The platform and Stripe write `canceled`; this codebase writes `CANCELLED`. A
+silent no-match leaves a departed customer able to submit and approve. Mapped once, in
+`statusFromPlatform`, with both spellings accepted and a test that names it. Sabotage: removing the
+one-L entry fails five tests.
+
+**METERING SURVIVED AND CHANGED SHAPE.** It no longer reads a plan to decide what to record — it
+records every meter it can COUNT, and stamps `unmirrored` when the platform has said nothing. The
+sweep now visits EVERY organization rather than every one with a subscription; VX5-9 read
+`subscription` there, which after 0039 would have skipped nearly every tenant. A seat count is only
+true at the moment it is taken, so a month skipped is a month nothing can reconstruct.
+
+**VeloExpense IS THE FIRST PRODUCT THAT MUST PUSH A NUMBER UP.** VeloLedger is flat-per-org, so the
+platform has never had to ask a product for a count. VeloExpense is per-seat and only VeloExpense can
+count VeloExpense seats. That push is VX5-20 and does not exist yet — **until it does, the platform
+cannot bill VeloExpense per seat.**
+
+**THE RESILIENCE TEST THAT WAS DELETED, and why that is not a regression.** VX5-9 proved one tenant's
+failure does not stop the sweep by giving a tenant a plan whose meter this build cannot count — which
+needed the local catalogue. With it gone there is no longer any DATA a tenant can hold that makes its
+own measurement throw, which is a better property than the test protected. `failures` stays on
+`SweepResult` because the path returns the day VCC lands and `CARD` becomes countable.
+
+**JOHN'S SIDE, on `product-velocrm`:** a `{ product: 'veloexpense', billingBasis: 'per_seat', plans: … }`
+group in `api/src/db/seed-plans.ts`; a `veloexpense` branch in `endpointFor()` in
+`provisioningOrchestrator.service.ts` reading `VELOEXPENSE_BASE_URL` / `VELOEXPENSE_PROVISION_TOKEN`;
+Stripe Products per his own `Stripe-Catalog-Blueprint.md` convention (`VeloExpense — Starter`,
+metadata `app=veloexpense`, per-seat `licensed`/`per_unit`). The entitlement endpoint already takes
+`?product=` and needs no change.
+
+**VeloExpense env, all optional and all off by default:** `PLATFORM_API_URL`,
+`PLATFORM_SERVICE_TOKEN` (outbound, entitlements). `PLATFORM_INBOUND_TOKEN` arrives with VX5-20.
+
 #### VX5-11 SHIPPED — the write gate, the billing screen, and a hole in my own design
 
 **No migration.** New: `lib/billing/gate.ts` · `app/admin/billing/{page.tsx,actions.ts}` ·

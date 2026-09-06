@@ -1,142 +1,69 @@
 /**
- * VX5-8 — the subscription, read and written.
+ * VX5-19 — the subscription MIRROR.
  *
- * ── WHAT THIS TICKET DELIBERATELY DOES NOT DO ───────────────────────────────
+ * Rewritten from VX5-8's version. What was a source of truth — a plan catalogue,
+ * a trial this product started, a status it decided — is now a local copy of what
+ * the VeloTech platform said, with the time it said it.
  *
- * It does not gate a single write. `canWrite` lives in `plans.ts` and is tested
- * there, and nothing calls it yet, because putting a subscription check into every
- * submit, approve and post path is a diff across a dozen files that deserves its
- * own review rather than arriving as a footnote to a schema.
+ * ── WHY MIRROR AT ALL, WHEN VeloLedger STORES NOTHING ──────────────────────
  *
- * That is the VX5-1 shape — ship the mechanism with nothing able to misuse it —
- * with one difference that matters: this one is NOT dead code. `startTrial` is
- * called from `createOrganization`'s transaction in this PR, so every tenant
- * created from today has a real subscription row and the shape is exercised by
- * the provisioning tests rather than only by its own.
+ * VeloLedger's client is a read-through with a 60-second cache, used for display
+ * and, in its own words, "(future) gating". Ours gates TODAY, inside the
+ * transaction that guards every submit, approval and payment.
  *
- * ── NO INVOICES, NO PAYMENTS, NO METER READINGS ────────────────────────────
+ * Putting an HTTP call in the middle of that transaction would mean a network
+ * round trip inside a database transaction and every write in this product
+ * failing when the platform hiccups — trading a billing outage for an operations
+ * outage, which is the worse of the two to hand a customer who has paid.
  *
- * A provider owns the money (John, 6 Sep). An invoice table here would be a second
- * copy of somebody else's record, drifting from it — which is UD-9's defect in
- * another costume, and UD-9 turned up a THIRD hand-kept copy the audit had not
- * even listed. Readings land with VX5-9, because a table nothing writes is a table
- * whose shape nobody has tested.
+ * So the entitlement is fetched OUTSIDE the write path and written here, and the
+ * gate reads this table. `mirrored_at` is on the row so a reader sees "the
+ * platform said this, at this time" rather than "this is true".
+ *
+ * ── NOTHING HERE DECIDES ANYTHING ──────────────────────────────────────────
+ *
+ * No `startTrial`, no `DEFAULT_PLAN_CODE`, no plan lookup. The platform starts
+ * trials, sets plans and cancels subscriptions; if VeloExpense appears to do any
+ * of those, two systems are deciding one thing and they will disagree. The only
+ * write in this file copies an answer somebody else gave.
  */
 import { type QueryRunner } from '@/lib/db/client';
 import { ORG } from '@/lib/tenant/sql';
 import {
   canWrite,
   canWriteWithoutSubscription,
+  statusFromPlatform,
   type Meter,
   type SubscriptionStatus,
 } from '@/lib/billing/plans';
+import type { EntitlementResult } from '@/lib/billing/entitlements';
 
-export interface PlanComponent {
-  meter: Meter;
-  unitAmountMinor: bigint;
-  includedUnits: number;
-}
-
-export interface Plan {
-  code: string;
-  name: string;
-  active: boolean;
-  period: 'MONTH' | 'YEAR';
-  currencyCode: string;
-  trialDays: number;
-  components: PlanComponent[];
-}
-
-export interface Subscription {
+export interface MirroredSubscription {
   id: string;
   planCode: string;
+  planName: string | null;
   status: SubscriptionStatus;
   trialEndsAt: Date | null;
-  currentPeriodStart: Date;
   currentPeriodEnd: Date | null;
-  provider: string | null;
+  /** The platform's own verdict, or null for a row mirrored before 0039. */
+  readOnly: boolean | null;
+  /** When the platform last answered. Null means never mirrored. */
+  mirroredAt: Date | null;
   cancelledAt: Date | null;
 }
 
 /**
- * The plan a brand-new tenant starts on.
- *
- * A constant rather than a column on `organization`, and rather than "the first
- * row by sort_order". The first-row version reads as flexible and is the worse
- * shape: reordering the catalogue for the pricing page would silently change what
- * every new customer gets, and nothing would fail.
- */
-export const DEFAULT_PLAN_CODE = 'STARTER';
-
-/**
- * The catalogue. Global reference data, so no tenant context is needed to read it
- * — `billing_plan` has no `organization_id` and no RLS, the same category as
- * `currency`.
- *
- * Inactive plans are returned when asked for, because a tenant sitting on a
- * withdrawn plan still has to be shown what it is paying for. AC-11's rule from
- * the chart of accounts: withdrawn deactivates, it does not disappear.
- */
-export async function listPlans(
-  tx: QueryRunner,
-  opts: { includeInactive?: boolean } = {},
-): Promise<Plan[]> {
-  const plans = await tx.query(
-    `SELECT code, name, active, period, currency_code, trial_days
-       FROM billing_plan
-      WHERE ($1::boolean OR active)
-      ORDER BY sort_order, code`,
-    [opts.includeInactive ?? false],
-  );
-  if (plans.rows.length === 0) return [];
-
-  const codes = plans.rows.map((r) => r.code as string);
-  const components = await tx.query(
-    `SELECT plan_code, meter, unit_amount_minor, included_units
-       FROM billing_plan_component
-      WHERE plan_code = ANY($1::text[])
-      ORDER BY plan_code, meter`,
-    [codes],
-  );
-
-  const byPlan = new Map<string, PlanComponent[]>();
-  for (const row of components.rows) {
-    const list = byPlan.get(row.plan_code as string) ?? [];
-    list.push({
-      meter: row.meter as Meter,
-      // bigint, like every amount in this schema. `pg` hands back a string for
-      // int8 and the whole of `lib/money.ts` exists because turning that into a
-      // Number is how money goes wrong.
-      unitAmountMinor: BigInt(row.unit_amount_minor as string),
-      includedUnits: Number(row.included_units),
-    });
-    byPlan.set(row.plan_code as string, list);
-  }
-
-  return plans.rows.map((r) => ({
-    code: r.code as string,
-    name: r.name as string,
-    active: r.active as boolean,
-    period: r.period as 'MONTH' | 'YEAR',
-    currencyCode: r.currency_code as string,
-    trialDays: Number(r.trial_days),
-    components: byPlan.get(r.code as string) ?? [],
-  }));
-}
-
-/**
- * This tenant's live subscription, or null.
+ * This tenant's live mirrored subscription, or null.
  *
  * Under `tenant_isolation`, so it needs a real tenant context and returns nothing
- * without one — which is the correct failure and not a special case: `withoutOrg`
- * does not bypass RLS, it connects under FORCE RLS with no context, so every
- * tenant table returns zero rows. That fact cost this project every SSO sign-in
- * once (VX5-3) and is worth restating wherever a read looks tenant-optional.
+ * without one — the correct failure, not a special case: `withoutOrg` does not
+ * bypass RLS, it connects under FORCE RLS with no context, so every tenant table
+ * returns zero rows. That fact cost this project every SSO sign-in once (VX5-3).
  */
-export async function liveSubscription(tx: QueryRunner): Promise<Subscription | null> {
+export async function liveSubscription(tx: QueryRunner): Promise<MirroredSubscription | null> {
   const r = await tx.query(
-    `SELECT id, plan_code, status, trial_ends_at, current_period_start,
-            current_period_end, provider, cancelled_at
+    `SELECT id, plan_code, plan_name, status, trial_ends_at, current_period_end,
+            read_only, mirrored_at, cancelled_at
        FROM subscription
       WHERE organization_id = ${ORG} AND status <> 'CANCELLED'`,
   );
@@ -145,115 +72,124 @@ export async function liveSubscription(tx: QueryRunner): Promise<Subscription | 
   return {
     id: row.id as string,
     planCode: row.plan_code as string,
+    planName: (row.plan_name as string | null) ?? null,
     status: row.status as SubscriptionStatus,
     trialEndsAt: (row.trial_ends_at as Date | null) ?? null,
-    currentPeriodStart: row.current_period_start as Date,
     currentPeriodEnd: (row.current_period_end as Date | null) ?? null,
-    provider: (row.provider as string | null) ?? null,
+    readOnly: (row.read_only as boolean | null) ?? null,
+    mirroredAt: (row.mirrored_at as Date | null) ?? null,
     cancelledAt: (row.cancelled_at as Date | null) ?? null,
-  };
-}
-
-/**
- * Start a tenant's trial. Called from `createOrganization`, inside its transaction.
- *
- * INSIDE that transaction on purpose, for the reason its own header gives about
- * the admin row and VX5-4 gives about categories: a tenant that exists without the
- * thing that makes it usable is the half-existing state this function's caller
- * refuses on principle. A tenant with no subscription is one that no billing sweep
- * will ever pick up and no screen can describe.
- *
- * THE TRIAL END IS COMPUTED FROM THE PLAN, not from a constant here, because
- * `billing_plan.trial_days` is where a change to the offer belongs — and zero is a
- * legitimate value meaning "no trial", which is why the status it produces differs.
- */
-export async function startTrial(
-  tx: QueryRunner,
-  opts: { planCode?: string } = {},
-): Promise<{
-  subscriptionId: string;
-  planCode: string;
-  status: SubscriptionStatus;
-  trialEndsAt: Date | null;
-}> {
-  const planCode = opts.planCode ?? DEFAULT_PLAN_CODE;
-
-  const plan = await tx.query('SELECT trial_days FROM billing_plan WHERE code = $1 AND active', [
-    planCode,
-  ]);
-  if (plan.rowCount === 0) {
-    // A refusal naming the plan, not a foreign-key error naming a constraint. The
-    // caller here is `createOrganization`, whose failure mode is a customer whose
-    // signup did not work.
-    throw new Error(`billing: no active plan '${planCode}'`);
-  }
-  const trialDays = Number(plan.rows[0].trial_days);
-
-  // A plan with no trial starts ACTIVE rather than TRIALING, and the CHECK in
-  // 0037 enforces the pairing either way: TRIALING has a trial end, nothing else
-  // may have one. Two claims about the same tenant is the state that CHECK exists
-  // to make unrepresentable.
-  const status: SubscriptionStatus = trialDays > 0 ? 'TRIALING' : 'ACTIVE';
-
-  const r = await tx.query(
-    `INSERT INTO subscription (organization_id, plan_code, status, trial_ends_at)
-     VALUES (${ORG}, $1, $2,
-             CASE WHEN $3::int > 0
-                  THEN clock_timestamp() + make_interval(days => $3::int)
-                  ELSE NULL END)
-     RETURNING id, status, trial_ends_at`,
-    [planCode, status, trialDays],
-  );
-  const row = r.rows[0];
-  return {
-    subscriptionId: row.id as string,
-    planCode,
-    status: row.status as SubscriptionStatus,
-    trialEndsAt: (row.trial_ends_at as Date | null) ?? null,
   };
 }
 
 /**
  * What this tenant's subscription says, INCLUDING a cancellation.
  *
- * ── A BUG IN MY OWN DESIGN, FOUND BY THE GATE'S TEST ───────────────────────
+ * A bug VX5-11's test caught and this rewrite keeps fixed: `liveSubscription`
+ * filters `status <> 'CANCELLED'`, which is right for "what are they on" — a
+ * customer who left is on nothing — but meant the write gate saw a cancelled
+ * tenant as a tenant with NO subscription, which is the one absence deliberately
+ * permitted. They kept full write access.
  *
- * `liveSubscription` filters `status <> 'CANCELLED'`, which is right for what it
- * is for — "what are they on" has no answer once they have left. But the write
- * gate consulted it and therefore saw a cancelled tenant as a tenant with NO
- * subscription, which `canWriteWithoutSubscription` deliberately permits. So a
- * customer who cancelled kept full write access: they could submit, approve and
- * pay indefinitely.
- *
- * The distinction the gate actually needs is between two different absences:
- *
- *   · NEVER SUBSCRIBED — no row at all. Every tenant created before 0037, and
- *     `blank` in the seed. Permitted, because refusing would take every existing
- *     customer offline on deploy.
- *   · CANCELLED — a row exists and says they left. Refused, exactly like LAPSED.
- *
- * Returns null only for the first. `canWrite('CANCELLED')` was already correct and
- * already tested; what was missing was anything that could reach it.
+ * Two different absences, and only one of them is permissive:
+ *   · NEVER MIRRORED — no row. Permitted (see `canWriteWithoutSubscription`).
+ *   · CANCELLED — a row that says they left. Refused.
  */
 export async function effectiveStatus(tx: QueryRunner): Promise<SubscriptionStatus | null> {
   const live = await liveSubscription(tx);
   if (live !== null) return live.status;
-  const any = await tx.query(
-    `SELECT 1 FROM subscription WHERE organization_id = ${ORG} LIMIT 1`,
-  );
+  const any = await tx.query(`SELECT 1 FROM subscription WHERE organization_id = ${ORG} LIMIT 1`);
   return any.rowCount === 0 ? null : 'CANCELLED';
 }
 
+export interface MirrorOutcome {
+  /** 'written' | 'unchanged' | 'skipped'. Skipped says why. */
+  state: 'written' | 'skipped';
+  reason?: string;
+}
+
 /**
- * Whether this tenant may write, right now.
+ * Copy a platform entitlement into the mirror.
  *
- * The function a write gate will call. It is here rather than at each call site so
- * that the "no subscription" case is answered in ONE place — see
- * `canWriteWithoutSubscription`, whose comment is the argument. A tenant created
- * before 0037 has no row, and the wrong answer there takes every existing customer
- * offline on deploy.
+ * ── WHAT IS DELIBERATELY *NOT* MIRRORED ────────────────────────────────────
+ *
+ * `disabled`, `not_found` and `error` all write NOTHING and say so. Each is a
+ * case where the honest local state is "we do not know", and the three would be
+ * flattened by writing a row:
+ *
+ *   · `disabled` — the integration is off. Writing anything would make a product
+ *     with no billing configured look billed.
+ *   · `not_found` — no platform Account. Legitimate for a tenant that came in
+ *     through VeloExpense's own signup and the operator console never saw.
+ *   · `error` — the platform did not answer. **The most important of the three.**
+ *     Writing a refusal here would let a platform OUTAGE stop a paying customer
+ *     working, which is precisely the failure the mirror exists to prevent. A
+ *     stale row that still says ACTIVE is the correct thing to keep.
+ *
+ * An unrecognised status is skipped for the same reason: better a stale mirror
+ * than one this product guessed at.
+ */
+export async function mirrorEntitlement(
+  tx: QueryRunner,
+  result: EntitlementResult,
+): Promise<MirrorOutcome> {
+  if (result.state !== 'ok') {
+    return { state: 'skipped', reason: result.state };
+  }
+  const e = result.entitlement;
+  if (!e.hasSubscription) {
+    return { state: 'skipped', reason: 'no subscription on the platform account' };
+  }
+  const status = statusFromPlatform(e.status);
+  if (status === null) {
+    return { state: 'skipped', reason: `unrecognised platform status "${e.status ?? 'null'}"` };
+  }
+
+  // One row per tenant, updated in place. The partial unique index from 0037
+  // still holds — a tenant has at most one non-cancelled subscription — so this
+  // is an upsert on the tenant rather than on a provider reference.
+  await tx.query(
+    `INSERT INTO subscription
+       (organization_id, plan_code, plan_name, status, trial_ends_at,
+        current_period_end, read_only, mirrored_at, cancelled_at)
+     VALUES (${ORG}, $1, $2, $3, $4, $5, $6, clock_timestamp(),
+             CASE WHEN $3 = 'CANCELLED' THEN clock_timestamp() ELSE NULL END)
+     ON CONFLICT (organization_id) WHERE status <> 'CANCELLED'
+     DO UPDATE SET plan_code          = EXCLUDED.plan_code,
+                   plan_name          = EXCLUDED.plan_name,
+                   status             = EXCLUDED.status,
+                   trial_ends_at      = EXCLUDED.trial_ends_at,
+                   current_period_end = EXCLUDED.current_period_end,
+                   read_only          = EXCLUDED.read_only,
+                   mirrored_at        = EXCLUDED.mirrored_at,
+                   cancelled_at       = COALESCE(subscription.cancelled_at, EXCLUDED.cancelled_at),
+                   updated_at         = clock_timestamp()`,
+    [
+      e.planSlug ?? 'unknown',
+      e.planName,
+      status,
+      e.trialEndsAt,
+      e.currentPeriodEnd,
+      e.readOnly,
+    ],
+  );
+  return { state: 'written' };
+}
+
+/**
+ * Whether this tenant may write, right now, from the mirror alone.
+ *
+ * THE PLATFORM'S `readOnly` WINS when the mirror has one. Deriving the answer
+ * from a status was VX5-11's design, and it meant this product held an opinion
+ * about what "past_due" permits that the platform's other consumers might not
+ * share. `canWrite` remains as the fallback for a row mirrored before 0039 or one
+ * the platform sent without a verdict.
  */
 export async function tenantMayWrite(tx: QueryRunner): Promise<boolean> {
+  const live = await liveSubscription(tx);
+  if (live !== null) {
+    return live.readOnly === null ? canWrite(live.status) : !live.readOnly;
+  }
   const status = await effectiveStatus(tx);
   return status === null ? canWriteWithoutSubscription() : canWrite(status);
 }
@@ -271,8 +207,7 @@ export interface ReadingView {
  * The most recent periods' readings for this tenant, newest first.
  *
  * A LIMIT rather than everything, because this feeds a screen and a tenant three
- * years in has a hundred rows nobody scrolls. Not paginated: if somebody wants the
- * full history it is an export, which is VX5-12's problem and a different shape.
+ * years in has a hundred rows nobody scrolls.
  */
 export async function recentReadings(tx: QueryRunner, limit = 12): Promise<ReadingView[]> {
   const r = await tx.query(
