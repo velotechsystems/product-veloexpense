@@ -73,6 +73,9 @@ export const USER_MESSAGE_CODES = [
 
   /* VX5-5: the address names one tenant and the session belongs to another. */
   'WRONG_TENANT_HOST',
+
+  /* VX5-11: the subscription lapsed and this action moves money or work. */
+  'BILLING_LAPSED',
   'REPORT_NOT_SUBMITTABLE',
   'REPORT_NOT_RECALLABLE',
   'REPORT_NOT_REIMBURSABLE',
@@ -460,6 +463,20 @@ export const ERROR_COPY: Record<UserMessageCode, Copy> = {
     // something already on screen. Keeping it would have meant a parameter, and
     // a parameter would have meant an encoding scheme in every URL.
     'en-CA': 'Blocking policy violations have to be fixed before this report can be submitted.',
+  },
+  BILLING_LAPSED: {
+    // WHAT STILL WORKS comes first, because the person reading this is usually an
+    // employee who did nothing wrong and whose next thought is "have I lost my
+    // work". They have not: drafts still save, everything is still readable.
+    //
+    // It names an administrator rather than a page, and deliberately gives no
+    // link: the billing screen is ADMIN-only, so a link would take most readers
+    // of this sentence to a refusal — which is the "dead end dressed as help"
+    // shape VX4-9's forbidden page exists to stop.
+    'en-CA':
+      'This organization\u2019s subscription has lapsed, so reports cannot be submitted, ' +
+      'approved or paid right now. Your drafts are saved and everything is still ' +
+      'readable \u2014 an administrator can restore this from the billing settings.',
   },
   REPORT_NOT_SUBMITTABLE: {
     'en-CA': 'Only a draft can be submitted, and this report is not one any more.',

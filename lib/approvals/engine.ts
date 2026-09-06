@@ -42,6 +42,7 @@ import { planApprovalForReport, countStoredReceipts } from '@/lib/approvals/serv
 import { notify, reportPayload } from '@/lib/notifications/service';
 import type { StepPlan } from '@/lib/approvals/tiers';
 import { ORG } from '@/lib/tenant/sql';
+import { assertTenantMayWrite } from '@/lib/billing/gate';
 
 /** The tenant predicate for an INSERT. Declared locally because every
  *  lib/<domain> module does — six copies and counting. Not worth diverging from
@@ -228,6 +229,11 @@ export async function decide(
   input: DecideInput = {},
   ctx: { isAdmin?: boolean; onDate?: Date } = {},
 ): Promise<DecideResult> {
+  // VX5-11, before the eligibility guard: "your subscription lapsed" and "this
+  // task is not yours" are different refusals, and the person who can act on the
+  // first is not the person holding the task.
+  await assertTenantMayWrite(tx, 'decide an approval');
+
   // Rule 3: the guard runs here, so no caller can skip it and no page can
   // disagree with it.
   await assertCanDecide(tx, taskId, actorId, ctx);

@@ -214,6 +214,37 @@ export async function startTrial(
 }
 
 /**
+ * What this tenant's subscription says, INCLUDING a cancellation.
+ *
+ * ── A BUG IN MY OWN DESIGN, FOUND BY THE GATE'S TEST ───────────────────────
+ *
+ * `liveSubscription` filters `status <> 'CANCELLED'`, which is right for what it
+ * is for — "what are they on" has no answer once they have left. But the write
+ * gate consulted it and therefore saw a cancelled tenant as a tenant with NO
+ * subscription, which `canWriteWithoutSubscription` deliberately permits. So a
+ * customer who cancelled kept full write access: they could submit, approve and
+ * pay indefinitely.
+ *
+ * The distinction the gate actually needs is between two different absences:
+ *
+ *   · NEVER SUBSCRIBED — no row at all. Every tenant created before 0037, and
+ *     `blank` in the seed. Permitted, because refusing would take every existing
+ *     customer offline on deploy.
+ *   · CANCELLED — a row exists and says they left. Refused, exactly like LAPSED.
+ *
+ * Returns null only for the first. `canWrite('CANCELLED')` was already correct and
+ * already tested; what was missing was anything that could reach it.
+ */
+export async function effectiveStatus(tx: QueryRunner): Promise<SubscriptionStatus | null> {
+  const live = await liveSubscription(tx);
+  if (live !== null) return live.status;
+  const any = await tx.query(
+    `SELECT 1 FROM subscription WHERE organization_id = ${ORG} LIMIT 1`,
+  );
+  return any.rowCount === 0 ? null : 'CANCELLED';
+}
+
+/**
  * Whether this tenant may write, right now.
  *
  * The function a write gate will call. It is here rather than at each call site so
@@ -223,6 +254,41 @@ export async function startTrial(
  * offline on deploy.
  */
 export async function tenantMayWrite(tx: QueryRunner): Promise<boolean> {
-  const sub = await liveSubscription(tx);
-  return sub === null ? canWriteWithoutSubscription() : canWrite(sub.status);
+  const status = await effectiveStatus(tx);
+  return status === null ? canWriteWithoutSubscription() : canWrite(status);
+}
+
+export interface ReadingView {
+  meter: Meter;
+  quantity: bigint;
+  planCode: string;
+  periodStart: Date;
+  periodEnd: Date;
+  measuredAt: Date;
+}
+
+/**
+ * The most recent periods' readings for this tenant, newest first.
+ *
+ * A LIMIT rather than everything, because this feeds a screen and a tenant three
+ * years in has a hundred rows nobody scrolls. Not paginated: if somebody wants the
+ * full history it is an export, which is VX5-12's problem and a different shape.
+ */
+export async function recentReadings(tx: QueryRunner, limit = 12): Promise<ReadingView[]> {
+  const r = await tx.query(
+    `SELECT meter, quantity, plan_code, period_start, period_end, measured_at
+       FROM subscription_meter_reading
+      WHERE organization_id = ${ORG}
+      ORDER BY period_start DESC, meter
+      LIMIT $1`,
+    [limit],
+  );
+  return r.rows.map((row) => ({
+    meter: row.meter as Meter,
+    quantity: BigInt(row.quantity as string),
+    planCode: row.plan_code as string,
+    periodStart: row.period_start as Date,
+    periodEnd: row.period_end as Date,
+    measuredAt: row.measured_at as Date,
+  }));
 }
