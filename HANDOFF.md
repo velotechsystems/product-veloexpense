@@ -53,16 +53,6 @@ Two separate codebases:
 - **Shared libs are VENDORED, not npm deps.** Copy the lib's `src/` into the app and pin the commit. `@velotech/auth-kit` is vendored at `src/auth-kit/` (pinned `e1db5c1`). `@velotech/ui` tokens are vendored at `app/velotech-tokens.css` + `app/tailwind-v4.css`; components come via `npx shadcn add https://velotechsystems.github.io/lib-ui-kit/r/<name>.json`.
 - **Git flow: this repo uses MERGE-COMMIT PRs (not squash).** So stacked branches are simple: `git fetch origin && git checkout -b <next> origin/main`. Always fetch before branching (local `origin/main` goes stale between merges).
 - **Every new tenant table** must have RLS + be added to the isolation test, and **every FK it points at another tenant table must be composite** (above). Three CI guards fail the build otherwise: RLS coverage, isolation-suite coverage, and the tenant-FK guard.
-  - **They are three separate steps and passing one proves nothing about the next.** The first
-    two both select tables carrying `organization_id`; the first asks the DATABASE whether RLS is
-    ENABLEd and FORCEd, the second greps `test/rls-isolation.test.ts` for the table's NAME. VX5-2
-    was pushed after running only the first, and CI answered `Tenant tables absent from
-    test/rls-isolation.test.ts: signup`. Run all three locally, from the workflow's own SQL.
-  - The column is what the guards key on, not the tenancy. `signup` carries `organization_id`
-    to record which tenant it BECAME and has no tenant policy at all — deliberately, so no tenant
-    can see one. The guards cannot express that, so the suite says it instead: the `signup` case
-    asserts invisibility from every org including its own, which is the assertion that fails if a
-    later migration "fixes" the missing policy by adding one.
 - **NO VENDOR NAME OUTSIDE `lib/integrations/<vendor>.ts`.** Not in a table, a column, a type, a
   CHECK literal, a shared enum, a constant, an audit action or a permission slug. Core resolves an
   integration by CAPABILITY — `resolveCapability(tx, 'POST_EXPENSE_REPORT')` — and vendor-specific
@@ -253,19 +243,6 @@ back to Phase 1 — it happened once, and was recovered by checking the feature 
 READS are fine (`git --no-optional-locks log/status/diff`); branch switching and fetching belong in
 John's own terminal, where `gh` is authenticated as `Velotechsys`.
 
-**`--no-optional-locks` IS NOT OPTIONAL, AND HERE IS WHAT IT COSTS.** A plain
-`git status` takes `.git/index.lock` to refresh the index, and the mount forbids `unlink` — so it
-warns (`unable to unlink '.git/index.lock': Operation not permitted`) and **leaves a zero-byte lock
-file behind that this session cannot delete**. Everything on the agent side keeps working, because
-reads only warn. The next thing John runs does not: `git add` and `git commit` both fail with
-"Another git process seems to be running in this repository". That happened on VX4-9 — the commit
-block failed, the branch was pushed still pointing at `main`, and `gh pr create` refused with "No
-commits between main and …". Recovery is one line **in John's terminal** (`rm -f .git/index.lock`,
-then re-run the add/commit/push); the agent cannot do it, and `device_request_delete_permission`
-would prompt for delete rights over the whole `velotechsystems` tree to remove one empty file.
-So: every git invocation from the device shell starts `git --no-optional-locks`. This was already
-written down one paragraph up and was not followed, which is the same failure mode as PR #90.
-
 ## 4. Standard per-ticket loop
 ```bash
 git fetch origin
@@ -317,6 +294,143 @@ So before pushing a new spec:
    rather than by a CI round, which is what the list is for.
 
 ## 5. STATUS — where things stand
+
+### PHASE 5 — Commercialization & GA. READ THIS FIRST; it is the current phase.
+
+**Written 6 Sep 2026, and it is late.** Nine PRs (#102–#110) merged before anything about them reached
+this file, so until today a fresh thread reading the handoff would have concluded the product has no
+signup, no invitations and no subdomains. That is the documentation debt this section clears. The
+narrative version, with the reasoning behind each decision, is in the build-record artifact; what
+follows is what a fresh thread needs in order not to break something.
+
+**The plan's Phase 5 is FOUR items and only one is substantially built.** Verbatim from
+`VeloExpense-Port-and-Build-Plan.docx`:
+
+> Self-serve onboarding: tenant signup + provisioning wizard, trial-to-paid, sample data (repurpose
+> the Concur importer as customer data import).
+> Billing/subscription (in-house vs provider — open decision); metering by seats/tenants/cards.
+> Compliance program per Velotech references: SOC 2 readiness, privacy (PIPEDA/GDPR/CCPA), DPAs,
+> per-tenant export/delete, data residency posture.
+> Multi-tenant infra hardening (scaling, per-tenant secrets, tenant-aware observability, backups) +
+> production cutover.
+> **Exit: a customer signs up, connects accounting, runs expenses, and is billed — GA.**
+
+Three of those four gate conditions are met. **Billing does not exist at all** — no schema, no
+metering, nothing. Note also that the onboarding bullet is not finished either: **trial-to-paid and
+the customer data importer were never built.** Do not read "the onboarding slice shipped" as "item 1
+is done"; it is two of four sub-items.
+
+**DECIDED 6 Sep (John):** billing goes to **a PROVIDER**, not in-house — the compliance programme is
+the larger unknown and card data is the part least worth pulling into SOC 2 scope. Metering is
+**seats + flat-per-tenant + cards**. Cards has nothing to count: **the VCC module does not exist in
+VeloExpense** and is one of the ExpenseOS modules never ported, so the meter model must express it
+while the meter itself stays explicitly sourceless until VCC lands. Do not ship a cards meter that
+returns zero — a meter that always reads nought is indistinguishable from a customer who owes nothing.
+
+**NOTHING UPSTREAM TO PORT, and this was checked rather than assumed.** ExpenseOS has no billing:
+`Stripe` appears once as a merchant string in a test fixture, `subscription` twice in comments about
+expense categories, and there is no `Subscription`, `Plan`, `Invoice` or `Billing` model anywhere in
+its 1,900-line schema. It also has **no tenant at all** — the only mention in the schema is a comment
+saying a future version would add one, and no organization is ever created anywhere in that codebase.
+So the whole of Phase 5 is the standing port-don't-build rule's own exception, and there are equally
+no upstream mistakes to be warned by.
+
+#### What shipped, and the traps in it
+
+- **VX5-1 (#102)** — `createOrganization`. One transaction that BECOMES the tenant partway through:
+  the row being written is where the tenant's identity comes from, so it cannot begin inside a tenant.
+  A failure can never leave an organization with no users, which would be one nobody could sign into
+  and whose slug is taken forever. Shipped deliberately with nothing able to call it.
+- **VX5-2 (#103) / VX5-2b (#104)** — migration `0035`, the signup + verification pages. **GET asks,
+  POST creates.** Corporate mail scanners fetch every URL in a message, so a link that acted on being
+  fetched would let a scanner create somebody's organization. The e2e fetches the link twice and
+  asserts nothing exists yet, and it is the only signed-out spec in the suite — a test already logged
+  in proves nothing about the front door. The slug is decided at CONFIRMATION, first to confirm wins.
+- **VX5-3 (#105)** — migration `0036`, `invite`. One live invite per email per tenant, enforced by the
+  database rather than by a check. **The link is not what admits you**: it carries which company you
+  are joining and can be withdrawn or expire, but Google or Microsoft confirming you hold the invited
+  address is what admits you. So a forwarded invitation is useless to whoever reads it.
+  **Creating an employee now SENDS an invite** — the old admin form that added somebody to the
+  directory *was* the grant of access. That page is deleted, not unlinked, and a test asserts it is
+  really gone.
+  **THE BUG THIS TICKET FOUND IS THE MOST IMPORTANT FACT IN THIS FILE'S HISTORY:** `resolveSsoUser`
+  read `app_user` under `withoutOrg`. `withoutOrg` does NOT bypass RLS — it connects as `veloapp`
+  under `FORCE ROW LEVEL SECURITY`, so an unset tenant context matches ZERO rows on every tenant
+  table. Every SSO sign-in, for everybody, was denied. Nothing caught it because `e2e/auth.setup.ts`
+  mints JWTs directly and no test existed for that file. It now resolves slug→orgId with no context
+  (safe: `organization` carries no tenant policy) and reads `app_user` inside `withOrg`.
+- **VX5-4 (#106)** — six starter categories seeded inside `createOrganization`'s transaction
+  (`lib/onboarding/starter.ts`), the rest a checklist (`lib/onboarding/setup.ts`). Before this a
+  brand-new tenant could not record an expense. `app/page.tsx` replaced the `create-next-app` scaffold.
+- **VX5-5 (#107)** — tenant subdomains. The host must agree with the session or the request is
+  refused (`lib/tenant/request.ts`, `HostMismatchError`). The apex comes from `AUTH_COOKIE_DOMAIN`,
+  NOT from a heuristic on the first label — `velo.test` read its own first label as a tenant.
+  **`secureCookies` is keyed on the ORIGIN'S SCHEME, not `NODE_ENV`.** Keying it on `NODE_ENV ===
+  'production'` named the cookie `__Secure-` over http, the browser dropped it, and every request was
+  unauthenticated — a real bug for self-hosted http deployments.
+- **VX5-6 (#108)** — branding only where a credential earns it. The invitation page is branded; **the
+  sign-in page deliberately is NOT**, because a branded sign-in page tells anybody who can guess a
+  company name whether that company is a customer and what their logo is. The reasoning is written
+  into the sign-in page itself so nobody later reads the plain page as an unfinished job.
+- **PE-9 (#109)** — one tenant predicate, `lib/tenant/sql.ts`, with `scripts/check-tenant-expression.mjs`
+  guarding both directions: a second declaration, and `${ORG}` inside a non-template string. Both have
+  now failed in practice. Branding audit action names were fixed in the same PR because `action` is
+  inside the hash payload, so a stored spelling is immutable.
+- **#110** — the pseudo-locale crawl's own guard. It read `body.innerText()` on `/expenses`; on a
+  freshly seeded database that page shows nothing catalogued, so the guard failed on a clean database
+  and passed in CI only because the full Playwright suite runs first and leaves reports behind. **The
+  flag was never off** — one marker sat in that page's HTML and none in its `innerText`. It now reads
+  `page.content()` across every crawled page. This unblocks **VX4-10**, which lowers the ratchet's
+  ceilings and could not be trusted while the ratchet could pass measuring nothing.
+
+#### VX5-18 SHIPPED — the seed refuses an environment that has not said what it is
+
+**No migration.** Changed: `scripts/seed.mjs` · `package.json` · `.github/workflows/ci.yml`. New:
+`test/seed-gate.db.test.ts` (8 tests).
+
+Ported from **ExpenseOS #454**, where the fixture gate refused `STAGE=prod` and always had — but the
+CD job passed neither `STAGE` nor `NODE_ENV`, the gate read that silence as "local", and it seeded six
+known-password QA accounts into their production database. The bug was never the prod check; it was
+the default.
+
+**Ours was milder and it is worth being precise about why**, so nobody reads this as a fix for a live
+compromise: this seed writes no credentials at all, and every seeded address is under `.test`, which
+nobody can hold mail for. What we had was **no gate whatsoever**, plus a seed that is not purely
+additive — `upsertOrg` re-asserts `name` and `posting_trigger` on conflict and `seedUser` re-asserts
+`role`. Pointed at a real database holding a tenant slugged `demo`, it would silently revert that
+tenant's posting trigger and an administrator's role.
+
+**`STAGE` is now REQUIRED and nothing substitutes for it.** No `NODE_ENV` fallback — that is stronger
+than upstream, deliberately: they accept `NODE_ENV=development`, and their own commit message records
+that this invalidated their verification, because a `.env.local` on a developer machine re-supplies
+it. A signal every dev machine emits by default is not an identification.
+
+**What this does NOT do, and why — read before "improving" it.** ExpenseOS's #454 also made their seed
+create-only. That is right for a seed that runs on every production deploy against 864 real people and
+WRONG here: re-asserting `posting_trigger` is deliberate, because `e2e/ap-queue.spec.ts` flips the demo
+tenant to AP_QUEUE and the next run's fixture must not depend on what the last spec did. The re-assert
+stays; the gate makes it unreachable from anywhere it could do harm.
+
+**A SECOND GATE WAS BUILT AND REJECTED. Its tests passed and it would have failed every CI build.** It
+read `organization` and refused any database holding a tenant the seed did not create. Every
+`.db.test.ts` suite here creates its own org — `access-co`, `pull-co`, `gate-co`, some thirty of them —
+and CI runs `npm test` and THEN `npm run seed`, deliberately, because the DB suites TRUNCATE and the
+e2e needs the fixtures back. So it would have fired on the normal path, every build, and the fix a
+person reaches for when a safety check fires on the normal path is to switch it off. That is the third
+time this repo has landed on "a gate that goes red because the suite before it did its job is a gate
+people disable" — after the raw-message check and the pseudo-locale ratchet.
+`test/seed-gate.db.test.ts` pins the CI ordering so the design cannot be rediscovered.
+
+**The residual risk is stated rather than papered over:** `STAGE=local` in a shell whose
+`DATABASE_URL` points at production is caught by nothing. No environment variable distinguishes those
+two situations. `announceTarget()` prints the database and host before writing — never the password —
+so the answer is in front of the person who does know, but that is a mitigation, not a gate.
+
+**Every entry point that legitimately seeds now declares itself:** `npm run e2e` and `npm run e2e:crawl`
+carry `STAGE=test`, and `ci.yml` sets `STAGE: ci` at the JOB level rather than on the seed step, so a
+future step that seeds inherits it — otherwise the failure lands on somebody under time pressure whose
+quickest fix is to weaken the gate. **Running the seed by hand now needs `STAGE=local npm run seed`.**
+
 **Phase 0 (foundation & tenancy) — COMPLETE, merged to main:**
 VX0-1 scaffold · VX0-2..6 tenancy spine + RLS isolation gate (green) · VX0-7 SSO (vendored auth-kit + login page) · VX0-9 seeds · VX0-10 CI + standard workflows + Dockerfile. (VX0-8 worker/MCP tenant-context deferred until those surfaces exist.)
 
@@ -2119,220 +2233,6 @@ shipped.
 | **VX4-7** ⏳ | **Locale: retag `en` → `en-CA`, add `en-US`** — parts 1 → 3 DONE. **VX4-7 CLOSED** (IL-1, IL-2, IL-4, IL-5/6, IL-7, IL-10, IL-11, UD-3, UD-5). fr-CA retired until its copy exists (0028) | IL-1: their `en` already formats as en-US (`3/4/2026`, `CA$10,799.00`), so this is a retag **and** an addition, 2 locales to 3 — touching URL segments, stored preferences and every `{ en: … }` Json key, whose arity is hardcoded in ~17 files (IL-7). Also: a company default locale, which does not exist there (IL-2); what a missing key does, decided before the third catalog exists rather than after two blank pages (IL-4); and the date-formatting calls that pass no locale (IL-10). | 3 |
 | **VX4-8** | **Module 12 slices 2–3: fraud detection + control evaluation** | ✅ **CLOSED** at part 4 (#96) — UD-8, four detectors, six controls, the review queue, two scheduled routes. **PHASE 4 COMPLETE.** | Deferred to this phase since Phase 2 because both are retrospective and need approval history, which now exists. Their versions are driven by `SystemFlag` config (MT-2) and run as unconditional global crons (MT-5), so both land on VX4-1 and VX4-2. | 3 |
 
-### VX4-11 + the audit-action registry SHIPPED — and a fixture date that expired overnight
-
-**PR #100.** No migration. New: `lib/audit/actions.ts` · `test/support/dates.ts`. Changed:
-`lib/expenses/lifecycle.ts` · `lib/audit/service.ts` · `lib/i18n/catalog/errors.ts` (2 codes) ·
-`app/expenses/[reportId]/page.tsx` · four pass-through audit helpers · fifteen db suites · six e2e
-specs.
-
-**VX4-11 — THE DETECTORS COULD NOT SEE AN UNDATED EXPENSE.** `txn_date` is nullable (0003) and the
-form collected it without insisting, so a tenant whose people skipped it got **no duplicate detection
-at all** and nothing said so: the duplicate and outlier rules both bound on the column, and an
-expense with none is invisible to them rather than reported by them.
-
-**Required at SUBMIT, not at the column** — John's call was "require the date", and the receipt-first
-flow decides where. `startFromReceipts` creates one expense per uploaded receipt before anybody has
-opened it, and the person coding it later is the first who knows the date; a NOT NULL column would
-have to invent a value there. A draft may be incomplete, a submitted report may not. `required` on
-the form is the nudge; `submitReport` is the rule.
-
-**Unconditional, unlike UD-2's coding gate.** That one is conditional on a connected ledger because
-the requirement comes from the integration. This one is not: the date orders the report, attributes
-spend to a period for analytics and budgets, goes on the ledger wire, and is what the detectors key
-on. And unlike an unmapped category — admin-owned, a dead end for the employee — this is a fact the
-person filing has in front of them, so the refusal is one they can act on. It is reported BEFORE the
-coding gate for the same reason.
-
-**THE FIXTURE DATE THAT EXPIRED OVERNIGHT, and it is this ticket's own subject.** ~32 fixtures needed
-a date. The first attempt hardcoded `2026-08-15`; every suite passed. The clock rolled to 5 Sep and
-twenty-three budget assertions started reading 0 instead of 1800 — `budgets.db.test.ts` builds its
-period as `current_date - 20 … current_date + 20`, so the literal that had been the window's first
-day was suddenly one day OUTSIDE it, the spend fell in no period, and nothing about the failure
-pointed at a date. **A fixed fixture date against a relative period is a test that expires.**
-`test/support/dates.ts` is now the one answer (TODAY), with that story in its header. The e2e hit the
-same wall first — a hardcoded date there broke `budget-flow`'s overage warning, and
-`compliance-flow` had already got it right.
-
-**A PRE-EXISTING FLAKE OF MINE, FIXED WHILE IT WAS VISIBLE.** `compliance-flow`'s threshold test
-failed once in a full run and passed twice alone. Cause: `click()` returns when the click is
-dispatched, not when the server action's POST finishes, so the following `goto` could race the
-redirect. From #96, and the same trap this session already hit once. Now waits for the POST response.
-Two consecutive clean full runs.
-
-**THE AUDIT-ACTION REGISTRY (flagged in #98) — and what typing it found.** Fifteen bare literals
-across nine modules, `append` taking `action: string`, eight more added by #98. A typo'd action is
-not an error: it inserts happily into an append-only table and nobody's query finds it again.
-`lib/audit/actions.ts` is the list, `AuditInput.action` is typed `AuditAction`, and
-`FRAUD_FLAG_<VERDICT>` is a template literal type derived from `VERDICTS` so a fourth verdict follows
-automatically.
-
-**The list I built by grepping was WRONG, and the compiler said so on the first run: nine actions
-missing.** Five pass through helpers typed `action: string` (`auditBranding`, `auditPrefs`,
-`auditPostAction`, and my own `auditEdit` from #98), two more sit in a ternary spanning lines. A grep
-sees none of those. That is the argument for the registry restated as evidence — the method that
-produces an incomplete list is the method a list without a compiler is maintained by. (My first
-`isAuditAction` also re-listed the three verdicts in a regex, three lines under the type that derives
-them. Fixed before it shipped.)
-
-**FLAGGED, NOT RENAMED:** everything is SCREAMING_SNAKE except branding, which writes
-`branding.color.set` and five siblings. First time the names have sat in one list. An audit action is
-written into rows that cannot be updated, so changing the spelling splits every historical query in
-two — doing that as a side effect of adding a registry is exactly the quiet decision this codebase
-keeps writing guards against. One edit in `lib/audit/actions.ts` whenever it is wanted.
-
-**Verified in the harness:** 1362 vitest / 62 files · 135 Playwright (twice) · 18 pseudo-crawl
-(/expenses still 19) · build · `check:actions`, `check:i18n`, `check:vendor`, `check:admin`. Three
-sabotage runs, one of which the compiler caught with "Did you mean 'REPORT_EDITED'?".
-
-### UD-2 + UD-4 + UD-9 SHIPPED — the last three upstream ports, and a third correspondence nobody had listed
-
-**PR #99.** No migration. New: `lib/integrations/coding.ts` · `test/submit-coding.db.test.ts` ·
-`test/ddl-correspondence.db.test.ts`. Changed: `lib/expenses/lifecycle.ts` ·
-`lib/integrations/post-outbox.ts` · `lib/i18n/catalog/errors.ts` (2 codes) · `app/expenses/page.tsx`
-· `app/admin/branding/page.tsx` · `lib/receipts/constants.ts` · `test/ledger-post.db.test.ts`.
-
-**UD-2 — A REPORT THAT CANNOT POST WAS SUBMITTABLE.** `submitReport` checked status, line-item count
-and the policy rules. **Nothing checked that a line had a GL account.** So a category with no
-`gl_account_id` — nullable since `0014` on the reasoning that "the employee filing the expense is not
-who fixes it" — passed submit, passed approval, and surfaced days later in the ledger queue to an
-operator who did not file it and also cannot fix it. `Workbench.uncodedExpenseCount` counts expenses
-with no LINE ITEMS, which is a different thing that reads like this one.
-
-**John's call, 4 Sep: refuse at submit.** The employee cannot fix an unmapped category, so being
-blocked is a dead end for them — but it is an immediate, visible dead end next to somebody who will
-escalate within minutes, and the alternative failure lands late on a person who can do even less
-about it. The refusal names the categories and says an administrator has to map them.
-
-**Two conditions that are not optional, both ported:** only when a ledger is CONNECTED (a tenant with
-no integration has nothing to be coded FOR, and refusing there would conjure a rule out of an absent
-integration), and BEFORE the policy pass (a fact about the report, not a judgement about it).
-`capabilityAvailability` rather than `requireCapability`, because it already answers the two awkward
-cases correctly: module off is `connected: false`, and TWO connected ledgers (AC-22) is
-`connected: true` — the coding is required whichever one wins. Both have their own test.
-
-**A SABOTAGE DISPROVED A CLAIM IN MY OWN COMMENT, AGAIN, AND THE FIX WAS A MISSING TEST ELSEWHERE.**
-`coding.ts` said the order of `coalesce(line, category)` mattered there. It does not: that function
-asks only whether EITHER is present, and `coalesce(a,b) IS NULL` is the same question as
-`coalesce(b,a) IS NULL`. Flipping it passed all twelve tests, correctly. The order IS load-bearing
-where the coalesce picks the account NUMBER — `dispatch.loadPostable` and `dryRun` — because flipping
-it there changes which account the money lands in, silently, for every report whose category was
-re-mapped after it was filed. **Nothing pinned that**; `test/ledger-post.db.test.ts` now does, and
-flipping the order there fails it.
-
-**UD-4 — the list heading.** `/expenses` said "Expense reports" over a list scoped to the reader.
-Worth recording that the sub-line ALREADY said "submitted by you": the scope was disclosed, in the
-place people skip, which makes upstream's A6 finding sharper rather than weaker. The heading now says
-"Your expense reports" / "All expense reports". One string for one string, so the pseudo-locale
-ratchet for `/expenses` stays at 19 — verified, not assumed.
-
-**UD-9 — one of the two was already closed, and a third was live.**
-  · `lib/receipts/constants.ts` promised its list was "kept in step with the UI's file-picker accept
-    list". It is not a copy and has not been since VX1-6 — `RECEIPT_ACCEPT` is derived and the drawer
-    imports it. The comment was the only thing that had drifted. Replaced rather than deleted,
-    because a stale promise is an invitation to create the copy it describes.
-  · **The one nobody had listed:** `LOGO_MIME_TYPES` says it "mirrors
-    `organization_logo_mime_raster`" (code-to-DDL), and `app/admin/branding/page.tsx` had the same
-    three strings typed out AGAIN in an `accept="…"` attribute. Three copies of one list, and the
-    worst failure is the quiet one: a file picker offering a type the database refuses is a rejected
-    upload with no explanation on the screen that offered it. The page now derives its list.
-  · `findingIdentity` "must match migration 0006's unique index exactly" — guarded.
-
-**BOTH GUARDS TEST BEHAVIOUR, NOT TEXT.** A test that reads `pg_get_constraintdef` and compares it to
-a list written in the test is a FOURTH copy — IL-7's shape, the thing `check:i18n` exists to avoid.
-So: the identity is tested by what it means (two findings differing only OUTSIDE the identity must
-collide; differing in any component of it must coexist — including the NULL line item the index
-coalesces, since NULL never equals NULL in SQL and without the coalesce reconciliation would grow a
-duplicate on every save), and the mime list by asking the database to accept every member and refuse
-everything else. Neither file names a column.
-
-**THREE CONSTRAINTS ON ONE FACT, found by the test failing three times.** A logo is `logo_bytes`,
-`logo_mime` and `logo_updated_at`, with a constraint per pairing, and both of the others fire BEFORE
-the raster check. The first two versions of that test were failing on the wrong constraint — which is
-why the expectation names `organization_logo_mime_raster` rather than just asserting a rejection.
-
-**Verified in the harness:** 1356 vitest / 62 files · 135 Playwright · 18 pseudo-crawl (/expenses
-still 19) · build · `check:actions`, `check:i18n`, `check:vendor`, `check:admin`. Six sabotage runs.
-
-### UD-11 + UD-1 SHIPPED — an edit is now auditable, and the wire is now assertable
-
-**PR #98.** No migration. New: `lib/audit/diff.ts` · `test/audit-diff.test.ts` ·
-`test/expense-audit.db.test.ts` · `test/support/audit-actor.ts`. Changed: `lib/expenses/service.ts`
-· `lib/receipts/service.ts` · `lib/audit/service.ts` · `app/expenses/actions.ts` ·
-`app/receipts/actions.ts` · three admin actions files · `test/veloledger-adapter.test.ts` · thirteen
-db suites (one argument each).
-
-**UD-11: THE QUESTION AN AUDIT TRAIL EXISTS TO ANSWER WAS UNANSWERABLE.** `lib/expenses/service.ts`
-contained no audit append at all. `recordEvent` covers TRANSITIONS only (SUBMIT, RECALL, APPROVE,
-REJECT, RETURN, REIMBURSE), so for every expense, report header and line item, *"who changed this
-line's amount, from what, and when"* had no answer. Upstream `78e7b7b4` fixed a WEAKER version of
-this — their rows said `{ fields: Object.keys(input) }`, the keys the client sent — so we were a step
-behind a defect.
-
-**WHERE THIS DIVERGES FROM THE PORT, AND WHY OURS CAN.** Theirs diffs the PATCH against the row, and
-their header is honest that "a mutation that quietly writes a column it did not list stays invisible
-here". Every write in our service ends in `RETURNING *`, so ours diffs the ROW BEFORE against the ROW
-AFTER. Two columns no caller ever names become visible: `gl_account_id`, re-stamped when a category
-changes (AC-10) — the one column an accountant would check on a re-coding — and `title`, which is
-TRIMMED on the way in, so a patch diff records what was typed rather than what was stored.
-
-**WHAT ROW-VS-ROW STILL CANNOT SEE, and the first draft of my own comment claimed it could:** a write
-that lands on ANOTHER TABLE. Changing a report's currency cascades to every child expense
-(single-currency MVP), and no diff of the report row shows it. That one is counted and recorded by
-hand (`cascaded_expense_currency`), and the comment now says so.
-
-**THE ACTOR IS A REQUIRED PARAMETER — John's call, 4 Sep.** The alternative was an `app.current_actor`
-GUC beside `app.current_org`, which would have cost no call-site churn. Rejected for two reasons, the
-second being the real one: enforcement would move from the compiler to run time, and the failure mode
-is the bad one — an edit outside the guard throws INSIDE the user's transaction and rolls back their
-edit over a logging detail (AU-5, which upstream's own commit warns about). The price was ~70 test
-call sites gaining one `TEST_ACTOR` argument. **Also measured, and it is why auditing at the edge was
-rejected outright:** `lib/receipts/service.ts` calls `addExpense` from outside
-`app/expenses/actions.ts`, so an edge-level audit would have shipped the receipt-first flow with no
-audit row on day one.
-
-**DELETIONS ARE AUDITED, WHICH THE PORT DOES NOT COVER.** "Who deleted the $4,000 line" is the
-question an auditor asks first, and the row is right there before the DELETE. `removeExpense` also
-snapshots the line items that go down with it by CASCADE — they leave no statement of their own, and
-"the expense was deleted" does not say what was on it. `deleteReport` gained the conditional-write
-idiom while it was being touched: `assertDraft` ran, but a concurrent submit would leave the DELETE
-matching nothing, and an audit row for a deletion that did not happen is worse than none.
-
-**UD-1: THE CURRENCY IS ON OUR WIRE AND NOTHING PINNED IT.** Upstream's `9f67f533` dropped `currency`
-from a body builder and NetSuite took the subsidiary's base currency at face value — USD 74.19 posted
-as CAD 74.19, silently, on every foreign-currency charge for a month. **Our adapter is correct** —
-`currencyCode` is required on `PostableReport`, so it cannot vanish from the CONTRACT the way theirs
-vanished from a per-vendor builder. The gap was the test, exactly as their commit describes it: our
-stub recorded `calls.push(tool)` and no bodies, so **deleting `currency: report.currencyCode` failed
-nothing** — measured by deleting it. Bodies are now captured and three fields whose absence is silent
-rather than loud are asserted: currency, account numbers, idempotency key. Plus their `1ab1bf19`
-sweep: no VeloExpense UUID in a field we do not own, `idempotencyKey` being the namespaced exception.
-
-**EIGHT EXISTING TESTS BROKE, AND THAT WAS THE CORRECT ORDER OF EVENTS.**
-`approval-engine.db.test.ts` asserts the tenant's audit chain EXHAUSTIVELY, which was only true while
-edits recorded nothing — its fixture builds a report, so `EXPENSE_ADDED` and `LINE_ITEM_ADDED` now
-appear. Same shape as VX4-7 part 2a, where `approval-flow.spec.ts` was pinned to the raw-enum render.
-Fixed by purging the chain at the end of the fixture rather than filtering action names out of the
-helper — a filter is a hand-kept list that goes stale the next time an action is added.
-
-**TWO SABOTAGE FINDINGS, ONE OF THEM ABOUT MY SABOTAGE.**
-  · Deleting `addExpense`'s audit append failed NOTHING — 1329 passed with a whole write path
-    recording nothing, because every test drove line items and report headers. The surviving tests
-    were the finding; there is now at least one assertion per audited action, and a ninth test naming
-    all eight across one report's life so a NEW unaudited path never appears in it.
-  · The follow-up sweep then reported 0 failures for all eight actions, which was **my measurement
-    being broken, not the tests**: the script produced a syntax error, so vitest never collected and
-    printed "no tests" — zero `×` lines. UD-10's family exactly. Re-run with `tsc --noEmit` as a gate
-    on the sabotage itself, every action fails 2-3 tests.
-
-**Verified in the harness:** 1334 vitest / 60 files · 135 Playwright · 18 pseudo-crawl · build ·
-`check:actions`, `check:i18n`, `check:vendor`, `check:admin`. Twelve sabotage runs.
-
-**FLAGGED, NOT FIXED:** the 15 audit action strings in this codebase are bare literals with no
-registry — `append` takes `action: string`. This ticket added 8 more. A typo'd action is a row nobody
-queries, and the fix that would make a registry load-bearing rather than decorative is typing
-`AuditInput.action` as a union, which touches every existing call site. Its own small ticket.
-
 ### VX4-9 SHIPPED — one admin gate, two exits, and a claim of mine the sabotage disproved
 
 **PR #97.** No migration. New: `lib/auth/admin-guard.ts` · `app/forbidden.tsx` ·
@@ -2503,17 +2403,12 @@ now closed by tests that fail when the rule is removed.
   has to be stamped per run — the demo tenant is not reset and CI retries once.
 - A `<summary>` has no button role.
 
-**VX4-11 — CLOSED in #100.** The account below is what it looked like when it was boarded:
-
 **VX4-11 boarded — the duplicate and outlier rules need `txn_date`, and the form does not insist on
 one.** Both rules bound on `expense.txn_date`; an entry with none is invisible to them. The
 add-expense form collects a date and does not require it, so a tenant whose people skip it gets no
 duplicate detection at all with nothing on any screen saying so. Found by this ticket's e2e, which
 failed for exactly that reason before the date was filled in. The fix is a product decision —
-require the date, or fall back to `created_at` — and is not this PR's. **John chose require, 5 Sep**:
-`created_at` is a fact about the data entry, not the purchase, so falling back turns a gap that is
-silent-but-honest into coverage that is quietly wrong. Gated at SUBMIT rather than at the column, so
-the receipt-first flow can still create an expense before anybody knows its date.
+require the date, or fall back to `created_at` — and is not this PR's.
 
 ### VX4-8 part 3 SHIPPED — Module 12 slice 3: control evaluation
 
@@ -3999,649 +3894,6 @@ inside VX4-1 rather than staying deferred.
 Two tenants, side by side, with **different modules enabled, different branding, and different
 locales** — one on `fr-CA`, one on `en-US` — each seeing only its own analytics and budgets, proved in
 a browser. The Phase-3 exit criterion took the same shape and it is what found AC-19, AC-22 and AC-23.
-
-### CLEANUP SHIPPED — PE-9 closed, the branding names renamed while it was still possible
-
-**PR #NNN.** No migration. New: `lib/tenant/sql.ts` · `scripts/check-tenant-expression.mjs` ·
-`test/tenant-expression.db.test.ts`. Changed: 35 files under `lib/` and `app/` (the sweep) ·
-`lib/audit/actions.ts` · `lib/branding/service.ts` · `test/{audit-canonical,branding.db}.test.ts` ·
-`package.json`. **`app/layout.tsx`, `playwright.config.ts` and `e2e/pseudo-crawl.spec.ts` are
-byte-identical to main.**
-
-**PE-9 was 20 sites, not 17** — three more were written between the audit naming the problem and this
-fixing it, each by somebody copying the file next door. That is what a rule with no enforcement looks
-like, so the fix is one constant plus a guard, not a careful sweep.
-
-**And the guard found ~25 MORE that the audit never counted**: the expression is also spelled inline
-in queries, not only in `const ORG` declarations. All of them now import `ORG` from
-`lib/tenant/sql.ts`. Two exemptions, both deliberate and both named in the script: comments (five
-files explain why the `NULLIF` matters, and a guard that forbade the explanation would delete its own
-reason for existing), and `lib/audit/chain.ts`'s advisory lock, which hashes the RAW setting uncast —
-substituting `ORG` there would hash a different value and change the lock key for a tenant, which is
-a serialization bug rather than a tidiness one.
-
-**THE REFACTOR INTRODUCED A SILENT FAILURE MODE AND THEN COMMITTED IT.** `${ORG}` inside a single- or
-double-quoted string is not an interpolation: it compiles, it lints, and it sends four literal
-characters to Postgres, which answers `syntax error at or near "$"`. It happened once —
-`lib/notifications/dispatch.ts` had a double-quoted query — and cost 19 failing tests to find. The
-guard now checks BOTH directions: the expression must not be written twice, and the constant must not
-be interpolated into a string that cannot interpolate. Sabotaged to confirm.
-
-**A sabotage found the guard's blind spot.** Removing the `NULLIF` from `lib/tenant/sql.ts` ITSELF
-failed nothing: the guard enforces "declared once", not "declared correctly", and the twenty call
-sites would have been perfectly consistent about the wrong thing.
-`test/tenant-expression.db.test.ts` now pins the BEHAVIOUR against a real Postgres — a pooled
-connection that has already carried a tenant returns `''`, not NULL, so the bare form raises `22P02`
-where the guarded one matches no rows. It also runs the bare expression directly, so the claim is
-demonstrated rather than asserted.
-
-**The branding audit actions are renamed, and the window was closing.** Six were
-`branding.color.set`-style where the other thirty-six are SCREAMING_SNAKE. VX4-11 flagged and left
-them, correctly. Renamed NOW because the action string is inside the hash payload: a stored row's
-spelling can never change — not by a migration, not by anything, because changing it changes the hash
-and the chain stops verifying. Rows already written keep the old spelling forever and still verify
-(the hash is recomputed from what is stored), so a database with pre-rename rows holds both spellings
-for one event. Today that costs nothing because nothing is in production and every such database gets
-rebuilt; after the first customer it would be permanent. `test/audit-canonical.test.ts` now asserts
-the SHAPE — not a list of members, per IL-7 — so a thirty-seventh cannot arrive dotted.
-
-**One test I wrote was wrong and was replaced**: it asserted the fraud verdict actions are members of
-`AUDIT_ACTIONS`. They are not — they are a template literal TYPE unioned into `AuditAction`, and
-putting them in the array is exactly the hand-typed duplicate the type exists to avoid. Replaced with
-a compile-time assertion, which is the gate that actually applies.
-
-**TWO OF THE FOUR ITEMS WERE NOT DONE, AND HERE IS WHY.**
-
-**The audit-retention purge job is not a cleanup item, and the note saying it is, is wrong.** HANDOFF
-said "per-org retention is already a column … what does not exist is the thing that runs". The live
-schema says otherwise: the `app.audit_purge` hatch exists and the watermark columns exist, but **there
-is no retention setting anywhere** — no column, no key in `organization.settings` — and
-`audit_entry.expires_at` exists with **nothing writing to it**. The job is not the missing piece; the
-policy is. Doing it properly is a migration, a per-tenant setting, a screen, the job, and tests that
-verification survives a purge — a ticket, and a destructive one over an append-only log.
-
-**The pseudo-crawl guard is worse than order-dependent, and I stopped rather than fix it blind.**
-VX5-4 flagged that `e2e/pseudo-crawl.spec.ts`'s "the server really is in pseudo mode" fails on a
-freshly seeded database and passes in CI only because the full Playwright suite runs first. Digging
-in: on a seed-only database **no crawled page has ANY bracketed text**, and the ratchet PASSES anyway
-— the un-catalogued counts land under their ceilings because less data means fewer strings. So the
-guard is the only thing standing between that state and a green run that measured nothing. Two
-rewrites were attempted (check every page; measure with the same `visibleStrings` walk the ratchet
-uses) and NEITHER passed, which means the cause is not the page choice. **The file is reverted to
-main byte-for-byte.** Boarded with this evidence rather than half-fixed.
-
-### VX5-6 SHIPPED — branding where a credential earns it, and nowhere else. PHASE 5 COMPLETE.
-
-**PR #NNN.** No migration. New: `app/pre-auth.tsx` · `app/api/invite/logo/route.ts`. Changed:
-`lib/invites/service.ts` · `app/invite/accept/page.tsx` · `app/login/page.tsx` (comment only) ·
-`app/signup/{page,verify/page}.tsx` (imports) · `lib/notifications/dispatch.ts` (dead import) ·
-`test/invites.db.test.ts` · `e2e/invite-flow.spec.ts`. **Deleted: `app/signup/ui.tsx`** (moved).
-**`app/layout.tsx` and `playwright.config.ts` are untouched by this ticket.**
-
-**THE DECISION, WHICH IS THE TICKET.** John's call: the sign-in page stays generic. GAP-AUDIT BR-4
-warns that pre-auth branding is "an unauthenticated oracle for: does this company use VeloExpense,
-and what is its logo", and since VX5-5 the host names the tenant, so `/login` COULD be branded and
-every subdomain product does it. It is not, and `app/login/page.tsx` now carries the reasoning so a
-future reader does not read the absence as an oversight and "finish the job".
-
-**Where branding DOES appear: `/invite/accept`, because getting there needs a live invitation
-token.** Not a guessable address — 32 random bytes an admin caused to be mailed to one address, which
-expire, which can be withdrawn, and which stop resolving the moment the invitation is used. The
-disclosure is gated by a credential rather than by knowing a company's name. It is also the screen
-where it earns its keep: somebody who has just been mailed a link is deciding whether the email was
-genuine, and a generic page is what every phishing page also looks like.
-
-**`/api/invite/logo` is addressed by TOKEN, not by slug.** `app/api/branding/logo`'s own header had
-predicted "a route addressed by SLUG rather than by session — a different route, not a relaxation of
-this one". That was half right: a slug route IS different, and it is also exactly the oracle BR-4
-names. By token it answers only for somebody already told. `Cache-Control: no-store` rather than the
-session route's immutable-and-private, because this URL carries a credential and a credential in a
-URL should not sit in a shared cache or a proxy log.
-
-**A dead invitation gets the plain product shell**, asserted separately: at that point there is no
-invitation to be entitled by, and rendering somebody's brand for an expired token hands out the very
-thing the gate exists to withhold.
-
-**`app/signup/ui.tsx` → `app/pre-auth.tsx`.** Three pages shared it and one imported it as
-`@/app/signup/ui` while not being a signup page. More to the point they did not look like each other
-or like `/login`: the first three screens a customer sees were three different products. They now
-share one shell carrying VeloExpense's own wordmark — which is all signup can honestly carry, since
-there is no tenant yet and inventing one is worse than a plain page.
-
-**Sabotage, 6 runs, and two of them were the finding.** Branding `/login` → 1 e2e. Branding a dead
-invitation → 1 e2e. Dropping the live-check inside `readInviteLogo` → **NOTHING**. Widening the
-`invite_lookup` policy to see dead rows → **NOTHING**. Removing BOTH → 2 unit + 1 e2e: a withdrawn
-invitation's logo carries on being served. So the two live-checks are real defence in depth with
-neither one load-bearing alone — the same shape `proxy.ts`'s public-route entry turned out to have,
-and now labelled as such rather than implying both matter.
-
-**A flake caught and fixed before it shipped**: the withdrawn-invitation e2e clicked Withdraw and
-navigated immediately. `click()` returns when the event dispatches, not when the server action's POST
-finishes — `compliance-flow.spec.ts`'s bug exactly. It passed in isolation and failed in the file,
-which is the timing signature; it now waits for the confirmation.
-
-**PHASE 5 IS COMPLETE.** VX5-1 through VX5-6, PRs #102–#108. A stranger can sign up, get an
-organization that works on day one, invite their colleagues, and reach it at their own web address.
-
-### VX5-5 SHIPPED — tenant subdomains, and three things that were measured rather than reasoned about
-
-**PR #NNN.** No migration. New: `lib/tenant/host.ts` · `app/wrong-tenant-host.tsx` ·
-`test/tenant-host.test.ts` · `test/tenant-host.db.test.ts` · `e2e/host-tenancy.spec.ts`. Changed:
-`lib/tenant/request.ts` · `auth.ts` · `app/layout.tsx` · `app/api/branding/logo/route.ts` ·
-`lib/notifications/{email,dispatch}.ts` · `lib/invites/service.ts` · `lib/i18n/catalog/errors.ts` ·
-`playwright.config.ts`. **`proxy.ts` is untouched** — see below.
-
-**THE SESSION IS AUTHORITATIVE, THE HOST IS NOT.** `app.current_org` still comes from the session and
-only from the session. A host that disagrees is REFUSED, before any tenant row: not redirected (which
-silently moves somebody who belongs to two tenants), and not quietly served from their own tenant at
-somebody else's address (which is a lie about what the URL means and indistinguishable from working).
-A host that could switch the session's tenant would be one URL away from a cross-tenant read.
-
-**Three corrections, all from running it:**
-
-1. **The apex must be configured, and my first design said otherwise.** The parser took no apex —
-   "first label of a multi-label host, and the database decides" — with `RESERVED_SLUGS` keeping our
-   own hostnames safe. The e2e refuted it on the first run: `velo.test` has two labels, `velo` was
-   read as a tenant, and every signed-in request to the apex was refused. The heuristic only works
-   when the apex's own first label happens to be reserved — `veloexpense.app` survives,
-   `expenses.velotech.ai` does not. The apex now comes from `AUTH_COOKIE_DOMAIN`, which is the same
-   variable that makes a session usable across subdomains at all, so the two cannot be configured
-   against each other. **Unset ⇒ no host names a tenant**, which is why every existing deployment and
-   the other 155 specs are unaffected.
-
-2. **`NODE_ENV` was the wrong test for a secure cookie.** The cookie config named it
-   `__Secure-authjs.session-token` whenever `NODE_ENV=production` — which the standalone build is,
-   over plain http. A `__Secure-` cookie on http is dropped, Auth.js derives the JWE salt from the
-   cookie NAME, and the result was every request arriving `unauthenticated` with nothing pointing at
-   why. Now keyed on the ORIGIN'S SCHEME, mirroring Auth.js's own inference. Not a test artefact: a
-   self-hosted deployment behind http on an internal network had exactly this silent sign-out.
-
-3. **The guard I called load-bearing was covered by nothing.** A sabotage removing the mismatch check
-   from `withCurrentOrg` failed NO test — `app/layout.tsx` renders the refusal for every PAGE before
-   its tenant read ever runs, so the layout was doing all the work. **A route handler never sees a
-   layout**, and `app/api/branding/logo` was bypassing both: on another tenant's host a Demo session
-   fetched Demo's logo bytes. Now routed through `withCurrentOrg`, and the e2e proves it. That test
-   also had to be fixed twice — the first version asserted a 404 that a tenant with no logo produces
-   anyway, so two sabotages passed against it until the fixture gave Demo real bytes.
-
-**No middleware, which was also a correction.** The first version had `proxy.ts` stamp an
-`x-velo-host-tenant` header with a careful note about overwriting it so nobody could forge one. That
-mechanism worked around a problem that does not exist: the `Host` header IS the host the request was
-made to, and "forging" it is just asking for that host — where the mismatch check applies unchanged.
-The header and the spoofing surface it created are gone, and `proxy.ts` is byte-identical to main.
-
-**Tenant mail links to the tenant's host** (`originForTenant`) — invitations and approve links.
-Signup confirmation stays on the apex, because there is no tenant yet. Gated on `AUTH_COOKIE_DOMAIN`
-for the reason above: a deployment that cannot hold a session on a subdomain must not mail somebody a
-subdomain link, and it refuses to invent a host when the apex and the cookie domain disagree.
-
-**The e2e launches its own browser**, with `--host-resolver-rules` mapping `*.velo.test` to 127.0.0.1
-— no `/etc/hosts`, no DNS, no network. It has to: a probe against `demo.localhost:3000` showed the
-apex rendering and the subdomain redirecting to `/login`, because a cookie with no `Domain` is
-host-only and browsers will not scope one to `localhost`. Contained to one spec — a second Playwright
-project would re-run everything and changing the shared config would move 155 tests onto a new origin
-to prove one thing.
-
-**DEPLOY SIDE, WHICH IS NOT IN THIS PR:** a wildcard certificate for `*.veloexpense.app`, the DNS to
-match, and `AUTH_COOKIE_DOMAIN` set. GAP-AUDIT BR-8 also warns `WEBAUTHN_RP_ID` must sit at the apex
-or every passkey stops validating when a tenant moves subdomain. Until `AUTH_COOKIE_DOMAIN` is set,
-this ticket changes nothing at runtime.
-
-**Sabotage, 7 runs.** Host believed over session → 1 e2e. Unknown subdomain served silently → 5.
-The apex heuristic restored → 2. `originForTenant` ungated → 1. Layout stops rendering the refusal →
-2 e2e. Cookie name back on `NODE_ENV` → 4 e2e. The logo route bypassing the guard → 1 e2e.
-
-**AND THE HARNESS RULE CAUGHT ME, WHICH IS THE POINT OF IT.** The first push of this ticket failed
-`check:harness`: I copied `app/layout.tsx` back wholesale from the cloud harness and brought its font
-stubs with it — `const geistSans = { variable: … }` instead of `const geistSans = Geist({ … })`. The
-rule names TWO files, I was careful about `playwright.config.ts`, and I forgot the other one in the
-same sentence.
-
-The fix was to take `origin/main`'s copy and apply the three edits to THAT, which is what "patched in
-place" means and what I should have done both times. **The mechanical step that would have caught it
-before the push: run `node scripts/check-harness-leak.mjs` ON THE DEVICE after every transfer.** It
-cannot be run in the harness — it fails there by design, which is exactly why forgetting is easy —
-so it has to be run on the other side. It is one command and it scanned 351 files in under a second.
-
-**Next: VX5-6**, pre-auth branding, which is now buildable — `/login` on a tenant host knows whose
-colours to use without anybody having signed in.
-
-### VX5-4 SHIPPED — what a tenant can do on the day it exists
-
-**PR #NNN.** No migration. New: `lib/onboarding/starter.ts` · `lib/onboarding/setup.ts` ·
-`app/actions.ts` · `test/onboarding-starter.db.test.ts` · `e2e/home-flow.spec.ts`. Changed:
-`lib/onboarding/provision.ts` · **`app/page.tsx` (rewritten)**.
-
-**The defect, found by walking rather than by reading.** A tenant created by `createOrganization`
-was taken through the first thing anybody does with an expense product:
-
-```
-createReport   OK
-addExpense     OK
-addLineItem    THREW ExpenseError CATEGORY_NOT_FOUND
-```
-
-A line item must name a category, `expense_category` is tenant data, and a new tenant had none. **A
-customer who had just signed up could not record a single expense.** Not a rough edge — the product
-did not work. `seedStarterCategories` runs inside `createOrganization`'s transaction (a tenant whose
-categories failed to write is the same half-existing state VX5-1 refuses for the admin row), and the
-count rides on the `ORGANIZATION_CREATED` genesis row rather than getting an action of its own.
-
-**Six categories and nothing else, and the line is the ticket's whole argument.** The same walk
-turned up no approval ladder, no spend policy, no legal entities, no chart of accounts — none of them
-seeded. A category list is structurally required and is edited on day one anyway; an approval route
-or a per-meal limit is a STATEMENT ABOUT HOW SOMEBODY'S COMPANY WORKS, and a new tenant quietly
-acquiring one that Velotech chose is what a finance team should not discover in an audit. Those go on
-a checklist that says what is missing and invents nothing.
-
-**The founder still cannot submit, deliberately.** Alone in their tenant they are the only active
-administrator, so step 1 has no eligible approver and `allow_sole_approver_self_approval` is false.
-That default stays — segregation of duties is the right answer for an expense product, and `0013`
-already argues it. What was missing was anybody TELLING them: the wall said "the submitter is the
-tenant's only active administrator", which is accurate and arrives at the worst possible moment.
-`APPROVER` is now the first checklist item, before they have written anything. A test asserts the
-refusal, so turning that default on becomes a deliberate act with a failing test attached.
-
-`APPROVER` counts **two or more** admins/managers, not one: the founder IS an admin, so "an approver
-exists" would be satisfied by the person who cannot approve their own report.
-
-**`app/page.tsx` was the unmodified `create-next-app` scaffold** — the Next.js logo, "To get started,
-edit the page.tsx file", links to Vercel templates — served to every signed-in customer, and in
-`e2e/crawl.spec.ts`'s page list for four phases. The crawl never caught it because a crawl asserts a
-page RENDERS and that one did. It is now the setup checklist plus a way into the product, and
-`e2e/home-flow.spec.ts` asserts on CONTENT, including that the scaffold's own strings are gone.
-
-**The checklist is admin work, and `/` never asks for it on an employee's behalf** — `app/actions.ts`
-splits the member read from the admin read, so a non-admin never gets a refusal page for something
-that was never theirs. `lib/onboarding/setup.ts` returns KEYS AND COUNTS and no English; the
-sentences are `Record<SetupItem, …>` on the page, so adding an item without copy is a compile error
-(the `EnumCopy` pattern, IL-7's rule).
-
-**Two bad tests written and fixed before they shipped.** The e2e first wrapped everything in
-`if (await panel.isVisible())` — it would have passed on a page with no checklist at all. The
-replacement named three specific outstanding items, passed alone, and FAILED in the full suite,
-because the expense-policy specs create rules in the demo tenant and it is never reset between files:
-"outstanding" is a property of what ran first, not of the seed. It now reads `setupStatus` and
-asserts the panel shows exactly what the service reports — while `setupStatus`'s own logic is pinned
-separately in `test/onboarding-starter.db.test.ts`, so neither test checks itself against itself.
-
-**Sabotage, 7 runs.** No seeding at creation → 6. Seeding overwrites a renamed category → 1.
-`APPROVER` satisfied by one → 6. Deactivated people counted → 1. The `scripts/seed.mjs` duplicate
-drifts → 1 (the list is hand-kept there because plain node cannot import TS; a test pins it, which is
-UD-9's lesson). Checklist shown to an employee → 1 e2e. The scaffold restored → 3 e2e. Plus one on
-the fixed test itself: making the panel list DONE items too → 1 e2e, which is what says the rewritten
-assertion still bites.
-
-**FLAGGED, NOT FIXED — the pseudo-crawl's own guard is order-dependent.** `e2e/pseudo-crawl.spec.ts`'s
-"the server really is in pseudo mode" visits `/expenses` and requires bracketed text. Run on a
-freshly seeded database it FAILS, because the seed creates no expense reports and the page has no
-catalogued strings to bracket; it passes in CI only because the full Playwright suite runs first and
-leaves reports behind. Same family as the traps this codebase keeps finding — an assertion that holds
-because something else ran first. CI is green in its own order (150 Playwright, then 18 crawl), so
-this is not a regression and not this ticket. Boarded.
-
-**CI caught a race my own test asserted wrongly — and a real defect behind it (on the VX5-4 branch, but VX5-3's code).**
-
-`test/invites.db.test.ts`'s "two simultaneous acceptances" asserted BOTH callers get a member. That
-is true of one of the two interleavings — the one where the inserts overlap and the loser is caught
-on `app_user`'s UNIQUE. **Eight consecutive local runs produced only that ordering; CI produced the
-other on its first run**, where the loser arrives strictly after the winner has committed, finds no
-live invitation, and got `null`.
-
-`null` was the wrong answer, not just an untested one: `resolveSsoUser` turns it into a DENIED
-sign-in for somebody who became a member a moment earlier. Two tabs, or a double-click on
-"Sign in to accept", and one of them is refused.
-
-So `acceptForVerifiedEmail` now returns a discriminated result — `ACCEPTED` when a live invitation was
-consumed, `ALREADY_A_MEMBER` when there was none and the verified address is an active member anyway.
-The loser audits nothing, because it did nothing: exactly one `INVITE_ACCEPTED` per invitation,
-whichever way the race falls. The recovery is narrow — a deactivated member is still refused, and
-somebody who was never invited still gets nothing.
-
-The test now asserts the invariant that holds on BOTH orderings (same member, one member, exactly one
-acceptance, one audit row) rather than the schedule — and the interleaving CI hit is covered
-separately by forcing it sequentially, which is the only way to reach that branch on purpose.
-
-**The lesson, written down because it will recur:** a concurrency test that passes locally has been
-measured on one of its orderings. A slower machine is a different schedule. Assert the invariant, not
-the outcome — and when a race test fails in CI, check whether the code is wrong before the test is.
-
-**Sabotage, 3 runs.** No recovery on the null path → 2. The recovery hands back anybody, deactivated
-included → 3. The loser reports `ACCEPTED` and audits → 3.
-
-### VX5-3 SHIPPED — the invite, and a bug that meant nobody could sign in at all
-
-**PR #NNN.** Migration `0036`. New: `lib/invites/service.ts` · `app/admin/employees/invite/page.tsx`
-· `app/invite/accept/page.tsx` · `test/invites.db.test.ts` · `e2e/invite-flow.spec.ts`. Changed:
-`lib/auth/resolve-sso-user.ts` · `lib/employees/service.ts` · `lib/tenant/context.ts`
-(`withInviteLookup`) · `lib/audit/actions.ts` (5 actions) · `lib/i18n/catalog/errors.ts` (5 codes) ·
-`app/admin/employees/{actions.ts,page.tsx,employee-form.tsx}` · `proxy.ts` ·
-`test/rls-isolation.test.ts` · `e2e/crawl.spec.ts`. **Deleted: `app/admin/employees/new/`.**
-
-**The door that was open.** "Invite-only" described the login page and nothing else. `resolveSsoUser`
-signs somebody in when an `app_user` row exists for (org, verified email) — so the grant of access was
-`INSERT INTO app_user`, and `createEmployee` did that from an admin form with no email to the person
-and no record they had never arrived. Two doors, one invisible. **`/admin/employees/new` is deleted**
-(the e2e asserts a 404, because a route taken off the nav is still a route); the form is now
-`/admin/employees/invite`, and the `app_user` row appears at acceptance. The directory therefore only
-contains people who have actually arrived — which matters because `app_user` is read by the manager
-picker, the reporting line and every approval ladder.
-
-**THE TOKEN IS NOT WHAT GRANTS ACCESS**, and this is the design rather than an omission.
-`acceptForVerifiedEmail(organizationId, verifiedEmail)` takes no token. The link carries the tenant
-and is revocable and expiring; the grant is bound to an email Google or Microsoft verified moments
-earlier, in `resolveSsoUser`. So a link forwarded to a colleague or pasted into a chat grants nothing
-— the holder would need the invited mailbox as an SSO identity, which is the same thing as being the
-invited person. It also means the link is optional: somebody who lost the email can sign in at
-`/login` with their org's web address and it works. Stronger than `0035`'s signup token, and it can
-be: a signup has neither a tenant nor an identity provider in the picture, and an invite has both.
-
-**`/invite/accept` therefore has no button that accepts.** It names the tenant (the only thing that
-lets somebody tell it from a copy) and shows a MASKED address — `n••••@acme.test`, a FIXED number of
-dots after the suite caught the first version publishing the hidden length. It exists to say
-"which mailbox" and to fail a dead link before a round trip through an identity provider.
-
-**One gate, not two.** `app.invite_lookup` answers ONE question — which tenant is this token in —
-after which everything runs under `tenant_isolation`. `0035` needed two GUCs because a signup has no
-tenant and its narrow SELECT policy made the consuming UPDATE impossible; an invite has a tenant, so
-`action_token`'s simpler shape applies. Not `app.platform_task`: that flag is held by long-running
-background paths, this one for a single statement in a single sign-in.
-
-**A BUG OLDER THAN THIS TICKET: SSO could not sign ANYBODY in.** `resolveSsoUser` read `app_user`
-inside `withoutOrg`, called in its own header "a sanctioned cross-tenant read". It is not one, and
-`lib/tenant/context.ts` says so explicitly — `withoutOrg` still connects as `veloapp` under FORCE
-RLS, so with `app.current_org` unset every policy compares against NULL and the table returns **zero
-rows**. Every SSO sign-in was denied, for everybody. Nothing caught it because `e2e/auth.setup.ts`
-mints session cookies directly with `next-auth/jwt` (SSO is unrunnable in CI), so the browser suite
-has never been through `signIn`, and there was no unit test on the file. The first test written
-against it failed, and that is how it surfaced. Fixed with no new hatch: `organization` has no tenant
-column, so the slug resolves with no context, and `app_user` is then read inside the tenant.
-
-**Two gaps folded in, at John's explicit instruction** (flagged as adjacent, not smuggled):
-`deleted_at` is now checked at the door — a deactivated person used to complete OAuth and hold a real
-session until `requireActor` refused them one step later; and `onSsoDenied` writes `SIGN_IN_DENIED`
-to the tenant's audit log instead of a `console.warn`, because with joining invite-only a refused
-attempt is the shape somebody probing a tenant takes. An unknown slug still writes nothing — an audit
-log belongs to an organization.
-
-**A third defect, found by deleting a route.** With `/admin/employees/new` gone the path fell through
-to `/admin/employees/[employeeId]` with the id `new`, Postgres answered `invalid input syntax for
-type uuid`, and the page 500ed. General, and present since VX1-2 — any hand-edited id did it; the
-static route was hiding it. `getEmployee` now treats a non-uuid id as not found, guarded in the
-SERVICE rather than the page for MT-3's reason.
-
-**The race, run rather than reasoned about.** A sabotage disabling `acceptOnce`'s `rowCount !== 1`
-guard failed NO test. Running two concurrent acceptances showed why: the loser never reaches it — it
-hits `app_user`'s UNIQUE one statement earlier and got back a raw `duplicate key … 23505`, which
-inside NextAuth's `signIn` callback is an opaque failure page for somebody who double-clicked. Now
-caught and resolved to the member the other transaction just made, narrowly. The `rowCount` guard
-stays with the depth honestly labelled — `markConsumed`'s situation, and the same answer.
-
-**PE-9 is not repeated here.** `lib/invites/service.ts` uses the `NULLIF`-guarded tenant expression,
-unlike the seventeen copies that omit it, because this module is reached from `resolveSsoUser` — the
-closest thing this product has to a caller with no tenant.
-
-**Sabotage, 10 runs.** Accept by token instead of by verified email → 1. Mask scales with length → 2.
-Retry removed → 1. `withoutOrg` restored → 2. `deleted_at` unchecked → 1. Revoked still grants → 1.
-Hatch not live-only → 2. One-live-per-address index dropped → 8. `getEmployee` id guard removed → 2
-e2e. **And one that failed nothing and was right to**: removing the `isDuplicateMember` narrowing,
-because the retry can only return a member it actually found — the narrowing is the belt, the empty
-read is the braces, and only the braces are pinned. Written up in the file rather than papered over.
-
-**Still not covered, and deliberately:** acceptance through a real identity provider. There is no
-Google in CI, so the grant is proved in `test/invites.db.test.ts` against a real database and
-`e2e/invite-flow.spec.ts` proves the wiring around it. A browser test claiming to cover acceptance
-would have to fake the verified email — the one input the whole design rests on not being fakeable.
-
-### VX5-2b SHIPPED — the pages, and the seam a first sign-in should not have
-
-**PR #NNN.** No migration. New: `app/signup/page.tsx` · `app/signup/actions.ts` · `app/signup/ui.tsx`
-· `app/signup/verify/page.tsx` · `app/signup/verify/actions.ts` · `app/login/login-screen.tsx` ·
-`e2e/signup-flow.spec.ts`. Changed: `proxy.ts` · `app/login/page.tsx` · `lib/onboarding/signup.ts`
-(`peekSignup`) · `test/signup.db.test.ts`.
-
-Numbered **2b rather than VX5-3** on purpose: it finishes VX5-2 rather than displacing invites, so
-the board's numbering still means what it said.
-
-**Why it jumped the queue.** VX5-1 and VX5-2 both shipped deliberately headless, and #103 left
-`startSignup` mailing a link to `/signup/verify` — a route that did not exist. Two tickets of
-unreachable code is where a third becomes a habit, and no unit test can reach the wiring that
-actually breaks in production: whether middleware lets a stranger in, whether the form's field names
-match what the action reads, whether the link in the email points anywhere. `e2e/signup-flow.spec.ts`
-is the deliverable; the pages are what it needed in order to exist.
-
-**The GET asks, the POST creates.** `app/approve/page.tsx` had this argument first and it applies
-here with more force. Mail clients and corporate link scanners fetch every URL in a message. A bare
-GET on a verification link means Outlook provisions somebody's company before they read the email —
-and the token is single-use, so the human then gets "that link is no longer valid" for a tenant they
-never made, with no way to start again (the address has a consumed signup and the slug is taken).
-So the GET renders a question. It reads the signup through **`peekSignup`**, a non-consuming read
-under the same narrow gate `verifySignup` uses — the two cannot disagree about whether a link is
-alive, because neither decides: `signup_read_live` does, and `test/signup.db.test.ts` asserts that
-agreement across all four cases (live, unknown, consumed, expired). The e2e proves the property
-directly: GET the link twice, and the organization count is still zero.
-
-**`/login` became a server component.** Verification ends by sending somebody to
-`/login?org=<their new web address>`; without this they read their slug on one screen and retype it
-on the next, on the first sign-in of their first day. The SSO handoff is unchanged, moved to
-`app/login/login-screen.tsx`. Done with a prop rather than `useSearchParams()` because the latter
-needs a Suspense boundary around the whole screen to prerender. `checkSlug` validates `?org=` before
-it is prefilled, and `setSsoOrgCookie` still validates on the way in — same rule at both ends.
-
-**The web address is optional on the form.** Blank derives it with `slugify`. Most people have no
-opinion about a URL slug and should not need one to sign up. It is still not a reservation: the
-`organization` UNIQUE constraint decides at verification, which is VX5-2's design, not a gap.
-
-**What a refusal loses.** A redirect drops what they typed; they retype three fields. That is the
-house pattern (`/preferences`, `/admin/locale`), and the alternative — round-tripping the values
-through the query string — would put somebody's email in a URL that every proxy in between logs.
-Repopulating without that means client state, which this product has nowhere else. Named as a cost,
-not left as an oversight.
-
-**`proxy.ts`: two places, and either one alone is enough.** `/signup` is listed in `PUBLIC` and in
-the `matcher`, as `/login` and `/approve` already were. A sabotage sweep measured what that
-redundancy is worth: removing it from `PUBLIC` alone fails nothing, removing it from the `matcher`
-alone fails nothing, removing it from both fails five e2e assertions. **No test can tell the two
-apart and none can be written to** — the comment in `proxy.ts` is the only thing between a later
-reader and the reasonable conclusion that one of them is dead code, which it is right up until
-somebody deletes the other one.
-
-**Not added to either crawl**, following the precedent `e2e/crawl.spec.ts` states for `/login` and
-`/approve`: a page reached without a session is owned by the spec that drives it, and
-`e2e/signup-flow.spec.ts` owns this one. It is the **only spec in the suite that runs signed out**
-(`test.use({ storageState: { cookies: [], origins: [] } })`) — with a session cookie present,
-`/signup` would render whether or not middleware let it through, so the middleware change would be
-untested. Its UI strings are un-catalogued English, like `/login`'s and `/approve`'s; that is VX4-10.
-
-**No drain.** Signup mail does not go through the outbox — `notification_delivery` is tenant-scoped
-and there is no tenant yet — so the sink has the message as soon as the POST returns.
-
-**Sabotage (7 runs).** Public entry removed from `PUBLIC` only → passes; from the `matcher` only →
-passes; from both → 5 failures. GET calls `verifySignup` → 2 failures. `?created=` echoed without
-`checkSlug` → 1. The sign-in button drops the slug → 1. `/login` stops seeding the field → 1.
-
-### VX5-2 SHIPPED — the door, and two things Postgres taught me by refusing
-
-**PR #103.** Migration `0035`. New: `lib/onboarding/signup.ts` · `test/signup.db.test.ts`. Changed:
-`lib/tenant/context.ts` (2 contexts) · `lib/i18n/catalog/errors.ts` (2 codes).
-
-**THE TENANT IS CREATED AT VERIFICATION, NOT AT REQUEST.** A tenant created at request time is a
-tenant created from an address nobody has proven they hold, and cleaning those up afterwards means
-deciding which half-used organizations are real. It also means an unverified request **cannot squat a
-name**: the slug on a signup row is what was ASKED for, and `organization`'s UNIQUE constraint decides
-at verification. First to verify wins; the loser is told the name is taken.
-
-**ONE LIVE SIGNUP PER ADDRESS, AS A CONSTRAINT RATHER THAN A COUNTER.** A partial UNIQUE index on
-`lower(email) WHERE consumed_at IS NULL` makes a second live signup impossible to write, so asking
-again is a RESEND — new token, new expiry, same row — and the old token dies the moment the new one
-is written. Better behaviour than a counter and a stronger guarantee, because it cannot be raced.
-What it does NOT limit, said so nobody reads more into it: one address, not one sender. A thousand
-addresses is a job for the edge.
-
-**POSTGRES WILL NOT LET AN UPDATE MOVE A ROW OUT OF VIEW, and that broke the first design.**
-`signup_read_live` narrows SELECT to unconsumed and unexpired rows — 0012's lesson, where "unknown",
-"already used" and "expired" become ONE case, a row that is not there. Setting `consumed_at` then
-takes the row out of that view, and **Postgres refuses an UPDATE whose new row is not visible under
-the table's SELECT policies**, the same rule a view's WITH CHECK OPTION enforces. It reports it as
-`new row violates row-level security policy`, which names the wrong half — the WITH CHECK passed.
-
-So **consumption has its own gate**: `app.signup_consume`, whose SELECT policy can see the row it is
-about to write and nothing more useful than that. `action_token` never hit this because it consumes
-under `tenant_isolation`, which does not narrow on `consumed_at` — the structural difference between
-a credential inside a tenant and one that predates it, which `0035`'s header had already named before
-it bit.
-
-**And RESEND needed a third policy**, found the same way: `ON CONFLICT … DO UPDATE` is an UPDATE, and
-there was no UPDATE policy under the request gate at all. `signup_resend`'s WITH CHECK says
-`consumed_at IS NULL` on both sides, so it can revive a pending signup — including an expired one, a
-resend after lunch should work — and can never be used to consume one.
-
-**A SABOTAGE PROVED A GUARD OF MINE UNREACHABLE, AND TWO ATTEMPTS TO TEST IT WERE WORSE THAN NOTHING.**
-Deleting `AND consumed_at IS NULL` from `markConsumed` failed no test and cannot be made to: the
-policy answers first, and `verifySignup` looks the token up under the NARROW gate, where a consumed
-row is invisible, so it throws before reaching the clause. The first replacement test asserted that a
-WHERE clause written IN THE TEST filtered rows — this codebase's "assertion whose subject swallows
-the failure" family. The second would have meant exporting a private function for a test to reach.
-Both deleted. The clause stays, with the depth honestly labelled in a comment: 0012's two-guards rule
-is about the day somebody simplifies the first one.
-
-**No outbox, and why:** `notification_delivery` is tenant-scoped, and there is no tenant when a
-verification email is sent. So `sendEmail` directly, no automatic retry — with RESEND as a button
-rather than a background job, which works because the person is standing there. The mail is plain and
-unbranded on purpose: `email-shell.ts` renders a TENANT's colours, and there is no tenant yet.
-
-**One sentence for three refusals.** `SIGNUP_LINK_DEAD` covers unknown, used and expired, because the
-policy makes them one case and because telling somebody WHICH would say whether a token they hold
-ever existed. "Start again" is the only action either way.
-
-**Verified in the harness:** 1416 vitest / 65 files · 135 Playwright · 18 pseudo-crawl · build ·
-`check:actions`, `check:i18n`, `check:vendor`, `check:admin`. Four sabotage runs.
-
-**Still no route.** `startSignup` and `verifySignup` are exported and reachable from nothing; the
-pages are VX5-4's, alongside what a brand-new tenant can actually do — because a signup that lands
-somebody on an empty product is not finished.
-
-### VX5-1 SHIPPED — the one write that cannot start inside a tenant
-
-**PR #102.** Migration `0034`. New: `lib/onboarding/slug.ts` · `lib/onboarding/provision.ts` ·
-`test/onboarding-slug.test.ts` · `test/onboarding-provision.db.test.ts`. Changed:
-`lib/audit/actions.ts` (1 action) · `lib/i18n/catalog/errors.ts` (4 codes).
-
-**IT SHIPS WITH NO CALLER, ON PURPOSE.** A provisioning endpoint anybody can POST to — creating
-tenants from addresses nobody has proven they hold — is the abuse surface VX5-2 exists to close.
-Shipping the mechanism first and the door second means there is never a commit where the door is
-open. `createOrganization` is exported, tested, and reachable from nothing.
-
-**ONE TRANSACTION, WHICH BECOMES THE TENANT PARTWAY THROUGH.** Every write in this codebase runs
-inside `withOrg`; creating an organization has no id to set, because the row being written is where
-the id comes from. The obvious shape — `withoutOrg` for the org, then `withOrg` for the administrator
-— is two transactions, and anything failing between them leaves an **organization with no users**:
-nobody can sign into it (`resolveSsoUser` finds no row), nobody can be invited into it (that needs an
-administrator), and its slug is taken forever. So it is one transaction that calls `set_config` on
-itself after the INSERT that produces the id. Transaction-local, so a rollback takes it with it.
-
-**Not a new escape hatch, and worth saying why:** `organization` is not a tenant table — no
-`organization_id`, no policy, since `0001` — so inserting into it bypasses nothing. The connection is
-still `veloapp` under FORCE RLS, and the `app_user` insert is an ordinary tenant-scoped write that
-succeeds only because the GUC names the org it belongs to. No `app.platform_task`, no ADMIN
-connection, no `SET ROLE`. The only new capability is choosing WHEN the tenant becomes known.
-
-**ADMIN by construction, not by argument.** An organization whose first user is an EMPLOYEE is one
-nobody can administer, invite into or configure — a dead tenant created by a typo in a parameter.
-
-**The genesis row of every chain is now the tenant coming into being**, written by the person it made
-an administrator. There is no earlier state for an auditor to wonder about.
-
-**`0034` — the slug is a hostname, so the database says what one is.** It has been `text NOT NULL
-UNIQUE` since `0001`; VX5-5 makes it a subdomain and VX5-1 is the first path that lets a member of the
-public choose one. A DNS-label CHECK, because the same column is written by the form, the seed, a test
-fixture and provisioning — a rule enforced at one of those is a rule the other three can break. The
-underscore is the case worth knowing: legal in a DNS record, illegal in a hostname, discovered by a
-certificate failing to issue rather than a form failing to submit.
-
-**The RESERVED list is in code, deliberately.** The shape of a hostname never changes; which names the
-platform keeps for itself changes the first time somebody adds a marketing subdomain, and a CHECK
-would make each of those a migration. Three groups, and the third is the one that gets forgotten:
-what we serve, infrastructure names, and **names a tenant could impersonate us with** — `billing`,
-`security`, `support`. A person receiving mail from `billing.veloexpense.com` has no way to know it is
-a customer's tenant.
-
-**A TEST OF MINE THAT PASSED WHILE PROVING NOTHING.** The atomicity test forced its failure with a
-300-character email — and `app_user.email` is unbounded `text`, so nothing failed and the rollback it
-asserted never happened. It passed. Replaced with a fault injected in the database (a temporary CHECK
-on one address), which is where such a failure would actually come from; the sabotage that splits the
-function into two transactions now fails it, and the two-transaction shape is exactly what this
-ticket rejects.
-
-**Verified in the harness:** 1393 vitest / 64 files · 135 Playwright · 18 pseudo-crawl · build ·
-`check:actions`, `check:i18n`, `check:vendor`, `check:admin` · the RLS-coverage query still finds no
-tenant table without FORCE RLS. Three sabotage runs.
-
-**Next: VX5-2**, which is the door — email verification, and the first caller `createOrganization`
-will have.
-
-## 5b. PHASE 5 BOARD — drafted 5 Sep 2026, from the audit and three decisions of John's
-
-**There is no Phase-5 tickets document**, the same as Phase 3 and Phase 4, and the Drive folder does
-not mount from a Cowork session (§6). The board comes from `docs/porting/GAP-AUDIT.md` ON-1..ON-4 and
-from three answers John gave on 5 Sep. **Read ON-1 first: it changes what kind of phase this is.**
-
-### The one fact that shapes everything
-
-**ExpenseOS has no tenant.** Not "a partial implementation" — the only occurrence of `tenantId` in
-their 1900-line schema is a comment saying a future model would add one. No organization is ever
-created anywhere in their source. So unlike Phases 1–4, **there is nothing to port and nothing to be
-warned by**: no upstream design to disagree with, and no upstream defect already found for us. Every
-decision here is ours, which is the argument for the audit being short and the board being explicit.
-
-### The three decisions (John, 5 Sep 2026)
-
-1. **OPEN SELF-SERVE.** Anyone with a working email creates an organization and becomes its first
-   administrator, after verifying the address. Chosen over a gated request queue and over invite-only
-   provisioning, because it is what the Plan's Phase 5 means and because it forces the unlit path
-   into the light: what a tenant with no categories, no policies, no approvers and no chart of
-   accounts can actually do.
-2. **INVITE ONLY for joining an existing organization.** Not upstream's domain allowlist — see ON-2
-   for why that shape is a hole here rather than a convenience. Verified domain claim is a real
-   improvement for a large rollout and is boarded separately, behind proof of domain control.
-3. **HOST-BASED TENANCY AFTER SIGNUP WORKS.** BR-8/ON-4 is a certificate and a DNS change with
-   passkey validation hanging off it; it is a bad thing to debug while also deciding what signup does.
-
-### The tickets
-
-| # | Ticket | Why it is this shape | Days |
-|---|---|---|---|
-| **VX5-1** | **The organization, self-served** | The interesting part is not the form. **Every write in this codebase runs inside `withOrg`**, and creating an organization is the one write that cannot — there is no `app.current_org` yet. That needs a deliberate platform-level path, in the shape `0033`'s `platform_read` and `app.platform_task` already established for scheduled jobs, rather than a connection that quietly bypasses RLS. First user becomes ADMIN; the org gets its slug here, which VX5-5 later turns into a host. | 4 |
-| **VX5-2** | **Email verification that is actually verification** | A token with an expiry, single-use, consumed by the conditional-write idiom (`WHERE … used_at IS NULL`, `rowCount !== 1`) so two clicks on one link cannot both succeed. Resend needs rate limiting, and open self-serve means the abuse surface is real rather than theoretical: a signup endpoint anybody can POST to. | 2 |
-| **VX5-3** | **Invites** | ON-3's four outcomes, minus Google: an invite that is sent, one that is accepted, an address that is ALREADY a member (refused, naming them), and one already invited (resend, not a second row). Carries a role, expires, and is revocable. This is the only way into an existing tenant, per decision 2, so it is also the phase's security boundary. | 3 |
-| **VX5-4** | **What a brand-new tenant can actually do** | The `blank` seed tenant is the specification and it has existed since VX0-9 for exactly this. A fresh org has no categories, no policies, no approval ladder, no chart of accounts and no ledger — so today it can create a report it cannot code, cannot submit and cannot post, and every screen shows an empty table rather than saying what to do next. Decide what is PROVISIONED (`DEFAULT_POLICIES` exists and the seed deliberately does not apply it; VX3-1's CoA template exists) versus what is offered as a first-run task list. | 3 |
-| **VX5-5** | **Host-based tenancy (VX4-4 + BR-8/ON-4)** | Subdomain resolves the tenant before sign-in. The teeth: a WILDCARD certificate where the CDK stack currently issues one for a single host, `WEBAUTHN_RP_ID` moved to the apex or **every existing passkey stops validating the day a tenant moves**, and `APP_URL` stops being a module-level constant — which NT-14 and AC-23 already pay a round trip for. | 4 |
-| **VX5-6** | **Pre-auth branding** | BR-4 built the logo route and VX4-3 the render path, both deliberately post-auth because nothing identified a tenant before sign-in. VX5-5 changes that, and this is the follow-through: a customer's people stop seeing a Velotech login page. Small, and only after VX5-5. | 1 |
-
-**~17 dev-days across six tickets.** Build order is the table order; VX5-6 depends on VX5-5, VX5-3
-depends on VX5-1, and VX5-4 can start as soon as VX5-1 lands.
-
-### Boarded, not in the phase, and easy to lose
-
-Both were set aside deliberately in earlier phases and neither has a ticket yet:
-
-- **PE-9 — 17 application-side copies of the tenant expression omit the `NULLIF`.** Not a leak: every
-  site is reached through `withOrg`, and off that path the query fails closed either way. What it
-  costs is legibility — the first caller to arrive without a tenant gets `22P02 invalid input syntax
-  for type uuid: ""` instead of a refusal naming the problem, which is the wrong error to hand a
-  scheduled job. **Phase 5 makes it likelier to matter**, because VX5-1 introduces the first write
-  path that legitimately runs without a tenant. Half a day plus a guard so the eighteenth copy cannot
-  be written.
-- **Audit-retention purge as a job.** Per-org retention is already a column and `0010` already has the
-  `app.audit_purge` hatch; what does not exist is the thing that runs. It boards with VX0-8's
-  scheduled-job fan-out rather than under settings.
-
-### VX4-10 is still open, and the argument for its timing
-
-161 un-catalogued UI strings across six screens, with a per-page ceiling the pseudo-locale crawl
-already enforces. **After Phase 5, not before:** onboarding adds a whole flow of new copy, so
-cataloguing now means raising the ratchet again afterwards, and it touches every screen, which
-conflicts with anything else in flight.
 
 ## 6. Planning docs (in the ExpenseOS Google-Drive folder, `Specifications_and_Planning/`)
 - `VeloExpense-Port-and-Build-Plan.docx` (7-phase plan + ExpenseOS→VeloExpense sync strategy)

@@ -30,6 +30,15 @@ jobs:
       # App connects as the NON-superuser role (RLS must apply); admin resets state.
       ADMIN_DATABASE_URL: postgres://postgres:velo@localhost:5432/veloexpense
       DATABASE_URL: postgres://veloapp:velo@localhost:5432/veloexpense
+      # VX5-18. The seed refuses to run against an environment that has not said
+      # what it is, so CI has to say. This is the step upstream missed: their CD
+      # job passed neither STAGE nor NODE_ENV, the gate read that silence as
+      # "local", and it seeded known-password accounts into production. Declaring
+      # it here rather than on the seed step means every future step that seeds
+      # inherits it — a second seed step added without this line would otherwise
+      # fail, and the fix somebody reaches for under time pressure is to weaken
+      # the gate.
+      STAGE: ci
 
     services:
       postgres:
