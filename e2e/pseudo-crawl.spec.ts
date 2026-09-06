@@ -162,17 +162,54 @@ test.use({ storageState: ADMIN_STATE });
 
 test.describe('the pseudo-locale crawl', () => {
   test('the server really is in pseudo mode', async ({ page }) => {
-    // THE GUARD ON THE WHOLE FILE. Every other assertion here is about how much
-    // text is bracketed; if the flag were off, nothing would be bracketed, every
-    // "is it catalogued" check would have nothing to compare against, and the
-    // ratchet would read the entire page as chrome. Pointed at the wrong server
-    // this file has to fail loudly rather than measure a fiction.
-    await page.goto('/expenses');
-    const body = await page.locator('body').innerText();
+    /* THE GUARD ON THE WHOLE FILE. Every other assertion here is about how much
+     * text is bracketed; if the flag were off nothing would be bracketed, every
+     * "is it catalogued" check would have nothing to compare against, and the
+     * ratchet below would read entire pages as chrome and pass. Pointed at a
+     * server without the flag, this file must fail loudly rather than measure a
+     * fiction.
+     *
+     * ── IT WAS ASKING THE RIGHT QUESTION OF THE WRONG EVIDENCE ─────────────
+     *
+     * It used to visit `/expenses` alone and look at `body.innerText()`. On a
+     * freshly seeded database that page says "0 reports submitted by you" — the
+     * seed creates no reports owned by the admin the e2e signs in as — so every
+     * VISIBLE string on it is chrome, and none of it is catalogued. The guard
+     * therefore failed on a clean database and passed in CI only because the
+     * full Playwright suite runs first and leaves reports, with their catalogued
+     * status labels, behind.
+     *
+     * That is the "assertion that holds only because something else ran first"
+     * family `approval-flow.spec.ts` has a note about, and it was worth chasing
+     * rather than pinning to a different page: the diagnosis showed the flag was
+     * ON the whole time. There was exactly ONE marker in that page's HTML and
+     * none in its `innerText` — pseudoized text that `innerText` does not
+     * surface. The server was never the problem; the measurement was.
+     *
+     * ── SO IT ASKS THE DOCUMENT, ACROSS EVERY PAGE ─────────────────────────
+     *
+     * `page.content()` rather than `innerText`, because the question is about
+     * the SERVER and a marker anywhere in what it sent answers it. Across all
+     * the crawled pages rather than one, because any single page can be
+     * legitimately empty. Both changes are about not letting the presence of
+     * DATA decide whether the flag looks set.
+     *
+     * Note what this deliberately does NOT try to fix: the ratchet below still
+     * counts fewer un-catalogued strings on a page with less data, so its
+     * ceilings are an upper bound rather than a measurement. That is sound for
+     * what it is for — refusing GROWTH — and this guard is what stops it being
+     * read as anything more.
+     */
+    const withMarkers: string[] = [];
+    for (const path of PAGES) {
+      await page.goto(path);
+      if ((await page.content()).includes(OPEN)) withMarkers.push(path);
+    }
     expect(
-      body.includes(OPEN),
-      'no bracketed text anywhere — is this server running with PSEUDO_LOCALE=1?',
-    ).toBe(true);
+      withMarkers.length,
+      `no bracketed text in the HTML of ANY of ${PAGES.length} pages — ` +
+        'is this server running with PSEUDO_LOCALE=1?',
+    ).toBeGreaterThan(0);
   });
 
   for (const path of PAGES) {
