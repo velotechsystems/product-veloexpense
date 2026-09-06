@@ -28,8 +28,8 @@ import type { UserMessage } from '@/lib/errors/domain';
 import type { UserMessageCode } from '@/lib/i18n/catalog/errors';
 import { DomainError } from '@/lib/errors/domain';
 import { requireModule } from '@/lib/modules/service';
+import { ORG } from '@/lib/tenant/sql';
 
-const ORG = "NULLIF(current_setting('app.current_org', true), '')::uuid";
 
 // The module code is written out at every call site rather than through a
 // constant, and that is the guard's requirement rather than a style choice:

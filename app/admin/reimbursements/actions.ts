@@ -31,6 +31,7 @@ import { errorParam } from '@/lib/errors/domain';
 import { revalidatePath } from 'next/cache';
 import { listPayableReports, reimburseReport } from '@/lib/expenses/lifecycle';
 import { asAdmin, asAdminPage } from '@/lib/auth/admin-guard';
+import { ORG } from '@/lib/tenant/sql';
 
 const PAGE = '/admin/reimbursements';
 
@@ -43,7 +44,7 @@ export async function getPayablePage() {
     const org = await tx.query(
       `SELECT allow_sole_approver_self_approval AS break_glass
          FROM organization
-        WHERE id = current_setting('app.current_org', true)::uuid`,
+        WHERE id = ${ORG}`,
     );
     const breakGlass = org.rows[0]?.break_glass === true;
     return {

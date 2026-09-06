@@ -36,10 +36,10 @@ import { ModuleDisabledError } from '@/lib/modules/errors';
 import { withPlatformRead } from '@/lib/tenant/context';
 import { listModules, moduleFor, type ModuleDefinition } from '@/lib/modules/registry';
 import { requeueWaitingPosts } from '@/lib/integrations/post-outbox';
+import { ORG } from '@/lib/tenant/sql';
 
 export { ModuleDisabledError, isModuleDisabled } from '@/lib/modules/errors';
 
-const ORG = "current_setting('app.current_org', true)::uuid";
 
 export interface EntitlementView {
   module: ModuleDefinition;

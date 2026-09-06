@@ -28,6 +28,7 @@ import { localeName, SUPPORTED_LOCALES } from '@/lib/i18n/locales';
 import { getOrgDefaults, listTimeZones, setOrgDefaults } from '@/lib/i18n/service';
 import { asAdmin, asAdminPage } from '@/lib/auth/admin-guard';
 import { auditActorOf } from '@/lib/audit/service';
+import { ORG } from '@/lib/tenant/sql';
 
 const PAGE = '/admin/locale';
 
@@ -107,7 +108,7 @@ export async function getLocalePage(): Promise<LocalePageView> {
  */
 async function orgIdOf(tx: QueryRunner): Promise<string> {
   const { rows } = await tx.query<{ id: string | null }>(
-    `SELECT NULLIF(current_setting('app.current_org', true), '')::uuid AS id`,
+    `SELECT ${ORG} AS id`,
   );
   const id = rows[0]?.id;
   if (!id) throw new Error('no tenant context');

@@ -30,8 +30,8 @@ import { DomainError } from '@/lib/errors/domain';
 import { parseCsv } from '@/lib/accounts/csv';
 import { validateCoaCsv, type ValidatedAccount, type ValidationError } from '@/lib/accounts/validate';
 import { requireModule } from '@/lib/modules/service';
+import { ORG } from '@/lib/tenant/sql';
 
-const ORG = "current_setting('app.current_org', true)::uuid";
 
 export type AccountSource = 'TEMPLATE' | 'IMPORT' | 'MANUAL' | 'PULLED';
 

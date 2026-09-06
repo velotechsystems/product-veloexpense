@@ -52,8 +52,8 @@ import {
   type FraudRuleCode,
 } from '@/lib/fraud/rules';
 import { requireModule } from '@/lib/modules/service';
+import { ORG } from '@/lib/tenant/sql';
 
-const ORG = "current_setting('app.current_org', true)::uuid";
 
 export interface ScanResult {
   created: number;

@@ -32,6 +32,7 @@ import {
   type TaskResolution,
   type TaskStatus,
 } from '@/lib/approvals/tiers';
+import { ORG } from '@/lib/tenant/sql';
 
 export * from '@/lib/approvals/tiers';
 
@@ -40,7 +41,6 @@ export * from '@/lib/approvals/tiers';
  * argument — the same expression the RLS policy will evaluate, so the two can
  * never disagree. Copied from lib/expenses/lifecycle.ts.
  */
-const ORG = "current_setting('app.current_org', true)::uuid";
 
 /**
  * One round trip for the whole ladder. The approvers come back as an ordered

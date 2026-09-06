@@ -11,6 +11,7 @@
 import { createHash } from 'node:crypto';
 import type { QueryRunner } from '@/lib/db/client';
 import { canonical } from '@/lib/audit/canonical';
+import { ORG } from '@/lib/tenant/sql';
 
 /**
  * THE FROZEN PAYLOAD. Changing this invalidates every hash ever written, so it
@@ -118,7 +119,7 @@ export async function readHeadHashForUpdate(
  *  message. */
 export async function currentOrganizationId(tx: QueryRunner): Promise<string> {
   const r = await tx.query(
-    `SELECT NULLIF(current_setting('app.current_org', true), '')::uuid AS org`,
+    `SELECT ${ORG} AS org`,
   );
   const org = r.rows[0]?.org as string | null | undefined;
   if (!org) {

@@ -30,6 +30,7 @@ import { listRuns, runFindings } from '@/lib/fraud/runs';
 import { isModuleEnabled } from '@/lib/modules/service';
 import { asAdmin, asAdminPage } from '@/lib/auth/admin-guard';
 import { auditActorOf } from '@/lib/audit/service';
+import { ORG } from '@/lib/tenant/sql';
 
 const PAGE = '/admin/compliance';
 
@@ -169,7 +170,7 @@ export async function evaluateNowFromForm() {
   await guarded(async () => {
     const { orgId, name } = await asAdmin(async (tx, actor) => {
       const r = await tx.query(
-        `SELECT NULLIF(current_setting('app.current_org', true), '')::uuid AS id`,
+        `SELECT ${ORG} AS id`,
       );
       return { orgId: r.rows[0].id as string, name: actor.display_name ?? actor.email };
     });
@@ -207,7 +208,7 @@ export async function saveThresholdsFromForm(form: FormData) {
       // that ever opened this form.
       await tx.query(
         `UPDATE organization SET fraud_config = $1, control_config = $2
-          WHERE id = NULLIF(current_setting('app.current_org', true), '')::uuid`,
+          WHERE id = ${ORG}`,
         [JSON.stringify(prune(fraud)), JSON.stringify(prune(control))],
       );
     });

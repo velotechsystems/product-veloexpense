@@ -37,7 +37,6 @@
 import type { QueryRunner } from '@/lib/db/client';
 import type { Channel } from '@/lib/notifications/catalog';
 
-const ORG = "current_setting('app.current_org', true)::uuid";
 
 export type DeliveryStatus = 'PENDING' | 'SENT' | 'FAILED' | 'DEAD' | 'CANCELLED';
 
@@ -56,6 +55,7 @@ export type DeliveryStatus = 'PENDING' | 'SENT' | 'FAILED' | 'DEAD' | 'CANCELLED
 // Re-exported here so this module's own callers and tests are unaffected.
 export { MAX_ATTEMPTS, CLAIM_TIMEOUT_SECONDS } from '@/lib/outbox/policy';
 import { BACKOFF_SECONDS, CLAIM_TIMEOUT_SECONDS, MAX_ATTEMPTS } from '@/lib/outbox/policy';
+import { ORG } from '@/lib/tenant/sql';
 
 export interface DeliveryRow {
   id: string;

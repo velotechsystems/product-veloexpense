@@ -39,12 +39,12 @@ import {
   type Severity,
 } from '@/lib/policy/rules';
 import { loadBudgetSnapshots } from '@/lib/budgets/service';
+import { ORG } from '@/lib/tenant/sql';
 
 // Convenience re-exports so callers need only one import.
 export { RULE_DEFINITIONS, RULE_KINDS, SEVERITIES, ruleDefinition } from '@/lib/policy/rules';
 export type { PolicyRow, RuleKind, Severity } from '@/lib/policy/rules';
 
-const ORG = "current_setting('app.current_org', true)::uuid";
 
 export type PolicyErrorCode =
   | 'NOT_FOUND'
@@ -299,7 +299,7 @@ export interface PolicyCurrencyInfo {
 export async function policyCurrencyCode(tx: QueryRunner): Promise<string> {
   const org = await tx.query(
     `SELECT policy_currency_code FROM organization
-      WHERE id = NULLIF(current_setting('app.current_org', true), '')::uuid`,
+      WHERE id = ${ORG}`,
   );
   if (org.rows.length === 0) {
     throw new PolicyError(
@@ -334,7 +334,7 @@ export async function setPolicyCurrency(tx: QueryRunner, code: string): Promise<
   // being an update across every tenant.
   const done = await tx.query(
     `UPDATE organization SET policy_currency_code = $1, updated_at = now()
-      WHERE id = NULLIF(current_setting('app.current_org', true), '')::uuid`,
+      WHERE id = ${ORG}`,
     [checked],
   );
   // PE-8, the write half. `organization` always has the row when there IS a

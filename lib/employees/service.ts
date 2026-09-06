@@ -15,8 +15,8 @@ import type { QueryRunner } from '@/lib/db/client';
 import type { UserMessage } from '@/lib/errors/domain';
 import type { UserMessageCode } from '@/lib/i18n/catalog/errors';
 import { DomainError } from '@/lib/errors/domain';
+import { ORG } from '@/lib/tenant/sql';
 
-const ORG = "current_setting('app.current_org', true)::uuid";
 
 /** Max levels walked when resolving a manager chain (also the cycle backstop). */
 /**

@@ -54,6 +54,7 @@ import {
   createEmployee,
   type EmployeeRole,
 } from '@/lib/employees/service';
+import { ORG } from '@/lib/tenant/sql';
 
 /** How long an invitation lives. Days, not minutes: unlike a signup confirmation,
  *  the person was not standing at a form when it was sent. */
@@ -92,7 +93,6 @@ export class InviteError extends DomainError {
  * to a caller with no tenant. Adding an eighteenth copy of the defect here would
  * have been careless in the one place it is likeliest to matter.
  */
-const ORG = "NULLIF(current_setting('app.current_org', true), '')::uuid";
 
 const hashToken = (raw: string) => createHash('sha256').update(raw, 'utf8').digest('hex');
 

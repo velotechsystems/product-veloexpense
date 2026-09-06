@@ -61,6 +61,7 @@
  */
 import type { QueryRunner } from '@/lib/db/client';
 import type { FraudMessageCode } from '@/lib/i18n/catalog/fraud-messages';
+import { ORG } from '@/lib/tenant/sql';
 
 export const FRAUD_RULES = {
   duplicate: 'DUPLICATE',
@@ -270,7 +271,7 @@ export function resolveFraudConfig(overrides: unknown): FraudConfig {
 export async function loadFraudConfig(tx: QueryRunner): Promise<FraudConfig> {
   const r = await tx.query(
     `SELECT fraud_config FROM organization
-      WHERE id = NULLIF(current_setting('app.current_org', true), '')::uuid`,
+      WHERE id = ${ORG}`,
   );
   if (r.rowCount !== 1) throw new Error('no organization in scope');
   return resolveFraudConfig(r.rows[0].fraud_config);
