@@ -1659,4 +1659,91 @@ describe('RLS tenant isolation', () => {
     await admin.query('DELETE FROM invite');
   });
 
+  /* ── subscriptions (VX5-8, migration 0037) ────────────────────────────────
+   *
+   * The ordinary tenant claim, plus the hatch — and the hatch here is a DIFFERENT
+   * shape from `invite`'s, so it is asserted differently.
+   *
+   * `subscription_platform_read` hangs off `app.platform_task`, the flag 0012
+   * introduced and 0033 reused, because its two callers are background paths: the
+   * sweep that moves an expired trial to LAPSED, and the webhook handler that
+   * arrives holding a provider reference and no tenant. Unlike `app.invite_lookup`
+   * it does NOT narrow on liveness — a cancelled subscription is exactly what a
+   * late webhook is about — so the property worth pinning is the other one: it is
+   * FOR SELECT, so the sweep cannot write across tenants even though it can read
+   * across them. One bug in a cross-tenant UPDATE cancels everybody.
+   */
+  it('subscriptions are tenant-isolated, and the platform hatch cannot write', async () => {
+    const start = async (org: string, plan: string) =>
+      withOrg(org, (tx) =>
+        tx.query(
+          `INSERT INTO subscription (organization_id, plan_code, status, trial_ends_at)
+           VALUES ($1, $2, 'TRIALING', clock_timestamp() + interval '30 days')
+           RETURNING id`,
+          [org, plan],
+        ),
+      );
+    const a = await start(orgA, 'STARTER');
+    await start(orgB, 'TEAM');
+
+    for (const [org, expected] of [
+      [orgA, 'STARTER'],
+      [orgB, 'TEAM'],
+    ] as const) {
+      const seen = await withOrg(org, (tx) => tx.query('SELECT plan_code FROM subscription'));
+      expect(seen.rows.map((r) => r.plan_code)).toEqual([expected]);
+    }
+
+    // WITH CHECK: org B cannot write a row belonging to org A, even naming it.
+    await expect(
+      withOrg(orgB, (tx) =>
+        tx.query(
+          `INSERT INTO subscription (organization_id, plan_code, status, trial_ends_at)
+           VALUES ($1, 'SCALE', 'TRIALING', clock_timestamp() + interval '30 days')`,
+          [orgA],
+        ),
+      ),
+    ).rejects.toThrow(/row-level security|violates/i);
+
+    // ONE LIVE SUBSCRIPTION PER TENANT, enforced by the partial unique index
+    // rather than by whichever code path checks first.
+    await expect(start(orgA, 'TEAM')).rejects.toThrow(/duplicate key|unique/i);
+
+    /* ── the hatch ──────────────────────────────────────────────────────────*/
+    const both = await withPlatformRead((tx) =>
+      tx.query('SELECT count(*)::int AS n FROM subscription'),
+    );
+    expect(both.rows[0].n).toBe(2);
+
+    // FOR SELECT only. An UPDATE falls through to `tenant_isolation`, which
+    // matches nothing with no `app.current_org` — a silent no-op, so `rowCount`
+    // is the assertion and a thrown error is not.
+    const attempted = await withPlatformRead((tx) =>
+      tx.query("UPDATE subscription SET status = 'CANCELLED', cancelled_at = clock_timestamp()"),
+    );
+    expect(attempted.rowCount).toBe(0);
+
+    // And unlike the invite hatch, a CANCELLED row stays visible to it — a late
+    // webhook about a subscription that has ended is precisely the case the sweep
+    // and the handler have to be able to see.
+    await withOrg(orgA, (tx) =>
+      tx.query(
+        `UPDATE subscription SET status = 'CANCELLED', cancelled_at = clock_timestamp(),
+                                 trial_ends_at = NULL WHERE id = $1`,
+        [a.rows[0].id],
+      ),
+    );
+    const afterCancel = await withPlatformRead((tx) =>
+      tx.query('SELECT count(*)::int AS n FROM subscription'),
+    );
+    expect(afterCancel.rows[0].n).toBe(2);
+
+    const blind = await withoutOrg((tx) =>
+      tx.query('SELECT count(*)::int AS n FROM subscription'),
+    );
+    expect(blind.rows[0].n).toBe(0);
+
+    await admin.query('DELETE FROM subscription');
+  });
+
 });
