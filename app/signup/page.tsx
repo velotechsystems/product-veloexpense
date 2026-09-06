@@ -19,7 +19,7 @@ import { Button } from '@/components/ui/button';
 import { ErrorBanner } from '@/app/expenses/ui';
 import { SIGNUP_TTL_MINUTES } from '@/lib/onboarding/signup';
 import { startSignupFromForm } from './actions';
-import { Card, Field, Lede, Shell, Title } from './ui';
+import { Card, Field, Lede, Shell, Title } from '@/app/pre-auth';
 
 // A public page reading `searchParams`: nothing here is static.
 export const dynamic = 'force-dynamic';

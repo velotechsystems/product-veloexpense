@@ -4000,6 +4000,59 @@ Two tenants, side by side, with **different modules enabled, different branding,
 locales** — one on `fr-CA`, one on `en-US` — each seeing only its own analytics and budgets, proved in
 a browser. The Phase-3 exit criterion took the same shape and it is what found AC-19, AC-22 and AC-23.
 
+### VX5-6 SHIPPED — branding where a credential earns it, and nowhere else. PHASE 5 COMPLETE.
+
+**PR #NNN.** No migration. New: `app/pre-auth.tsx` · `app/api/invite/logo/route.ts`. Changed:
+`lib/invites/service.ts` · `app/invite/accept/page.tsx` · `app/login/page.tsx` (comment only) ·
+`app/signup/{page,verify/page}.tsx` (imports) · `lib/notifications/dispatch.ts` (dead import) ·
+`test/invites.db.test.ts` · `e2e/invite-flow.spec.ts`. **Deleted: `app/signup/ui.tsx`** (moved).
+**`app/layout.tsx` and `playwright.config.ts` are untouched by this ticket.**
+
+**THE DECISION, WHICH IS THE TICKET.** John's call: the sign-in page stays generic. GAP-AUDIT BR-4
+warns that pre-auth branding is "an unauthenticated oracle for: does this company use VeloExpense,
+and what is its logo", and since VX5-5 the host names the tenant, so `/login` COULD be branded and
+every subdomain product does it. It is not, and `app/login/page.tsx` now carries the reasoning so a
+future reader does not read the absence as an oversight and "finish the job".
+
+**Where branding DOES appear: `/invite/accept`, because getting there needs a live invitation
+token.** Not a guessable address — 32 random bytes an admin caused to be mailed to one address, which
+expire, which can be withdrawn, and which stop resolving the moment the invitation is used. The
+disclosure is gated by a credential rather than by knowing a company's name. It is also the screen
+where it earns its keep: somebody who has just been mailed a link is deciding whether the email was
+genuine, and a generic page is what every phishing page also looks like.
+
+**`/api/invite/logo` is addressed by TOKEN, not by slug.** `app/api/branding/logo`'s own header had
+predicted "a route addressed by SLUG rather than by session — a different route, not a relaxation of
+this one". That was half right: a slug route IS different, and it is also exactly the oracle BR-4
+names. By token it answers only for somebody already told. `Cache-Control: no-store` rather than the
+session route's immutable-and-private, because this URL carries a credential and a credential in a
+URL should not sit in a shared cache or a proxy log.
+
+**A dead invitation gets the plain product shell**, asserted separately: at that point there is no
+invitation to be entitled by, and rendering somebody's brand for an expired token hands out the very
+thing the gate exists to withhold.
+
+**`app/signup/ui.tsx` → `app/pre-auth.tsx`.** Three pages shared it and one imported it as
+`@/app/signup/ui` while not being a signup page. More to the point they did not look like each other
+or like `/login`: the first three screens a customer sees were three different products. They now
+share one shell carrying VeloExpense's own wordmark — which is all signup can honestly carry, since
+there is no tenant yet and inventing one is worse than a plain page.
+
+**Sabotage, 6 runs, and two of them were the finding.** Branding `/login` → 1 e2e. Branding a dead
+invitation → 1 e2e. Dropping the live-check inside `readInviteLogo` → **NOTHING**. Widening the
+`invite_lookup` policy to see dead rows → **NOTHING**. Removing BOTH → 2 unit + 1 e2e: a withdrawn
+invitation's logo carries on being served. So the two live-checks are real defence in depth with
+neither one load-bearing alone — the same shape `proxy.ts`'s public-route entry turned out to have,
+and now labelled as such rather than implying both matter.
+
+**A flake caught and fixed before it shipped**: the withdrawn-invitation e2e clicked Withdraw and
+navigated immediately. `click()` returns when the event dispatches, not when the server action's POST
+finishes — `compliance-flow.spec.ts`'s bug exactly. It passed in isolation and failed in the file,
+which is the timing signature; it now waits for the confirmation.
+
+**PHASE 5 IS COMPLETE.** VX5-1 through VX5-6, PRs #102–#108. A stranger can sign up, get an
+organization that works on day one, invite their colleagues, and reach it at their own web address.
+
 ### VX5-5 SHIPPED — tenant subdomains, and three things that were measured rather than reasoned about
 
 **PR #NNN.** No migration. New: `lib/tenant/host.ts` · `app/wrong-tenant-host.tsx` ·

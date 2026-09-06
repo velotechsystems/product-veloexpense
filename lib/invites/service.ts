@@ -369,6 +369,31 @@ export interface PendingInvite {
   /** Masked — see `maskEmail`. */
   emailHint: string;
   role: EmployeeRole;
+  /**
+   * VX5-6 — the tenant's colour, and a URL for its logo, on a page nobody has
+   * signed in to.
+   *
+   * GAP-AUDIT BR-4 warns that pre-auth branding is "an unauthenticated oracle
+   * for: does this company use VeloExpense, and what is its logo", and John's
+   * call is that the SIGN-IN page stays generic for exactly that reason —
+   * anybody who can guess `acme.veloexpense.app` could read it.
+   *
+   * This page is different in kind, and the difference is the whole argument for
+   * branding it: **you cannot get here without a live invitation token.** Not a
+   * guessable address — 32 random bytes an admin caused to be mailed to one
+   * address, which expire, which can be withdrawn, and which stop resolving the
+   * moment the invitation is used. The disclosure is gated by a credential
+   * rather than by knowing a company's name.
+   *
+   * And it is the screen where it matters most: somebody who has just been mailed
+   * a link is deciding whether the email was genuine. A page in the right colours
+   * with the right mark is an answer to that; a generic one is what every
+   * phishing page also looks like.
+   */
+  brandColor: string | null;
+  /** For `/api/invite/logo`, carrying the token — see that route. Null when the
+   *  tenant has uploaded nothing. */
+  logoSrc: string | null;
 }
 
 /**
@@ -386,7 +411,7 @@ export async function readPendingInvite(rawToken: string): Promise<PendingInvite
   const tokenHash = hashToken(rawToken.trim());
   return withOrg(tenant.organizationId, async (tx) => {
     const r = await tx.query(
-      `SELECT i.email, i.role, o.name
+      `SELECT i.email, i.role, o.name, o.brand_color, o.logo_mime, o.logo_updated_at
          FROM invite i JOIN organization o ON o.id = i.organization_id
         WHERE i.token_hash = $1
           AND i.accepted_at IS NULL AND i.revoked_at IS NULL
@@ -394,11 +419,79 @@ export async function readPendingInvite(rawToken: string): Promise<PendingInvite
       [tokenHash],
     );
     if (r.rows.length === 0) return null;
+    const row = r.rows[0];
+    const stamp = row.logo_updated_at as Date | null;
     return {
-      organizationName: r.rows[0].name as string,
+      organizationName: row.name as string,
       organizationSlug: tenant.organizationSlug,
-      emailHint: maskEmail(r.rows[0].email as string),
-      role: r.rows[0].role as EmployeeRole,
+      emailHint: maskEmail(row.email as string),
+      role: row.role as EmployeeRole,
+      brandColor: (row.brand_color as string | null) ?? null,
+      // The token again, and a `?v=` stamp for the same reason the session route
+      // has one: a new logo is a new URL rather than a staleness window to guess
+      // at. Nothing caches this one — see the route's `no-store`.
+      logoSrc:
+        row.logo_mime === null || stamp === null
+          ? null
+          : `/api/invite/logo?token=${encodeURIComponent(rawToken.trim())}&v=${stamp.getTime()}`,
+    };
+  });
+}
+
+/**
+ * The logo bytes for a LIVE invitation, addressed by its token.
+ *
+ * ── WHY BY TOKEN AND NOT BY SLUG ────────────────────────────────────────────
+ *
+ * `app/api/branding/logo` is session-gated, and its own header already said what
+ * a pre-auth version would need: "a route addressed by SLUG rather than by
+ * session — which is a different route, not a relaxation of this one." That was
+ * written before this ticket, and it is half right. A slug route IS a different
+ * route, and it is also the oracle BR-4 warns about — `GET /logo?org=acme` tells
+ * anybody who tries whether Acme is a customer and what their mark looks like.
+ *
+ * Addressed by TOKEN, it tells that only to somebody already holding a live
+ * invitation, which they could only have been sent. Same bytes, no oracle.
+ *
+ * ── TWO LIVE-CHECKS, EITHER ONE SUFFICIENT — MEASURED, NOT ASSUMED ──────────
+ *
+ * A dead invitation is refused twice over: `resolveInviteTenant` above runs under
+ * `app.invite_lookup`, whose policy is live-only, and the query below repeats the
+ * three conditions itself.
+ *
+ * Three sabotages pinned down what that redundancy is actually worth. Dropping
+ * the clause from the query below fails NOTHING. Widening the policy to see dead
+ * rows fails NOTHING. Removing BOTH fails two unit tests and an e2e — a withdrawn
+ * invitation's logo carries on being served, which is precisely the thing the
+ * token gate exists to stop.
+ *
+ * So this is real defence in depth rather than a line pretending to be
+ * load-bearing, and it is the same shape `proxy.ts`'s public-route entry turned
+ * out to have. Neither guard can be called the important one; what matters is
+ * that the bytes stop at exactly the moment the invitation does, and they do
+ * because both halves read the same three conditions rather than drifting apart.
+ */
+export async function readInviteLogo(
+  rawToken: string,
+): Promise<{ bytes: Buffer; mime: string; updatedAt: Date } | null> {
+  const tenant = await resolveInviteTenant(rawToken);
+  if (tenant === null) return null;
+  const tokenHash = hashToken(rawToken.trim());
+  return withOrg(tenant.organizationId, async (tx) => {
+    const r = await tx.query(
+      `SELECT o.logo_bytes, o.logo_mime, o.logo_updated_at
+         FROM invite i JOIN organization o ON o.id = i.organization_id
+        WHERE i.token_hash = $1
+          AND i.accepted_at IS NULL AND i.revoked_at IS NULL
+          AND i.expires_at > clock_timestamp()`,
+      [tokenHash],
+    );
+    const row = r.rows[0];
+    if (row === undefined || row.logo_mime === null) return null;
+    return {
+      bytes: row.logo_bytes as Buffer,
+      mime: row.logo_mime as string,
+      updatedAt: row.logo_updated_at as Date,
     };
   });
 }
