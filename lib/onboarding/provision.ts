@@ -61,6 +61,7 @@ import { DomainError } from '@/lib/errors/domain';
 import type { UserMessageCode } from '@/lib/i18n/catalog/errors';
 import { append as auditAppend } from '@/lib/audit/service';
 import { seedStarterCategories } from '@/lib/onboarding/starter';
+import { startTrial } from '@/lib/billing/service';
 import { checkSlug, type SlugRefusal } from '@/lib/onboarding/slug';
 
 export type ProvisionErrorCode = SlugRefusal | 'SLUG_TAKEN' | 'NAME_REQUIRED' | 'EMAIL_REQUIRED';
@@ -178,6 +179,16 @@ export async function createOrganization(
      * POLICY, and `lib/onboarding/starter.ts` argues the line. */
     const seededCategories = await seedStarterCategories(tx);
 
+    /* VX5-8 — the tenant starts its trial in the same transaction, and for the
+     * same reason as the two writes above it.
+     *
+     * A tenant with no subscription is one no billing sweep will ever pick up and
+     * no screen can describe. Doing it here rather than in a follow-up write means
+     * there is no window in which a customer exists and is unbillable — and no
+     * repair path to write for the rows created during that window, which is the
+     * kind of thing that is cheap now and a data migration later. */
+    const trial = await startTrial(tx);
+
     await auditAppend(
       tx,
       { id: adminUserId, name: input.adminName?.trim() || adminEmail, role: 'ADMIN' },
@@ -190,7 +201,18 @@ export async function createOrganization(
         // separate event, and an auditor asking "where did these six categories
         // come from" finds the answer on the row that says where everything
         // came from.
-        details: { slug, name, admin_email: adminEmail, seeded_categories: seededCategories },
+        details: {
+          slug,
+          name,
+          admin_email: adminEmail,
+          seeded_categories: seededCategories,
+          // On the genesis row for the reason the categories are: the trial is
+          // part of the tenant coming into being, not a separate event, and
+          // "when did this customer's clock start" is a question an auditor asks
+          // of the row that says where everything came from.
+          plan_code: trial.planCode,
+          trial_ends_at: trial.trialEndsAt?.toISOString() ?? null,
+        },
       },
     );
 

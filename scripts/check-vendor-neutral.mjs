@@ -67,6 +67,7 @@ const ROOT = process.cwd();
  * will reach for at 5pm.
  */
 const VENDORS = [
+  // Accounting — VX3-7's original list.
   'veloledger',
   'quickbooks',
   'qbo',
@@ -75,6 +76,24 @@ const VENDORS = [
   'netsuite',
   'intacct',
   'freshbooks',
+  // BILLING PROVIDERS — added by VX5-8, and the reason is the same rule rather
+  // than a new one. John decided on 6 Sep that subscriptions go to a provider
+  // rather than in-house. That decides who runs the money; it is not a licence to
+  // model `subscription` around one company, and AC-13 is the record of what
+  // happens otherwise — in ExpenseOS the only integration became the model, so a
+  // budget carries a required FK to a NetSuite-shaped table on a page that has
+  // nothing to do with NetSuite.
+  //
+  // Until this PR the guard policed ledgers only, so `stripe` in a column name or
+  // an audit action would have sailed through the check whose entire purpose is to
+  // stop exactly that. The list is what makes the rule real, so it has to name the
+  // vendors the product is actually about to acquire.
+  'stripe',
+  'paddle',
+  'chargebee',
+  'recurly',
+  'braintree',
+  'lemonsqueezy',
 ];
 
 /**

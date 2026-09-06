@@ -383,6 +383,62 @@ no upstream mistakes to be warned by.
   `page.content()` across every crawled page. This unblocks **VX4-10**, which lowers the ratchet's
   ceilings and could not be trusted while the ratchet could pass measuring nothing.
 
+#### VX5-8 SHIPPED — the subscription schema and the plan catalogue
+
+**Migration `0037`.** New: `lib/billing/plans.ts` (pure) · `lib/billing/service.ts` ·
+`test/billing-plans.test.ts` · `test/billing.db.test.ts`. Changed: `lib/onboarding/provision.ts` ·
+`scripts/check-vendor-neutral.mjs` · a `subscription` block in `test/rls-isolation.test.ts`.
+
+Three tables. `billing_plan` and `billing_plan_component` are GLOBAL reference data — no
+`organization_id`, no RLS, the same category as `currency` — and their starter rows are in the
+migration, as `currency` (0001) and the CoA templates (0014), so there is no second copy in the seed
+to drift. **The prices are placeholders and are obviously round on purpose**; pricing is John's.
+`subscription` is tenant-scoped with the usual `tenant_isolation` plus a `FOR SELECT` hatch on
+`app.platform_task` for the trial sweep and the webhook handler, both of which need to cross tenants
+and neither of which is a user. Read-only on purpose: a sweep that can UPDATE across every tenant is
+one bug from cancelling everybody.
+
+**A PLAN HAS COMPONENTS, NOT A METER.** John chose all three meters, and a single `meter` column
+would force one. Real pricing is a flat base PLUS a per-seat charge, which is what `TEAM` and `SCALE`
+are. **`CARD` is in the vocabulary and a CHECK refuses to attach it to a plan**, because the VCC
+module does not exist here so nothing can count a card — expressible without being billable. Drop
+`billing_plan_component_card_has_no_source` in the migration that lands VCC.
+
+**NO VENDOR NAME ANYWHERE, and the guard now enforces it here too.** `check-vendor-neutral.mjs`
+policed accounting vendors only, so `stripe` in a column name or an audit action would have sailed
+past the check whose whole purpose is stopping that. Six billing providers added to `VENDORS`.
+A provider appears as `subscription.provider` — a slug beside two opaque reference columns, exactly
+as `integration_installation` — with deliberately no CHECK listing them.
+
+**THE TWO PRODUCT DECISIONS (John, 6 Sep), and where they live in code:**
+- A seat is anybody who can sign in — a non-deleted `app_user`. Not live invitations. Counting is
+  VX5-9; this migration only has to not preclude it, and does not.
+- A lapsed tenant is READ-ONLY, not locked out: `canWrite` in `lib/billing/plans.ts`.
+  **`PAST_DUE` still writes**, and that is the entry most likely to be "corrected" later — a card
+  that failed on a Friday must not halt an approval queue on Monday, and the provider's dunning
+  escalates to LAPSED, which is where function stops. It has its own test with the reason in it.
+- **Absence is not lapse.** `canWriteWithoutSubscription()` returns true, as a named decision rather
+  than a `?? false`: every tenant created before 0037 has no row, and answering "no" would take every
+  existing customer offline on the deploy that ships the write gate.
+
+**WHAT THIS DELIBERATELY DOES NOT DO:** it gates no writes. `tenantMayWrite` exists and nothing calls
+it, because putting a subscription check into every submit/approve/post path is a diff across a dozen
+files that deserves its own review. No invoices, no payments, no meter readings — a provider owns the
+money, and an invoice table here would be a second copy of somebody else's record drifting from it
+(UD-9 in another costume). `startTrial` IS wired, inside `createOrganization`'s transaction, so this
+is not dead code: there is no window in which a customer exists and is unbillable, and therefore no
+repair path to write later for rows created during it.
+
+**A DEPLOYMENT HAZARD FOUND WHILE BUILDING THIS, not fixed here, boarded for VX5-20.**
+`pg_default_acl` was EMPTY in the cloud harness, so `subscription` was created with no privileges for
+`veloapp` and every query returned `permission denied` — while CI was fine, because CI runs
+"Apply migrations" and THEN "Create non-superuser app role", whose `GRANT ... ON ALL TABLES` sweeps
+up whatever the migrations just made. A long-lived database does not get that second step again: it
+relies solely on the `ALTER DEFAULT PRIVILEGES` lines in HANDOFF §3 having been run at setup. **If
+they were not, the next migration that adds a table breaks the app on deploy, and CI cannot see it.**
+Production cutover needs to verify `pg_default_acl` is non-empty before the first migration lands.
+This is the same shape as VX5-18's finding: CI's fresh-database ordering conceals a real hazard.
+
 #### VX5-18 SHIPPED — the seed refuses an environment that has not said what it is
 
 **No migration.** Changed: `scripts/seed.mjs` · `package.json` · `.github/workflows/ci.yml`. New:
