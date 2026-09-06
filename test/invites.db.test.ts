@@ -17,6 +17,7 @@ import {
   revokeInvite,
   resolveInviteTenant,
   readPendingInvite,
+  readInviteLogo,
   acceptForVerifiedEmail,
   maskEmail,
   InviteError,
@@ -172,8 +173,79 @@ describe('the hatch, and what the acceptance page may read', () => {
       organizationSlug: 'acme',
       emailHint: 'n••••@acme.test',
       role: 'EMPLOYEE',
+      // VX5-6 — branding, for a page a live token is required to reach.
+      brandColor: null,
+      logoSrc: null,
     });
     expect(JSON.stringify(pending)).not.toContain(INVITEE);
+  });
+
+  /* ── VX5-6: the tenant's colours, and the one thing that gates them ────────
+   *
+   * `/login` is deliberately NOT branded (BR-4: an unauthenticated oracle for
+   * who our customers are). This page is, because a live invitation token is a
+   * credential rather than a guess — so the tests that matter are the ones where
+   * the token STOPS being live. */
+  it('carries the tenant’s colour and a logo URL that names the token', async () => {
+    await admin.query(
+      `UPDATE organization
+          SET brand_color = '#663399', logo_bytes = $1, logo_mime = 'image/png',
+              logo_updated_at = clock_timestamp()
+        WHERE id = $2`,
+      [Buffer.from('89504e470d0a1a0a', 'hex'), orgId],
+    );
+    const issued = await issue();
+    const pending = await readPendingInvite(issued.token);
+    expect(pending!.brandColor).toBe('#663399');
+    expect(pending!.logoSrc).toContain('/api/invite/logo?token=');
+    expect(pending!.logoSrc).toContain(encodeURIComponent(issued.token));
+    // A `?v=` stamp, so a new logo is a new URL rather than a staleness window.
+    expect(pending!.logoSrc).toMatch(/&v=\d+$/);
+  });
+
+  it('serves the logo bytes to a live invitation and to nothing else', async () => {
+    const png = Buffer.from('89504e470d0a1a0a', 'hex');
+    await admin.query(
+      `UPDATE organization
+          SET logo_bytes = $1, logo_mime = 'image/png', logo_updated_at = clock_timestamp()
+        WHERE id = $2`,
+      [png, orgId],
+    );
+    const live = await issue();
+    const served = await readInviteLogo(live.token);
+    expect(served).not.toBeNull();
+    expect(served!.mime).toBe('image/png');
+    expect(Buffer.from(served!.bytes).equals(png)).toBe(true);
+
+    // A token nobody issued.
+    expect(await readInviteLogo('not-a-token')).toBeNull();
+
+    // WITHDRAWN — the bytes stop at the same moment the invitation does, because
+    // both read through the same live-only policy rather than through two checks
+    // that could disagree.
+    await withOrg(orgId, (tx) => revokeInvite(tx, ACTOR, live.inviteId));
+    expect(await readInviteLogo(live.token)).toBeNull();
+
+    // EXPIRED.
+    await admin.query('DELETE FROM invite');
+    const expiring = await issue();
+    await admin.query(
+      "UPDATE invite SET expires_at = clock_timestamp() - interval '1 second' WHERE id = $1",
+      [expiring.inviteId],
+    );
+    expect(await readInviteLogo(expiring.token)).toBeNull();
+
+    // ACCEPTED — a spent token is not a way to keep reading a customer's mark.
+    await admin.query('DELETE FROM invite');
+    const spent = await issue();
+    await acceptForVerifiedEmail(orgId, INVITEE);
+    expect(await readInviteLogo(spent.token)).toBeNull();
+  });
+
+  it('has no logo URL when the tenant has uploaded nothing', async () => {
+    const issued = await issue();
+    expect((await readPendingInvite(issued.token))!.logoSrc).toBeNull();
+    expect(await readInviteLogo(issued.token)).toBeNull();
   });
 
   it('masks a one-character local part without revealing it is one character', () => {

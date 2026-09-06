@@ -42,7 +42,7 @@ import { ErrorBanner } from '@/app/expenses/ui';
 import { enumLabel, EMPLOYEE_ROLE_COPY } from '@/lib/i18n/catalog/enums';
 import { readerPrefs } from '@/lib/i18n/request';
 import { readPendingInvite } from '@/lib/invites/service';
-import { Card, Lede, Shell, Title } from '@/app/signup/ui';
+import { Card, Lede, Shell, Title } from '@/app/pre-auth';
 
 export const dynamic = 'force-dynamic';
 
@@ -90,7 +90,18 @@ export default async function AcceptInvitePage({
 
   const { locale } = await readerPrefs();
   return (
-    <Shell>
+    /* VX5-6 — the tenant's own colours and mark, on the one pre-auth screen that
+     * requires a credential to reach. `PendingInvite.brandColor` carries the
+     * argument; the short version is that a live invitation token is not a
+     * guessable address, and this is the screen where somebody is deciding
+     * whether the email they got was genuine. */
+    <Shell
+      tenant={{
+        name: pending.organizationName,
+        brandColor: pending.brandColor,
+        logoSrc: pending.logoSrc,
+      }}
+    >
       <Card>
         <Title>You have been invited to {pending.organizationName}</Title>
         <Lede>

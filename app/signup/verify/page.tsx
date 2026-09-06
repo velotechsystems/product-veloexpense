@@ -22,7 +22,7 @@ import { ErrorBanner } from '@/app/expenses/ui';
 import { peekSignup } from '@/lib/onboarding/signup';
 import { checkSlug } from '@/lib/onboarding/slug';
 import { confirmSignupFromForm } from './actions';
-import { Card, Lede, Shell, Title } from '../ui';
+import { Card, Lede, Shell, Title } from '@/app/pre-auth';
 
 export const dynamic = 'force-dynamic';
 

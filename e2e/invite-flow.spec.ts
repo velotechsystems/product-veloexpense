@@ -94,6 +94,32 @@ async function memberCount(email: string): Promise<number> {
   }
 }
 
+/**
+ * Give the demo tenant a colour and a logo.
+ *
+ * Written as bytes rather than through the admin screen: this spec is about who
+ * may SEE branding, and the upload path has its own coverage in
+ * `branding.db.test.ts`. An eight-byte PNG signature is enough — nothing here
+ * decodes it, and `0023`'s CHECK wants a raster mime and the three columns
+ * moving together, which this satisfies.
+ */
+async function setDemoBranding(): Promise<void> {
+  const pool = new Pool({
+    connectionString: process.env.ADMIN_DATABASE_URL ?? process.env.DATABASE_URL,
+  });
+  try {
+    await pool.query(
+      `UPDATE organization
+          SET brand_color = '#663399', logo_bytes = $1, logo_mime = 'image/png',
+              logo_updated_at = clock_timestamp()
+        WHERE slug = 'demo'`,
+      [Buffer.from('89504e470d0a1a0a', 'hex')],
+    );
+  } finally {
+    await pool.end();
+  }
+}
+
 test.beforeAll(async ({ request }) => {
   await request.delete(`${MAIL_HTTP}/messages`);
 });
@@ -198,6 +224,104 @@ test.describe('inviting somebody', () => {
     await page.getByLabel('Email').fill('employee@demo.test');
     await page.getByRole('button', { name: 'Send the invitation' }).click();
     await expect(page.getByTestId('error-banner')).toContainText('already in your organization');
+  });
+
+  /* ── VX5-6 ─────────────────────────────────────────────────────────────────
+   *
+   * The tenant's colours and mark appear on the acceptance page and NOWHERE ELSE
+   * that a stranger can reach. Both halves are asserted, because the second is
+   * the decision: `/login` could be branded — the host names the tenant — and
+   * deliberately is not (BR-4's oracle). A test that only checked the branding
+   * would let somebody "finish the job" later without noticing they had reversed
+   * a decision. */
+  test('a live invitation shows the organization’s own colours and mark', async ({
+    page,
+    request,
+  }) => {
+    const email = `branded-${RUN}@invite.e2e`;
+    await setDemoBranding();
+
+    await page.goto('/admin/employees/invite');
+    await page.getByLabel('Email').fill(email);
+    await page.getByRole('button', { name: 'Send the invitation' }).click();
+    await expect(page.getByText('Invitation sent.')).toBeVisible();
+
+    const link = await waitForInviteLink(request, email);
+    await page.goto(link);
+
+    // The mark: an <img> whose ALT is the organization's name, pointing at the
+    // token-gated route rather than the session-gated one.
+    const logo = page.getByRole('img', { name: 'Demo Co' });
+    await expect(logo).toBeVisible();
+    const src = await logo.getAttribute('src');
+    expect(src).toContain('/api/invite/logo?token=');
+    // And it actually serves bytes, through the page so cookies and the token
+    // travel exactly as the browser would send them.
+    const served = await page.evaluate(async (u: string) => {
+      const r = await fetch(u);
+      return { status: r.status, type: r.headers.get('content-type'), bytes: (await r.arrayBuffer()).byteLength };
+    }, src!);
+    expect(served.status).toBe(200);
+    expect(served.type).toBe('image/png');
+    expect(served.bytes).toBeGreaterThan(0);
+
+    // The colour, as a scoped <style> rather than the document-level one the
+    // layout emits for a signed-in reader.
+    const styled = await page.evaluate(
+      () => getComputedStyle(document.documentElement).getPropertyValue('--primary').trim(),
+    );
+    expect(styled.length, 'the tenant colour should be applied').toBeGreaterThan(0);
+
+    // The product still names itself under the customer's mark: somebody judging
+    // whether the email was genuine needs to see both.
+    await expect(page.getByText('Expense management by VeloExpense')).toBeVisible();
+  });
+
+  test('a dead invitation gets the plain product shell, not somebody’s brand', async ({
+    page,
+    request,
+  }) => {
+    const email = `dead-brand-${RUN}@invite.e2e`;
+    await setDemoBranding();
+    await page.goto('/admin/employees/invite');
+    await page.getByLabel('Email').fill(email);
+    await page.getByRole('button', { name: 'Send the invitation' }).click();
+    const link = await waitForInviteLink(request, email);
+
+    await page.goto('/admin/employees');
+    await page
+      .getByRole('row', { name: new RegExp(email) })
+      .getByRole('button', { name: 'Withdraw' })
+      .click();
+    /* WAIT FOR THE WITHDRAWAL, do not assume it. `click()` returns when the
+     * event is dispatched, not when the server action's POST has finished — the
+     * same flake `compliance-flow.spec.ts` was fixed for. Without this the next
+     * line navigated to a link that was still live and failed on a page that was
+     * entirely correct. It passed in isolation and failed in the file, which is
+     * the timing signature. */
+    await expect(page.getByText('Invitation withdrawn.')).toBeVisible();
+
+    await page.goto(link);
+    await expect(page.getByRole('heading', { name: 'That invitation is not usable' })).toBeVisible();
+    // No mark, because there is no longer an invitation to be entitled to one by.
+    await expect(page.getByRole('img', { name: 'Demo Co' })).toBeHidden();
+    // The bytes are gone too, at the same moment and for the same reason.
+    const dead = await page.evaluate(async (u: string) => (await fetch(u)).status, `/api/invite/logo?token=${encodeURIComponent(new URL(link).searchParams.get('token')!)}`);
+    expect(dead).toBe(404);
+  });
+
+  /* THE DECISION, NOT AN OMISSION. `/login` could show a tenant's colours since
+   * VX5-5 — the host names them. It does not, because a branded sign-in page is
+   * readable by anybody who can guess a company's name (BR-4). Pinned here so
+   * reversing it is a deliberate act with a failing test attached. */
+  test('the sign-in page is NOT branded per tenant', async ({ page }) => {
+    await setDemoBranding();
+    await page.goto('/login');
+    await expect(page.getByRole('img', { name: 'Demo Co' })).toBeHidden();
+    const body = await page.locator('body').innerText();
+    expect(body).not.toContain('Demo Co');
+    // It is the product's own screen, and says so.
+    expect(body).toContain('VeloExpense');
   });
 
   test('a made-up token and a missing one say the same thing', async ({ page }) => {

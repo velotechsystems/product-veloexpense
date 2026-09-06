@@ -35,7 +35,6 @@ import { resolveReaderPrefs } from '@/lib/i18n/resolve';
 import { placeholderValuesFrom } from '@/lib/notifications/catalog';
 import { renderMessage } from '@/lib/notifications/service';
 import {
-  appOrigin,
   originForTenant,
   fromAddress,
   sendEmail,
