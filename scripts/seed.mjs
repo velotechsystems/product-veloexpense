@@ -16,6 +16,167 @@ import { Pool } from 'pg';
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 
 /**
+ * ── VX5-18: an environment has to say what it is, and silence is a refusal ────
+ *
+ * PORTED FROM ExpenseOS #454, which is the whole argument for this code. Their
+ * fixture gate refused `STAGE=prod` and always had — but the `db-migrate` job in
+ * their CD passed neither `STAGE` nor `NODE_ENV`, so the gate saw nothing,
+ * concluded "local", and seeded six QA accounts with a known fallback password
+ * into their production database. Their own seed comment describes that as making
+ * every role "signable-in by anyone who can read this repo". As they put it: the
+ * bug was never the prod check, it was the DEFAULT.
+ *
+ * OURS IS NOT THAT BAD AND IT IS WORTH BEING PRECISE ABOUT WHY, so nobody reads
+ * this as a fix for a live compromise. This seed writes no credentials at all —
+ * sign-in is SSO or a passkey, and every seeded address is under `.test`, an
+ * IANA-reserved TLD nobody can hold mail for. So there is no analogue of their
+ * nine accounts. What we DID have is no gate whatsoever, and a seed that is not
+ * purely additive: `upsertOrg` re-asserts `name` and `posting_trigger` on
+ * conflict and `seedUser` re-asserts `role`. Point this at a real database
+ * holding a tenant slugged `demo` and it reverts that tenant's posting trigger
+ * and an administrator's role change, silently.
+ *
+ * ── WHY THE FIX IS THE GATE AND NOT ExpenseOS'S OTHER HALF ───────────────────
+ *
+ * Their #454 also made their seed create-only, so a release stops reverting
+ * people. That is right for THEIR seed, which runs on every production deploy
+ * against 864 real employees. It would be wrong here, and the reason is written
+ * five lines above `upsertOrg`: re-asserting `posting_trigger` is DELIBERATE,
+ * because `e2e/ap-queue.spec.ts` flips the demo tenant to AP_QUEUE and the next
+ * run's fixture must not depend on what the last spec did. Making this seed
+ * create-only would make the suite's behaviour depend on the order it last ran
+ * in. So the re-assert stays, and the gate makes it unreachable from anywhere it
+ * could do harm. One fix, in the right layer.
+ *
+ * ── A SECOND GATE WAS DESIGNED, BUILT, AND THEN REJECTED. READ THIS BEFORE ───
+ * ── ADDING IT BACK, BECAUSE IT LOOKS OBVIOUSLY CORRECT AND IS NOT ────────────
+ *
+ * `checkStage()` asks the ENVIRONMENT to identify itself, and that is exactly the
+ * kind of check that failed upstream — so the first design here did not let it
+ * stand alone. A second gate read `organization` and refused any database holding
+ * a tenant slug the seed did not create, on the reasoning that an environment
+ * variable can be absent, stale or copied from the wrong shell while a foreign
+ * tenant cannot be any of those things. It was written, it was tested, and the
+ * tests passed.
+ *
+ * IT BREAKS CI, and only running the real command showed it. Every `.db.test.ts`
+ * suite here creates its own organization — `access-co`, `pull-co`, `gate-co`,
+ * some thirty of them — and whichever runs last leaves it behind. CI's step order
+ * is `npm test` and then `npm run seed`, precisely because the DB suites TRUNCATE
+ * and the e2e needs the fixture tenants back. So the second gate would have fired
+ * on the normal path, every single build.
+ *
+ * And the fix a person reaches for when a safety check fires on the normal path
+ * is to switch it off. The override would have gone into a shell profile inside a
+ * week, taking the gate with it and leaving behind the habit of overriding safety
+ * checks. That is worse than not having built it: this repo has now landed on
+ * "a gate that goes red because the suite before it did its job is a gate people
+ * disable" three times — the raw-message check, the pseudo-locale ratchet, and
+ * here.
+ *
+ * WHAT REPLACES IT is `announceTarget()` below, which cannot false-fire because it
+ * refuses nothing: it prints the database and host about to be written, so a human
+ * running this by hand sees where it is pointed before it writes. That does not
+ * cover the case a second gate would have — `STAGE=local` in a shell whose
+ * `DATABASE_URL` points at production — and saying so is better than pretending
+ * otherwise. Nothing in this repo covers that case today.
+ *
+ * NO `NODE_ENV` FALLBACK, deliberately, and this is stronger than upstream's
+ * version. They accept `NODE_ENV=development` as an identification — and their
+ * own commit message then records that this made their verification invalid,
+ * because the seed reads a `.env.local` that declares `NODE_ENV=development`, so
+ * `env -u NODE_ENV` proves nothing on a developer machine. A signal that every
+ * dev machine emits by default is not an identification. `STAGE` is required and
+ * nothing else substitutes for it.
+ */
+const PRODUCTION_STAGES = new Set(['prod', 'production']);
+
+/**
+ * THROWS rather than calling `process.exit(1)`, and that is not a style choice.
+ * `process.exit` tears the process down in the same tick, which can truncate a
+ * write to stderr when stderr is a PIPE rather than a terminal — which is exactly
+ * what it is when `test/seed-gate.db.test.ts` spawns this script and reads the
+ * message. A refusal whose reason gets cut off is a refusal nobody can act on.
+ * So it throws, the top-level handler prints and sets `process.exitCode`, and the
+ * process ends on its own with everything flushed.
+ */
+class SeedRefused extends Error {
+  constructor(reason, remedy) {
+    super(`\nseed refused — ${reason}\n\n${remedy}\n`);
+    this.name = 'SeedRefused';
+  }
+}
+
+function refuse(reason, remedy) {
+  throw new SeedRefused(reason, remedy);
+}
+
+function checkStage() {
+  const stage = (process.env.STAGE ?? '').trim();
+  if (stage === '') {
+    refuse(
+      'no STAGE is set, and this seed does not guess.',
+      'Say which environment this is:\n' +
+        '  STAGE=local  npm run seed     a development database\n' +
+        '  STAGE=ci     npm run seed     a build\n' +
+        '`npm run e2e` and `npm run e2e:crawl` set STAGE=test for you, so this only\n' +
+        'applies to running the seed directly.\n\n' +
+        'Absence used to mean permission in ExpenseOS. It is how six known-password\n' +
+        'accounts reached their production database (their #454). Here it means no.',
+    );
+  }
+  if (PRODUCTION_STAGES.has(stage.toLowerCase())) {
+    refuse(
+      `STAGE=${stage}.`,
+      'This seed writes fixture tenants and must never run against production.\n' +
+        'A real organization comes into existence one way only — through signup,\n' +
+        'which verifies an email address first. See app/signup.',
+    );
+  }
+}
+
+/**
+ * Say where this is pointed, before writing anything.
+ *
+ * Not a gate — it refuses nothing and so can never fire falsely, which is the
+ * whole reason it survived where the second gate did not. It exists for the one
+ * risk `checkStage()` structurally cannot see: a correct `STAGE=local` in a shell
+ * whose `DATABASE_URL` points somewhere else. No environment variable
+ * distinguishes those two situations, so the only thing left is to put the answer
+ * in front of the person who does know.
+ *
+ * The password is never printed. `URL` parses it into its own field, and this
+ * reads `host`, `port` and `pathname` only — so a `DATABASE_URL` pasted into a
+ * terminal log by this line cannot leak a credential. A URL that will not parse
+ * is not worth crashing over here; the pool is about to fail on it anyway with a
+ * better message.
+ */
+function announceTarget() {
+  const raw = process.env.DATABASE_URL ?? '';
+  let where = '(unparseable DATABASE_URL)';
+  try {
+    // `new URL` THROWS on the socket form this project's own harness uses —
+    // `postgresql://user:pw@/dbname?host=/tmp/pgsock&port=5499`, whose authority
+    // has no host. Verified, not assumed: it raises `Invalid URL`. Substituting a
+    // placeholder authority makes it parseable without changing anything read
+    // back, and libpq's `?host=` override then wins over it, which is exactly the
+    // precedence libpq itself applies.
+    const u = new URL(raw.replace('@/', '@placeholder/'));
+    const db = u.pathname.replace(/^\//, '') || '(default)';
+    const socket = u.searchParams.get('host');
+    where =
+      socket !== null
+        ? `${db} on socket ${socket}`
+        : u.hostname === 'placeholder'
+          ? `${db} on a local socket`
+          : `${db} at ${u.hostname}${u.port ? ':' + u.port : ''}`;
+  } catch {
+    /* fall through to the placeholder — the pool is about to fail with better */
+  }
+  console.log(`seed: STAGE=${process.env.STAGE} — writing fixture tenants to ${where}`);
+}
+
+/**
  * UD-8: the demo tenant posts on approval, stated EXPLICITLY rather than taken
  * from the column default — which is now AP_QUEUE for a new organization.
  *
@@ -316,6 +477,11 @@ async function seedReferenceData(orgId, entityName = 'Demo Co Inc.') {
 
 
 async function main() {
+  // Before the pool is used for anything else. The environment check needs no
+  // database at all, so it goes first and costs a connection nothing.
+  checkStage();
+  announceTarget();
+
   const client = await pool.connect();
   let demoId;
   try {
@@ -417,7 +583,12 @@ async function main() {
   await pool.end();
 }
 
-main().catch((err) => {
-  console.error(err);
-  process.exit(1);
+main().catch(async (err) => {
+  // A refusal is a decision, not a crash: it prints its own sentence and no stack,
+  // because the stack is noise for somebody who needs to read a remedy. Anything
+  // else keeps the stack, which is what a stack is for.
+  if (err instanceof SeedRefused) console.error(err.message);
+  else console.error(err);
+  process.exitCode = 1;
+  await pool.end().catch(() => {});
 });
