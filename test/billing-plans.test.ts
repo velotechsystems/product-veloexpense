@@ -12,6 +12,7 @@ import {
   canWriteWithoutSubscription,
   isLive,
   meterIsBillable,
+  statusFromPlatform,
   type Meter,
   type SubscriptionStatus,
 } from '@/lib/billing/plans';
@@ -77,9 +78,12 @@ describe('what a subscription status permits', () => {
     expect(canWriteWithoutSubscription()).toBe(true);
   });
 
-  it('every status except CANCELLED is live', () => {
+  it('every status except CANCELLED is live — SUSPENDED included', () => {
+    // SUSPENDED is live on purpose: an operator stopped the account, and it can
+    // be started again. CANCELLED is the customer having left, which is terminal
+    // in the platform's vocabulary and in Stripe's.
     const live = SUBSCRIPTION_STATUSES.filter(isLive);
-    expect(live).toEqual(['TRIALING', 'ACTIVE', 'PAST_DUE', 'LAPSED']);
+    expect(live).toEqual(['TRIALING', 'ACTIVE', 'PAST_DUE', 'LAPSED', 'SUSPENDED']);
   });
 });
 
@@ -93,5 +97,46 @@ describe('the types are exhaustive over the runtime arrays', () => {
     const statuses: SubscriptionStatus[] = [...SUBSCRIPTION_STATUSES];
     expect(all).toHaveLength(METERS.length);
     expect(statuses).toHaveLength(SUBSCRIPTION_STATUSES.length);
+  });
+});
+
+describe('the platform’s vocabulary maps onto ours', () => {
+  it('covers every status the platform documents', () => {
+    // active | trialing | past_due | canceled | suspended — from the platform's
+    // own entitlement projection. A gap here is silent: an unmapped status
+    // returns null and the tenant keeps writing, which is the right failure but
+    // still a failure.
+    expect(statusFromPlatform('active')).toBe('ACTIVE');
+    expect(statusFromPlatform('trialing')).toBe('TRIALING');
+    expect(statusFromPlatform('past_due')).toBe('PAST_DUE');
+    expect(statusFromPlatform('canceled')).toBe('CANCELLED');
+    expect(statusFromPlatform('suspended')).toBe('SUSPENDED');
+  });
+
+  it('accepts BOTH spellings of cancelled, which is the trap', () => {
+    // The platform and Stripe write one L; this codebase writes two. A silent
+    // no-match would leave a departed customer able to submit and approve.
+    expect(statusFromPlatform('canceled')).toBe('CANCELLED');
+    expect(statusFromPlatform('cancelled')).toBe('CANCELLED');
+  });
+
+  it('is case- and whitespace-insensitive', () => {
+    expect(statusFromPlatform('  ACTIVE ')).toBe('ACTIVE');
+  });
+
+  it('returns null for anything else rather than guessing', () => {
+    // A platform that adds a sixth status must make this product fall back to
+    // permitting, not map it onto the nearest refusal.
+    expect(statusFromPlatform('dormant')).toBeNull();
+    expect(statusFromPlatform(null)).toBeNull();
+    expect(statusFromPlatform('')).toBeNull();
+  });
+
+  it('every mapped value is a member of our vocabulary', () => {
+    for (const p of ['active', 'trialing', 'past_due', 'canceled', 'suspended']) {
+      const mapped = statusFromPlatform(p);
+      expect(mapped).not.toBeNull();
+      expect(SUBSCRIPTION_STATUSES).toContain(mapped!);
+    }
   });
 });

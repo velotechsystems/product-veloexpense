@@ -10,7 +10,6 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { Pool } from 'pg';
 import { withOrg } from '@/lib/tenant/context';
-import { startTrial } from '@/lib/billing/service';
 import {
   canCount,
   countFor,
@@ -29,14 +28,18 @@ const SEPTEMBER: Period = {
   end: new Date(Date.UTC(2026, 9, 1)),
 };
 
-async function newOrg(slug: string, plan = 'TEAM'): Promise<string> {
+/**
+ * A tenant, with no subscription — which after 0039 is the normal state. This
+ * product no longer starts trials; the platform does, and metering deliberately
+ * does not wait for it (see `recordReadings`: a seat count is only true at the
+ * moment it is taken, so a tenant skipped this month has a hole nothing can fill).
+ */
+async function newOrg(slug: string): Promise<string> {
   const r = await admin.query(
     'INSERT INTO organization (slug, name) VALUES ($1, $2) RETURNING id',
     [slug, slug],
   );
-  const id = r.rows[0].id as string;
-  await withOrg(id, (tx) => startTrial(tx, { planCode: plan }));
-  return id;
+  return r.rows[0].id as string;
 }
 
 async function addUser(orgId: string, email: string): Promise<string> {
@@ -50,40 +53,8 @@ async function addUser(orgId: string, email: string): Promise<string> {
   return r.rows[0].id as string;
 }
 
-/**
- * Remove the deliberately-broken fixture plan, and everything pointing at it.
- *
- * ORDER MATTERS and getting it wrong is how this file failed twice: a
- * `subscription` row references `billing_plan(code)`, so deleting the plan first
- * raises a foreign-key error and the rest of the cleanup never runs. Tenants
- * first (which cascades their subscriptions), then components, then the plan.
- *
- * Called from `beforeAll` as well as from the test's own `finally`, because
- * `billing_plan` is GLOBAL reference data that no `TRUNCATE organization CASCADE`
- * can reach — so a run killed mid-test leaves it behind for every run after.
- */
-async function dropBrokenPlanFixture(): Promise<void> {
-  // Subscriptions BEFORE the plan, and the organization is deliberately left
-  // alone: `subscription_organization_id_fkey` has no ON DELETE CASCADE (nor does
-  // any tenant FK in this schema), so deleting the org first fails too. The next
-  // run's `TRUNCATE organization CASCADE` clears the tenant; only the global
-  // reference rows need clearing by hand, because truncate cannot reach them.
-  await admin.query("DELETE FROM subscription WHERE plan_code = 'BROKEN'");
-  await admin.query("DELETE FROM billing_plan_component WHERE plan_code = 'BROKEN'");
-  await admin.query("DELETE FROM billing_plan WHERE code = 'BROKEN'");
-  // And put 0037's CHECK back if a crashed run dropped it.
-  await admin.query(`DO $$ BEGIN
-      IF NOT EXISTS (SELECT 1 FROM pg_constraint
-                      WHERE conname = 'billing_plan_component_card_has_no_source') THEN
-        ALTER TABLE billing_plan_component
-          ADD CONSTRAINT billing_plan_component_card_has_no_source CHECK (meter <> 'CARD');
-      END IF;
-    END $$;`);
-}
-
 beforeAll(async () => {
   await admin.query('TRUNCATE organization RESTART IDENTITY CASCADE');
-  await dropBrokenPlanFixture();
 });
 
 afterAll(async () => {
@@ -162,13 +133,14 @@ describe('a seat is anybody who can sign in', () => {
 
 describe('recording readings', () => {
   it('writes one per meter the plan actually charges for', async () => {
-    const org = await newOrg('meter-record', 'TEAM');
+    const org = await newOrg('meter-record');
     await addUser(org, 'one@meter-record.test');
 
     const written = await withOrg(org, (tx) => recordReadings(tx, SEPTEMBER));
 
-    // TEAM has TENANT + SEAT components. Not CARD, which 0037's CHECK refuses to
-    // attach to any plan.
+    // Every meter this product can COUNT — SEAT and TENANT. Not CARD, which has
+    // no source. Which of these becomes an invoice line is the platform's
+    // business; 0039 removed the local catalogue that used to decide it here.
     expect(written.map((w) => w.meter).sort()).toEqual(['SEAT', 'TENANT']);
     expect(written.every((w) => w.inserted)).toBe(true);
 
@@ -183,8 +155,9 @@ describe('recording readings', () => {
       ['TENANT', '1'],
     ]);
     // Stamped at measurement, so "what were they on when this was counted" stays
-    // answerable after they change plan.
-    expect(rows.rows.every((r) => r.plan_code === 'TEAM')).toBe(true);
+    // answerable after they change plan. `unmirrored` is the honest stamp for a
+    // tenant the platform has not told us about — which is most of them today.
+    expect(rows.rows.every((r) => r.plan_code === 'unmirrored')).toBe(true);
   });
 
   it('is idempotent — a second run writes nothing and says so', async () => {
@@ -243,16 +216,25 @@ describe('recording readings', () => {
     expect(n.rows[0].n).toBe(4);
   });
 
-  it('a tenant with no subscription is skipped, not an error', async () => {
-    // Every tenant created before 0037 is in this state. A sweep that threw here
-    // would stop at the first legacy tenant and never reach the rest.
-    const r = await admin.query(
-      "INSERT INTO organization (slug, name) VALUES ('meter-legacy','Legacy') RETURNING id",
-    );
-    const org = r.rows[0].id as string;
+  it('a tenant with no subscription is MEASURED, which is the reverse of VX5-9', async () => {
+    // VX5-9 returned [] here, because it read the local plan catalogue to decide
+    // what to measure and a tenant with no subscription had no plan. 0039 deleted
+    // that catalogue — the platform owns plans — so the question changed from
+    // "what is this tenant charged for" to "what can this product count", and the
+    // answer does not depend on anybody having bought anything.
+    //
+    // The reading is stamped `unmirrored` rather than a plan code, so a later
+    // reconciliation can tell a measured-but-unbilled period from a billed one.
+    const org = await newOrg('meter-nosub');
+    await addUser(org, 'x@meter-nosub.test');
 
     const written = await withOrg(org, (tx) => recordReadings(tx, SEPTEMBER));
-    expect(written).toEqual([]);
+
+    expect(written.map((w) => w.meter).sort()).toEqual(['SEAT', 'TENANT']);
+    const rows = await withOrg(org, (tx) =>
+      tx.query("SELECT plan_code FROM subscription_meter_reading WHERE meter = 'SEAT'"),
+    );
+    expect(rows.rows[0].plan_code).toBe('unmirrored');
   });
 
   it('readings are tenant-isolated', async () => {
@@ -272,7 +254,7 @@ describe('the sweep across every tenant', () => {
   it('meters each tenant in its own context and totals what it wrote', async () => {
     await admin.query('TRUNCATE organization RESTART IDENTITY CASCADE');
     const a = await newOrg('sweep-a');
-    const b = await newOrg('sweep-b', 'STARTER');
+    const b = await newOrg('sweep-b');
     await addUser(a, 'a@sweep.test');
     await addUser(b, 'b@sweep.test');
 
@@ -291,39 +273,42 @@ describe('the sweep across every tenant', () => {
     expect(again.readingsAlreadyPresent).toBe(4);
   });
 
-  it('one tenant failing does not stop the others, and the failure is returned', async () => {
-    // A tenant whose plan carries a meter this build cannot count. Reachable only
-    // by defeating 0037's CHECK, which is the point: the sweep's resilience must
-    // not depend on that constraint still being there.
-    await admin.query(
-      'ALTER TABLE billing_plan_component DROP CONSTRAINT IF EXISTS billing_plan_component_card_has_no_source',
-    );
-    try {
-      await admin.query(
-        `INSERT INTO billing_plan (code, name, period, currency_code, sort_order)
-         VALUES ('BROKEN', 'Broken', 'MONTH', 'CAD', 99)`,
-      );
-      await admin.query(
-        `INSERT INTO billing_plan_component (plan_code, meter, unit_amount_minor)
-         VALUES ('BROKEN', 'CARD', 100)`,
-      );
-      const bad = await newOrg('sweep-bad', 'BROKEN');
+  it('measures a tenant the platform has never told us about', async () => {
+    // AFTER 0039 THIS IS THE NORMAL CASE and it is the reason the sweep no longer
+    // reads `subscription` to decide who to visit. VX5-9 did, which meant a
+    // tenant with no mirrored entitlement was skipped — and since this product no
+    // longer starts its own trials, that would now be almost every tenant. A seat
+    // count is only true at the moment it is taken, so a month skipped is a month
+    // that cannot be reconstructed.
+    await admin.query('TRUNCATE organization RESTART IDENTITY CASCADE');
+    const org = await newOrg('sweep-unmirrored');
+    await addUser(org, 'a@sweep-unmirrored.test');
 
-      const october: Period = {
-        start: new Date(Date.UTC(2026, 9, 1)),
-        end: new Date(Date.UTC(2026, 10, 1)),
-      };
-      const result = await meterAllTenants(october);
+    const result = await meterAllTenants(SEPTEMBER);
 
-      // The good tenants were still measured — the whole point.
-      expect(result.readingsWritten).toBe(4);
-      expect(result.failures).toHaveLength(1);
-      expect(result.failures[0].organizationId).toBe(bad);
-      expect(result.failures[0].message).toMatch(/no counter for meter 'CARD'/);
-    } finally {
-      await dropBrokenPlanFixture();
-    }
+    expect(result.organizations).toBe(1);
+    expect(result.readingsWritten).toBe(2);
+    expect(result.failures).toEqual([]);
   });
+
+  /**
+   * ── THE RESILIENCE TEST THAT USED TO BE HERE, AND WHY IT IS NOT ───────────
+   *
+   * VX5-9 proved that one tenant's failure does not stop the sweep, by giving a
+   * tenant a plan whose meter this build cannot count. That needed a plan
+   * catalogue in this database, and 0039 deleted it — the platform owns plans.
+   *
+   * With the catalogue gone there is no longer any DATA a tenant can hold that
+   * makes its own measurement throw: the sweep counts a fixed set of meters it
+   * knows it can count. That is a better property than the test was protecting,
+   * and pretending otherwise by dropping a constraint mid-test is exactly the
+   * schema surgery that made this file un-re-runnable twice before.
+   *
+   * The `failures` array stays on `SweepResult` rather than being removed,
+   * because the path returns the day VCC lands and `CARD` becomes countable —
+   * and a sweep that aborts on the first bad tenant would then leave every tenant
+   * after it unmeasured for a month.
+   */
 });
 
 describe('the billing period', () => {

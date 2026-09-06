@@ -24,12 +24,15 @@
  *
  * ── WHAT IS DELIBERATELY ABSENT ─────────────────────────────────────────────
  *
- * No amounts, and no invoice. This screen shows QUANTITIES — 34 seats in
- * September — because that is what we measure and what we can stand behind. The
- * money is the provider's arithmetic (VX5-10), and printing our own multiplication
- * beside theirs is how two numbers that should agree start not to. `0038`'s header
- * argues this at length; the screen honours it by not quietly reintroducing a
- * price times a quantity.
+ * No amounts, no invoice, and after VX5-19 no plan catalogue either. This screen
+ * shows QUANTITIES — 34 seats in September — because that is what this product
+ * measures and can stand behind. Prices, plans and money belong to the VeloTech
+ * platform, which owns them for every product in the suite; printing our own
+ * multiplication beside theirs is how two numbers that should agree start not to.
+ *
+ * 4. **AND IT SAYS WHERE THE DECISIONS ARE MADE.** An administrator looking for a
+ *    "change plan" button should find a sentence telling them where to go, not an
+ *    absence they read as a missing feature.
  */
 import Link from 'next/link';
 import { EmptyRow } from '@/app/expenses/ui';
@@ -74,11 +77,21 @@ const STATUS_COPY: Record<SubscriptionStatus, { label: string; detail: string }>
       'Drafts still save and everything is still readable. Reports cannot be ' +
       'submitted, approved or marked paid.',
   },
+  SUSPENDED: {
+    // NOT a synonym for lapsed, and the copy says so. Suspension is a decision
+    // somebody made; lapsing is what happens when a trial runs out or dunning
+    // gives up. They restrict the same things, and telling an administrator whose
+    // card is fine that they have "lapsed" sends them to fix the wrong problem.
+    label: 'Suspended',
+    detail:
+      'This organization has been suspended by VeloTech. Drafts still save and ' +
+      'everything is still readable. Get in touch to resolve it.',
+  },
 };
 
 export default async function BillingPage() {
   const prefs = await readerPrefs();
-  const { subscription, plans, readings } = await getBillingPage();
+  const { subscription, readings, platformConfigured } = await getBillingPage();
 
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-col gap-6 p-6">
@@ -90,17 +103,30 @@ export default async function BillingPage() {
       </header>
 
       {subscription === null ? (
-        /* Not an empty state — a statement. See the header, point 3. */
+        /* Not an empty state — a statement, and it says WHICH of two things is
+         * true. AC-22's rule: "billing is switched off in this deployment" and
+         * "nobody is billing this particular tenant" look identical as an empty
+         * table, and only one of them is something an administrator can act on. */
         <section className="rounded-md border border-border bg-muted/40 px-4 py-3 text-sm">
-          <strong className="font-medium">This organization has no subscription.</strong>{' '}
-          Nothing is being charged and everything works normally. Organizations created
-          before billing existed are in this state.
+          {platformConfigured ? (
+            <>
+              <strong className="font-medium">Nothing is being billed for this organization.</strong>{' '}
+              VeloTech has no subscription on record for it, so everything works normally
+              and nothing is being charged.
+            </>
+          ) : (
+            <>
+              <strong className="font-medium">Billing is not configured in this deployment.</strong>{' '}
+              VeloExpense is running without a connection to VeloTech billing. Everything
+              works normally and nothing is being charged.
+            </>
+          )}
         </section>
       ) : (
         <section className="flex flex-col gap-3 rounded-md border border-border p-4">
           <div className="flex flex-wrap items-baseline justify-between gap-2">
             <h2 className="text-lg font-medium">
-              {plans.find((p) => p.code === subscription.planCode)?.name ?? subscription.planCode}
+              {subscription.planName ?? subscription.planCode}
             </h2>
             <span
               className={
@@ -122,9 +148,12 @@ export default async function BillingPage() {
               Trial ends {formatInstant(subscription.trialEndsAt, prefs)}.
             </p>
           )}
-          {subscription.provider === null && (
+          {subscription.mirroredAt !== null && (
+            /* WHEN the platform said this, not just what it said. The row is a
+             * mirror and can be stale — a reader who cannot see its age would
+             * take a cached answer for a current one. */
             <p className="text-sm text-muted-foreground">
-              No payment method is connected yet.
+              Last confirmed with VeloTech {formatInstant(subscription.mirroredAt, prefs)}.
             </p>
           )}
         </section>
@@ -176,8 +205,9 @@ export default async function BillingPage() {
       </section>
 
       <p className="text-sm text-muted-foreground">
-        Changing plan and cancelling are not here yet — both belong to the payment
-        provider, which is not connected. To change anything, get in touch.{' '}
+        Plans, prices and payment are managed by VeloTech, not in VeloExpense — this
+        page shows what VeloTech holds for this organization. To change a plan or a
+        payment method, get in touch.{' '}
         <Link href="/admin" className="underline underline-offset-4">
           Back to settings
         </Link>
