@@ -31,8 +31,8 @@ import { append as auditAppend } from '@/lib/audit/service';
 import { notify, reportPayload } from '@/lib/notifications/service';
 import { capabilityAvailability } from '@/lib/integrations/service';
 import { uncodedCategories, uncodedDiagnostic } from '@/lib/integrations/coding';
+import { ORG } from '@/lib/tenant/sql';
 
-const ORG = "current_setting('app.current_org', true)::uuid";
 
 export type TransitionAction = 'SUBMIT' | 'RECALL' | 'APPROVE' | 'REJECT' | 'RETURN' | 'REIMBURSE';
 

@@ -23,6 +23,7 @@
  */
 import type { QueryRunner } from '@/lib/db/client';
 import { computeEntryHash } from '@/lib/audit/chain';
+import { ORG } from '@/lib/tenant/sql';
 
 export interface VerifyWindow {
   /** Verify entries with sequence >= this. */
@@ -194,7 +195,7 @@ async function purgeWatermark(tx: QueryRunner): Promise<string | null> {
   const r = await tx.query(
     `SELECT audit_purged_head_hash AS h
        FROM organization
-      WHERE id = NULLIF(current_setting('app.current_org', true), '')::uuid`,
+      WHERE id = ${ORG}`,
   );
   return (r.rows[0]?.h as string | null | undefined) ?? null;
 }

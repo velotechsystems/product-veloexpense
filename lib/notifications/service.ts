@@ -56,8 +56,8 @@ import {
   type PreferenceMap,
   type SubjectType,
 } from '@/lib/notifications/catalog';
+import { ORG } from '@/lib/tenant/sql';
 
-const ORG = "current_setting('app.current_org', true)::uuid";
 
 export class NotificationError extends DomainError {
   constructor(

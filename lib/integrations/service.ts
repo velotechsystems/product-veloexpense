@@ -39,8 +39,8 @@ import { capabilityWords, findCapabilityRival, rivalMessage, rivalUserMessage } 
 import { requeueWaitingPosts } from '@/lib/integrations/post-outbox';
 import { freshAuthConfig } from '@/lib/integrations/oauth';
 import { isModuleDisabled, requireModule } from '@/lib/modules/service';
+import { ORG } from '@/lib/tenant/sql';
 
-const ORG = "current_setting('app.current_org', true)::uuid";
 
 // VX3-9a: the class moved to `lib/integrations/errors.ts` so `oauth.ts` can throw
 // it without this module and that one importing each other. Re-exported here, so

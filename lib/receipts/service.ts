@@ -30,10 +30,10 @@ import type { Actor } from '@/lib/auth/actor';
 // Shared with the browser via lib/receipts/constants (this module imports pg).
 import { ALLOWED_CONTENT_TYPES, MAX_RECEIPT_BYTES } from './constants';
 import type { AuditActor } from '@/lib/audit/service';
+import { ORG } from '@/lib/tenant/sql';
 
 export { ALLOWED_CONTENT_TYPES, MAX_RECEIPT_BYTES };
 
-const ORG = "current_setting('app.current_org', true)::uuid";
 
 export type ReceiptStatus = 'PENDING' | 'STORED';
 

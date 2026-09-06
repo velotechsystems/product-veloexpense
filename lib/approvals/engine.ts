@@ -41,12 +41,12 @@ import { RoutingError, type ResolvedAssignment } from '@/lib/approvals/routing';
 import { planApprovalForReport, countStoredReceipts } from '@/lib/approvals/service';
 import { notify, reportPayload } from '@/lib/notifications/service';
 import type { StepPlan } from '@/lib/approvals/tiers';
+import { ORG } from '@/lib/tenant/sql';
 
 /** The tenant predicate for an INSERT. Declared locally because every
  *  lib/<domain> module does — six copies and counting. Not worth diverging from
  *  the convention inside one ticket, but it is the same drift hazard GAP-AUDIT
  *  AP-12 describes, and a shared constant would be a five-minute change. */
-const ORG = "current_setting('app.current_org', true)::uuid";
 
 export type ApprovalEngineErrorCode =
   | 'REPORT_NOT_FOUND'

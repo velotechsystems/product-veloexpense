@@ -29,8 +29,8 @@ import type { UserMessageCode } from '@/lib/i18n/catalog/errors';
 import { append as auditAppend, type AuditActor } from '@/lib/audit/service';
 import { manualFinding, type FraudSeverity } from '@/lib/fraud/rules';
 import { requireModule } from '@/lib/modules/service';
+import { ORG } from '@/lib/tenant/sql';
 
-const ORG = "current_setting('app.current_org', true)::uuid";
 
 /**
  * `AuditActor.id` is nullable — VX2-8's mail worker and VX2-2's token path both

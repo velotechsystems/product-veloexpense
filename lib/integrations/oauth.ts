@@ -36,8 +36,8 @@ import { findCapabilityRival, rivalMessage, rivalUserMessage } from '@/lib/integ
 import { requeueWaitingPosts } from '@/lib/integrations/post-outbox';
 import { OAuthConsentRequired, type AdapterConfig } from '@/lib/integrations/contract';
 import type { QueryRunner } from '@/lib/db/client';
+import { ORG } from '@/lib/tenant/sql';
 
-const ORG = "current_setting('app.current_org', true)::uuid";
 
 /**
  * How long an admin has to finish consenting. Ten minutes: long enough to read a

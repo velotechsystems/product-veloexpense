@@ -47,6 +47,7 @@
  * accounting module is ON (UD-2), and a new tenant has no entitlements.
  */
 import type { QueryRunner } from '@/lib/db/client';
+import { ORG } from '@/lib/tenant/sql';
 
 /**
  * `[code, label, sortOrder]`.
@@ -82,7 +83,7 @@ export const STARTER_CATEGORIES: ReadonlyArray<readonly [string, string, number]
 export async function seedStarterCategories(tx: QueryRunner): Promise<number> {
   const r = await tx.query(
     `INSERT INTO expense_category (organization_id, code, label, sort_order)
-     SELECT NULLIF(current_setting('app.current_org', true), '')::uuid, c.code, c.label, c.sort_order
+     SELECT ${ORG}, c.code, c.label, c.sort_order
        FROM unnest($1::text[], $2::text[], $3::int[]) AS c(code, label, sort_order)
      ON CONFLICT (organization_id, code) DO NOTHING`,
     [

@@ -31,17 +31,35 @@
  * two lists must not be merged: the audit chain is hashed and append-only, the
  * event log is neither.
  *
- * ── ONE INCONSISTENCY THIS EXPOSED, DELIBERATELY LEFT ALONE ─────────────────
+ * ── THE BRANDING NAMES, RENAMED WHILE IT WAS STILL POSSIBLE ─────────────────
  *
- * Everything here is SCREAMING_SNAKE except branding, which writes
- * `branding.color.set` and five siblings. That is a real inconsistency and this
- * file is the first place it has been visible, because it is the first time the
- * names have sat in one list. NOT renamed here: an audit action is written into
- * rows that cannot be updated, so changing the spelling splits every historical
- * query in two, and doing that as a side effect of adding a registry would be
- * exactly the kind of quiet decision this codebase keeps writing guards against.
- * It is flagged for its own line in the handoff; the rename is one edit here
- * whenever it is wanted.
+ * Six actions were written `branding.color.set` and so on, lower-case-dotted,
+ * where the other thirty-six are SCREAMING_SNAKE. VX4-11 flagged it and left it
+ * alone, correctly: renaming as a side effect of adding a registry would have
+ * been a quiet decision about an append-only log.
+ *
+ * Renamed now, deliberately, because **the window closes at GA and does not
+ * reopen.** The action string is inside the hash payload (`chain.ts`), so a
+ * stored row's spelling can never be changed — not by a migration, not by
+ * anything, because changing it changes the hash and the chain stops verifying.
+ * That is the log working as designed.
+ *
+ * What that means in practice, and it is worth being exact rather than
+ * reassuring:
+ *
+ *   · Rows already written keep `branding.color.set` FOREVER. Their chains still
+ *     verify, because verification recomputes each hash from what is stored, not
+ *     from this list.
+ *   · A database with pre-rename rows therefore contains both spellings for the
+ *     same event, and no query can be written that is right for both without
+ *     naming both.
+ *   · Today that costs nothing: nothing is in production, and every database
+ *     that has one of these rows is a development or CI one that gets rebuilt.
+ *     After the first customer it would cost that mixed history permanently.
+ *
+ * So this is the last cheap moment, and it is being taken. `test/audit-canonical`
+ * asserts no member of this list is dotted, so a thirty-seventh cannot arrive in
+ * the old shape and start the problem again.
  *
  * ── WHAT THE COMPILER FOUND ON THE FIRST RUN, WORTH RECORDING ───────────────
  *
@@ -118,12 +136,12 @@ export const AUDIT_ACTIONS = [
   'SIGN_IN_DENIED',
 
   /* branding — VX4-3. The odd family; see the header. */
-  'branding.color.set',
-  'branding.color.clear',
-  'branding.logo.set',
-  'branding.logo.clear',
-  'branding.tagline.set',
-  'branding.tagline.clear',
+  'BRANDING_COLOR_SET',
+  'BRANDING_COLOR_CLEARED',
+  'BRANDING_LOGO_SET',
+  'BRANDING_LOGO_CLEARED',
+  'BRANDING_TAGLINE_SET',
+  'BRANDING_TAGLINE_CLEARED',
 ] as const;
 
 /**

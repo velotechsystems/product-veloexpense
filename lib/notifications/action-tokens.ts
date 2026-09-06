@@ -35,8 +35,8 @@
  */
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import type { QueryRunner } from '@/lib/db/client';
+import { ORG } from '@/lib/tenant/sql';
 
-const ORG = "current_setting('app.current_org', true)::uuid";
 
 export type TokenAction = 'APPROVE' | 'REJECT';
 

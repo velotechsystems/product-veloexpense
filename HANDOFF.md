@@ -4000,6 +4000,76 @@ Two tenants, side by side, with **different modules enabled, different branding,
 locales** — one on `fr-CA`, one on `en-US` — each seeing only its own analytics and budgets, proved in
 a browser. The Phase-3 exit criterion took the same shape and it is what found AC-19, AC-22 and AC-23.
 
+### CLEANUP SHIPPED — PE-9 closed, the branding names renamed while it was still possible
+
+**PR #NNN.** No migration. New: `lib/tenant/sql.ts` · `scripts/check-tenant-expression.mjs` ·
+`test/tenant-expression.db.test.ts`. Changed: 35 files under `lib/` and `app/` (the sweep) ·
+`lib/audit/actions.ts` · `lib/branding/service.ts` · `test/{audit-canonical,branding.db}.test.ts` ·
+`package.json`. **`app/layout.tsx`, `playwright.config.ts` and `e2e/pseudo-crawl.spec.ts` are
+byte-identical to main.**
+
+**PE-9 was 20 sites, not 17** — three more were written between the audit naming the problem and this
+fixing it, each by somebody copying the file next door. That is what a rule with no enforcement looks
+like, so the fix is one constant plus a guard, not a careful sweep.
+
+**And the guard found ~25 MORE that the audit never counted**: the expression is also spelled inline
+in queries, not only in `const ORG` declarations. All of them now import `ORG` from
+`lib/tenant/sql.ts`. Two exemptions, both deliberate and both named in the script: comments (five
+files explain why the `NULLIF` matters, and a guard that forbade the explanation would delete its own
+reason for existing), and `lib/audit/chain.ts`'s advisory lock, which hashes the RAW setting uncast —
+substituting `ORG` there would hash a different value and change the lock key for a tenant, which is
+a serialization bug rather than a tidiness one.
+
+**THE REFACTOR INTRODUCED A SILENT FAILURE MODE AND THEN COMMITTED IT.** `${ORG}` inside a single- or
+double-quoted string is not an interpolation: it compiles, it lints, and it sends four literal
+characters to Postgres, which answers `syntax error at or near "$"`. It happened once —
+`lib/notifications/dispatch.ts` had a double-quoted query — and cost 19 failing tests to find. The
+guard now checks BOTH directions: the expression must not be written twice, and the constant must not
+be interpolated into a string that cannot interpolate. Sabotaged to confirm.
+
+**A sabotage found the guard's blind spot.** Removing the `NULLIF` from `lib/tenant/sql.ts` ITSELF
+failed nothing: the guard enforces "declared once", not "declared correctly", and the twenty call
+sites would have been perfectly consistent about the wrong thing.
+`test/tenant-expression.db.test.ts` now pins the BEHAVIOUR against a real Postgres — a pooled
+connection that has already carried a tenant returns `''`, not NULL, so the bare form raises `22P02`
+where the guarded one matches no rows. It also runs the bare expression directly, so the claim is
+demonstrated rather than asserted.
+
+**The branding audit actions are renamed, and the window was closing.** Six were
+`branding.color.set`-style where the other thirty-six are SCREAMING_SNAKE. VX4-11 flagged and left
+them, correctly. Renamed NOW because the action string is inside the hash payload: a stored row's
+spelling can never change — not by a migration, not by anything, because changing it changes the hash
+and the chain stops verifying. Rows already written keep the old spelling forever and still verify
+(the hash is recomputed from what is stored), so a database with pre-rename rows holds both spellings
+for one event. Today that costs nothing because nothing is in production and every such database gets
+rebuilt; after the first customer it would be permanent. `test/audit-canonical.test.ts` now asserts
+the SHAPE — not a list of members, per IL-7 — so a thirty-seventh cannot arrive dotted.
+
+**One test I wrote was wrong and was replaced**: it asserted the fraud verdict actions are members of
+`AUDIT_ACTIONS`. They are not — they are a template literal TYPE unioned into `AuditAction`, and
+putting them in the array is exactly the hand-typed duplicate the type exists to avoid. Replaced with
+a compile-time assertion, which is the gate that actually applies.
+
+**TWO OF THE FOUR ITEMS WERE NOT DONE, AND HERE IS WHY.**
+
+**The audit-retention purge job is not a cleanup item, and the note saying it is, is wrong.** HANDOFF
+said "per-org retention is already a column … what does not exist is the thing that runs". The live
+schema says otherwise: the `app.audit_purge` hatch exists and the watermark columns exist, but **there
+is no retention setting anywhere** — no column, no key in `organization.settings` — and
+`audit_entry.expires_at` exists with **nothing writing to it**. The job is not the missing piece; the
+policy is. Doing it properly is a migration, a per-tenant setting, a screen, the job, and tests that
+verification survives a purge — a ticket, and a destructive one over an append-only log.
+
+**The pseudo-crawl guard is worse than order-dependent, and I stopped rather than fix it blind.**
+VX5-4 flagged that `e2e/pseudo-crawl.spec.ts`'s "the server really is in pseudo mode" fails on a
+freshly seeded database and passes in CI only because the full Playwright suite runs first. Digging
+in: on a seed-only database **no crawled page has ANY bracketed text**, and the ratchet PASSES anyway
+— the un-catalogued counts land under their ceilings because less data means fewer strings. So the
+guard is the only thing standing between that state and a green run that measured nothing. Two
+rewrites were attempted (check every page; measure with the same `visibleStrings` walk the ratchet
+uses) and NEITHER passed, which means the cause is not the page choice. **The file is reverted to
+main byte-for-byte.** Boarded with this evidence rather than half-fixed.
+
 ### VX5-6 SHIPPED — branding where a credential earns it, and nowhere else. PHASE 5 COMPLETE.
 
 **PR #NNN.** No migration. New: `app/pre-auth.tsx` · `app/api/invite/logo/route.ts`. Changed:

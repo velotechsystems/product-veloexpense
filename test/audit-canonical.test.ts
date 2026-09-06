@@ -6,6 +6,8 @@
  */
 import { describe, it, expect } from 'vitest';
 import { canonical } from '@/lib/audit/canonical';
+import { AUDIT_ACTIONS, type AuditAction } from '@/lib/audit/actions';
+import { VERDICTS } from '@/lib/fraud/review';
 
 describe('canonical', () => {
   it('sorts object keys, so insertion order cannot change a hash', () => {
@@ -54,5 +56,42 @@ describe('canonical', () => {
     expect(canonical([3, 1, 2])).toBe('[3,1,2]');
     // Array ORDER is meaningful and must not be sorted.
     expect(canonical([1, 2])).not.toBe(canonical([2, 1]));
+  });
+});
+
+/* ── PE-cleanup: the action vocabulary has ONE shape ───────────────────────────
+ *
+ * Six branding actions were lower-case-dotted where the other thirty-six are
+ * SCREAMING_SNAKE. They were renamed while it was still possible to — the action
+ * string is inside the hash payload, so a row's spelling is immutable once
+ * written, and after the first real customer the mixed history would be
+ * permanent.
+ *
+ * This is what stops a thirty-seventh arriving in the old shape and starting the
+ * problem over. It asserts the SHAPE rather than listing the members, so it does
+ * not have to be edited every time an action is added — IL-7's rule about a
+ * guard that restates the list it polices.
+ */
+describe('the audit action vocabulary', () => {
+  it('is SCREAMING_SNAKE throughout, with no dotted survivors', () => {
+    const wrong = AUDIT_ACTIONS.filter((a) => !/^[A-Z][A-Z0-9_]*$/.test(a));
+    expect(wrong, `these are not SCREAMING_SNAKE: ${wrong.join(', ')}`).toEqual([]);
+  });
+
+  /* The fraud verdicts are NOT in the array — they are a template literal TYPE,
+   * `FRAUD_FLAG_${Verdict}`, unioned into `AuditAction`. The first version of
+   * this test asserted they were members and failed, which was the test being
+   * wrong rather than the code: putting them in the array would be the hand-typed
+   * duplicate the template type exists to avoid.
+   *
+   * So the assertion is a COMPILE-TIME one. A verdict that stopped producing a
+   * valid `AuditAction` would fail `tsc`, which is the same gate the throw sites
+   * already pass through — and a runtime loop here would only be re-checking
+   * what the compiler already refused to build. */
+  it('accepts a derived fraud verdict action, by type', () => {
+    const derived: AuditAction = `FRAUD_FLAG_${VERDICTS[0]}`;
+    expect(derived.startsWith('FRAUD_FLAG_')).toBe(true);
+    // And the shape rule above holds for the derived family too.
+    expect(/^[A-Z][A-Z0-9_]*$/.test(derived)).toBe(true);
   });
 });

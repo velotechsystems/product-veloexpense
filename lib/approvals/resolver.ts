@@ -42,6 +42,7 @@ import {
 } from '@/lib/approvals/routing';
 import { isApproverRole, type StepPlan } from '@/lib/approvals/tiers';
 import { MAX_CHAIN_DEPTH, type EmployeeRole } from '@/lib/employees/service';
+import { ORG } from '@/lib/tenant/sql';
 
 /* ── the chain ─────────────────────────────────────────────────────────────── */
 
@@ -206,7 +207,7 @@ async function adminFallback(tx: QueryRunner, excludeId: string): Promise<string
 const BREAK_GLASS_QUERY = `
   SELECT o.allow_sole_approver_self_approval AS allowed
     FROM organization o
-   WHERE o.id = NULLIF(current_setting('app.current_org', true), '')::uuid`;
+   WHERE o.id = ${ORG}`;
 
 async function breakGlassAllowed(tx: QueryRunner): Promise<boolean> {
   const r = await tx.query(BREAK_GLASS_QUERY, []);

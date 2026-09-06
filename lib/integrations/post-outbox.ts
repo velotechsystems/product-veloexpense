@@ -27,8 +27,8 @@ import { withPlatformRead } from '@/lib/tenant/context';
 import { backoffSecondsFor, isExhausted, CLAIM_TIMEOUT_SECONDS } from '@/lib/outbox/policy';
 import { append as auditAppend, type AuditActor } from '@/lib/audit/service';
 import { uncodedCategories } from '@/lib/integrations/coding';
+import { ORG } from '@/lib/tenant/sql';
 
-const ORG = "current_setting('app.current_org', true)::uuid";
 
 /**
  * A RUNTIME ARRAY, and the type derived from it — not a hand-written union with

@@ -51,6 +51,7 @@
  */
 import type { QueryRunner } from '@/lib/db/client';
 import type { ControlMessageCode } from '@/lib/i18n/catalog/control-messages';
+import { ORG } from '@/lib/tenant/sql';
 
 export const CONTROLS = {
   staleDraft: 'STALE_DRAFT',
@@ -157,7 +158,7 @@ export function resolveControlConfig(overrides: unknown): ControlConfig {
 export async function loadControlConfig(tx: QueryRunner): Promise<ControlConfig> {
   const r = await tx.query(
     `SELECT control_config FROM organization
-      WHERE id = NULLIF(current_setting('app.current_org', true), '')::uuid`,
+      WHERE id = ${ORG}`,
   );
   if (r.rowCount !== 1) throw new Error('no organization in scope');
   return resolveControlConfig(r.rows[0].control_config);

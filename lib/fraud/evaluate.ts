@@ -39,6 +39,7 @@ import {
   type ControlFinding,
   type Period,
 } from '@/lib/fraud/controls';
+import { ORG } from '@/lib/tenant/sql';
 
 /** Every value `control_evaluation_run.status` can hold. See FLAG_STATUSES. */
 export const CONTROL_RUN_STATUSES = ['RUNNING', 'COMPLETED', 'FAILED'] as const;
@@ -93,7 +94,7 @@ export async function runControlEvaluation(
     const r = await tx.query(
       `INSERT INTO control_evaluation_run
          (organization_id, period_start, period_end, requested_by_id, requested_by_name)
-       VALUES (NULLIF(current_setting('app.current_org', true), '')::uuid, $1, $2, $3, $4)
+       VALUES (${ORG}, $1, $2, $3, $4)
        RETURNING id`,
       [period.start, period.end, opts.requestedById ?? null, opts.requestedByName ?? null],
     );
@@ -126,7 +127,7 @@ export async function runControlEvaluation(
           `INSERT INTO control_finding
              (organization_id, run_id, control_code, severity, subject_type, subject_id,
               subject_label, message_code, data, evidence)
-           SELECT NULLIF(current_setting('app.current_org', true), '')::uuid, $1,
+           SELECT ${ORG}, $1,
                   t.control_code, t.severity::control_severity, t.subject_type, t.subject_id,
                   t.subject_label, t.message_code, t.data, t.evidence
              FROM unnest($2::text[], $3::text[], $4::text[], $5::uuid[], $6::text[],

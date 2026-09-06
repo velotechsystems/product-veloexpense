@@ -31,8 +31,8 @@ import {
   normaliseHex,
   readableForeground,
 } from '@/lib/branding/color';
+import { ORG } from '@/lib/tenant/sql';
 
-const ORG = "NULLIF(current_setting('app.current_org', true), '')::uuid";
 
 export type BrandingErrorCode =
   | 'NO_TENANT'
@@ -137,7 +137,7 @@ export async function setBrandColor(
   if (input === null || input.trim() === '') {
     const before = await readRow(tx);
     await updateOrganization(tx, 'brand_color = NULL', []);
-    await auditBranding(tx, actor, 'branding.color.clear', {
+    await auditBranding(tx, actor, 'BRANDING_COLOR_CLEARED', {
       previousColor: (before.brand_color as string | null) ?? null,
     });
     return { brandColor: null, foreground: null, ratio: null };
@@ -173,7 +173,7 @@ export async function setBrandColor(
 
   const before = await readRow(tx);
   await updateOrganization(tx, 'brand_color = $1', [hex]);
-  await auditBranding(tx, actor, 'branding.color.set', {
+  await auditBranding(tx, actor, 'BRANDING_COLOR_SET', {
     previousColor: (before.brand_color as string | null) ?? null,
     color: hex,
     foreground: fg.hex,
@@ -253,7 +253,7 @@ export async function setLogo(
     'logo_bytes = $1, logo_mime = $2, logo_updated_at = now()',
     [bytes, mime],
   );
-  await auditBranding(tx, actor, 'branding.logo.set', {
+  await auditBranding(tx, actor, 'BRANDING_LOGO_SET', {
     mime,
     // A string, and in bytes rather than KiB: the audit row is the record, and
     // rounding at write time throws away the only copy of the real number.
@@ -267,7 +267,7 @@ export async function clearLogo(tx: QueryRunner, actor: AuditActor): Promise<voi
     'logo_bytes = NULL, logo_mime = NULL, logo_updated_at = NULL',
     [],
   );
-  await auditBranding(tx, actor, 'branding.logo.clear', {});
+  await auditBranding(tx, actor, 'BRANDING_LOGO_CLEARED', {});
 }
 
 export async function setLoginTagline(
@@ -278,7 +278,7 @@ export async function setLoginTagline(
   const trimmed = input === null ? null : input.trim();
   if (trimmed === null || trimmed === '') {
     await updateOrganization(tx, 'login_tagline = NULL', []);
-    await auditBranding(tx, actor, 'branding.tagline.clear', {});
+    await auditBranding(tx, actor, 'BRANDING_TAGLINE_CLEARED', {});
     return null;
   }
   if (trimmed.length > TAGLINE_MAX_LENGTH) {
@@ -292,7 +292,7 @@ export async function setLoginTagline(
     );
   }
   await updateOrganization(tx, 'login_tagline = $1', [trimmed]);
-  await auditBranding(tx, actor, 'branding.tagline.set', { tagline: trimmed });
+  await auditBranding(tx, actor, 'BRANDING_TAGLINE_SET', { tagline: trimmed });
   return trimmed;
 }
 

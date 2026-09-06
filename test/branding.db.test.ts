@@ -165,7 +165,7 @@ describe('brand colour (VX4-3)', () => {
         [highWater],
       ),
     );
-    expect(rows.rows.map((r) => r.action)).toEqual(['branding.color.set', 'branding.color.set']);
+    expect(rows.rows.map((r) => r.action)).toEqual(['BRANDING_COLOR_SET', 'BRANDING_COLOR_SET']);
     // entityType and entityId are both required or neither — the contract was
     // right about this once already.
     expect(rows.rows[0].entity_type).toBe('organization');

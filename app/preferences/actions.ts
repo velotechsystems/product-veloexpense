@@ -27,6 +27,7 @@ import type { EmployeeRow } from '@/lib/employees/service';
 import type { QueryRunner } from '@/lib/db/client';
 import { SUPPORTED_LOCALES } from '@/lib/i18n/locales';
 import { getOrgDefaults, getUserPrefs, listTimeZones, setUserPrefs } from '@/lib/i18n/service';
+import { ORG } from '@/lib/tenant/sql';
 
 const PAGE = '/preferences';
 
@@ -39,7 +40,7 @@ async function asActor<T>(fn: (tx: QueryRunner, actor: EmployeeRow) => Promise<T
 
 async function orgIdOf(tx: QueryRunner): Promise<string> {
   const { rows } = await tx.query<{ id: string | null }>(
-    `SELECT NULLIF(current_setting('app.current_org', true), '')::uuid AS id`,
+    `SELECT ${ORG} AS id`,
   );
   const id = rows[0]?.id;
   if (!id) throw new Error('no tenant context');

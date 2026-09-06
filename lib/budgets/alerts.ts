@@ -57,6 +57,7 @@ import type { QueryRunner } from '@/lib/db/client';
 import { formatMinor } from '@/lib/money';
 import { crossedThresholdBp } from '@/lib/budgets/scope';
 import { notify } from '@/lib/notifications/service';
+import { ORG } from '@/lib/tenant/sql';
 
 export interface AlertOutcome {
   /** Crossings claimed and fanned out on this call. */
@@ -149,7 +150,7 @@ export async function fireThresholdAlerts(
       const claim = await tx.query(
         `INSERT INTO budget_alert_claim
            (organization_id, period_id, threshold_bp, used_minor, amount_minor)
-         VALUES (NULLIF(current_setting('app.current_org', true), '')::uuid, $1, $2, $3, $4)
+         VALUES (${ORG}, $1, $2, $3, $4)
          ON CONFLICT (organization_id, period_id, threshold_bp) DO NOTHING
          RETURNING id`,
         [row.period_id, crossed, usedMinor.toString(), amountMinor.toString()],

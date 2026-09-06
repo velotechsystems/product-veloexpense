@@ -28,8 +28,8 @@ import { accountForCategory } from '@/lib/accounts/service';
 import { append as auditAppend, type AuditActor } from '@/lib/audit/service';
 import { auditDiff, auditSnapshot } from '@/lib/audit/diff';
 import type { AuditAction } from '@/lib/audit/actions';
+import { ORG } from '@/lib/tenant/sql';
 
-const ORG = "current_setting('app.current_org', true)::uuid";
 
 /**
  * UD-11 — every edit in this file is audited, and the actor is a REQUIRED

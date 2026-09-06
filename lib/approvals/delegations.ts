@@ -32,8 +32,8 @@ import type { UserMessageCode } from '@/lib/i18n/catalog/errors';
 import { append as auditAppend } from '@/lib/audit/service';
 import { DELEGATION_SCOPES, type DelegationScope } from '@/lib/approvals/tiers';
 import type { EmployeeRow } from '@/lib/employees/service';
+import { ORG } from '@/lib/tenant/sql';
 
-const ORG = "current_setting('app.current_org', true)::uuid";
 
 export type DelegationErrorCode =
   | 'NOT_FOUND'

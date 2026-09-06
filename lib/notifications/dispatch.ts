@@ -50,6 +50,7 @@ import {
 } from '@/lib/notifications/outbox';
 import { issueActionToken } from '@/lib/notifications/action-tokens';
 import { decidableTaskForReport } from '@/lib/approvals/inbox';
+import { ORG } from '@/lib/tenant/sql';
 
 /**
  * The path a token lands on. `/approve` rather than something neutral, and it
@@ -218,9 +219,7 @@ export async function prepareEmail(
   // `prepareEmail` runs inside the tenant transaction already, so the current
   // org is the tenant this message is about — read it the way every other
   // tenant-scoped statement in this file does rather than threading an id in.
-  const slugRow = await tx.query(
-    "SELECT slug FROM organization WHERE id = NULLIF(current_setting('app.current_org', true), '')::uuid",
-  );
+  const slugRow = await tx.query(`SELECT slug FROM organization WHERE id = ${ORG}`);
   const origin = originForTenant((slugRow.rows[0]?.slug as string | undefined) ?? '');
   const reportUrl = origin ? `${origin}/expenses/${row.subject_id}` : null;
 
