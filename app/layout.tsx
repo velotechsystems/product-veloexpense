@@ -43,9 +43,15 @@ import { readerPrefs } from "@/lib/i18n/request";
 import { hostTenantMismatch } from "@/lib/tenant/request";
 import { WrongTenantHost } from "@/app/wrong-tenant-host";
 
-const geistSans = { variable: "--font-geist-sans" };
+const geistSans = Geist({
+  variable: "--font-geist-sans",
+  subsets: ["latin"],
+});
 
-const geistMono = { variable: "--font-geist-mono" };
+const geistMono = Geist_Mono({
+  variable: "--font-geist-mono",
+  subsets: ["latin"],
+});
 
 const PRODUCT = "VeloExpense";
 

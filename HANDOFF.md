@@ -4068,6 +4068,18 @@ this ticket changes nothing at runtime.
 The apex heuristic restored → 2. `originForTenant` ungated → 1. Layout stops rendering the refusal →
 2 e2e. Cookie name back on `NODE_ENV` → 4 e2e. The logo route bypassing the guard → 1 e2e.
 
+**AND THE HARNESS RULE CAUGHT ME, WHICH IS THE POINT OF IT.** The first push of this ticket failed
+`check:harness`: I copied `app/layout.tsx` back wholesale from the cloud harness and brought its font
+stubs with it — `const geistSans = { variable: … }` instead of `const geistSans = Geist({ … })`. The
+rule names TWO files, I was careful about `playwright.config.ts`, and I forgot the other one in the
+same sentence.
+
+The fix was to take `origin/main`'s copy and apply the three edits to THAT, which is what "patched in
+place" means and what I should have done both times. **The mechanical step that would have caught it
+before the push: run `node scripts/check-harness-leak.mjs` ON THE DEVICE after every transfer.** It
+cannot be run in the harness — it fails there by design, which is exactly why forgetting is easy —
+so it has to be run on the other side. It is one command and it scanned 351 files in under a second.
+
 **Next: VX5-6**, pre-auth branding, which is now buildable — `/login` on a tenant host knows whose
 colours to use without anybody having signed in.
 
