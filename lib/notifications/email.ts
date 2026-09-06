@@ -267,6 +267,50 @@ export function appOrigin(): string | null {
 }
 
 /**
+ * VX5-5 — the origin a link for THIS TENANT should point at.
+ *
+ * `acme.veloexpense.app` when the deployment serves tenants on subdomains, and
+ * the plain `appOrigin()` when it does not. An approve link that lands on the
+ * tenant's own address arrives somewhere the host and the session already agree,
+ * which is one fewer way for a link out of a mailbox to end up refused.
+ *
+ * ── WHY IT IS GATED ON THE COOKIE DOMAIN AND NOT ON A NEW FLAG ──────────────
+ *
+ * `AUTH_COOKIE_DOMAIN` is what makes a session usable across subdomains at all
+ * (`auth.ts` has the measurement). A deployment that has not set it CANNOT serve
+ * a signed-in tenant subdomain — the cookie is host-only and the person is
+ * bounced to `/login` — so mailing them a subdomain link would send them
+ * somewhere that provably does not work.
+ *
+ * One flag, two behaviours that must move together, rather than two flags and a
+ * combination that is broken in a way nobody tests. NT-14's family: a link-less
+ * email was invisible, and so is a link to a host that cannot hold a session.
+ *
+ * The apex is taken from `appOrigin()` rather than from the cookie domain, so a
+ * port and a scheme survive — `http://velo.test:3000` becomes
+ * `http://acme.velo.test:3000`, which is what makes this testable at all.
+ */
+export function originForTenant(slug: string): string | null {
+  const origin = appOrigin();
+  if (origin === null) return null;
+  const domain = process.env.AUTH_COOKIE_DOMAIN?.trim();
+  if (!domain) return origin;
+  try {
+    const url = new URL(origin);
+    // Only rewrite when the apex actually matches the cookie's domain. A
+    // mismatch means somebody has configured the two against each other, and
+    // inventing `acme.<cookie domain>` out of it would produce a host that
+    // resolves to nothing.
+    const apex = domain.replace(/^\./, '');
+    if (url.hostname !== apex && !url.hostname.endsWith(`.${apex}`)) return origin;
+    url.hostname = `${slug}.${apex}`;
+    return url.origin;
+  } catch {
+    return origin;
+  }
+}
+
+/**
  * Say so, once per process, when there is nothing to link to.
  *
  * Ported with its reason: without it "the recipient gets a correct sentence about

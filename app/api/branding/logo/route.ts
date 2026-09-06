@@ -31,7 +31,8 @@
  */
 import { NextResponse } from 'next/server';
 import { auth } from '@/auth';
-import { withOrg } from '@/lib/tenant/context';
+import { withCurrentOrg } from '@/lib/tenant/request';
+import { HostMismatchError } from '@/lib/tenant/host';
 import { readLogoBytes } from '@/lib/branding/service';
 
 export async function GET(): Promise<NextResponse> {
@@ -41,7 +42,29 @@ export async function GET(): Promise<NextResponse> {
   // unauthenticated caller gets told apart from anything else.
   if (!orgId) return new NextResponse('Not found', { status: 404 });
 
-  const logo = await withOrg(orgId, readLogoBytes);
+  /* VX5-5 — `withCurrentOrg`, not `withOrg(orgId)`, and this route is why the
+   * guard lives in there at all.
+   *
+   * A ROUTE HANDLER NEVER SEES A LAYOUT. `app/layout.tsx` renders the "this is
+   * not your organization" page for every PAGE on a mismatched host, and it does
+   * so before any page's own tenant read runs — which is why a sabotage removing
+   * the guard from `withCurrentOrg` failed no browser test until this line
+   * existed. It was measured, not assumed: the layout was doing all the work and
+   * the guard I had called load-bearing was covered by nothing.
+   *
+   * This route bypassed both. On `second.veloexpense.app` a Demo session fetched
+   * Demo's logo bytes quite happily — your own logo, so not a leak, but exactly
+   * the shape of one, and the shape is what the next route copies.
+   *
+   * A mismatch is a 404 here for the reason the `orgId` check above is: what a
+   * tenant has uploaded is not something this route confirms or denies. */
+  let logo: Awaited<ReturnType<typeof readLogoBytes>>;
+  try {
+    logo = await withCurrentOrg(readLogoBytes);
+  } catch (err) {
+    if (err instanceof HostMismatchError) return new NextResponse('Not found', { status: 404 });
+    throw err;
+  }
   if (logo === null) return new NextResponse('Not found', { status: 404 });
 
   return new NextResponse(new Uint8Array(logo.bytes), {

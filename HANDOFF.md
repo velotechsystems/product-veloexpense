@@ -4000,6 +4000,77 @@ Two tenants, side by side, with **different modules enabled, different branding,
 locales** — one on `fr-CA`, one on `en-US` — each seeing only its own analytics and budgets, proved in
 a browser. The Phase-3 exit criterion took the same shape and it is what found AC-19, AC-22 and AC-23.
 
+### VX5-5 SHIPPED — tenant subdomains, and three things that were measured rather than reasoned about
+
+**PR #NNN.** No migration. New: `lib/tenant/host.ts` · `app/wrong-tenant-host.tsx` ·
+`test/tenant-host.test.ts` · `test/tenant-host.db.test.ts` · `e2e/host-tenancy.spec.ts`. Changed:
+`lib/tenant/request.ts` · `auth.ts` · `app/layout.tsx` · `app/api/branding/logo/route.ts` ·
+`lib/notifications/{email,dispatch}.ts` · `lib/invites/service.ts` · `lib/i18n/catalog/errors.ts` ·
+`playwright.config.ts`. **`proxy.ts` is untouched** — see below.
+
+**THE SESSION IS AUTHORITATIVE, THE HOST IS NOT.** `app.current_org` still comes from the session and
+only from the session. A host that disagrees is REFUSED, before any tenant row: not redirected (which
+silently moves somebody who belongs to two tenants), and not quietly served from their own tenant at
+somebody else's address (which is a lie about what the URL means and indistinguishable from working).
+A host that could switch the session's tenant would be one URL away from a cross-tenant read.
+
+**Three corrections, all from running it:**
+
+1. **The apex must be configured, and my first design said otherwise.** The parser took no apex —
+   "first label of a multi-label host, and the database decides" — with `RESERVED_SLUGS` keeping our
+   own hostnames safe. The e2e refuted it on the first run: `velo.test` has two labels, `velo` was
+   read as a tenant, and every signed-in request to the apex was refused. The heuristic only works
+   when the apex's own first label happens to be reserved — `veloexpense.app` survives,
+   `expenses.velotech.ai` does not. The apex now comes from `AUTH_COOKIE_DOMAIN`, which is the same
+   variable that makes a session usable across subdomains at all, so the two cannot be configured
+   against each other. **Unset ⇒ no host names a tenant**, which is why every existing deployment and
+   the other 155 specs are unaffected.
+
+2. **`NODE_ENV` was the wrong test for a secure cookie.** The cookie config named it
+   `__Secure-authjs.session-token` whenever `NODE_ENV=production` — which the standalone build is,
+   over plain http. A `__Secure-` cookie on http is dropped, Auth.js derives the JWE salt from the
+   cookie NAME, and the result was every request arriving `unauthenticated` with nothing pointing at
+   why. Now keyed on the ORIGIN'S SCHEME, mirroring Auth.js's own inference. Not a test artefact: a
+   self-hosted deployment behind http on an internal network had exactly this silent sign-out.
+
+3. **The guard I called load-bearing was covered by nothing.** A sabotage removing the mismatch check
+   from `withCurrentOrg` failed NO test — `app/layout.tsx` renders the refusal for every PAGE before
+   its tenant read ever runs, so the layout was doing all the work. **A route handler never sees a
+   layout**, and `app/api/branding/logo` was bypassing both: on another tenant's host a Demo session
+   fetched Demo's logo bytes. Now routed through `withCurrentOrg`, and the e2e proves it. That test
+   also had to be fixed twice — the first version asserted a 404 that a tenant with no logo produces
+   anyway, so two sabotages passed against it until the fixture gave Demo real bytes.
+
+**No middleware, which was also a correction.** The first version had `proxy.ts` stamp an
+`x-velo-host-tenant` header with a careful note about overwriting it so nobody could forge one. That
+mechanism worked around a problem that does not exist: the `Host` header IS the host the request was
+made to, and "forging" it is just asking for that host — where the mismatch check applies unchanged.
+The header and the spoofing surface it created are gone, and `proxy.ts` is byte-identical to main.
+
+**Tenant mail links to the tenant's host** (`originForTenant`) — invitations and approve links.
+Signup confirmation stays on the apex, because there is no tenant yet. Gated on `AUTH_COOKIE_DOMAIN`
+for the reason above: a deployment that cannot hold a session on a subdomain must not mail somebody a
+subdomain link, and it refuses to invent a host when the apex and the cookie domain disagree.
+
+**The e2e launches its own browser**, with `--host-resolver-rules` mapping `*.velo.test` to 127.0.0.1
+— no `/etc/hosts`, no DNS, no network. It has to: a probe against `demo.localhost:3000` showed the
+apex rendering and the subdomain redirecting to `/login`, because a cookie with no `Domain` is
+host-only and browsers will not scope one to `localhost`. Contained to one spec — a second Playwright
+project would re-run everything and changing the shared config would move 155 tests onto a new origin
+to prove one thing.
+
+**DEPLOY SIDE, WHICH IS NOT IN THIS PR:** a wildcard certificate for `*.veloexpense.app`, the DNS to
+match, and `AUTH_COOKIE_DOMAIN` set. GAP-AUDIT BR-8 also warns `WEBAUTHN_RP_ID` must sit at the apex
+or every passkey stops validating when a tenant moves subdomain. Until `AUTH_COOKIE_DOMAIN` is set,
+this ticket changes nothing at runtime.
+
+**Sabotage, 7 runs.** Host believed over session → 1 e2e. Unknown subdomain served silently → 5.
+The apex heuristic restored → 2. `originForTenant` ungated → 1. Layout stops rendering the refusal →
+2 e2e. Cookie name back on `NODE_ENV` → 4 e2e. The logo route bypassing the guard → 1 e2e.
+
+**Next: VX5-6**, pre-auth branding, which is now buildable — `/login` on a tenant host knows whose
+colours to use without anybody having signed in.
+
 ### VX5-4 SHIPPED — what a tenant can do on the day it exists
 
 **PR #NNN.** No migration. New: `lib/onboarding/starter.ts` · `lib/onboarding/setup.ts` ·

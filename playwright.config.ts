@@ -83,6 +83,21 @@ const APP_ENV = {
   //   WORKER_SECRET  unset -> the drain route refuses everything, fail-closed
   APP_URL: BASE_URL,
 
+  // VX5-5. The apex tenant subdomains live under, which `lib/tenant/host.ts`
+  // reads from this one variable — the same one that makes a session usable
+  // across subdomains at all (`auth.ts` has the measurement).
+  //
+  // `velo.test` and not `localhost`, because browsers will not scope a cookie to
+  // `localhost` and a probe confirmed it: `demo.localhost:3000` bounced to
+  // `/login` while the apex rendered. `e2e/host-tenancy.spec.ts` resolves
+  // `*.velo.test` inside its own browser.
+  //
+  // The other 150 specs are UNAFFECTED and that is checked rather than assumed:
+  // they talk to `localhost:3000`, which is not under this apex, so
+  // `candidateSlugFromHost` returns null for every one of their requests and the
+  // mismatch guard never engages.
+  AUTH_COOKIE_DOMAIN: 'velo.test',
+
   // VX4-7 part 3. Off here and ON in `playwright.pseudo.config.ts`, which is
   // the whole reason that second config exists: `lib/i18n/pseudo.ts` reads this
   // ONCE at boot, deliberately, so one server cannot serve both the normal
