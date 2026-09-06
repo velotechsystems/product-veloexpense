@@ -1746,4 +1746,70 @@ describe('RLS tenant isolation', () => {
     await admin.query('DELETE FROM subscription');
   });
 
+  /* ── meter readings (VX5-9, migration 0038) ───────────────────────────────
+   *
+   * The ordinary tenant claim, and then the ABSENCE of a hatch, which is the
+   * interesting half.
+   *
+   * `subscription` has a platform read policy because a webhook arrives holding a
+   * provider reference and no tenant — a genuinely tenant-less question. Counting
+   * seats never is: the sweep fans out per tenant and sets `app.current_org` for
+   * each. So this table has `tenant_isolation` and nothing else, and the assertion
+   * that keeps it that way is that `app.platform_task` buys NOTHING here. A hatch
+   * added later "for an invoice screen" would be a cross-tenant read of billing
+   * quantities, and this is the test it would have to delete.
+   */
+  it('meter readings are tenant-isolated, and no platform flag opens them', async () => {
+    const write = async (org: string, meter: string, quantity: number) =>
+      withOrg(org, (tx) =>
+        tx.query(
+          `INSERT INTO subscription_meter_reading
+             (organization_id, meter, plan_code, period_start, period_end, quantity)
+           VALUES ($1, $2, 'STARTER', '2026-09-01T00:00:00Z', '2026-10-01T00:00:00Z', $3)`,
+          [org, meter, quantity],
+        ),
+      );
+    await write(orgA, 'SEAT', 7);
+    await write(orgB, 'SEAT', 3);
+
+    for (const [org, expected] of [
+      [orgA, '7'],
+      [orgB, '3'],
+    ] as const) {
+      const seen = await withOrg(org, (tx) =>
+        tx.query('SELECT quantity FROM subscription_meter_reading'),
+      );
+      expect(seen.rows.map((r) => r.quantity)).toEqual([expected]);
+    }
+
+    // WITH CHECK: naming another tenant does not write there.
+    await expect(
+      withOrg(orgB, (tx) =>
+        tx.query(
+          `INSERT INTO subscription_meter_reading
+             (organization_id, meter, plan_code, period_start, period_end, quantity)
+           VALUES ($1, 'TENANT', 'STARTER', '2026-09-01T00:00:00Z', '2026-10-01T00:00:00Z', 1)`,
+          [orgA],
+        ),
+      ),
+    ).rejects.toThrow(/row-level security|violates/i);
+
+    // One reading per tenant per meter per period — the index that makes the
+    // sweep safe to re-run rather than a check somebody has to remember.
+    await expect(write(orgA, 'SEAT', 9)).rejects.toThrow(/duplicate key|unique/i);
+
+    // NO HATCH. `app.platform_task` opens `subscription`; it must not open this.
+    const viaPlatform = await withPlatformRead((tx) =>
+      tx.query('SELECT count(*)::int AS n FROM subscription_meter_reading'),
+    );
+    expect(viaPlatform.rows[0].n).toBe(0);
+
+    const blind = await withoutOrg((tx) =>
+      tx.query('SELECT count(*)::int AS n FROM subscription_meter_reading'),
+    );
+    expect(blind.rows[0].n).toBe(0);
+
+    await admin.query('DELETE FROM subscription_meter_reading');
+  });
+
 });

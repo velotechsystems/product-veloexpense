@@ -383,6 +383,69 @@ no upstream mistakes to be warned by.
   `page.content()` across every crawled page. This unblocks **VX4-10**, which lowers the ratchet's
   ceilings and could not be trusted while the ratchet could pass measuring nothing.
 
+#### VX5-9 SHIPPED — metering: what a tenant is billed for
+
+**Migration `0038`.** New: `lib/billing/metering.ts` · `app/api/internal/billing/meter/route.ts` ·
+`test/metering.db.test.ts` (17 tests). Changed: a `subscription_meter_reading` block in
+`test/rls-isolation.test.ts`.
+
+**A READING IS A MEASUREMENT, NOT A CALCULATION.** The table stores a QUANTITY and never an amount. A
+quantity is a fact about a moment — this tenant had 34 people who could sign in on 30 September — and
+stays true forever. An amount is that fact times a price, and a price can be corrected, discounted or
+renegotiated, so storing one here would be a second copy of arithmetic the provider is also doing.
+That is UD-9's defect (three hand-kept copies, one already obsolete) and UD-1's (a currency the
+adapters did send, that nothing asserted, and a month of USD booked as CAD in the gap).
+
+**`DO NOTHING`, NOT `DO UPDATE`, and this is the entry most likely to be "improved".** A period's
+reading is EVIDENCE. If September said 34 seats and a later run says 31, the interesting fact is that
+they disagree — an overwrite destroys exactly what somebody investigating a disputed invoice needs.
+Same argument `fraud_flag` makes for never deleting a finding whose rule stopped firing. The unique
+index `(organization_id, meter, period_start)` is what makes idempotence a property rather than an
+intention, which matters because this is a cron: it WILL be run twice.
+
+**CARD HAS NO COUNTER, AND THAT IS THREE LAYERS DEEP.** `COUNTERS` is a `Partial<Record<Meter, …>>`
+with no `CARD` entry; `countFor` THROWS for it rather than returning zero; 0037's CHECK refuses to
+attach it to a plan; and `meterIsBillable` says no. A `CARD` counter returning `0n` was written first
+and is exactly wrong — a reading of zero is indistinguishable from a customer who genuinely owes
+nothing, so the defect would be invisible on every invoice and in every test.
+**`lib/billing/metering.ts` reconciles itself against `lib/billing/plans.ts` AT MODULE LOAD** and
+throws if the two lists disagree, the same guard `lib/integrations/registry.ts` uses for a declared
+capability with no method (AC-5). Verified: adding a `CARD: async () => 0n` counter makes the suite
+fail to load, exit code 1.
+
+**A SEAT IS ANYBODY WHO CAN SIGN IN** — `deleted_at IS NULL`, nothing else. Deliberately NOT filtered
+on `employee_status`: `resolveSsoUser` does not consult it, so filtering here would bill differently
+from how the product admits people. A person ON_LEAVE is counted, and there is a test saying so. The
+tests assert the PROPERTY (deactivate somebody, the count follows) rather than a number against a
+fixture.
+
+**NO PLATFORM HATCH ON THE READINGS TABLE, and its absence is the decision.** `subscription` has one
+because a webhook arrives with a provider reference and no tenant — a genuinely tenant-less question.
+Counting seats never is: the sweep fans out per tenant and sets `app.current_org` for each, the VX0-8
+shape `scanAllTenants` established. The isolation suite asserts that `app.platform_task` buys nothing
+here, so a hatch added later "for an invoice screen" has a test to delete first.
+
+**The route** is the fifth on the `/api/internal/*` pattern — shared secret, constant-time compare,
+404 rather than 401, fail-closed when `WORKER_SECRET` is unset. It meters the current UTC month by
+default and accepts `{"month":"2026-09"}` to repair a gap, which is only safe because the write is
+idempotent; a FUTURE month is refused, because a reading for a period that has not happened is not a
+repair, it is a wrong number with a plausible date on it. **The period is UTC, not tenant-local** —
+two tenants in different zones must not disagree about which month a midnight seat belongs to.
+
+**One tenant's failure does not stop the sweep**, and the failures are RETURNED rather than logged,
+because the caller is an HTTP route an operator reads and a failure nobody is handed is a failure
+nobody sees.
+
+**A DEFECT IN MY OWN TEST, found by running it twice.** The resilience case needs a tenant whose
+measurement throws, which means defeating 0037's CARD constraint — so it dropped the constraint and
+created a `BROKEN` plan. Its `finally` cleaned the component and the constraint but not the plan row,
+and `billing_plan` is GLOBAL reference data that `TRUNCATE organization CASCADE` cannot reach. So the
+file passed once and failed on every subsequent run. Two more orderings were wrong before it was
+right (the plan cannot be deleted while a subscription references it; the organization cannot be
+deleted while its subscription does). It now repairs on the way IN as well as out, so it is
+re-runnable from any state — including one left by a run that was killed. **The whole suite was run
+twice end to end to prove it: 1,562 tests, twice.**
+
 #### VX5-8 SHIPPED — the subscription schema and the plan catalogue
 
 **Migration `0037`.** New: `lib/billing/plans.ts` (pure) · `lib/billing/service.ts` ·
