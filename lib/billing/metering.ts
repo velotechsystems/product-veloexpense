@@ -143,23 +143,28 @@ export async function recordReadings(
     `SELECT plan_code FROM subscription
       WHERE organization_id = ${ORG} AND status <> 'CANCELLED'`,
   );
-  // No live subscription, nothing to meter. Not an error: a tenant created before
-  // 0037 is in exactly this state, and a sweep that threw on it would stop at the
-  // first legacy tenant and never reach the rest.
-  if (sub.rowCount === 0) return [];
-  const planCode = sub.rows[0].plan_code as string;
+  // The plan is a STAMP, not a filter — see below. A tenant the platform has
+  // never told us about still gets measured, because the seat count is a fact
+  // about this product whether or not anybody is billing for it yet, and a gap in
+  // the readings is the one thing that cannot be reconstructed later.
+  const planCode = sub.rowCount === 0 ? 'unmirrored' : (sub.rows[0].plan_code as string);
 
-  // Only the meters this tenant's PLAN charges for. A seat count on a flat-fee
-  // plan is a number nobody will ever price, and writing it would invite somebody
-  // later to price it.
-  const components = await tx.query(
-    'SELECT meter FROM billing_plan_component WHERE plan_code = $1 ORDER BY meter',
-    [planCode],
-  );
+  // ── EVERY METER WE CAN COUNT, NOT EVERY METER THE PLAN CHARGES FOR ────────
+  //
+  // VX5-9 read `billing_plan_component` to decide which meters to record. That
+  // catalogue is gone (0039): the platform owns plans and prices, and this
+  // product owning a copy of them was the mistake that ticket fixed.
+  //
+  // So the filter is now what this product can MEASURE rather than what somebody
+  // is CHARGED. Which of these becomes an invoice line is the platform's
+  // business, and measuring a meter nobody bills costs one integer a month —
+  // where NOT measuring one that is later billed costs a period of history that
+  // cannot be recovered, because a seat count is only true at the moment it is
+  // taken.
+  const meters = METERS.filter(meterIsBillable);
 
   const written: ReadingWritten[] = [];
-  for (const row of components.rows) {
-    const meter = row.meter as Meter;
+  for (const meter of meters) {
     const quantity = await countFor(tx, meter);
     const ins = await tx.query(
       `INSERT INTO subscription_meter_reading
@@ -199,12 +204,18 @@ export interface SweepResult {
  * operator reads, and a failure nobody is handed is a failure nobody sees.
  */
 export async function meterAllTenants(period: Period): Promise<SweepResult> {
+  // EVERY tenant, not every tenant with a mirrored subscription. VX5-9 read
+  // `subscription` here, which meant a tenant the platform had not yet told us
+  // about was never measured — and after 0039 that is most of them, because this
+  // product no longer starts its own trials. A seat count is only true at the
+  // moment it is taken, so a tenant skipped this month has a hole in its history
+  // that no later run can fill.
+  //
+  // `organization` carries no tenant policy (0001: it is where the tenant's
+  // identity comes from), so this needs no hatch at all.
   const orgs = await withPlatformRead(async (tx) => {
-    const r = await tx.query(
-      `SELECT organization_id FROM subscription
-        WHERE status <> 'CANCELLED' ORDER BY organization_id`,
-    );
-    return r.rows.map((row) => row.organization_id as string);
+    const r = await tx.query('SELECT id FROM organization ORDER BY id');
+    return r.rows.map((row) => row.id as string);
   });
 
   const result: SweepResult = {
