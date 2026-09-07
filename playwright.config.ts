@@ -93,6 +93,13 @@ const APP_ENV = {
   PLATFORM_API_URL: `http://127.0.0.1:${PLATFORM_PORT}`,
   PLATFORM_SERVICE_TOKEN: 'e2e-platform-token-not-a-real-secret',
 
+  // VX5-20 part 2. The INBOUND token, and a different string from the outbound
+  // one above: one secret for both directions means a leak in either grants
+  // both. Unset, `POST /api/platform/provision` answers 503 to everything and
+  // every assertion in `e2e/platform-provision.spec.ts` would pass by the route
+  // being off.
+  PLATFORM_INBOUND_TOKEN: 'e2e-inbound-token-not-a-real-secret',
+
   // VX5-5. The apex tenant subdomains live under, which `lib/tenant/host.ts`
   // reads from this one variable — the same one that makes a session usable
   // across subdomains at all (`auth.ts` has the measurement).

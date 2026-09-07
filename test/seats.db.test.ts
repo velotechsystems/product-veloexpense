@@ -109,11 +109,31 @@ async function addUser(orgId: string, email: string): Promise<string> {
 
 const ACCOUNT = '11111111-1111-1111-1111-111111111111';
 
+/**
+ * A DISTINCT platform Account per fixture tenant.
+ *
+ * This file used to hand `ACCOUNT` to all seven of its tenants, and `0040` is
+ * what noticed: `organization.account_id` is now UNIQUE where present, because
+ * one platform Account owns one tenant — the whole basis of
+ * `POST /api/platform/provision` being idempotent on it. Seven tenants sharing
+ * an Account was a fixture asserting something the platform cannot produce, and
+ * a seat push resolved by `(accountId, product)` against that state would be
+ * ambiguous by construction.
+ *
+ * `ACCOUNT` itself stays, for the one test that asserts the exact value that
+ * went over the wire.
+ */
+let accountSeq = 0;
+function nextAccount(): string {
+  accountSeq += 1;
+  return `11111111-1111-1111-1111-${String(accountSeq).padStart(12, '0')}`;
+}
+
 /* ── the tests ────────────────────────────────────────────────────────────── */
 
 describe('whether the integration is on at all', () => {
   it('is disabled with either env var missing, and pushes nothing', async () => {
-    const org = await newOrg('seats-disabled', ACCOUNT);
+    const org = await newOrg('seats-disabled', nextAccount());
     await addUser(org, 'a@seats-disabled.test');
 
     delete process.env.PLATFORM_API_URL;
@@ -182,7 +202,7 @@ describe('what a push actually contains', () => {
     // `lib/billing/metering.ts` and `test/metering.db.test.ts` pins it to being
     // able to sign in. This asserts the push AGREES with that, which is the thing
     // that breaks if somebody writes a second COUNT(*) here.
-    const org = await newOrg('seats-agree', ACCOUNT);
+    const org = await newOrg('seats-agree', nextAccount());
     const a = await addUser(org, 'a@seats-agree.test');
     await addUser(org, 'b@seats-agree.test');
 
@@ -196,7 +216,7 @@ describe('what a push actually contains', () => {
 
 describe('when the platform refuses', () => {
   it('reports an error and does not throw', async () => {
-    const org = await newOrg('seats-refused', ACCOUNT);
+    const org = await newOrg('seats-refused', nextAccount());
     await addUser(org, 'a@seats-refused.test');
     nextStatus = 500;
 
@@ -209,7 +229,7 @@ describe('when the platform refuses', () => {
     // The `/seats` route does not exist on the real platform yet. Until it does,
     // every push in production gets a 404 — so this asserts the shape of the state
     // this feature ships in, rather than only the state it is meant to reach.
-    const org = await newOrg('seats-404', ACCOUNT);
+    const org = await newOrg('seats-404', nextAccount());
     await addUser(org, 'a@seats-404.test');
     nextStatus = 404;
 
@@ -226,7 +246,7 @@ describe('when the platform refuses', () => {
     // real timeout rather than asserting the constant, because a test that reads
     // TIMEOUT_MS and checks it is 4000 would pass with the signal not wired up at
     // all. That was the first draft, and it proved nothing.
-    const org = await newOrg('seats-hang', ACCOUNT);
+    const org = await newOrg('seats-hang', nextAccount());
     await addUser(org, 'a@seats-hang.test');
     hangMs = 30_000;
 
@@ -240,7 +260,7 @@ describe('when the platform refuses', () => {
   }, 20_000);
 
   it('an unreachable platform is an error, not a crash', async () => {
-    const org = await newOrg('seats-unreachable', ACCOUNT);
+    const org = await newOrg('seats-unreachable', nextAccount());
     await addUser(org, 'a@seats-unreachable.test');
     // A port nothing is listening on.
     process.env.PLATFORM_API_URL = 'http://127.0.0.1:1';

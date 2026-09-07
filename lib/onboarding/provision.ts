@@ -84,6 +84,18 @@ export interface NewOrganization {
   /** The first administrator. VX5-2 is what proves they hold this address. */
   adminEmail: string;
   adminName?: string | null;
+  /**
+   * VX5-20 part 2 — the platform's Account UUID, when the platform is the caller.
+   *
+   * OMITTED for VeloExpense's own signup, and that absence is meaningful rather
+   * than incidental: a tenant with no `account_id` is one the platform has never
+   * heard of, which `lib/billing/entitlements.ts` and `lib/billing/seats.ts` both
+   * treat as a legitimate state (the entitlement client falls back to resolving
+   * by email domain; the seat push skips). So this stays optional — making it
+   * required would force the signup path to invent a value, and an invented
+   * account id is worse than a null one because it looks answered.
+   */
+  accountId?: string | null;
 }
 
 export interface ProvisionedOrganization {
@@ -130,12 +142,19 @@ export async function createOrganization(
     // signups racing for the same one is a real case the moment signup is
     // public. The loser gets a sentence naming the problem instead of a
     // Postgres error class.
+    // `account_id` is stamped HERE rather than UPDATEd afterwards. An UPDATE
+    // would be a second statement that can fail on its own, and the state it
+    // leaves — a tenant the platform provisioned but cannot find again — is the
+    // exact half-existing shape this function's header refuses for the admin
+    // row. `organization_by_account_idx` is UNIQUE as of `0040`, so a second
+    // provision for the same Account raises 23505 here and the whole transaction
+    // rolls back; `lib/platform/provision.ts` absorbs that as `already_exists`.
     const org = await tx.query(
-      `INSERT INTO organization (slug, name, status)
-       VALUES ($1, $2, 'active')
+      `INSERT INTO organization (slug, name, status, account_id)
+       VALUES ($1, $2, 'active', $3)
        ON CONFLICT (slug) DO NOTHING
        RETURNING id`,
-      [slug, name],
+      [slug, name, input.accountId ?? null],
     );
     if (org.rows.length === 0) {
       throw new ProvisionError(
@@ -209,6 +228,10 @@ export async function createOrganization(
           name,
           admin_email: adminEmail,
           seeded_categories: seededCategories,
+          // Present only when the platform provisioned this tenant, so the
+          // genesis row answers "where did this tenant come from" without a
+          // second action or a join. Absent means VeloExpense's own front door.
+          ...(input.accountId ? { account_id: input.accountId } : {}),
         },
       },
     );
