@@ -82,10 +82,33 @@ const CHROME_CEILING: Record<string, number> = {
   // it is here because no filter on this screen produces an empty list, and it is
   // worth a ticket rather than a clever selector. Any page added here with rows
   // needs a RATCHET_PATH or the same caveat.
+  // LEFT AT 42 THOUGH IT CURRENTLY READS 10, and that is not laziness. This page's
+  // count moves with how many notifications exist, and 42 was measured on a fuller
+  // database — the full Playwright suite creates them and runs before this. VX4-10
+  // did not touch this screen, so lowering the ceiling here would be claiming
+  // credit for an empty table and would go red the moment the suite ahead of it
+  // did its job. It comes down when the screen is catalogued, in a later part.
   '/notifications': 42,
-  '/preferences': 10,
+  // VX4-10 part 1 catalogued this screen: 10 → 1. The ONE that remains is
+  // `Mar 4, 2026, 2:30 a.m.` — the formatting sample the page exists to show, and
+  // `Intl` output rather than copy. No catalogue will ever contain it.
+  //
+  // So 1 is this page's FLOOR, not a residue of work left undone, and the reason
+  // is worth knowing before somebody tries to reach zero: `visibleStrings` drops
+  // purely numeric lines, but a formatted date carries a month name and an "a.m.",
+  // so it survives the filter. Widening that filter to catch month names was
+  // considered and rejected — it would hide a real heading containing the word
+  // "March", which is a worse failure than a ceiling of one.
+  //
+  // Any page that shows a formatted date has the same irreducible floor.
+  '/preferences': 1,
+  // Same as `/notifications` and for the same reason: reads 29 on this database
+  // and 46 was measured on a fuller one. Untouched by part 1; comes down when it
+  // is catalogued.
   '/admin/expense-policies': 46,
   '/admin/locale': 19,
+  // Measured after VX4-10 part 1 catalogued the screen. See PAGES above.
+  '/admin/billing': 0,
 };
 
 /**
@@ -156,6 +179,11 @@ const PAGES = [
   '/preferences',
   '/admin/expense-policies',
   '/admin/locale',
+  // VX4-10. Added with its ceiling measured on the same run that catalogued it,
+  // rather than inherited. `/admin/billing` shipped in VX5-11 and was outside
+  // this ratchet entirely until now — a screen the gate could not see was a screen
+  // whose chrome could grow without anybody noticing.
+  '/admin/billing',
 ] as const;
 
 test.use({ storageState: ADMIN_STATE });

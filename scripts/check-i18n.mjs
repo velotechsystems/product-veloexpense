@@ -433,6 +433,21 @@ const COPY_FILES = new Set([
   'lib/i18n/catalog/fraud-messages.ts',
   // VX4-8 part 3. Fifth instance, same guarantee.
   'lib/i18n/catalog/control-messages.ts',
+  // VX4-10. The chrome catalogue, and the SIXTH instance — but its coverage
+  // guarantee is weaker than the five above and the difference is worth stating
+  // where somebody adding a seventh will read it.
+  //
+  // Those five are keyed by something the product independently enumerates (a
+  // status union, a rule's message codes), so "did you miss one" is a question
+  // the type system or a generated assertion can answer. Chrome has no such
+  // enumeration — UI_COPY *is* the list — so the type only proves that every key
+  // USED exists, never that every string SHOWN is a key.
+  //
+  // What covers the other direction is not in this file at all: it is the
+  // un-catalogued ratchet in `e2e/pseudo-crawl.spec.ts`, which counts what a page
+  // renders and refuses to let the number grow. That is why VX4-10 lowers those
+  // ceilings as it catalogues rather than deleting the gate.
+  'lib/i18n/catalog/ui.ts',
 ]);
 
 async function* sourceFiles(root) {

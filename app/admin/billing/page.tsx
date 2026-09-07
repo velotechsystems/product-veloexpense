@@ -39,7 +39,8 @@ import { EmptyRow } from '@/app/expenses/ui';
 import { formatInstant } from '@/lib/i18n/format';
 import { readerPrefs } from '@/lib/i18n/request';
 import { getBillingPage } from '@/app/admin/billing/actions';
-import { canWrite, type SubscriptionStatus } from '@/lib/billing/plans';
+import { uiText, type UiKey } from '@/lib/i18n/catalog/ui';
+import { canWrite, type Meter, type SubscriptionStatus } from '@/lib/billing/plans';
 
 /**
  * One sentence per status, and the LAPSED/CANCELLED pair leads with what still
@@ -47,59 +48,41 @@ import { canWrite, type SubscriptionStatus } from '@/lib/billing/plans';
  * ticket that catalogues this chrome, and adding a half-catalogued screen ahead of
  * it would make that ticket's ratchet harder to read, not easier.
  */
-const STATUS_COPY: Record<SubscriptionStatus, { label: string; detail: string }> = {
-  TRIALING: {
-    label: 'Trial',
-    detail: 'Everything works. Nothing is being charged yet.',
-  },
-  ACTIVE: {
-    label: 'Active',
-    detail: 'Everything works.',
-  },
-  PAST_DUE: {
-    // Deliberately calm: this state does NOT restrict anything, and a banner that
-    // sounded like it did would have people chasing a problem that is not stopping
-    // their work.
-    label: 'Payment overdue',
-    detail:
-      'A payment did not go through and is being retried. Nothing is restricted — ' +
-      'reports can still be submitted, approved and paid.',
-  },
-  LAPSED: {
-    label: 'Lapsed',
-    detail:
-      'Drafts still save and everything is still readable. Reports cannot be ' +
-      'submitted, approved or marked paid until this is resolved.',
-  },
-  CANCELLED: {
-    label: 'Cancelled',
-    detail:
-      'Drafts still save and everything is still readable. Reports cannot be ' +
-      'submitted, approved or marked paid.',
-  },
-  SUSPENDED: {
-    // NOT a synonym for lapsed, and the copy says so. Suspension is a decision
-    // somebody made; lapsing is what happens when a trial runs out or dunning
-    // gives up. They restrict the same things, and telling an administrator whose
-    // card is fine that they have "lapsed" sends them to fix the wrong problem.
-    label: 'Suspended',
-    detail:
-      'This organization has been suspended by VeloTech. Drafts still save and ' +
-      'everything is still readable. Get in touch to resolve it.',
-  },
+/**
+ * Which catalogue keys each status uses.
+ *
+ * A `Record<SubscriptionStatus, …>` of KEYS rather than of strings: the copy moved
+ * to `lib/i18n/catalog/ui.ts` in VX4-10, and this is what keeps the guarantee that
+ * moving it could have lost — a status added to the union still fails to compile
+ * here. That is the exact failure CI caught on #115's first run, when the union
+ * gained SUSPENDED and this map did not.
+ */
+const STATUS_KEYS: Record<SubscriptionStatus, { label: UiKey; detail: UiKey }> = {
+  TRIALING: { label: 'billing.status.TRIALING.label', detail: 'billing.status.TRIALING.detail' },
+  ACTIVE: { label: 'billing.status.ACTIVE.label', detail: 'billing.status.ACTIVE.detail' },
+  PAST_DUE: { label: 'billing.status.PAST_DUE.label', detail: 'billing.status.PAST_DUE.detail' },
+  LAPSED: { label: 'billing.status.LAPSED.label', detail: 'billing.status.LAPSED.detail' },
+  CANCELLED: { label: 'billing.status.CANCELLED.label', detail: 'billing.status.CANCELLED.detail' },
+  SUSPENDED: { label: 'billing.status.SUSPENDED.label', detail: 'billing.status.SUSPENDED.detail' },
 };
 
 export default async function BillingPage() {
   const prefs = await readerPrefs();
   const { subscription, readings, platformConfigured } = await getBillingPage();
+  const t = (key: UiKey) => uiText(key, prefs.locale);
+  // VX4-10. A lookup rather than a ternary, so a meter added to the vocabulary is
+  // a compile error here instead of a cell that silently says "Organization".
+  const METER_KEY: Record<Meter, UiKey> = {
+    SEAT: 'billing.meter.seat',
+    TENANT: 'billing.meter.tenant',
+    CARD: 'billing.meter.card',
+  };
 
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-col gap-6 p-6">
       <header>
-        <h1 className="text-2xl font-semibold tracking-tight">Billing</h1>
-        <p className="text-sm text-muted-foreground">
-          What this organization is on, and what it has been measured at.
-        </p>
+        <h1 className="text-2xl font-semibold tracking-tight">{t('billing.title')}</h1>
+        <p className="text-sm text-muted-foreground">{t('billing.lede')}</p>
       </header>
 
       {subscription === null ? (
@@ -110,15 +93,13 @@ export default async function BillingPage() {
         <section className="rounded-md border border-border bg-muted/40 px-4 py-3 text-sm">
           {platformConfigured ? (
             <>
-              <strong className="font-medium">Nothing is being billed for this organization.</strong>{' '}
-              VeloTech has no subscription on record for it, so everything works normally
-              and nothing is being charged.
+              <strong className="font-medium">{t('billing.none.billed.title')}</strong>{' '}
+              {t('billing.none.billed.detail')}
             </>
           ) : (
             <>
-              <strong className="font-medium">Billing is not configured in this deployment.</strong>{' '}
-              VeloExpense is running without a connection to VeloTech billing. Everything
-              works normally and nothing is being charged.
+              <strong className="font-medium">{t('billing.none.unconfigured.title')}</strong>{' '}
+              {t('billing.none.unconfigured.detail')}
             </>
           )}
         </section>
@@ -136,11 +117,11 @@ export default async function BillingPage() {
               }
               data-testid="subscription-status"
             >
-              {STATUS_COPY[subscription.status].label}
+              {t(STATUS_KEYS[subscription.status].label)}
             </span>
           </div>
           <p className="text-sm text-muted-foreground">
-            {STATUS_COPY[subscription.status].detail}
+            {t(STATUS_KEYS[subscription.status].detail)}
           </p>
           {subscription.trialEndsAt !== null && (
             /* A DATE, not a countdown. See the header, point 2. */
@@ -160,29 +141,22 @@ export default async function BillingPage() {
       )}
 
       <section className="flex flex-col gap-2">
-        <h2 className="text-lg font-medium">Measured usage</h2>
-        <p className="text-sm text-muted-foreground">
-          Counted at the end of each period. Amounts are not shown here — what is charged
-          is calculated by the payment provider, and two copies of the same arithmetic
-          eventually disagree.
-        </p>
+        <h2 className="text-lg font-medium">{t('billing.usage.title')}</h2>
+        <p className="text-sm text-muted-foreground">{t('billing.usage.lede')}</p>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-border text-left text-xs uppercase tracking-wide text-muted-foreground">
-                <th className="py-2 pr-4 font-medium">Period</th>
-                <th className="py-2 pr-4 font-medium">Measure</th>
-                <th className="py-2 pr-4 font-medium">Quantity</th>
-                <th className="py-2 pr-4 font-medium">Plan</th>
-                <th className="py-2 font-medium">Counted</th>
+                <th className="py-2 pr-4 font-medium">{t('billing.column.period')}</th>
+                <th className="py-2 pr-4 font-medium">{t('billing.column.measure')}</th>
+                <th className="py-2 pr-4 font-medium">{t('billing.column.quantity')}</th>
+                <th className="py-2 pr-4 font-medium">{t('billing.column.plan')}</th>
+                <th className="py-2 font-medium">{t('billing.column.counted')}</th>
               </tr>
             </thead>
             <tbody>
               {readings.length === 0 ? (
-                <EmptyRow colSpan={5}>
-                  Nothing measured yet. The first reading is taken at the end of the
-                  current period.
-                </EmptyRow>
+                <EmptyRow colSpan={5}>{t('billing.usage.empty')}</EmptyRow>
               ) : (
                 readings.map((r) => (
                   <tr
@@ -190,7 +164,7 @@ export default async function BillingPage() {
                     className="border-b border-border last:border-0"
                   >
                     <td className="py-2 pr-4">{formatInstant(r.periodStart, prefs)}</td>
-                    <td className="py-2 pr-4">{r.meter === 'SEAT' ? 'People' : 'Organization'}</td>
+                    <td className="py-2 pr-4">{t(METER_KEY[r.meter])}</td>
                     <td className="py-2 pr-4 tabular-nums">{r.quantity.toString()}</td>
                     <td className="py-2 pr-4">{r.planCode}</td>
                     <td className="py-2 text-muted-foreground">
@@ -205,11 +179,9 @@ export default async function BillingPage() {
       </section>
 
       <p className="text-sm text-muted-foreground">
-        Plans, prices and payment are managed by VeloTech, not in VeloExpense — this
-        page shows what VeloTech holds for this organization. To change a plan or a
-        payment method, get in touch.{' '}
+        {t('billing.managed.elsewhere')}{' '}
         <Link href="/admin" className="underline underline-offset-4">
-          Back to settings
+          {t('billing.back')}
         </Link>
       </p>
     </div>
