@@ -38,6 +38,7 @@
  */
 import { test, expect, type Page } from '@playwright/test';
 import { ADMIN_STATE } from './helpers';
+import { installCrawlFixture } from './crawl-fixture';
 import { PSEUDO_MARKERS } from '@/lib/i18n/pseudo';
 
 const { open: OPEN, close: CLOSE } = PSEUDO_MARKERS;
@@ -73,8 +74,29 @@ const CHROME_CEILING: Record<string, number> = {
   // Measured on the filtered, empty table — see RATCHET_PATH above. Was 44 while
   // report rows were being counted, and would have risen with every spec that
   // files one.
-  '/expenses': 19,
-  '/approvals': 15,
+  // VX4-10 part 2 catalogued this screen: 19 → 1, measured through RATCHET_PATH's
+  // empty-table filter as before. The ONE is the word "VeloExpense" in the shell
+  // header — the product's NAME, which no catalogue should hold, because a product
+  // name that changes language is a different product. It is this screen's floor
+  // and it is on every page under /expenses.
+  '/expenses': 1,
+  // VX4-10 part 2: 31 → 10, and both numbers need their conditions attached.
+  //
+  // 31 was with `e2e/crawl-fixture.ts` installed; the ceiling of 15 this replaces
+  // was the EMPTY inbox, which is what this screen showed before the fixture
+  // existed. The file said such a page needs a RATCHET_PATH or a caveat and this
+  // one had neither, so its ceiling passed only while nothing ahead of it left a
+  // pending task for the crawl's admin.
+  //
+  // The 10 is five strings per fixture row, times two rows, and every one is
+  // tenant DATA: the report title, its EXP number, the submitter's name, the
+  // policy rung's name, and the submitted date. A catalogue holding any of them
+  // would be a catalogue holding a customer's own words — VX5-4's argument about
+  // starter categories, arriving on a different screen.
+  //
+  // So this is a floor of `5 × rows`, and the fixture is what fixes `rows` at two
+  // no matter what ran first. Change the fixture's row count and change this.
+  '/approvals': 10,
   // STILL DATA-DEPENDENT, stated rather than left to be discovered. This page
   // lists notification rows and the count moves with them: 30 at the moment,
   // against a ceiling measured at 42 on a fuller database. The headroom is what
@@ -106,9 +128,29 @@ const CHROME_CEILING: Record<string, number> = {
   // and 46 was measured on a fuller one. Untouched by part 1; comes down when it
   // is catalogued.
   '/admin/expense-policies': 46,
-  '/admin/locale': 19,
+  // VX4-10 part 2: 19 → 5, and the five are the SAMPLES this screen exists to
+  // show — `localeName()` output for two locales, their formatted instants, and a
+  // formatted amount. Cataloguing them would defeat the screen: IL-1 is that
+  // upstream shipped `en` for years believing it was Canadian because nothing
+  // showed them the difference, and what is shown has to be real `Intl` output or
+  // it shows nothing.
+  '/admin/locale': 5,
   // Measured after VX4-10 part 1 catalogued the screen. See PAGES above.
-  '/admin/billing': 0,
+  // VX4-10 part 2 CORRECTS PART 1'S CEILING, which was wrong and which I shipped.
+  //
+  // Part 1 measured 0 on a database where no tenant had a subscription, so the
+  // whole subscription card had never rendered and two English sentences inside it
+  // (`Trial ends …`, `Last confirmed with VeloTech …`) sat behind a ceiling that
+  // said the screen was finished. With a subscription present the same page reads
+  // 8. Both sentences are now catalogued, and `e2e/crawl-fixture.ts` makes sure
+  // that branch is never measured absent again.
+  //
+  // The 4 that remain are data: the plan's name and its code — the PLATFORM's
+  // words, not ours, and the same rule as a tenant's category — and two `Intl`
+  // dates in the usage table. The trial and mirror dates that used to be counted
+  // are gone from this list because they now sit INSIDE a catalogued sentence and
+  // are bracketed with it.
+  '/admin/billing': 4,
 };
 
 /**
@@ -187,6 +229,15 @@ const PAGES = [
 ] as const;
 
 test.use({ storageState: ADMIN_STATE });
+
+/**
+ * VX4-10 part 2. Every ceiling below is measured against this fixture, and is
+ * meaningless without it — see `crawl-fixture.ts` for what part 1 got wrong by
+ * measuring empty pages, and for the branches this still does not reach.
+ */
+test.beforeAll(async () => {
+  await installCrawlFixture();
+});
 
 test.describe('the pseudo-locale crawl', () => {
   test('the server really is in pseudo mode', async ({ page }) => {
@@ -302,14 +353,17 @@ test.describe('the pseudo-locale crawl', () => {
       // Printed on every run, passing or failing: a count that has DROPPED is
       // how somebody notices the ceiling should come down, and an assertion
       // cannot tell them that without being flaky.
-      // eslint-disable-next-line no-console
       console.log(`  ${path}: ${plain.length} un-catalogued (ceiling ${ceiling})`);
       expect(
         plain.length,
         `${path}: ${plain.length} un-catalogued strings, ceiling ${ceiling}.\n` +
           `Copy added to this page has to go through a catalogue. If you LOWERED the\n` +
           `count by cataloguing some, lower the ceiling here too.\n` +
-          plain.slice(0, 12).map((l) => `    ${l}`).join('\n'),
+          // 60, not the 12 this used to print. VX4-10 part 2 raised it because a
+          // screen being CATALOGUED needs the whole list — twelve of nineteen is
+          // enough to fix a regression and not enough to finish a page, and the
+          // twelve it showed were the ones the walker happened to reach first.
+          plain.slice(0, 60).map((l) => `    ${l}`).join('\n'),
       ).toBeLessThanOrEqual(ceiling);
     });
   }

@@ -170,6 +170,99 @@ export const UI_COPY = {
       'This organization has been suspended by VeloTech. Drafts still save and everything is still readable. Get in touch to resolve it.',
   },
 
+  /* ── shared navigation, on more than one screen ─────────────────────────── */
+  //
+  // Named `nav.*` rather than under the screen they happen to sit on, because
+  // both of these appear on two screens today and the key is what a translator
+  // sees. A `expenses.approvals.link` that also renders on /approvals is a key
+  // that lies about where its copy lives.
+  'nav.reports': { 'en-CA': 'Reports' },
+  'nav.approvals': { 'en-CA': 'Approvals' },
+  'nav.notifications': { 'en-CA': 'Notifications' },
+  'nav.delegations': { 'en-CA': 'Delegations' },
+  'nav.my.expenses': { 'en-CA': 'My expenses' },
+  'pager.previous': { 'en-CA': 'Previous' },
+  'pager.next': { 'en-CA': 'Next' },
+
+  /* ── /expenses (VX1-6, UD-4) ────────────────────────────────────────────── */
+  //
+  // Two titles rather than one with the scope appended: UD-4's finding was that a
+  // list whose scope is invisible gets read as the whole set, and the fix put the
+  // scope in the HEADING. Two whole headings is what lets a translator keep that.
+  'expenses.title.own': { 'en-CA': 'Your expense reports' },
+  'expenses.title.org': { 'en-CA': 'All expense reports' },
+  'expenses.new': { 'en-CA': 'New report' },
+  'expenses.filter.search': { 'en-CA': 'Search' },
+  // Catalogued although the ratchet cannot see it: `visibleStrings` walks text
+  // nodes, and a placeholder is an attribute. A screen-reader user hears it and a
+  // sighted user reads it, so "the gate cannot see it" is not a reason to leave
+  // it in English — it is a reason to say here that the gate is not what is
+  // covering it.
+  'expenses.filter.search.placeholder': { 'en-CA': 'Title or EXP number' },
+  'expenses.filter.status': { 'en-CA': 'Status' },
+  'expenses.filter.status.any': { 'en-CA': 'Any' },
+  'expenses.filter.everyone': { 'en-CA': 'Everyone’s reports' },
+  'expenses.filter.apply': { 'en-CA': 'Apply' },
+  'expenses.empty.start.link': { 'en-CA': 'Start one' },
+  'expenses.column.report': { 'en-CA': 'Report' },
+  'expenses.column.submitter': { 'en-CA': 'Submitter' },
+  'expenses.column.status': { 'en-CA': 'Status' },
+  'expenses.column.expenses': { 'en-CA': 'Expenses' },
+  'expenses.column.receipts': { 'en-CA': 'Receipts' },
+  'expenses.column.created': { 'en-CA': 'Created' },
+  'expenses.column.total': { 'en-CA': 'Total' },
+
+  /* ── /approvals (VX2-4) ─────────────────────────────────────────────────── */
+  'approvals.title': { 'en-CA': 'Approvals' },
+  'approvals.none.waiting': { 'en-CA': 'Nothing waiting on you' },
+  'approvals.column.report': { 'en-CA': 'Report' },
+  'approvals.column.submitted.by': { 'en-CA': 'Submitted by' },
+  'approvals.column.total': { 'en-CA': 'Total' },
+  'approvals.column.step': { 'en-CA': 'Step' },
+  'approvals.column.why': { 'en-CA': 'Why you' },
+  'approvals.column.waiting.since': { 'en-CA': 'Waiting since' },
+  // The link TEXT of `approvals.footer`, and the same for `expenses.empty.start`.
+  // Param-less, so it lives here with the other plain strings; `UI_SENTENCES`
+  // holds the sentence with the `{link}` hole and this fills it. Two entries for
+  // one sentence is the cost of letting a translator move the link, and it is
+  // cheaper than the alternative, which is not letting them.
+  'approvals.footer.link': { 'en-CA': 'Arrange cover' },
+  // Appended to the count sentence with a space when the reader is an ADMIN. Its
+  // own entry so the plural forms stay about the plural and this stays about the
+  // role — one clause after another, not a word inserted into a sentence.
+  'approvals.count.admin.suffix': {
+    'en-CA': '— other people’s approvals are on their reports, not here',
+  },
+  'approvals.empty': {
+    'en-CA': 'Nothing to approve. Reports appear here when somebody submits one that routes to you.',
+  },
+
+  /* ── /admin/locale (VX4-7 part 2a's screen) ─────────────────────────────── */
+  //
+  // The words repeat /preferences deliberately and the KEYS do not. Same copy,
+  // different screens: one sets a personal preference, one sets the org default,
+  // and a translator who wants "Sprache und Zeit" on one and something else on the
+  // other must be able to have it. A shared key would forbid that to save two
+  // lines.
+  'locale.title': { 'en-CA': 'Language and time' },
+  'locale.lede': {
+    'en-CA':
+      'How dates, times and amounts are written for everyone in this organization. An employee who sets their own preference keeps it; everyone else follows what you choose here.',
+  },
+  'locale.language.label': { 'en-CA': 'Language and formatting' },
+  'locale.timezone.label': { 'en-CA': 'Time zone' },
+  'locale.timezone.help': {
+    'en-CA':
+      'Timestamps recorded by the product — when a report was submitted, approved or paid — are shown in this zone. Dates people type, like the date on an expense, are calendar dates and do not move.',
+  },
+  'locale.samples.title': { 'en-CA': 'How each option reads' },
+  'locale.column.language': { 'en-CA': 'Language' },
+  'locale.column.datetime': { 'en-CA': 'Date and time' },
+  'locale.column.amounts': { 'en-CA': 'Amounts' },
+  'locale.in.use': { 'en-CA': 'in use' },
+  'locale.audited': { 'en-CA': 'Changes are recorded in the audit trail.' },
+  'locale.save': { 'en-CA': 'Save' },
+
   'billing.meter.seat': { 'en-CA': 'People' },
   'billing.meter.tenant': { 'en-CA': 'Organization' },
   'billing.meter.card': { 'en-CA': 'Cards' },
@@ -204,4 +297,175 @@ export function uiText(key: UiKey, locale: Locale | string = DEFAULT_LOCALE): st
   const entry = UI_COPY[key] as Copy | undefined;
   if (entry === undefined) return missingCopyMarker(key);
   return localizedFrom<string>(entry, locale) ?? missingCopyMarker(key);
+}
+
+/**
+ * ── PARAMETERISED CHROME: SENTENCES, NOT HEADINGS ──────────────────────────
+ *
+ * `UI_COPY` above forbids a `{parameter}` and `test/i18n-ui.test.ts` enforces it.
+ * That rule is right and this map is why it can afford to be: a sentence naming a
+ * count, a date or a person is a different kind of thing from a column header,
+ * and mixing them would have meant loosening the rule that makes the flat map
+ * safe.
+ *
+ * WHY THIS IS NOT `message-data.ts`. That machinery renders a row's `data` jsonb
+ * for policy, fraud and control messages: it is keyed by a message CODE, its
+ * accessors refuse a key missing from the row, and its whole job is turning
+ * stored evidence into a sentence. Nothing here comes from a row. `Page 3 of 7`
+ * is chrome that happens to contain numbers, and routing it through a jsonb
+ * accessor would have been a second, wronger use of a good abstraction.
+ *
+ * ── ONE ENTRY PER PLURAL FORM, AS A FLAT KEY ───────────────────────────────
+ *
+ * `expenses.count.own.one` and `expenses.count.own.other`, not one entry holding
+ * `{ one, other }`. The reason is mechanical and worth knowing before somebody
+ * tidies it: `localizedFrom` applies the pseudo-locale ONLY to string values —
+ * line 220, `if (typeof value === 'string') return pseudoIfEnabled(value)`. A
+ * nested object would pass through untouched, the sentence would render
+ * unbracketed, and the crawl would count a catalogued string as un-catalogued.
+ * Worse, it would do so quietly. Keeping every value a string keeps the number of
+ * places the pseudo-locale is applied at exactly two, which VX4-7 part 3 argued
+ * for at length.
+ *
+ * English has two forms; `Intl.PluralRules` is asked for the category rather than
+ * `n === 1 ? … : …` being written inline, so a locale with three or six forms
+ * needs new ENTRIES and no new code.
+ */
+export const UI_SENTENCES = {
+  /* ── /expenses ──────────────────────────────────────────────────────────── */
+  'expenses.count.own.one': { 'en-CA': '{n} report submitted by you' },
+  'expenses.count.own.other': { 'en-CA': '{n} reports submitted by you' },
+  'expenses.count.org.one': { 'en-CA': '{n} report across your organization' },
+  'expenses.count.org.other': { 'en-CA': '{n} reports across your organization' },
+  'expenses.page.of': { 'en-CA': 'Page {page} of {pages}' },
+  // The empty state is a sentence with a link INSIDE it, which is why it is here
+  // and not in `UI_COPY` as two fragments. A translator who cannot move the link
+  // cannot write a correct German sentence, and two fragments is exactly the
+  // shape that forbids it.
+  'expenses.empty.start': { 'en-CA': 'No reports yet. {link}.' },
+
+  /* ── /approvals ─────────────────────────────────────────────────────────── */
+  'approvals.count.waiting.one': { 'en-CA': '{n} waiting on you' },
+  'approvals.count.waiting.other': { 'en-CA': '{n} waiting on you' },
+  'approvals.step.of': { 'en-CA': '{step} of {steps}' },
+  'approvals.covering.for': { 'en-CA': 'for {name}' },
+  'approvals.escalated.one': { 'en-CA': 'routed {n} step from the rung' },
+  'approvals.escalated.other': { 'en-CA': 'routed {n} steps from the rung' },
+  'approvals.footer': {
+    'en-CA':
+      'Open a report to approve, return or reject it — the decision lives with the thing you are deciding on. Going away? {link} — you keep your queue, your stand-in gains the ability to decide.',
+  },
+
+  /* ── /admin/billing — the branch part 1's ceiling of 0 never saw ─────────── */
+  'billing.trial.ends': { 'en-CA': 'Trial ends {date}.' },
+  'billing.mirrored.at': { 'en-CA': 'Last confirmed with VeloTech {date}.' },
+
+  /* ── /admin/locale ──────────────────────────────────────────────────────── */
+  'locale.sample.shown.in': { 'en-CA': '4 March 2026, 02:30 UTC, shown in {zone}' },
+} as const satisfies Record<string, Copy>;
+
+export type UiSentenceKey = keyof typeof UI_SENTENCES;
+export const UI_SENTENCE_KEYS = Object.keys(UI_SENTENCES) as UiSentenceKey[];
+
+/** Everything a sentence can be given. Strings only — the caller formats. */
+export type UiParams = Record<string, string>;
+
+const PLACEHOLDER = /\{([a-zA-Z_]\w*)\}/g;
+
+/**
+ * Thrown when a sentence names a parameter the caller did not supply.
+ *
+ * REFUSES rather than rendering `{n}` or `undefined` at a reader, for the reason
+ * `message-data.ts` gives about its own accessors: "undefined is $700.00, over
+ * the undefined limit" is a sentence, renders fine, and tells a reader nothing
+ * while looking like it worked. A missing parameter is a programming error and
+ * should read as one.
+ */
+export class UiSentenceError extends Error {
+  constructor(
+    readonly key: string,
+    readonly param: string,
+  ) {
+    super(`ui sentence ${key} needs {${param}}, which was not supplied`);
+    this.name = 'UiSentenceError';
+  }
+}
+
+function fill(key: string, template: string, params: UiParams): string {
+  return template.replace(PLACEHOLDER, (_match, name: string) => {
+    const value = params[name];
+    if (value === undefined) throw new UiSentenceError(key, name);
+    return value;
+  });
+}
+
+function template(key: UiSentenceKey, locale: Locale | string): string {
+  const entry = UI_SENTENCES[key] as Copy | undefined;
+  if (entry === undefined) return missingCopyMarker(key);
+  return localizedFrom<string>(entry, locale) ?? missingCopyMarker(key);
+}
+
+/** One parameterised sentence, filled. */
+export function uiSentence(
+  key: UiSentenceKey,
+  params: UiParams = {},
+  locale: Locale | string = DEFAULT_LOCALE,
+): string {
+  return fill(key, template(key, locale), params);
+}
+
+/**
+ * The plural form of `base` for `n`, filled — `base` plus `.one`, `.other`, and
+ * whatever else a locale's rules ask for.
+ *
+ * Falls back to `.other` when the category a locale asks for has no entry, which
+ * is the only fallback that is always *a* sentence rather than a marker. That is a
+ * real limitation and not a hidden one: `test/i18n-ui.test.ts` asserts every
+ * shipped locale's categories are present for every base, so the fallback is
+ * unreachable for the locales this product actually ships.
+ */
+export function uiPlural(
+  base: string,
+  n: number,
+  params: UiParams = {},
+  locale: Locale | string = DEFAULT_LOCALE,
+): string {
+  let category = 'other';
+  try {
+    category = new Intl.PluralRules(String(locale)).select(n);
+  } catch {
+    // An unparseable tag is not worth throwing over in a render path; `other` is
+    // correct English for everything except one, and the locale registry is
+    // already gated by `check:i18n`.
+  }
+  const exact = `${base}.${category}` as UiSentenceKey;
+  const key = exact in UI_SENTENCES ? exact : (`${base}.other` as UiSentenceKey);
+  return uiSentence(key, { n: String(n), ...params }, locale);
+}
+
+/**
+ * A sentence with exactly one `{link}` in it, split into the text before and the
+ * text after — so JSX can put a real `<Link>` between them and the TRANSLATOR
+ * decides where in the sentence it goes.
+ *
+ * The alternative, two catalogue entries called `…before` and `…after`, is what
+ * this exists to avoid: it freezes English clause order into the catalogue and
+ * there is no way for a translator to say "in my language the link comes first".
+ *
+ * THROWS when the sentence has no `{link}`, rather than returning the whole thing
+ * and an empty string. A silent one-sided split renders a sentence with the link
+ * stuck on the end, which looks deliberate.
+ */
+export function uiAround(
+  key: UiSentenceKey,
+  params: UiParams = {},
+  locale: Locale | string = DEFAULT_LOCALE,
+): [string, string] {
+  const raw = template(key, locale);
+  const at = raw.indexOf('{link}');
+  if (at === -1) throw new UiSentenceError(key, 'link');
+  return [
+    fill(key, raw.slice(0, at), params),
+    fill(key, raw.slice(at + '{link}'.length), params),
+  ];
 }

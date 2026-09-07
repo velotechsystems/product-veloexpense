@@ -39,7 +39,7 @@ import { EmptyRow } from '@/app/expenses/ui';
 import { formatInstant } from '@/lib/i18n/format';
 import { readerPrefs } from '@/lib/i18n/request';
 import { getBillingPage } from '@/app/admin/billing/actions';
-import { uiText, type UiKey } from '@/lib/i18n/catalog/ui';
+import { uiText, uiSentence, type UiKey } from '@/lib/i18n/catalog/ui';
 import { canWrite, type Meter, type SubscriptionStatus } from '@/lib/billing/plans';
 
 /**
@@ -126,7 +126,11 @@ export default async function BillingPage() {
           {subscription.trialEndsAt !== null && (
             /* A DATE, not a countdown. See the header, point 2. */
             <p className="text-sm">
-              Trial ends {formatInstant(subscription.trialEndsAt, prefs)}.
+              {uiSentence(
+                'billing.trial.ends',
+                { date: formatInstant(subscription.trialEndsAt, prefs) },
+                prefs.locale,
+              )}
             </p>
           )}
           {subscription.mirroredAt !== null && (
@@ -134,7 +138,11 @@ export default async function BillingPage() {
              * mirror and can be stale — a reader who cannot see its age would
              * take a cached answer for a current one. */
             <p className="text-sm text-muted-foreground">
-              Last confirmed with VeloTech {formatInstant(subscription.mirroredAt, prefs)}.
+              {uiSentence(
+                'billing.mirrored.at',
+                { date: formatInstant(subscription.mirroredAt, prefs) },
+                prefs.locale,
+              )}
             </p>
           )}
         </section>

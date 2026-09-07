@@ -383,6 +383,76 @@ no upstream mistakes to be warned by.
   `page.content()` across every crawled page. This unblocks **VX4-10**, which lowers the ratchet's
   ceilings and could not be trusted while the ratchet could pass measuring nothing.
 
+#### VX4-10 part 2 SHIPPED — four screens, two new copy shapes, and a correction to part 1's own ceiling
+
+**New:** `e2e/crawl-fixture.ts`. **Changed:** `lib/i18n/catalog/ui.ts` · `test/i18n-ui.test.ts` ·
+`e2e/pseudo-crawl.spec.ts` · `app/expenses/page.tsx` · `app/expenses/layout.tsx` ·
+`app/approvals/page.tsx` · `app/admin/locale/page.tsx` · `app/admin/billing/page.tsx`.
+
+**PART 1 SHIPPED A WRONG CEILING AND THIS CORRECTS IT.** `'/admin/billing': 0` was measured on a
+database where no tenant had a subscription, so the entire subscription card never rendered. Insert
+one and the same page reports **8** — including `Trial ends …` and `Last confirmed with VeloTech …`,
+two English sentences sitting behind a ceiling that claimed the screen was finished. It was not
+breaking CI, and the reason matters: VX5-19 deleted `seedSubscription`, so nothing in the e2e database
+has a subscription. It was *latently* wrong and would have gone red on VX5-20, looking like VX5-20's
+fault. Both sentences are catalogued and the ceiling is now 4.
+
+**The general form of that mistake, which is the lesson.** `#110` wrote, correctly, that the ratchet's
+ceilings are *"an upper bound rather than a measurement — sound for what it is for, refusing GROWTH."*
+An upper bound is the right instrument for refusing growth and the **wrong** instrument for VX4-10,
+which uses those numbers as TARGETS. I read a documented limitation as a measurement, twice.
+
+**What actually fixes it is narrower than what I first built.** The spec already had `RATCHET_PATH`,
+which measures `/expenses` through `?q=<nonce>` so the count is chrome plus the empty state and does
+not drift with whatever rows some other spec filed. That is the ROBUST design — in CI the crawl runs
+after the full suite, so a fixture makes a count deterministic only if nothing else writes rows, and
+something else does. `e2e/crawl-fixture.ts` is therefore scoped to what only a fixture can do:
+- render `/admin/billing`'s subscription card, which is not a table and has no empty equivalent;
+- make `/approvals` deterministic, by clearing foreign PENDING tasks for the crawl's one admin and
+  installing exactly two of its own. That screen had rows, no `RATCHET_PATH` and none of the caveat the
+  file says such a page needs — its ceiling of 15 was the empty inbox and held only while nothing
+  ahead of it left a task.
+
+**Ceilings, all re-measured, all with their reason in place:** `/expenses` 19 → **1** (the word
+"VeloExpense" — a product name, never catalogued), `/approvals` 31 → **10** (5 strings × 2 fixture
+rows, all tenant data: titles, EXP numbers, submitter, the tenant's own rung name, dates),
+`/admin/locale` 19 → **5** (the `Intl` samples the screen exists to show — cataloguing them defeats
+IL-1), `/admin/billing` → **4** (plan name and code from the platform, two `Intl` dates).
+
+**Two new copy shapes, because five of these strings could not go in a flat map.**
+`{n} reports submitted by you`, `Page {n} of {m}`, `routed {n} step(s) from the rung` are counts with
+plurals; `No reports yet. [Start one].` and the `Arrange cover` sentence have a link in the middle.
+Cataloguing those as fragments freezes English clause order and English's two plural forms.
+- `UI_SENTENCES` + `uiSentence`/`uiPlural`: one flat entry per plural category (`…​.one`, `…​.other`),
+  **not** a nested `{one, other}` object — `localizedFrom` applies the pseudo-locale only to STRING
+  values (its line 220), so a nested object would render unbracketed and the crawl would count a
+  catalogued string as un-catalogued, quietly. Keeping every value a string keeps the pseudo-locale
+  applied in exactly two places, which VX4-7 part 3 argued for.
+- `uiAround`: one catalogued sentence with a `{link}` hole, split for JSX, so a translator decides
+  where the link goes.
+- `uiSentence` THROWS on a missing parameter rather than rendering `{pages}` — `message-data.ts`'s
+  argument, applied here.
+- `UI_COPY` forbids a parameter; `UI_SENTENCES` **requires** one. Two halves of one rule, so neither
+  map can quietly become the other. Three entries failed that on the way in and moved rather than the
+  rule bending.
+
+**Also fixed:** `app/approvals/page.tsx` named its row variable `t`, which would have shadowed the
+translator the moment a catalogued string was needed inside a row — silently, since `t.step` and
+`t('key')` are both valid on their own types. Renamed to `task`.
+
+**Verified:** 1588 tests (76 files) · `npm run e2e` 161 passed · **crawl 20/20 on the database the full
+suite had just left**, which is the CI condition and the one that matters here (`/notifications` reads
+30 and `/admin/expense-policies` 46 on that database, against ceilings of 42 and 46) · all `check:`
+gates · tsc clean · eslint 0 errors. **Four sabotages:** hardcoded column header → `/approvals` 11 vs
+10; `.one` plural form deleted → two tests fail, one structural and one rendering
+`'1 reports submitted by you'`; a param-less entry in `UI_SENTENCES` → the inverse rule fires; the
+fixture's foreign-task clearing removed, with a foreign task present → `/approvals` 15 vs 10, and
+green again with the clearing restored **while that row was still in the database**.
+
+**Still open on VX4-10:** `/notifications` (42) and `/admin/expense-policies` (46) — the two biggest,
+88 strings — and **UD-16**, deferred out of this part deliberately: a metadata rework across ~25
+routes on top of a fixture, two new copy mechanisms and four screens would not have been reviewable.
+
 #### VX4-10 part 1 SHIPPED — the chrome catalogue, and a gate that passed against a build it had never seen
 
 **New:** `lib/i18n/catalog/ui.ts` · `test/i18n-ui.test.ts` · `scripts/check-build-fresh.mjs`.
