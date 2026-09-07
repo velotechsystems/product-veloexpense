@@ -40,6 +40,8 @@ import {
   S3Client,
 } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
+import { createReadStream } from 'node:fs';
+import { readFile, stat } from 'node:fs/promises';
 
 /** How long a presigned URL stays valid, in seconds. */
 export const UPLOAD_URL_TTL_SECONDS = 15 * 60;
@@ -63,6 +65,30 @@ export interface Storage {
   /** null when the object does not exist — how confirmUpload detects a no-show. */
   head(key: string): Promise<StoredObjectHead | null>;
   delete(key: string): Promise<void>;
+  /**
+   * VX5-12 — upload a file the SERVER produced, from a local path.
+   *
+   * ── WHY THIS INTERFACE DID NOT HAVE A WRITE UNTIL NOW ─────────────────────
+   *
+   * Every object in this product until now was a receipt, and a receipt is
+   * uploaded by the BROWSER straight to storage against a presigned URL — which
+   * is the whole reason `presignUpload` exists and the reason the bytes never
+   * pass through the app. Nothing server-side had anything to store, so the
+   * interface had no way to say so. That absence was correct and it is worth
+   * knowing it was not an oversight.
+   *
+   * An export archive is the first object this product MAKES.
+   *
+   * ── AND WHY IT TAKES A PATH RATHER THAN BYTES ────────────────────────────
+   *
+   * `put(key, bytes)` would put the whole archive in memory, and the archive's
+   * size is a function of how long the tenant has been a customer —
+   * `audit_entry` grows forever and is never pruned. The writer streams to a
+   * temporary file for exactly that reason, so handing over the path keeps the
+   * ceiling at one DEFLATE window instead of the whole export. S3's PutObject
+   * takes a stream when it is given a length, which a file has.
+   */
+  putFile(key: string, localPath: string, contentType: string): Promise<void>;
 }
 
 /* ── in-memory driver (tests) ──────────────────────────────────────────────── */
@@ -78,6 +104,20 @@ export class MemoryStorage implements Storage {
 
   has(key: string) {
     return this.objects.has(key);
+  }
+
+  /**
+   * Test helper: the stored bytes.
+   *
+   * NOT on the `Storage` interface. Nothing in the product reads an object back
+   * — receipts are served to the browser by presigned URL and never pass
+   * through the app — so putting a read on the interface would be an unused
+   * method the S3 driver has to implement. VX5-12 part 2 adds one when the
+   * receipt bundle actually needs to read objects; until then this is a test
+   * affordance beside `put` and `has`, which are the same thing.
+   */
+  body(key: string): Uint8Array | null {
+    return this.objects.get(key)?.body ?? null;
   }
 
   get objectCount() {
@@ -103,6 +143,12 @@ export class MemoryStorage implements Storage {
 
   async delete(key: string): Promise<void> {
     this.objects.delete(key);
+  }
+
+  async putFile(key: string, localPath: string, contentType: string): Promise<void> {
+    // Reads the file whole, which is right HERE and wrong in the S3 driver: this
+    // one already holds every object in a Map, so a stream would buy nothing.
+    this.objects.set(key, { body: new Uint8Array(await readFile(localPath)), contentType });
   }
 }
 
@@ -163,6 +209,23 @@ export class S3Storage implements Storage {
 
   async delete(key: string): Promise<void> {
     await this.client.send(new DeleteObjectCommand({ Bucket: this.bucket, Key: key }));
+  }
+
+  async putFile(key: string, localPath: string, contentType: string): Promise<void> {
+    // ContentLength from stat, which is what lets this be a STREAM rather than a
+    // buffer: PutObject requires a length for a non-buffer body, and without one
+    // the SDK would either buffer the stream itself or need multipart. A local
+    // file knows its own size, so neither is necessary.
+    const { size } = await stat(localPath);
+    await this.client.send(
+      new PutObjectCommand({
+        Bucket: this.bucket,
+        Key: key,
+        Body: createReadStream(localPath),
+        ContentLength: size,
+        ContentType: contentType,
+      }),
+    );
   }
 }
 

@@ -211,25 +211,12 @@ jobs:
       # proves the isolation SUITE actually names it — which is a different
       # claim, and the one that rots. A table added with correct RLS and no test
       # is asserted by nobody, and the guard above would stay green forever.
+      # VX5-12 moved the logic to `scripts/check-rls-suite.mjs` so it can be run
+      # BEFORE a push. It was inline shell here, which meant `npm run check:*`
+      # and the whole test suite could pass locally while this failed in CI —
+      # which is exactly what happened when `tenant_export` was added.
       - name: RLS isolation coverage (every tenant table must appear in the suite)
-        run: |
-          TABLES=$(psql "$ADMIN_DATABASE_URL" -tAc "
-            SELECT c.relname
-            FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
-            WHERE n.nspname = 'public' AND c.relkind = 'r'
-              AND EXISTS (SELECT 1 FROM pg_attribute a
-                          WHERE a.attrelid = c.oid AND a.attname = 'organization_id'
-                            AND NOT a.attisdropped)
-            ORDER BY c.relname;")
-          UNTESTED=""
-          for t in $TABLES; do
-            grep -q "\b$t\b" test/rls-isolation.test.ts || UNTESTED="$UNTESTED $t"
-          done
-          if [ -n "$UNTESTED" ]; then
-            echo "::error::Tenant tables absent from test/rls-isolation.test.ts:$UNTESTED"
-            exit 1
-          fi
-          echo "Isolation coverage OK — every tenant table is named in the suite."
+        run: npm run check:rls-suite
 
       # VX3-10. The two guards above are about RLS. This one is about FOREIGN
       # KEYS, and it exists because RLS cannot help with them: Postgres performs

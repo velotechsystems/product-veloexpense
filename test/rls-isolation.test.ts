@@ -1812,4 +1812,98 @@ describe('RLS tenant isolation', () => {
     await admin.query('DELETE FROM subscription_meter_reading');
   });
 
+  /* ── export requests (VX5-12, migration 0041) ─────────────────────────────
+   *
+   * The ordinary tenant claim, and then the two things specific to this table,
+   * both of which matter more than usual because of WHAT the row points at:
+   * `data_key` is the storage key of an archive holding every expense, every
+   * approver decision and every employee's name and email a tenant has. A
+   * cross-tenant read here is not a leak of metadata; it is a map to the whole
+   * dataset.
+   *
+   * NO HATCH, and its absence is the decision — same reasoning as the meter
+   * readings above. The purge fans out per tenant with `app.current_org` set, so
+   * nothing ever needs to see across tenants.
+   *
+   * AND THE COMPOSITE FK, which `test/tenant-fk.db.test.ts` demands generically
+   * and this pins concretely: Postgres checks referential integrity with RLS
+   * BYPASSED, so a single-column `requested_by_id` would happily accept another
+   * tenant's user — an export attributed to somebody who does not work there.
+   */
+  it('export requests are tenant-isolated, and cannot name another tenant\'s user', async () => {
+    const userOf = async (org: string) =>
+      (
+        await withOrg(org, (tx) =>
+          tx.query('SELECT id FROM app_user WHERE organization_id = $1 LIMIT 1', [org]),
+        )
+      ).rows[0].id as string;
+
+    // Clean at the START as well as the end. A previous FAILING run of this test
+    // never reaches its own cleanup, and the leftover rows then break the
+    // in-flight assertion on the next run — a test that poisons itself, which is
+    // the same shape as the seed's `deleted_at` problem this ticket also fixed.
+    await admin.query('DELETE FROM tenant_export');
+
+    const [userA, userB] = [await userOf(orgA), await userOf(orgB)];
+    const request = async (org: string, user: string) =>
+      withOrg(org, (tx) =>
+        tx.query(
+          `INSERT INTO tenant_export (organization_id, requested_by_id, expires_at)
+           VALUES ($1, $2, now() + interval '7 days')`,
+          [org, user],
+        ),
+      );
+
+    await request(orgA, userA);
+    await request(orgB, userB);
+
+    for (const org of [orgA, orgB]) {
+      const seen = await withOrg(org, (tx) =>
+        tx.query('SELECT organization_id FROM tenant_export'),
+      );
+      expect(seen.rows.map((r) => r.organization_id)).toEqual([org]);
+    }
+
+    /* WITH CHECK: naming another tenant does not write there.
+     *
+     * Written out rather than reusing `request`, because `request` puts the same
+     * org in the GUC and in the column and so cannot express this at all. My
+     * first version here was `expect(request(orgA, userA) && request(orgB, userA))`
+     * — which awaits only the second, fires the first as an unhandled promise,
+     * and asserts nothing about WITH CHECK. */
+    await expect(
+      withOrg(orgB, (tx) =>
+        tx.query(
+          `INSERT INTO tenant_export (organization_id, requested_by_id, expires_at)
+           VALUES ($1, $2, now() + interval '7 days')`,
+          [orgA, userA],
+        ),
+      ),
+    ).rejects.toThrow(/row-level security|violates/i);
+
+    // ONE IN FLIGHT PER TENANT. The partial unique index, and the reason it is in
+    // the database rather than in a handler: the caller is a button, and a button
+    // with no feedback gets pressed four times — which would be four full-dataset
+    // reads against the same pool.
+    await expect(request(orgA, userA)).rejects.toThrow(/duplicate key|unique/i);
+
+    // THE COMPOSITE FK. Tenant B's own transaction, naming tenant A's user: RLS
+    // is satisfied (the row is B's) and the FK is what has to refuse it.
+    await admin.query('DELETE FROM tenant_export');
+    await expect(request(orgB, userA)).rejects.toThrow(/foreign key|violates/i);
+
+    // NO HATCH, in either direction.
+    const viaPlatform = await withPlatformRead((tx) =>
+      tx.query('SELECT count(*)::int AS n FROM tenant_export'),
+    );
+    expect(viaPlatform.rows[0].n).toBe(0);
+
+    const blind = await withoutOrg((tx) =>
+      tx.query('SELECT count(*)::int AS n FROM tenant_export'),
+    );
+    expect(blind.rows[0].n).toBe(0);
+
+    await admin.query('DELETE FROM tenant_export');
+  });
+
 });
