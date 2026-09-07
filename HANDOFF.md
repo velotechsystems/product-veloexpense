@@ -383,6 +383,73 @@ no upstream mistakes to be warned by.
   `page.content()` across every crawled page. This unblocks **VX4-10**, which lowers the ratchet's
   ceilings and could not be trusted while the ratchet could pass measuring nothing.
 
+#### VX4-10 part 1 SHIPPED — the chrome catalogue, and a gate that passed against a build it had never seen
+
+**New:** `lib/i18n/catalog/ui.ts` · `test/i18n-ui.test.ts` · `scripts/check-build-fresh.mjs`.
+**Changed:** `app/preferences/page.tsx` · `app/admin/billing/page.tsx` · `e2e/pseudo-crawl.spec.ts` ·
+`scripts/check-i18n.mjs` · `package.json`.
+
+**The sixth catalogue, and it is honestly weaker than the other five.** The catalogues before it are
+keyed by something the product already enumerates — a status union, a rule's message codes — so
+`EnumCopy<ReportStatus>` cannot miss a status: the union *is* the key. Chrome has no such
+enumeration, and inventing a runtime list of "every heading this product shows" would be a second
+list that drifts from the screens, which is UD-9's defect and one this project has now paid for three
+times. So `UI_COPY` **is** the enumeration: `UiKey` is derived from its keys, a call site naming a
+key that does not exist fails to compile — but **a heading somebody hardcodes without calling
+`uiText` at all is invisible to the type system.** That direction is covered by the pseudo-locale
+crawl's ratchet and by nothing else, which is why this ticket lowers ceilings rather than deleting the
+gate. The header of `ui.ts` says all of this in place, so the next person does not read the compiler's
+guarantee as covering more than it does.
+
+**Two screens catalogued, and the ceilings measured rather than assumed.** `/preferences` 10 → 1,
+`/admin/billing` added to `PAGES` at 0. `/preferences` cannot reach zero: its last string is
+`"Mar 4, 2026, 2:30 a.m."`, Intl output that survives the numeric filter, and widening that filter to
+swallow it would also hide a heading containing the word "March" — a worse failure than a ceiling of
+one. `/notifications` (42) and `/admin/expense-policies` (46) were deliberately **left alone** even
+though a seeded database renders 10 and 29: lowering them to what an empty table shows would claim
+credit for rows that are not there and go red the day the full suite runs first and leaves data
+behind.
+
+**`STATUS_COPY` became `STATUS_KEYS: Record<SubscriptionStatus, {label: UiKey; detail: UiKey}>`** so a
+status added to the union is still a compile error at this screen. That is the exact failure CI caught
+on #115, and moving the copy into a catalogue is precisely the move that could have quietly lost it.
+Sabotage: deleting the `SUSPENDED` line reproduces `TS2741: Property 'SUSPENDED' is missing`.
+
+**THE FINDING, and it is the real content of this ticket.** `npm run e2e:crawl` seeds and starts
+`npm run start:standalone`, which serves whatever `.next/standalone` already holds. **It does not
+build.** `npm run e2e` does; the crawl was split off from it for the pseudo flag, and the build stayed
+with the half it left behind. Nobody noticed because CI builds at `ci.yml:134` and crawls at
+`ci.yml:289` in the same job, so **CI has always been correct** — this was only ever a local hazard,
+and it caught me: sabotage-testing this ticket I hardcoded `Measured usage` back onto
+`/admin/billing`, ran the crawl, and got `0 un-catalogued (ceiling 0)` — **green, against a defect
+planted exactly where the ceiling would catch it.** Rebuild and the same run says
+`1 un-catalogued, ceiling 0 — Measured usage`.
+
+That is the worst thing a gate can do. Not a false alarm — a clean pass that reports the thing it was
+pointed at is fine. Had I not been running a sabotage that turn I would have read the green as a
+measurement, and **every crawl number I have quoted from this container since VX4-7 part 3 was taken
+without a guarantee that the build matched the source.** The numbers above were re-measured on a
+verified-fresh build after the guard existed.
+
+`scripts/check-build-fresh.mjs` compares the newest mtime under `app/ lib/ components/ src/` (plus
+`next.config.ts`, `proxy.ts`, `auth.ts`, `package.json`) against `.next/standalone/server.js`, and
+refuses with the command to run. Prefixed onto `e2e:crawl`. **Not** a `npm run build &&` prefix: CI has
+already built by then, so that would spend ~90s per PR guarding a mistake CI cannot make. Its limit is
+stated in the file — mtimes, not content hashes, so `touch` fails it with nothing changed and a
+backdating checkout could pass it with everything changed. It is right for the case it guards, which is
+one person editing a file and re-running a command in the same shell.
+
+**Verified:** 1581 tests (76 files) · build · crawl 20/20 on a fresh build · `check:actions`,
+`check:tenant`, `check:admin`, `check:i18n`, `check:vendor` · `tsc` clean · eslint 0 errors.
+**Three sabotages, each failing exactly the intended test and nothing else:** hardcoded heading →
+`/admin/billing: 1, ceiling 0`; `SUSPENDED` dropped from `STATUS_KEYS` → TS2741; `{period}` smuggled
+into a catalogue entry → `no entry carries an ICU-style parameter`.
+
+**Still open on VX4-10:** the four remaining screens (`/expenses` 19, `/approvals` 15,
+`/notifications` 42, `/admin/expense-policies` 46, `/admin/locale` 19) and **UD-16 — no page names
+itself.** `generateMetadata` exists only in the root layout, so every tab says the same thing; it needs
+a title template plus ~25 per-page titles, catalogued here.
+
 #### VX5-19 SHIPPED — the platform owns billing; VeloExpense mirrors it. THIS UNDOES MY OWN MISTAKE.
 
 **Migration `0039`.** New: `lib/billing/entitlements.ts`. Rewritten: `lib/billing/plans.ts` ·
