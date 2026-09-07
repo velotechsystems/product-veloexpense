@@ -29,6 +29,14 @@ import { getLocalePage, saveLocaleFromForm } from './actions';
 import { uiText, uiSentence, type UiKey } from '@/lib/i18n/catalog/ui';
 import { readerPrefs } from '@/lib/i18n/request';
 
+import { pageTitle } from '@/lib/i18n/page-title';
+
+// UD-16. See `lib/i18n/page-title.ts` for why the title lives here rather than
+// in a map of routes, and `scripts/check-page-titles.mjs` for what enforces it.
+export function generateMetadata() {
+  return pageTitle('title.admin.locale');
+}
+
 export default async function AdminLocalePage({
   searchParams,
 }: {

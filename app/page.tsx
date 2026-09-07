@@ -25,6 +25,14 @@ import { Button } from '@/components/ui/button';
 import { SETUP_ITEMS, type SetupItem } from '@/lib/onboarding/setup';
 import { getHomeContext, getSetupStatus } from './actions';
 
+import { pageTitle } from '@/lib/i18n/page-title';
+
+// UD-16. See `lib/i18n/page-title.ts` for why the title lives here rather than
+// in a map of routes, and `scripts/check-page-titles.mjs` for what enforces it.
+export function generateMetadata() {
+  return pageTitle('title.home');
+}
+
 export const dynamic = 'force-dynamic';
 
 const SETUP_COPY: Record<SetupItem, { title: string; why: string; href: string; cta: string }> = {

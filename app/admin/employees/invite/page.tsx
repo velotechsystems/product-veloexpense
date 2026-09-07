@@ -20,6 +20,14 @@ import { readerPrefs } from '@/lib/i18n/request';
 import { EmployeeForm } from '../employee-form';
 import { INVITE_TTL_DAYS } from '@/lib/invites/service';
 
+import { pageTitle } from '@/lib/i18n/page-title';
+
+// UD-16. See `lib/i18n/page-title.ts` for why the title lives here rather than
+// in a map of routes, and `scripts/check-page-titles.mjs` for what enforces it.
+export function generateMetadata() {
+  return pageTitle('title.admin.employees.invite');
+}
+
 export const dynamic = 'force-dynamic';
 
 export default async function InviteEmployeePage({

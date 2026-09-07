@@ -16,6 +16,14 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { minorToDecimalString } from '@/lib/money';
 import { readerPrefs } from '@/lib/i18n/request';
+import { pageTitle } from '@/lib/i18n/page-title';
+
+// UD-16. See `lib/i18n/page-title.ts` for why the title lives here rather than
+// in a map of routes, and `scripts/check-page-titles.mjs` for what enforces it.
+export function generateMetadata() {
+  return pageTitle('title.admin.expense.policies');
+}
+
 import {
   RULE_DEFINITIONS,
   RULE_KINDS,

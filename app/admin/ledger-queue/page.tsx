@@ -28,6 +28,14 @@ import { EmptyRow, ErrorBanner } from '@/app/expenses/ui';
 import { formatInstant } from '@/lib/i18n/format';
 import { enumLabel, POST_STATUS_COPY } from '@/lib/i18n/catalog/enums';
 import { readerPrefs } from '@/lib/i18n/request';
+import { pageTitle } from '@/lib/i18n/page-title';
+
+// UD-16. See `lib/i18n/page-title.ts` for why the title lives here rather than
+// in a map of routes, and `scripts/check-page-titles.mjs` for what enforces it.
+export function generateMetadata() {
+  return pageTitle('title.admin.ledger.queue');
+}
+
 import {
   cancelFromForm,
   dryRunFromForm,

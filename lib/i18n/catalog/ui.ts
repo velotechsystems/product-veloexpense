@@ -170,6 +170,57 @@ export const UI_COPY = {
       'This organization has been suspended by VeloTech. Drafts still save and everything is still readable. Get in touch to resolve it.',
   },
 
+  /* ── UD-16: page titles ─────────────────────────────────────────────────── */
+  //
+  // A tab title, a bookmark, a back-history entry, and what a screen reader
+  // announces on navigation — one string, four jobs, and until UD-16 every route
+  // in the product used the same one.
+  //
+  // NOT the same keys as the headings, even where the words match. A heading has
+  // the page around it; a title stands alone in a strip of twenty tabs, so
+  // `Employees` may want to be `People` in one and not the other, and a translator
+  // has to be able to make that choice. Two keys with identical `en-CA` today is
+  // the cheap half of that; one key would have forbidden it.
+  //
+  // Composed with the tenant's name by `title.template` in `app/layout.tsx`, so
+  // these are the page's half only.
+  'title.home': { 'en-CA': 'Home' },
+  'title.expenses': { 'en-CA': 'Expense reports' },
+  'title.expenses.new': { 'en-CA': 'New expense report' },
+  // The fallback when a report cannot be named — see `dataTitle`. A report's own
+  // title is the CUSTOMER's words and is never catalogued.
+  'title.expenses.report': { 'en-CA': 'Expense report' },
+  'title.approvals': { 'en-CA': 'Approvals' },
+  'title.approvals.delegations': { 'en-CA': 'Delegations' },
+  'title.approve': { 'en-CA': 'Approve a report' },
+  'title.notifications': { 'en-CA': 'Notifications' },
+  'title.notifications.preferences': { 'en-CA': 'Notification preferences' },
+  'title.preferences': { 'en-CA': 'Language and time' },
+  'title.login': { 'en-CA': 'Sign in' },
+  'title.signup': { 'en-CA': 'Create an organization' },
+  'title.signup.verify': { 'en-CA': 'Confirm your email' },
+  'title.invite.accept': { 'en-CA': 'Accept your invitation' },
+  'title.admin.analytics': { 'en-CA': 'Spend analytics' },
+  'title.admin.approval.ladder': { 'en-CA': 'Approval ladder' },
+  'title.admin.billing': { 'en-CA': 'Billing' },
+  'title.admin.branding': { 'en-CA': 'Branding' },
+  'title.admin.budgets': { 'en-CA': 'Budgets' },
+  'title.admin.chart.of.accounts': { 'en-CA': 'Chart of accounts' },
+  'title.admin.compliance': { 'en-CA': 'Compliance' },
+  'title.admin.employees': { 'en-CA': 'Employees' },
+  'title.admin.employees.invite': { 'en-CA': 'Invite someone' },
+  // Fallback for the employee detail page, which titles itself by the person's
+  // name. Same rule as a report title.
+  'title.admin.employees.one': { 'en-CA': 'Employee' },
+  'title.admin.expense.policies': { 'en-CA': 'Expense policies' },
+  'title.admin.integrations': { 'en-CA': 'Accounting integrations' },
+  'title.admin.ledger.queue': { 'en-CA': 'Ledger queue' },
+  'title.admin.locale': { 'en-CA': 'Language and time' },
+  'title.admin.modules': { 'en-CA': 'Modules' },
+  'title.admin.notification.delivery': { 'en-CA': 'Email delivery' },
+  'title.admin.notification.templates': { 'en-CA': 'Notification wording' },
+  'title.admin.reimbursements': { 'en-CA': 'Reimbursements' },
+
   /* ── shared navigation, on more than one screen ─────────────────────────── */
   //
   // Named `nav.*` rather than under the screen they happen to sit on, because

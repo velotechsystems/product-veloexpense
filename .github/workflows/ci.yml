@@ -128,6 +128,13 @@ jobs:
       - name: Admin-gate guard (one gate, and the right exit per caller)
         run: npm run check:admin
 
+      # UD-16. Every route names itself, or this fails and says which do not.
+      # A GLOB, not a list of routes — upstream's #398 was three pages missing
+      # from a hand-kept title map, and a map is a second enumeration that drifts
+      # silently. Needs no build and no database.
+      - name: Page-title guard (every route names itself)
+        run: npm run check:titles
+
       # Build first: Next 16 generates .next/types/** (e.g. LayoutProps) that the
       # standalone `tsc --noEmit` typecheck depends on.
       - name: Build

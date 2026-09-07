@@ -42,6 +42,14 @@ import { getBillingPage } from '@/app/admin/billing/actions';
 import { uiText, uiSentence, type UiKey } from '@/lib/i18n/catalog/ui';
 import { canWrite, type Meter, type SubscriptionStatus } from '@/lib/billing/plans';
 
+import { pageTitle } from '@/lib/i18n/page-title';
+
+// UD-16. See `lib/i18n/page-title.ts` for why the title lives here rather than
+// in a map of routes, and `scripts/check-page-titles.mjs` for what enforces it.
+export function generateMetadata() {
+  return pageTitle('title.admin.billing');
+}
+
 /**
  * One sentence per status, and the LAPSED/CANCELLED pair leads with what still
  * works. English literals in JSX, like every other admin screen — VX4-10 is the

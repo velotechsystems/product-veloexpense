@@ -33,6 +33,14 @@ import { formatInstant } from '@/lib/i18n/format';
 import { readerPrefs } from '@/lib/i18n/request';
 import { getInboxPage, markAllReadFromForm, markReadFromForm } from './actions';
 
+import { pageTitle } from '@/lib/i18n/page-title';
+
+// UD-16. See `lib/i18n/page-title.ts` for why the title lives here rather than
+// in a map of routes, and `scripts/check-page-titles.mjs` for what enforces it.
+export function generateMetadata() {
+  return pageTitle('title.notifications');
+}
+
 export const dynamic = 'force-dynamic';
 
 /** Where a subject lives. One table, so a new subject type is one line here and

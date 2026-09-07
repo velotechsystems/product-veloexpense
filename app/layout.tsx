@@ -58,7 +58,19 @@ const PRODUCT = "VeloExpense";
 export async function generateMetadata(): Promise<Metadata> {
   const { branding } = await brandingForRender();
   return {
-    title: branding === null ? PRODUCT : `${branding.name} · ${PRODUCT}`,
+    // UD-16. A TEMPLATE, not a string, which is what lets each page contribute
+    // its own half. `%s` is the page's title; `default` is what a route with no
+    // title of its own gets, and `scripts/check-page-titles.mjs` exists so that
+    // "no title of its own" is a deliberate choice rather than an oversight.
+    //
+    // The page's name comes FIRST for a mechanical reason: a browser truncates
+    // the END of a tab title. `Acme Inc · VeloExpense · Appro…` is thirty-one
+    // titles that still look identical in a narrow tab, which is the defect this
+    // was supposed to fix.
+    title: {
+      template: branding === null ? `%s · ${PRODUCT}` : `%s · ${branding.name} · ${PRODUCT}`,
+      default: branding === null ? PRODUCT : `${branding.name} · ${PRODUCT}`,
+    },
     description: "Submit, approve, and reconcile expenses across your organization.",
     // The tenant's own wordmark as the tab icon when there is one. Next serves
     // this as a <link rel="icon"> pointing at our route, so the `?v=` stamp and
