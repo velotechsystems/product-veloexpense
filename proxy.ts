@@ -26,6 +26,42 @@ import { NextResponse, type NextRequest } from 'next/server';
 //                                       here. Public because an invited person
 //                                       has no session yet, by definition.
 //
+// VX5-20 part 2 adds a fifth, and it is the only one that is a SERVICE:
+//   /api/platform/provision             the VeloTech platform's provisioning
+//                                       orchestrator, authenticated by
+//                                       `x-platform-key` against
+//                                       PLATFORM_INBOUND_TOKEN in constant time,
+//                                       503 when unset. Public here for the same
+//                                       reason the drain route is: there is no
+//                                       human and never will be, so a session
+//                                       cookie is not a credential it could
+//                                       present. Listed in BOTH places below,
+//                                       and the redundancy was measured the same
+//                                       way /signup's was: removing it from
+//                                       PUBLIC alone fails nothing, removing it
+//                                       from the matcher alone fails nothing,
+//                                       and removing it from BOTH turns every
+//                                       assertion in
+//                                       e2e/platform-provision.spec.ts into a
+//                                       307 to /login.
+//
+//                                       That failure mode is worse than failing
+//                                       closed. A client that follows redirects
+//                                       — which is every client — gets the login
+//                                       PAGE with a 200 where it expected a 201,
+//                                       so the orchestrator's operator sees a
+//                                       plausible success and no tenant. It
+//                                       looks like the platform's bug.
+//
+//                                       NOTE FOR WHOEVER TESTS THIS NEXT:
+//                                       Playwright's APIRequestContext does NOT
+//                                       go through this middleware — an
+//                                       anonymous one renders /expenses, which
+//                                       this file guards. The spec uses plain
+//                                       fetch with redirect:'manual' for exactly
+//                                       that reason, and the first version of it
+//                                       passed with this entry deleted.
+//
 // TWO PLACES, AND EITHER ONE ALONE IS ENOUGH — MEASURED, NOT ASSUMED. The
 // `matcher` decides whether middleware runs at all; `PUBLIC` is what runs when
 // it does. `/signup` is in both, as `/login` and `/approve` already were, and a
@@ -46,6 +82,7 @@ const PUBLIC = [
   /^\/signup/,
   /^\/invite/,
   /^\/api\/internal\//,
+  /^\/api\/platform\//,
   /^\/_next\//,
   /^\/favicon\.ico$/,
 ];
@@ -66,5 +103,5 @@ export function proxy(req: NextRequest) {
 }
 
 export const config = {
-  matcher: ['/((?!api/auth|api/internal|_next/static|_next/image|favicon.ico|login|approve|signup|invite).*)'],
+  matcher: ['/((?!api/auth|api/internal|api/platform|_next/static|_next/image|favicon.ico|login|approve|signup|invite).*)'],
 };

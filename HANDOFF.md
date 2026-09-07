@@ -468,6 +468,94 @@ three that are now keys. The second failed with `'{X} needs {X}.'`, which is the
 feeding real keys made the assertion **stronger** than it was: it now proves the lookup resolves
 rather than only that the template fills.
 
+#### VX5-20 part 2 SHIPPED — inbound provisioning. VX5-20 CLOSED, and the GA gate now waits only on VeloCRM.
+
+**New:** `prisma/migrations/0040_platform_provision/migration.sql` · `lib/platform/provision.ts` ·
+`app/api/platform/provision/route.ts` · `test/platform-provision.db.test.ts` ·
+`test/platform-provision-route.db.test.ts` · `e2e/platform-provision.spec.ts` ·
+`scripts/patch-harness-vx520p2.py`.
+**Changed:** `lib/onboarding/provision.ts` · `proxy.ts` · `test/seats.db.test.ts` ·
+`playwright.config.ts` (**patch in place with the shipped script — harness file**).
+
+**THE PORT IS MOSTLY A DELETION.** VeloLedger's `provisionTenant` writes the organization, entity,
+journal sequence, fiscal periods, role, admin user and audit row itself, because it had no other
+caller that creates a tenant. VeloExpense has one — `createOrganization`, VX5-1, used by self-serve
+signup since VX5-2b — so `lib/platform/provision.ts` is a wrapper around it. A second
+tenant-creation path would be a second place deciding what a new tenant arrives holding (VX5-4
+settled that) and a second place that has to get the mid-transaction
+`set_config('app.current_org', …, true)` right. Everything the file adds is what the PLATFORM needs
+and signup does not: the Account link, idempotency on it, and a slug that resolves.
+
+**THREE DELIBERATE DEVIATIONS FROM THE PORT, each because VeloLedger's shape is wrong rather than
+merely different:**
+
+1. **`0040` makes `organization_by_account_idx` UNIQUE.** VeloLedger's `0051` — and `0039`, which
+   copied it — created a plain index and implemented idempotency as read-then-write. That makes the
+   lookup fast, not the invariant true: two provisions for one Account both pass the SELECT and the
+   Account ends up owning two tenants, one invisible forever because every later lookup takes
+   `LIMIT 1`. **The concurrent case is the expected case** — the caller is an orchestrator whose most
+   likely reason to call twice is a first call that timed out, i.e. may still be running. The SELECT
+   stays as an optimisation; the constraint is the guarantee.
+2. **The slug resolves instead of refusing.** VeloLedger 400s on a taken slug, which leaves the
+   orchestrator inventing a name it cannot check — the list is in this database. A taken slug becomes
+   `-2` here and **the response reports the slug actually used**. A slug is a hostname; `account_id`
+   is the identity. RESERVED or malformed is still a refusal, because that is a caller bug and
+   renaming `admin` to `admin-2` would hide it.
+3. **An unexpected failure is a 500, not a 400.** VeloLedger ends every failure at 400 with the
+   error's own message. 400 means "do not retry", so a dropped connection or an exhausted pool would
+   tell the orchestrator to give up permanently on a tenant somebody paid for; and the message is a
+   diagnostic, which is the whole reason `DomainError` exists. Detail to the log, generic body out.
+
+**IT DOES NOT ADOPT AN EXISTING TENANT.** If a company signed up through the front door and later
+buys through the platform, this creates a second tenant rather than stamping `account_id` on the
+first. Matching on admin email would be the obvious "helpful" link and it is an account-takeover
+primitive. `already_exists` means the ACCOUNT was seen before, never that the company was.
+
+**THE FINDING WORTH CARRYING: PLAYWRIGHT'S `APIRequestContext` DOES NOT GO THROUGH NEXT MIDDLEWARE.**
+Measured in one run, one server, one moment: plain `fetch` POST with `redirect:'manual'` → **307** to
+`/login?callbackUrl=…`; `anon.post(…, { maxRedirects: 0 })` → **401 JSON from the route**;
+`anon.get('/expenses')` with **no cookies at all** → **200**, a page `proxy.ts` guards. The first
+version of `e2e/platform-provision.spec.ts` used `request`, declared in its own header that every
+assertion was really about middleware, and **passed with `/api/platform/` deleted from both lists in
+`proxy.ts`.** Three sabotage runs came back green and the sabotage was not the thing that was wrong.
+The spec now uses `fetch` throughout. Anything asserting on middleware with `request` is asserting
+nothing.
+
+With the instrument fixed, the redundancy measures exactly like `/signup`'s: **PUBLIC alone removed →
+nothing fails; matcher alone removed → nothing fails; both removed → every assertion in the spec is a
+307.**
+
+**Two more things the work turned up:**
+
+- **`0040` caught `test/seats.db.test.ts` handing one `ACCOUNT` to seven fixture tenants** — a state
+  the platform cannot produce, and one where a seat push resolved by `(accountId, product)` is
+  ambiguous by construction. Each fixture tenant now has its own.
+- **`audit_entry` is append-only by trigger, so a tenant cannot be deleted by an ordinary caller** —
+  and every tenant has a genesis row. The e2e cleanup therefore uses `app.audit_purge = 'on'`, the
+  hatch the trigger itself documents. Cleaning up is **not optional** here: this is the only spec that
+  creates tenants carrying an `account_id`, and leaving them behind puts them in
+  `reconcileAllTenants`' sweep, which `seat-push.spec.ts` asserts exact counts from — an uncleaned run
+  of one file failing a different file, pointing nowhere near the cause. The child tables come from
+  `information_schema` rather than a list, because a hardcoded list rots silently as a cleanup that
+  leaves rows behind.
+
+**Sabotages, and two of them came back green:** the account-conflict absorption stubbed out → the
+DIFFERENT-slugs concurrency test fails (the SAME-slugs one does not, which is why there are two);
+`0040` reverted to a plain index → 2 tests; **the `SLUG_TAKEN` re-check removed → NOTHING FAILS**, and
+the comment claiming it was load-bearing was wrong — the loser simply loops and trips the account
+index one attempt later. It stays for a stated, lesser reason, with the measurement in the comment.
+**`/api/platform/` removed from both lists in `proxy.ts` → every assertion is a 307**, once the
+instrument was `fetch`.
+
+**Verification:** 1645 tests / 82 files · `npm run e2e` **171 passed** · crawl 27/27 · every `check:`
+gate · `tsc` clean · eslint 0 errors.
+
+**THE GA GATE IS NOW ENTIRELY ON VeloCRM:** `POST /api/v1/platform/seats` — extract
+`setSeatQuantity(subscriptionId, quantity)` out of `syncSeatQuantity(tenantId)`, add the route on the
+`requirePlatformService` router, resolve by **`(accountId, product)`** rather than `tenantId`, and
+honour `observedAt`. Plus the `veloexpense` plan group in `seed-plans.ts` and the `endpointFor()`
+branch reading `VELOEXPENSE_BASE_URL` / `VELOEXPENSE_PROVISION_TOKEN`.
+
 #### VX5-20 part 1 SHIPPED — the seat count goes UP. THE LAST GA-GATE ITEM, HALF DONE.
 
 **New:** `lib/billing/seats.ts` · `app/api/internal/billing/seats/route.ts` ·
@@ -547,10 +635,8 @@ deactivates somebody and the seed is not re-run between invocations. The counts 
 a count compared against a constant tests the fixture, a count compared against the database tests the
 feature.
 
-**Still to do — part 2, and it is not GA-blocking:** inbound `POST /api/platform/provision`, ported
-from VeloLedger (`product-veloledger/app/api/platform/provision/route.ts` plus
-`lib/platform/provision.ts` — `PLATFORM_INBOUND_TOKEN`, idempotent on `account_id`, 503/401/400/422).
-That is the platform standing a tenant UP; the gate needs the count going up, which is this.
+**Part 2 SHIPPED** — see the VX5-20 part 2 section above. That is the platform standing a tenant UP;
+the gate needs the count going up, which is this half.
 
 **And the GA gate is not closed until John's side lands:** `POST /api/v1/platform/seats` on VeloCRM —
 extract `setSeatQuantity(subscriptionId, quantity)` out of `syncSeatQuantity(tenantId)`, add the route
@@ -1012,7 +1098,9 @@ metadata `app=veloexpense`, per-seat `licensed`/`per_unit`). The entitlement end
 `?product=` and needs no change.
 
 **VeloExpense env, all optional and all off by default:** `PLATFORM_API_URL`,
-`PLATFORM_SERVICE_TOKEN` (outbound, entitlements). `PLATFORM_INBOUND_TOKEN` arrives with VX5-20.
+`PLATFORM_SERVICE_TOKEN` (outbound, entitlements and the seat push) and `PLATFORM_INBOUND_TOKEN`
+(inbound provisioning — a DIFFERENT string on purpose; one secret for both directions means a leak in
+either grants both). Unset, `POST /api/platform/provision` answers 503 to everything.
 
 #### VX5-11 SHIPPED — the write gate, the billing screen, and a hole in my own design
 
