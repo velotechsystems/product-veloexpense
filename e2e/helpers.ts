@@ -39,6 +39,10 @@ export const CONTROL = `http://127.0.0.1:${process.env.E2E_LEDGER_CONTROL_PORT ?
 export const LEDGER = `http://127.0.0.1:${process.env.E2E_LEDGER_PORT ?? 9411}`;
 export const WORKER_SECRET = process.env.WORKER_SECRET ?? 'e2e-worker-secret';
 
+// VX5-20. The platform sink's two ports — see scripts/e2e-platform.mjs for why
+// the seat push has to leave the process to be checkable.
+export const PLATFORM_CONTROL = `http://127.0.0.1:${process.env.E2E_PLATFORM_CONTROL_PORT ?? 9522}`;
+
 /**
  * THE APPROVER, WHO IS NOT THE SUBMITTER.
  *
@@ -150,6 +154,83 @@ export async function billsAtSink(request: APIRequestContext) {
       payload: Record<string, unknown>;
     }>;
   };
+}
+
+/* ── VX5-20: the platform sink ─────────────────────────────────────────────── */
+
+export interface SeatReport {
+  at: string;
+  key: string | null;
+  contentType: string | null;
+  body: { accountId?: string; product?: string; seatCount?: number; observedAt?: string };
+}
+
+/** Every seat report the platform sink has received, in order. */
+export async function seatReportsAtSink(request: APIRequestContext): Promise<SeatReport[]> {
+  const r = await request.get(`${PLATFORM_CONTROL}/seats`);
+  expect(
+    r.ok(),
+    'the e2e platform sink is not answering — is scripts/e2e-platform.mjs up?',
+  ).toBe(true);
+  return ((await r.json()) as { reports: SeatReport[] }).reports;
+}
+
+export async function resetPlatformSink(request: APIRequestContext) {
+  const r = await request.post(`${PLATFORM_CONTROL}/reset`);
+  expect(r.ok(), 'the e2e platform sink is not answering').toBe(true);
+}
+
+/** Make the sink refuse the next seat report with a 500. */
+export async function platformFailsNextSeatPush(request: APIRequestContext) {
+  const r = await request.post(`${PLATFORM_CONTROL}/fail-next`);
+  expect(r.ok()).toBe(true);
+}
+
+/**
+ * Run the reconcile sweep the way a scheduler would.
+ *
+ * Returns the body, because the sweep REPORTS rather than refuses — a test that
+ * only checked the status could not tell a clean sweep from one where every
+ * tenant failed.
+ */
+export async function reconcileSeats(request: APIRequestContext) {
+  const r = await request.post('/api/internal/billing/seats', {
+    headers: { authorization: `Bearer ${WORKER_SECRET}` },
+  });
+  expect(r.status(), 'the seat reconcile route refused the worker secret').toBe(200);
+  return (await r.json()) as {
+    configured: boolean;
+    organizations?: number;
+    sent?: number;
+    skipped?: number;
+    failures?: { organizationId: string; message: string }[];
+  };
+}
+
+/**
+ * Wait for a seat report to arrive.
+ *
+ * The push is FIRE-AND-FORGET — `pushSeatCountInBackground` is deliberately not
+ * awaited, so the server action returns before the POST lands. A test that
+ * asserted immediately after the click would be racing the feature it is testing
+ * and would fail perhaps one run in ten, which is worse than not having the test.
+ */
+export async function waitForSeatReports(
+  request: APIRequestContext,
+  atLeast: number,
+  timeoutMs = 10_000,
+): Promise<SeatReport[]> {
+  const deadline = Date.now() + timeoutMs;
+  let reports = await seatReportsAtSink(request);
+  while (reports.length < atLeast && Date.now() < deadline) {
+    await new Promise((r) => setTimeout(r, 200));
+    reports = await seatReportsAtSink(request);
+  }
+  expect(
+    reports.length,
+    `expected at least ${atLeast} seat report(s) at the sink within ${timeoutMs}ms`,
+  ).toBeGreaterThanOrEqual(atLeast);
+  return reports;
 }
 
 /** Drain the posting queue the way a scheduler would. */

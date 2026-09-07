@@ -23,7 +23,7 @@
     "check:i18n": "node scripts/check-i18n.mjs",
     "check:build-fresh": "node scripts/check-build-fresh.mjs",
     "check:titles": "node scripts/check-page-titles.mjs",
-    "e2e:crawl": "npm run check:build-fresh && STAGE=test npm run seed && E2E_PORT=3100 E2E_STORAGE_PORT=9501 E2E_SMTP_PORT=2625 E2E_MAIL_HTTP_PORT=2626 E2E_LEDGER_PORT=9511 E2E_LEDGER_CONTROL_PORT=9512 playwright test --config playwright.pseudo.config.ts",
+    "e2e:crawl": "npm run check:build-fresh && STAGE=test npm run seed && E2E_PORT=3100 E2E_STORAGE_PORT=9501 E2E_SMTP_PORT=2625 E2E_MAIL_HTTP_PORT=2626 E2E_LEDGER_PORT=9511 E2E_LEDGER_CONTROL_PORT=9512 E2E_PLATFORM_PORT=9621 E2E_PLATFORM_CONTROL_PORT=9622 playwright test --config playwright.pseudo.config.ts",
     "check:tenant": "node scripts/check-tenant-expression.mjs"
   },
   "dependencies": {

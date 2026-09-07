@@ -22,6 +22,8 @@ import { redirect } from 'next/navigation';
 import { revalidatePath } from 'next/cache';
 import * as svc from '@/lib/employees/service';
 import * as invites from '@/lib/invites/service';
+import { pushSeatCountInBackground } from '@/lib/billing/seats';
+import { currentOrgId } from '@/lib/tenant/request';
 import { errorParam } from '@/lib/errors/domain';
 import { asAdmin, asAdminPage } from '@/lib/auth/admin-guard';
 import { auditActorOf } from '@/lib/audit/service';
@@ -82,17 +84,52 @@ export async function listLiveInvites() {
   return asAdminPage((tx) => invites.listLiveInvites(tx));
 }
 
+/*
+ * ── VX5-20: WHERE THE SEAT PUSH GOES, AND WHY NOT IN THE SERVICE ───────────
+ *
+ * The seat count is non-deleted `app_user` rows, and exactly three things change
+ * it: acceptance of an invitation (in `lib/auth/resolve-sso-user.ts`),
+ * deactivation, and reactivation. The last two are here.
+ *
+ * The push is AFTER `asAdmin` returns, never inside it, and that is a
+ * correctness point rather than a style one:
+ *
+ *   · `svc.updateEmployee` and `svc.deactivateEmployee` run inside the caller's
+ *     transaction. A push from in there would report a count that has not
+ *     committed — and if the transaction then rolled back, the platform would
+ *     hold a number that never existed, with nothing to correct it because a level
+ *     is last-write-wins.
+ *   · it would also hold a database transaction open across a network call to
+ *     another company's service, which is how a slow dependency becomes a
+ *     connection-pool outage.
+ *
+ * So: commit, then report. The window between them is a dropped push if the
+ * process dies in it, which is what `reconcileAllTenants()` is for.
+ *
+ * The organization comes from `currentOrgId()` — the session's, and the one
+ * `asAdmin` just ran inside. NOT a second query of my own: there is one way to
+ * ask which tenant this request is for, and adding another is how the two end up
+ * disagreeing in the one case that matters.
+ */
 export async function updateEmployee(employeeId: string, patch: svc.EmployeePatch) {
-  return asAdmin((tx) => svc.updateEmployee(tx, employeeId, patch));
+  const result = await asAdmin((tx) => svc.updateEmployee(tx, employeeId, patch));
+  // Only when the patch could have moved the count. Reactivating clears
+  // `deleted_at` (see `svc.updateEmployee`); a title or a manager change does not
+  // touch it, and pushing an unchanged number on every edit is noise the platform
+  // would have to absorb.
+  if ('employeeStatus' in patch) pushSeatCountInBackground(await currentOrgId());
+  return result;
 }
 
 export async function deactivateEmployee(
   employeeId: string,
   opts: { reassignReportsTo?: string | null } = {},
 ) {
-  return asAdmin((tx, actor) =>
+  const result = await asAdmin((tx, actor) =>
     svc.deactivateEmployee(tx, employeeId, { ...opts, actingEmployeeId: actor.id }),
   );
+  pushSeatCountInBackground(await currentOrgId());
+  return result;
 }
 
 /* ── writes (progressive-enhancement form entry points) ────────────────────── */

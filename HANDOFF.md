@@ -383,6 +383,95 @@ no upstream mistakes to be warned by.
   `page.content()` across every crawled page. This unblocks **VX4-10**, which lowers the ratchet's
   ceilings and could not be trusted while the ratchet could pass measuring nothing.
 
+#### VX5-20 part 1 SHIPPED — the seat count goes UP. THE LAST GA-GATE ITEM, HALF DONE.
+
+**New:** `lib/billing/seats.ts` · `app/api/internal/billing/seats/route.ts` ·
+`scripts/e2e-platform.mjs` · `test/seats.db.test.ts` · `e2e/seat-push.spec.ts`.
+**Changed:** `lib/auth/resolve-sso-user.ts` · `app/admin/employees/actions.ts` · `e2e/helpers.ts` ·
+`package.json` · `playwright.config.ts` (**patch in place — harness file**).
+
+**The first upward integration in the suite.** Everything before it reads downwards: an entitlement
+comes from VeloCRM and `lib/billing/service.ts` mirrors it. This exists because **only VeloExpense can
+count VeloExpense seats** — VeloLedger bills flat-per-org so the platform never has to ask, and
+VeloCRM counts its own `users` table in-process.
+
+**THE PLATFORM'S USAGE ENDPOINT IS THE WRONG DOOR, and reading VeloCRM is what established that.**
+`POST /api/v1/platform/usage` exists, authenticates on the same `x-platform-key`, and its Zod schema
+even has an optional `meter`. It would have accepted this. It would also have been wrong, quietly:
+
+| | seats | AI credits |
+|---|---|---|
+| Stripe mechanism | subscription item **quantity** (licensed) | **meter events** (usage-based) |
+| platform code | `stripeService.syncSeatQuantity()` | `platform_usage_events` → `credits` |
+| semantics | a **level** — last-write-wins | an **event** — appended, summed, deduped |
+
+`recordUsage` computes `credits = tokensToCredits(quantity, model)` **ignoring `meter`**, and `credits`
+is `NOT NULL DEFAULT 0`. Four seats would have been stored as **0.0007 AI credits** and billed as
+consumption. So this posts to `POST /api/v1/platform/seats` — a level endpoint that **does not exist
+yet**; John is adding it. Until it does every push gets a 404, which `test/seats.db.test.ts` asserts
+as the shape this ships in rather than only the shape it is meant to reach.
+
+**Where the push happens, and why not where it looks like it should.** The seat count is non-deleted
+`app_user`, and exactly three things move it: invitation ACCEPTANCE (`lib/auth/resolve-sso-user.ts` —
+`app_user` is inserted there and nowhere else since VX5-2 removed the admin-form path), deactivation,
+and reactivation. The last two are in the admin actions **after `asAdmin` returns**, and that is
+correctness rather than style: `svc.deactivateEmployee` runs inside the caller's transaction, so a
+push from in there reports a count that has not committed — and if the transaction rolled back the
+platform would hold a number that never existed, with nothing to correct it because a level is
+last-write-wins. It would also hold a database transaction open across a network call to another
+company's service.
+
+**Fail soft, everywhere.** Nothing throws into a caller. Adding an employee must not fail because the
+platform is down — the same argument `canWriteWithoutSubscription` makes from the other direction. The
+price is a dropped push, and because a level has nothing to contradict it, a dropped push is
+**permanent**. That is why `POST /api/internal/billing/seats` is not optional: it is what makes
+best-effort mean eventually-right rather than occasionally-wrong-forever. VeloCRM's own seat sync has
+the same exposure and no sweep; it gets away with it because the CRM is where the users are.
+
+**`observedAt` on every push.** A level endpoint has no idempotency key, so ordering is the exposure:
+an add and a remove a second apart can arrive reversed and leave the platform on the older number.
+Every push carries the instant the count was taken, inside the transaction that took it. **The
+platform is expected to ignore a stale one — that is a promise about the receiver this file cannot
+enforce**, which is why it is written down rather than assumed.
+
+**One tenant is skipped, and it is not an error.** No `organization.account_id` (nullable since 0039)
+means the platform has never heard of this tenant — every tenant that signed up through VeloExpense's
+own front door. The sweep counts those separately, because during the cutover that number is how much
+of the estate is invisible to billing.
+
+**A fourth e2e sink, for the reason the other three exist.** A mocked `fetch` proves a payload was
+BUILT. `scripts/e2e-platform.mjs` proves one arrived — with the platform's header, at the platform's
+path, with `observedAt` surviving JSON. And it proves the **absence** of a push for an accountless
+tenant, which is the assertion a mock is worst at: a mock never called and a mock never wired up look
+identical.
+
+**Verified:** 1610 tests (79 files) · `npm run e2e` **165 passed** · crawl 27/27 on the database the
+full suite had just left · every `check:` gate · tsc clean · eslint 0 errors. The e2e spec was run
+twice consecutively to prove it is re-runnable, after the first draft was not.
+
+**Five sabotages:** the no-account skip removed → two tests, including the sweep's skip count; the
+`x-platform-key` header dropped → the payload test; a second seat definition instead of
+`countFor(tx, 'SEAT')` → the agrees-with-the-meter test; `AbortSignal.timeout` removed → the hang test
+times out instead of returning; and **the push moved to before the commit → the platform received 4
+where the truth was 3.** That last one is the ticket's whole design in one number.
+
+**Two of my own mistakes are recorded in place** because both were caught by a test rather than by
+reading: a `DEMO_ACCOUNT` UUID of `…00000000d3m0`, which spells "demo" and is not valid hex, and
+assertions of `seatCount >= 4` that passed once and failed on the next run because this spec
+deactivates somebody and the seed is not re-run between invocations. The counts now read the database:
+a count compared against a constant tests the fixture, a count compared against the database tests the
+feature.
+
+**Still to do — part 2, and it is not GA-blocking:** inbound `POST /api/platform/provision`, ported
+from VeloLedger (`product-veloledger/app/api/platform/provision/route.ts` plus
+`lib/platform/provision.ts` — `PLATFORM_INBOUND_TOKEN`, idempotent on `account_id`, 503/401/400/422).
+That is the platform standing a tenant UP; the gate needs the count going up, which is this.
+
+**And the GA gate is not closed until John's side lands:** `POST /api/v1/platform/seats` on VeloCRM —
+extract `setSeatQuantity(subscriptionId, quantity)` out of `syncSeatQuantity(tenantId)`, add the route
+on the `requirePlatformService` router, resolve the subscription by **`(accountId, product)`** rather
+than `tenantId`, and honour `observedAt`. Until then this half is correct and inert.
+
 #### VX4-10 part 4 SHIPPED — VX4-10 CLOSED. A duplicate list, a dead catalogue, and a gate the crawl cannot be
 
 **New:** `lib/i18n/list.ts` · `test/i18n-list.test.ts`. **Changed:** `lib/i18n/catalog/enums.ts` ·

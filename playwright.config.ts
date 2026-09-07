@@ -49,6 +49,10 @@ const MAIL_HTTP_PORT = Number(process.env.E2E_MAIL_HTTP_PORT ?? 2526);
 // 9411/9412 rather than anything round, per the 9401 note above.
 const LEDGER_PORT = Number(process.env.E2E_LEDGER_PORT ?? 9411);
 const LEDGER_CONTROL_PORT = Number(process.env.E2E_LEDGER_CONTROL_PORT ?? 9412);
+// VX5-20. The platform sink: the seat push has to leave the process to be
+// checkable at all (scripts/e2e-platform.mjs explains why a mock cannot do it).
+const PLATFORM_PORT = Number(process.env.E2E_PLATFORM_PORT ?? 9521);
+const PLATFORM_CONTROL_PORT = Number(process.env.E2E_PLATFORM_CONTROL_PORT ?? 9522);
 // The entity the sink answers for. The spec configures the VeloLedger connection
 // with this value, so `testConnection`'s "is this entity one this key can see"
 // check passes against the sink's `list_entities`.
@@ -82,6 +86,12 @@ const APP_ENV = {
   //   SMTP_HOST      unset -> the console transport, so nothing is sent
   //   WORKER_SECRET  unset -> the drain route refuses everything, fail-closed
   APP_URL: BASE_URL,
+
+  // VX5-20. BOTH are required or the seat push reports `disabled` and every
+  // assertion about it passes by the feature being off — the same trap as an
+  // unset SMTP_HOST making the mail tests prove nothing.
+  PLATFORM_API_URL: `http://127.0.0.1:${PLATFORM_PORT}`,
+  PLATFORM_SERVICE_TOKEN: 'e2e-platform-token-not-a-real-secret',
 
   // VX5-5. The apex tenant subdomains live under, which `lib/tenant/host.ts`
   // reads from this one variable — the same one that makes a session usable
@@ -213,6 +223,24 @@ export default defineConfig({
         E2E_LEDGER_PORT: String(LEDGER_PORT),
         E2E_LEDGER_CONTROL_PORT: String(LEDGER_CONTROL_PORT),
         E2E_LEDGER_ENTITY_ID: LEDGER_ENTITY_ID,
+      },
+      stdout: 'pipe',
+      stderr: 'pipe',
+    },
+    {
+      command: 'node scripts/e2e-platform.mjs',
+      // The CONTROL port, not the platform one — Playwright's probe needs a port
+      // the app does not depend on, exactly as with the mail sink's HTTP port and
+      // the ledger's.
+      port: PLATFORM_CONTROL_PORT,
+      // Never reused, for the fourth time and the same reason: the probe
+      // identifies a PORT, not a program, so a stranger answering here would be
+      // silently adopted as the platform — and a seat push would go somewhere
+      // unknown while the assertion failed on an empty report list.
+      reuseExistingServer: false,
+      env: {
+        E2E_PLATFORM_PORT: String(PLATFORM_PORT),
+        E2E_PLATFORM_CONTROL_PORT: String(PLATFORM_CONTROL_PORT),
       },
       stdout: 'pipe',
       stderr: 'pipe',
