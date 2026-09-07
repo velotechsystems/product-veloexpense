@@ -17,7 +17,12 @@ import { Input } from '@/components/ui/input';
 import { minorToDecimalString } from '@/lib/money';
 import { readerPrefs } from '@/lib/i18n/request';
 import { uiText, uiPlural, uiSentence, type UiKey } from '@/lib/i18n/catalog/ui';
-import { enumLabel, RULE_KIND_COPY, RULE_DESCRIPTION_COPY } from '@/lib/i18n/catalog/enums';
+import {
+  enumLabel,
+  RULE_KIND_COPY,
+  RULE_DESCRIPTION_COPY,
+  SEVERITY_COPY,
+} from '@/lib/i18n/catalog/enums';
 import { joinAnd } from '@/lib/i18n/list';
 import { pageTitle } from '@/lib/i18n/page-title';
 
@@ -253,7 +258,9 @@ export default async function ExpensePoliciesPage({
                             !severityExceeds(s, definition.maxSeverity),
                         ).map((s) => (
                           <option key={s} value={s}>
-                            {s}
+                            {/* `SeverityBadge` in the same row says "Must be
+                                fixed"; this used to say `BLOCK`. */}
+                            {enumLabel(SEVERITY_COPY, s, prefs.locale)}
                           </option>
                         ))}
                       </select>
@@ -385,7 +392,7 @@ export default async function ExpensePoliciesPage({
             <select id="severity" name="severity" className={selectClass} defaultValue="WARNING">
               {SEVERITIES.map((s) => (
                 <option key={s} value={s}>
-                  {s}
+                  {enumLabel(SEVERITY_COPY, s, prefs.locale)}
                 </option>
               ))}
             </select>

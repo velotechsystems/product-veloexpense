@@ -11,7 +11,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { ErrorBanner } from '@/app/expenses/ui';
 import { listEmployees, listLiveInvites, revokeInviteFromForm } from './actions';
-import { enumLabel, EMPLOYEE_ROLE_COPY } from '@/lib/i18n/catalog/enums';
+import { enumLabel, EMPLOYEE_ROLE_COPY, EMPLOYEE_STATUS_COPY } from '@/lib/i18n/catalog/enums';
 import { readerPrefs } from '@/lib/i18n/request';
 import { EMPLOYEE_STATUSES, type EmployeeStatus } from '@/lib/employees/service';
 
@@ -176,9 +176,11 @@ export default async function EmployeeDirectoryPage({
             className="h-8 rounded-lg border border-input bg-transparent px-3 text-sm shadow-xs outline-none"
           >
             <option value="">Any</option>
+            {/* Catalogued, like the badge in the table beside it. See
+                `scripts/check-enum-options.mjs`. */}
             {EMPLOYEE_STATUSES.map((s) => (
               <option key={s} value={s}>
-                {s}
+                {enumLabel(EMPLOYEE_STATUS_COPY, s, locale)}
               </option>
             ))}
           </select>

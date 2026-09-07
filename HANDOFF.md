@@ -383,6 +383,91 @@ no upstream mistakes to be warned by.
   `page.content()` across every crawled page. This unblocks **VX4-10**, which lowers the ratchet's
   ceilings and could not be trusted while the ratchet could pass measuring nothing.
 
+#### UD-17 SHIPPED — the three boarded copy defects, and a guard the crawl cannot be
+
+**New:** `scripts/check-enum-options.mjs` · `test/i18n-policy-params.test.ts`. **Changed:**
+`lib/notifications/catalog.ts` · `lib/i18n/catalog/enums.ts` · `lib/i18n/catalog/errors.ts` ·
+`lib/policy/rules.ts` · `lib/policy/service.ts` · `app/expenses/page.tsx` ·
+`app/admin/employees/page.tsx` · `app/admin/expense-policies/page.tsx` ·
+`test/notification-catalog.test.ts` · `test/i18n-errors.test.ts` · `package.json` ·
+`.github/workflows/ci.yml`.
+
+Three defects boarded across VX4-10 and VX5-20, all of them copy a person reads, none of them
+visible to the pseudo-locale crawl.
+
+**1. A notification whose template cannot be resolved showed a reader `TASK_ASSIGNED` as its BODY.**
+`shippedBody` ended `|| eventType`, and the comment there defended it: an unmapped event renders
+"ugly and unmistakably a missing-copy bug rather than a blank row". **That half was right** — loud
+beats blank. What it missed is that the product had since acquired a STANDARD way to be loud, and
+this was not it. `missingCopyMarker` renders `{TASK_ASSIGNED}`, which is what `enumLabel` returns for
+an unknown member and `uiText` for an unknown key. A bare `TASK_ASSIGNED` is ambiguous — it could be
+deliberate shorthand. `{TASK_ASSIGNED}` cannot, and it is greppable. **VX4-7 part 3 made this exact
+call on this exact screen** for the row's sub-label; the body path was never updated, so one screen
+carried two conventions for the same failure — and the body is the half people read.
+
+**2. Four dropdowns rendered raw enum members beside catalogued labels for the same values.**
+`/expenses`' status filter said `RETURNED` while `StatusBadge` two inches away in the same table said
+"Returned for changes"; both severity selects on `/admin/expense-policies` said `BLOCK` where
+`SeverityBadge` said "Must be fixed"; `/admin/employees` said `DEACTIVATED`. `/admin/compliance` had
+been doing it correctly with `enumLabel` all along, so the product knew how.
+
+**These needed a gate of their own**, and the reason is structural: `e2e/pseudo-crawl.spec.ts` skips
+`SELECT` and `OPTION` deliberately, because counting timezone lists took `/preferences` and
+`/admin/locale` to 497 and 181 un-catalogued strings. That exclusion is right, and its cost is that
+**the ratchet cannot see a raw enum in a dropdown.** `scripts/check-enum-options.mjs` can.
+
+**That guard was WRONG TWICE before it was right, and both are recorded in it.** First version
+matched `ARRAY.map((v) =>` and looked forward for the option: it found **three of the four** and
+silently missed the one whose `.filter()` spans lines, because the optional `\([\s\S]*?\)` in the
+pattern stops at the first `)` — which is inside `severityExceeds(…)`. A regex cannot balance
+parentheses. **I only knew it had missed one because I had read the four files by hand first**, which
+is not a method that scales and is the exact situation a gate replaces. Second version took "the last
+SCREAMING_CASE token before the `.map(`" as the array and produced two FALSE positives, flagging
+`page.zones.map((zone) => …)` on both locale screens because the literal `UTC` sits in an
+`<option value="UTC">` a few lines above. It now starts from the option — an unambiguous single-line
+shape — and walks backwards with a real balanced-paren scan to the receiver's ROOT identifier. Four
+findings, no false positives.
+
+**3. Catalogued refusals were filled with English at the throw site.**
+`POLICY_PARAM_REQUIRED` is `'{rule} needs {field}.'`, and eight sites in `lib/policy/service.ts`
+passed `definition.label` and `spec.label` — English literals — so a French reader would get a French
+template with `Per-transaction limit` and `Limit` inside it. VX4-10 part 4 narrowed this to one source
+of truth resolved at `DEFAULT_LOCALE` and boarded the rest, because there was "no seam at which a
+reader's locale could be applied".
+
+**That seam is now `PARAM_CATALOGUES` in `errors.ts`** — a table saying which catalogue turns
+`{rule}`, `{field}` and `{maximum}` into words, resolved inside `renderUserMessage` where the locale
+IS known. The params carry KEYS. Keyed by param name rather than by message code, because `{rule}`
+means the same thing in all eight messages that use it and a per-code table would be eight chances to
+disagree. An unknown member becomes the marker rather than the raw key — a sentence containing
+`NO_SUCH_RULE` reads as content, one containing `{NO_SUCH_RULE}` cannot.
+
+**`ParamSpec.label` is gone too**, the same removal as `RuleDefinition.label` in part 4 and for the
+same reason: read only by `service.ts`, only to put into a catalogued sentence.
+
+**`RULE_PARAM_COPY` is keyed by the PAIR, and that is forced rather than chosen.** Both parameters in
+the product are named `thresholdMinor` and they are not called the same thing — "Limit" on a
+per-transaction cap, "Only above" on a receipt requirement. A catalogue keyed by parameter name would
+have to pick one and be wrong on the other screen. So there is no union to key a `Record` on and no
+free coverage from a type — but `RULE_DEFINITIONS` enumerates every pair as data, so
+`test/i18n-policy-params.test.ts` walks `RULE_KINDS × params` and refuses a pair with no entry, plus
+an orphan entry no rule declares, plus the two same-named params being given the same words. Coverage
+from the product's own enumeration, through a loop instead of a type.
+
+**Verified:** 1618 tests (81 files) · `npm run e2e` 165 passed · crawl 27/27 on the database the full
+suite had just left · every `check:` gate including the new `check:options` · tsc clean · eslint 0
+errors. **Five sabotages:** `|| eventType` restored → 2 tests; a raw enum back in a select → the new
+guard names it; the param resolution replaced by `String(value)` → 2 tests, including the marker one;
+a rule's parameter copy deleted → the coverage loop; the two same-named params given identical words →
+the assertion that exists to stop somebody "simplifying" the compound key away.
+
+**Two tests changed rather than added, and both were pinning the old behaviour deliberately** — so
+each carries why it moved: `shippedBody`'s fallback test asserted `'SOMETHING_NEW'`, and
+`i18n-errors`' placeholder sweep fed `'X'` to every param, which is no longer a usable fixture for the
+three that are now keys. The second failed with `'{X} needs {X}.'`, which is the marker working, and
+feeding real keys made the assertion **stronger** than it was: it now proves the lookup resolves
+rather than only that the template fills.
+
 #### VX5-20 part 1 SHIPPED — the seat count goes UP. THE LAST GA-GATE ITEM, HALF DONE.
 
 **New:** `lib/billing/seats.ts` · `app/api/internal/billing/seats/route.ts` ·

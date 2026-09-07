@@ -144,6 +144,39 @@ export const RULE_KIND_COPY: EnumCopy<RuleKind> = {
 };
 
 /**
+ * What a rule's PARAMETER is called, for the sentence a refusal makes.
+ *
+ * Keyed `<RuleKind>.<paramName>`, and the compound key is forced rather than
+ * chosen: both parameters in the product are named `thresholdMinor` and they are
+ * NOT called the same thing — it is "Limit" on a per-transaction cap and "Only
+ * above" on a receipt requirement, because those are different questions with the
+ * same storage. A catalogue keyed by the parameter name alone would have to pick
+ * one and be wrong on the other screen.
+ *
+ * So this is not an `EnumCopy<T>` — there is no union of `(kind, param)` pairs in
+ * the type system. Coverage still comes from the product's own enumeration rather
+ * than from a hand-kept list: `RULE_DEFINITIONS` names every pair, so
+ * `test/i18n-policy-params.test.ts` walks `RULE_KINDS × definition.params` and
+ * refuses a pair with no entry. Same guarantee, arrived at through a loop instead
+ * of through a type.
+ *
+ * WHY IT IS CATALOGUED AT ALL: these appear inside `POLICY_PARAM_REQUIRED` and
+ * friends, which are themselves catalogued sentences. `'{rule} needs {field}.'`
+ * rendered a French template with `Limit` inside it, because the param was filled
+ * with an English literal at the throw site. See `PARAM_CATALOGUES` in
+ * `errors.ts` for the half that resolves them.
+ */
+export const RULE_PARAM_COPY: Record<string, Copy> = {
+  'PER_TRANSACTION_LIMIT.thresholdMinor': { 'en-CA': 'Limit' },
+  'RECEIPT_REQUIRED.thresholdMinor': { 'en-CA': 'Only above' },
+};
+
+/** The key `RULE_PARAM_COPY` uses. One place, so no call site spells it. */
+export function ruleParamKey(kind: string, paramName: string): string {
+  return `${kind}.${paramName}`;
+}
+
+/**
  * What each rule DOES, in a sentence, for the admin choosing whether to enable it.
  *
  * Genuinely un-catalogued before part 4 — unlike the labels above, no catalogue

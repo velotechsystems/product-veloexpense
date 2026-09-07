@@ -37,7 +37,14 @@
  * exception's own text in a URL.
  */
 import { DEFAULT_LOCALE, localizedFrom, type Locale } from '../locales';
-import { type Copy, missingCopyMarker } from './enums';
+import {
+  enumLabel,
+  missingCopyMarker,
+  RULE_KIND_COPY,
+  RULE_PARAM_COPY,
+  SEVERITY_COPY,
+  type Copy,
+} from './enums';
 import { decodeUserMessage, type MessageParams } from '@/lib/errors/domain';
 
 export const USER_MESSAGE_CODES = [
@@ -1157,13 +1164,49 @@ export const ERROR_COPY: Record<UserMessageCode, Copy> = {
   },
 };
 
-function fill(template: string, params: MessageParams): string | null {
+/**
+ * ── PARAMS THAT ARE KEYS, NOT TEXT ─────────────────────────────────────────
+ *
+ * A refusal's `params` travel through a `?error=` URL, filled where the error is
+ * THROWN and rendered somewhere else entirely. So a param filled with a word is a
+ * word chosen without knowing who is going to read it — and
+ * `POLICY_PARAM_REQUIRED` ("{rule} needs {field}.") did exactly that: eight sites
+ * in `lib/policy/service.ts` passed English rule and field names into a
+ * catalogued sentence, so a French reader got a French template with
+ * `Per-transaction limit` and `Limit` inside it.
+ *
+ * The fix is that those params now carry the KEY — `PER_TRANSACTION_LIMIT`,
+ * `PER_TRANSACTION_LIMIT.thresholdMinor`, `BLOCK` — and this table says which
+ * catalogue turns each into words, HERE, where the reader's locale is known.
+ *
+ * Keyed by PARAM NAME rather than by message code, deliberately: `{rule}` means
+ * the same thing in all eight messages that use it, and a per-code table would
+ * be eight chances to disagree.
+ *
+ * A param not in this table is still filled verbatim, which is right — `{count}`
+ * and `{name}` are data.
+ */
+const PARAM_CATALOGUES: Record<string, Record<string, Copy>> = {
+  rule: RULE_KIND_COPY,
+  field: RULE_PARAM_COPY,
+  maximum: SEVERITY_COPY,
+};
+
+function fill(template: string, params: MessageParams, locale: Locale | string): string | null {
   let missing = false;
   const out = template.replace(/\{(\w+)\}/g, (_m, key: string) => {
     const value = params[key];
     if (value === undefined || value === null || String(value) === '') {
       missing = true;
       return '';
+    }
+    const catalogue = PARAM_CATALOGUES[key];
+    if (catalogue !== undefined) {
+      // `enumLabel` returns the missing-copy marker for a value the catalogue does
+      // not hold — loud, and the same shape as everywhere else. Not a silent
+      // fall-through to the raw key, which would put `PER_TRANSACTION_LIMIT` in a
+      // sentence and look almost right.
+      return enumLabel(catalogue, String(value), locale);
     }
     return String(value);
   });
@@ -1199,7 +1242,7 @@ export function renderUserMessage(value: string | null | undefined, locale: Loca
   for (const key of requires(code)) {
     if (params[key] === undefined) return generic(locale);
   }
-  return fill(template, params) ?? generic(locale);
+  return fill(template, params, locale) ?? generic(locale);
 }
 
 function generic(locale: Locale | string): string {
