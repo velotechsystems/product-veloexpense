@@ -18,7 +18,18 @@
  * better than a test that looks stronger than it is.
  */
 import { describe, it, expect } from 'vitest';
-import { UI_COPY, UI_KEYS, uiText, type UiKey } from '@/lib/i18n/catalog/ui';
+import {
+  UI_COPY,
+  UI_KEYS,
+  uiText,
+  UI_SENTENCES,
+  UI_SENTENCE_KEYS,
+  uiSentence,
+  uiPlural,
+  uiAround,
+  UiSentenceError,
+  type UiKey,
+} from '@/lib/i18n/catalog/ui';
 import { SUPPORTED_LOCALES, DEFAULT_LOCALE } from '@/lib/i18n/locales';
 
 describe('every entry resolves', () => {
@@ -99,5 +110,91 @@ describe('the keys are stable identifiers, not copy', () => {
     // `billing.title` and `billing.Title` both resolving, one of them dead.
     const normalised = UI_KEYS.map((k) => k.toLowerCase().replace(/[.\s]+$/, ''));
     expect(new Set(normalised).size).toBe(UI_KEYS.length);
+  });
+});
+
+/**
+ * VX4-10 part 2 — the parameterised half.
+ *
+ * `UI_COPY` above is checked for the ABSENCE of parameters. This map is the
+ * opposite and the two rules are one rule: a string with a `{hole}` in it must be
+ * in the map whose renderer fills holes, and a string without one must not be, so
+ * that neither map can quietly become the other.
+ */
+describe('the sentence catalogue', () => {
+  it('every entry resolves in every shipped locale', () => {
+    for (const key of UI_SENTENCE_KEYS) {
+      for (const locale of SUPPORTED_LOCALES) {
+        const raw = UI_SENTENCES[key] as Record<string, string>;
+        const text = raw[locale] ?? raw[DEFAULT_LOCALE];
+        expect(text, `${key} in ${locale}`).toBeTruthy();
+      }
+    }
+  });
+
+  it('every entry carries at least one parameter — otherwise it belongs in UI_COPY', () => {
+    // The inverse of the rule on `UI_COPY`, and the reason both can be trusted.
+    // Three entries failed this while part 2 was being written — a link's TEXT, an
+    // admin suffix — and all three moved rather than the rule bending.
+    for (const key of UI_SENTENCE_KEYS) {
+      for (const [locale, text] of Object.entries(UI_SENTENCES[key] as Record<string, string>)) {
+        expect(text, `${key} (${locale}) has no parameter`).toMatch(/\{[a-zA-Z_]\w*\}/);
+      }
+    }
+  });
+
+  it('a plural base has an entry for every category its locales ask for', () => {
+    // The real coverage question for plurals, and it cannot be asked of the map
+    // alone: `Intl.PluralRules` decides which key gets looked up at render time, so
+    // a missing category is a fallback nobody sees until that language ships.
+    const bases = new Set(
+      UI_SENTENCE_KEYS.filter((k) => /\.(one|two|few|many|other|zero)$/.test(k)).map((k) =>
+        k.slice(0, k.lastIndexOf('.')),
+      ),
+    );
+    expect(bases.size, 'no plural bases found — has the naming changed?').toBeGreaterThan(0);
+    for (const base of bases) {
+      for (const locale of SUPPORTED_LOCALES) {
+        for (const category of new Intl.PluralRules(locale).resolvedOptions().pluralCategories) {
+          expect(
+            UI_SENTENCE_KEYS,
+            `${base} has no .${category} for ${locale}`,
+          ).toContain(`${base}.${category}`);
+        }
+      }
+    }
+  });
+
+  it('fills its parameters, and picks the right plural form', () => {
+    expect(uiPlural('expenses.count.own', 1)).toBe('1 report submitted by you');
+    expect(uiPlural('expenses.count.own', 26)).toBe('26 reports submitted by you');
+    expect(uiPlural('expenses.count.own', 0)).toBe('0 reports submitted by you');
+    expect(uiSentence('expenses.page.of', { page: '2', pages: '7' })).toBe('Page 2 of 7');
+  });
+
+  it('REFUSES a missing parameter rather than rendering a hole', () => {
+    // `message-data.ts`'s argument, applied here: "undefined is $700.00, over the
+    // undefined limit" is a sentence, renders fine, and tells a reader nothing
+    // while looking like it worked. A `{page}` on the screen should be a crash in
+    // a test, not a shrug in production.
+    expect(() => uiSentence('expenses.page.of', { page: '2' })).toThrow(UiSentenceError);
+    expect(() => uiSentence('expenses.page.of', { page: '2' })).toThrow(/needs \{pages\}/);
+  });
+
+  it('splits a sentence at its {link}, and refuses one that has none', () => {
+    const [before, after] = uiAround('approvals.footer');
+    expect(before).toContain('Going away?');
+    expect(after).toContain('you keep your queue');
+    // Neither half may contain the marker, or JSX would render it verbatim.
+    expect(before + after).not.toContain('{link}');
+    expect(() => uiAround('expenses.page.of', { page: '1', pages: '1' })).toThrow(UiSentenceError);
+  });
+
+  it('has no key in both maps', () => {
+    // Two maps, two renderers, one namespace as far as a translator is concerned.
+    // A key in both would resolve differently depending on which function a call
+    // site happened to use.
+    const overlap = UI_SENTENCE_KEYS.filter((k) => (UI_KEYS as string[]).includes(k));
+    expect(overlap).toEqual([]);
   });
 });

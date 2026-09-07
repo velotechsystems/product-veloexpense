@@ -15,6 +15,7 @@ import { listReports, getWorkbenchOptions } from './actions';
 import { EmptyRow, ErrorBanner, StatusBadge, selectClass } from './ui';
 import { formatInstant } from '@/lib/i18n/format';
 import { readerPrefs } from '@/lib/i18n/request';
+import { uiText, uiPlural, uiSentence, uiAround, type UiKey } from '@/lib/i18n/catalog/ui';
 
 export const dynamic = 'force-dynamic';
 
@@ -36,6 +37,7 @@ export default async function ExpenseReportsPage({
   }>;
 }) {
   const prefs = await readerPrefs();
+  const t = (key: UiKey) => uiText(key, prefs.locale);
   const sp = await searchParams;
   const page = Math.max(Number(sp.page ?? '1') || 1, 1);
   const { actor } = await getWorkbenchOptions();
@@ -80,21 +82,26 @@ export default async function ExpenseReportsPage({
             /expenses does not move (VX4-10 owns cataloguing this page's chrome).
           */}
           <h1 className="text-2xl font-semibold tracking-tight">
-            {orgWide ? 'All expense reports' : 'Your expense reports'}
+            {t(orgWide ? 'expenses.title.org' : 'expenses.title.own')}
           </h1>
+          {/* VX4-10 part 2. Was `{total} {total === 1 ? 'report' : 'reports'}`
+              concatenated with a scope clause — three JSX children assembling one
+              English sentence. Catalogued as whole sentences per plural category,
+              because a language with three plural forms cannot be served by a
+              ternary and a language that puts the scope first cannot be served by
+              concatenation. */}
           <p className="text-sm text-muted-foreground">
-            {total} {total === 1 ? 'report' : 'reports'}
-            {orgWide ? ' across your organization' : ' submitted by you'}
+            {uiPlural(orgWide ? 'expenses.count.org' : 'expenses.count.own', total, {}, prefs.locale)}
           </p>
         </div>
         <div className="flex items-center gap-3">
           {/* Still no app-wide navigation (HANDOFF §7), so the inbox is linked
               from the one page every user already visits. */}
           <Link href="/approvals" className="text-sm underline underline-offset-4">
-            Approvals
+            {t('nav.approvals')}
           </Link>
           <Button asChild>
-            <Link href="/expenses/new">New report</Link>
+            <Link href="/expenses/new">{t('expenses.new')}</Link>
           </Button>
         </div>
       </header>
@@ -104,16 +111,21 @@ export default async function ExpenseReportsPage({
       <form className="flex flex-wrap items-end gap-3" action="/expenses">
         <div className="flex flex-col gap-1.5">
           <label className="text-sm font-medium" htmlFor="q">
-            Search
+            {t('expenses.filter.search')}
           </label>
-          <Input id="q" name="q" placeholder="Title or EXP number" defaultValue={sp.q ?? ''} />
+          <Input
+            id="q"
+            name="q"
+            placeholder={t('expenses.filter.search.placeholder')}
+            defaultValue={sp.q ?? ''}
+          />
         </div>
         <div className="flex flex-col gap-1.5">
           <label className="text-sm font-medium" htmlFor="status">
-            Status
+            {t('expenses.filter.status')}
           </label>
           <select id="status" name="status" defaultValue={sp.status ?? ''} className={selectClass}>
-            <option value="">Any</option>
+            <option value="">{t('expenses.filter.status.any')}</option>
             {REPORT_STATUSES.map((s) => (
               <option key={s} value={s}>
                 {s}
@@ -124,11 +136,11 @@ export default async function ExpenseReportsPage({
         {actor.role === 'ADMIN' ? (
           <label className="flex items-center gap-2 pb-2 text-sm">
             <input type="checkbox" name="scope" value="all" defaultChecked={orgWide} />
-            Everyone&rsquo;s reports
+            {t('expenses.filter.everyone')}
           </label>
         ) : null}
         <Button type="submit" variant="outline">
-          Apply
+          {t('expenses.filter.apply')}
         </Button>
       </form>
 
@@ -136,19 +148,36 @@ export default async function ExpenseReportsPage({
         <table className="w-full min-w-[760px] text-left text-sm">
           <thead className="bg-muted/50 text-xs uppercase tracking-wide text-muted-foreground">
             <tr>
-              <th className="px-4 py-3 font-medium">Report</th>
-              {orgWide ? <th className="px-4 py-3 font-medium">Submitter</th> : null}
-              <th className="px-4 py-3 font-medium">Status</th>
-              <th className="px-4 py-3 font-medium">Expenses</th>
-              <th className="px-4 py-3 font-medium">Receipts</th>
-              <th className="px-4 py-3 font-medium">Created</th>
-              <th className="px-4 py-3 text-right font-medium">Total</th>
+              <th className="px-4 py-3 font-medium">{t('expenses.column.report')}</th>
+              {orgWide ? (
+                <th className="px-4 py-3 font-medium">{t('expenses.column.submitter')}</th>
+              ) : null}
+              <th className="px-4 py-3 font-medium">{t('expenses.column.status')}</th>
+              <th className="px-4 py-3 font-medium">{t('expenses.column.expenses')}</th>
+              <th className="px-4 py-3 font-medium">{t('expenses.column.receipts')}</th>
+              <th className="px-4 py-3 font-medium">{t('expenses.column.created')}</th>
+              <th className="px-4 py-3 text-right font-medium">{t('expenses.column.total')}</th>
             </tr>
           </thead>
           <tbody>
             {reports.length === 0 ? (
               <EmptyRow colSpan={orgWide ? 7 : 6}>
-                No reports yet. <Link className="underline underline-offset-4" href="/expenses/new">Start one</Link>.
+                {/* One catalogued sentence with a `{link}` in it, split by
+                    `uiAround`, rather than two entries called `…before` and
+                    `…after`. A translator can move the link; with two fragments
+                    they cannot, and clause order is not English's to fix. */}
+                {(() => {
+                  const [before, after] = uiAround('expenses.empty.start', {}, prefs.locale);
+                  return (
+                    <>
+                      {before}
+                      <Link className="underline underline-offset-4" href="/expenses/new">
+                        {t('expenses.empty.start.link')}
+                      </Link>
+                      {after}
+                    </>
+                  );
+                })()}
               </EmptyRow>
             ) : (
               reports.map((r) => (
@@ -185,15 +214,19 @@ export default async function ExpenseReportsPage({
         <nav className="flex items-center gap-3 text-sm">
           {page > 1 ? (
             <Link className="underline underline-offset-4" href={pageHref(page - 1)}>
-              Previous
+              {t('pager.previous')}
             </Link>
           ) : null}
           <span className="text-muted-foreground">
-            Page {page} of {pageCount}
+            {uiSentence(
+              'expenses.page.of',
+              { page: String(page), pages: String(pageCount) },
+              prefs.locale,
+            )}
           </span>
           {page < pageCount ? (
             <Link className="underline underline-offset-4" href={pageHref(page + 1)}>
-              Next
+              {t('pager.next')}
             </Link>
           ) : null}
         </nav>

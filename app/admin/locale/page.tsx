@@ -26,6 +26,8 @@ import { ErrorBanner, cardClass, fieldClass, labelClass, selectClass } from '@/a
 import { Button } from '@/components/ui/button';
 import { localeName } from '@/lib/i18n/locales';
 import { getLocalePage, saveLocaleFromForm } from './actions';
+import { uiText, uiSentence, type UiKey } from '@/lib/i18n/catalog/ui';
+import { readerPrefs } from '@/lib/i18n/request';
 
 export default async function AdminLocalePage({
   searchParams,
@@ -34,28 +36,27 @@ export default async function AdminLocalePage({
 }) {
   const { error, changed } = await searchParams;
   const page = await getLocalePage();
+  const prefs = await readerPrefs();
+  const t = (key: UiKey) => uiText(key, prefs.locale);
 
   return (
     <main className="mx-auto flex w-full max-w-3xl flex-col gap-6 p-6">
       <header className="flex flex-col gap-1">
-        <h1 className="text-xl font-semibold">Language and time</h1>
-        <p className="text-sm text-muted-foreground">
-          How dates, times and amounts are written for everyone in this organization. An employee
-          who sets their own preference keeps it; everyone else follows what you choose here.
-        </p>
+        <h1 className="text-xl font-semibold">{t('locale.title')}</h1>
+        <p className="text-sm text-muted-foreground">{t('locale.lede')}</p>
       </header>
 
       <ErrorBanner message={error} />
       {changed ? (
         <p className="rounded-lg border border-primary/40 bg-primary/5 px-3 py-2 text-sm text-primary">
-          Saved.
+          {t('preferences.saved')}
         </p>
       ) : null}
 
       <form action={saveLocaleFromForm} className={`${cardClass} flex flex-col gap-5 p-5`}>
         <div className={fieldClass}>
           <label className={labelClass} htmlFor="locale">
-            Language and formatting
+            {t('locale.language.label')}
           </label>
           <select
             id="locale"
@@ -74,7 +75,7 @@ export default async function AdminLocalePage({
 
         <div className={fieldClass}>
           <label className={labelClass} htmlFor="timeZone">
-            Time zone
+            {t('locale.timezone.label')}
           </label>
           <select
             id="timeZone"
@@ -95,18 +96,18 @@ export default async function AdminLocalePage({
               </option>
             ))}
           </select>
-          <p className="text-xs text-muted-foreground">
-            Timestamps recorded by the product — when a report was submitted, approved or paid —
-            are shown in this zone. Dates people type, like the date on an expense, are calendar
-            dates and do not move.
-          </p>
+          <p className="text-xs text-muted-foreground">{t('locale.timezone.help')}</p>
         </div>
 
         <div className="flex flex-col gap-3 border-t border-border pt-4">
           <div className="flex items-baseline justify-between gap-3">
-            <h2 className="text-sm font-medium">How each option reads</h2>
+            <h2 className="text-sm font-medium">{t('locale.samples.title')}</h2>
             <p className="text-xs text-muted-foreground" data-testid="sample-caption">
-              4 March 2026, 02:30 UTC, shown in {page.timeZoneInUse}
+              {uiSentence(
+                'locale.sample.shown.in',
+                { zone: page.timeZoneInUse },
+                prefs.locale,
+              )}
             </p>
           </div>
           {/* A table, not three paragraphs: the question an admin has here is
@@ -116,9 +117,9 @@ export default async function AdminLocalePage({
             <table className="w-full text-sm" data-testid="locale-sample">
               <thead>
                 <tr className="border-b border-border text-left text-xs uppercase tracking-wide text-muted-foreground">
-                  <th className="py-1.5 pr-4 font-medium">Language</th>
-                  <th className="py-1.5 pr-4 font-medium">Date and time</th>
-                  <th className="py-1.5 font-medium">Amounts</th>
+                  <th className="py-1.5 pr-4 font-medium">{t('locale.column.language')}</th>
+                  <th className="py-1.5 pr-4 font-medium">{t('locale.column.datetime')}</th>
+                  <th className="py-1.5 font-medium">{t('locale.column.amounts')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -128,7 +129,7 @@ export default async function AdminLocalePage({
                       <span className={s.current ? 'font-medium' : ''}>{s.name}</span>
                       {s.current ? (
                         <span className="ml-2 rounded-full border border-primary/40 px-2 py-0.5 text-xs text-primary">
-                          in use
+                          {t('locale.in.use')}
                         </span>
                       ) : null}
                     </td>
@@ -140,10 +141,8 @@ export default async function AdminLocalePage({
             </table>
           </div>
           <div className="flex items-center justify-between gap-3">
-            <p className="text-xs text-muted-foreground">
-              Changes are recorded in the audit trail.
-            </p>
-            <Button type="submit">Save</Button>
+            <p className="text-xs text-muted-foreground">{t('locale.audited')}</p>
+            <Button type="submit">{t('locale.save')}</Button>
           </div>
         </div>
       </form>

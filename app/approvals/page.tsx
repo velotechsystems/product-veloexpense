@@ -17,6 +17,7 @@ import { EmptyRow, ErrorBanner } from '@/app/expenses/ui';
 import { formatInstant } from '@/lib/i18n/format';
 import { enumLabel, INBOX_ROUTE_COPY } from '@/lib/i18n/catalog/enums';
 import { readerPrefs } from '@/lib/i18n/request';
+import { uiText, uiPlural, uiSentence, uiAround, type UiKey } from '@/lib/i18n/catalog/ui';
 
 export const dynamic = 'force-dynamic';
 
@@ -39,6 +40,11 @@ export default async function ApprovalsPage({
   searchParams: Promise<{ error?: string }>;
 }) {
   const prefs = await readerPrefs();
+  // `t` is the translator here, so the row variable below is `task`. It used to
+  // be `t`, which would have shadowed this the moment a catalogued string was
+  // needed inside a row — a silent one, since `t.step` and `t('key')` are both
+  // valid on their own types.
+  const t = (key: UiKey) => uiText(key, prefs.locale);
   const { error } = await searchParams;
   const { tasks, actor } = await getInbox();
 
@@ -46,27 +52,32 @@ export default async function ApprovalsPage({
     <div className="mx-auto flex w-full max-w-5xl flex-col gap-6 p-6">
       <header className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Approvals</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">{t('approvals.title')}</h1>
           <p className="text-sm text-muted-foreground">
             {tasks.length === 0
-              ? 'Nothing waiting on you'
-              : `${tasks.length} waiting on you${actor.role === 'ADMIN' ? ' — other people’s approvals are on their reports, not here' : ''}`}
+              ? t('approvals.none.waiting')
+              : [
+                  uiPlural('approvals.count.waiting', tasks.length, {}, prefs.locale),
+                  actor.role === 'ADMIN' ? t('approvals.count.admin.suffix') : null,
+                ]
+                  .filter(Boolean)
+                  .join(' ')}
           </p>
         </div>
         <div className="flex items-center gap-3">
           {/* Reachable from the inbox because that is where somebody realises
               they are about to be away. No admin nav anywhere yet — HANDOFF §7. */}
           <Link href="/notifications" className="text-sm underline underline-offset-4">
-            Notifications
+            {t('nav.notifications')}
           </Link>
           <Link
             href="/approvals/delegations"
             className="text-sm underline underline-offset-4"
           >
-            Delegations
+            {t('nav.delegations')}
           </Link>
           <Link href="/expenses" className="text-sm underline underline-offset-4">
-            My expenses
+            {t('nav.my.expenses')}
           </Link>
         </div>
       </header>
@@ -77,61 +88,68 @@ export default async function ApprovalsPage({
         <table className="w-full min-w-[840px] text-left text-sm">
           <thead className="bg-muted/50 text-xs uppercase tracking-wide text-muted-foreground">
             <tr>
-              <th className="px-3 py-2 font-medium">Report</th>
-              <th className="px-3 py-2 font-medium">Submitted by</th>
-              <th className="px-3 py-2 font-medium">Total</th>
-              <th className="px-3 py-2 font-medium">Step</th>
-              <th className="px-3 py-2 font-medium">Why you</th>
-              <th className="px-3 py-2 font-medium">Waiting since</th>
+              <th className="px-3 py-2 font-medium">{t('approvals.column.report')}</th>
+              <th className="px-3 py-2 font-medium">{t('approvals.column.submitted.by')}</th>
+              <th className="px-3 py-2 font-medium">{t('approvals.column.total')}</th>
+              <th className="px-3 py-2 font-medium">{t('approvals.column.step')}</th>
+              <th className="px-3 py-2 font-medium">{t('approvals.column.why')}</th>
+              <th className="px-3 py-2 font-medium">{t('approvals.column.waiting.since')}</th>
             </tr>
           </thead>
           <tbody>
             {tasks.length === 0 ? (
-              <EmptyRow colSpan={6}>
-                Nothing to approve. Reports appear here when somebody submits one that routes to
-                you.
-              </EmptyRow>
+              <EmptyRow colSpan={6}>{t('approvals.empty')}</EmptyRow>
             ) : (
-              tasks.map((t) => (
-                <tr key={t.taskId} className="border-t border-border">
+              tasks.map((task) => (
+                <tr key={task.taskId} className="border-t border-border">
                   <td className="px-3 py-2">
                     <Link
-                      href={`/expenses/${t.reportId}`}
+                      href={`/expenses/${task.reportId}`}
                       className="font-medium underline underline-offset-4"
                     >
-                      {t.reportTitle}
+                      {task.reportTitle}
                     </Link>
-                    <p className="text-xs text-muted-foreground">{t.reportNumber ?? '—'}</p>
+                    <p className="text-xs text-muted-foreground">{task.reportNumber ?? '—'}</p>
                   </td>
-                  <td className="px-3 py-2">{t.submitterName}</td>
+                  <td className="px-3 py-2">{task.submitterName}</td>
                   <td className="px-3 py-2 tabular-nums">
-                    {formatMinor(t.totalMinor, t.currencyCode, undefined, prefs.locale)}
+                    {formatMinor(task.totalMinor, task.currencyCode, undefined, prefs.locale)}
                   </td>
                   <td className="px-3 py-2">
-                    {t.step} of {t.totalSteps}
-                    {t.rungName ? (
-                      <p className="text-xs text-muted-foreground">{t.rungName}</p>
+                    {uiSentence(
+                      'approvals.step.of',
+                      { step: String(task.step), steps: String(task.totalSteps) },
+                      prefs.locale,
+                    )}
+                    {task.rungName ? (
+                      <p className="text-xs text-muted-foreground">{task.rungName}</p>
                     ) : null}
                   </td>
                   <td className="px-3 py-2">
                     <span className="rounded bg-muted px-2 py-0.5 text-xs">
-                      {enumLabel(INBOX_ROUTE_COPY, t.route, prefs.locale)}
+                      {enumLabel(INBOX_ROUTE_COPY, task.route, prefs.locale)}
                     </span>
-                    {t.route === 'DELEGATED' && t.coveringFor ? (
-                      <p className="text-xs text-muted-foreground">for {t.coveringFor}</p>
+                    {task.route === 'DELEGATED' && task.coveringFor ? (
+                      <p className="text-xs text-muted-foreground">
+                        {uiSentence('approvals.covering.for', { name: task.coveringFor }, prefs.locale)}
+                      </p>
                     ) : null}
-                    {t.escalationLevel > 0 ? (
+                    {task.escalationLevel > 0 ? (
                       // Non-zero means the ladder was not literally met — the
                       // resolver walked past somebody absent, or fell short of
                       // the level the rung asked for. An approver seeing a report
                       // they did not expect deserves to know why.
                       <p className="text-xs text-muted-foreground">
-                        routed {t.escalationLevel} step{t.escalationLevel === 1 ? '' : 's'} from the
-                        rung
+                        {uiPlural(
+                          'approvals.escalated',
+                          task.escalationLevel,
+                          {},
+                          prefs.locale,
+                        )}
                       </p>
                     ) : null}
                   </td>
-                  <td className="px-3 py-2 text-muted-foreground">{formatInstant(t.submittedAt, prefs)}</td>
+                  <td className="px-3 py-2 text-muted-foreground">{formatInstant(task.submittedAt, prefs)}</td>
                 </tr>
               ))
             )}
@@ -140,12 +158,18 @@ export default async function ApprovalsPage({
       </div>
 
       <p className="text-xs text-muted-foreground">
-        Open a report to approve, return or reject it — the decision lives with the thing you are
-        deciding on. Going away?{' '}
-        <Link href="/approvals/delegations" className="underline underline-offset-4">
-          Arrange cover
-        </Link>{' '}
-        — you keep your queue, your stand-in gains the ability to decide.
+        {(() => {
+          const [before, after] = uiAround('approvals.footer', {}, prefs.locale);
+          return (
+            <>
+              {before}
+              <Link href="/approvals/delegations" className="underline underline-offset-4">
+                {t('approvals.footer.link')}
+              </Link>
+              {after}
+            </>
+          );
+        })()}
       </p>
     </div>
   );
