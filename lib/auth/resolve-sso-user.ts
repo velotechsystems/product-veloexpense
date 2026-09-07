@@ -66,6 +66,7 @@
 import { withoutOrg, withOrg } from '@/lib/tenant/context';
 import type { ResolvedUser } from '@/src/auth-kit';
 import { acceptForVerifiedEmail } from '@/lib/invites/service';
+import { pushSeatCountInBackground } from '@/lib/billing/seats';
 import { append as auditAppend } from '@/lib/audit/service';
 
 /**
@@ -109,6 +110,25 @@ export async function resolveSsoUser(orgSlug: string, email: string): Promise<Re
   // is refused rather than quietly signed into Acme.
   const accepted = await acceptForVerifiedEmail(orgId, email);
   if (accepted === null) return null;
+
+  /*
+   * VX5-20. A NEW MEMBER IS A NEW SEAT, and this is the only place in the product
+   * where one appears: `app_user` is inserted at invitation ACCEPTANCE, not from
+   * an admin form (VX5-2 removed that path), so a seat is created here and
+   * nowhere else.
+   *
+   * `ACCEPTED` only. `ALREADY_A_MEMBER` means nothing was consumed and nothing
+   * happened — pushing there would send an unchanged count on every sign-in of
+   * every existing employee, which is a lot of requests to say nothing.
+   *
+   * Fire-and-forget, in a path where that is not a shortcut but the rule: this
+   * runs inside NextAuth's `signIn` callback, and the note under
+   * `recordDeniedSignIn` below says why anything here must not throw — "a throw
+   * becomes an opaque failure page". Nobody should fail to sign in because the
+   * platform is slow, and nobody should wait on it either.
+   */
+  if (accepted.kind === 'ACCEPTED') pushSeatCountInBackground(accepted.organizationId);
+
   return {
     userId: accepted.userId,
     orgId: accepted.organizationId,
