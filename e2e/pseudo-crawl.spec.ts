@@ -97,20 +97,27 @@ const CHROME_CEILING: Record<string, number> = {
   // So this is a floor of `5 × rows`, and the fixture is what fixes `rows` at two
   // no matter what ran first. Change the fixture's row count and change this.
   '/approvals': 10,
-  // STILL DATA-DEPENDENT, stated rather than left to be discovered. This page
-  // lists notification rows and the count moves with them: 30 at the moment,
-  // against a ceiling measured at 42 on a fuller database. The headroom is what
-  // keeps it green, which is exactly the weakness `/expenses` just demonstrated —
-  // it is here because no filter on this screen produces an empty list, and it is
-  // worth a ticket rather than a clever selector. Any page added here with rows
-  // needs a RATCHET_PATH or the same caveat.
-  // LEFT AT 42 THOUGH IT CURRENTLY READS 10, and that is not laziness. This page's
-  // count moves with how many notifications exist, and 42 was measured on a fuller
-  // database — the full Playwright suite creates them and runs before this. VX4-10
-  // did not touch this screen, so lowering the ceiling here would be claiming
-  // credit for an empty table and would go red the moment the suite ahead of it
-  // did its job. It comes down when the screen is catalogued, in a later part.
-  '/notifications': 42,
+  // VX4-10 part 3 catalogued this screen: 30 → 3, and the 42 it replaces was
+  // never a measurement of anything. It was taken on a fuller database and passed
+  // on the HEADROOM between itself and whatever a given run happened to produce —
+  // the note that used to sit here said as much ("STILL DATA-DEPENDENT … the
+  // headroom is what keeps it green") and asked for a ticket rather than a clever
+  // selector. This is that ticket.
+  //
+  // No filter empties this screen. `?unread=1` narrows the list and never empties
+  // it, and pointing the ratchet at the unread-only view would leave the read-row
+  // and everything-empty copy unmeasured — trading one blind spot for two. So it
+  // is `e2e/crawl-fixture.ts` that fixes the row count, exactly as for
+  // `/approvals`.
+  //
+  // The 3 is ONE STRING PER ROW: the `Intl` instant in the When column, at
+  // `NOTIFICATION_COUNT` rows. Everything else on the screen is catalogued — the
+  // chrome by part 3, and the row bodies and their two sub-labels long before it,
+  // by `notification-templates` and by `EVENT_TYPE_COPY` /
+  // `NOTIFICATION_WORDING_COPY` in `enums.ts`.
+  //
+  // So: `1 × NOTIFICATION_COUNT`. Change the fixture's count and change this.
+  '/notifications': 3,
   // VX4-10 part 1 catalogued this screen: 10 → 1. The ONE that remains is
   // `Mar 4, 2026, 2:30 a.m.` — the formatting sample the page exists to show, and
   // `Intl` output rather than copy. No catalogue will ever contain it.
@@ -124,10 +131,23 @@ const CHROME_CEILING: Record<string, number> = {
   //
   // Any page that shows a formatted date has the same irreducible floor.
   '/preferences': 1,
-  // Same as `/notifications` and for the same reason: reads 29 on this database
-  // and 46 was measured on a fuller one. Untouched by part 1; comes down when it
-  // is catalogued.
-  '/admin/expense-policies': 46,
+  // VX4-10 part 4 catalogued this screen: 46 → ZERO, and it is the only page in
+  // this list that reaches zero. Worth saying why, because "0" invites the same
+  // suspicion the other ceilings have earned.
+  //
+  // A policy ROW contributes no un-catalogued text node at all. Its rule name and
+  // description now come from `RULE_KIND_COPY` / `RULE_DESCRIPTION_COPY`; its
+  // severity, category and threshold currency are `<select>` contents, which
+  // `visibleStrings` skips by design; its threshold and dates are input VALUES,
+  // not text; and Save/Delete are catalogued. So unlike `/approvals` (5 × rows)
+  // and `/notifications` (1 × rows), this screen's count does not move with its
+  // data, and 0 is a property of the page rather than of the database it was
+  // measured against.
+  //
+  // That also means this is the one ceiling here with no per-row term to keep in
+  // step with a fixture. If it ever reads 1, something was added — which is what a
+  // ratchet is for.
+  '/admin/expense-policies': 0,
   // VX4-10 part 2: 19 → 5, and the five are the SAMPLES this screen exists to
   // show — `localeName()` output for two locales, their formatted instants, and a
   // formatted amount. Cataloguing them would defeat the screen: IL-1 is that

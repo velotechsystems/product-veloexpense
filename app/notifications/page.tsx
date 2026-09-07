@@ -31,6 +31,7 @@ import { Button } from '@/components/ui/button';
 import { EmptyRow, ErrorBanner } from '@/app/expenses/ui';
 import { formatInstant } from '@/lib/i18n/format';
 import { readerPrefs } from '@/lib/i18n/request';
+import { uiText, uiPlural, type UiKey } from '@/lib/i18n/catalog/ui';
 import { getInboxPage, markAllReadFromForm, markReadFromForm } from './actions';
 
 import { pageTitle } from '@/lib/i18n/page-title';
@@ -67,6 +68,7 @@ export default async function NotificationsPage({
   searchParams: Promise<{ error?: string; unread?: string }>;
 }) {
   const prefs = await readerPrefs();
+  const t = (key: UiKey) => uiText(key, prefs.locale);
   const { error, unread } = await searchParams;
   const unreadOnly = unread === '1';
   const { rows, unread: unreadTotal } = await getInboxPage(unreadOnly);
@@ -75,11 +77,11 @@ export default async function NotificationsPage({
     <div className="mx-auto flex w-full max-w-4xl flex-col gap-6 p-6">
       <header className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Notifications</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">{t('notifications.title')}</h1>
           <p className="text-sm text-muted-foreground">
             {unreadTotal === 0
-              ? 'Nothing unread'
-              : `${unreadTotal} unread`}
+              ? t('notifications.none.unread')
+              : uiPlural('notifications.count.unread', unreadTotal, {}, prefs.locale)}
           </p>
         </div>
         <div className="flex items-center gap-3">
@@ -87,18 +89,18 @@ export default async function NotificationsPage({
               surfaces cross-link each other. Not a substitute for a real nav
               with an unread badge on it — see HANDOFF §7. */}
           <Link href="/approvals" className="text-sm underline underline-offset-4">
-            Approvals
+            {t('nav.approvals')}
           </Link>
           <Link
             href="/notifications/preferences"
             className="text-sm underline underline-offset-4"
           >
-            Preferences
+            {t('nav.preferences')}
           </Link>
           {unreadTotal > 0 ? (
             <form action={markAllReadFromForm}>
               <Button type="submit" variant="outline">
-                Mark all read
+                {t('notifications.mark.all.read')}
               </Button>
             </form>
           ) : null}
@@ -112,13 +114,13 @@ export default async function NotificationsPage({
           href="/notifications"
           className={unreadOnly ? 'text-muted-foreground underline underline-offset-4' : 'font-medium'}
         >
-          Everything
+          {t('notifications.filter.all')}
         </Link>
         <Link
           href="/notifications?unread=1"
           className={unreadOnly ? 'font-medium' : 'text-muted-foreground underline underline-offset-4'}
         >
-          Unread only
+          {t('notifications.filter.unread')}
         </Link>
       </div>
 
@@ -126,8 +128,8 @@ export default async function NotificationsPage({
         <table className="w-full min-w-[720px] text-left text-sm">
           <thead className="bg-muted/50 text-xs uppercase tracking-wide text-muted-foreground">
             <tr>
-              <th className="px-3 py-2 font-medium">What happened</th>
-              <th className="px-3 py-2 font-medium">When</th>
+              <th className="px-3 py-2 font-medium">{t('notifications.column.what')}</th>
+              <th className="px-3 py-2 font-medium">{t('notifications.column.when')}</th>
               <th className="px-3 py-2" />
             </tr>
           </thead>
@@ -135,8 +137,8 @@ export default async function NotificationsPage({
             {rows.length === 0 ? (
               <EmptyRow colSpan={3}>
                 {unreadOnly
-                  ? 'Nothing unread.'
-                  : 'Nothing yet. Submitted reports, approvals and returns land here.'}
+                  ? t('notifications.empty.unread')
+                  : t('notifications.empty.all')}
               </EmptyRow>
             ) : (
               rows.map((row) => {
@@ -186,7 +188,7 @@ export default async function NotificationsPage({
                           size="sm"
                           variant="outline"
                         >
-                          Mark read
+                          {t('notifications.mark.read')}
                         </Button>
                       ) : null}
                     </td>
@@ -212,10 +214,7 @@ export default async function NotificationsPage({
           </form>
         ))}
 
-      <p className="text-xs text-muted-foreground">
-        Open a report to act on it — a notification says what happened, the report is where you do
-        something about it.
-      </p>
+      <p className="text-xs text-muted-foreground">{t('notifications.footer')}</p>
     </div>
   );
 }

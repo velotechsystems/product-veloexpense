@@ -373,6 +373,134 @@ async function messageCodesFor({ label, catalogueFile, arrayName, rulesFile }) {
 }
 
 /** Files exempt from the whole scan. */
+/*
+ * ── A CATALOGUE NOBODY READS, AND THE DEFECT IT HID ────────────────────────
+ *
+ * VX4-10 part 4. `RULE_KIND_COPY` was declared in VX4-7 part 2a with complete
+ * coverage of `RuleKind` and a passing coverage test — and had exactly two
+ * references in the whole tree, both inside that test. Nothing in `lib/` or `app/`
+ * ever asked it anything.
+ *
+ * Meanwhile `lib/policy/rules.ts` carried a `label` on each rule definition: a
+ * second list of the same five names, which is what the screen and eight refusal
+ * messages actually used. The two drifted on two of five members and no reader
+ * ever saw the catalogue's wording, so the drift shipped invisibly.
+ *
+ * A COVERAGE TEST CANNOT CATCH THIS. It proves a catalogue covers its union; it
+ * has no way to notice that the catalogue is dead, and a dead catalogue is exactly
+ * where a duplicate hides. So this checks the other direction: every `*_COPY`
+ * exported from `enums.ts` must be read from somewhere that is not a test.
+ *
+ * WHAT IT DELIBERATELY DOES NOT DO: judge whether the call site is the RIGHT one.
+ * A catalogue read once, in the wrong place, passes. That is a code-review
+ * question. This gate answers the narrower one that was actually load-bearing —
+ * is anybody asking? — because that is the question whose answer was "no" for
+ * two releases.
+ */
+/*
+ * ── A CONNECTING WORD SPELLED INTO A `join` ────────────────────────────────
+ *
+ * VX4-10 part 4. `app/admin/expense-policies/page.tsx` built a phrase with
+ * `.join(' and ')`, which puts an English conjunction inside a sentence a
+ * translator is otherwise free to write. `lib/i18n/list.ts` replaced it with
+ * `Intl.ListFormat`.
+ *
+ * THIS GATE EXISTS BECAUSE THE SABOTAGE CAME BACK GREEN. Reverting that call to
+ * `.join(' and ')` left the pseudo-locale crawl at 0 un-catalogued for the page,
+ * and the reason is structural rather than a bug: `unbracketed()` drops any TEXT
+ * NODE containing a marker, and the join happens inside a catalogued sentence's
+ * parameter hole — so the rendered node is `⟦Only ⟦A⟧ and ⟦B⟧ can be …⟧`, one
+ * node, marker present, filtered. **Any hardcoded word inside a catalogued
+ * sentence is invisible to the crawl.** A static check is the only thing that can
+ * see this one.
+ *
+ * WHAT IT MATCHES, after three rounds of false positives on its first run:
+ *
+ *   · a `.join()` whose separator contains a LOWER-CASE letter and whitespace.
+ *     `join('')`, `join(', ')`, `join('/')` are punctuation and left alone.
+ *   · NOT inside a comment. Its own documentation, and the note at the call site
+ *     it fixed, both matched on the first run — four hits in `lib/i18n/list.ts`
+ *     alone, which is the file that removes the defect.
+ *   · NOT an upper-case separator. `where.join(' AND ')` in
+ *     `lib/expenses/service.ts` is SQL. A gate that cannot tell a query from a
+ *     sentence would be turned off within a week.
+ *
+ * The crudeness is deliberate and the failure mode is the safe one: somebody
+ * joining on a lower-case word for a machine format gets told to think about it,
+ * and can add themselves to EXEMPT_JOINS with a reason.
+ */
+const WORD_JOIN_RE = /\.join\(\s*(['"`])([^'"`]*[a-z][^'"`]*)\1\s*\)/g;
+
+/**
+ * Sites that join on a word and are NOT this ticket's to fix, each with a reason.
+ *
+ * Both entries below are genuinely un-catalogued sentences a person reads —
+ * found by this gate on its first run, in integration code rather than on any
+ * screen the pseudo-locale crawl visits. They are boarded rather than folded into
+ * VX4-10, which is about the seven crawled screens; see HANDOFF.
+ *
+ * An exemption is a debt with a name on it. It is not an allow-list for
+ * convenience.
+ */
+const EXEMPT_JOINS = new Map([
+  [
+    'lib/integrations/conflicts.ts',
+    'rivalMessage() and its sibling build whole English sentences as template literals — the join is the smallest part of the problem. Needs the integrations refusal catalogue, boarded.',
+  ],
+  [
+    'lib/integrations/service.ts',
+    'same family as conflicts.ts, same catalogue, boarded with it.',
+  ],
+  [
+    'lib/i18n/list.ts',
+    'the file that REPLACES these joins. Its fallback path joins on a comma and its documentation quotes the defect.',
+  ],
+  [
+    'scripts/check-i18n.mjs',
+    'this gate quotes the pattern it refuses.',
+  ],
+]);
+
+function wordJoins(text, filePath) {
+  if (EXEMPT_JOINS.has(filePath)) return [];
+  const lines = text.split('\n');
+  const out = [];
+  for (const m of text.matchAll(WORD_JOIN_RE)) {
+    const separator = m[2];
+    // A connector is a word with space around it; a delimiter is not.
+    if (!/\s/.test(separator)) continue;
+    if (!/^\s*[a-z]+\s*$/.test(separator)) continue;
+    const lineNo = text.slice(0, m.index).split('\n').length;
+    const line = lines[lineNo - 1] ?? '';
+    // Comments. Its own docs matched on the first run, four times.
+    const before = line.slice(0, line.indexOf('.join('));
+    // `{/*` as well as `/*`: a JSX comment is the form this file's own note at
+    // the fixed call site takes, and it matched on the second run.
+    if (/^\s*[{(]?\s*(\*|\/\/|\/\*)/.test(line) || before.includes('//') || before.includes('/*')) continue;
+    out.push({ file: filePath, line: lineNo, separator });
+  }
+  return out;
+}
+
+function deadCatalogues(enumsText, scanned) {
+  const declared = [...enumsText.matchAll(/^export const ([A-Z][A-Z0-9_]*_COPY)\b/gm)].map(
+    (m) => m[1],
+  );
+  const dead = [];
+  for (const name of declared) {
+    const re = new RegExp(`\\b${name}\\b`);
+    const readers = scanned.filter(({ rel, text }) => {
+      if (rel.endsWith('lib/i18n/catalog/enums.ts')) return false;
+      // A test proves coverage, not use. Excluded on purpose — including them is
+      // what made this defect invisible for two releases.
+      if (rel.startsWith('test/') || rel.includes('.test.')) return false;
+      return re.test(text);
+    });
+    if (readers.length === 0) dead.push(name);
+  }
+  return dead;
+}
+
 const ALLOWED = new Set([
   'lib/i18n/locales.ts', // the registry itself
   'scripts/check-i18n.mjs', // this file: the patterns below are tags
@@ -621,9 +749,14 @@ async function main() {
   const all = [];
   const dateInputs = [];
   const rawErrors = [];
+  // Kept for `deadCatalogues` below, so the tree is read once rather than twice.
+  const scanned = [];
+  const joins = [];
   for (const file of files) {
     const rel = relative(repoRoot, file);
     const text = await readFile(file, 'utf8');
+    scanned.push({ rel, text });
+    joins.push(...wordJoins(text, rel));
     // NOT skipped for an ALLOWED file: the allow-list is about locale literals,
     // and a file being allowed to name `en-CA` says nothing about whether it may
     // print an exception. Two checks, two questions.
@@ -714,6 +847,38 @@ async function main() {
       '\nA locale decided outside the registry is a locale the registry cannot move.\n' +
         'Read the tag from SUPPORTED_LOCALES / DEFAULT_LOCALE, or resolve it per reader\n' +
         'with lib/i18n/request.ts (readerPrefs). A bare "en" is never right — see IL-1.\n',
+    );
+    process.exit(1);
+  }
+
+  if (joins.length > 0) {
+    console.error(`\n✗ ${joins.length} join(s) on a connecting WORD:\n`);
+    for (const j of joins) console.error(`  ${j.file}:${j.line}  .join('${j.separator}')`);
+    console.error(
+      '\nA separator with a word in it is copy, and a copy decision no translator can\n' +
+        'reach: English puts "and" between the last two, Japanese uses an ideographic\n' +
+        'comma and no word at all, Spanish uses "y". Use joinAnd() or joinOr() from\n' +
+        'lib/i18n/list.ts.\n' +
+        '\nThis is a STATIC gate because the crawl cannot see this: a hardcoded word\n' +
+        'inside a catalogued sentence sits in a text node that already carries a\n' +
+        'pseudo-locale marker, and unbracketed() filters the whole node.\n',
+    );
+    process.exit(1);
+  }
+
+  const enumsFile = join(repoRoot, 'lib', 'i18n', 'catalog', 'enums.ts');
+  const dead = deadCatalogues(await readFile(enumsFile, 'utf8'), scanned);
+  if (dead.length > 0) {
+    console.error(`\n✗ ${dead.length} enum catalogue(s) that nothing outside a test reads:\n`);
+    for (const name of dead) console.error(`  ${name}`);
+    console.error(
+      '\nA catalogue with no call site is where a DUPLICATE hides. RULE_KIND_COPY sat\n' +
+        'here for two releases with full coverage and a passing test, while\n' +
+        'lib/policy/rules.ts held a second list of the same five names — the one the\n' +
+        'screen actually rendered. They drifted on two members and nobody could see it,\n' +
+        'because a coverage test proves a catalogue covers its union and cannot notice\n' +
+        'that nobody asks it anything.\n' +
+        '\nEither point a render path at it, or delete it. Do not leave it here.\n',
     );
     process.exit(1);
   }

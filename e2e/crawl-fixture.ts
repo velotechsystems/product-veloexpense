@@ -37,12 +37,21 @@
  * it reads 8. Both numbers are true of different databases, which is the whole
  * point being made — so the one worth quoting is the one this fixture produces.
  *
- * `/approvals` is the third case: it HAS rows, had no `RATCHET_PATH`, and never
- * got the caveat the file says such a page needs. Its ceiling of 15 was the empty
- * inbox, and it passed only while nothing ahead of it happened to leave a pending
- * task for the crawl's admin. This fixture makes it deterministic from the other
- * direction — it clears foreign pending tasks for that one user and installs
- * exactly two of its own, so the number is the same whatever ran first.
+ * `/approvals` and `/notifications` are the third case: both HAVE rows, neither
+ * has a `RATCHET_PATH`, and neither got the caveat the file says such a page
+ * needs. `/approvals`' ceiling of 15 was the empty inbox and passed only while
+ * nothing ahead of it happened to leave a pending task for the crawl's admin;
+ * `/notifications`' 42 was measured on a fuller database and passed on the
+ * HEADROOM between 42 and whatever that run happened to produce, which is the
+ * same weakness with a bigger cushion.
+ *
+ * Neither can be filtered empty. `/notifications` takes `?unread=1`, which
+ * narrows the list and never empties it — and pointing the ratchet at the
+ * unread-only view would leave the read-row and everything-empty copy unmeasured,
+ * which is trading one blind spot for two. So this fixture makes both
+ * deterministic from the other direction: it clears the crawl admin's foreign
+ * rows and installs a known number of its own, and the ceilings are `per-row ×
+ * rows` with the row count set here.
  *
  * ── WHAT IS STILL INVISIBLE, AND IT IS NOT A SMALL LIST ────────────────────
  *
@@ -105,6 +114,22 @@ const EMPLOYEE_EMAIL = 'employee@demo.test';
  * and never checked.
  */
 const REPORT_COUNT = 26;
+
+/**
+ * Notifications for the crawl's admin.
+ *
+ * Three, not one, and not ten. One row cannot show that the per-row residue
+ * SCALES — a ceiling of 1 and a ceiling of `1 × rows` look identical at one row,
+ * and the difference is the whole reason `/approvals` needed this. Ten was what
+ * the database happened to hold while part 3 was measured and is not a number
+ * anybody chose.
+ *
+ * Two are unread and one is read, which is what makes the row-level `Mark read`
+ * button and the read/unread styling both render — the button is only on unread
+ * rows, so an all-read fixture would leave it uncounted and an all-unread one
+ * would leave the read path unrendered.
+ */
+const NOTIFICATION_COUNT = 3;
 
 export interface CrawlFixture {
   orgId: string;
@@ -181,6 +206,17 @@ export async function installCrawlFixture(): Promise<CrawlFixture> {
         WHERE organization_id = $1 AND assignee_id = $2 AND status = 'PENDING'`,
       [orgId, adminId],
     );
+    // The crawl admin's notifications, cleared for the same reason as their
+    // pending tasks and with the same narrow scope: this org, this ONE user.
+    // `activity` rows are left alone — they are an append-only record of things
+    // that happened, other specs assert on them, and deleting the notification is
+    // enough to empty an inbox. The FK is ON DELETE CASCADE from activity, not
+    // the other way round, so this cannot reach one.
+    await pool.query('DELETE FROM notification WHERE organization_id = $1 AND recipient_id = $2', [
+      orgId,
+      adminId,
+    ]);
+
     await pool.query('DELETE FROM subscription WHERE organization_id = $1', [orgId]);
     await pool.query('DELETE FROM subscription_meter_reading WHERE organization_id = $1', [orgId]);
 
@@ -296,6 +332,65 @@ export async function installCrawlFixture(): Promise<CrawlFixture> {
        VALUES ($1, $2, $3, current_date - 1, current_date + 30, 'ALL', $2, $4)`,
       [orgId, managerId, adminId, TAG],
     );
+
+    // ── /notifications: a known number of rows ─────────────────────────────
+    //
+    // Through `activity` because `notification` has a NOT NULL FK to it and the
+    // body a reader sees is rendered FROM it — event type, subject, payload. A
+    // notification with a hand-written body would be a row this product cannot
+    // produce, and the screen's whole point is that the body comes from a
+    // template.
+    //
+    // `subject_type`/`subject_id` point at the assigned report, so the row's body
+    // links somewhere real: `subjectHref` returns null for an unknown subject
+    // type and the body then renders as plain text instead of a link, which is a
+    // different branch from the one a reader normally sees.
+    //
+    // `EXPENSE_REPORT` and `TASK_ASSIGNED` are real members of `SUBJECT_TYPES` and
+    // `EVENT_TYPES`, and getting there took two wrong drafts that are worth
+    // recording because neither was rejected by anything.
+    //
+    // First draft: `REPORT_SUBMITTED`, which is not an event type at all. The
+    // schema's only constraint on that column is
+    // `activity_event_type_present` — the string is non-empty — so the
+    // ENUMERATION is enforced in TypeScript and nowhere in Postgres. The screen
+    // rendered `{REPORT_SUBMITTED}`, the missing-copy marker, doing its job in the
+    // one place a reader would ever see it.
+    //
+    // Second draft: lower-case `expense_report`, which `templateKeyFor` does not
+    // match, so no shipped template was found and `shippedBody` fell through to
+    // its `|| eventType` and put the bare word `TASK_ASSIGNED` in front of a
+    // reader as the notification's TEXT. That fallback is a real defect and is
+    // boarded rather than fixed here (see HANDOFF) — it is the same family as the
+    // raw `{row.eventType}` sub-label VX4-7 part 3 removed from this very screen,
+    // left in the body path.
+    //
+    // Both drafts are the same lesson: a writer outside `lib/` can store values
+    // this product cannot render, and what a reader gets is a marker in one case
+    // and a plausible-looking enum member in the other. Only the first reads as
+    // broken.
+    for (let i = 0; i < NOTIFICATION_COUNT; i += 1) {
+      const activity = await pool.query(
+        `INSERT INTO activity
+           (organization_id, subject_type, subject_id, event_type, actor_id, payload, occurred_at)
+         VALUES ($1, 'EXPENSE_REPORT', $2, 'TASK_ASSIGNED', $3, '{}'::jsonb,
+                 now() - ($4 || ' hours')::interval)
+         RETURNING id`,
+        [orgId, assignedReport, employeeId, String(i + 1)],
+      );
+      await pool.query(
+        `INSERT INTO notification (organization_id, activity_id, recipient_id, read_at, created_at)
+         VALUES ($1, $2, $3, $4, now() - ($5 || ' hours')::interval)`,
+        [
+          orgId,
+          activity.rows[0].id as string,
+          adminId,
+          // The last one is READ, so both row states render. See NOTIFICATION_COUNT.
+          i === NOTIFICATION_COUNT - 1 ? new Date() : null,
+          String(i + 1),
+        ],
+      );
+    }
 
     // ── /admin/billing: the branch part 1 never saw ─────────────────────────
     //

@@ -18,7 +18,7 @@
  *     cleared, because BLOCK findings must be fixed rather than waved through.
  */
 import type { QueryRunner } from '@/lib/db/client';
-import { enumLabel, SEVERITY_COPY } from '@/lib/i18n/catalog/enums';
+import { enumLabel, RULE_KIND_COPY, SEVERITY_COPY } from '@/lib/i18n/catalog/enums';
 import { DEFAULT_LOCALE } from '@/lib/i18n/locales';
 import type { UserMessage } from '@/lib/errors/domain';
 import type { UserMessageCode } from '@/lib/i18n/catalog/errors';
@@ -136,8 +136,8 @@ function normalizeParams(kind: RuleKind, params: Record<string, unknown> = {}) {
     const missing = raw === undefined || raw === null || raw === '';
     if (missing) {
       if (spec.required) {
-        throw new PolicyError(`${definition.label} needs ${spec.label}`, 'MISSING_PARAM',
-      { code: 'POLICY_PARAM_REQUIRED', params: { rule: definition.label, field: spec.label } },
+        throw new PolicyError(`${ruleName(definition.kind)} needs ${spec.label}`, 'MISSING_PARAM',
+      { code: 'POLICY_PARAM_REQUIRED', params: { rule: ruleName(definition.kind), field: spec.label } },
     );
       }
       continue;
@@ -212,7 +212,7 @@ function assertSeverityForKind(kind: RuleKind, severity: string): Severity {
   const maximum = definition.maxSeverity;
   if (maximum !== undefined && severityExceeds(checked, maximum)) {
     throw new PolicyError(
-      `${definition.label} cannot be set to ${checked}: this rule never goes above ${maximum}`,
+      `${ruleName(definition.kind)} cannot be set to ${checked}: this rule never goes above ${maximum}`,
       'SEVERITY_ABOVE_MAXIMUM',
       {
         code: 'POLICY_SEVERITY_ABOVE_MAX',
@@ -220,7 +220,7 @@ function assertSeverityForKind(kind: RuleKind, severity: string): Severity {
         // it straight through would put "WARNING" in a sentence an admin reads —
         // which is the defect part 2a spent a whole PR removing from eleven
         // screens, walking back in through a parameter three PRs later.
-        params: { rule: definition.label, maximum: enumLabel(SEVERITY_COPY, maximum, DEFAULT_LOCALE) },
+        params: { rule: ruleName(definition.kind), maximum: enumLabel(SEVERITY_COPY, maximum, DEFAULT_LOCALE) },
       },
     );
   }
@@ -231,9 +231,9 @@ async function assertCategory(tx: QueryRunner, kind: RuleKind, categoryId: strin
   if (!categoryId) return;
   if (!ruleDefinition(kind).supportsCategoryScope) {
     throw new PolicyError(
-      `${ruleDefinition(kind).label} applies to the whole report and cannot be scoped to a category`,
+      `${ruleName(kind)} applies to the whole report and cannot be scoped to a category`,
       'CATEGORY_NOT_SCOPEABLE',
-      { code: 'POLICY_NOT_CATEGORY_SCOPED', params: { rule: ruleDefinition(kind).label } },
+      { code: 'POLICY_NOT_CATEGORY_SCOPED', params: { rule: ruleName(kind) } },
     );
   }
   const r = await tx.query('SELECT id FROM expense_category WHERE id = $1', [categoryId]);
@@ -296,6 +296,26 @@ export interface PolicyCurrencyInfo {
  * slim reader is the alternative to a third copy of this query, which is exactly
  * what PE-8 was about.
  */
+/*
+ * VX4-10 part 4. `definition.label` used to be an English literal on the rule
+ * definition; it is now `enumLabel(RULE_KIND_COPY, kind, …)`, so there is one
+ * list of rule names in the product rather than two.
+ *
+ * DEFAULT_LOCALE here, and that is a KNOWN LIMITATION rather than an oversight.
+ * A refusal's `params` are filled where it is THROWN and rendered somewhere else
+ * entirely — `errors.ts` does `String(value)` on whatever it is handed, so there
+ * is no seam at which a reader's locale could be applied. The result is a
+ * catalogued French template with an English rule name inside it.
+ *
+ * That is a real defect and it is not new: line 223 already resolved
+ * `SEVERITY_COPY` at `DEFAULT_LOCALE` for exactly the same reason. What changed
+ * is that the leak is now one source of truth resolved at the wrong locale,
+ * rather than a hardcoded literal — smaller, and fixable by making params carry
+ * KEYS instead of text. That is a change to the refusal catalogue's param
+ * contract and its tests, so it is boarded (see HANDOFF) and not folded in here.
+ */
+const ruleName = (kind: RuleKind) => enumLabel(RULE_KIND_COPY, kind, DEFAULT_LOCALE);
+
 export async function policyCurrencyCode(tx: QueryRunner): Promise<string> {
   const org = await tx.query(
     `SELECT policy_currency_code FROM organization
@@ -408,9 +428,9 @@ export async function createPolicy(tx: QueryRunner, input: NewPolicy): Promise<P
   } catch (err) {
     if ((err as { code?: string }).code === '23505') {
       throw new PolicyError(
-        `a ${ruleDefinition(kind).label} rule already exists for that scope — edit it instead`,
+        `a ${ruleName(kind)} rule already exists for that scope — edit it instead`,
         'DUPLICATE_RULE',
-      { code: 'POLICY_DUPLICATE_SCOPE', params: { rule: ruleDefinition(kind).label } },
+      { code: 'POLICY_DUPLICATE_SCOPE', params: { rule: ruleName(kind) } },
     );
     }
     throw err;

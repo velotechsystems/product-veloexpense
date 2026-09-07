@@ -155,8 +155,25 @@ export interface ParamSpec {
 
 export interface RuleDefinition {
   kind: RuleKind;
-  label: string;
-  description: string;
+  /*
+   * NO `label` AND NO `description`, deliberately, and their removal is VX4-10
+   * part 4's actual content.
+   *
+   * They used to live here as English literals, and `lib/i18n/catalog/enums.ts`
+   * separately held `RULE_KIND_COPY` — a second list of the same five names,
+   * built in VX4-7 part 2a, covered by the union, tested, and read by nothing but
+   * its own test. The pair had already drifted on two members: this file said "No
+   * negative amounts" and "Over budget" where the catalogue said "Amount cannot be
+   * negative" and "Budget overage". A reader only ever saw this file's, because
+   * this file's is what the screen and the eight refusals in `service.ts` used.
+   *
+   * One list now, in the catalogue, where a locale can reach it. Anything wanting
+   * a rule's NAME calls `enumLabel(RULE_KIND_COPY, kind, locale)`; anything
+   * wanting its SENTENCE calls `enumLabel(RULE_DESCRIPTION_COPY, kind, locale)`.
+   *
+   * A rule definition still has no business holding copy: it is the evaluator,
+   * and every field left below is something the evaluator or the form needs.
+   */
   defaultSeverity: Severity;
   /**
    * The strongest severity an INSTANCE of this rule may evaluate at.
@@ -340,9 +357,6 @@ function expenseLabel(expense: WorkbenchExpense) {
 
 const PER_TRANSACTION_LIMIT: RuleDefinition = {
   kind: 'PER_TRANSACTION_LIMIT',
-  label: 'Per-transaction limit',
-  description:
-    'Flags any single line item above the limit. Scope it to one category to give, say, meals a tighter cap than airfare.',
   defaultSeverity: 'WARNING',
   supportsCategoryScope: true,
   params: [
@@ -411,9 +425,6 @@ const PER_TRANSACTION_LIMIT: RuleDefinition = {
 
 const RECEIPT_REQUIRED: RuleDefinition = {
   kind: 'RECEIPT_REQUIRED',
-  label: 'Receipt required',
-  description:
-    'Flags an expense with no receipt attached. Set a limit to require receipts only above an amount.',
   defaultSeverity: 'BLOCK',
   supportsCategoryScope: true,
   params: [
@@ -504,9 +515,6 @@ const RECEIPT_REQUIRED: RuleDefinition = {
 
 const CATEGORY_ACTIVE: RuleDefinition = {
   kind: 'CATEGORY_ACTIVE',
-  label: 'Category must be active',
-  description:
-    'Flags a line item coded to a category the tenant has retired. Catches reports left in draft across a chart-of-accounts change.',
   defaultSeverity: 'BLOCK',
   supportsCategoryScope: false,
   params: [],
@@ -538,9 +546,6 @@ const CATEGORY_ACTIVE: RuleDefinition = {
 
 const NON_NEGATIVE_AMOUNT: RuleDefinition = {
   kind: 'NON_NEGATIVE_AMOUNT',
-  label: 'No negative amounts',
-  description:
-    'Flags a line item below zero. Credits and refunds belong on the original report, not as a negative line.',
   defaultSeverity: 'BLOCK',
   supportsCategoryScope: false,
   params: [],
@@ -604,9 +609,6 @@ const NON_NEGATIVE_AMOUNT: RuleDefinition = {
  */
 const BUDGET_OVERAGE: RuleDefinition = {
   kind: 'BUDGET_OVERAGE',
-  label: 'Over budget',
-  description:
-    'Flags a report whose spend takes a budget period past its budget, counting what is already approved and what is still awaiting a decision. Warns; it never blocks.',
   defaultSeverity: 'WARNING',
   maxSeverity: 'WARNING',
   supportsCategoryScope: false,

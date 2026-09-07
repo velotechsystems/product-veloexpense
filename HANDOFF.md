@@ -383,6 +383,176 @@ no upstream mistakes to be warned by.
   `page.content()` across every crawled page. This unblocks **VX4-10**, which lowers the ratchet's
   ceilings and could not be trusted while the ratchet could pass measuring nothing.
 
+#### VX4-10 part 4 SHIPPED — VX4-10 CLOSED. A duplicate list, a dead catalogue, and a gate the crawl cannot be
+
+**New:** `lib/i18n/list.ts` · `test/i18n-list.test.ts`. **Changed:** `lib/i18n/catalog/enums.ts` ·
+`lib/policy/rules.ts` · `lib/policy/service.ts` · `app/admin/expense-policies/page.tsx` ·
+`lib/i18n/catalog/ui.ts` · `scripts/check-i18n.mjs` · `e2e/pseudo-crawl.spec.ts` ·
+`test/i18n-enum-catalog.test.ts`.
+
+**`/admin/expense-policies` 46 → ZERO.** The only screen in the crawl that reaches zero, and it is a
+property of the page rather than of the database: a policy row's name and description now come from
+catalogues, its severity/category/currency are `<select>` contents the crawl skips by design, and its
+threshold and dates are input values rather than text. Verified on the database the full suite leaves,
+where it used to read 46. **All seven crawled screens are now at their floors and VX4-10 is closed.**
+
+**I WAS WRONG ABOUT THE RULE LABELS, AND THE TRUTH WAS WORSE.** I reported them as "un-catalogued
+English missed when VX4-7 part 2a built the enum catalogue." `RULE_KIND_COPY` **was** built, with full
+coverage of `RuleKind` and a passing test. The screen never adopted it: it rendered
+`RULE_DEFINITIONS[kind].label` from `lib/policy/rules.ts` — a second, independent list of the same five
+names — and so did eight refusal messages in `lib/policy/service.ts`.
+
+**The two had already drifted, on two of five members:**
+
+| kind | `RULE_KIND_COPY` | `rules.ts` — what shipped |
+|---|---|---|
+| `NON_NEGATIVE_AMOUNT` | Amount cannot be negative | **No negative amounts** |
+| `BUDGET_OVERAGE` | Budget overage | **Over budget** |
+
+UD-9's defect in its purest form, the fourth time this tree has paid for it. `label` and `description`
+are gone from `RuleDefinition`; the names live in `RULE_KIND_COPY` and the sentences in a new
+`RULE_DESCRIPTION_COPY`. **`rules.ts`' wording survived both disagreements** — not because it is
+better, but because it is what readers see, and a ticket about removing a duplicate list is not a
+ticket about changing copy. Changing both at once means nobody can tell afterwards which change caused
+a complaint.
+
+**WHY A COVERAGE TEST COULD NOT CATCH IT, and the gate that can.** `RULE_KIND_COPY` had exactly two
+references in the tree and both were its own test file. A coverage test proves a catalogue covers its
+union; it has no way to notice that nobody reads the catalogue — **and a dead catalogue is precisely
+where a duplicate hides.** `scripts/check-i18n.mjs` now refuses any `*_COPY` in `enums.ts` with no
+reader outside a test.
+
+**It found three more on its first run**, and all three are deleted: `DECISION_COPY`,
+`ACCOUNT_SOURCE_COPY`, `RECEIPT_STATUS_COPY`. None was rendered anywhere in the product, and
+`Decision`'s APPROVED/REJECTED/RETURNED already overlap the live `TRANSITION_ACTION_COPY` and
+`REPORT_STATUS_COPY` — a third spelling of those words was a drift waiting to happen. Deleted rather
+than exempted, because an exemption list would preserve exactly the condition the gate exists to
+prevent. **This is scope beyond the screen and it is in the PR deliberately, not quietly.**
+
+**`lib/i18n/list.ts` — `Intl.ListFormat` behind `joinAnd`/`joinOr`**, replacing `.join(' and ')` and
+two `.join(', ')`. There is deliberately **no `joinList`**, and the measurement is in the file: its
+first draft used `type: 'unit'` for bare enumerations, and `unit` is CLDR's *measurement* joiner —
+it gives Chinese `USDEURGBP` at every style. No `Intl.ListFormat` mode means "separate opaque tokens
+visibly in every language", so the data lists go through the conjunction too.
+
+**A SABOTAGE CAME BACK GREEN, AND THAT IS THE SECOND GATE.** I claimed in `list.ts` that the crawl
+would catch a hardcoded conjunction, because `⟦A⟧ and ⟦B⟧` leaves ` and ` outside the brackets.
+**Measured, and false.** Reverting `joinAnd` to `.join(' and ')` left the page at 0. `unbracketed()`
+filters whole TEXT NODES containing a marker, and the join happens inside a catalogued sentence's
+parameter hole — the node is `⟦Only ⟦A⟧ and ⟦B⟧ can be scoped…⟧`, one node, filtered. **Every
+hardcoded word inside a catalogued sentence is invisible to the crawl.** The false claim is corrected
+in place, and `check:i18n` now refuses a `.join()` on a lower-case word — a static gate, because the
+rendered output cannot be asked. Three rounds of false positives shaped it: its own documentation
+(four hits in the file that fixes the defect), `where.join(' AND ')` in `lib/expenses/service.ts`
+which is SQL, and a JSX `{/* … */}` comment.
+
+**That gate found two genuine defects outside this ticket**, both exempted with reasons in the script
+rather than only here: `lib/integrations/conflicts.ts`'s `rivalMessage()` and a sibling in
+`lib/integrations/service.ts` build whole English sentences as template literals — the join is the
+smallest part of it. They need the integrations refusal catalogue. **Boarded.**
+
+**Still boarded from part 4's reading, unchanged:** `lib/policy/service.ts` fills catalogued refusal
+params with text rather than keys, so `POLICY_PARAM_REQUIRED` ("{rule} needs {field}.") renders a
+French template with an English rule name in it. Now resolved through `RULE_KIND_COPY` at
+`DEFAULT_LOCALE` — one source of truth at the wrong locale rather than a hardcoded literal, which is
+smaller but not fixed. `errors.ts` does `String(value)` on whatever it is handed, so there is no seam
+for a reader's locale; the fix is params carrying keys, which changes that catalogue's contract and its
+tests.
+
+**Also from part 3, still open:** `shippedBody`'s `|| eventType` puts a bare enum member in front of a
+reader as a notification's body.
+
+**Verified:** 1600 tests (78 files) · `npm run e2e` 161 passed · crawl **27/27 on the database the full
+suite had just left** · every `check:` gate · tsc clean · eslint 0 errors. **Four sabotages:** a rule
+kind loses its description → `TS2741` on `EnumCopy<RuleKind>`; a catalogue with no reader →
+the dead-catalogue gate names it; `.join(' and ')` restored → the new join gate names the file and line
+(and the crawl does **not**, which is why the gate exists); a hardcoded heading →
+`/admin/expense-policies: 1, ceiling 0`.
+
+**Two small things I found and did not fix**, both invisible to the crawl because `<select>` contents
+are skipped: `/expenses`' status filter and both severity selects on `/admin/expense-policies` render
+raw enum members (`SUBMITTED`, `WARNING`) beside catalogued labels for the same values.
+
+#### VX4-10 part 3 SHIPPED — /notifications, and a ceiling that was never a measurement
+
+**Changed:** `app/notifications/page.tsx` · `lib/i18n/catalog/ui.ts` · `e2e/crawl-fixture.ts` ·
+`e2e/pseudo-crawl.spec.ts`.
+
+**`/notifications` 30 → 3, and the 42 it replaces measured nothing.** That number was taken on a
+fuller database and passed on the HEADROOM between itself and whatever a run happened to produce. The
+note beside it said so — *"STILL DATA-DEPENDENT … the headroom is what keeps it green, which is
+exactly the weakness `/expenses` just demonstrated … worth a ticket rather than a clever selector"* —
+and this is that ticket.
+
+No filter empties this screen. `?unread=1` narrows and never empties, and pointing the ratchet at the
+unread-only view would leave the read-row and everything-empty copy unmeasured — trading one blind
+spot for two. So the fixture fixes the row count, exactly as it does for `/approvals`, and the ceiling
+is **one string per row**: the `Intl` instant in the When column, at `NOTIFICATION_COUNT` rows.
+Everything else on the screen was already catalogued — the chrome by this part, and the row bodies and
+their two sub-labels long before it.
+
+`NOTIFICATION_COUNT = 3`, chosen rather than inherited: **one row cannot show that a residue scales**
+— a ceiling of 1 and a ceiling of `1 × rows` are identical at one row, and that difference is the
+whole reason `/approvals` needed a fixture. Two unread and one read, so the row-level `Mark read`
+button and the read styling both render; an all-read fixture leaves the button uncounted and an
+all-unread one leaves the read path unrendered.
+
+**Two empty states, not one.** `Nothing unread.` and `Nothing yet. Submitted reports, approvals and
+returns land here.` were a ternary and are now two entries: the unread view is empty because the reader
+has caught up, the everything view because nothing has happened, and those want different sentences in
+any language.
+
+**A REAL DEFECT FOUND AND NOT FIXED HERE — `shippedBody` renders a raw enum member at a reader.**
+`lib/notifications/catalog.ts:543`:
+
+```ts
+return (def && localized(def.shipped, locale)) || eventType;
+```
+
+When `templateKeyFor(eventType, subjectType)` finds no key, the notification's **body** — the sentence
+a person reads — becomes the bare word `TASK_ASSIGNED`. That is the same family as the raw
+`{row.eventType}` sub-label VX4-7 part 3 removed from this very screen, left behind in the body path.
+It is boarded, not folded in: the fix is a decision about what an unrenderable notification should say
+(the missing-copy marker reads as broken, which is arguably right; a catalogued "something happened"
+sentence reads as content), and it belongs with the notification catalogue rather than in a screen
+PR.
+
+**How it was found is worth keeping.** Two wrong fixture drafts, neither rejected by anything:
+- `REPORT_SUBMITTED` as the event type — **not a member of `EVENT_TYPES` at all**. Postgres accepted
+  it: the only constraint on that column is `activity_event_type_present`, which checks the string is
+  non-empty, so the enumeration is enforced in TypeScript and **nowhere in the schema**. The screen
+  rendered `{REPORT_SUBMITTED}` — the missing-copy marker, working exactly as designed, in the one
+  place a reader would ever see it.
+- lower-case `expense_report` as the subject type, which `templateKeyFor` does not match — and that is
+  what surfaced the `|| eventType` fallback above.
+
+Both drafts are one lesson: a writer outside `lib/` can store values this product cannot render, and
+what a reader gets is a marker in one case and a plausible-looking enum member in the other. **Only
+the first reads as broken.**
+
+**Verified:** 1593 tests (77 files) · `npm run e2e` 161 passed · crawl 27/27 on the database the full
+suite had just left · every `check:` gate · tsc clean · eslint 0 errors. **Two sabotages:** a
+hardcoded column header → `/notifications: 4, ceiling 3`; the fixture's notification clearing removed
+→ `6, ceiling 3`, and green again at 3 with the clearing restored **while nine of that user's
+notifications were still in the database**.
+
+**Still open on VX4-10 — one screen, and it is not a cataloguing job.** `/admin/expense-policies` at
+46. Enumerating it turned up three things beyond chrome:
+- **`RULE_DEFINITIONS` labels and descriptions are un-catalogued English inside a product
+  enumeration.** Five rule kinds in `lib/policy/rules.ts`, each with a bare `label` and `description`.
+  `RULE_KINDS` is a runtime array, so this is precisely what VX4-7 part 2a's `EnumCopy<T>` is for —
+  **it was missed when that catalogue was built**, and no gate could see it because those strings only
+  render on this screen, behind a ceiling of 46.
+- **`.join(' and ')` hardcodes an English conjunction** (`app/admin/expense-policies/page.tsx:387`).
+  `Intl.ListFormat` is the answer. Two more joins on the same screen use `', '` — more portable, still
+  not locale-correct.
+- Two sentences wrap a list: `Amount limits cannot be enforced on {list} reports.` and
+  `Rates available: {list} (the reverse of each is derived).`
+
+That screen also sits **exactly at** its ceiling of 46 on a full database, so it has no headroom
+today: any string added to it fails CI immediately, and the failure will not look related to whatever
+PR adds it.
+
 #### UD-16 SHIPPED — every page names itself, and a new route that does not is a failure
 
 **New:** `lib/i18n/page-title.ts` · `scripts/check-page-titles.mjs` · `test/page-titles.test.ts`.
