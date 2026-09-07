@@ -12,7 +12,7 @@
     "test:watch": "vitest",
     "migrate": "node scripts/migrate.mjs",
     "seed": "node scripts/seed.mjs",
-    "e2e": "npm run migrate && npm run build && npm run check:actions && npm run check:tenant && npm run check:admin && npm run check:i18n && STAGE=test npm run seed && playwright test",
+    "e2e": "npm run migrate && npm run build && npm run check:actions && npm run check:tenant && npm run check:admin && npm run check:i18n && npm run check:titles && STAGE=test npm run seed && playwright test",
     "e2e:ui": "playwright test --ui",
     "start:standalone": "cp -r public .next/standalone/public 2>/dev/null; cp -r .next/static .next/standalone/.next/static && node .next/standalone/server.js",
     "check:actions": "node scripts/check-server-actions.mjs",
@@ -22,6 +22,7 @@
     "verify:chain": "vitest run --config vitest.chain.config.ts",
     "check:i18n": "node scripts/check-i18n.mjs",
     "check:build-fresh": "node scripts/check-build-fresh.mjs",
+    "check:titles": "node scripts/check-page-titles.mjs",
     "e2e:crawl": "npm run check:build-fresh && STAGE=test npm run seed && E2E_PORT=3100 E2E_STORAGE_PORT=9501 E2E_SMTP_PORT=2625 E2E_MAIL_HTTP_PORT=2626 E2E_LEDGER_PORT=9511 E2E_LEDGER_CONTROL_PORT=9512 playwright test --config playwright.pseudo.config.ts",
     "check:tenant": "node scripts/check-tenant-expression.mjs"
   },

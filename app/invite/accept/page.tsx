@@ -44,6 +44,14 @@ import { readerPrefs } from '@/lib/i18n/request';
 import { readPendingInvite } from '@/lib/invites/service';
 import { Card, Lede, Shell, Title } from '@/app/pre-auth';
 
+import { pageTitle } from '@/lib/i18n/page-title';
+
+// UD-16. See `lib/i18n/page-title.ts` for why the title lives here rather than
+// in a map of routes, and `scripts/check-page-titles.mjs` for what enforces it.
+export function generateMetadata() {
+  return pageTitle('title.invite.accept');
+}
+
 export const dynamic = 'force-dynamic';
 
 export default async function AcceptInvitePage({

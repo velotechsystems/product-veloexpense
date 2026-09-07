@@ -383,6 +383,77 @@ no upstream mistakes to be warned by.
   `page.content()` across every crawled page. This unblocks **VX4-10**, which lowers the ratchet's
   ceilings and could not be trusted while the ratchet could pass measuring nothing.
 
+#### UD-16 SHIPPED — every page names itself, and a new route that does not is a failure
+
+**New:** `lib/i18n/page-title.ts` · `scripts/check-page-titles.mjs` · `test/page-titles.test.ts`.
+**Changed:** `app/layout.tsx` (**patch in place — harness file**) · all 32 `app/**/page.tsx` ·
+`lib/i18n/catalog/ui.ts` · `e2e/pseudo-crawl.spec.ts` · `e2e/crawl-fixture.ts` (comments only) ·
+`package.json` · `.github/workflows/ci.yml`.
+
+**The defect.** `app/layout.tsx` held the only `generateMetadata` in the product and returned
+`Acme Inc · VeloExpense` for **all thirty-two routes**. Every browser tab said the same thing, and so
+did every bookmark, every back-history entry, and **every page announcement a screen reader makes on
+navigation** — which is the half that is an accessibility defect rather than a polish item. A blind
+user with two windows of this product open had nothing to tell them apart, and `aria-current` on a nav
+link does not help somebody who never sees the nav.
+
+**No map, and that is the whole design.** Upstream's #398 was three pages missing from a
+hand-maintained title map. A map is a second enumeration of the routes; it drifts, and it drifts
+silently. So the title lives ON the page as a two-line `generateMetadata`, and
+`scripts/check-page-titles.mjs` **globs** `app/**/page.tsx` — adding a route without a title is a
+failing build, not an omission nobody notices. The only list is of EXEMPTIONS, which is a different
+thing: one has to be written down with a reason, and the list ships empty. The script also refuses a
+glob that matches nothing, because a discovery gate that found no files passes every rule it has.
+
+**A title template, page name FIRST**, and the order is mechanical rather than aesthetic: a browser
+truncates the END of a tab title, so `Acme Inc · VeloExpense · Appro…` would have been thirty-one
+titles that still look identical in a narrow tab — the defect this was meant to fix. Sabotage 4
+reverses the template and all seven crawl title tests go red.
+
+**Titles are catalogue copy, and this is why UD-16 waited for VX4-10** rather than shipping on its own:
+31 English literals in `generateMetadata` would have been 31 new un-catalogued strings **that no gate
+could see** — `visibleStrings` walks `document.body` and a `<title>` is in `<head>`. Copy the crawl
+cannot reach is exactly the copy that needs a compiler. The keys are `title.*` and are deliberately
+NOT the same keys as the headings even where the words match: a heading has the page around it, a
+title stands alone in a strip of twenty tabs, and a translator has to be able to make them differ.
+
+**Two routes title themselves from their DATA** — `/expenses/[reportId]` by the report's title,
+`/admin/employees/[employeeId]` by the person's name — through `dataTitle`, with a catalogued fallback
+for an unreadable record. That costs a second read of the same row per request; Next dedupes `fetch`
+and not database calls, so the cost is real, named in the file, and one indexed primary-key read.
+
+**Three layers, because no one of them is enough:** `check:titles` sees that a route declares a title;
+`test/page-titles.test.ts` sees that every `title.*` key is used, that no two routes claim one, and
+that **no title is a bare literal** (the tempting shortcut — one line shorter, passes the guard, ships
+an uncatalogued string the crawl cannot see); and the crawl's seven new tests ask a real browser what
+the tab says.
+
+**The crawl title test cost me an hour and the reason is worth keeping.** Checked by curl against a
+hand-started server, `/admin/billing` and `/admin/locale` returned the root layout's fallback title —
+which reads exactly like a UD-16 regression. It was a **403**: the ad-hoc server had none of
+`playwright.config.ts`'s tenancy environment, so the admin gate refused and the 403 page's title was
+what I was measuring. A title test that is not signed in the way a reader is signed in measures the
+403 page. That is why the assertion lives in the crawl, which is the only place in the suite that
+renders these pages signed in on a host the tenancy resolver accepts.
+
+**Also in this PR, said rather than folded in silently:** three comment-only corrections to
+`e2e/crawl-fixture.ts` from #117 — it quoted `/admin/billing` reading 5 (measured by hand before the
+file also installed a meter reading; with one it reads 8), described in the present tense a
+`/approvals` fragility the same file fixes, and told the `/admin/billing` story twice in two header
+sections. No code changed.
+
+**Verified:** 1593 tests (77 files) · `npm run e2e` 161 passed · crawl **27/27** (20 + the 7 title
+tests) on the database the full suite had just left · every `check:` gate · tsc clean · eslint 0
+errors. **Four sabotages:** a route stops naming itself → `check:titles` names the file; a title
+written as `{ title: 'Budgets' }` → two tests, the literal rule and the orphaned-key rule; an unused
+`title.*` key → the orphan rule; the template reversed to put the tenant first → all seven crawl title
+tests fail on position, not presence.
+
+**Still open on VX4-10:** `/notifications` (42) and `/admin/expense-policies` (46) — 88 strings, the
+two biggest, and the last part. Note `/admin/expense-policies` sits **exactly at** its ceiling of 46
+on a full database, so it has no headroom: any string added to that screen fails CI immediately, and
+the failure will not look related to whatever PR adds it.
+
 #### VX4-10 part 2 SHIPPED — four screens, two new copy shapes, and a correction to part 1's own ceiling
 
 **New:** `e2e/crawl-fixture.ts`. **Changed:** `lib/i18n/catalog/ui.ts` · `test/i18n-ui.test.ts` ·

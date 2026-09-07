@@ -17,7 +17,21 @@ import {
 } from '../actions';
 import { EmployeeForm } from '../employee-form';
 
+import { dataTitle } from '@/lib/i18n/page-title';
 export const dynamic = 'force-dynamic';
+
+
+// UD-16. Titled by the PERSON, for the same reason the report workbench is titled
+// by the report: an admin working through a directory has several of these open at
+// once. The name is the tenant's data and is not catalogued.
+export async function generateMetadata({ params }: { params: Promise<{ employeeId: string }> }) {
+  const { employeeId } = await params;
+  const detail = await getEmployeeDetail(employeeId).catch(() => null);
+  return dataTitle(
+    'title.admin.employees.one',
+    detail?.employee?.display_name ?? detail?.employee?.email ?? null,
+  );
+}
 
 const sectionClass = 'flex flex-col gap-3 rounded-lg border border-border p-5';
 

@@ -41,6 +41,14 @@ import { formatInstant, toDateInputValue } from '@/lib/i18n/format';
 import { enumLabel, DELEGATION_SCOPE_COPY } from '@/lib/i18n/catalog/enums';
 import type { ReaderPrefs } from '@/lib/i18n/resolve';
 import { readerPrefs } from '@/lib/i18n/request';
+import { pageTitle } from '@/lib/i18n/page-title';
+
+// UD-16. See `lib/i18n/page-title.ts` for why the title lives here rather than
+// in a map of routes, and `scripts/check-page-titles.mjs` for what enforces it.
+export function generateMetadata() {
+  return pageTitle('title.approvals.delegations');
+}
+
 import {
   createDelegationFromForm,
   getDelegationsPage,

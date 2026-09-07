@@ -30,6 +30,14 @@ import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { EmptyRow, ErrorBanner, selectClass } from '@/app/expenses/ui';
+import { pageTitle } from '@/lib/i18n/page-title';
+
+// UD-16. See `lib/i18n/page-title.ts` for why the title lives here rather than
+// in a map of routes, and `scripts/check-page-titles.mjs` for what enforces it.
+export function generateMetadata() {
+  return pageTitle('title.admin.chart.of.accounts');
+}
+
 import {
   createAccountFromForm,
   getChartPage,

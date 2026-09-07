@@ -21,6 +21,14 @@ import { SIGNUP_TTL_MINUTES } from '@/lib/onboarding/signup';
 import { startSignupFromForm } from './actions';
 import { Card, Field, Lede, Shell, Title } from '@/app/pre-auth';
 
+import { pageTitle } from '@/lib/i18n/page-title';
+
+// UD-16. See `lib/i18n/page-title.ts` for why the title lives here rather than
+// in a map of routes, and `scripts/check-page-titles.mjs` for what enforces it.
+export function generateMetadata() {
+  return pageTitle('title.signup');
+}
+
 // A public page reading `searchParams`: nothing here is static.
 export const dynamic = 'force-dynamic';
 

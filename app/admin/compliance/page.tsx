@@ -39,6 +39,14 @@ import {
 import { renderFraudMessage } from '@/lib/i18n/catalog/fraud-messages';
 import { renderControlMessage } from '@/lib/i18n/catalog/control-messages';
 import { FRAUD_SEVERITIES } from '@/lib/fraud/rules';
+import { pageTitle } from '@/lib/i18n/page-title';
+
+// UD-16. See `lib/i18n/page-title.ts` for why the title lives here rather than
+// in a map of routes, and `scripts/check-page-titles.mjs` for what enforces it.
+export function generateMetadata() {
+  return pageTitle('title.admin.compliance');
+}
+
 import {
   evaluateNowFromForm,
   getCompliancePage,

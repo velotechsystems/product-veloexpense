@@ -291,6 +291,49 @@ test.describe('the pseudo-locale crawl', () => {
     ).toBeGreaterThan(0);
   });
 
+  /**
+   * UD-16 — every crawled page's TITLE, checked here because nothing else can.
+   *
+   * `visibleStrings` walks `document.body`; a `<title>` lives in `<head>`, so the
+   * ratchet below is structurally blind to it, and `scripts/check-page-titles.mjs`
+   * can only see that a route DECLARES a title, not that one arrives. This is the
+   * only place in the suite that renders these pages signed in, on a host the
+   * tenancy resolver accepts, and can therefore ask a browser what the tab says.
+   *
+   * That last clause is not incidental. Checking this by curl against a
+   * hand-started server returned 403 and the root layout's fallback title for
+   * every /admin route — which reads exactly like a UD-16 regression and was not
+   * one: the ad-hoc server had none of `playwright.config.ts`'s tenancy
+   * environment. A title test that is not signed in the way a reader is signed in
+   * measures the 403 page.
+   *
+   * Asserts pseudo-BRACKETING rather than the words, deliberately. The words are
+   * `test/page-titles.test.ts`'s business; asking for them here would put a second
+   * copy of the catalogue in a spec file. A bracketed title proves the string came
+   * from a catalogue through `localizedFrom`, which is the one thing only a
+   * rendered page can tell us.
+   */
+  for (const path of PAGES) {
+    test(`${path} — the tab says what page this is`, async ({ page }) => {
+      const response = await page.goto(path);
+      // A 403 or a redirect renders the ROOT layout's fallback title, which would
+      // pass a laxer assertion while proving nothing. Fail on the status first, so
+      // the message names the real problem.
+      expect(response?.status(), `${path} did not render`).toBeLessThan(400);
+
+      const title = await page.title();
+      // The page's own half comes FIRST, because a browser truncates the END of a
+      // tab title. `Acme Inc \u00b7 VeloExpense \u00b7 \u27e6Billing\u27e7` would satisfy a
+      // "contains" assertion and still be the defect UD-16 is about, so this
+      // checks the position and not just the presence.
+      expect(title, `${path} tab title: ${JSON.stringify(title)}`).toContain(OPEN);
+      expect(
+        title.startsWith(OPEN),
+        `${path} title does not lead with its own name: ${JSON.stringify(title)}`,
+      ).toBe(true);
+    });
+  }
+
   for (const path of PAGES) {
     test(`${path} — catalogued text is catalogued`, async ({ page }) => {
       await page.goto(path);

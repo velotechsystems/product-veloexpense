@@ -16,13 +16,6 @@
  * growth. It is the wrong instrument for VX4-10, which uses those numbers as
  * TARGETS — and in part 1 I used one that way without noticing the difference.
  *
- * What that cost, concretely: part 1 shipped `'/admin/billing': 0`. Insert one
- * subscription and the same page reports **five**, because the entire
- * subscription card had never rendered — including two English sentences
- * (`Trial ends …`, `Last confirmed with VeloTech …`) that I left uncatalogued
- * while claiming the screen was done. The ceiling was not a lie about the
- * screen; it was an honest measurement of a page that was only ever half there.
- *
  * ── WHAT A FIXTURE CAN AND CANNOT FIX HERE ────────────────────────────────
  *
  * Not every screen. `pseudo-crawl.spec.ts` already carries `RATCHET_PATH`, which
@@ -39,14 +32,17 @@
  * and otherwise does not exist at all — so part 1 measured a page that was only
  * ever half there, wrote `'/admin/billing': 0`, and left two English sentences
  * (`Trial ends …`, `Last confirmed with VeloTech …`) uncatalogued behind a
- * ceiling that claimed the screen was finished.
+ * ceiling that claimed the screen was finished. With one subscription inserted by
+ * hand that page read 5; with the subscription AND the reading this file installs
+ * it reads 8. Both numbers are true of different databases, which is the whole
+ * point being made — so the one worth quoting is the one this fixture produces.
  *
- * `/approvals` is the third case: it HAS rows, has no `RATCHET_PATH`, and never
+ * `/approvals` is the third case: it HAS rows, had no `RATCHET_PATH`, and never
  * got the caveat the file says such a page needs. Its ceiling of 15 was the empty
- * inbox, and it passes today only because nothing ahead of it happens to leave a
- * pending task for the crawl's admin. This fixture makes it deterministic from
- * the other direction — it clears foreign pending tasks for that one user and
- * installs exactly two of its own, so the number is the same whatever ran first.
+ * inbox, and it passed only while nothing ahead of it happened to leave a pending
+ * task for the crawl's admin. This fixture makes it deterministic from the other
+ * direction — it clears foreign pending tasks for that one user and installs
+ * exactly two of its own, so the number is the same whatever ran first.
  *
  * ── WHAT IS STILL INVISIBLE, AND IT IS NOT A SMALL LIST ────────────────────
  *

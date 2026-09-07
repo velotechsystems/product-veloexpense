@@ -19,6 +19,14 @@ import { readerPrefs } from '@/lib/i18n/request';
 import { uiText, type UiKey } from '@/lib/i18n/catalog/ui';
 import { getPreferencesPage, savePreferencesFromForm } from './actions';
 
+import { pageTitle } from '@/lib/i18n/page-title';
+
+// UD-16. See `lib/i18n/page-title.ts` for why the title lives here rather than
+// in a map of routes, and `scripts/check-page-titles.mjs` for what enforces it.
+export function generateMetadata() {
+  return pageTitle('title.preferences');
+}
+
 export default async function PreferencesPage({
   searchParams,
 }: {

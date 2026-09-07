@@ -59,7 +59,24 @@ import { PolicyPanel } from './policy-panel';
 import { LifecycleBar, ReportHistory } from './lifecycle-bar';
 import { ApprovalPanel } from './approval-panel';
 
+import { dataTitle } from '@/lib/i18n/page-title';
 export const dynamic = 'force-dynamic';
+
+
+// UD-16. Titled by the REPORT, because that is what distinguishes this tab from
+// the four others a reviewer has open — "Expense report" thirty-one times over is
+// the defect UD-16 is about, only narrower. The report's own title is the
+// customer's words and is not catalogued; the fallback for an unreadable one is.
+//
+// This costs a second read of the workbench for the same request. Next dedupes
+// `fetch`, not database calls, so the cost is real and it is one indexed
+// primary-key read against a row the page is about to read anyway. Worth naming
+// rather than pretending it is free.
+export async function generateMetadata({ params }: { params: Promise<{ reportId: string }> }) {
+  const { reportId } = await params;
+  const workbench = await getReportWorkbench(reportId).catch(() => null);
+  return dataTitle('title.expenses.report', workbench?.report?.title ?? null);
+}
 
 export default async function ReportWorkbenchPage({
   params,
