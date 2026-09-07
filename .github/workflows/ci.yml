@@ -135,6 +135,14 @@ jobs:
       - name: Page-title guard (every route names itself)
         run: npm run check:titles
 
+      # An enum member rendered raw inside a <select>. Needs its own gate because
+      # the pseudo-locale crawl skips SELECT and OPTION on purpose — a timezone
+      # list is data, and counting it took two screens to 497 and 181
+      # un-catalogued strings. Four dropdowns were spelling BLOCK and RETURNED
+      # beside catalogued labels for the same values. No build, no database.
+      - name: Enum-in-a-select guard (no raw member in a dropdown)
+        run: npm run check:options
+
       # Build first: Next 16 generates .next/types/** (e.g. LayoutProps) that the
       # standalone `tsc --noEmit` typecheck depends on.
       - name: Build

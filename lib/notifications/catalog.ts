@@ -32,6 +32,9 @@
  * inventing a second template."
  */
 import { DEFAULT_LOCALE, localizedFrom, type Locale } from '@/lib/i18n/locales';
+// A VALUE import from `enums.ts`, which imports `EventType` back from here — but
+// only as a `type`, so that edge is erased and there is no runtime cycle.
+import { missingCopyMarker } from '@/lib/i18n/catalog/enums';
 
 /**
  * Re-exported, not redeclared. `lib/i18n/locales.ts` owns the value; this line
@@ -529,9 +532,36 @@ export function renderContent(
 /**
  * The shipped sentence for an event, with no database involved.
  *
- * Last resort is the event type itself, as ExpenseOS's `renderMessage` does
- * (`?? type`): an event with no registry entry renders as `TASK_ASSIGNED`, which
- * is ugly and unmistakably a missing-copy bug rather than a blank row.
+ * ── THE FALLBACK, AND WHY IT CHANGED ───────────────────────────────────────
+ *
+ * This used to end `|| eventType`, ported from ExpenseOS's `renderMessage`
+ * (`?? type`), and the reasoning written here was sound as far as it went: an
+ * event with no registry entry renders as `TASK_ASSIGNED`, which is "ugly and
+ * unmistakably a missing-copy bug rather than a blank row". Loud beats blank, and
+ * that half was right.
+ *
+ * What it got wrong is that the product had since acquired a STANDARD way to be
+ * loud, and this was not it. `missingCopyMarker` renders `{TASK_ASSIGNED}` —
+ * braces around the value it could not resolve — and it is what `enumLabel`
+ * returns for an unknown member, what `uiText` returns for an unknown key, and
+ * what `test/i18n-ui.test.ts` and `test/i18n-enum-catalog.test.ts` both assert
+ * against. One shape for "copy is missing here", everywhere.
+ *
+ * The difference is not cosmetic. A bare `TASK_ASSIGNED` in a notification body
+ * is ambiguous: it could be deliberate shorthand, and a reader has no way to tell.
+ * `{TASK_ASSIGNED}` cannot be mistaken for content by anybody, and it is
+ * greppable — an operator seeing it in a screenshot can find every other instance
+ * of the same class of bug.
+ *
+ * VX4-7 part 3 already made this exact call on this exact screen: the row's
+ * SUB-LABEL was a raw `{row.eventType}` and became
+ * `enumLabel(EVENT_TYPE_COPY, …)`, which falls back to the marker. The body path
+ * simply was not updated to match, so one screen had two conventions for the same
+ * failure — and the body is the half a person actually reads.
+ *
+ * Found by VX5-20's crawl fixture inserting a lower-case `expense_report` subject
+ * type, which `templateKeyFor` does not match. That was a fixture bug, and this
+ * was the product behind it.
  */
 export function shippedBody(
   eventType: string,
@@ -540,5 +570,5 @@ export function shippedBody(
 ): string {
   const key = templateKeyFor(eventType, subjectType);
   const def = key ? TEMPLATE_KEY_BY_KEY.get(key) : undefined;
-  return (def && localized(def.shipped, locale)) || eventType;
+  return (def && localized(def.shipped, locale)) || missingCopyMarker(eventType);
 }

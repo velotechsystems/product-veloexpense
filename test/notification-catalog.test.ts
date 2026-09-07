@@ -38,6 +38,7 @@ import {
   shippedBody,
   templateKeyFor,
 } from '@/lib/notifications/catalog';
+import { missingCopyMarker } from '@/lib/i18n/catalog/enums';
 
 /* ── the taxonomy ──────────────────────────────────────────────────────────── */
 
@@ -311,11 +312,34 @@ describe('shippedBody', () => {
     expect(shippedBody('APPROVED', 'EXPENSE_REPORT')).toContain('{report}');
   });
 
-  it('falls back to the event type itself for an unmapped event', () => {
-    // Ugly on purpose, and ported: an unmistakable missing-copy bug beats a
-    // blank row.
-    expect(shippedBody('SOMETHING_NEW', 'EXPENSE_REPORT')).toBe('SOMETHING_NEW');
-    expect(shippedBody('APPROVED', null)).toBe('APPROVED');
+  it('falls back to the MISSING-COPY MARKER for an unmapped event', () => {
+    // Was `toBe('SOMETHING_NEW')` — the bare event type, "ugly on purpose", and
+    // that half of the reasoning still stands: loud beats blank.
+    //
+    // What changed is that the product has a standard way to be loud, and this
+    // was not it. `missingCopyMarker` renders `{VALUE}`, and it is what
+    // `enumLabel` returns for an unknown member and `uiText` for an unknown key.
+    // A bare `SOMETHING_NEW` in a notification BODY is ambiguous — it could be
+    // deliberate shorthand, and a reader cannot tell. `{SOMETHING_NEW}` cannot be
+    // mistaken for content by anybody, and it is greppable.
+    //
+    // VX4-7 part 3 made this same call on this same screen for the row's
+    // sub-label; the body path was not updated to match, so one screen had two
+    // conventions for the same failure — and the body is the half people read.
+    expect(shippedBody('SOMETHING_NEW', 'EXPENSE_REPORT')).toBe('{SOMETHING_NEW}');
+    // `APPROVED` with no subject type has no template key either, which is the
+    // second shape of the same miss: a real event type, an unusable pairing.
+    expect(shippedBody('APPROVED', null)).toBe('{APPROVED}');
+  });
+
+  it('and the marker is the same shape every other catalogue uses', () => {
+    // The assertion that would fail if somebody "improved" the marker here into a
+    // local format. One shape for "copy is missing", everywhere, is the whole
+    // value of the change — two shapes would be worse than the one bare string it
+    // replaced.
+    expect(shippedBody('SOMETHING_NEW', 'EXPENSE_REPORT')).toBe(
+      missingCopyMarker('SOMETHING_NEW'),
+    );
   });
 });
 

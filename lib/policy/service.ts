@@ -18,7 +18,13 @@
  *     cleared, because BLOCK findings must be fixed rather than waved through.
  */
 import type { QueryRunner } from '@/lib/db/client';
-import { enumLabel, RULE_KIND_COPY, SEVERITY_COPY } from '@/lib/i18n/catalog/enums';
+import {
+  enumLabel,
+  RULE_KIND_COPY,
+  RULE_PARAM_COPY,
+  ruleParamKey,
+  SEVERITY_COPY,
+} from '@/lib/i18n/catalog/enums';
 import { DEFAULT_LOCALE } from '@/lib/i18n/locales';
 import type { UserMessage } from '@/lib/errors/domain';
 import type { UserMessageCode } from '@/lib/i18n/catalog/errors';
@@ -136,8 +142,14 @@ function normalizeParams(kind: RuleKind, params: Record<string, unknown> = {}) {
     const missing = raw === undefined || raw === null || raw === '';
     if (missing) {
       if (spec.required) {
-        throw new PolicyError(`${ruleName(definition.kind)} needs ${spec.label}`, 'MISSING_PARAM',
-      { code: 'POLICY_PARAM_REQUIRED', params: { rule: ruleName(definition.kind), field: spec.label } },
+        throw new PolicyError(
+        `${ruleName(definition.kind)} needs ${paramName(definition.kind, spec.name)}`,
+        'MISSING_PARAM',
+        {
+          code: 'POLICY_PARAM_REQUIRED',
+          // KEYS. `errors.ts` turns them into words for whoever reads them.
+          params: { rule: definition.kind, field: paramKey(definition.kind, spec.name) },
+        },
     );
       }
       continue;
@@ -147,12 +159,17 @@ function normalizeParams(kind: RuleKind, params: Record<string, unknown> = {}) {
       try {
         value = typeof raw === 'bigint' ? raw : BigInt(String(raw).trim());
       } catch {
-        throw new PolicyError(`${spec.label} must be a whole number of minor units`, 'INVALID_PARAM',
-      { code: 'POLICY_PARAM_NOT_WHOLE', params: { field: spec.label } },
+        throw new PolicyError(
+        `${paramName(definition.kind, spec.name)} must be a whole number of minor units`,
+        'INVALID_PARAM',
+        { code: 'POLICY_PARAM_NOT_WHOLE', params: { field: paramKey(definition.kind, spec.name) } },
     );
       }
-      if (value < 0n) throw new PolicyError(`${spec.label} cannot be negative`, 'INVALID_PARAM',
-      { code: 'POLICY_PARAM_NEGATIVE', params: { field: spec.label } },
+      if (value < 0n)
+        throw new PolicyError(
+          `${paramName(definition.kind, spec.name)} cannot be negative`,
+          'INVALID_PARAM',
+          { code: 'POLICY_PARAM_NEGATIVE', params: { field: paramKey(definition.kind, spec.name) } },
     );
       clean[spec.name] = Number(value);
     } else {
@@ -220,7 +237,7 @@ function assertSeverityForKind(kind: RuleKind, severity: string): Severity {
         // it straight through would put "WARNING" in a sentence an admin reads —
         // which is the defect part 2a spent a whole PR removing from eleven
         // screens, walking back in through a parameter three PRs later.
-        params: { rule: ruleName(definition.kind), maximum: enumLabel(SEVERITY_COPY, maximum, DEFAULT_LOCALE) },
+        params: { rule: definition.kind, maximum },
       },
     );
   }
@@ -233,7 +250,7 @@ async function assertCategory(tx: QueryRunner, kind: RuleKind, categoryId: strin
     throw new PolicyError(
       `${ruleName(kind)} applies to the whole report and cannot be scoped to a category`,
       'CATEGORY_NOT_SCOPEABLE',
-      { code: 'POLICY_NOT_CATEGORY_SCOPED', params: { rule: ruleName(kind) } },
+      { code: 'POLICY_NOT_CATEGORY_SCOPED', params: { rule: kind } },
     );
   }
   const r = await tx.query('SELECT id FROM expense_category WHERE id = $1', [categoryId]);
@@ -315,6 +332,30 @@ export interface PolicyCurrencyInfo {
  * contract and its tests, so it is boarded (see HANDOFF) and not folded in here.
  */
 const ruleName = (kind: RuleKind) => enumLabel(RULE_KIND_COPY, kind, DEFAULT_LOCALE);
+
+/*
+ * ── THE PARAMS NOW CARRY KEYS, NOT WORDS ───────────────────────────────────
+ *
+ * The note above described `DEFAULT_LOCALE` here as a known limitation: a
+ * refusal's params are filled where it is THROWN and rendered somewhere else, so
+ * there was no seam at which a reader's locale could be applied, and a French
+ * reader got a French template with an English rule name inside it.
+ *
+ * That seam now exists. `errors.ts` has a `PARAM_CATALOGUES` table saying which
+ * catalogue turns `{rule}`, `{field}` and `{maximum}` into words, and it resolves
+ * them in `renderUserMessage`, where the locale IS known. So these sites pass the
+ * KEY and stop guessing.
+ *
+ * `ruleName` survives for one job only: the `Error.message`. That string is for a
+ * log and a stack trace, it has no reader and therefore no locale, and
+ * `DEFAULT_LOCALE` is exactly right for it. What changed is that it is no longer
+ * also the thing a person sees.
+ */
+const paramKey = (kind: RuleKind, paramName: string) => ruleParamKey(kind, paramName);
+
+/** A param spec's name in words, for a LOG line. See above. */
+const paramName = (kind: RuleKind, name: string) =>
+  enumLabel(RULE_PARAM_COPY, ruleParamKey(kind, name), DEFAULT_LOCALE);
 
 export async function policyCurrencyCode(tx: QueryRunner): Promise<string> {
   const org = await tx.query(
@@ -430,7 +471,7 @@ export async function createPolicy(tx: QueryRunner, input: NewPolicy): Promise<P
       throw new PolicyError(
         `a ${ruleName(kind)} rule already exists for that scope — edit it instead`,
         'DUPLICATE_RULE',
-      { code: 'POLICY_DUPLICATE_SCOPE', params: { rule: ruleName(kind) } },
+      { code: 'POLICY_DUPLICATE_SCOPE', params: { rule: kind } },
     );
     }
     throw err;

@@ -16,6 +16,7 @@ import { EmptyRow, ErrorBanner, StatusBadge, selectClass } from './ui';
 import { formatInstant } from '@/lib/i18n/format';
 import { readerPrefs } from '@/lib/i18n/request';
 import { uiText, uiPlural, uiSentence, uiAround, type UiKey } from '@/lib/i18n/catalog/ui';
+import { enumLabel, REPORT_STATUS_COPY } from '@/lib/i18n/catalog/enums';
 
 import { pageTitle } from '@/lib/i18n/page-title';
 
@@ -134,9 +135,16 @@ export default async function ExpenseReportsPage({
           </label>
           <select id="status" name="status" defaultValue={sp.status ?? ''} className={selectClass}>
             <option value="">{t('expenses.filter.status.any')}</option>
+            {/* The catalogued label, not the member. `StatusBadge` two inches
+                away in the table renders "Returned for changes" for the same
+                value this dropdown used to spell `RETURNED` — one screen, one
+                value, two spellings. The VALUE stays the member; only the text
+                changes. `scripts/check-enum-options.mjs` refuses the old form,
+                because the pseudo-locale crawl skips <select> by design and
+                could never see it. */}
             {REPORT_STATUSES.map((s) => (
               <option key={s} value={s}>
-                {s}
+                {enumLabel(REPORT_STATUS_COPY, s, prefs.locale)}
               </option>
             ))}
           </select>

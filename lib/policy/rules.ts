@@ -147,7 +147,16 @@ export interface Finding {
 
 export interface ParamSpec {
   name: string;
-  label: string;
+  /*
+   * NO `label`. It was an English literal here and is now
+   * `RULE_PARAM_COPY[ruleParamKey(kind, name)]` in `lib/i18n/catalog/enums.ts`,
+   * for the same reason `RuleDefinition.label` moved there in VX4-10 part 4: it
+   * was read only by `lib/policy/service.ts`, which put it verbatim into a
+   * CATALOGUED refusal — so a French reader got a French sentence with an English
+   * word inside it.
+   *
+   * A rule definition is the evaluator. Copy belongs where a locale can reach it.
+   */
   type: 'amount' | 'boolean';
   required: boolean;
   help?: string;
@@ -362,7 +371,6 @@ const PER_TRANSACTION_LIMIT: RuleDefinition = {
   params: [
     {
       name: 'thresholdMinor',
-      label: 'Limit',
       type: 'amount',
       required: true,
       help: 'A line item above this amount raises the violation.',
@@ -430,7 +438,6 @@ const RECEIPT_REQUIRED: RuleDefinition = {
   params: [
     {
       name: 'thresholdMinor',
-      label: 'Only above',
       type: 'amount',
       required: false,
       help: 'Leave blank to require a receipt on every expense.',
