@@ -263,6 +263,35 @@ export const UI_COPY = {
   'expenses.column.created': { 'en-CA': 'Created' },
   'expenses.column.total': { 'en-CA': 'Total' },
 
+  /* ── /notifications (VX2-8, VX4-10 part 3) ──────────────────────────────── */
+  //
+  // The ROWS on this screen were already catalogued and it is worth knowing why
+  // before reading the ceiling below: a notification's body comes from
+  // `notification-templates`, and its two sub-labels from `EVENT_TYPE_COPY` and
+  // `NOTIFICATION_WORDING_COPY` in `enums.ts`. Part 3 had only the chrome left,
+  // which is why this screen's residue is one `Intl` date per row and nothing
+  // else.
+  'notifications.title': { 'en-CA': 'Notifications' },
+  'notifications.none.unread': { 'en-CA': 'Nothing unread' },
+  'notifications.mark.all.read': { 'en-CA': 'Mark all read' },
+  'notifications.mark.read': { 'en-CA': 'Mark read' },
+  'notifications.filter.all': { 'en-CA': 'Everything' },
+  'notifications.filter.unread': { 'en-CA': 'Unread only' },
+  'notifications.column.what': { 'en-CA': 'What happened' },
+  'notifications.column.when': { 'en-CA': 'When' },
+  // Two empty states, not one with a clause bolted on. The unread-only view is
+  // empty because the reader has caught up; the everything view is empty because
+  // nothing has happened yet, and those want different sentences in any language.
+  'notifications.empty.unread': { 'en-CA': 'Nothing unread.' },
+  'notifications.empty.all': {
+    'en-CA': 'Nothing yet. Submitted reports, approvals and returns land here.',
+  },
+  'notifications.footer': {
+    'en-CA':
+      'Open a report to act on it — a notification says what happened, the report is where you do something about it.',
+  },
+  'nav.preferences': { 'en-CA': 'Preferences' },
+
   /* ── /approvals (VX2-4) ─────────────────────────────────────────────────── */
   'approvals.title': { 'en-CA': 'Approvals' },
   'approvals.none.waiting': { 'en-CA': 'Nothing waiting on you' },
@@ -287,6 +316,58 @@ export const UI_COPY = {
   'approvals.empty': {
     'en-CA': 'Nothing to approve. Reports appear here when somebody submits one that routes to you.',
   },
+
+  /* ── /admin/expense-policies (VX3-2, VX4-10 part 4) ─────────────────────── */
+  //
+  // The rule NAMES and DESCRIPTIONS are NOT here. They are `RULE_KIND_COPY` and
+  // `RULE_DESCRIPTION_COPY` in `enums.ts`, keyed by `RuleKind` — a union the
+  // product enumerates, so a new rule kind is a compile error there in a way it
+  // could never be here. This catalogue holds the screen's chrome and nothing
+  // that a type can guarantee coverage of.
+  'policies.title': { 'en-CA': 'Expense policies' },
+  // The clause after the rule count. Param-less, so it lives here and
+  // `policies.count.rules.*` interpolates it as `{tail}` — split that way so a
+  // translator can move it, or drop the interpunct, without touching the plural
+  // forms. `UI_SENTENCES` rejected it for exactly the reason it should: no hole.
+  'policies.count.tail': {
+    'en-CA': 'changes apply on the next save of a report, no deploy',
+  },
+  'policies.restore.starter': { 'en-CA': 'Restore starter rules' },
+  'policies.currency.title': { 'en-CA': 'Threshold currency' },
+  'policies.currency.lede': {
+    'en-CA':
+      'Every amount below is compared in this currency. A report in another currency is converted first, so one limit means the same thing to everybody. A rule can override it — useful if you have entities in more than one country.',
+  },
+  'policies.currency.aria': { 'en-CA': 'Policy currency' },
+  'policies.save': { 'en-CA': 'Save' },
+  'policies.delete': { 'en-CA': 'Delete' },
+  'policies.no.rates': {
+    'en-CA': 'No exchange rates are loaded. Reports in a single currency are unaffected.',
+  },
+  'policies.column.rule': { 'en-CA': 'Rule' },
+  'policies.column.category': { 'en-CA': 'Category' },
+  'policies.column.severity': { 'en-CA': 'Severity' },
+  'policies.column.threshold': { 'en-CA': 'Threshold' },
+  'policies.column.effective': { 'en-CA': 'Effective' },
+  'policies.column.on': { 'en-CA': 'On' },
+  'policies.empty': {
+    'en-CA': 'No policy rules yet. Restore the starter set above, or add one below.',
+  },
+  'policies.all.categories': { 'en-CA': 'All categories' },
+  'policies.whole.report': { 'en-CA': 'Whole report' },
+  'policies.category.inactive.suffix': { 'en-CA': ' (inactive)' },
+  'policies.add.title': { 'en-CA': 'Add a rule' },
+  'policies.add.choose': { 'en-CA': 'Choose…' },
+  'policies.field.rule': { 'en-CA': 'Rule' },
+  'policies.field.severity': { 'en-CA': 'Severity' },
+  'policies.field.threshold': { 'en-CA': 'Threshold' },
+  'policies.field.category': { 'en-CA': 'Category' },
+  'policies.field.effective.from': { 'en-CA': 'Effective from' },
+  'policies.field.effective.to': { 'en-CA': 'Effective to' },
+  'policies.field.enabled': { 'en-CA': 'Enabled' },
+  'policies.add.submit': { 'en-CA': 'Add rule' },
+  'nav.approval.ladder': { 'en-CA': 'Approval ladder' },
+  'nav.employees': { 'en-CA': 'Employees' },
 
   /* ── /admin/locale (VX4-7 part 2a's screen) ─────────────────────────────── */
   //
@@ -406,6 +487,35 @@ export const UI_SENTENCES = {
     'en-CA':
       'Open a report to approve, return or reject it — the decision lives with the thing you are deciding on. Going away? {link} — you keep your queue, your stand-in gains the ability to decide.',
   },
+
+  /* ── /admin/expense-policies ────────────────────────────────────────────── */
+  'policies.count.rules.one': { 'en-CA': '{n} rule · {tail}' },
+  'policies.count.rules.other': { 'en-CA': '{n} rules · {tail}' },
+  // Both halves of the unconvertible-currency warning. `{currencies}` and
+  // `{scopeable}` arrive already joined by `lib/i18n/list.ts`, so the connecting
+  // word is `Intl`'s and not this catalogue's.
+  'policies.unconvertible.title': {
+    'en-CA': 'Amount limits cannot be enforced on {currencies} reports.',
+  },
+  'policies.unconvertible.one.detail': {
+    'en-CA':
+      'There is no exchange rate between that currency and {code}, so those reports get an informational note instead of a limit check. Rules that do not involve an amount are unaffected.',
+  },
+  'policies.unconvertible.many.detail': {
+    'en-CA':
+      'There is no exchange rate between those currencies and {code}, so those reports get an informational note instead of a limit check. Rules that do not involve an amount are unaffected.',
+  },
+  'policies.rates.available': {
+    'en-CA': 'Rates available: {pairs} (the reverse of each is derived).',
+  },
+  'policies.scopeable.only': {
+    'en-CA': 'Only {rules} can be scoped to one category.',
+  },
+  'policies.threshold.currency.aria': { 'en-CA': 'Currency for the {rule} threshold' },
+
+  /* ── /notifications ─────────────────────────────────────────────────────── */
+  'notifications.count.unread.one': { 'en-CA': '{n} unread' },
+  'notifications.count.unread.other': { 'en-CA': '{n} unread' },
 
   /* ── /admin/billing — the branch part 1's ceiling of 0 never saw ─────────── */
   'billing.trial.ends': { 'en-CA': 'Trial ends {date}.' },

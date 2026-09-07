@@ -101,21 +101,92 @@ export const SEVERITY_COPY: EnumCopy<Severity> = {
   BLOCK: { 'en-CA': 'Must be fixed' },
 };
 
+/**
+ * ── THIS CATALOGUE WAS DEAD UNTIL VX4-10 PART 4, AND THAT IS THE STORY ─────
+ *
+ * Built in VX4-7 part 2a with full coverage of `RuleKind` and a passing test in
+ * `test/i18n-enum-catalog.test.ts`. It had exactly two consumers, and both were
+ * that test file. Nothing in `lib/` or `app/` ever asked it anything.
+ *
+ * Meanwhile `lib/policy/rules.ts` carried a `label` on every `RuleDefinition` —
+ * a SECOND list of the same five names — and that is what `/admin/expense-policies`
+ * rendered, what `lib/policy/service.ts` put into eight refusal messages, and
+ * therefore the only one a person ever read.
+ *
+ * The two had already drifted on two of five members:
+ *
+ *   NON_NEGATIVE_AMOUNT   catalogue: "Amount cannot be negative"
+ *                            rules.ts: "No negative amounts"   ← what shipped
+ *   BUDGET_OVERAGE        catalogue: "Budget overage"
+ *                            rules.ts: "Over budget"           ← what shipped
+ *
+ * UD-9's defect in its purest form, and the fourth time this tree has paid for
+ * it. What made it invisible is worth more than the fix: a coverage test can
+ * prove a catalogue covers its union and cannot notice that nobody reads the
+ * catalogue. `scripts/check-i18n.mjs` now refuses a catalogue here whose only
+ * references are its own test.
+ *
+ * ── WHICH WORDING SURVIVED, AND WHY IT IS THE LIVE ONE ─────────────────────
+ *
+ * `rules.ts`', on both disagreements. Not because it is better — "Amount cannot
+ * be negative" is arguably clearer than "No negative amounts" — but because it is
+ * what readers see today, and a ticket about removing a duplicate list is not a
+ * ticket about changing copy. Changing both at once would have meant nobody could
+ * tell afterwards which change caused a complaint. The wording question is now a
+ * one-line edit here, which is the whole point of the catalogue existing.
+ */
 export const RULE_KIND_COPY: EnumCopy<RuleKind> = {
   PER_TRANSACTION_LIMIT: { 'en-CA': 'Per-transaction limit' },
   RECEIPT_REQUIRED: { 'en-CA': 'Receipt required' },
   CATEGORY_ACTIVE: { 'en-CA': 'Category must be active' },
-  NON_NEGATIVE_AMOUNT: { 'en-CA': 'Amount cannot be negative' },
-  BUDGET_OVERAGE: { 'en-CA': 'Budget overage' },
+  NON_NEGATIVE_AMOUNT: { 'en-CA': 'No negative amounts' },
+  BUDGET_OVERAGE: { 'en-CA': 'Over budget' },
+};
+
+/**
+ * What each rule DOES, in a sentence, for the admin choosing whether to enable it.
+ *
+ * Genuinely un-catalogued before part 4 — unlike the labels above, no catalogue
+ * held these at all. They render only on `/admin/expense-policies`, which is why
+ * no gate saw them: that screen sat behind a pseudo-locale ceiling of 46 from the
+ * day the ratchet was built until the day this ticket lowered it.
+ *
+ * A separate catalogue from the labels rather than a `{ label, description }`
+ * pair per member, because `Copy` is a locale-keyed STRING map and nesting a
+ * second level inside it would put an object where `localizedFrom` expects a
+ * string — the same mechanical trap VX4-10 part 2 hit with plural forms, where a
+ * nested value passes through unpseudoized and the crawl then counts a catalogued
+ * string as un-catalogued. Two flat catalogues keyed by the same union cost one
+ * extra declaration and keep every value a string.
+ *
+ * Verbatim from the `description` fields they replace. Wording changes are a
+ * separate decision, for the reason given above the labels.
+ */
+export const RULE_DESCRIPTION_COPY: EnumCopy<RuleKind> = {
+  PER_TRANSACTION_LIMIT: {
+    'en-CA':
+      'Flags any single line item above the limit. Scope it to one category to give, say, meals a tighter cap than airfare.',
+  },
+  RECEIPT_REQUIRED: {
+    'en-CA':
+      'Flags an expense with no receipt attached. Set a limit to require receipts only above an amount.',
+  },
+  CATEGORY_ACTIVE: {
+    'en-CA':
+      'Flags a line item coded to a category the tenant has retired. Catches reports left in draft across a chart-of-accounts change.',
+  },
+  NON_NEGATIVE_AMOUNT: {
+    'en-CA':
+      'Flags a line item below zero. Credits and refunds belong on the original report, not as a negative line.',
+  },
+  BUDGET_OVERAGE: {
+    'en-CA':
+      'Flags a report whose spend takes a budget period past its budget, counting what is already approved and what is still awaiting a decision. Warns; it never blocks.',
+  },
 };
 
 /* ── approvals ────────────────────────────────────────────────────────────── */
 
-export const DECISION_COPY: EnumCopy<Decision> = {
-  APPROVED: { 'en-CA': 'Approved' },
-  REJECTED: { 'en-CA': 'Rejected' },
-  RETURNED: { 'en-CA': 'Returned for changes' },
-};
 
 export const DELEGATION_SCOPE_COPY: EnumCopy<DelegationScope> = {
   // Replaces `row.scope === 'ALL' ? 'Everything' : 'Expense reports'` — an
@@ -234,12 +305,6 @@ export const CAPABILITY_COPY: EnumCopy<Capability> = {
   READ_PAYMENT_STATUS: { 'en-CA': 'Read payment status' },
 };
 
-export const ACCOUNT_SOURCE_COPY: EnumCopy<AccountSource> = {
-  TEMPLATE: { 'en-CA': 'From a template' },
-  IMPORT: { 'en-CA': 'Imported' },
-  MANUAL: { 'en-CA': 'Added by hand' },
-  PULLED: { 'en-CA': 'Pulled from the ledger' },
-};
 
 /* ── notifications ────────────────────────────────────────────────────────── */
 
@@ -282,10 +347,6 @@ export const EVENT_TYPE_COPY: EnumCopy<EventType> = {
 
 /* ── receipts ─────────────────────────────────────────────────────────────── */
 
-export const RECEIPT_STATUS_COPY: EnumCopy<ReceiptStatus> = {
-  PENDING: { 'en-CA': 'Uploading' },
-  STORED: { 'en-CA': 'Attached' },
-};
 
 /* ── the render boundary ──────────────────────────────────────────────────── */
 
@@ -333,6 +394,27 @@ export function missingCopyMarker(value: string): string {
  * is what makes the coverage assertion meaningful — a page that formatted its
  * own label would be outside the guarantee, and four of them used to be.
  */
+/*
+ * ── THREE CATALOGUES WERE DELETED HERE BY VX4-10 PART 4 ────────────────────
+ *
+ * `DECISION_COPY`, `ACCOUNT_SOURCE_COPY` and `RECEIPT_STATUS_COPY`. The
+ * dead-catalogue gate added to `scripts/check-i18n.mjs` in part 4 found them on
+ * its first run — none was read from anywhere but its own coverage test, exactly
+ * like `RULE_KIND_COPY` before it, and none of the three enums is rendered to a
+ * reader anywhere in the product today.
+ *
+ * Deleted rather than exempted, and the reason is the gate's own argument: a
+ * catalogue with no call site is where a duplicate hides, and an exemption list
+ * would have preserved precisely the condition the gate exists to prevent.
+ * `Decision` is the clearest case — APPROVED / REJECTED / RETURNED already
+ * overlap `TRANSITION_ACTION_COPY` and `REPORT_STATUS_COPY`, both of which are
+ * live, so a third spelling of those words was a drift waiting to happen.
+ *
+ * If a screen needs any of them, three lines brings it back — and the wording
+ * will then be chosen with the screen in front of the author, which is better
+ * than inheriting a guess nobody has ever seen rendered.
+ */
+
 export function enumLabel(
   // Deliberately NOT generic over the union. A generic would infer `T` from the
   // VALUE argument and then demand the catalogue prove it covers exactly that

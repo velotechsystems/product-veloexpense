@@ -29,14 +29,11 @@
 import { describe, it, expect } from 'vitest';
 import { SUPPORTED_LOCALES, DEFAULT_LOCALE, fallbackChain } from '@/lib/i18n/locales';
 import {
-  ACCOUNT_SOURCE_COPY,
   CAPABILITY_COPY,
   CHANNEL_COPY,
   CONTROL_RUN_STATUS_COPY,
   CONTROL_SEVERITY_COPY,
-  DECISION_COPY,
   DELEGATION_SCOPE_COPY,
-  DELIVERY_STATUS_COPY,
   EMPLOYEE_ROLE_COPY,
   EMPLOYEE_STATUS_COPY,
   EVENT_TYPE_COPY,
@@ -44,9 +41,9 @@ import {
   FRAUD_SEVERITY_COPY,
   INBOX_ROUTE_COPY,
   POST_STATUS_COPY,
-  RECEIPT_STATUS_COPY,
   REPORT_STATUS_COPY,
   RULE_KIND_COPY,
+  RULE_DESCRIPTION_COPY,
   SEVERITY_COPY,
   TRANSITION_ACTION_COPY,
   enumLabel,
@@ -70,9 +67,11 @@ import { DELEGATION_SCOPES } from '@/lib/approvals/tiers';
 /**
  * The rendered enums, each paired with the array that DEFINES it.
  *
- * A union with no runtime array of its own (`PostStatus`, `DeliveryStatus`,
- * `TransitionAction`, `InboxRoute`, `Decision`, `AccountSource`,
- * `ReceiptStatus`) is listed with its members written out. That is a second copy
+ * A union with no runtime array of its own (`TransitionAction`, `InboxRoute`) is
+ * listed with its members written out. `Decision`,
+ * `AccountSource` and `ReceiptStatus` used to be here too; VX4-10 part 4 deleted
+ * those catalogues after the new dead-catalogue gate in `scripts/check-i18n.mjs`
+ * found that nothing outside this file ever read them. That is a second copy
  * and it is the honest one available: those modules export a TYPE and no array,
  * so there is nothing else to enumerate. `every union with a runtime array is
  * paired with it` below asserts the pairing is used wherever one exists, so this
@@ -90,37 +89,25 @@ const CATALOGUES: {
   { name: 'EmployeeStatus', members: EMPLOYEE_STATUSES, copy: EMPLOYEE_STATUS_COPY, fromArray: true },
   { name: 'Severity', members: SEVERITIES, copy: SEVERITY_COPY, fromArray: true },
   { name: 'RuleKind', members: RULE_KINDS, copy: RULE_KIND_COPY, fromArray: true },
+  // VX4-10 part 4. A SECOND catalogue on the same union — the rule's SENTENCE, not
+  // its name — and it is in this table for the same reason the first one is: a new
+  // rule kind must be a failure in both, and the union is what makes that free.
+  //
+  // Named with a suffix rather than 'RuleKind' twice, because the `owned` check
+  // below looks up by name and two entries called the same thing would let one
+  // shadow the other.
+  {
+    name: 'RuleKind (descriptions)',
+    members: RULE_KINDS,
+    copy: RULE_DESCRIPTION_COPY,
+    fromArray: true,
+  },
   { name: 'Channel', members: CHANNELS, copy: CHANNEL_COPY, fromArray: true },
   { name: 'EventType', members: EVENT_TYPES, copy: EVENT_TYPE_COPY, fromArray: true },
   { name: 'Capability', members: CAPABILITIES, copy: CAPABILITY_COPY, fromArray: true },
-  { name: 'DelegationScope', members: DELEGATION_SCOPES, copy: DELEGATION_SCOPE_COPY, fromArray: true },
-  {
-    name: 'TransitionAction',
-    members: ['SUBMIT', 'RECALL', 'APPROVE', 'REJECT', 'RETURN', 'REIMBURSE'],
-    copy: TRANSITION_ACTION_COPY,
-    fromArray: false,
-  },
-  {
-    name: 'PostStatus',
-    // Was a hand-copied list until VX4-8 part 1, when adding HELD made it stale
-    // and this file's own stale-copy check said so. `POST_STATUSES` now exists
-    // for exactly this reason.
-    members: POST_STATUSES,
-    copy: POST_STATUS_COPY,
-    fromArray: true,
-  },
-  {
-    name: 'FraudSeverity',
-    members: FRAUD_SEVERITIES,
-    copy: FRAUD_SEVERITY_COPY,
-    fromArray: true,
-  },
-  {
-    name: 'FlagStatus',
-    members: FLAG_STATUSES,
-    copy: FRAUD_FLAG_STATUS_COPY,
-    fromArray: true,
-  },
+  { name: 'PostStatus', members: POST_STATUSES, copy: POST_STATUS_COPY, fromArray: true },
+  { name: 'FraudSeverity', members: FRAUD_SEVERITIES, copy: FRAUD_SEVERITY_COPY, fromArray: true },
+  { name: 'FlagStatus', members: FLAG_STATUSES, copy: FRAUD_FLAG_STATUS_COPY, fromArray: true },
   {
     name: 'ControlSeverity',
     members: CONTROL_SEVERITIES,
@@ -133,10 +120,11 @@ const CATALOGUES: {
     copy: CONTROL_RUN_STATUS_COPY,
     fromArray: true,
   },
+  { name: 'DelegationScope', members: DELEGATION_SCOPES, copy: DELEGATION_SCOPE_COPY, fromArray: true },
   {
-    name: 'DeliveryStatus',
-    members: ['PENDING', 'SENT', 'FAILED', 'DEAD', 'CANCELLED'],
-    copy: DELIVERY_STATUS_COPY,
+    name: 'TransitionAction',
+    members: ['SUBMIT', 'RECALL', 'APPROVE', 'REJECT', 'RETURN', 'REIMBURSE'],
+    copy: TRANSITION_ACTION_COPY,
     fromArray: false,
   },
   {
@@ -145,14 +133,6 @@ const CATALOGUES: {
     copy: INBOX_ROUTE_COPY,
     fromArray: false,
   },
-  { name: 'Decision', members: ['APPROVED', 'REJECTED', 'RETURNED'], copy: DECISION_COPY, fromArray: false },
-  {
-    name: 'AccountSource',
-    members: ['TEMPLATE', 'IMPORT', 'MANUAL', 'PULLED'],
-    copy: ACCOUNT_SOURCE_COPY,
-    fromArray: false,
-  },
-  { name: 'ReceiptStatus', members: ['PENDING', 'STORED'], copy: RECEIPT_STATUS_COPY, fromArray: false },
 ];
 
 describe('every rendered enum member has copy, in every locale we ship', () => {
