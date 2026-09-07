@@ -216,6 +216,19 @@ async function seedUser(orgId, email, displayName, employee = {}) {
          DO UPDATE SET display_name = EXCLUDED.display_name,
                        title        = EXCLUDED.title,
                        role         = EXCLUDED.role,
+                       -- REACTIVATE. Without this the seed is not idempotent
+                       -- in the one direction that matters: the seat-push spec
+                       -- DEACTIVATES the demo employee as part of its subject,
+                       -- and if that spec fails partway the row stays
+                       -- soft-deleted. Re-running the seed healed nothing, so
+                       -- every later run failed eleven EMPLOYEE-role assertions
+                       -- with a 500 -- pointing at the crawl, the home page and
+                       -- the invite form rather than at the state.
+                       --
+                       -- A fixture user is DEFINED as present and active. A spec
+                       -- that wants one gone can deactivate it again, which is
+                       -- exactly what that spec does.
+                       deleted_at   = NULL,
                        updated_at   = now()`,
       [orgId, email, displayName, employee.title ?? null, employee.role ?? 'EMPLOYEE'],
     );

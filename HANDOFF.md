@@ -468,6 +468,126 @@ three that are now keys. The second failed with `'{X} needs {X}.'`, which is the
 feeding real keys made the assertion **stronger** than it was: it now proves the lookup resolves
 rather than only that the template fills.
 
+#### VX5-12 part 1 SHIPPED — per-tenant export: the engine, with no door.
+
+**New:** `prisma/migrations/0041_tenant_export/migration.sql` · `lib/export/csv.ts` ·
+`lib/export/zip.ts` · `lib/export/tables.ts` · `lib/export/service.ts` ·
+`test/export-coverage.db.test.ts` · `test/export-csv.test.ts` · `test/export-zip.test.ts` ·
+`test/export-archive.db.test.ts` · `test/support/zip-reader.ts` · `test/support/purge-tenants.ts`.
+**Changed:** `lib/storage/index.ts` · `scripts/seed.mjs`.
+
+**NO ROUTE AND NO SCREEN, deliberately.** Same reasoning `lib/onboarding/provision.ts` gives for
+VX5-1: *"Shipping the mechanism first and the door second means there is never a commit where the
+door is open."* An endpoint producing a complete dump of a tenant's data is the worst thing to get
+authorisation wrong on. Part 2 is the admin screen, the download route, the drain route and the
+receipt bundle.
+
+**JOHN CHOSE THE SHAPE:** a ZIP of CSVs plus `manifest.json`; tenant-admin self-serve; receipts as a
+separate second archive.
+
+**THE ENUMERATION IS THE TICKET, AND THE DATABASE IS THE AUTHORITY.** A legal deliverable's property
+is COMPLETENESS and its failure is a table or column that exists and is not in it — invisible, since
+nobody notices a missing column in somebody else's export. So `lib/export/tables.ts` does not list
+the tenant's data; `information_schema` does, and that file says for each table either how it is
+exported or why it is not. `test/export-coverage.db.test.ts` refuses a tenant table in neither map,
+an entry for a table that no longer exists, and **a COLUMN of an exported table that is neither
+exported nor redacted with a reason.** That last one is the point: `integration_installation` gained
+six OAuth columns in VX3-8, two of them live bearer tokens.
+
+**`SELECT *` MINUS A REDACTION LIST, NOT A COLUMN LIST — and the direction of failure is the whole
+argument.** A hand-typed column list fails CLOSED: a new column is silently absent and the export is
+quietly incomplete, which is the thing the ticket exists to prevent and which no test can catch,
+because there is nothing to compare against. `SELECT *` fails OPEN: a new column is silently present,
+which a coverage test CAN catch, because the column is in the catalogue. Fail open where a test can
+close it.
+
+**CSV WAS CHOSEN PARTLY TO DELETE A CLASS OF DEFECT.** Upstream's Excel export shipped 213 text cells
+and no numeric ones — `SUM` returned zero — and **their own post-mortem says the writer was never the
+problem**: *"`exportTable` has supported typed cells all along, so the fix is at this call site."*
+That correction matters for our record: UD-15 was a CALL-SITE defect, not an export-writer one, and
+the tracker had it the other way round. A format with no cell types cannot have a call site that
+forgets to say so.
+
+**WHAT CSV BRINGS INSTEAD: a spreadsheet EXECUTES some text.** `=cmd|' /C calc'!A0` in an expense
+description is an intra-tenant escalation delivered as a file, authored by any employee who can file
+an expense. A leading `= + @ TAB CR` is neutralised with an apostrophe — **but `-` is guarded ONLY
+when what follows is not a number**, because the naive rule corrupts every negative amount in a legal
+deliverable to defend against a formula a number cannot be. The manifest records the rule and the
+count.
+
+**THE ZIP WRITER IS 130 LINES AND NO DEPENDENCY.** `node:zlib` does DEFLATE; the container is the
+rest. It STREAMS using a data descriptor (general-purpose bit 3, zeroed local headers) because
+`audit_entry` is unbounded by design — buffering an entry would put the memory ceiling of a legal
+deliverable in the hands of how long a customer has been a customer. **No ZIP64: every limit throws
+`ZipLimitError` naming which one**, because a writer that sails past 4 GiB emits an archive that
+opens, lists its contents, and produces garbage for the last entries. Verified against three
+independent readers — `unzip -t`, Python `zipfile.testzip()`, and the hand-written
+`test/support/zip-reader.ts` — plus the CRC-32 reference vector (`123456789` → `0xCBF43926`).
+
+**ONE SNAPSHOT: `REPEATABLE READ, READ ONLY`.** This looks like the opposite of VX5-20's "no network
+call inside a transaction" and is not: that was a WRITE transaction whose commit waited on something
+outside the database. This is a read-only transaction that talks only to Postgres, takes no row locks
+and blocks no writer. It costs a held snapshot (delayed vacuum), which is why it is a background job.
+It buys the only property that matters here — **the files agree with each other.** Forty tables in
+forty transactions gives an export where an expense's line items are missing because somebody
+submitted a report between file 6 and file 7. `pg_dump` makes the same trade. Server-side cursors
+(`DECLARE`/`FETCH 1000`) because node-pg buffers a whole result set — and a cursor needs the
+transaction the snapshot already needs.
+
+**`Storage` HAD NO SERVER-SIDE WRITE, and that was not an oversight**: every object until now was a
+receipt uploaded by the BROWSER against a presigned URL, so the bytes never passed through the app. An
+export archive is the first object this product MAKES. `putFile(key, localPath, contentType)` takes a
+PATH rather than bytes, so the archive streams from a temp file with `ContentLength` from `stat`
+rather than sitting in memory.
+
+**Sabotages — and one came back green because of MY vacuity mistake:**
+
+| sabotage | got |
+|---|---|
+| the tenant GUC removed from the export transaction | 4 tests, including the cross-tenant one |
+| the `organization` id filter removed | 10 tests |
+| the formula guard removed | 4 tests across two files |
+| a table dropped from `EXPORTED` | the coverage test names it |
+| an OAuth token un-redacted | the credential test |
+| an entry for a table that does not exist | 2 tests |
+| `tenant_export_one_in_flight_idx` dropped | the in-flight test |
+| the manifest written BEFORE the tables | the row-count test |
+| **`audit_entry`'s `orderBy` override removed** | **NOTHING, the first time** |
+
+That last one: the chain-order test asserted "sorted ascending" and a freshly created tenant has
+exactly ONE audit row, which is sorted whatever you order it by. `test/i18n-policy-params.test.ts`
+has a "found some pairs at all" guard for exactly this and I did not write one. Adding rows would
+only have made a false pass IMPROBABLE — a uuid ordering of six rows is accidentally sorted about
+once in 720 runs, which is a flake nobody would diagnose. **So the assertion now computes BOTH
+candidate orders and refuses to proceed if they coincide**, then demands equality with the sequence
+one. It cannot pass vacuously.
+
+**TWO GATES CAUGHT ME:** `test/tenant-fk.db.test.ts` refused the single-column
+`requested_by_id REFERENCES app_user(id)` — TN-1: Postgres checks referential integrity with RLS
+BYPASSED, so it would accept another tenant's user id. It is composite now. And
+`tenant_export_expiry_after_request` refused a TEST taking a shortcut (`expires_at = now() - 1 day`
+with `requested_at` untouched), so the purge test ages the whole row like a real 8-day-old export.
+
+**AN UNRELATED FIX, INCLUDED DELIBERATELY AND SAID OUT LOUD: `scripts/seed.mjs` now resets
+`deleted_at = NULL`.** The seed was not idempotent in the one direction that matters: the seat-push
+spec DEACTIVATES the demo employee as part of its subject, and a partial run leaves the row
+soft-deleted — **which re-seeding did not heal**, so every later e2e run failed eleven EMPLOYEE-role
+assertions with a 500, pointing at the crawl, the home page and the invite form rather than at the
+state. It cost most of an hour to find. A fixture user is DEFINED as present and active.
+
+**One thing I did NOT diagnose, stated plainly:** the first full e2e run after this work failed one
+seat-push assertion, and I did not capture its message before the employee state was poisoned. It has
+not recurred in three subsequent full runs. Treat it as an unreproduced flake in that spec rather
+than as something known-good.
+
+**Verification:** 1699 tests / 86 files · `npm run e2e` **171 passed, run TWICE consecutively with no
+re-seed between** (which is what proves the seed fix) · crawl 27/27 · every `check:` gate · `tsc`
+clean · eslint 0 errors.
+
+**Part 2:** the admin screen, the download route (presigned, admin-gated, expiring), a drain route to
+run PENDING exports, the purge on a schedule, and the receipt bundle — which needs a READ on the
+`Storage` interface, which it still does not have.
+
 #### VX5-20 part 2 SHIPPED — inbound provisioning. VX5-20 CLOSED, and the GA gate now waits only on VeloCRM.
 
 **New:** `prisma/migrations/0040_platform_provision/migration.sql` · `lib/platform/provision.ts` ·
