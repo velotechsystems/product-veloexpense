@@ -29,7 +29,7 @@
  * The RUN is FAILED only when it cannot be completed at all.
  */
 import { withOrg } from '@/lib/tenant/context';
-import { organizationsWithModule, requireModule } from '@/lib/modules/service';
+import { isModuleEnabled, organizationsWithModule, requireModule } from '@/lib/modules/service';
 import {
   CONTROL_CHECKS,
   DEFAULT_CONTROL_CONFIG,
@@ -207,6 +207,25 @@ export interface EvaluateSweepResult {
   runs: number;
   findings: number;
   failedRuns: number;
+  /**
+   * Tenants whose entitlement row says yes and whose PLAN says no.
+   *
+   * VX5-21. `organizationsWithModule` selects on `module_entitlement` alone — it
+   * runs under `withPlatformRead`, where no tenant context exists, so it cannot
+   * apply the plan ceiling without a second implementation of that rule in SQL.
+   * The rule stays in one place (`lib/billing/plan-entitlement.ts`) and the sweep
+   * re-asks it per tenant, under that tenant's context, where `isModuleEnabled`
+   * already knows the answer.
+   *
+   * COUNTED RATHER THAN FAILED, and that is the point of this field. Without it a
+   * downgraded tenant lands in `failed` on every sweep, for ever, with
+   * "Compliance is not enabled" — a permanent error stream describing a state that
+   * is entirely normal. That is the same mistake the platform seats route
+   * deliberately avoids by making "no subscription" a 200 with a status rather
+   * than a 404: **a routine outcome must not be reported as a fault, or the fault
+   * report stops being read.**
+   */
+  skipped: number;
   failed: Array<{ organizationId: string; error: string }>;
 }
 
@@ -219,10 +238,16 @@ export async function evaluateAllTenants(
     runs: 0,
     findings: 0,
     failedRuns: 0,
+    skipped: 0,
     failed: [],
   };
   for (const orgId of orgs) {
     try {
+      const entitled = await withOrg(orgId, (tx) => isModuleEnabled(tx, 'compliance'));
+      if (!entitled) {
+        out.skipped += 1;
+        continue;
+      }
       const result = await runControlEvaluation(orgId, opts);
       out.organizations += 1;
       out.runs += 1;
