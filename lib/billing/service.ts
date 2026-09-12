@@ -37,6 +37,11 @@ import {
   type SubscriptionStatus,
 } from '@/lib/billing/plans';
 import type { EntitlementResult } from '@/lib/billing/entitlements';
+import {
+  parsePlanEntitlement,
+  UNGATED,
+  type PlanEntitlement,
+} from '@/lib/billing/plan-entitlement';
 
 export interface MirroredSubscription {
   id: string;
@@ -50,6 +55,12 @@ export interface MirroredSubscription {
   /** When the platform last answered. Null means never mirrored. */
   mirroredAt: Date | null;
   cancelledAt: Date | null;
+  /**
+   * The plan's own projection, parsed. `UNGATED` when the platform never sent
+   * one — see `lib/billing/plan-entitlement.ts` on why absence is permissive
+   * here and restrictive in `module_entitlement`.
+   */
+  plan: PlanEntitlement;
 }
 
 /**
@@ -63,7 +74,7 @@ export interface MirroredSubscription {
 export async function liveSubscription(tx: QueryRunner): Promise<MirroredSubscription | null> {
   const r = await tx.query(
     `SELECT id, plan_code, plan_name, status, trial_ends_at, current_period_end,
-            read_only, mirrored_at, cancelled_at
+            read_only, mirrored_at, cancelled_at, features, limits
        FROM subscription
       WHERE organization_id = ${ORG} AND status <> 'CANCELLED'`,
   );
@@ -77,6 +88,9 @@ export async function liveSubscription(tx: QueryRunner): Promise<MirroredSubscri
     trialEndsAt: (row.trial_ends_at as Date | null) ?? null,
     currentPeriodEnd: (row.current_period_end as Date | null) ?? null,
     readOnly: (row.read_only as boolean | null) ?? null,
+    // `pg` returns jsonb already parsed, so these are values rather than strings.
+    // NULL columns arrive as null, which `parsePlanEntitlement` reads as absent.
+    plan: parsePlanEntitlement(row.features, row.limits),
     mirroredAt: (row.mirrored_at as Date | null) ?? null,
     cancelledAt: (row.cancelled_at as Date | null) ?? null,
   };
@@ -151,8 +165,8 @@ export async function mirrorEntitlement(
   await tx.query(
     `INSERT INTO subscription
        (organization_id, plan_code, plan_name, status, trial_ends_at,
-        current_period_end, read_only, mirrored_at, cancelled_at)
-     VALUES (${ORG}, $1, $2, $3, $4, $5, $6, clock_timestamp(),
+        current_period_end, read_only, features, limits, mirrored_at, cancelled_at)
+     VALUES (${ORG}, $1, $2, $3, $4, $5, $6, $7, $8, clock_timestamp(),
              CASE WHEN $3 = 'CANCELLED' THEN clock_timestamp() ELSE NULL END)
      ON CONFLICT (organization_id) WHERE status <> 'CANCELLED'
      DO UPDATE SET plan_code          = EXCLUDED.plan_code,
@@ -161,6 +175,8 @@ export async function mirrorEntitlement(
                    trial_ends_at      = EXCLUDED.trial_ends_at,
                    current_period_end = EXCLUDED.current_period_end,
                    read_only          = EXCLUDED.read_only,
+                   features           = EXCLUDED.features,
+                   limits             = EXCLUDED.limits,
                    mirrored_at        = EXCLUDED.mirrored_at,
                    cancelled_at       = COALESCE(subscription.cancelled_at, EXCLUDED.cancelled_at),
                    updated_at         = clock_timestamp()`,
@@ -171,6 +187,15 @@ export async function mirrorEntitlement(
       e.trialEndsAt,
       e.currentPeriodEnd,
       e.readOnly,
+      /* Stored VERBATIM, not re-serialised from the parsed projection.
+       *
+       * The parser drops keys it does not understand, which is right for a
+       * DECISION and wrong for a MIRROR: a key this build ignores today is one a
+       * later build reads, and a mirror that silently narrowed what the platform
+       * sent would make the bug invisible on both sides. What is stored is what
+       * arrived; what is obeyed is what parses. */
+      JSON.stringify(e.features ?? {}),
+      JSON.stringify(e.limits ?? {}),
     ],
   );
   return { state: 'written' };
@@ -192,6 +217,24 @@ export async function tenantMayWrite(tx: QueryRunner): Promise<boolean> {
   }
   const status = await effectiveStatus(tx);
   return status === null ? canWriteWithoutSubscription() : canWrite(status);
+}
+
+/**
+ * The plan projection in force for this tenant, right now.
+ *
+ * `UNGATED` when there is no live mirrored subscription, and that is the line
+ * that matters on deploy day: **most tenants have no mirror at all.** This
+ * product stopped starting its own trials at 0039, and every tenant created
+ * before 0037 has no row. A version of this function that returned an empty
+ * projection instead would switch off every module for every one of them the
+ * moment it shipped.
+ *
+ * Same argument as `canWriteWithoutSubscription`, in a different currency: the
+ * absence of a billing record is not evidence of a downgrade.
+ */
+export async function planFor(tx: QueryRunner): Promise<PlanEntitlement> {
+  const live = await liveSubscription(tx);
+  return live === null ? UNGATED : live.plan;
 }
 
 export interface ReadingView {

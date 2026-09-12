@@ -37,6 +37,8 @@ import { withPlatformRead } from '@/lib/tenant/context';
 import { listModules, moduleFor, type ModuleDefinition } from '@/lib/modules/registry';
 import { requeueWaitingPosts } from '@/lib/integrations/post-outbox';
 import { ORG } from '@/lib/tenant/sql';
+import { planFor } from '@/lib/billing/service';
+import { planPermitsModule } from '@/lib/billing/plan-entitlement';
 
 export { ModuleDisabledError, isModuleDisabled } from '@/lib/modules/errors';
 
@@ -60,6 +62,32 @@ export interface EntitlementView {
 export async function isModuleEnabled(tx: QueryRunner, code: string): Promise<boolean> {
   const definition = moduleFor(code);
   if (!definition || !definition.available) return false;
+
+  /* THREE THINGS MUST AGREE, AND THEY ARE DELIBERATELY NOT COLLAPSED.
+   *
+   *   1. The BUILD can serve it          — `definition.available`, above.
+   *   2. The PLAN includes it            — VX5-21, here.
+   *   3. The TENANT has it switched on   — `module_entitlement`, below.
+   *
+   * The plan is a CEILING and the entitlement row is the tenant's position under
+   * it. They are ANDed rather than synced, and that choice is worth defending
+   * because a sync is the obvious alternative:
+   *
+   *   · A sync would have to write rows, which means a downgrade silently
+   *     rewrites a tenant's admin screen and an upgrade cannot put it back the
+   *     way it was — the admin's own "off" is indistinguishable from the
+   *     downgrade's.
+   *   · A sync has to run somewhere. Every place it could run is a place it can
+   *     fail to run, and a stale sync grants access the plan does not.
+   *   · ANDing needs no job, no migration and no reconciliation. A plan change
+   *     takes effect on the next entitlement refresh, in both directions.
+   *
+   * The cost is one extra indexed read per gate call, on a path whose own comment
+   * promises "one indexed lookup". It is now two. That is the price of the gate
+   * being correct after a downgrade, and it is worth it. */
+  const plan = await planFor(tx);
+  if (!planPermitsModule(plan, code)) return false;
+
   const r = await tx.query(
     `SELECT enabled FROM module_entitlement
       WHERE organization_id = ${ORG} AND module_code = $1`,
@@ -165,6 +193,21 @@ export async function setEntitlement(
     // lies, and it would be believed by every read above.
     throw new Error(
       `${definition.name} is declared but not available in this build, so it cannot be enabled.`,
+    );
+  }
+  if (enabled && !planPermitsModule(await planFor(tx), code)) {
+    /* VX5-21. Refused for the same reason as the line above it: a row that says a
+     * tenant has a module their plan does not include is a row `isModuleEnabled`
+     * will read and then override, so it records something untrue and changes
+     * nothing.
+     *
+     * This is only reachable from the admin screen, and it is the one place where
+     * the plan ceiling produces a MESSAGE rather than a silent false — an admin
+     * clicking a toggle deserves to be told why it did not move. `isModuleEnabled`
+     * stays silent on purpose: a gated function refusing is not the place to
+     * explain somebody's billing. */
+    throw new Error(
+      `${definition.name} is not included in this organization's plan.`,
     );
   }
 
