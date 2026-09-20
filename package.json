@@ -29,21 +29,21 @@
     "check:rls-suite": "node scripts/check-rls-suite.mjs"
   },
   "dependencies": {
-    "@aws-sdk/client-s3": "^3.1117.0",
-    "@aws-sdk/s3-request-presigner": "^3.1117.0",
+    "@aws-sdk/client-s3": "^3.1134.0",
+    "@aws-sdk/s3-request-presigner": "^3.1134.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
-    "next": "16.3.2",
+    "next": "16.3.5",
     "next-auth": "^5.0.0-beta.32",
     "nodemailer": "^7.0.9",
     "pg": "^8.13.1",
     "radix-ui": "^1.6.7",
-    "react": "19.2.8",
-    "react-dom": "19.2.8",
-    "tailwind-merge": "^3.6.0"
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
+    "tailwind-merge": "^3.7.0"
   },
   "devDependencies": {
-    "@playwright/test": "^1.50.0",
+    "@playwright/test": "^1.63.0",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
     "@types/nodemailer": "^6.4.17",
@@ -51,9 +51,9 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",
-    "eslint-config-next": "16.3.2",
+    "eslint-config-next": "16.3.5",
     "s3rver": "^3.7.1",
-    "smtp-server": "^3.13.6",
+    "smtp-server": "^3.19.13",
     "tailwindcss": "^4",
     "typescript": "^5",
     "vitest": "^2.1.8"
