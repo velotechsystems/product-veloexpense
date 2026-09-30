@@ -737,10 +737,48 @@ export async function validateReport(
   for (const [key, want] of desired) {
     if (seen.has(key)) continue;
     await tx.query(
+      /* ON CONFLICT, AND WHY IT IS NOT BELT-AND-BRACES.
+       *
+       * The swap above is read-then-write: it SELECTs the report's existing
+       * violations, then deletes, updates and inserts to match. Two validations of
+       * the same report — two tabs, or an autosave racing a manual save — both read
+       * the same `existing` set, both find the same key missing, and both arrive
+       * here. Nothing holds a lock on the report; the only `FOR UPDATE` in this
+       * codebase are on `organization` for the report sequence and in the audit
+       * chain.
+       *
+       * `policy_violation_identity_idx` (0006) already makes the duplicate ROW
+       * impossible, which is the thing that actually matters and is why this was
+       * never a data defect. What it did instead was turn the loser into a 23505,
+       * aborting a transaction that was doing nothing wrong — the person sees a
+       * failed save on a legitimate action, with no explanation available to them.
+       *
+       * Upstream ExpenseOS hit the same race and fixed it by serializing per report
+       * (their "serialize the violation swap"). We do not need to: they had no such
+       * index and were getting duplicate rows, where we have the invariant already
+       * and only need the insert to be idempotent under it. A lock would add a
+       * contention point to every validation to solve a problem a conflict clause
+       * solves at the one statement that has it.
+       *
+       * THE CONFLICT TARGET IS THE INDEX'S EXPRESSION, NOT A COLUMN LIST. The index
+       * is on `COALESCE(line_item_id, '000…'::uuid)` because a report-scoped finding
+       * has a NULL `line_item_id` and NULLs do not conflict with each other. Writing
+       * `ON CONFLICT (report_id, rule_code, line_item_id, finding_key)` here would
+       * not match the index, and Postgres would refuse with "no unique or exclusion
+       * constraint matching" — loudly, which is the good case. The quiet failure is
+       * the one to fear elsewhere; here it cannot compile a plan at all. */
       `INSERT INTO policy_violation
          (organization_id, report_id, line_item_id, policy_id, rule_code, severity, message,
           message_code, finding_key, data)
-       VALUES (${ORG}, $1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb)`,
+       VALUES (${ORG}, $1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb)
+       ON CONFLICT (report_id, rule_code,
+                    COALESCE(line_item_id, '00000000-0000-0000-0000-000000000000'::uuid),
+                    finding_key)
+       DO UPDATE SET severity     = EXCLUDED.severity,
+                     message      = EXCLUDED.message,
+                     message_code = EXCLUDED.message_code,
+                     data         = EXCLUDED.data,
+                     policy_id    = EXCLUDED.policy_id`,
       [
         reportId,
         want.lineItemId,
