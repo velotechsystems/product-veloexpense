@@ -60,6 +60,69 @@ async function begin(): Promise<PoolClient> {
   return client;
 }
 
+/**
+ * THE GUARD THAT MAKES THE INTERLEAVE A FACT RATHER THAN A HOPE.
+ *
+ * The overlap depends on B reaching its INSERT and blocking on A's uncommitted
+ * row before A commits. A sleep is what gives it time to get there — and on a
+ * slow runner it may not, in which case A commits first, B's SELECT sees a
+ * COMMITTED row, B takes the UPDATE path, and the test PASSES WITHOUT TESTING
+ * ANYTHING. Failing open: green whether or not the thing happened, which is the
+ * exact defect shape this suite exists to catch.
+ *
+ * ── AND WHY THIS ASKS POSTGRES RATHER THAN THE PROMISE ────────────────────
+ *
+ * The first version of this guard asserted that B's promise was still PENDING,
+ * and that is not the same question. A promise that has not settled is equally
+ * consistent with "blocked on the lock" (what we want) and "has not reached the
+ * insert yet" (the vacuous case) — so the check passed in precisely the
+ * situation it was written to catch. A weaker instrument for the same blind
+ * spot.
+ *
+ * `pg_stat_activity.wait_event_type = 'Lock'` is the fact itself: that backend
+ * is waiting on a lock, right now. Nothing else answers it.
+ */
+async function waitUntilBlocked(
+  admin: Pool,
+  pid: number,
+  second: Promise<unknown>,
+  label: string,
+): Promise<void> {
+  /* `state = 'idle in transaction'` is NOT the finished signal, and an earlier
+   * version of this used it and failed immediately: that is simply the backend's
+   * state BETWEEN statements, which a client issuing queries one at a time is in
+   * constantly. What distinguishes the vacuous run is the PROMISE settling before
+   * a lock wait is ever observed. */
+  let settled = false;
+  void second.then(
+    () => { settled = true; },
+    () => { settled = true; },
+  );
+
+  const deadline = Date.now() + 3000;
+  for (;;) {
+    const r = await admin.query(
+      'SELECT wait_event_type, state FROM pg_stat_activity WHERE pid = $1',
+      [pid],
+    );
+    const row = r.rows[0] as { wait_event_type: string | null; state: string } | undefined;
+    if (row?.wait_event_type === 'Lock') return;
+    if (settled) {
+      throw new Error(
+        `${label}: the second validation completed without ever blocking — it did not overlap ` +
+          'the first, so this run proves nothing about the race.',
+      );
+    }
+    if (Date.now() > deadline) {
+      throw new Error(
+        `${label}: the second validation never blocked within 3s (last wait_event_type: ` +
+          `${row?.wait_event_type ?? 'none'}, state: ${row?.state ?? 'gone'}).`,
+      );
+    }
+    await sleep(25);
+  }
+}
+
 beforeAll(async () => {
   await admin.query('TRUNCATE app_user, organization CASCADE');
   const o = await admin.query(
@@ -122,6 +185,7 @@ describe('two validations of the same report, overlapping', () => {
 
     const a = await begin();
     const b = await begin();
+    const bPid = (await b.query('SELECT pg_backend_pid() AS pid')).rows[0].pid as number;
     try {
       // A validates and holds its transaction open.
       const first = await policy.validateReport(a, reportId);
@@ -130,7 +194,7 @@ describe('two validations of the same report, overlapping', () => {
       // B validates against the same pre-insert snapshot. Started, NOT awaited:
       // its insert blocks on A's uncommitted row.
       const second = policy.validateReport(b, reportId);
-      await sleep(150);
+      await waitUntilBlocked(admin, bPid, second, 'both succeed');
 
       await a.query('COMMIT');
       // B now unblocks. Before the ON CONFLICT clause this rejected with 23505
@@ -138,6 +202,14 @@ describe('two validations of the same report, overlapping', () => {
       await expect(second).resolves.toBeTruthy();
       await b.query('COMMIT');
     } finally {
+      /* ROLLBACK BEFORE RELEASE. node-pg does not reset a connection on release,
+       * so a client returned mid-transaction goes back into the pool still
+       * holding its locks. An earlier version of this file released without
+       * rolling back; the moment an assertion threw, the next test blocked on the
+       * abandoned lock and failed as a 5s timeout — a failure that looks nothing
+       * like its cause. `.catch()` because the transaction may already be gone. */
+      await a.query('ROLLBACK').catch(() => {});
+      await b.query('ROLLBACK').catch(() => {});
       a.release();
       b.release();
     }
@@ -153,14 +225,23 @@ describe('two validations of the same report, overlapping', () => {
 
     const a = await begin();
     const b = await begin();
+    const bPid = (await b.query('SELECT pg_backend_pid() AS pid')).rows[0].pid as number;
     try {
       await policy.validateReport(a, reportId);
       const second = policy.validateReport(b, reportId);
-      await sleep(150);
+      await waitUntilBlocked(admin, bPid, second, 'row is intact');
       await a.query('COMMIT');
       await second;
       await b.query('COMMIT');
     } finally {
+      /* ROLLBACK BEFORE RELEASE. node-pg does not reset a connection on release,
+       * so a client returned mid-transaction goes back into the pool still
+       * holding its locks. An earlier version of this file released without
+       * rolling back; the moment an assertion threw, the next test blocked on the
+       * abandoned lock and failed as a 5s timeout — a failure that looks nothing
+       * like its cause. `.catch()` because the transaction may already be gone. */
+      await a.query('ROLLBACK').catch(() => {});
+      await b.query('ROLLBACK').catch(() => {});
       a.release();
       b.release();
     }
