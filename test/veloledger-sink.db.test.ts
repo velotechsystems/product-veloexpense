@@ -33,6 +33,14 @@
  * `npm test` and `npx playwright test` cannot collide — the lesson VX2-10 paid for
  * when Playwright's port probe silently adopted a local MinIO.
  */
+// Not ambient: CI exports it for the whole job, which hid that this suite needs
+// it. `beforeAll` installs the adapter with an `apiKey`, a `secret` field, and
+// `encryptSecret` refuses without a key — so without this the hook throws and
+// the suite's three tests report as SKIPPED, not failed, beside 1,700 passes.
+// Read at call time, so assigning after the hoisted imports is in time.
+process.env.SECRET_ENCRYPTION_KEY =
+  process.env.SECRET_ENCRYPTION_KEY ?? Buffer.alloc(32, 19).toString('base64');
+
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { spawn, type ChildProcess } from 'node:child_process';
 import { Pool } from 'pg';

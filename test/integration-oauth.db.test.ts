@@ -12,6 +12,19 @@
  * token is not lost, and the difference between "a human must re-consent" and
  * "try again in a minute" is respected in both directions.
  */
+// Neither of these is ambient, and this suite used to assume both were. CI
+// exports them for the whole job (ci.yml), which is the ONLY reason it ever
+// passed: `stub-oauth` registers only under the flag (lib/integrations/stub.ts),
+// and the tokens it stores are encrypted at rest. A shell that sourced
+// `scripts/dev-env.sh` has neither, and all 26 tests failed with `no such
+// integration: stub-oauth` — on a laptop, never in CI. Same prelude as
+// integrations.db.test.ts and the other suites that already set their own.
+// Both are read at CALL time, so assigning here, after the hoisted imports, is
+// in time.
+process.env.INTEGRATIONS_ENABLE_STUB = '1';
+process.env.SECRET_ENCRYPTION_KEY =
+  process.env.SECRET_ENCRYPTION_KEY ?? Buffer.alloc(32, 17).toString('base64');
+
 import { describe, it, expect, beforeAll, beforeEach, afterAll } from 'vitest';
 import { Pool } from 'pg';
 import { withOrg } from '@/lib/tenant/context';
