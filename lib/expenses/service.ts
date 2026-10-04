@@ -300,8 +300,25 @@ function toMinorString(value: number | bigint | string, field: string): string {
   }
 }
 
+/**
+ * The report row, LOCKED for the rest of the transaction.
+ *
+ * `FOR UPDATE`, because this is the read every write path checks the status
+ * against, and under READ COMMITTED a plain read takes no lock: a check could
+ * pass against a DRAFT that another transaction was in the middle of submitting,
+ * and the line, the expense or the total written next would land on a report
+ * that was SUBMITTED by the time it committed. `test/report-lock.db.test.ts`
+ * reproduced exactly that before this clause existed. With it, a write waits for
+ * a submit already in flight and then sees the status it actually has.
+ *
+ * Every path that changes a report takes this lock FIRST, and the submit, the
+ * recall and the approval decision take the same row first too — so they agree
+ * on one order (report row, then tasks, then the audit chain) and cannot
+ * deadlock against each other. Before, `addLineItem` queued for the audit chain
+ * and only then touched the report row, while `submitReport` did the reverse.
+ */
 async function requireReport(tx: QueryRunner, reportId: string) {
-  const r = await tx.query('SELECT * FROM expense_report WHERE id = $1', [reportId]);
+  const r = await tx.query('SELECT * FROM expense_report WHERE id = $1 FOR UPDATE', [reportId]);
   if (r.rows.length === 0) throw new ExpenseError('report not found', 'NOT_FOUND');
   return r.rows[0];
 }
@@ -902,7 +919,17 @@ export async function removeLineItem(tx: QueryRunner, actor: AuditActor, lineIte
   return reportId;
 }
 
-/** Report total = sum of its line-item amounts (single currency, MVP). */
+/**
+ * Report total = sum of its line-item amounts (single currency, MVP).
+ *
+ * The write REFUSES on its own unless the report is DRAFT. Every caller has
+ * already passed `assertDraft` — which locks the row — so in today's code this
+ * cannot fire; it is here so that a caller written tomorrow without the gate
+ * cannot restate a total somebody has already submitted, approved or been paid
+ * against. Same argument as ExpenseOS #511 ("refuse to rewrite a decided report's
+ * total"): the total is the figure the approver signs and the ledger books, and
+ * the last write on every path is the one place a single guard covers them all.
+ */
 export async function recomputeReportTotal(tx: QueryRunner, reportId: string) {
   const s = await tx.query(
     `SELECT COALESCE(SUM(li.amount_minor), 0) AS total
@@ -910,10 +937,18 @@ export async function recomputeReportTotal(tx: QueryRunner, reportId: string) {
       WHERE e.report_id = $1`,
     [reportId],
   );
-  await tx.query('UPDATE expense_report SET total_minor = $1, updated_at = now() WHERE id = $2', [
-    s.rows[0].total,
-    reportId,
-  ]);
+  const written = await tx.query(
+    `UPDATE expense_report SET total_minor = $1, updated_at = now()
+      WHERE id = $2 AND status = 'DRAFT'`,
+    [s.rows[0].total, reportId],
+  );
+  if (written.rowCount !== 1) {
+    throw new ExpenseError(
+      `report ${reportId} is not a DRAFT; its total is what was submitted and is not recomputed`,
+      'NOT_DRAFT',
+      'REPORT_NOT_DRAFT',
+    );
+  }
   return BigInt(s.rows[0].total);
 }
 

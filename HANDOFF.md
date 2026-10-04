@@ -307,13 +307,18 @@ So before pushing a new spec:
   environment. The event-driven seat push (invite accepted) was not exercised.
   Operator-direct subscriptions create NO Stripe subscription, so they can never bill —
   that path is for Velotech's own tenants, which must never pay.
-- **The Toronto-day fix (this branch).** `PostableReport.approvedAt` is replaced by
+- **The Toronto-day fix (#133).** `PostableReport.approvedAt` is replaced by
   `postingDate`, the tenant's calendar day computed once by the dispatcher from
   `organization.default_timezone`. The VeloLedger adapter was booking the UTC day. Adapters two
   and three cannot repeat it: the contract no longer hands them an instant.
-- **Verified 4 Oct against the code, still OPEN:** the report lock (`assertDraft` is a plain
-  SELECT; the submit and approval UPDATEs filter on id only — upstream #511/#515);
-  `capIsEnforced()` returns true for `maxUsers` / `expensesPerYear`, which nothing enforces;
+- **The report lock (this branch).** Every status check that a write depends on is now
+  `FOR UPDATE` (edits via `assertDraft`, submit, recall, and the approval decision), and the
+  writes carry the status in their WHERE so they refuse on their own. Three races were
+  REPRODUCED against the old code first (`test/report-lock.db.test.ts`): a line landing on a
+  SUBMITTED report; a submit validating without a line added under it; a recall flipping an
+  APPROVED report back to DRAFT. Lock order is now report row → tasks → audit chain everywhere.
+- **Verified 4 Oct against the code, still OPEN:** `capIsEnforced()` returns true for
+  `maxUsers` / `expensesPerYear`, which nothing enforces;
   `REPORT_SUBMITTED` missing from `AUDIT_ACTIONS`; admin override decisions are not marked in
   the audit row. VeloExpense has NO receipt extraction at all; upstream's is sync by default
   with Batch only for multi-upload, from one request builder.

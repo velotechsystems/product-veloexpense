@@ -83,9 +83,18 @@ export interface ReportEvent {
 /** Which statuses a recall may return to DRAFT from. */
 const RECALLABLE: ReportStatus[] = ['SUBMITTED', 'RETURNED'];
 
-async function requireReport(tx: QueryRunner, reportId: string) {
+/**
+ * The report's head. `lock: true` for a TRANSITION (submit, recall): the row is
+ * then held until COMMIT, so the status checked is the status written over —
+ * see `requireReport` in `lib/expenses/service.ts` for the race this closes and
+ * `test/report-lock.db.test.ts` for both orderings. The readiness probe passes
+ * `false`: it decides nothing, and a page render should not queue behind a save.
+ */
+async function requireReport(tx: QueryRunner, reportId: string, lock: boolean) {
   const r = await tx.query(
-    'SELECT id, number, status, total_minor, currency_code FROM expense_report WHERE id = $1',
+    `SELECT id, number, status, total_minor, currency_code FROM expense_report WHERE id = $1${
+      lock ? ' FOR UPDATE' : ''
+    }`,
     [reportId],
   );
   if (r.rows.length === 0) throw new LifecycleError('report not found', 'NOT_FOUND');
@@ -144,7 +153,7 @@ export async function submitReport(
   // makes for the GL-coding gate: check the fact before the judgement.
   await assertTenantMayWrite(tx, 'submit a report');
 
-  const report = await requireReport(tx, reportId);
+  const report = await requireReport(tx, reportId, true);
   if (report.status !== 'DRAFT') {
     throw new LifecycleError(
       `report ${report.number ?? reportId} is ${report.status}; only a DRAFT can be submitted`,
@@ -286,10 +295,20 @@ export async function submitReport(
             department_id =
               (SELECT department_id FROM app_user WHERE id = expense_report.submitter_id),
             updated_at = now()
-      WHERE id = $1
+      WHERE id = $1 AND status = 'DRAFT'
       RETURNING id, number, status, submitted_at, department_id`,
     [reportId],
   );
+  // The status is in the WHERE as well as in the check above, so the write
+  // refuses on its own even for a caller that reached it without the lock.
+  if (updated.rowCount !== 1) {
+    throw new LifecycleError(
+      `report ${report.number ?? reportId} is no longer a DRAFT; it was not submitted`,
+      'WRONG_STATUS',
+      [],
+      'REPORT_NOT_SUBMITTABLE',
+    );
+  }
 
   // VX4-5 part 2 — the budget rollup, ON THE TRANSITION and AFTER the status
   // write, so this report is counted as pending by the recompute it triggers.
@@ -344,7 +363,7 @@ export async function recallReport(
   actorId: string,
   note?: string | null,
 ) {
-  const report = await requireReport(tx, reportId);
+  const report = await requireReport(tx, reportId, true);
   if (!RECALLABLE.includes(report.status)) {
     throw new LifecycleError(
       `report ${report.number ?? reportId} is ${report.status}; only a submitted or returned report can be recalled`,
@@ -357,10 +376,22 @@ export async function recallReport(
   const updated = await tx.query(
     `UPDATE expense_report
         SET status = 'DRAFT', submitted_at = NULL, updated_at = now()
-      WHERE id = $1
+      WHERE id = $1 AND status IN ('SUBMITTED', 'RETURNED')
       RETURNING id, number, status`,
     [reportId],
   );
+  // Without the status in the WHERE, a recall that had read SUBMITTED and then
+  // waited behind an approval put the APPROVED report back into DRAFT — editable,
+  // with its ledger posting already queued. The lock above makes the read
+  // current; this makes the write refuse even if a caller skips the lock.
+  if (updated.rowCount !== 1) {
+    throw new LifecycleError(
+      `report ${report.number ?? reportId} is no longer submitted or returned; it was not recalled`,
+      'WRONG_STATUS',
+      [],
+      'REPORT_NOT_RECALLABLE',
+    );
+  }
 
   // Cancel the approval run, or the next submit cannot open one —
   // approval_request_one_running_idx allows exactly one RUNNING request per
@@ -653,7 +684,7 @@ export async function listEvents(tx: QueryRunner, reportId: string): Promise<Rep
  * itself.
  */
 export async function getSubmitReadiness(tx: QueryRunner, reportId: string) {
-  const report = await requireReport(tx, reportId);
+  const report = await requireReport(tx, reportId, false);
   const lines = await tx.query(
     `SELECT COUNT(*)::int AS count
        FROM expense_line_item li JOIN expense e ON e.id = li.expense_id
