@@ -135,10 +135,6 @@ async function callTool<T>(
   return JSON.parse(text) as T;
 }
 
-function isoDate(value: Date | null): string {
-  return (value ?? new Date()).toISOString().slice(0, 10);
-}
-
 export const veloLedgerAdapter: AccountingAdapter = {
   slug: 'veloledger',
   name: 'VeloLedger',
@@ -234,7 +230,11 @@ export const veloLedgerAdapter: AccountingAdapter = {
     config: AdapterConfig,
     report: PostableReport,
   ): Promise<PostResult> {
-    const billDate = isoDate(report.approvedAt);
+    // The tenant's day, computed by the dispatcher. This line was
+    // `approvedAt.toISOString().slice(0, 10)` — the UTC day — and booked every
+    // evening approval in Toronto on the next day, and the next period at
+    // month-end. See `PostableReport.postingDate`.
+    const billDate = report.postingDate;
     // Their `draft_bill` needs a periodId, and `resolve_period` is the tool that
     // turns a date into one — configuring it would go stale every month.
     const period = await callTool<{ periodId?: string; id?: string }>(

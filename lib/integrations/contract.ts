@@ -89,7 +89,33 @@ export interface PostableReport {
   submitterEmail: string;
   currencyCode: string;
   totalMinor: string;
-  approvedAt: Date | null;
+  /**
+   * The calendar day the report is booked on, `'YYYY-MM-DD'`, in the TENANT'S
+   * zone (`organization.default_timezone`). Computed once, by the dispatcher.
+   *
+   * ── WHY AN ADAPTER IS HANDED A DAY AND NOT AN INSTANT ─────────────────────
+   *
+   * This used to be `approvedAt: Date`, and the VeloLedger adapter turned it into
+   * a bill date with `toISOString().slice(0, 10)` — the UTC day. For a tenant in
+   * Toronto, anything approved after 20:00 in summer (19:00 in winter) was booked
+   * on TOMORROW, and on the last day of a month that is the next accounting
+   * period. Nothing fails: the bill drafts, the period resolves, the journal
+   * posts, and the month-end close is short by every late approval. A customer
+   * finds it, not a test.
+   *
+   * ExpenseOS shipped the same defect in its NetSuite poster and fixed it as
+   * "post the expense report on the approval's Toronto day, not its UTC day".
+   * Fixing it per adapter would mean every adapter re-deriving a day from an
+   * instant and every one of them getting a chance to do it in UTC. So the
+   * contract offers ONLY the day, and an adapter has no instant to get wrong.
+   * QuickBooks, Sage and Xero inherit the rule by not being able to break it.
+   *
+   * The zone is the tenant's configured one, not America/Toronto hard-coded:
+   * VeloExpense has tenants outside Ontario, and `0027` explains why the column
+   * defaults to `UTC` rather than guessing. A tenant that never set a zone is
+   * booked on UTC days, which is what it was before this change.
+   */
+  postingDate: string;
   lines: PostableLine[];
 }
 
@@ -103,7 +129,14 @@ export interface PostableLine {
   glAccountName: string | null;
   amountMinor: string;
   taxMinor: string;
-  txnDate: Date | null;
+  /**
+   * A calendar date, `'YYYY-MM-DD'`. Typed `Date` until now, which was never
+   * true at runtime: `lib/db/client.ts` hands `date` columns over as strings
+   * (VX4-7 part 1b), so an adapter that called `.toISOString()` on it would have
+   * thrown on the first post. No adapter reads it yet; the type is corrected
+   * before one does.
+   */
+  txnDate: string | null;
   merchant: string | null;
 }
 

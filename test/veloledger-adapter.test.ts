@@ -48,7 +48,7 @@ function report(numbers: Array<string | null>): PostableReport {
     submitterEmail: 'ada@x.com',
     currencyCode: 'CAD',
     totalMinor: '10000',
-    approvedAt: new Date('2026-08-20T12:00:00Z'),
+    postingDate: '2026-08-20',
     lines: numbers.map((n, i) => ({
       lineItemId: `line-${i}`,
       description: 'Taxi',
@@ -58,7 +58,7 @@ function report(numbers: Array<string | null>): PostableReport {
       glAccountName: 'Travel',
       amountMinor: '10000',
       taxMinor: '0',
-      txnDate: new Date('2026-08-19T00:00:00Z'),
+      txnDate: '2026-08-19',
       merchant: 'Beck',
     })),
   };
@@ -262,6 +262,20 @@ describe('the posted body carries what the far end cannot infer', () => {
     await postOk(['68100', '68200']);
     const lines = bodyOf('draft_bill').lines as Array<Record<string, unknown>>;
     expect(lines.map((l) => l.expenseAccountNumber)).toEqual(['68100', '68200']);
+  });
+
+  it('books the bill on the DAY IT IS HANDED, and resolves that day\'s period', async () => {
+    // The Toronto-day defect. The adapter used to derive its own day from an
+    // instant with `toISOString().slice(0, 10)` — the UTC day — so a report
+    // approved at 23:30 on 30 September in Toronto went to VeloLedger as
+    // 1 October, and into October's period. The day is now computed by the
+    // dispatcher in the tenant's zone (`test/ledger-post.db.test.ts` pins that
+    // half); this pins that the adapter sends exactly what it was given, to
+    // BOTH calls that take a date — a bill dated one day in another day's
+    // period is a second way to get it wrong.
+    await postOk(['68100'], { postingDate: '2026-09-30' });
+    expect(bodyOf('resolve_period').date).toBe('2026-09-30');
+    expect(bodyOf('draft_bill').billDate).toBe('2026-09-30');
   });
 
   it('sends the IDEMPOTENCY KEY, which is the only thing stopping a double-post', async () => {

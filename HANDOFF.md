@@ -295,6 +295,29 @@ So before pushing a new spec:
 
 ## 5. STATUS — where things stand
 
+### LATEST — 4 Oct 2026 (read before the Phase 5 narrative below, which predates it)
+
+- **#130, #131:** the local suite is green on macOS. Two suites had been borrowing
+  `INTEGRATIONS_ENABLE_STUB` / `SECRET_ENCRYPTION_KEY` from `ci.yml`'s job env; they now set
+  their own. `npm test` now fails ONCE, naming the cause, when the DB environment is wrong
+  (`test/support/require-db-env.ts`).
+- **GA gate PASSED locally, Stripe TEST mode, 4 Oct.** Paid Checkout → VeloCRM webhook →
+  orchestrator → `POST /api/platform/provision 201` → seat sweep → the Stripe subscription's
+  quantity read back from Stripe at 1 → 3. Not production: there is still no deployed
+  environment. The event-driven seat push (invite accepted) was not exercised.
+  Operator-direct subscriptions create NO Stripe subscription, so they can never bill —
+  that path is for Velotech's own tenants, which must never pay.
+- **The Toronto-day fix (this branch).** `PostableReport.approvedAt` is replaced by
+  `postingDate`, the tenant's calendar day computed once by the dispatcher from
+  `organization.default_timezone`. The VeloLedger adapter was booking the UTC day. Adapters two
+  and three cannot repeat it: the contract no longer hands them an instant.
+- **Verified 4 Oct against the code, still OPEN:** the report lock (`assertDraft` is a plain
+  SELECT; the submit and approval UPDATEs filter on id only — upstream #511/#515);
+  `capIsEnforced()` returns true for `maxUsers` / `expensesPerYear`, which nothing enforces;
+  `REPORT_SUBMITTED` missing from `AUDIT_ACTIONS`; admin override decisions are not marked in
+  the audit row. VeloExpense has NO receipt extraction at all; upstream's is sync by default
+  with Batch only for multi-upload, from one request builder.
+
 ### PHASE 5 — Commercialization & GA. READ THIS FIRST; it is the current phase.
 
 **Written 6 Sep 2026, and it is late.** Nine PRs (#102–#110) merged before anything about them reached
