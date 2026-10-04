@@ -238,6 +238,26 @@ export async function decide(
   // disagree with it.
   await assertCanDecide(tx, taskId, actorId, ctx);
 
+  // THE REPORT ROW FIRST, locked until COMMIT, and before the task is claimed.
+  //
+  // Two reasons. A recall in flight has to finish before this decision reads the
+  // run, or both proceed on stale reads: before this lock a recall that waited
+  // behind an approval put the APPROVED report back into DRAFT
+  // (`test/report-lock.db.test.ts`). And the ORDER: submit, recall and every
+  // edit now take the report row first, then tasks, then the audit chain. This
+  // used to claim the task and only then write the report, while the recall
+  // wrote the report and then cancelled the tasks — the opposite order, which
+  // is a deadlock waiting for the right timing.
+  await tx.query(
+    `SELECT rep.id
+       FROM approval_task t
+       JOIN approval_request q   ON q.id = t.request_id
+       JOIN expense_report   rep ON rep.id = q.report_id
+      WHERE t.id = $1
+        FOR UPDATE OF rep`,
+    [taskId],
+  );
+
   const t = await tx.query(
     `SELECT t.id, t.step, t.status, t.assignee_id, t.claim_role,
             q.id  AS request_id, q.status AS request_status,
@@ -410,12 +430,23 @@ export async function decide(
   // 42P08 "inconsistent types deduced for parameter $2, text versus
   // expense_report_status". VX2-1's test helper hit this exact error and left a
   // comment about it; I wrote it again anyway. Same fix as there.
-  await tx.query(
+  const decided = await tx.query(
     `UPDATE expense_report
         SET status = $2, approved_at = $3, updated_at = now()
-      WHERE id = $1`,
+      WHERE id = $1 AND status = 'SUBMITTED'`,
     [task.report_id, reportStatus, decision === 'APPROVED' ? new Date() : null],
   );
+  // A decision is only ever on a SUBMITTED report. Under the lock taken at the
+  // top this cannot fire; the status in the WHERE is what keeps it true for a
+  // caller that arrives some other way, rather than restating whatever the
+  // report has become since.
+  if (decided.rowCount !== 1) {
+    throw new ApprovalEngineError(
+      `report ${task.report_number} is no longer SUBMITTED; the decision was not applied`,
+      'WRONG_STATUS',
+      'RUN_NOT_RUNNING',
+    );
+  }
 
   // VX4-5 part 2 — the budget rollup, on EVERY terminal decision and not only on
   // APPROVED. A rejection or a return takes the report out of `pending_minor`
