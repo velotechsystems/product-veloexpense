@@ -50,6 +50,7 @@ import {
 import { isDefinitelyNotApplied, type PostableReport } from '@/lib/integrations/contract';
 import { isModuleDisabled } from '@/lib/modules/errors';
 import type { QueryRunner } from '@/lib/db/client';
+import { toDateInputValue } from '@/lib/i18n/format';
 
 export interface DrainResult {
   claimed: number;
@@ -70,14 +71,32 @@ export interface DrainResult {
 async function loadPostable(tx: QueryRunner, reportId: string): Promise<PostableReport | null> {
   const r = await tx.query(
     `SELECT rep.id, rep.number, rep.title, rep.currency_code, rep.total_minor, rep.approved_at,
-            u.display_name AS submitter_name, u.email AS submitter_email
+            u.display_name AS submitter_name, u.email AS submitter_email,
+            o.default_timezone
        FROM expense_report rep
        JOIN app_user u ON u.id = rep.submitter_id
+       JOIN organization o ON o.id = rep.organization_id
       WHERE rep.id = $1`,
     [reportId],
   );
   if (r.rows.length === 0) return null;
   const head = r.rows[0];
+
+  // The tenant's calendar day of the approval — see `PostableReport.postingDate`.
+  // `toDateInputValue` is the house conversion from an instant to a day in a
+  // supplied zone, already tested across zones and against the server's own
+  // zone (`test/i18n-format.test.ts`); the DST edge is pinned in
+  // `test/ledger-post.db.test.ts`. A report with no `approved_at` (legacy rows
+  // only; the queue takes APPROVED reports) is booked on today, in the same zone.
+  const postingDate = toDateInputValue(
+    (head.approved_at as Date | null) ?? new Date(),
+    head.default_timezone as string,
+  );
+  if (!postingDate) {
+    // '' is the function's answer for an unusable instant. Refusing beats
+    // sending a ledger an empty date and learning what it does with one.
+    throw new Error(`report ${reportId} has no usable approval time to post on`);
+  }
 
   const lines = await tx.query(
     `SELECT li.id, li.description, li.amount_minor, li.tax_minor,
@@ -103,7 +122,7 @@ async function loadPostable(tx: QueryRunner, reportId: string): Promise<Postable
     submitterEmail: head.submitter_email as string,
     currencyCode: head.currency_code as string,
     totalMinor: String(head.total_minor),
-    approvedAt: head.approved_at as Date | null,
+    postingDate,
     lines: lines.rows.map((line) => ({
       lineItemId: line.id as string,
       description: line.description as string | null,
@@ -113,7 +132,7 @@ async function loadPostable(tx: QueryRunner, reportId: string): Promise<Postable
       glAccountName: line.gl_account_name as string | null,
       amountMinor: String(line.amount_minor),
       taxMinor: String(line.tax_minor),
-      txnDate: line.txn_date as Date | null,
+      txnDate: line.txn_date as string | null,
       merchant: line.merchant as string | null,
     })),
   };

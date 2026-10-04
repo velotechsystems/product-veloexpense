@@ -22,7 +22,7 @@ process.env.INTEGRATIONS_ENABLE_STUB = '1';
 process.env.SECRET_ENCRYPTION_KEY =
   process.env.SECRET_ENCRYPTION_KEY ?? Buffer.alloc(32, 5).toString('base64');
 
-import { describe, it, expect, beforeAll, beforeEach, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, beforeEach, afterAll, afterEach } from 'vitest';
 import { Pool } from 'pg';
 import { withOrg } from '@/lib/tenant/context';
 import * as outbox from '@/lib/integrations/post-outbox';
@@ -471,6 +471,47 @@ describe('posting', () => {
     await expect(
       withOrg(orgId, (tx) => outbox.cancelPost(tx, queue[0].id, 'too late')),
     ).rejects.toThrow(/already posted/);
+  });
+});
+
+/**
+ * The Toronto-day defect: a report is booked on the TENANT'S calendar day of its
+ * approval, not the UTC day.
+ *
+ * The VeloLedger adapter used to compute `approvedAt.toISOString().slice(0, 10)`,
+ * so in Toronto everything approved after 20:00 EDT (19:00 EST) was booked on the
+ * next day — and on the last day of a month, in the next accounting period. It
+ * failed nothing: the bill drafted, the period resolved, the journal posted. The
+ * day is now computed here, by the dispatcher, from `organization.default_timezone`,
+ * and the adapter is handed only the day (`PostableReport.postingDate`).
+ *
+ * Every case below is 23:30 local on a day whose UTC date is already the next
+ * one, which is the only shape that tells the two answers apart. The month-end
+ * case is the one a customer would find; the two DST cases are there because a
+ * fixed -04:00 offset would pass the first and fail them.
+ */
+describe("the posting date is the TENANT'S day, not the UTC day", () => {
+  afterEach(async () => {
+    // The suite's other tests assume the column's default.
+    await admin.query("UPDATE organization SET default_timezone = 'UTC' WHERE id = $1", [orgId]);
+  });
+
+  it.each([
+    // zone,                approved_at (UTC),         the day it is booked on
+    ['America/Toronto', '2026-10-01T03:30:00Z', '2026-09-30'], // 23:30 EDT, last day of September
+    ['America/Vancouver', '2026-10-01T06:30:00Z', '2026-09-30'], // 23:30 PDT, same month-end
+    ['America/Toronto', '2026-03-09T03:30:00Z', '2026-03-08'], // 23:30 EDT, the day DST began
+    ['America/Toronto', '2026-11-02T04:30:00Z', '2026-11-01'], // 23:30 EST, the day DST ended
+    ['UTC', '2026-10-01T03:30:00Z', '2026-10-01'], // a tenant that never set a zone: unchanged
+  ])('%s, approved at %s, is booked on %s', async (zone, approvedAt, day) => {
+    await connectStub();
+    const reportId = await approvedReport(`booked in ${zone}`);
+    await admin.query('UPDATE organization SET default_timezone = $2 WHERE id = $1', [orgId, zone]);
+    await admin.query('UPDATE expense_report SET approved_at = $2 WHERE id = $1', [reportId, approvedAt]);
+
+    const queue = await withOrg(orgId, (tx) => outbox.listQueue(tx));
+    expect(await postOne(orgId, queue[0].id)).toBe('POSTED');
+    expect(stub.posted()[0].report.postingDate).toBe(day);
   });
 });
 
