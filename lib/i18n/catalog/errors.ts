@@ -103,6 +103,7 @@ export const USER_MESSAGE_CODES = [
   'RUN_NOT_RUNNING',
   'RECEIPT_ACK_REQUIRED',
   'STEP_UNROUTABLE',
+  'SUBMIT_NEEDS_APPROVER',
   'REPORT_NOT_AWAITING_APPROVAL',
   'RUN_ALREADY_OPEN',
 
@@ -564,6 +565,15 @@ export const ERROR_COPY: Record<UserMessageCode, Copy> = {
     'en-CA':
       'This report cannot be routed to its next approver. The approval ladder or the ' +
       'reporting line needs fixing before it can move — ask your administrator.',
+  },
+  SUBMIT_NEEDS_APPROVER: {
+    // DECIDED 4 Oct 2026: nobody approves their own expenses, including the only
+    // person in the tenant. So this does not offer a way round — it says who to
+    // add, and where, in the words the home page's setup list already uses.
+    'en-CA':
+      'Nobody else here can approve this report, and an expense report cannot be approved by ' +
+      'the person who filed it. Invite somebody who can approve (Employees \u2192 Invite someone) ' +
+      'or give yourself a manager, then submit again. Your report is saved as a draft.',
   },
   REPORT_NOT_AWAITING_APPROVAL: {
     'en-CA': 'That report is not waiting for approval.',

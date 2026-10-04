@@ -100,7 +100,17 @@ export class RoutingError extends DomainError {
     readonly code: RoutingErrorCode,
     readonly step: number | null = null,
   ) {
-    super(message);
+    // A SENTENCE FOR EVERY CODE. This class used to pass none, and at submit a
+    // RoutingError escapes `openRun` untranslated — so a founder alone in their
+    // tenant, refused because nobody else can approve, was shown the generic
+    // "something went wrong" on the one action the product exists for.
+    //
+    // SELF_APPROVAL is the solo-founder case (the resolver's admin fallback found
+    // nobody but the submitter) and says what to do: invite somebody — the same
+    // advice as the APPROVER item on the home page's setup list, so the warning
+    // and the wall agree. Every other code is a ladder or reporting-line problem
+    // the reader cannot fix themselves, and gets STEP_UNROUTABLE's sentence.
+    super(message, code === 'SELF_APPROVAL' ? 'SUBMIT_NEEDS_APPROVER' : 'STEP_UNROUTABLE');
     this.name = 'RoutingError';
   }
 }

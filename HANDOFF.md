@@ -317,7 +317,7 @@ So before pushing a new spec:
   REPRODUCED against the old code first (`test/report-lock.db.test.ts`): a line landing on a
   SUBMITTED report; a submit validating without a line added under it; a recall flipping an
   APPROVED report back to DRAFT. Lock order is now report row → tasks → audit chain everywhere.
-- **Caps and audit gaps (this branch).** `maxUsers` is enforced in `createEmployee` and on
+- **Caps and audit gaps (#135).** `maxUsers` is enforced in `createEmployee` and on
   reactivation, `expensesPerYear` (rolling 365 days) in `addExpense` — `lib/billing/caps.ts`,
   under a tenant-row lock so two additions at the limit cannot both win. A seat refusal at
   sign-in becomes a denial plus an `INVITE_REFUSED` audit row (a throw in NextAuth's
@@ -326,8 +326,10 @@ So before pushing a new spec:
   `REPORT_RECALLED` are in the audit chain; decisions carry `details.override`.
   Known gap: the invitee's sign-in error page is the auth kit's generic one, not "seats full".
 - **DECIDED 4 Oct (John): one-person tenant keeps segregation of duties.** A solo founder
-  must invite an approver; the fix still to build is the refusal message — today submit
-  says STEP_UNROUTABLE "ask your administrator" to the administrator.
+  must invite an approver. Their submit used to show the generic error: a `RoutingError`
+  carried no reader copy and escapes `openRun` untranslated. Every `RoutingError` now has a
+  sentence — SELF_APPROVAL → `SUBMIT_NEEDS_APPROVER` (invite somebody, Employees → Invite
+  someone), every other code → `STEP_UNROUTABLE` (this branch).
 - **Verified 4 Oct, still OPEN:** VeloExpense has NO receipt extraction at all; upstream's is sync by default
   with Batch only for multi-upload, from one request builder.
 
