@@ -88,6 +88,13 @@ export const AUDIT_ACTIONS = [
   'LINE_ITEM_EDITED',
   'LINE_ITEM_REMOVED',
 
+  /* the report's own transitions. Missing until 4 Oct 2026: a submit and a recall
+   * wrote only to `expense_report_event`, so the tamper-evident chain recorded who
+   * APPROVED a report and never who put it forward or took it back — half of the
+   * question an auditor asks. Found during the entitlement work (#124). */
+  'REPORT_SUBMITTED',
+  'REPORT_RECALLED',
+
   /* approvals — VX2-3 */
   'APPROVAL_RUN_OPENED',
   'APPROVAL_RUN_CANCELLED',
@@ -133,6 +140,10 @@ export const AUDIT_ACTIONS = [
   'INVITE_RESENT',
   'INVITE_REVOKED',
   'INVITE_ACCEPTED',
+  /* An invitation that could not be accepted for a reason the invitee did not
+   * cause — today only the plan's seat cap. Written ahead of the auth kit's own
+   * SIGN_IN_DENIED, which has no way to carry a reason. */
+  'INVITE_REFUSED',
   'SIGN_IN_DENIED',
 
   /* branding — VX4-3. The odd family; see the header. */

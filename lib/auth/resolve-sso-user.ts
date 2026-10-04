@@ -68,6 +68,7 @@ import type { ResolvedUser } from '@/src/auth-kit';
 import { acceptForVerifiedEmail } from '@/lib/invites/service';
 import { pushSeatCountInBackground } from '@/lib/billing/seats';
 import { append as auditAppend } from '@/lib/audit/service';
+import { CapReachedError } from '@/lib/billing/caps';
 
 /**
  * Slug to tenant. `organization` has no tenant column and no `tenant_isolation`
@@ -108,7 +109,32 @@ export async function resolveSsoUser(orgSlug: string, email: string): Promise<Re
   // The tenant is the one they NAMED, via the cookie — never the one an
   // invitation happens to be in. Somebody invited to Acme who signs in at Globex
   // is refused rather than quietly signed into Acme.
-  const accepted = await acceptForVerifiedEmail(orgId, email);
+  let accepted: Awaited<ReturnType<typeof acceptForVerifiedEmail>>;
+  try {
+    accepted = await acceptForVerifiedEmail(orgId, email);
+  } catch (err) {
+    // THE SEAT CAP (`lib/billing/caps.ts`), refusing inside NextAuth's `signIn`
+    // callback, where a throw is an opaque failure page. So it becomes a denial
+    // like any other — the invitation was not consumed (its transaction rolled
+    // back), so the same person signs in the moment a seat is free — and the
+    // REASON is written to the tenant's audit log first, because the
+    // `SIGN_IN_DENIED` row the auth kit writes next cannot say why, and "my
+    // invitee can't get in" is the call an admin will otherwise take blind.
+    if (!(err instanceof CapReachedError)) throw err;
+    console.warn('[auth] invitation not accepted: seat limit reached', { orgSlug, email });
+    try {
+      await withOrg(orgId, (tx) =>
+        auditAppend(
+          tx,
+          { id: null, email, name: email, role: 'anonymous' },
+          { action: 'INVITE_REFUSED', details: { reason: err.code, limit: err.limit } },
+        ),
+      );
+    } catch (auditErr) {
+      console.error('[auth] could not audit a refused invitation:', auditErr);
+    }
+    return null;
+  }
   if (accepted === null) return null;
 
   /*

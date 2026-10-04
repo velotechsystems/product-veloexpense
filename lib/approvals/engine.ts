@@ -35,7 +35,7 @@ import type { UserMessageCode } from '@/lib/i18n/catalog/errors';
 import { append as auditAppend, type AuditActor } from '@/lib/audit/service';
 import { enqueuePost } from '@/lib/integrations/post-outbox';
 import { recomputeForReport } from '@/lib/budgets/service';
-import { assertCanDecide } from '@/lib/approvals/eligibility';
+import { assertCanDecide, canDecide } from '@/lib/approvals/eligibility';
 import { tieredRouter } from '@/lib/approvals/resolver';
 import { RoutingError, type ResolvedAssignment } from '@/lib/approvals/routing';
 import { planApprovalForReport, countStoredReceipts } from '@/lib/approvals/service';
@@ -238,6 +238,17 @@ export async function decide(
   // disagree with it.
   await assertCanDecide(tx, taskId, actorId, ctx);
 
+  // WAS THIS AN OVERRIDE? Asked on the task's own terms — the assignee, a
+  // delegatee, the claim pool — with the admin flag OFF. An admin who would have
+  // been allowed anyway is recorded as the approver they are; only a decision
+  // that needed the ADMIN role is marked. Before this, an override wrote an audit
+  // row indistinguishable from the assigned manager's, so the log could not say
+  // which decisions went round the ladder. ExpenseOS #507's audit half; its
+  // permission half does not apply here (the override is the ADMIN role, not a
+  // read permission).
+  const override =
+    ctx.isAdmin === true && !(await canDecide(tx, taskId, actorId, { ...ctx, isAdmin: false }));
+
   // THE REPORT ROW FIRST, locked until COMMIT, and before the task is claimed.
   //
   // Two reasons. A recall in flight has to finish before this decision reads the
@@ -345,6 +356,7 @@ export async function decide(
     note: input.note ?? null,
     receiptViewAcknowledged: input.receiptViewAcknowledged === true,
     receiptsPresentAtDecision: receiptsPresent,
+    override,
   };
 
   /* ── a positive decision that is not the last step ──────────────────── */

@@ -29,6 +29,7 @@ import { append as auditAppend, type AuditActor } from '@/lib/audit/service';
 import { auditDiff, auditSnapshot } from '@/lib/audit/diff';
 import type { AuditAction } from '@/lib/audit/actions';
 import { ORG } from '@/lib/tenant/sql';
+import { assertExpenseAllowance } from '@/lib/billing/caps';
 
 
 /**
@@ -708,6 +709,10 @@ export async function addExpense(
 ) {
   await assertDraft(tx, reportId);
   await assertCurrency(tx, input.currencyCode);
+  // The plan's yearly expense cap, if one is in force — `lib/billing/caps.ts`.
+  // This is the only INSERT INTO expense, so every path that creates one,
+  // including starting a report from uploaded receipts, is counted here.
+  await assertExpenseAllowance(tx);
   const r = await tx.query(
     `INSERT INTO expense (organization_id, report_id, merchant, txn_date, currency_code, notes)
      VALUES (${ORG}, $1, $2, $3, $4, $5) RETURNING *`,

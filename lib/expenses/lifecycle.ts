@@ -348,9 +348,47 @@ export async function submitReport(
    * all; that is the correct direction to fail, and it is why every tenant is
    * seeded with an admin.
    */
+  // REPORT_SUBMITTED into the audit chain, BEFORE the run is opened so the chain
+  // reads in the order things happened: put forward, then routed.
+  await auditTransition(tx, actorId, 'REPORT_SUBMITTED', reportId, {
+    reportNumber: report.number ?? null,
+    totalMinor: String(report.total_minor),
+    currencyCode: report.currency_code,
+    acknowledgedCount: validation.violations.filter((v) => v.resolved_at !== null).length,
+  });
+
   const approval = await engine.openRun(tx, reportId, actorId);
 
   return { report: updated.rows[0], validation, approval };
+}
+
+/**
+ * A report transition into the tamper-evident chain, as the person who made it.
+ *
+ * `expense_report_event` already records every transition for the report's own
+ * history screen; this is the OTHER record, the one an auditor verifies. Until
+ * 4 Oct 2026 the chain held approvals and reimbursements but not submits or
+ * recalls, so it could say who signed a report off and not who put it forward.
+ */
+async function auditTransition(
+  tx: QueryRunner,
+  actorId: string,
+  action: 'REPORT_SUBMITTED' | 'REPORT_RECALLED',
+  reportId: string,
+  details: Record<string, unknown>,
+): Promise<void> {
+  const actor = await tx.query(
+    `SELECT COALESCE(display_name, email) AS name, email, role FROM app_user WHERE id = $1`,
+    [actorId],
+  );
+  if (actor.rows.length === 0) {
+    throw new LifecycleError('the acting user is not in this organization', 'FORBIDDEN');
+  }
+  await auditAppend(
+    tx,
+    { id: actorId, name: actor.rows[0].name as string, role: actor.rows[0].role as string },
+    { action, entityType: 'expense_report', entityId: reportId, details },
+  );
 }
 
 /**
@@ -399,6 +437,15 @@ export async function recallReport(
   // resuming the old one: 0008's reasoning is that a report's total can move
   // while it is back in DRAFT, so re-banding an existing run would let an
   // employee returned at three sign-offs trim a line and resubmit into one.
+  // REPORT_RECALLED BEFORE the run is cancelled, so the chain reads cause then
+  // effect — taken back, then the run voided — the mirror of submit's order.
+  // The cancelled run's id is on its own APPROVAL_RUN_CANCELLED row.
+  await auditTransition(tx, actorId, 'REPORT_RECALLED', reportId, {
+    reportNumber: report.number ?? null,
+    fromStatus: report.status,
+    note: note ?? null,
+  });
+
   const cancelled = await engine.cancelRunForReport(tx, reportId, actorId);
 
   // Back to DRAFT is spend LEAVING the pending total. Without this a recalled

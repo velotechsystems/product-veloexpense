@@ -83,6 +83,9 @@ export const USER_MESSAGE_CODES = [
 
   /* VX5-11: the subscription lapsed and this action moves money or work. */
   'BILLING_LAPSED',
+  /* the plan's numeric caps (lib/billing/caps.ts) */
+  'SEAT_LIMIT_REACHED',
+  'EXPENSE_LIMIT_REACHED',
   'REPORT_NOT_SUBMITTABLE',
   'REPORT_NOT_RECALLABLE',
   'REPORT_NOT_REIMBURSABLE',
@@ -484,6 +487,19 @@ export const ERROR_COPY: Record<UserMessageCode, Copy> = {
       'This organization\u2019s subscription has lapsed, so reports cannot be submitted, ' +
       'approved or paid right now. Your drafts are saved and everything is still ' +
       'readable \u2014 an administrator can restore this from the billing settings.',
+  },
+  SEAT_LIMIT_REACHED: {
+    // Read by the person ACCEPTING an invitation as often as by an admin, so it
+    // says who can fix it rather than pointing at a page most readers cannot open.
+    'en-CA':
+      'This organization\u2019s plan allows {limit} people, and every seat is taken. ' +
+      'An administrator can free one or change the plan from the billing settings.',
+  },
+  EXPENSE_LIMIT_REACHED: {
+    'en-CA':
+      'This organization\u2019s plan allows {limit} expenses a year, and that many have been ' +
+      'added in the last twelve months. Your drafts are saved \u2014 an administrator can ' +
+      'change the plan from the billing settings.',
   },
   REPORT_NOT_SUBMITTABLE: {
     'en-CA': 'Only a draft can be submitted, and this report is not one any more.',
