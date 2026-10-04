@@ -311,16 +311,24 @@ So before pushing a new spec:
   `postingDate`, the tenant's calendar day computed once by the dispatcher from
   `organization.default_timezone`. The VeloLedger adapter was booking the UTC day. Adapters two
   and three cannot repeat it: the contract no longer hands them an instant.
-- **The report lock (this branch).** Every status check that a write depends on is now
+- **The report lock (#134).** Every status check that a write depends on is now
   `FOR UPDATE` (edits via `assertDraft`, submit, recall, and the approval decision), and the
   writes carry the status in their WHERE so they refuse on their own. Three races were
   REPRODUCED against the old code first (`test/report-lock.db.test.ts`): a line landing on a
   SUBMITTED report; a submit validating without a line added under it; a recall flipping an
   APPROVED report back to DRAFT. Lock order is now report row → tasks → audit chain everywhere.
-- **Verified 4 Oct against the code, still OPEN:** `capIsEnforced()` returns true for
-  `maxUsers` / `expensesPerYear`, which nothing enforces;
-  `REPORT_SUBMITTED` missing from `AUDIT_ACTIONS`; admin override decisions are not marked in
-  the audit row. VeloExpense has NO receipt extraction at all; upstream's is sync by default
+- **Caps and audit gaps (this branch).** `maxUsers` is enforced in `createEmployee` and on
+  reactivation, `expensesPerYear` (rolling 365 days) in `addExpense` — `lib/billing/caps.ts`,
+  under a tenant-row lock so two additions at the limit cannot both win. A seat refusal at
+  sign-in becomes a denial plus an `INVITE_REFUSED` audit row (a throw in NextAuth's
+  `signIn` is an opaque page). `minUsers` is now `INFORMATIONAL_CAPS`; a test fails if
+  `capIsEnforced` vouches for a cap with no `withinCap` call site. `REPORT_SUBMITTED` and
+  `REPORT_RECALLED` are in the audit chain; decisions carry `details.override`.
+  Known gap: the invitee's sign-in error page is the auth kit's generic one, not "seats full".
+- **DECIDED 4 Oct (John): one-person tenant keeps segregation of duties.** A solo founder
+  must invite an approver; the fix still to build is the refusal message — today submit
+  says STEP_UNROUTABLE "ask your administrator" to the administrator.
+- **Verified 4 Oct, still OPEN:** VeloExpense has NO receipt extraction at all; upstream's is sync by default
   with Batch only for multi-upload, from one request builder.
 
 ### PHASE 5 — Commercialization & GA. READ THIS FIRST; it is the current phase.

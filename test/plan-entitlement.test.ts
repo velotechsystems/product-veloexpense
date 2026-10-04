@@ -10,6 +10,7 @@ import { join } from 'node:path';
 import {
   CAPS,
   LIMITS_WITHOUT_AN_ENFORCER,
+  INFORMATIONAL_CAPS,
   UNGATED,
   capIsEnforced,
   flag,
@@ -199,6 +200,45 @@ describe('LIMITS_WITHOUT_AN_ENFORCER — the caps this build cannot police', () 
     };
     walk('lib');
     expect(offenders).toEqual([]);
+  });
+});
+
+describe('an ENFORCED cap has an enforcement call site', () => {
+  /**
+   * The other direction of the guard above, and the one that was missing.
+   *
+   * Until 4 Oct 2026 `capIsEnforced` answered `true` for `maxUsers`,
+   * `expensesPerYear` and `minUsers`, and not one of them had a call site: the
+   * set above only polices caps declared UNenforceable, so a cap that was simply
+   * never wired passed every test while claiming to be real. Now every cap
+   * `capIsEnforced` vouches for must appear in a `withinCap(…, '<cap>', …)` call
+   * somewhere in `lib/` outside the vocabulary file.
+   */
+  it('every cap capIsEnforced vouches for is passed to withinCap somewhere in lib/', () => {
+    const sources: string[] = [];
+    const walk = (dir: string): void => {
+      for (const entry of readdirSync(dir)) {
+        const full = join(dir, entry);
+        if (statSync(full).isDirectory()) {
+          walk(full);
+          continue;
+        }
+        if (!full.endsWith('.ts') || full.endsWith('lib/billing/plan-entitlement.ts')) continue;
+        sources.push(readFileSync(full, 'utf8'));
+      }
+    };
+    walk('lib');
+    const unenforced = CAPS.filter((cap) => {
+      if (!capIsEnforced(cap)) return false;
+      const call = new RegExp(`withinCap\\([^)]*'${cap}'`);
+      return !sources.some((text) => call.test(text));
+    });
+    expect(unenforced).toEqual([]);
+  });
+
+  it('minUsers is information, not a limit', () => {
+    expect(INFORMATIONAL_CAPS.has('minUsers')).toBe(true);
+    expect(capIsEnforced('minUsers')).toBe(false);
   });
 });
 

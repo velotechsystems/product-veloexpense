@@ -204,8 +204,8 @@ describe('openRun', () => {
     });
 
     // The audit entry is part of the same transaction, and the chain verifies.
-    expect(await auditActions()).toEqual(['APPROVAL_RUN_OPENED']);
-    expect(await withOrg(orgId, (tx) => verifyChain(tx))).toMatchObject({ ok: true, scanned: 1 });
+    expect(await auditActions()).toEqual(['REPORT_SUBMITTED', 'APPROVAL_RUN_OPENED']);
+    expect(await withOrg(orgId, (tx) => verifyChain(tx))).toMatchObject({ ok: true, scanned: 2 });
   });
 
   it('refuses a second run while one is open', async () => {
@@ -286,8 +286,8 @@ describe('decide', () => {
     // which is the whole point of 0007 choosing clock_timestamp() over now().
     const events = await withOrg(orgId, (tx) => lifecycle.listEvents(tx, reportId));
     expect(events.map((e) => e.action)).toEqual(['APPROVE', 'SUBMIT']);
-    expect(await auditActions()).toEqual(['APPROVAL_RUN_OPENED', 'REPORT_APPROVED']);
-    expect(await withOrg(orgId, (tx) => verifyChain(tx))).toMatchObject({ ok: true, scanned: 2 });
+    expect(await auditActions()).toEqual(['REPORT_SUBMITTED', 'APPROVAL_RUN_OPENED', 'REPORT_APPROVED']);
+    expect(await withOrg(orgId, (tx) => verifyChain(tx))).toMatchObject({ ok: true, scanned: 3 });
   });
 
   it('advances a two-rung ladder one step at a time', async () => {
@@ -326,6 +326,7 @@ describe('decide', () => {
     );
     expect(second).toMatchObject({ requestStatus: 'APPROVED', reportStatus: 'APPROVED' });
     expect(await auditActions()).toEqual([
+      'REPORT_SUBMITTED',
       'APPROVAL_RUN_OPENED',
       'APPROVAL_STEP_APPROVED',
       'REPORT_APPROVED',
@@ -405,7 +406,7 @@ describe('decide', () => {
     ).rejects.toBeInstanceOf(DecisionForbiddenError);
     // The first decision stands and nothing was written twice.
     expect((await reportRow(reportId)).status).toBe('APPROVED');
-    expect(await auditActions()).toEqual(['APPROVAL_RUN_OPENED', 'REPORT_APPROVED']);
+    expect(await auditActions()).toEqual(['REPORT_SUBMITTED', 'APPROVAL_RUN_OPENED', 'REPORT_APPROVED']);
   });
 
   it('cancels a task waiting AHEAD of its turn when the run closes early', async () => {
@@ -482,8 +483,11 @@ describe('recall cancels the run', () => {
     const second = await submit(reportId);
     expect(second.approval.requestId).not.toBe(first.approval.requestId);
     expect(await auditActions()).toEqual([
+      'REPORT_SUBMITTED',
       'APPROVAL_RUN_OPENED',
+      'REPORT_RECALLED',
       'APPROVAL_RUN_CANCELLED',
+      'REPORT_SUBMITTED',
       'APPROVAL_RUN_OPENED',
     ]);
   });
@@ -521,7 +525,7 @@ describe('receipt-view acknowledgement', () => {
       withOrg(orgId, (tx) => decide(tx, approval.taskId, managerId, 'APPROVED')),
     ).rejects.toMatchObject({ code: 'RECEIPT_ACK_REQUIRED' });
     // The refusal rolled back: no audit entry beyond the open, task still PENDING.
-    expect(await auditActions()).toEqual(['APPROVAL_RUN_OPENED']);
+    expect(await auditActions()).toEqual(['REPORT_SUBMITTED', 'APPROVAL_RUN_OPENED']);
     expect((await tasksOf(approval.requestId))[0].status).toBe('PENDING');
 
     await withOrg(orgId, (tx) =>
@@ -569,7 +573,7 @@ describe('authorization', () => {
     ).rejects.toMatchObject({ code: 'SELF_APPROVAL' });
     // Nothing decided, nothing logged.
     expect((await tasksOf(approval.requestId))[0].status).toBe('PENDING');
-    expect(await auditActions()).toEqual(['APPROVAL_RUN_OPENED']);
+    expect(await auditActions()).toEqual(['REPORT_SUBMITTED', 'APPROVAL_RUN_OPENED']);
   });
 
   it('lets an admin decide somebody else’s task', async () => {

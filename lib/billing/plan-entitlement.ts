@@ -122,8 +122,24 @@ export const LIMITS_WITHOUT_AN_ENFORCER: ReadonlySet<Cap> = new Set<Cap>([
   'aiCreditsPerSeat',
 ]);
 
+/**
+ * Caps that are information, not limits: nothing refuses a tenant for being
+ * under them. `minUsers` is a contractual floor a screen may show. Separate from
+ * `LIMITS_WITHOUT_AN_ENFORCER` because the reason differs — that set is "should
+ * refuse, cannot yet count"; this one is "never refuses, by design".
+ *
+ * `capIsEnforced('minUsers')` used to answer `true`, alongside `maxUsers` and
+ * `expensesPerYear`, none of which anything enforced. A function whose job is to
+ * say whether a limit is real said yes three times about limits nothing kept.
+ */
+export const INFORMATIONAL_CAPS: ReadonlySet<Cap> = new Set<Cap>(['minUsers']);
+
+/**
+ * Does a refusal exist for this cap? True only for a cap with an enforcement
+ * call site in `lib/` — `test/plan-entitlement.test.ts` checks both directions.
+ */
 export function capIsEnforced(cap: Cap): boolean {
-  return !LIMITS_WITHOUT_AN_ENFORCER.has(cap);
+  return !LIMITS_WITHOUT_AN_ENFORCER.has(cap) && !INFORMATIONAL_CAPS.has(cap);
 }
 
 /**

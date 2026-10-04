@@ -16,6 +16,7 @@ import type { UserMessage } from '@/lib/errors/domain';
 import type { UserMessageCode } from '@/lib/i18n/catalog/errors';
 import { DomainError } from '@/lib/errors/domain';
 import { ORG } from '@/lib/tenant/sql';
+import { assertSeatAvailable } from '@/lib/billing/caps';
 
 
 /** Max levels walked when resolving a manager chain (also the cycle backstop). */
@@ -282,6 +283,11 @@ export async function createEmployee(tx: QueryRunner, input: NewEmployee): Promi
     );
   }
 
+  // The plan's seat cap, if one is in force — `lib/billing/caps.ts`. Here and not
+  // in the invite code, because this is the one insert every way into a tenant
+  // reaches.
+  await assertSeatAvailable(tx);
+
   const r = await tx.query(
     `INSERT INTO app_user
        (organization_id, email, display_name, title, role, employee_status,
@@ -356,6 +362,12 @@ export async function updateEmployee(
   if ('businessUnitId' in patch) put('business_unit_id', patch.businessUnitId ?? null);
   if ('legalEntityId' in patch) put('legal_entity_id', patch.legalEntityId ?? null);
   if ('employeeStatus' in patch) {
+    // Reactivating a DEACTIVATED person takes a seat back — the meter counts
+    // `deleted_at IS NULL` — so it is capped like a new one. Without this, a cap
+    // enforced only on creation is walked round by deactivating and reactivating.
+    if (patch.employeeStatus === 'ACTIVE' && current.deleted_at !== null) {
+      await assertSeatAvailable(tx);
+    }
     put('employee_status', patch.employeeStatus);
     // Reactivating clears the soft-delete stamp; anything else leaves it alone.
     if (patch.employeeStatus === 'ACTIVE') sets.push('deleted_at = NULL');
