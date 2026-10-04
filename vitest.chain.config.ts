@@ -21,6 +21,10 @@ export default defineConfig({
   test: {
     environment: 'node',
     include: ['test/**/*.check.ts'],
+    // Same guard as the main config. This file runs LAST in `npm run e2e`, so
+    // an environment fault here would otherwise appear after the whole build
+    // and seed had already gone by, as far from its cause as it can get.
+    globalSetup: ['./test/support/require-db-env.ts'],
     fileParallelism: false,
   },
 });

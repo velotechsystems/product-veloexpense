@@ -6,6 +6,12 @@ export default defineConfig({
   test: {
     environment: 'node',
     include: ['test/**/*.test.ts'],
+    // Fails the run ONCE, naming the shell, when DATABASE_URL /
+    // ADMIN_DATABASE_URL are missing or point at nothing. Without it a
+    // forgotten `. scripts/dev-env.sh` surfaces as 55 files reporting
+    // `database "<your login>" does not exist` — a message that names the
+    // database for a fault that is entirely in the shell. See the file.
+    globalSetup: ['./test/support/require-db-env.ts'],
     // VX2-10. `chain-verify.check.ts` is deliberately OUTSIDE the normal run and
     // has its own config, because it verifies the database AS IT STANDS rather
     // than data it wrote itself. Two reasons it cannot live here:
