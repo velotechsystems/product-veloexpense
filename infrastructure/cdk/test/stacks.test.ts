@@ -211,7 +211,10 @@ describe('storage', () => {
 });
 
 describe('config', () => {
-  it('refuses to synthesise without a certificate for the host', () => {
-    expect(() => buildConfig('staging', {})).toThrow(/No ACM certificate/);
+  it('staging carries its committed, issued certificate; the environment can override it', () => {
+    expect(buildConfig('staging').albCertificateArn).toBe(
+      'arn:aws:acm:ca-central-1:535079144866:certificate/a2c0714c-bf9c-4f69-bed9-a31e1b2a56b9',
+    );
+    expect(buildConfig('staging', { albCertificateArn: CERT }).albCertificateArn).toBe(CERT);
   });
 });

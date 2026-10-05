@@ -107,9 +107,10 @@ const STAGES: Record<Stage, Omit<VeloExpenseConfig, 'resourcePrefix' | 'secretPr
     region: REGION,
     domainName: 'staging.veloexpense.ai',
     authCookieDomain: undefined,
-    // Filled in from the certificate John requested on 5 Oct 2026; the env var
-    // ALB_CERTIFICATE_ARN overrides it (bin/app.ts) until it is committed.
-    albCertificateArn: '',
+    // ACM, ca-central-1, staging.veloexpense.ai — requested and DNS-validated
+    // 5 Oct 2026 (validation CNAME in Cloudflare, DNS only; keep it, renewal uses
+    // it). ALB_CERTIFICATE_ARN in the environment still overrides (bin/app.ts).
+    albCertificateArn: 'arn:aws:acm:ca-central-1:535079144866:certificate/a2c0714c-bf9c-4f69-bed9-a31e1b2a56b9',
     listenerPriority: 100,
     rds: {
       databaseName: 'veloexpense',
