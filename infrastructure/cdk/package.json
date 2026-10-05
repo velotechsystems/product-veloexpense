@@ -1,0 +1,24 @@
+{
+  "name": "@veloexpense/cdk",
+  "version": "1.0.0",
+  "description": "VeloExpense - AWS CDK infrastructure (ported from ExpenseOS infrastructure/cdk)",
+  "private": true,
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "synth": "cdk synth",
+    "diff": "cdk diff",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "aws-cdk": "^2.1129.0",
+    "ts-node": "^10.9.2",
+    "typescript": "~5.5.0",
+    "vitest": "^4.1.11"
+  },
+  "dependencies": {
+    "aws-cdk-lib": "^2.260.0",
+    "constructs": "^10.6.0",
+    "source-map-support": "^0.5.21"
+  }
+}

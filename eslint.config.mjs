@@ -12,6 +12,8 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // The CDK app has its own package.json, tsconfig and tests (infrastructure/cdk).
+    "infrastructure/**",
   ]),
 ]);
 

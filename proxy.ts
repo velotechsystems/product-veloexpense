@@ -62,6 +62,19 @@ import { NextResponse, type NextRequest } from 'next/server';
 //                                       that reason, and the first version of it
 //                                       passed with this entry deleted.
 //
+// Phase 5 staging adds a sixth, and it carries no credential because it
+// discloses nothing:
+//   /api/health                         liveness for the load balancer's target
+//                                       group and the container health check,
+//                                       which send no cookie. It answers
+//                                       {"ok":true} and nothing else (no
+//                                       version, no commit). EXACT path in
+//                                       PUBLIC; the matcher, like its
+//                                       neighbours, is a prefix. Without it the
+//                                       target group sees a 307 to /login, marks
+//                                       every task unhealthy, and the deploy
+//                                       rolls itself back.
+//
 // TWO PLACES, AND EITHER ONE ALONE IS ENOUGH — MEASURED, NOT ASSUMED. The
 // `matcher` decides whether middleware runs at all; `PUBLIC` is what runs when
 // it does. `/signup` is in both, as `/login` and `/approve` already were, and a
@@ -83,6 +96,7 @@ const PUBLIC = [
   /^\/invite/,
   /^\/api\/internal\//,
   /^\/api\/platform\//,
+  /^\/api\/health$/,
   /^\/_next\//,
   /^\/favicon\.ico$/,
 ];
@@ -103,5 +117,5 @@ export function proxy(req: NextRequest) {
 }
 
 export const config = {
-  matcher: ['/((?!api/auth|api/internal|api/platform|_next/static|_next/image|favicon.ico|login|approve|signup|invite).*)'],
+  matcher: ['/((?!api/auth|api/internal|api/platform|api/health$|_next/static|_next/image|favicon.ico|login|approve|signup|invite).*)'],
 };
