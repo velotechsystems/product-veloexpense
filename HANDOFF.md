@@ -330,6 +330,23 @@ So before pushing a new spec:
   carried no reader copy and escapes `openRun` untranslated. Every `RoutingError` now has a
   sentence — SELF_APPROVAL → `SUBMIT_NEEDS_APPROVER` (invite somebody, Employees → Invite
   someone), every other code → `STEP_UNROUTABLE` (this branch).
+- **STAGING INFRASTRUCTURE (5 Oct, this PR) — `infrastructure/cdk`.** DECIDED (John): staging
+  is `https://staging.veloexpense.ai` with TENANT SUBDOMAINS OFF (`AUTH_COOKIE_DOMAIN` unset), on
+  the SHARED `velotech-dev` VPC/cluster/ALB that product-velocrm's CDK owns, Cloudflare in front.
+  Attachment is via product-velocrm #262's SSM contract (`/velotech/<stage>/shared/*`): we add a
+  host rule (priority band 100-199), our ACM cert by SNI, a target group, and our service joins the
+  shared apps security group. Never a rule on the ALB's own group — a template test enforces it.
+  Ported from ExpenseOS `infrastructure/cdk`; dropped with reasons in each file: own VPC/ALB,
+  CloudFront, worker + Valkey, SES, GuardDuty, RDS Proxy (8-ACU minimum), exports/audit buckets.
+  The running app gets ONLY `veloapp` (`DB_USER`/`DB_PASSWORD`; `scripts/docker-entrypoint.sh`
+  composes `DATABASE_URL`, `sslmode=verify-full` against the RDS CA in the image). The master login
+  goes only to the one-off DB task: `scripts/db-bootstrap.mjs` (role, grants, default privileges,
+  and it FAILS if `pg_default_acl` is missing them — the VX5-20 hazard) then `migrate.mjs`.
+  The bootstrap sends the password as a SCRAM verifier, because `log_statement=ddl` and pgaudit
+  would otherwise write it to CloudWatch. `/api/internal/*` is finally called on a schedule
+  (`scripts/tick.mjs`, EventBridge Scheduler → one Fargate task per route); billing routes stay
+  off until the platform link is configured in staging. `/api/health` is new (liveness only,
+  never the DB) and public in `proxy.ts`. Mail uses the suite's `velocrm/smtp-credentials`.
 - **Verified 4 Oct, still OPEN:** VeloExpense has NO receipt extraction at all; upstream's is sync by default
   with Batch only for multi-upload, from one request builder.
 

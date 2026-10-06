@@ -315,3 +315,26 @@ jobs:
       - name: Audit (non-blocking)
         run: npm audit --audit-level=high
         continue-on-error: true
+
+  infra:
+    # The CDK app (infrastructure/cdk) has its own package.json, tsconfig and
+    # tests, so it is its own job: synthesising every stack and asserting what
+    # the templates must not contain (rules on the shared ALB group, the master
+    # login in the web task) needs no database and no AWS credentials — the
+    # shared infrastructure is read from SSM at DEPLOY time, not at synth.
+    name: Infrastructure (CDK typecheck + template tests)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: infrastructure/cdk
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: infrastructure/cdk/package-lock.json
+      - run: npm ci --no-audit --no-fund
+      - run: npx tsc --noEmit
+      - run: npx vitest run

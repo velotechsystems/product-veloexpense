@@ -1,0 +1,406 @@
+/**
+ * ComputeStack – VeloExpense's web service on the SHARED cluster and ALB, the
+ * one-off database task, and the scheduled jobs.
+ *
+ * Ported from ExpenseOS `compute-stack.ts`. Kept: Fargate on ARM64; one task
+ * role and one execution role per kind of task; secrets imported BY NAME/ARN so
+ * nothing writes a resource policy back onto another stack's secret; execution
+ * roles granted exactly the secrets they pull; the deployment circuit breaker
+ * with rollback; minHealthy 100 / maxHealthy 200 so a deploy never drops below
+ * one serving task; ECS Exec on; a target-group health check.
+ *
+ * Changed, and why:
+ *   · NO cluster, ALB or listener of our own. The cluster and the HTTPS
+ *     listener are product-velocrm's (shared.ts). We add a HOST rule in
+ *     VeloExpense's priority band, our certificate to that listener by SNI, and a
+ *     target group. The ALB reaches the task because the task joins the shared
+ *     apps security group; we never touch the ALB's own group (the listener is
+ *     imported WITHOUT it, so CDK cannot add rules to it on our behalf).
+ *   · NO worker service. Background work is `/api/internal/*`; a scheduled
+ *     Fargate task (`scripts/tick.mjs`) calls it with WORKER_SECRET.
+ *   · The DATABASE TASK. ExpenseOS ran migrations from an in-VPC CodeBuild runner.
+ *     Here the same image runs `scripts/db-bootstrap.mjs` then
+ *     `scripts/migrate.mjs` as a one-off task — it is the ONLY task definition
+ *     that receives the master login. The web task receives `veloapp` and
+ *     nothing else, so the running app is subject to FORCE ROW LEVEL SECURITY
+ *     like every test in the suite assumes.
+ *   · DATABASE_URL is composed at container start (docker-entrypoint.sh) from
+ *     DB_HOST/DB_PORT/DB_NAME plus DB_USER/DB_PASSWORD pulled from Secrets
+ *     Manager, instead of ExpenseOS's hand-made `database-url` secret — one fewer
+ *     secret for a person to keep in step with a generated password.
+ */
+import {
+  CfnOutput,
+  Duration,
+  RemovalPolicy,
+  Stack,
+  type StackProps,
+  Tags,
+  aws_ec2 as ec2,
+  aws_ecr as ecr,
+  aws_ecs as ecs,
+  aws_elasticloadbalancingv2 as elbv2,
+  aws_iam as iam,
+  aws_logs as logs,
+  aws_scheduler as scheduler,
+  aws_secretsmanager as secretsmanager,
+} from 'aws-cdk-lib';
+import type { Construct } from 'constructs';
+import type { VeloExpenseConfig } from './config';
+import { SHARED_APP_PORT, importShared } from './shared';
+
+export interface ComputeStackProps extends StackProps {
+  config: VeloExpenseConfig;
+  /** Image tag in `<prefix>/web` to run. Immutable tags: one tag, one build. */
+  imageTag: string;
+  serviceSecurityGroupId: string;
+  masterKeyArn: string;
+  /** Aurora writer endpoint. */
+  dbHost: string;
+  authSecretArn: string;
+  workerSecretArn: string;
+  appDbSecretArn: string;
+  /** The RDS-generated master secret (JSON: username, password, …). */
+  masterDbSecretArn: string;
+}
+
+/** Where the image puts the RDS CA bundle (Dockerfile); node trusts it via NODE_EXTRA_CA_CERTS. */
+export const RDS_CA_PATH = '/app/rds-ca.pem';
+
+export class ComputeStack extends Stack {
+  public readonly service: ecs.FargateService;
+
+  constructor(scope: Construct, id: string, props: ComputeStackProps) {
+    super(scope, id, props);
+    const { config } = props;
+    const prefix = config.resourcePrefix;
+    const shared = importShared(this, config.sharedStage);
+    const origin = `https://${config.domainName}`;
+
+    const serviceSg = ec2.SecurityGroup.fromSecurityGroupId(this, 'ServiceSg', props.serviceSecurityGroupId);
+    const appsSg = ec2.SecurityGroup.fromSecurityGroupId(this, 'SharedAppsSg', shared.appsSecurityGroupId, {
+      mutable: false,
+    });
+    const repo = ecr.Repository.fromRepositoryName(this, 'WebRepo', `${prefix}/web`);
+    const image = ecs.ContainerImage.fromEcrRepository(repo, props.imageTag);
+
+    // ── Secrets, imported locally ─────────────────────────────────────────────
+    const byArn = (cid: string, arn: string) => secretsmanager.Secret.fromSecretCompleteArn(this, cid, arn);
+    const byName = (cid: string, name: string) => secretsmanager.Secret.fromSecretNameV2(this, cid, name);
+
+    const authSecret = byArn('AuthSecret', props.authSecretArn);
+    const workerSecret = byArn('WorkerSecret', props.workerSecretArn);
+    const appDb = byArn('AppDb', props.appDbSecretArn);
+    const masterDb = byArn('MasterDb', props.masterDbSecretArn);
+    const encryptionKey = byName('SecretEncryptionKey', `${config.secretPrefix}/secret-encryption-key`);
+    const googleOAuth = byName('GoogleOAuth', `${config.secretPrefix}/google-oauth`);
+    const smtp = byName('Smtp', config.smtpSecretName);
+
+    /** Partial-ARN wildcard for a secret imported by NAME (its ARN ends in a random suffix). */
+    const nameArn = (name: string) =>
+      `arn:aws:secretsmanager:${config.region}:${config.accountId}:secret:${name}-??????`;
+
+    // ── Roles ─────────────────────────────────────────────────────────────────
+    const executionRole = (rid: string, name: string, secretArns: string[]) => {
+      const role = new iam.Role(this, rid, {
+        roleName: `${prefix}-${name}-exec`,
+        assumedBy: new iam.ServicePrincipal('ecs-tasks.amazonaws.com'),
+        managedPolicies: [
+          iam.ManagedPolicy.fromAwsManagedPolicyName('service-role/AmazonECSTaskExecutionRolePolicy'),
+        ],
+      });
+      role.addToPrincipalPolicy(
+        new iam.PolicyStatement({
+          actions: ['secretsmanager:GetSecretValue', 'secretsmanager:DescribeSecret'],
+          resources: secretArns,
+        }),
+      );
+      // Secrets and ECR layers are encrypted with our master key.
+      role.addToPrincipalPolicy(new iam.PolicyStatement({ actions: ['kms:Decrypt'], resources: [props.masterKeyArn] }));
+      return role;
+    };
+
+    const webExecRole = executionRole('WebExecutionRole', 'web', [
+      props.authSecretArn,
+      props.workerSecretArn,
+      props.appDbSecretArn,
+      nameArn(`${config.secretPrefix}/secret-encryption-key`),
+      nameArn(`${config.secretPrefix}/google-oauth`),
+      nameArn(config.smtpSecretName),
+    ]);
+    // The database task: the master login and veloapp's (to set its password). Nothing else.
+    const dbExecRole = executionRole('DbExecutionRole', 'db', [props.masterDbSecretArn, props.appDbSecretArn]);
+    // The scheduled caller: WORKER_SECRET only.
+    const tickExecRole = executionRole('TickExecutionRole', 'tick', [props.workerSecretArn]);
+
+    const webTaskRole = new iam.Role(this, 'WebTaskRole', {
+      roleName: `${prefix}-web-task`,
+      assumedBy: new iam.ServicePrincipal('ecs-tasks.amazonaws.com'),
+    });
+    // Receipts: by ARN string, not the bucket construct, so no bucket policy is
+    // written back onto the storage stack.
+    const receiptsArn = `arn:aws:s3:::${prefix}-receipts-${config.accountId}`;
+    webTaskRole.addToPrincipalPolicy(
+      new iam.PolicyStatement({
+        actions: ['s3:GetObject', 's3:PutObject', 's3:DeleteObject', 's3:ListBucket'],
+        resources: [receiptsArn, `${receiptsArn}/*`],
+      }),
+    );
+    webTaskRole.addToPrincipalPolicy(
+      new iam.PolicyStatement({
+        actions: ['kms:GenerateDataKey', 'kms:Encrypt', 'kms:Decrypt'],
+        resources: [props.masterKeyArn],
+      }),
+    );
+    const plainTaskRole = (rid: string, name: string) =>
+      new iam.Role(this, rid, {
+        roleName: `${prefix}-${name}-task`,
+        assumedBy: new iam.ServicePrincipal('ecs-tasks.amazonaws.com'),
+      });
+    const dbTaskRole = plainTaskRole('DbTaskRole', 'db');
+    const tickTaskRole = plainTaskRole('TickTaskRole', 'tick');
+
+    // ── Logs ──────────────────────────────────────────────────────────────────
+    const logGroup = (lid: string, name: string) =>
+      new logs.LogGroup(this, lid, {
+        logGroupName: `/ecs/${prefix}/${name}`,
+        retention: logs.RetentionDays.ONE_MONTH,
+        removalPolicy: RemovalPolicy.DESTROY,
+      });
+
+    // ── Environment shared by every task ──────────────────────────────────────
+    const dbEnv = {
+      DB_HOST: props.dbHost,
+      DB_PORT: '5432',
+      DB_NAME: config.rds.databaseName,
+      NODE_EXTRA_CA_CERTS: RDS_CA_PATH,
+    };
+    const runtime = { cpuArchitecture: ecs.CpuArchitecture.ARM64, operatingSystemFamily: ecs.OperatingSystemFamily.LINUX };
+
+    // ── 1. Web ────────────────────────────────────────────────────────────────
+    const webTaskDef = new ecs.FargateTaskDefinition(this, 'WebTaskDef', {
+      family: `${prefix}-web`,
+      cpu: config.web.cpu,
+      memoryLimitMiB: config.web.memoryMiB,
+      taskRole: webTaskRole,
+      executionRole: webExecRole,
+      runtimePlatform: runtime,
+    });
+    webTaskDef.addContainer('web', {
+      image,
+      portMappings: [{ containerPort: SHARED_APP_PORT, protocol: ecs.Protocol.TCP }],
+      environment: {
+        NODE_ENV: 'production',
+        HOSTNAME: '0.0.0.0',
+        PORT: String(SHARED_APP_PORT),
+        APP_URL: origin,
+        AUTH_URL: origin,
+        // The app sits behind Cloudflare and the ALB; the host it sees is the
+        // forwarded one. AUTH_URL above pins what Auth.js builds links on.
+        AUTH_TRUST_HOST: 'true',
+        ...(config.authCookieDomain ? { AUTH_COOKIE_DOMAIN: config.authCookieDomain } : {}),
+        STORAGE_DRIVER: 's3',
+        STORAGE_BUCKET: `${prefix}-receipts-${config.accountId}`,
+        STORAGE_REGION: config.region,
+        PG_POOL_MAX: String(config.web.pgPoolMax),
+        ...dbEnv,
+      },
+      secrets: {
+        AUTH_SECRET: ecs.Secret.fromSecretsManager(authSecret),
+        WORKER_SECRET: ecs.Secret.fromSecretsManager(workerSecret),
+        DB_USER: ecs.Secret.fromSecretsManager(appDb, 'username'),
+        DB_PASSWORD: ecs.Secret.fromSecretsManager(appDb, 'password'),
+        SECRET_ENCRYPTION_KEY: ecs.Secret.fromSecretsManager(encryptionKey),
+        AUTH_GOOGLE_ID: ecs.Secret.fromSecretsManager(googleOAuth, 'clientId'),
+        AUTH_GOOGLE_SECRET: ecs.Secret.fromSecretsManager(googleOAuth, 'clientSecret'),
+        // The suite's Google Workspace relay, the same secret VeloCRM reads. Its
+        // keys are VeloCRM's names; mapped to VeloExpense's here. Port 465 turns
+        // on implicit TLS by itself (lib/notifications/email.ts).
+        SMTP_HOST: ecs.Secret.fromSecretsManager(smtp, 'SMTP_HOST'),
+        SMTP_PORT: ecs.Secret.fromSecretsManager(smtp, 'SMTP_PORT'),
+        SMTP_USER: ecs.Secret.fromSecretsManager(smtp, 'SMTP_USER'),
+        SMTP_PASS: ecs.Secret.fromSecretsManager(smtp, 'SMTP_PASSWORD'),
+        EMAIL_FROM: ecs.Secret.fromSecretsManager(smtp, 'SMTP_FROM_ADDRESS'),
+      },
+      logging: ecs.LogDrivers.awsLogs({ logGroup: logGroup('WebLogs', 'web'), streamPrefix: 'web' }),
+      healthCheck: {
+        command: ['CMD-SHELL', `node -e "fetch('http://127.0.0.1:${SHARED_APP_PORT}/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"`],
+        interval: Duration.seconds(15),
+        timeout: Duration.seconds(5),
+        retries: 3,
+        startPeriod: Duration.seconds(30),
+      },
+    });
+
+    this.service = new ecs.FargateService(this, 'WebService', {
+      serviceName: `${prefix}-web`,
+      cluster: shared.cluster,
+      taskDefinition: webTaskDef,
+      desiredCount: config.web.desiredCount,
+      // OUR group (database access) + the SHARED apps group (the ALB's way in).
+      securityGroups: [serviceSg, appsSg],
+      vpcSubnets: { subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS },
+      assignPublicIp: false,
+      enableExecuteCommand: true,
+      circuitBreaker: { enable: true, rollback: true },
+      minHealthyPercent: 100,
+      maxHealthyPercent: 200,
+    });
+    Tags.of(this.service).add('Product', 'veloexpense');
+
+    // ── 2. The shared listener: our host, our certificate, our target group ───
+    const listener = elbv2.ApplicationListener.fromApplicationListenerAttributes(this, 'SharedHttpsListener', {
+      listenerArn: shared.httpsListenerArn,
+      // IMMUTABLE: CDK would otherwise add egress rules to the ALB's group for our
+      // targets. That group is product-velocrm's; our tasks are reachable because
+      // they join the shared apps group, whose rules that repo owns.
+      securityGroup: ec2.SecurityGroup.fromSecurityGroupId(this, 'SharedAlbSg', shared.albSecurityGroupId, {
+        mutable: false,
+      }),
+    });
+
+    const targetGroup = new elbv2.ApplicationTargetGroup(this, 'WebTargetGroup', {
+      targetGroupName: `${prefix}-web`,
+      vpc: shared.vpc,
+      port: SHARED_APP_PORT,
+      protocol: elbv2.ApplicationProtocol.HTTP,
+      targetType: elbv2.TargetType.IP,
+      healthCheck: {
+        path: '/api/health',
+        interval: Duration.seconds(15),
+        timeout: Duration.seconds(5),
+        healthyThresholdCount: 2,
+        unhealthyThresholdCount: 3,
+        healthyHttpCodes: '200',
+      },
+      deregistrationDelay: Duration.seconds(15),
+    });
+    targetGroup.addTarget(this.service);
+
+    new elbv2.ApplicationListenerRule(this, 'HostRule', {
+      listener,
+      priority: config.listenerPriority,
+      conditions: [elbv2.ListenerCondition.hostHeaders([config.domainName])],
+      action: elbv2.ListenerAction.forward([targetGroup]),
+    });
+    // ECS refuses a service whose target group is not yet attached to a load
+    // balancer. CDK orders the service after this rule by itself (the target
+    // group records the rule as its attachment); test/stacks.test.ts holds it to that.
+
+    // SNI: the shared listener presents our certificate for our host. Cloudflare
+    // in Full (strict) refuses an origin whose certificate does not name it.
+    new elbv2.ApplicationListenerCertificate(this, 'HostCertificate', {
+      listener,
+      certificates: [elbv2.ListenerCertificate.fromArn(config.albCertificateArn)],
+    });
+
+    // ── 3. The database task (bootstrap + migrations), run on demand ──────────
+    const dbTaskDef = new ecs.FargateTaskDefinition(this, 'DbTaskDef', {
+      family: `${prefix}-db`,
+      cpu: 256,
+      memoryLimitMiB: 512,
+      taskRole: dbTaskRole,
+      executionRole: dbExecRole,
+      runtimePlatform: runtime,
+    });
+    dbTaskDef.addContainer('db', {
+      image,
+      command: ['sh', '-c', 'node scripts/db-bootstrap.mjs && node scripts/migrate.mjs'],
+      environment: { NODE_ENV: 'production', ...dbEnv },
+      secrets: {
+        DB_ADMIN_USER: ecs.Secret.fromSecretsManager(masterDb, 'username'),
+        DB_ADMIN_PASSWORD: ecs.Secret.fromSecretsManager(masterDb, 'password'),
+        DB_APP_USER: ecs.Secret.fromSecretsManager(appDb, 'username'),
+        DB_APP_PASSWORD: ecs.Secret.fromSecretsManager(appDb, 'password'),
+      },
+      logging: ecs.LogDrivers.awsLogs({ logGroup: logGroup('DbLogs', 'db'), streamPrefix: 'db' }),
+    });
+
+    // ── 4. Scheduled jobs: POST /api/internal/* with WORKER_SECRET ────────────
+    // One task definition PER JOB, with its path in the command, rather than one
+    // definition and a per-schedule override: what a schedule runs is then
+    // readable in the task definition itself, and nothing depends on how the
+    // scheduler passes overrides to RunTask.
+    const tickLogs = logGroup('TickLogs', 'tick');
+    const tickFamilies: string[] = [];
+    const tickTaskDefs = config.schedules.map((job) => {
+      const family = `${prefix}-tick-${job.name}`;
+      tickFamilies.push(family);
+      const def = new ecs.FargateTaskDefinition(this, `TickTaskDef-${job.name}`, {
+        family,
+        cpu: 256,
+        memoryLimitMiB: 512,
+        taskRole: tickTaskRole,
+        executionRole: tickExecRole,
+        runtimePlatform: runtime,
+      });
+      def.addContainer('tick', {
+        image,
+        command: ['node', 'scripts/tick.mjs', job.path],
+        environment: { NODE_ENV: 'production', APP_URL: origin },
+        secrets: { WORKER_SECRET: ecs.Secret.fromSecretsManager(workerSecret) },
+        logging: ecs.LogDrivers.awsLogs({ logGroup: tickLogs, streamPrefix: job.name }),
+      });
+      return { job, def };
+    });
+
+    const schedulerRole = new iam.Role(this, 'SchedulerRole', {
+      roleName: `${prefix}-scheduler`,
+      assumedBy: new iam.ServicePrincipal('scheduler.amazonaws.com'),
+    });
+    schedulerRole.addToPrincipalPolicy(
+      new iam.PolicyStatement({
+        actions: ['ecs:RunTask'],
+        // Any revision of the tick families, and nothing else.
+        resources: tickFamilies.map(
+          (f) => `arn:aws:ecs:${config.region}:${config.accountId}:task-definition/${f}:*`,
+        ),
+      }),
+    );
+    schedulerRole.addToPrincipalPolicy(
+      new iam.PolicyStatement({
+        actions: ['iam:PassRole'],
+        resources: [tickExecRole.roleArn, tickTaskRole.roleArn],
+      }),
+    );
+
+    const privateSubnetIds = shared.vpc.privateSubnets.map((s) => s.subnetId);
+    for (const { job, def } of tickTaskDefs) {
+      new scheduler.CfnSchedule(this, `Schedule-${job.name}`, {
+        name: `${prefix}-${job.name}`,
+        description: `POST ${job.path}`,
+        scheduleExpression: `rate(${job.rate.minutes} minutes)`,
+        flexibleTimeWindow: { mode: 'OFF' },
+        target: {
+          arn: shared.cluster.clusterArn,
+          roleArn: schedulerRole.roleArn,
+          ecsParameters: {
+            taskDefinitionArn: def.taskDefinitionArn,
+            launchType: 'FARGATE',
+            taskCount: 1,
+            networkConfiguration: {
+              awsvpcConfiguration: {
+                subnets: privateSubnetIds,
+                securityGroups: [props.serviceSecurityGroupId],
+                assignPublicIp: 'DISABLED',
+              },
+            },
+          },
+          retryPolicy: { maximumRetryAttempts: 0 },
+        },
+      });
+    }
+
+    // ── Outputs: what a person needs for DNS and for running the database task ─
+    new CfnOutput(this, 'CloudflareCnameTarget', {
+      value: shared.albDnsName,
+      description: `Cloudflare: CNAME ${config.domainName} -> this (proxied)`,
+    });
+    new CfnOutput(this, 'ClusterName', { value: shared.cluster.clusterName });
+    new CfnOutput(this, 'DbTaskFamily', { value: dbTaskDef.family });
+    new CfnOutput(this, 'TaskSubnets', { value: privateSubnetIds.join(',') });
+    new CfnOutput(this, 'TaskSecurityGroup', { value: props.serviceSecurityGroupId });
+
+    for (const [key, value] of Object.entries(config.tags)) Tags.of(this).add(key, value);
+  }
+}

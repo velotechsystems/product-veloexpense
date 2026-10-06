@@ -7,7 +7,13 @@ node_modules
 .env
 .env.local
 .env.*.local
+# Every other env file too (.env.gate, .env.click, …): gitignored, but a local
+# build context is the working tree, and the builder stage COPYs all of it.
+.env*
 coverage
 playwright-report
 test-results
 .vx0-7-staged
+# The CDK app is not part of the image, and its node_modules is large.
+infrastructure
+.claude-handoff
