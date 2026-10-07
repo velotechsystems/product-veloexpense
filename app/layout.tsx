@@ -45,6 +45,7 @@ import { hostTenantMismatch } from "@/lib/tenant/request";
 import { WrongTenantHost } from "@/app/wrong-tenant-host";
 import { AppShell } from "@/components/app-shell/app-shell";
 import { navContext } from "@/lib/nav/context";
+import { Providers } from "@/app/providers";
 
 /*
  * 2026 brand edition: Plus Jakarta Sans for the UI, Josefin Sans Light for
@@ -164,15 +165,19 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
             only here would be a check the next caller forgets (MT-3). This is
             for the READER: a person who followed a colleague's link gets a
             sentence and a way out instead of a thrown error. */}
-        {mismatch !== null ? (
-          <WrongTenantHost locale={locale} />
-        ) : nav === null ? (
-          children
-        ) : (
-          <AppShell ctx={nav} locale={locale}>
-            {children}
-          </AppShell>
-        )}
+        {/* Wave 0: ExpenseOS's client providers (session + tRPC), so ported screens
+            can call `trpc.*.useQuery` unchanged. app/providers.tsx. */}
+        <Providers>
+          {mismatch !== null ? (
+            <WrongTenantHost locale={locale} />
+          ) : nav === null ? (
+            children
+          ) : (
+            <AppShell ctx={nav} locale={locale}>
+              {children}
+            </AppShell>
+          )}
+        </Providers>
       </body>
     </html>
   );

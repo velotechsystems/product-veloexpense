@@ -1,11 +1,33 @@
 import { defineConfig } from 'vitest/config';
 import { fileURLToPath } from 'node:url';
 
+const r = (p: string) => fileURLToPath(new URL(`./${p}`, import.meta.url));
+
 export default defineConfig({
-  resolve: { alias: { '@': fileURLToPath(new URL('.', import.meta.url)) } },
+  resolve: {
+    alias: [
+      // Code ported from ExpenseOS keeps its package imports (`@expenseos/rbac`, …); these
+      // mirror tsconfig.json's `paths`, which vitest does not read.
+      { find: /^@expenseos\/rbac\/server$/, replacement: r('packages/rbac/src/server.ts') },
+      { find: /^@expenseos\/rbac\/(.*)$/, replacement: r('packages/rbac/src/$1.ts') },
+      { find: /^@expenseos\/rbac$/, replacement: r('packages/rbac/src/index.ts') },
+      { find: /^@expenseos\/platform$/, replacement: r('server/platform/modules.ts') },
+      { find: /^@\//, replacement: r('') },
+    ],
+  },
   test: {
     environment: 'node',
-    include: ['test/**/*.test.ts'],
+    // ExpenseOS's setting. Testing Library unmounts between tests through a global
+    // `afterEach`, so without it the ported DOM tests see the previous test's render.
+    globals: true,
+    include: [
+      'test/**/*.test.ts',
+      // Tests ported from ExpenseOS stay beside the code they test, as they were there.
+      '{packages,server,lib,app,components}/**/*.test.{ts,tsx}',
+    ],
+    // ExpenseOS runs its colocated tests under jsdom (its `unit` project); a file that
+    // needs node says so with `// @vitest-environment node`, as several do.
+    environmentMatchGlobs: [['{packages,server,lib,app,components}/**/*.test.{ts,tsx}', 'jsdom']],
     // Fails the run ONCE, naming the shell, when DATABASE_URL /
     // ADMIN_DATABASE_URL are missing or point at nothing. Without it a
     // forgotten `. scripts/dev-env.sh` surfaces as 55 files reporting
