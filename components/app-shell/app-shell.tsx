@@ -18,6 +18,11 @@
  * brand-50 tint (`--sidebar-accent`). Every colour is a kit token, so a tenant's
  * branding (`lib/branding/css.ts`) re-colours the shell without this file knowing.
  *
+ * The organization's name and the reader's name and email are `translate="no"`:
+ * they are tenant DATA, so a browser's translate prompt must leave them alone, and
+ * the pseudo-locale crawl (e2e/pseudo-crawl.spec.ts) skips them for the same
+ * reason — otherwise every screen's un-catalogued count rises by three.
+ *
  * The wordmark is VeloExpense's, not the tenant's, even for a branded tenant: the
  * tenant's NAME sits under it. The tenant's logo is their tab icon and their
  * emails' header (VX4-3); swapping the product's mark in the shell is a decision
@@ -57,7 +62,11 @@ function Sidebar({ ctx, locale }: { ctx: NavContext; locale: string }) {
     <aside className="flex h-full w-full flex-col overflow-hidden border-r border-sidebar-border bg-sidebar text-sidebar-foreground">
       <div className="flex flex-col items-center gap-3 px-4 pt-7 pb-4">
         <Wordmark capHeight={16} />
-        <p className="max-w-full truncate text-xs font-medium text-muted-foreground" data-testid="shell-org-name">
+        <p
+          className="max-w-full truncate text-xs font-medium text-muted-foreground"
+          data-testid="shell-org-name"
+          translate="no"
+        >
           {ctx.organizationName}
         </p>
       </div>
@@ -99,8 +108,12 @@ function Sidebar({ ctx, locale }: { ctx: NavContext; locale: string }) {
 
       <div className="flex items-center gap-3 border-t border-sidebar-border px-4 py-3">
         <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-medium text-foreground">{ctx.name}</p>
-          <p className="truncate text-xs text-muted-foreground">{ctx.email}</p>
+          <p className="truncate text-sm font-medium text-foreground" translate="no">
+            {ctx.name}
+          </p>
+          <p className="truncate text-xs text-muted-foreground" translate="no">
+            {ctx.email}
+          </p>
         </div>
         <form action={signOutAction}>
           <button

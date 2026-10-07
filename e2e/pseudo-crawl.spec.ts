@@ -75,11 +75,11 @@ const CHROME_CEILING: Record<string, number> = {
   // report rows were being counted, and would have risen with every spec that
   // files one.
   // VX4-10 part 2 catalogued this screen: 19 → 1, measured through RATCHET_PATH's
-  // empty-table filter as before. The ONE is the word "VeloExpense" in the shell
-  // header — the product's NAME, which no catalogue should hold, because a product
-  // name that changes language is a different product. It is this screen's floor
-  // and it is on every page under /expenses.
-  '/expenses': 1,
+  // empty-table filter as before. The one was the word "VeloExpense" in the
+  // /expenses-only header. The app shell (#147) replaced that header; its product
+  // mark is an image, and its tenant data is `translate="no"` (skipped above). So
+  // 1 → 0: nothing un-catalogued is left on this screen.
+  '/expenses': 0,
   // VX4-10 part 2: 31 → 10, and both numbers need their conditions attached.
   //
   // 31 was with `e2e/crawl-fixture.ts` installed; the ceiling of 15 this replaces
@@ -214,6 +214,10 @@ async function visibleStrings(page: Page): Promise<string[]> {
       if (node.nodeType === Node.ELEMENT_NODE) {
         const el = node as Element;
         if (skip.has(el.tagName)) return;
+        // `translate="no"` is HTML's own "this is not language" flag; the app shell
+        // puts it on tenant DATA (the organization's and the reader's names, the
+        // email). Not copy, so not counted — the same decision as SELECT above.
+        if (el.getAttribute('translate') === 'no') return;
       }
       if (node.nodeType === Node.TEXT_NODE) {
         const t = node.textContent?.trim() ?? '';
