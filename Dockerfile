@@ -8,15 +8,23 @@
 # so the runner carries scripts/ and prisma/migrations/ next to the standalone
 # server. `pg` is already in the standalone node_modules because the app uses it.
 #
-# Build for the deployed platform (Fargate ARM64):
-#   docker build --platform linux/arm64 -t veloexpense-web .
+# Build for the deployed platform (Fargate ARM64), as a plain image rather than an
+# index, so ECR's scan-on-push scans it:
+#   docker build --platform linux/arm64 --provenance=false --sbom=false -t veloexpense-web .
+#
+# ALPINE, as ExpenseOS's docker/web/Dockerfile is (node:26-alpine there; Node 24 here,
+# the version this repo pins). The first image was node:24-bookworm-slim, and ECR's scan
+# of it (6 Oct 2026) found 5 CRITICAL and 14 HIGH — every one in a Debian base package
+# the app never runs (perl, util-linux, gcc-12 runtime libs, zlib). Alpine carries none
+# of perl or util-linux, and every stage is Alpine so npm installs the musl builds of
+# native packages (sharp) that the runner can load.
 
-FROM node:24-bookworm-slim AS deps
+FROM node:24-alpine AS deps
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci --no-audit --no-fund
 
-FROM node:24-bookworm-slim AS builder
+FROM node:24-alpine AS builder
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
@@ -24,16 +32,20 @@ ENV NEXT_TELEMETRY_DISABLED=1
 ENV NODE_ENV=production
 RUN npm run build
 
-FROM node:24-bookworm-slim AS runner
+FROM node:24-alpine AS runner
 WORKDIR /app
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV PORT=3000
 ENV HOSTNAME=0.0.0.0
 
-RUN apt-get update \
- && apt-get install -y --no-install-recommends tini \
- && rm -rf /var/lib/apt/lists/*
+# tini (PID 1, signal handling) is /sbin/tini on Alpine. Then: apply the base image's
+# pending security updates, and remove npm/npx/corepack — the running image only ever
+# runs `node`, and npm's own dependency tree is a scanner finding waiting to happen.
+RUN apk add --no-cache tini \
+ && apk upgrade --no-cache \
+ && rm -rf /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/corepack \
+           /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack
 
 # Amazon RDS certificate authorities for ca-central-1, so the app can connect
 # with sslmode=verify-full (docker-entrypoint.sh) instead of trusting whatever
@@ -41,8 +53,8 @@ RUN apt-get update \
 # definition). Fetched at build time; a failed fetch fails the build.
 ADD --chmod=0644 https://truststore.pki.rds.amazonaws.com/ca-central-1/ca-central-1-bundle.pem /app/rds-ca.pem
 
-RUN groupadd --system --gid 1001 nodejs \
- && useradd --system --uid 1001 --gid nodejs --home /home/nextjs --create-home --shell /usr/sbin/nologin nextjs
+RUN addgroup -S -g 1001 nodejs \
+ && adduser -S -u 1001 -G nodejs -h /home/nextjs -s /sbin/nologin nextjs
 
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
@@ -54,5 +66,5 @@ COPY --chmod=0755 scripts/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.
 
 USER nextjs
 EXPOSE 3000
-ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/docker-entrypoint.sh"]
+ENTRYPOINT ["/sbin/tini", "--", "/usr/local/bin/docker-entrypoint.sh"]
 CMD ["node", "server.js"]
