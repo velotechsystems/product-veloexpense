@@ -297,6 +297,15 @@ So before pushing a new spec:
 
 ### LATEST — 4 Oct 2026 (read before the Phase 5 narrative below, which predates it)
 
+- **UI on the 2026 VeloTech kit (#146–#148, 7 Oct).** DECIDED (John): port ExpenseOS's layout and
+  screens, restyled with the kit; a missing component goes into lib-ui-kit FIRST, then is vendored here
+  (`scripts/check-ui-kit.mjs` fails on drift). #147 is the app shell — ExpenseOS's sidebar
+  (`lib/nav/sections.ts`, menu as data, gates mirror each page's own) — which ends the "no admin
+  navigation" notes below. #148 moves every screen onto kit parts: `PageHeader`, `NativeSelect` (server
+  safe, no client JS), `Table`/`TableCard`, `Badge`, `Card`, `Textarea`; layout bits in
+  `components/screen.tsx`. The shell owns the page's one `<main>`; screens do not declare their own.
+  Client components are now the receipt drawer, `login-screen.tsx`, and the shell's `NavLink` and
+  `ShellFrame` — not "one".
 - **#130, #131:** the local suite is green on macOS. Two suites had been borrowing
   `INTEGRATIONS_ENABLE_STUB` / `SECRET_ENCRYPTION_KEY` from `ci.yml`'s job env; they now set
   their own. `npm test` now fails ONCE, naming the cause, when the DB environment is wrong

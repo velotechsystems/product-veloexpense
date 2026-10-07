@@ -53,6 +53,8 @@ import type { SpendSlice } from '@/lib/analytics/service';
 import { EmptyRow, ErrorBanner, cardClass, fieldClass, labelClass } from '@/app/expenses/ui';
 
 import { pageTitle } from '@/lib/i18n/page-title';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { PageHeader, ROOMY_CELLS, Screen } from '@/components/screen';
 
 // UD-16. See `lib/i18n/page-title.ts` for why the title lives here rather than
 // in a map of routes, and `scripts/check-page-titles.mjs` for what enforces it.
@@ -121,18 +123,11 @@ export default async function AnalyticsPage({
     summary ? formatMinor(v, summary.baseCurrency, summary.baseMinorUnit, prefs.locale) : '—';
 
   return (
-    <main className="mx-auto flex max-w-6xl flex-col gap-6 p-6">
-      <div className="flex items-baseline justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Spend analytics</h1>
-          <p className="text-sm text-muted-foreground">
-            Approved and in-flight spend across the whole organization, in your reporting currency.
-          </p>
-        </div>
-        <Link href="/admin/modules" className="text-sm underline underline-offset-4">
-          Modules
-        </Link>
-      </div>
+    <Screen width="wide">
+      <PageHeader
+        title="Spend analytics"
+        description="Approved and in-flight spend across the whole organization, in your reporting currency."
+      />
 
       <ErrorBanner message={problem ?? undefined} />
 
@@ -219,7 +214,7 @@ export default async function AnalyticsPage({
           {/* ── AN-7 made visible ──────────────────────────────────────────── */}
           {Object.keys(summary.unconvertible.byCurrency).length > 0 ? (
             <section
-              className="rounded-xl border border-destructive/40 bg-destructive/10 p-4 text-sm"
+              className="rounded-lg border border-destructive/40 bg-destructive/10 p-4 text-sm"
               data-testid="analytics-unconvertible"
             >
               <p className="font-medium">
@@ -247,7 +242,7 @@ export default async function AnalyticsPage({
           {/* ── spend by month: stacked bars ───────────────────────────────── */}
           <section className={`${cardClass} p-5`}>
             <div className="flex flex-wrap items-baseline justify-between gap-2">
-              <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+              <h2 className="velo-eyebrow">
                 By month
               </h2>
               {/* A legend is always present for two series, so identity is never
@@ -291,7 +286,7 @@ export default async function AnalyticsPage({
           </div>
         </>
       ) : null}
-    </main>
+    </Screen>
   );
 }
 
@@ -422,25 +417,25 @@ function Breakdown({
 
   return (
     <section className={`${cardClass} overflow-hidden`} data-testid={testid}>
-      <h2 className="px-4 pt-4 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+      <h2 className="velo-eyebrow px-4 pt-4">
         {title}
       </h2>
-      <table className="mt-2 w-full text-sm">
+      <Table className={`mt-2 ${ROOMY_CELLS}`}>
         {/* One cell per row carries the label, both figures and the bar, so the
             header is a single column. A three-column header over one-column rows
             is the kind of markup a screen reader reads back as nonsense. */}
-        <thead className="sr-only">
-          <tr>
-            <th>Name and amounts</th>
-          </tr>
-        </thead>
-        <tbody>
+        <TableHeader className="sr-only">
+          <TableRow>
+            <TableHead>Name and amounts</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
           {slices.length === 0 ? (
             <EmptyRow colSpan={1}>Nothing in this range.</EmptyRow>
           ) : (
             slices.map((s) => (
-              <tr key={s.key ?? s.label} className="border-t border-border">
-                <td className="px-4 py-2">
+              <TableRow key={s.key ?? s.label}>
+                <TableCell>
                   <div className="flex items-baseline justify-between gap-3">
                     <span>{s.label}</span>
                     {/* Values wear TEXT tokens, never the series colour — the bar
@@ -470,12 +465,12 @@ function Breakdown({
                       />
                     ) : null}
                   </div>
-                </td>
-              </tr>
+                </TableCell>
+              </TableRow>
             ))
           )}
-        </tbody>
-      </table>
+        </TableBody>
+      </Table>
     </section>
   );
 }

@@ -17,6 +17,13 @@
  * Tailwind's reset; VeloLedger omits it to avoid repainting its existing screens.
  */
 
+/* Tailwind's own cascade-layer order, declared here because an app may import
+   this file BEFORE `@import "tailwindcss"` (VeloExpense does). Layer order is
+   fixed by first mention, so without this line the `components` layer below
+   would be registered first and rank UNDER preflight's `base` — and preflight's
+   `img { display: block }` would beat `.velo-on-dark { display: none }`. */
+@layer theme, base, components, utilities;
+
 @custom-variant data-open {
   &:where([data-state="open"]),
   &:where([data-open]:not([data-open="false"])) {
@@ -68,7 +75,22 @@
     @slot;
   }
 }
-@custom-variant dark (&:is(.dark *));
+/* `dark:` follows the SAME two switches as the tokens in velotech-tokens.css:
+   data-theme="dark" on an ancestor, or the OS setting when no data-theme is set.
+   It used to be `&:is(.dark *)`, a class no Velotech app sets (VeloLedger and
+   VeloExpense switch on data-theme), so every `dark:` utility in the kit's
+   components — the input fill, the invalid ring — never applied while the
+   tokens around them had gone dark. `.dark` is kept for an app that uses it. */
+@custom-variant dark {
+  &:where(.dark, .dark *, [data-theme="dark"], [data-theme="dark"] *) {
+    @slot;
+  }
+  @media (prefers-color-scheme: dark) {
+    &:where(:root:not([data-theme]), :root:not([data-theme]) *) {
+      @slot;
+    }
+  }
+}
 
 @utility no-scrollbar {
   -ms-overflow-style: none;
@@ -154,4 +176,80 @@
   --radius-xl: calc(var(--radius) * 1.4);
   --radius-2xl: calc(var(--radius) * 1.8);
   --radius-3xl: calc(var(--radius) * 2.2);
+}
+
+/* ── 2026 guide: brand surfaces and native controls ─────────────────────────
+   In @layer components so a utility on the same element still wins. */
+@layer components {
+  /* "Logo in use": the soft glow behind a -nohalo wordmark (and the page title
+     or sign-in panel — nowhere else). 50% --brand-halo at the centre fading to
+     nothing, the same stops as the logo SVGs. Size with --halo-size, 8.74 x the
+     wordmark's cap height. */
+  .velo-halo {
+    position: relative;
+    isolation: isolate;
+  }
+  .velo-halo::before {
+    content: "";
+    position: absolute;
+    z-index: -1;
+    left: 50%;
+    top: 50%;
+    width: var(--halo-size, 140px);
+    height: var(--halo-size, 140px);
+    transform: translate(-50%, -50%);
+    border-radius: 9999px;
+    pointer-events: none;
+    background: radial-gradient(
+      closest-side,
+      color-mix(in oklch, var(--brand-halo) 50%, transparent),
+      color-mix(in oklch, var(--brand-halo) 42%, transparent) 35%,
+      color-mix(in oklch, var(--brand-halo) 28%, transparent) 60%,
+      color-mix(in oklch, var(--brand-halo) 13%, transparent) 80%,
+      color-mix(in oklch, var(--brand-halo) 4%, transparent) 93%,
+      transparent
+    );
+  }
+
+  /* Eyebrow: Josefin Sans Light, all caps, 0.30em tracking, tagline ink. Short
+     section labels only — never a paragraph or a button. */
+  .velo-eyebrow {
+    font-family: var(--font-tagline);
+    font-weight: 300;
+    font-size: 13px;
+    line-height: 16px;
+    letter-spacing: 0.3em;
+    text-transform: uppercase;
+    color: var(--tagline);
+  }
+
+  /* A light-ground / dark-ground artwork pair (wordmarks): show the one that
+     matches the same switches as `dark:` above. Each is an <img>; do not add a
+     display utility to either, it would out-rank this and show both. */
+  .velo-on-dark {
+    display: none;
+  }
+  :where([data-theme="dark"]) .velo-on-light {
+    display: none;
+  }
+  :where([data-theme="dark"]) .velo-on-dark {
+    display: revert;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme]) .velo-on-light {
+      display: none;
+    }
+    :root:not([data-theme]) .velo-on-dark {
+      display: revert;
+    }
+  }
+}
+
+@layer base {
+  /* Native checkboxes and radios take the product's primary, so a server-rendered
+     form needs no client component for a tick box. */
+  input[type="checkbox"],
+  input[type="radio"] {
+    accent-color: var(--primary);
+  }
 }

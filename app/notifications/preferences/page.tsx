@@ -19,7 +19,6 @@
  * preference key that no code has ever read. Hiding the two columns instead
  * would make the screen look finished and the roadmap invisible.
  */
-import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { ErrorBanner } from '@/app/expenses/ui';
 import { enumLabel, CHANNEL_COPY } from '@/lib/i18n/catalog/enums';
@@ -27,6 +26,7 @@ import { readerPrefs } from '@/lib/i18n/request';
 import { getPreferencesPage, setPreferenceFromForm } from '../actions';
 
 import { pageTitle } from '@/lib/i18n/page-title';
+import { PageHeader, Screen } from '@/components/screen';
 
 // UD-16. See `lib/i18n/page-title.ts` for why the title lives here rather than
 // in a map of routes, and `scripts/check-page-titles.mjs` for what enforces it.
@@ -46,19 +46,16 @@ export default async function NotificationPreferencesPage({
   const { grid } = await getPreferencesPage();
 
   return (
-    <div className="mx-auto flex w-full max-w-4xl flex-col gap-6 p-6">
-      <header className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Notification preferences</h1>
-          <p className="text-sm text-muted-foreground">
-            What you are told about, and where. Leave a choice on{' '}
-            <strong>Default</strong> to follow whatever the product ships.
-          </p>
-        </div>
-        <Link href="/notifications" className="text-sm underline underline-offset-4">
-          Notifications
-        </Link>
-      </header>
+    <Screen>
+      <PageHeader
+        title="Notification preferences"
+        description={
+          <>
+            What you are told about, and where. Leave a choice on <strong>Default</strong> to follow
+            whatever the product ships.
+          </>
+        }
+      />
 
       <ErrorBanner message={error} />
 
@@ -137,6 +134,6 @@ export default async function NotificationPreferencesPage({
         report ever seems to have gone quiet, the trail can say when the setting changed and who
         changed it.
       </p>
-    </div>
+    </Screen>
   );
 }

@@ -19,14 +19,15 @@
  * event is their own preference, not an admin's editorial decision.
  */
 import { Fragment } from 'react';
-import Link from 'next/link';
 import { Button } from '@/components/ui/button';
-import { ErrorBanner, textareaClass } from '@/app/expenses/ui';
+import { ErrorBanner } from '@/app/expenses/ui';
 import { formatInstant } from '@/lib/i18n/format';
 import { readerPrefs } from '@/lib/i18n/request';
 import { getTemplatesPage, setTemplateFromForm } from './actions';
 
 import { pageTitle } from '@/lib/i18n/page-title';
+import { Textarea } from '@/components/ui/textarea';
+import { PageHeader, Screen } from '@/components/screen';
 
 // UD-16. See `lib/i18n/page-title.ts` for why the title lives here rather than
 // in a map of routes, and `scripts/check-page-titles.mjs` for what enforces it.
@@ -47,27 +48,15 @@ export default async function NotificationTemplatesPage({
   const overridden = templates.filter((t) => t.body !== null).length;
 
   return (
-    <div className="mx-auto flex w-full max-w-4xl flex-col gap-6 p-6">
-      <header className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Notification wording</h1>
-          <p className="text-sm text-muted-foreground">
-            {overridden === 0
-              ? `All ${templates.length} messages use the shipped wording`
-              : `${overridden} of ${templates.length} reworded`}{' '}
-            · changes apply to the next notification sent, no deploy
-          </p>
-        </div>
-        <div className="flex items-center gap-3">
-          {/* No admin navigation exists yet — HANDOFF §7. */}
-          <Link href="/admin/approval-ladder" className="text-sm underline underline-offset-4">
-            Approval ladder
-          </Link>
-          <Link href="/notifications" className="text-sm underline underline-offset-4">
-            Notifications
-          </Link>
-        </div>
-      </header>
+    <Screen>
+      <PageHeader
+        title="Notification wording"
+        description={`${
+          overridden === 0
+            ? `All ${templates.length} messages use the shipped wording`
+            : `${overridden} of ${templates.length} reworded`
+        } · changes apply to the next notification sent, no deploy`}
+      />
 
       <ErrorBanner message={error} />
 
@@ -109,9 +98,8 @@ export default async function NotificationTemplatesPage({
             </p>
             <form action={setTemplateFromForm} className="mt-2 flex flex-col gap-2">
               <input type="hidden" name="templateKey" value={t.templateKey} />
-              <textarea
+              <Textarea
                 name="body"
-                className={textareaClass}
                 defaultValue={t.body ?? ''}
                 placeholder={t.shipped}
                 aria-label={`Wording for ${t.name}`}
@@ -130,6 +118,6 @@ export default async function NotificationTemplatesPage({
           </section>
         ))}
       </div>
-    </div>
+    </Screen>
   );
 }

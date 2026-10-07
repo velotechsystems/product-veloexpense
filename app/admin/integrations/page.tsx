@@ -44,6 +44,9 @@ import {
   testFromForm,
   updateFromForm,
 } from './actions';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { TableCard } from '@/components/screen';
+import { PageHeader, Screen } from '@/components/screen';
 
 export const dynamic = 'force-dynamic';
 
@@ -114,36 +117,22 @@ export default async function IntegrationsPage({
   const { installations, available, keyConfigured, moduleEnabled } = await getIntegrationsPage();
 
   return (
-    <div className="mx-auto flex w-full max-w-5xl flex-col gap-6 p-6">
-      <header className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Accounting integrations</h1>
-          <p className="text-sm text-muted-foreground">
-            {installations.filter((i) => i.active).length === 0
-              ? 'Nothing connected'
-              : `${installations.filter((i) => i.active).length} connected`}
-            {' · '}approved reports post to the connected ledger
-          </p>
-        </div>
-        <div className="flex items-center gap-3">
-          <Link href="/admin/modules" className="text-sm underline underline-offset-4">
-            Modules
-          </Link>
-          <Link href="/admin/chart-of-accounts" className="text-sm underline underline-offset-4">
-            Chart of accounts
-          </Link>
-          <Link href="/admin/expense-policies" className="text-sm underline underline-offset-4">
-            Expense policies
-          </Link>
-        </div>
-      </header>
+    <Screen>
+      <PageHeader
+        title="Accounting integrations"
+        description={`${
+          installations.filter((i) => i.active).length === 0
+            ? 'Nothing connected'
+            : `${installations.filter((i) => i.active).length} connected`
+        } · approved reports post to the connected ledger`}
+      />
 
       {!moduleEnabled ? (
         // VX4-1. The reads on this screen are deliberately UNGATED so the page can
         // render, which means an off module looks exactly like an empty one unless
         // the page says otherwise. That is the AC-22 mistake, and this is the
         // sentence that avoids it.
-        <div className="rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm">
+        <div className="rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm">
           <strong className="font-medium">
             Accounting integrations are not enabled for this organization.
           </strong>{' '}
@@ -159,15 +148,15 @@ export default async function IntegrationsPage({
 
       <ErrorBanner message={error} />
       {notice ? (
-        <p className="rounded-md border border-border bg-muted/40 px-3 py-2 text-sm">{notice}</p>
+        <p className="rounded-lg border border-border bg-muted/50 px-3 py-2 text-sm">{notice}</p>
       ) : null}
       {connected ? (
-        <p className="rounded-md border border-border bg-muted/40 px-3 py-2 text-sm">
+        <p className="rounded-lg border border-border bg-muted/50 px-3 py-2 text-sm">
           Connected. Press <strong>Test</strong> to check it before relying on it.
         </p>
       ) : null}
       {disconnected ? (
-        <p className="rounded-md border border-border bg-muted/40 px-3 py-2 text-sm">
+        <p className="rounded-lg border border-border bg-muted/50 px-3 py-2 text-sm">
           Disconnected, and the stored credentials were deleted.
         </p>
       ) : null}
@@ -188,7 +177,7 @@ export default async function IntegrationsPage({
 
       {!keyConfigured ? (
         // Said before somebody types a credential, not after the save fails.
-        <div className="rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm">
+        <div className="rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm">
           <strong className="font-medium">
             SECRET_ENCRYPTION_KEY is not set in this environment.
           </strong>{' '}
@@ -199,27 +188,27 @@ export default async function IntegrationsPage({
 
       {/* ── What is connected ────────────────────────────────────────────────── */}
       <section className="flex flex-col gap-3">
-        <h2 className="text-lg font-medium">Connections</h2>
-        <div className="overflow-x-auto rounded-lg border border-border">
-          <table className="w-full min-w-[820px] text-left text-sm">
-            <thead className="bg-muted/50 text-xs uppercase tracking-wide text-muted-foreground">
-              <tr>
-                <th className="px-3 py-2 font-medium">Integration</th>
-                <th className="px-3 py-2 font-medium">Can do</th>
-                <th className="px-3 py-2 font-medium">Connected</th>
-                <th className="px-3 py-2 font-medium">Last test</th>
-                <th className="px-3 py-2" />
-              </tr>
-            </thead>
-            <tbody>
+        <h2 className="text-lg leading-7 font-semibold">Connections</h2>
+        <TableCard>
+          <Table className="min-w-[820px]">
+            <TableHeader>
+              <TableRow>
+                <TableHead>Integration</TableHead>
+                <TableHead>Can do</TableHead>
+                <TableHead>Connected</TableHead>
+                <TableHead>Last test</TableHead>
+                <TableHead />
+              </TableRow>
+            </TableHeader>
+            <TableBody>
               {installations.length === 0 ? (
                 <EmptyRow colSpan={5}>
                   No ledger is connected. Approved reports are recorded here and posted nowhere.
                 </EmptyRow>
               ) : (
                 installations.map((i) => (
-                  <tr key={i.id} className="border-t border-border align-top">
-                    <td className="px-3 py-2">
+                  <TableRow key={i.id} className="align-top">
+                    <TableCell>
                       <p className="font-medium">{i.label}</p>
                       <p className="text-xs text-muted-foreground">
                         {i.adapter?.name ?? (
@@ -233,8 +222,8 @@ export default async function IntegrationsPage({
                         {i.code}
                         {i.active ? '' : ' · disconnected'}
                       </p>
-                    </td>
-                    <td className="px-3 py-2 text-xs text-muted-foreground">
+                    </TableCell>
+                    <TableCell className="text-xs text-muted-foreground">
                       {/* Was `.toLowerCase().replace(/_/g, ' ')` — string surgery
                           standing in for copy, which turns POST_EXPENSE_REPORT
                           into "post expense report" and cannot ever say
@@ -242,8 +231,8 @@ export default async function IntegrationsPage({
                       {(i.adapter?.capabilities ?? [])
                         .map((c) => enumLabel(CAPABILITY_COPY, c, prefs.locale))
                         .join(', ') || '—'}
-                    </td>
-                    <td className="px-3 py-2 text-muted-foreground">
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">
                       {i.connected_at ? (
                         <>
                           {formatInstant(i.connected_at, prefs)}
@@ -254,8 +243,8 @@ export default async function IntegrationsPage({
                       ) : (
                         '—'
                       )}
-                    </td>
-                    <td className="px-3 py-2">
+                    </TableCell>
+                    <TableCell>
                       {i.last_test_at === null ? (
                         <span className="text-muted-foreground">never tested</span>
                       ) : (
@@ -273,8 +262,8 @@ export default async function IntegrationsPage({
                           ) : null}
                         </>
                       )}
-                    </td>
-                    <td className="px-3 py-2">
+                    </TableCell>
+                    <TableCell>
                       <div className="flex flex-wrap items-center gap-2">
                         {/* VX3-8. An OAUTH2 connection is authorised at the far
                             end, so its primary action is a redirect rather than a
@@ -301,13 +290,13 @@ export default async function IntegrationsPage({
                           </Button>
                         ) : null}
                       </div>
-                    </td>
-                  </tr>
+                    </TableCell>
+                  </TableRow>
                 ))
               )}
-            </tbody>
-          </table>
-        </div>
+            </TableBody>
+          </Table>
+        </TableCard>
 
         {installations.map((i) => (
           <div key={i.id} className="hidden">
@@ -329,7 +318,7 @@ export default async function IntegrationsPage({
         .filter((i) => i.active && i.adapter)
         .map((i) => (
           <section key={i.id} className="flex flex-col gap-3 rounded-lg border border-border p-4">
-            <h2 className="text-lg font-medium">{i.label} settings</h2>
+            <h2 className="text-lg leading-7 font-semibold">{i.label} settings</h2>
             <form action={updateFromForm} className="flex flex-col gap-3">
               <input type="hidden" name="id" value={i.id} />
               <div className="flex flex-col gap-1">
@@ -362,7 +351,7 @@ export default async function IntegrationsPage({
         )
       ) : (
         <section className="flex flex-col gap-4">
-          <h2 className="text-lg font-medium">Connect a ledger</h2>
+          <h2 className="text-lg leading-7 font-semibold">Connect a ledger</h2>
           {available.map((a) => (
             <form
               key={a.slug}
@@ -375,7 +364,7 @@ export default async function IntegrationsPage({
                 <p className="text-sm text-muted-foreground">{a.description}</p>
               </div>
               {a.setupSteps && a.setupSteps.length > 0 ? (
-                <div className="rounded-md border border-border bg-muted/30 p-3 text-sm">
+                <div className="rounded-lg border border-border bg-muted/50 p-3 text-sm">
                   <p className="font-medium">First, in {a.name}:</p>
                   <ol className="mt-1 list-decimal pl-5 text-muted-foreground">
                     {a.setupSteps.map((step) => (
@@ -405,6 +394,6 @@ export default async function IntegrationsPage({
           ))}
         </section>
       )}
-    </div>
+    </Screen>
   );
 }

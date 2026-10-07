@@ -55,8 +55,11 @@ import {
   cardClass,
   fieldClass,
   labelClass,
-  selectClass,
-} from '@/app/expenses/ui';
+  } from '@/app/expenses/ui';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { TableCard } from '@/components/screen';
+import { NativeSelect } from '@/components/ui/native-select';
+import { PageHeader, Screen } from '@/components/screen';
 
 export const dynamic = 'force-dynamic';
 
@@ -87,32 +90,18 @@ export default async function ExpensePoliciesPage({
   const scopeable = RULE_KINDS.filter((kind) => RULE_DEFINITIONS[kind].supportsCategoryScope);
 
   return (
-    <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 p-6">
-      <header className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">{t('policies.title')}</h1>
-          <p className="text-sm text-muted-foreground">
-            {uiPlural(
-              'policies.count.rules',
-              policies.length,
-              { tail: t('policies.count.tail') },
-              prefs.locale,
-            )}
-          </p>
-        </div>
-        <div className="flex items-center gap-3">
-          {/* No admin navigation exists yet; the two admin surfaces link to each
-              other so neither is reachable only by typing a URL. */}
-          <Link href="/admin/approval-ladder" className="text-sm underline underline-offset-4">
-            {t('nav.approval.ladder')}
-          </Link>
+    <Screen width="wide">
+      <PageHeader
+        title={t('policies.title')}
+        description={uiPlural('policies.count.rules', policies.length, { tail: t('policies.count.tail') }, prefs.locale)}
+        actions={
           <form action={restoreStarterRulesFromForm}>
             <Button type="submit" variant="outline">
               {t('policies.restore.starter')}
             </Button>
           </form>
-        </div>
-      </header>
+        }
+      />
 
       <ErrorBanner message={error} />
 
@@ -125,13 +114,12 @@ export default async function ExpensePoliciesPage({
       <section className="flex flex-col gap-3 rounded-lg border border-border p-4">
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div className="max-w-2xl">
-            <h2 className="text-lg font-medium">{t('policies.currency.title')}</h2>
+            <h2 className="text-lg leading-7 font-semibold">{t('policies.currency.title')}</h2>
             <p className="mt-1 text-sm text-muted-foreground">{t('policies.currency.lede')}</p>
           </div>
           <form action={setPolicyCurrencyFromForm} className="flex items-end gap-2">
-            <select
+            <NativeSelect
               name="policyCurrency"
-              className={selectClass}
               defaultValue={policyCurrency.code}
               aria-label={t('policies.currency.aria')}
             >
@@ -140,7 +128,7 @@ export default async function ExpensePoliciesPage({
                   {c.code} — {c.name}
                 </option>
               ))}
-            </select>
+            </NativeSelect>
             <Button type="submit" size="sm" variant="outline">
               {t('policies.save')}
             </Button>
@@ -151,7 +139,7 @@ export default async function ExpensePoliciesPage({
           // The warning an admin needs BEFORE the reports start coming back with
           // "could not be checked" notes on them. Naming the currencies makes it
           // actionable; "no rate" on its own does not.
-          <div className="rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm">
+          <div className="rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm">
             {/* Two whole sentences per number rather than a ternary swapping
                 "that currency" for "those currencies" inside one. The singular and
                 plural of this sentence differ by more than a word in most
@@ -185,20 +173,20 @@ export default async function ExpensePoliciesPage({
         </p>
       </section>
 
-      <div className="overflow-x-auto rounded-lg border border-border">
-        <table className="w-full min-w-[900px] text-left text-sm">
-          <thead className="bg-muted/50 text-xs uppercase tracking-wide text-muted-foreground">
-            <tr>
-              <th className="px-3 py-2 font-medium">{t('policies.column.rule')}</th>
-              <th className="px-3 py-2 font-medium">{t('policies.column.category')}</th>
-              <th className="px-3 py-2 font-medium">{t('policies.column.severity')}</th>
-              <th className="px-3 py-2 font-medium">{t('policies.column.threshold')}</th>
-              <th className="px-3 py-2 font-medium">{t('policies.column.effective')}</th>
-              <th className="px-3 py-2 font-medium">{t('policies.column.on')}</th>
-              <th className="px-3 py-2" />
-            </tr>
-          </thead>
-          <tbody>
+      <TableCard>
+        <Table className="min-w-[900px]">
+          <TableHeader>
+            <TableRow>
+              <TableHead className="min-w-64">{t('policies.column.rule')}</TableHead>
+              <TableHead>{t('policies.column.category')}</TableHead>
+              <TableHead>{t('policies.column.severity')}</TableHead>
+              <TableHead>{t('policies.column.threshold')}</TableHead>
+              <TableHead>{t('policies.column.effective')}</TableHead>
+              <TableHead>{t('policies.column.on')}</TableHead>
+              <TableHead />
+            </TableRow>
+          </TableHeader>
+          <TableBody>
             {policies.length === 0 ? (
               <EmptyRow colSpan={7}>{t('policies.empty')}</EmptyRow>
             ) : (
@@ -206,8 +194,8 @@ export default async function ExpensePoliciesPage({
                 const definition = ruleDefinition(p.kind);
                 const takesThreshold = definition.params.some((s) => s.name === 'thresholdMinor');
                 return (
-                  <tr key={p.id} className="border-t border-border align-top">
-                    <td className="px-3 py-2">
+                  <TableRow key={p.id} className="align-top">
+                    <TableCell>
                       <div className="flex items-center gap-2">
                         <span className="font-medium">{ruleName(p.kind)}</span>
                         <SeverityBadge severity={p.severity} locale={prefs.locale} />
@@ -215,13 +203,13 @@ export default async function ExpensePoliciesPage({
                       <p className="max-w-md text-xs text-muted-foreground">
                         {enumLabel(RULE_DESCRIPTION_COPY, p.kind, prefs.locale)}
                       </p>
-                    </td>
-                    <td className="px-3 py-2">
+                    </TableCell>
+                    <TableCell>
                       {definition.supportsCategoryScope ? (
-                        <select
+                        <NativeSelect
                           form={`policy-${p.id}`}
                           name="categoryId"
-                          className={selectClass}
+                          className="min-w-40"
                           defaultValue={p.category_id ?? ''}
                         >
                           <option value="">{t('policies.all.categories')}</option>
@@ -231,16 +219,16 @@ export default async function ExpensePoliciesPage({
                               {c.active ? '' : t('policies.category.inactive.suffix')}
                             </option>
                           ))}
-                        </select>
+                        </NativeSelect>
                       ) : (
                         <span className="text-muted-foreground">{t('policies.whole.report')}</span>
                       )}
-                    </td>
-                    <td className="px-3 py-2">
-                      <select
+                    </TableCell>
+                    <TableCell>
+                      <NativeSelect
                         form={`policy-${p.id}`}
                         name="severity"
-                        className={selectClass}
+                        className="min-w-36"
                         defaultValue={p.severity}
                       >
                         {/* A rule with a declared maximum does not offer more than
@@ -263,26 +251,26 @@ export default async function ExpensePoliciesPage({
                             {enumLabel(SEVERITY_COPY, s, prefs.locale)}
                           </option>
                         ))}
-                      </select>
-                    </td>
-                    <td className="px-3 py-2">
+                      </NativeSelect>
+                    </TableCell>
+                    <TableCell>
                       {takesThreshold ? (
                         <div className="flex items-center gap-1">
                           <Input
                             form={`policy-${p.id}`}
                             name="thresholdMinor"
                             inputMode="decimal"
-                            className="max-w-28 text-right"
+                            className="w-28 text-right"
                             placeholder="0.00"
                             defaultValue={thresholdValue(p.params)}
                           />
                           {/* Empty = the tenant's currency, which is the case for
                               nearly every rule and is why the option is labelled
                               with the code rather than left blank. */}
-                          <select
+                          <NativeSelect
                             form={`policy-${p.id}`}
                             name="currencyCode"
-                            className={selectClass}
+                            className="min-w-24"
                             defaultValue={p.currency_code ?? ''}
                             aria-label={uiSentence(
                               'policies.threshold.currency.aria',
@@ -298,13 +286,13 @@ export default async function ExpensePoliciesPage({
                                   {c.code}
                                 </option>
                               ))}
-                          </select>
+                          </NativeSelect>
                         </div>
                       ) : (
                         <span className="text-muted-foreground">—</span>
                       )}
-                    </td>
-                    <td className="px-3 py-2">
+                    </TableCell>
+                    <TableCell>
                       <div className="flex flex-col gap-1">
                         <Input
                           form={`policy-${p.id}`}
@@ -321,16 +309,16 @@ export default async function ExpensePoliciesPage({
                           defaultValue={dateValue(p.effective_to)}
                         />
                       </div>
-                    </td>
-                    <td className="px-3 py-2">
+                    </TableCell>
+                    <TableCell>
                       <input
                         form={`policy-${p.id}`}
                         type="checkbox"
                         name="enabled"
                         defaultChecked={p.enabled}
                       />
-                    </td>
-                    <td className="px-3 py-2">
+                    </TableCell>
+                    <TableCell>
                       <div className="flex items-center justify-end gap-1">
                         <Button type="submit" form={`policy-${p.id}`} size="xs" variant="outline">
                           {t('policies.save')}
@@ -344,14 +332,14 @@ export default async function ExpensePoliciesPage({
                           {t('policies.delete')}
                         </Button>
                       </div>
-                    </td>
-                  </tr>
+                    </TableCell>
+                  </TableRow>
                 );
               })
             )}
-          </tbody>
-        </table>
-      </div>
+          </TableBody>
+        </Table>
+      </TableCard>
 
       {policies.map((p) => (
         <Fragment key={`forms-${p.id}`}>
@@ -365,7 +353,7 @@ export default async function ExpensePoliciesPage({
       ))}
 
       <section className={`${cardClass} flex flex-col gap-4 p-5`}>
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+        <h2 className="velo-eyebrow">
           {t('policies.add.title')}
         </h2>
         <form action={createPolicyFromForm} className="grid items-end gap-3 sm:grid-cols-3">
@@ -373,7 +361,7 @@ export default async function ExpensePoliciesPage({
             <label className={labelClass} htmlFor="kind">
               {t('policies.field.rule')}
             </label>
-            <select id="kind" name="kind" required className={selectClass} defaultValue="">
+            <NativeSelect id="kind" name="kind" required defaultValue="">
               <option value="" disabled>
                 {t('policies.add.choose')}
               </option>
@@ -382,20 +370,20 @@ export default async function ExpensePoliciesPage({
                   {ruleName(kind)}
                 </option>
               ))}
-            </select>
+            </NativeSelect>
           </div>
 
           <div className={fieldClass}>
             <label className={labelClass} htmlFor="severity">
               {t('policies.field.severity')}
             </label>
-            <select id="severity" name="severity" className={selectClass} defaultValue="WARNING">
+            <NativeSelect id="severity" name="severity" defaultValue="WARNING">
               {SEVERITIES.map((s) => (
                 <option key={s} value={s}>
                   {enumLabel(SEVERITY_COPY, s, prefs.locale)}
                 </option>
               ))}
-            </select>
+            </NativeSelect>
           </div>
 
           <div className={fieldClass}>
@@ -409,14 +397,14 @@ export default async function ExpensePoliciesPage({
             <label className={labelClass} htmlFor="categoryId">
               {t('policies.field.category')}
             </label>
-            <select id="categoryId" name="categoryId" className={selectClass} defaultValue="">
+            <NativeSelect id="categoryId" name="categoryId" defaultValue="">
               <option value="">{t('policies.all.categories')}</option>
               {categories.map((c) => (
                 <option key={c.id} value={c.id}>
                   {c.label}
                 </option>
               ))}
-            </select>
+            </NativeSelect>
             <p className="text-xs text-muted-foreground">
               {/* `joinAnd`, not `.join(' and ')`. The conjunction was the only
                   English word in this sentence a translator could not reach. */}
@@ -458,6 +446,6 @@ export default async function ExpensePoliciesPage({
           {t('nav.employees')}
         </Link>
       </p>
-    </div>
+    </Screen>
   );
 }

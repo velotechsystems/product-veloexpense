@@ -18,6 +18,8 @@ import {
 import { EmployeeForm } from '../employee-form';
 
 import { dataTitle } from '@/lib/i18n/page-title';
+import { NativeSelect } from '@/components/ui/native-select';
+import { BackLink, PageHeader, Screen } from '@/components/screen';
 export const dynamic = 'force-dynamic';
 
 
@@ -51,22 +53,17 @@ export default async function EmployeeDetailPage({
   const isDeactivated = employee.employee_status === 'DEACTIVATED';
 
   return (
-    <div className="mx-auto flex w-full max-w-4xl flex-col gap-6 p-6">
-      <header className="flex flex-col gap-1">
-        <Link className="text-sm text-muted-foreground underline-offset-4 hover:underline" href="/admin/employees">
-          ← Employees
-        </Link>
-        <h1 className="text-2xl font-semibold tracking-tight">
-          {employee.display_name ?? employee.email}
-        </h1>
-        <p className="text-sm text-muted-foreground">
-          {employee.title ? `${employee.title} · ` : ''}
-          {employee.email} · {employee.role} · {employee.employee_status}
-        </p>
-      </header>
+    <Screen>
+      <div className="flex flex-col gap-2">
+        <BackLink href="/admin/employees">Employees</BackLink>
+        <PageHeader
+          title={employee.display_name ?? employee.email}
+          description={`${employee.title ? `${employee.title} · ` : ''}${employee.email} · ${employee.role} · ${employee.employee_status}`}
+        />
+      </div>
 
       <section className={sectionClass}>
-        <h2 className="text-lg font-medium">Details</h2>
+        <h2 className="text-lg leading-7 font-semibold">Details</h2>
         <EmployeeForm
       locale={prefs.locale}
           action={updateEmployeeFromForm}
@@ -77,7 +74,7 @@ export default async function EmployeeDetailPage({
       </section>
 
       <section className={sectionClass}>
-        <h2 className="text-lg font-medium">Reporting line</h2>
+        <h2 className="text-lg leading-7 font-semibold">Reporting line</h2>
         {managerChain.length === 0 ? (
           <p className="text-sm text-muted-foreground">No manager set.</p>
         ) : (
@@ -95,7 +92,7 @@ export default async function EmployeeDetailPage({
       </section>
 
       <section className={sectionClass}>
-        <h2 className="text-lg font-medium">
+        <h2 className="text-lg leading-7 font-semibold">
           Direct reports {directReports.length > 0 ? `(${directReports.length})` : ''}
         </h2>
         {directReports.length === 0 ? (
@@ -119,7 +116,7 @@ export default async function EmployeeDetailPage({
 
       {isDeactivated ? null : (
         <section className={sectionClass}>
-          <h2 className="text-lg font-medium">Deactivate</h2>
+          <h2 className="text-lg leading-7 font-semibold">Deactivate</h2>
           <p className="text-sm text-muted-foreground">
             Deactivating keeps the employee&apos;s history and removes them from the active directory.
             {activeReports.length > 0
@@ -133,11 +130,11 @@ export default async function EmployeeDetailPage({
                 <label className="text-sm font-medium" htmlFor="reassignReportsTo">
                   Reassign {activeReports.length} report(s) to
                 </label>
-                <select
+                <NativeSelect
                   id="reassignReportsTo"
                   name="reassignReportsTo"
                   defaultValue={employee.manager_id ?? ''}
-                  className="h-8 rounded-lg border border-input bg-transparent px-3 text-sm outline-none"
+
                 >
                   <option value="">— no manager —</option>
                   {options.managers
@@ -147,7 +144,7 @@ export default async function EmployeeDetailPage({
                         {m.display_name ?? m.email}
                       </option>
                     ))}
-                </select>
+                </NativeSelect>
               </div>
             ) : null}
             <Button type="submit" variant="destructive">
@@ -156,6 +153,6 @@ export default async function EmployeeDetailPage({
           </form>
         </section>
       )}
-    </div>
+    </Screen>
   );
 }

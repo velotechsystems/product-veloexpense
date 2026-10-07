@@ -24,6 +24,7 @@
  */
 import type { ReactNode } from 'react';
 import { brandCss } from '@/lib/branding/css';
+import { Input } from '@/components/ui/input';
 
 /** The product's own mark. Two letters and a name, matching the sign-in screen. */
 function ProductMark() {
@@ -108,7 +109,7 @@ export function Shell({
 
 export function Card({ children }: { children: ReactNode }) {
   return (
-    <section className="flex flex-col gap-4 rounded-xl border border-border bg-background p-6">
+    <section className="flex flex-col gap-4 rounded-lg border border-border bg-card p-6">
       {children}
     </section>
   );
@@ -151,8 +152,7 @@ export function Field({
       <label className="text-sm font-medium text-foreground" htmlFor={name}>
         {label}
       </label>
-      <input
-        className="h-9 w-full rounded-lg border border-input bg-transparent px-2.5 py-1 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
+      <Input
         id={name}
         name={name}
         type={type}

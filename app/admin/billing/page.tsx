@@ -43,6 +43,8 @@ import { uiText, uiSentence, type UiKey } from '@/lib/i18n/catalog/ui';
 import { canWrite, type Meter, type SubscriptionStatus } from '@/lib/billing/plans';
 
 import { pageTitle } from '@/lib/i18n/page-title';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { PageHeader, Screen } from '@/components/screen';
 
 // UD-16. See `lib/i18n/page-title.ts` for why the title lives here rather than
 // in a map of routes, and `scripts/check-page-titles.mjs` for what enforces it.
@@ -87,18 +89,15 @@ export default async function BillingPage() {
   };
 
   return (
-    <div className="mx-auto flex w-full max-w-5xl flex-col gap-6 p-6">
-      <header>
-        <h1 className="text-2xl font-semibold tracking-tight">{t('billing.title')}</h1>
-        <p className="text-sm text-muted-foreground">{t('billing.lede')}</p>
-      </header>
+    <Screen>
+      <PageHeader title={t('billing.title')} description={t('billing.lede')} />
 
       {subscription === null ? (
         /* Not an empty state — a statement, and it says WHICH of two things is
          * true. AC-22's rule: "billing is switched off in this deployment" and
          * "nobody is billing this particular tenant" look identical as an empty
          * table, and only one of them is something an administrator can act on. */
-        <section className="rounded-md border border-border bg-muted/40 px-4 py-3 text-sm">
+        <section className="rounded-lg border border-border bg-muted/50 px-4 py-3 text-sm">
           {platformConfigured ? (
             <>
               <strong className="font-medium">{t('billing.none.billed.title')}</strong>{' '}
@@ -112,9 +111,9 @@ export default async function BillingPage() {
           )}
         </section>
       ) : (
-        <section className="flex flex-col gap-3 rounded-md border border-border p-4">
+        <section className="flex flex-col gap-3 rounded-lg border border-border bg-card p-4">
           <div className="flex flex-wrap items-baseline justify-between gap-2">
-            <h2 className="text-lg font-medium">
+            <h2 className="text-lg leading-7 font-semibold">
               {subscription.planName ?? subscription.planCode}
             </h2>
             <span
@@ -157,40 +156,37 @@ export default async function BillingPage() {
       )}
 
       <section className="flex flex-col gap-2">
-        <h2 className="text-lg font-medium">{t('billing.usage.title')}</h2>
+        <h2 className="text-lg leading-7 font-semibold">{t('billing.usage.title')}</h2>
         <p className="text-sm text-muted-foreground">{t('billing.usage.lede')}</p>
         <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-border text-left text-xs uppercase tracking-wide text-muted-foreground">
-                <th className="py-2 pr-4 font-medium">{t('billing.column.period')}</th>
-                <th className="py-2 pr-4 font-medium">{t('billing.column.measure')}</th>
-                <th className="py-2 pr-4 font-medium">{t('billing.column.quantity')}</th>
-                <th className="py-2 pr-4 font-medium">{t('billing.column.plan')}</th>
-                <th className="py-2 font-medium">{t('billing.column.counted')}</th>
-              </tr>
-            </thead>
-            <tbody>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>{t('billing.column.period')}</TableHead>
+                <TableHead>{t('billing.column.measure')}</TableHead>
+                <TableHead>{t('billing.column.quantity')}</TableHead>
+                <TableHead>{t('billing.column.plan')}</TableHead>
+                <TableHead>{t('billing.column.counted')}</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
               {readings.length === 0 ? (
                 <EmptyRow colSpan={5}>{t('billing.usage.empty')}</EmptyRow>
               ) : (
                 readings.map((r) => (
-                  <tr
-                    key={`${r.periodStart.toISOString()}-${r.meter}`}
-                    className="border-b border-border last:border-0"
-                  >
-                    <td className="py-2 pr-4">{formatInstant(r.periodStart, prefs)}</td>
-                    <td className="py-2 pr-4">{t(METER_KEY[r.meter])}</td>
-                    <td className="py-2 pr-4 tabular-nums">{r.quantity.toString()}</td>
-                    <td className="py-2 pr-4">{r.planCode}</td>
-                    <td className="py-2 text-muted-foreground">
+                  <TableRow key={`${r.periodStart.toISOString()}-${r.meter}`}>
+                    <TableCell>{formatInstant(r.periodStart, prefs)}</TableCell>
+                    <TableCell>{t(METER_KEY[r.meter])}</TableCell>
+                    <TableCell className="tabular-nums">{r.quantity.toString()}</TableCell>
+                    <TableCell>{r.planCode}</TableCell>
+                    <TableCell className="text-muted-foreground">
                       {formatInstant(r.measuredAt, prefs)}
-                    </td>
-                  </tr>
+                    </TableCell>
+                  </TableRow>
                 ))
               )}
-            </tbody>
-          </table>
+            </TableBody>
+          </Table>
         </div>
       </section>
 
@@ -200,6 +196,6 @@ export default async function BillingPage() {
           {t('billing.back')}
         </Link>
       </p>
-    </div>
+    </Screen>
   );
 }

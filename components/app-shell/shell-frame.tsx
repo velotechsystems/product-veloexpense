@@ -30,12 +30,14 @@ export function ShellFrame({
   brand,
   menuLabel,
   closeLabel,
+  skipLabel,
   children,
 }: {
   sidebar: React.ReactNode;
   brand: React.ReactNode;
   menuLabel: string;
   closeLabel: string;
+  skipLabel: string;
   children: React.ReactNode;
 }) {
   const pathname = usePathname() ?? '/';
@@ -46,6 +48,12 @@ export function ShellFrame({
 
   return (
     <div className="flex min-h-svh w-full flex-1">
+      <a
+        href="#main-content"
+        className="sr-only z-50 rounded-lg bg-primary px-3 py-2 text-sm font-medium text-primary-foreground focus:not-sr-only focus:absolute focus:top-2 focus:left-2"
+      >
+        {skipLabel}
+      </a>
       <div className="sticky top-0 hidden h-svh w-60 shrink-0 lg:flex">{sidebar}</div>
 
       <div className="flex min-w-0 flex-1 flex-col">
@@ -77,7 +85,11 @@ export function ShellFrame({
           </div>
         ) : null}
 
-        <div className="flex min-w-0 flex-1 flex-col">{children}</div>
+        {/* The page's one <main> landmark is the shell's, so no screen declares its
+            own; "Skip to content" lands here. */}
+        <main id="main-content" tabIndex={-1} className="flex min-w-0 flex-1 flex-col outline-none">
+          {children}
+        </main>
       </div>
     </div>
   );

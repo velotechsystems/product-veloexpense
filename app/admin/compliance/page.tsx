@@ -55,6 +55,10 @@ import {
   saveThresholdsFromForm,
   scanNowFromForm,
 } from './actions';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { TableCard } from '@/components/screen';
+import { NativeSelect } from '@/components/ui/native-select';
+import { PageHeader, Screen } from '@/components/screen';
 
 export const dynamic = 'force-dynamic';
 
@@ -69,9 +73,9 @@ export default async function CompliancePage({
 
   if (!view.moduleEnabled) {
     return (
-      <div className="mx-auto flex w-full max-w-6xl flex-col gap-4 p-6">
-        <h1 className="text-2xl font-semibold tracking-tight">Compliance</h1>
-        <p className="rounded-md border border-border bg-muted/40 px-3 py-2 text-sm">
+      <Screen width="wide">
+        <PageHeader title="Compliance" />
+        <p className="rounded-lg border border-border bg-muted/50 px-3 py-2 text-sm">
           <strong className="font-medium">The compliance module is off for this organization.</strong>{' '}
           Every report still goes through policy, approval and reimbursement; nothing is looked at
           again afterwards. Turn it on from{' '}
@@ -80,7 +84,7 @@ export default async function CompliancePage({
           </Link>
           .
         </p>
-      </div>
+      </Screen>
     );
   }
 
@@ -88,31 +92,31 @@ export default async function CompliancePage({
   const selectedRun = runs.find((r) => r.id === selectedRunId) ?? null;
 
   return (
-    <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 p-6">
-      <header className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Compliance</h1>
-          <p className="text-sm text-muted-foreground">
-            {summary.active === 0
-              ? 'Nothing open'
-              : `${summary.active} open · ${summary.critical} worth opening · ${summary.reviewed} decided`}
-          </p>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <form action={scanNowFromForm}>
-            <Button type="submit" size="sm" variant="outline">
-              Look for problems now
-            </Button>
-          </form>
-          <form action={evaluateNowFromForm}>
-            <Button type="submit" size="sm" variant="outline">
-              Evaluate the controls now
-            </Button>
-          </form>
-        </div>
-      </header>
+    <Screen width="wide">
+      <PageHeader
+        title="Compliance"
+        description={
+          summary.active === 0
+            ? 'Nothing open'
+            : `${summary.active} open · ${summary.critical} worth opening · ${summary.reviewed} decided`
+        }
+        actions={
+          <>
+            <form action={scanNowFromForm}>
+              <Button type="submit" variant="outline">
+                Look for problems now
+              </Button>
+            </form>
+            <form action={evaluateNowFromForm}>
+              <Button type="submit" variant="outline">
+                Evaluate the controls now
+              </Button>
+            </form>
+          </>
+        }
+      />
 
-      <p className="rounded-md border border-border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
+      <p className="rounded-lg border border-border bg-muted/50 px-3 py-2 text-sm text-muted-foreground">
         <strong className="font-medium text-foreground">Nothing here is an accusation.</strong> These
         are patterns worth a person&rsquo;s attention — a charge that looks entered twice, an amount
         unlike somebody&rsquo;s usual, one approver signing off everything for one employee. None of
@@ -123,19 +127,19 @@ export default async function CompliancePage({
 
       {/* ── the queue ───────────────────────────────────────────────────── */}
       <section className="flex flex-col gap-3">
-        <h2 className="text-lg font-medium">Flags</h2>
-        <div className="overflow-x-auto rounded-lg border border-border">
-          <table className="w-full min-w-[860px] text-left text-sm">
-            <thead className="bg-muted/50 text-xs uppercase tracking-wide text-muted-foreground">
-              <tr>
-                <th className="px-3 py-2 font-medium">What was noticed</th>
-                <th className="px-3 py-2 font-medium">About</th>
-                <th className="px-3 py-2 font-medium">Weight</th>
-                <th className="px-3 py-2 font-medium">Status</th>
-                <th className="px-3 py-2 font-medium">Decision</th>
-              </tr>
-            </thead>
-            <tbody>
+        <h2 className="text-lg leading-7 font-semibold">Flags</h2>
+        <TableCard>
+          <Table className="min-w-[860px]">
+            <TableHeader>
+              <TableRow>
+                <TableHead>What was noticed</TableHead>
+                <TableHead>About</TableHead>
+                <TableHead>Weight</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead>Decision</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
               {flags.length === 0 ? (
                 <EmptyRow colSpan={5}>
                   Nothing has been flagged. Reports are looked at again after the fact — this fills
@@ -145,14 +149,14 @@ export default async function CompliancePage({
                 flags.map((flag) => {
                   const open = flag.status === 'ACTIVE';
                   return (
-                    <tr key={flag.id} className="border-t border-border align-top">
-                      <td className="px-3 py-2">
+                    <TableRow key={flag.id} className="align-top">
+                      <TableCell>
                         {renderFraudMessage(flag.message_code, flag.data, prefs.locale)}
                         <span className="mt-1 block text-xs text-muted-foreground">
                           first seen {formatInstant(flag.first_seen_at, prefs)}
                         </span>
-                      </td>
-                      <td className="px-3 py-2">
+                      </TableCell>
+                      <TableCell>
                         {flag.report_id === null ? (
                           <span className="text-muted-foreground">
                             {flag.subject_name ?? '—'}
@@ -170,16 +174,16 @@ export default async function CompliancePage({
                             {flag.subject_name}
                           </span>
                         ) : null}
-                      </td>
-                      <td className="px-3 py-2">
+                      </TableCell>
+                      <TableCell>
                         <span
                           data-testid="severity-badge"
                           className={flag.severity === 'HIGH' ? 'text-destructive' : ''}
                         >
                           {enumLabel(FRAUD_SEVERITY_COPY, flag.severity, prefs.locale)}
                         </span>
-                      </td>
-                      <td className="px-3 py-2">
+                      </TableCell>
+                      <TableCell>
                         <span data-testid="status-badge">
                           {enumLabel(FRAUD_FLAG_STATUS_COPY, flag.status, prefs.locale)}
                         </span>
@@ -192,8 +196,8 @@ export default async function CompliancePage({
                         {flag.review_note ? (
                           <span className="mt-1 block text-xs">{flag.review_note}</span>
                         ) : null}
-                      </td>
-                      <td className="px-3 py-2">
+                      </TableCell>
+                      <TableCell>
                         {open ? (
                           <div className="flex flex-wrap items-center gap-2">
                             <Input
@@ -239,14 +243,14 @@ export default async function CompliancePage({
                             decided — a decision here is not reversible
                           </span>
                         )}
-                      </td>
-                    </tr>
+                      </TableCell>
+                    </TableRow>
                   );
                 })
               )}
-            </tbody>
-          </table>
-        </div>
+            </TableBody>
+          </Table>
+        </TableCard>
 
         {/*
           Row forms, outside the table. THREE SUBMIT BUTTONS, ONE FORM: the
@@ -273,17 +277,16 @@ export default async function CompliancePage({
             </label>
             <label className="flex flex-col gap-1 text-sm">
               Weight
-              <select
+              <NativeSelect
                 name="severity"
                 defaultValue="MEDIUM"
-                className="h-9 rounded-md border border-input bg-background px-2 text-sm"
               >
                 {FRAUD_SEVERITIES.map((s) => (
                   <option key={s} value={s}>
                     {enumLabel(FRAUD_SEVERITY_COPY, s, prefs.locale)}
                   </option>
                 ))}
-              </select>
+              </NativeSelect>
             </label>
             {/*
               REQUIRED, because `fraud_flag_subject_chk` requires a subject and a
@@ -304,23 +307,23 @@ export default async function CompliancePage({
 
       {/* ── control evaluation ──────────────────────────────────────────── */}
       <section className="flex flex-col gap-3">
-        <h2 className="text-lg font-medium">Control evaluations</h2>
+        <h2 className="text-lg leading-7 font-semibold">Control evaluations</h2>
         <p className="text-sm text-muted-foreground">
           A run is a snapshot of a period, not a queue. You do not dismiss a deficiency — you fix it
           and the next run stops reporting it.
         </p>
-        <div className="overflow-x-auto rounded-lg border border-border">
-          <table className="w-full min-w-[720px] text-left text-sm">
-            <thead className="bg-muted/50 text-xs uppercase tracking-wide text-muted-foreground">
-              <tr>
-                <th className="px-3 py-2 font-medium">Run</th>
-                <th className="px-3 py-2 font-medium">Period</th>
-                <th className="px-3 py-2 font-medium">Outcome</th>
-                <th className="px-3 py-2 font-medium">Findings</th>
-                <th className="px-3 py-2 font-medium" />
-              </tr>
-            </thead>
-            <tbody>
+        <TableCard>
+          <Table className="min-w-[720px]">
+            <TableHeader>
+              <TableRow>
+                <TableHead>Run</TableHead>
+                <TableHead>Period</TableHead>
+                <TableHead>Outcome</TableHead>
+                <TableHead>Findings</TableHead>
+                <TableHead />
+              </TableRow>
+            </TableHeader>
+            <TableBody>
               {runs.length === 0 ? (
                 <EmptyRow colSpan={5}>
                   No evaluation has run yet. &ldquo;Evaluate the controls now&rdquo; runs one over
@@ -328,23 +331,18 @@ export default async function CompliancePage({
                 </EmptyRow>
               ) : (
                 runs.map((r) => (
-                  <tr
-                    key={r.id}
-                    className={`border-t border-border align-top ${
-                      r.id === selectedRunId ? 'bg-muted/30' : ''
-                    }`}
-                  >
-                    <td className="px-3 py-2">
+                  <TableRow key={r.id} className={`align-top ${ r.id === selectedRunId ? 'bg-muted/30' : '' }`}>
+                    <TableCell>
                       {formatInstant(r.started_at, prefs)}
                       <span className="block text-xs text-muted-foreground">
                         {r.requested_by_name ?? 'scheduled'}
                       </span>
-                    </td>
-                    <td className="px-3 py-2 text-xs">
+                    </TableCell>
+                    <TableCell className="text-xs">
                       {formatInstant(r.period_start, prefs)} →{' '}
                       {formatInstant(r.period_end, prefs)}
-                    </td>
-                    <td className="px-3 py-2">
+                    </TableCell>
+                    <TableCell>
                       <span
                         data-testid="status-badge"
                         className={r.status === 'FAILED' ? 'text-destructive' : ''}
@@ -365,9 +363,9 @@ export default async function CompliancePage({
                           could not check: {Object.keys(r.summary.failedControls).join(', ')}
                         </span>
                       ) : null}
-                    </td>
-                    <td className="px-3 py-2 tabular-nums">{r.finding_count}</td>
-                    <td className="px-3 py-2">
+                    </TableCell>
+                    <TableCell className="tabular-nums">{r.finding_count}</TableCell>
+                    <TableCell>
                       {r.id === selectedRunId ? (
                         <span className="text-xs text-muted-foreground">shown below</span>
                       ) : (
@@ -378,26 +376,26 @@ export default async function CompliancePage({
                           Open
                         </Link>
                       )}
-                    </td>
-                  </tr>
+                    </TableCell>
+                  </TableRow>
                 ))
               )}
-            </tbody>
-          </table>
-        </div>
+            </TableBody>
+          </Table>
+        </TableCard>
 
         {selectedRun === null ? null : (
-          <div className="overflow-x-auto rounded-lg border border-border">
-            <table className="w-full min-w-[720px] text-left text-sm">
-              <thead className="bg-muted/50 text-xs uppercase tracking-wide text-muted-foreground">
-                <tr>
-                  <th className="px-3 py-2 font-medium">Control</th>
-                  <th className="px-3 py-2 font-medium">Subject</th>
-                  <th className="px-3 py-2 font-medium">Weight</th>
-                  <th className="px-3 py-2 font-medium">What it found</th>
-                </tr>
-              </thead>
-              <tbody>
+          <TableCard>
+            <Table className="min-w-[720px]">
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Control</TableHead>
+                  <TableHead>Subject</TableHead>
+                  <TableHead>Weight</TableHead>
+                  <TableHead>What it found</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
                 {findings.length === 0 ? (
                   <EmptyRow colSpan={4}>
                     {selectedRun.status === 'FAILED'
@@ -406,9 +404,9 @@ export default async function CompliancePage({
                   </EmptyRow>
                 ) : (
                   findings.map((f) => (
-                    <tr key={f.id} className="border-t border-border align-top">
-                      <td className="px-3 py-2 text-xs">{f.control_code}</td>
-                      <td className="px-3 py-2">
+                    <TableRow key={f.id} className="align-top">
+                      <TableCell className="text-xs">{f.control_code}</TableCell>
+                      <TableCell>
                         {/*
                           `subject_label` as recorded, never a join — see
                           `runFindings`. A finding whose subject has since been
@@ -418,30 +416,30 @@ export default async function CompliancePage({
                         <span className="block text-xs text-muted-foreground">
                           {f.subject_type === 'expense_category' ? 'category' : 'report'}
                         </span>
-                      </td>
-                      <td className="px-3 py-2">
+                      </TableCell>
+                      <TableCell>
                         <span
                           data-testid="severity-badge"
                           className={f.severity === 'CRITICAL' ? 'text-destructive' : ''}
                         >
                           {enumLabel(CONTROL_SEVERITY_COPY, f.severity, prefs.locale)}
                         </span>
-                      </td>
-                      <td className="px-3 py-2">
+                      </TableCell>
+                      <TableCell>
                         {renderControlMessage(f.message_code, f.data, prefs.locale)}
-                      </td>
-                    </tr>
+                      </TableCell>
+                    </TableRow>
                   ))
                 )}
-              </tbody>
-            </table>
-          </div>
+              </TableBody>
+            </Table>
+          </TableCard>
         )}
       </section>
 
       {/* ── thresholds ──────────────────────────────────────────────────── */}
       <section className="flex flex-col gap-3 rounded-lg border border-border p-4">
-        <h2 className="text-lg font-medium">Thresholds</h2>
+        <h2 className="text-lg leading-7 font-semibold">Thresholds</h2>
         <p className="text-sm text-muted-foreground">
           Yours alone — every organization tunes its own. Leave a field blank to use the shipped
           default; the number shown is what is in force now.
@@ -472,7 +470,7 @@ export default async function CompliancePage({
           </Button>
         </form>
       </section>
-    </div>
+    </Screen>
   );
 }
 

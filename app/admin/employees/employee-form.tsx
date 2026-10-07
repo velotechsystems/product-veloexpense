@@ -17,6 +17,7 @@ import {
   EMPLOYEE_STATUSES,
   type EmployeeRow,
 } from '@/lib/employees/service';
+import { NativeSelect } from '@/components/ui/native-select';
 
 type Options = {
   departments: Array<{ id: string; name: string }>;
@@ -27,8 +28,6 @@ type Options = {
 
 const fieldClass = 'flex flex-col gap-1.5';
 const labelClass = 'text-sm font-medium text-foreground';
-const selectClass =
-  'h-8 w-full rounded-lg border border-input bg-transparent px-3 py-1 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50';
 
 export function EmployeeForm({
   action,
@@ -84,10 +83,9 @@ export function EmployeeForm({
           <label className={labelClass} htmlFor="role">
             Role
           </label>
-          <select
+          <NativeSelect
             id="role"
             name="role"
-            className={selectClass}
             defaultValue={employee?.role ?? 'EMPLOYEE'}
           >
             {EMPLOYEE_ROLES.map((role) => (
@@ -95,7 +93,7 @@ export function EmployeeForm({
                 {enumLabel(EMPLOYEE_ROLE_COPY, role, locale)}
               </option>
             ))}
-          </select>
+          </NativeSelect>
         </div>
 
         {showStatus ? (
@@ -103,10 +101,9 @@ export function EmployeeForm({
             <label className={labelClass} htmlFor="employeeStatus">
               Status
             </label>
-            <select
+            <NativeSelect
               id="employeeStatus"
               name="employeeStatus"
-              className={selectClass}
               defaultValue={employee?.employee_status ?? 'ACTIVE'}
             >
               {EMPLOYEE_STATUSES.map((status) => (
@@ -114,7 +111,7 @@ export function EmployeeForm({
                   {enumLabel(EMPLOYEE_STATUS_COPY, status, locale)}
                 </option>
               ))}
-            </select>
+            </NativeSelect>
           </div>
         ) : null}
 
@@ -122,10 +119,9 @@ export function EmployeeForm({
           <label className={labelClass} htmlFor="managerId">
             Manager
           </label>
-          <select
+          <NativeSelect
             id="managerId"
             name="managerId"
-            className={selectClass}
             defaultValue={employee?.manager_id ?? ''}
           >
             <option value="">— none —</option>
@@ -134,17 +130,16 @@ export function EmployeeForm({
                 {m.display_name ?? m.email}
               </option>
             ))}
-          </select>
+          </NativeSelect>
         </div>
 
         <div className={fieldClass}>
           <label className={labelClass} htmlFor="departmentId">
             Department
           </label>
-          <select
+          <NativeSelect
             id="departmentId"
             name="departmentId"
-            className={selectClass}
             defaultValue={employee?.department_id ?? ''}
           >
             <option value="">— none —</option>
@@ -153,17 +148,16 @@ export function EmployeeForm({
                 {d.name}
               </option>
             ))}
-          </select>
+          </NativeSelect>
         </div>
 
         <div className={fieldClass}>
           <label className={labelClass} htmlFor="businessUnitId">
             Business unit
           </label>
-          <select
+          <NativeSelect
             id="businessUnitId"
             name="businessUnitId"
-            className={selectClass}
             defaultValue={employee?.business_unit_id ?? ''}
           >
             <option value="">— none —</option>
@@ -172,17 +166,16 @@ export function EmployeeForm({
                 {bu.name}
               </option>
             ))}
-          </select>
+          </NativeSelect>
         </div>
 
         <div className={fieldClass}>
           <label className={labelClass} htmlFor="legalEntityId">
             Legal entity
           </label>
-          <select
+          <NativeSelect
             id="legalEntityId"
             name="legalEntityId"
-            className={selectClass}
             defaultValue={employee?.legal_entity_id ?? ''}
           >
             <option value="">— none —</option>
@@ -191,7 +184,7 @@ export function EmployeeForm({
                 {le.name}
               </option>
             ))}
-          </select>
+          </NativeSelect>
         </div>
       </div>
 

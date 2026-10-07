@@ -23,7 +23,7 @@ export function WrongTenantHost({ locale }: { locale: string }) {
   return (
     <main className="mx-auto flex min-h-svh w-full max-w-md flex-col justify-center gap-4 p-6">
       <section
-        className="flex flex-col gap-4 rounded-xl border border-border bg-background p-6"
+        className="flex flex-col gap-4 rounded-lg border border-border bg-card p-6"
         data-testid="wrong-tenant-host"
       >
         <h1 className="text-lg font-semibold text-foreground">This is not your organization</h1>

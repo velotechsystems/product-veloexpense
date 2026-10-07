@@ -3,13 +3,15 @@
  * the DRAFT (assigning its EXP-###### number) and redirects into the editor.
  * Currency and business-unit choices come from the tenant's own data.
  */
-import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { createReportFromForm, getWorkbenchOptions } from '../actions';
-import { ErrorBanner, cardClass, fieldClass, labelClass, selectClass, textareaClass } from '../ui';
+import { ErrorBanner, cardClass, fieldClass, labelClass } from '../ui';
 
 import { pageTitle } from '@/lib/i18n/page-title';
+import { NativeSelect } from '@/components/ui/native-select';
+import { Textarea } from '@/components/ui/textarea';
+import { BackLink, PageHeader, Screen } from '@/components/screen';
 
 // UD-16. See `lib/i18n/page-title.ts` for why the title lives here rather than
 // in a map of routes, and `scripts/check-page-titles.mjs` for what enforces it.
@@ -29,13 +31,11 @@ export default async function NewReportPage({
   const defaultCurrency = currencies.find((c) => c.code === 'CAD')?.code ?? currencies[0]?.code;
 
   return (
-    <div className="mx-auto flex w-full max-w-2xl flex-col gap-6 p-6">
-      <header className="flex flex-col gap-1">
-        <Link className="text-sm text-muted-foreground underline-offset-4 hover:underline" href="/expenses">
-          ← Back to reports
-        </Link>
-        <h1 className="text-2xl font-semibold tracking-tight">New expense report</h1>
-      </header>
+    <Screen width="narrow">
+      <div className="flex flex-col gap-2">
+        <BackLink href="/expenses">Back to reports</BackLink>
+        <PageHeader title="New expense report" />
+      </div>
 
       <ErrorBanner message={sp.error} />
 
@@ -51,10 +51,9 @@ export default async function NewReportPage({
           <label className={labelClass} htmlFor="purpose">
             Business purpose
           </label>
-          <textarea
+          <Textarea
             id="purpose"
             name="purpose"
-            className={textareaClass}
             placeholder="What was this trip or spend for?"
           />
         </div>
@@ -64,11 +63,10 @@ export default async function NewReportPage({
             <label className={labelClass} htmlFor="currencyCode">
               Currency
             </label>
-            <select
+            <NativeSelect
               id="currencyCode"
               name="currencyCode"
               required
-              className={selectClass}
               defaultValue={defaultCurrency}
             >
               {currencies.map((c) => (
@@ -76,21 +74,21 @@ export default async function NewReportPage({
                   {c.code} — {c.name}
                 </option>
               ))}
-            </select>
+            </NativeSelect>
           </div>
 
           <div className={fieldClass}>
             <label className={labelClass} htmlFor="businessUnitId">
               Business unit
             </label>
-            <select id="businessUnitId" name="businessUnitId" className={selectClass} defaultValue="">
+            <NativeSelect id="businessUnitId" name="businessUnitId" defaultValue="">
               <option value="">— none —</option>
               {businessUnits.map((bu) => (
                 <option key={bu.id} value={bu.id}>
                   {bu.name}
                 </option>
               ))}
-            </select>
+            </NativeSelect>
           </div>
         </div>
 
@@ -98,6 +96,6 @@ export default async function NewReportPage({
           <Button type="submit">Create draft</Button>
         </div>
       </form>
-    </div>
+    </Screen>
   );
 }

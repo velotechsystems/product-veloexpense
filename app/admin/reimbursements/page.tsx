@@ -31,6 +31,9 @@ import { readerPrefs } from '@/lib/i18n/request';
 import { getPayablePage, reimburseFromForm } from './actions';
 
 import { pageTitle } from '@/lib/i18n/page-title';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { TableCard } from '@/components/screen';
+import { PageHeader, Screen } from '@/components/screen';
 
 // UD-16. See `lib/i18n/page-title.ts` for why the title lives here rather than
 // in a map of routes, and `scripts/check-page-titles.mjs` for what enforces it.
@@ -66,32 +69,19 @@ export default async function ReimbursementsPage({
   const mixed = new Set(rows.map((r) => r.currency_code)).size > 1;
 
   return (
-    <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 p-6">
-      <header className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Reimbursements</h1>
-          <p className="text-sm text-muted-foreground">
-            {rows.length === 0
-              ? 'Nothing approved is waiting to be paid'
-              : `${rows.length} waiting${
-                  // Only summed when there is one currency to sum. A mixed-currency
-                  // total is a number that means nothing, and PE-1 (policy
-                  // thresholds are currency-blind) is a live reminder of what
-                  // happens when a figure quietly assumes one currency.
-                  mixed ? '' : ` · ${formatMinor(total.toString(), currency, undefined, prefs.locale)}`
-                }`}
-          </p>
-        </div>
-        <div className="flex items-center gap-3">
-          {/* No admin navigation exists yet — HANDOFF §7. */}
-          <Link href="/admin/notification-delivery" className="text-sm underline underline-offset-4">
-            Email delivery
-          </Link>
-          <Link href="/admin/approval-ladder" className="text-sm underline underline-offset-4">
-            Approval ladder
-          </Link>
-        </div>
-      </header>
+    <Screen width="wide">
+      <PageHeader
+        title="Reimbursements"
+        description={
+          rows.length === 0
+            ? 'Nothing approved is waiting to be paid'
+            : `${rows.length} waiting${
+                // Only summed when there is one currency to sum. A mixed-currency total
+                // is a number that means nothing (PE-1: thresholds are currency-blind).
+                mixed ? '' : ` · ${formatMinor(total.toString(), currency, undefined, prefs.locale)}`
+              }`
+        }
+      />
 
       <ErrorBanner message={error} />
 
@@ -127,19 +117,19 @@ export default async function ReimbursementsPage({
         </div>
       ) : null}
 
-      <div className="overflow-x-auto rounded-lg border border-border">
-        <table className="w-full min-w-[900px] text-left text-sm">
-          <thead className="bg-muted/50 text-xs uppercase tracking-wide text-muted-foreground">
-            <tr>
-              <th className="px-3 py-2 font-medium">Report</th>
-              <th className="px-3 py-2 font-medium">Claimant</th>
-              <th className="px-3 py-2 font-medium">Amount</th>
-              <th className="px-3 py-2 font-medium">Approved</th>
-              <th className="px-3 py-2 font-medium">Reference</th>
-              <th className="px-3 py-2" />
-            </tr>
-          </thead>
-          <tbody>
+      <TableCard>
+        <Table className="min-w-[900px]">
+          <TableHeader>
+            <TableRow>
+              <TableHead>Report</TableHead>
+              <TableHead>Claimant</TableHead>
+              <TableHead>Amount</TableHead>
+              <TableHead>Approved</TableHead>
+              <TableHead>Reference</TableHead>
+              <TableHead />
+            </TableRow>
+          </TableHeader>
+          <TableBody>
             {rows.length === 0 ? (
               <EmptyRow colSpan={6}>
                 Nothing to pay. Approved reports appear here as soon as they clear their last
@@ -149,8 +139,8 @@ export default async function ReimbursementsPage({
               rows.map((row) => {
                 const formId = `pay-${row.id}`;
                 return (
-                  <tr key={row.id} className="border-t border-border align-top">
-                    <td className="px-3 py-2">
+                  <TableRow key={row.id} className="align-top">
+                    <TableCell>
                       <Link
                         href={`/expenses/${row.id}`}
                         className="font-medium underline underline-offset-4"
@@ -158,15 +148,15 @@ export default async function ReimbursementsPage({
                         {row.title}
                       </Link>
                       <p className="text-xs text-muted-foreground">{row.number ?? '—'}</p>
-                    </td>
-                    <td className="px-3 py-2">{row.submitter_name}</td>
-                    <td className="px-3 py-2 tabular-nums">
+                    </TableCell>
+                    <TableCell>{row.submitter_name}</TableCell>
+                    <TableCell className="tabular-nums">
                       {formatMinor(row.total_minor, row.currency_code, undefined, prefs.locale)}
-                    </td>
-                    <td className="px-3 py-2 text-muted-foreground">
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">
                       {formatInstant(row.approved_at, prefs)}
-                    </td>
-                    <td className="px-3 py-2">
+                    </TableCell>
+                    <TableCell>
                       <Input
                         form={formId}
                         name="reference"
@@ -176,8 +166,8 @@ export default async function ReimbursementsPage({
                         disabled={row.blockedAsOwn}
                       />
                       <p className="mt-1 text-xs text-muted-foreground">optional</p>
-                    </td>
-                    <td className="px-3 py-2">
+                    </TableCell>
+                    <TableCell>
                       {row.blockedAsOwn ? (
                         // The reason, not a missing button. An AP clerk who cannot
                         // pay one row out of twenty needs to know which and why.
@@ -189,14 +179,14 @@ export default async function ReimbursementsPage({
                           Mark reimbursed
                         </Button>
                       )}
-                    </td>
-                  </tr>
+                    </TableCell>
+                  </TableRow>
                 );
               })
             )}
-          </tbody>
-        </table>
-      </div>
+          </TableBody>
+        </Table>
+      </TableCard>
 
       {/* The row forms. Outside the table, referenced by `form=` above. */}
       {rows
@@ -206,6 +196,6 @@ export default async function ReimbursementsPage({
             <input type="hidden" name="reportId" value={r.id} />
           </form>
         ))}
-    </div>
+    </Screen>
   );
 }

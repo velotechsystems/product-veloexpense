@@ -21,7 +21,10 @@
  * restates another list stops matching it.
  */
 import Link from 'next/link';
+import { Bell, CircleCheck, Receipt } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardDescription, CardHeader } from '@/components/ui/card';
+import { PageHeader, Screen } from '@/components/screen';
 import { SETUP_ITEMS, type SetupItem } from '@/lib/onboarding/setup';
 import { getHomeContext, getSetupStatus } from './actions';
 
@@ -78,9 +81,9 @@ const SETUP_COPY: Record<SetupItem, { title: string; why: string; href: string; 
 };
 
 const LINKS = [
-  { href: '/expenses', label: 'Expense reports', hint: 'File a report, or pick up a draft.' },
-  { href: '/approvals', label: 'Approvals', hint: 'What is waiting on you.' },
-  { href: '/notifications', label: 'Notifications', hint: 'What has happened recently.' },
+  { href: '/expenses', label: 'Expense reports', hint: 'File a report, or pick up a draft.', Icon: Receipt },
+  { href: '/approvals', label: 'Approvals', hint: 'What is waiting on you.', Icon: CircleCheck },
+  { href: '/notifications', label: 'Notifications', hint: 'What has happened recently.', Icon: Bell },
 ];
 
 export default async function HomePage() {
@@ -91,60 +94,67 @@ export default async function HomePage() {
     setup === null ? [] : SETUP_ITEMS.filter((item) => !setup.items.find((i) => i.item === item)!.done);
 
   return (
-    <main className="mx-auto flex w-full max-w-4xl flex-col gap-8 p-6">
-      <header className="flex flex-col gap-1">
-        <h1 className="text-2xl font-semibold tracking-tight">{organizationName}</h1>
-        <p className="text-sm text-muted-foreground">Signed in as {name}.</p>
-      </header>
+    <Screen>
+      <PageHeader title={organizationName} description={`Signed in as ${name}.`} />
 
       {setup !== null && !setup.complete ? (
-        <section className="flex flex-col gap-4 rounded-xl border border-border bg-background p-5">
-          <div className="flex flex-col gap-1">
-            <h2 className="text-base font-semibold">Finish setting up</h2>
-            <p className="text-sm text-muted-foreground">
+        <Card>
+          <CardHeader>
+            {/* A real <h2>: the kit's CardTitle is a <div>, and this is the screen's one section heading. */}
+            <h2 className="text-lg leading-7 font-semibold">Finish setting up</h2>
+            <CardDescription>
               {outstanding.length} {outstanding.length === 1 ? 'thing' : 'things'} left. Nothing
               here was decided for you — an approval route or a spend limit is a statement about
               how your company works, so we did not invent one.
-            </p>
-          </div>
-
-          <ol className="flex flex-col gap-4">
-            {outstanding.map((item) => {
-              const copy = SETUP_COPY[item];
-              return (
-                <li className="flex flex-col gap-1.5 border-t border-border pt-4" key={item}>
-                  <h3 className="text-sm font-medium text-foreground">{copy.title}</h3>
-                  <p className="text-sm text-muted-foreground">{copy.why}</p>
-                  <div>
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <ol className="flex flex-col">
+              {outstanding.map((item) => {
+                const copy = SETUP_COPY[item];
+                return (
+                  <li
+                    className="flex flex-wrap items-center justify-between gap-3 border-t border-border py-4 first:border-t-0 first:pt-0 last:pb-0"
+                    key={item}
+                  >
+                    <div className="flex min-w-0 flex-1 flex-col gap-1">
+                      <h3 className="text-sm font-semibold text-foreground">{copy.title}</h3>
+                      <p className="text-sm text-muted-foreground">{copy.why}</p>
+                    </div>
                     <Button asChild size="sm" variant="outline">
                       <Link href={copy.href}>{copy.cta}</Link>
                     </Button>
-                  </div>
-                </li>
-              );
-            })}
-          </ol>
+                  </li>
+                );
+              })}
+            </ol>
 
-          {setup.memberCount === 1 ? (
-            <p className="text-xs text-muted-foreground">
-              You are the only person in {organizationName} so far.
-            </p>
-          ) : null}
-        </section>
+            {setup.memberCount === 1 ? (
+              <p className="mt-4 text-xs text-muted-foreground">
+                You are the only person in {organizationName} so far.
+              </p>
+            ) : null}
+          </CardContent>
+        </Card>
       ) : null}
 
-      <section className="grid gap-3 sm:grid-cols-3" data-testid="home-links">
-        {LINKS.map((link) => (
+      <section className="grid gap-4 sm:grid-cols-3" data-testid="home-links">
+        {LINKS.map(({ href, label, hint, Icon }) => (
           <Link
-            className="flex flex-col gap-1 rounded-xl border border-border bg-background p-4 transition-colors hover:border-ring"
-            href={link.href}
-            key={link.href}
+            className="group flex flex-col gap-3 rounded-lg border border-border bg-card p-5 transition-colors hover:border-ring hover:bg-accent/40"
+            href={href}
+            key={href}
           >
-            <span className="text-sm font-medium text-foreground">{link.label}</span>
-            <span className="text-xs text-muted-foreground">{link.hint}</span>
+            <span className="flex size-9 items-center justify-center rounded-lg bg-accent text-accent-foreground">
+              <Icon aria-hidden className="size-[18px]" strokeWidth={1.75} />
+            </span>
+            <span className="flex flex-col gap-0.5">
+              <span className="text-sm font-semibold text-foreground">{label}</span>
+              <span className="text-sm text-muted-foreground">{hint}</span>
+            </span>
           </Link>
         ))}
       </section>
-    </main>
+    </Screen>
   );
 }
