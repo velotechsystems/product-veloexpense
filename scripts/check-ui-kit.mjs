@@ -33,7 +33,25 @@ const VENDORED = {
   card: 'components/ui/card.tsx',
   badge: 'components/ui/badge.tsx',
   'page-header': 'components/page-header.tsx',
+  // Wave 0: the kit primitives ported ExpenseOS screens use.
+  popover: 'components/ui/popover.tsx',
+  select: 'components/ui/select.tsx',
+  tooltip: 'components/ui/tooltip.tsx',
+  checkbox: 'components/ui/checkbox.tsx',
+  combobox: 'components/ui/combobox.tsx',
+  drawer: 'components/ui/drawer.tsx',
+  'emoji-picker': 'components/ui/emoji-picker.tsx',
+  breakpoints: 'lib/breakpoints.ts',
+  'use-is-compact': 'hooks/useIsCompact.ts',
 };
+
+/**
+ * Items with MORE THAN ONE file, compared file by file at each file's own `target`.
+ * `data-display` is ExpenseOS's data-table, filter and saved-view components (31 files),
+ * ported into the kit for Wave 0; a single-file comparison would check one and wave the
+ * other thirty through.
+ */
+const VENDORED_MULTI = ['data-display'];
 
 async function item(name) {
   if (!/^https?:/.test(REGISTRY)) return JSON.parse(readFileSync(join(REGISTRY, `${name}.json`), 'utf8'));
@@ -64,6 +82,37 @@ for (const [name, local] of Object.entries(VENDORED)) {
   } else {
     console.error(`  DRIFT ${local}  differs from the kit's "${name}" — re-copy it from lib-ui-kit; never edit it here`);
     failed++;
+  }
+}
+for (const name of VENDORED_MULTI) {
+  let kit;
+  try {
+    kit = await item(name);
+  } catch (err) {
+    console.error(`check:ui-kit: could not read the kit's "${name}": ${err.message}`);
+    failed++;
+    continue;
+  }
+  const files = kit.files ?? [];
+  if (files.length === 0) {
+    console.error(`check:ui-kit: the kit's "${name}" has no files`);
+    failed++;
+    continue;
+  }
+  for (const f of files) {
+    let mine;
+    try {
+      mine = readFileSync(f.target, 'utf8');
+    } catch {
+      console.error(`  MISSING ${f.target}  (kit ${name}) — copy it from lib-ui-kit`);
+      failed++;
+      continue;
+    }
+    if (mine === f.content) console.log(`  ok    ${f.target}  (= kit ${name})`);
+    else {
+      console.error(`  DRIFT ${f.target}  differs from the kit's "${name}" — re-copy it from lib-ui-kit; never edit it here`);
+      failed++;
+    }
   }
 }
 if (failed > 0) process.exit(1);
