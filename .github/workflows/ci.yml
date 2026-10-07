@@ -143,6 +143,12 @@ jobs:
       - name: Enum-in-a-select guard (no raw member in a dropdown)
         run: npm run check:options
 
+      # 2026 brand: the token sheet, Tailwind glue and shadcn components are
+      # vendored copies of lib-ui-kit. Fails when one drifts from the published
+      # registry (needs network; the kit is a public GitHub Pages site).
+      - name: Kit drift guard (vendored design system = published lib-ui-kit)
+        run: npm run check:ui-kit
+
       # Build first: Next 16 generates .next/types/** (e.g. LayoutProps) that the
       # standalone `tsc --noEmit` typecheck depends on.
       - name: Build

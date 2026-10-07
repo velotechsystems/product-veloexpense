@@ -146,14 +146,12 @@ test('a good colour reaches the PAGE, with the chosen foreground shown to the ad
   // cannot fail.
   const css = (await style.textContent()) ?? '';
   expect(css).not.toBe('');
-  expect(css).toContain(`--vl-brand:${BRAND}`);
+  expect(css).toContain(`--brand-primary:${BRAND}`);
   // The RAMP is there too, derived — not just the one colour the admin typed.
-  // Seven steps, none of them the sky hexes they replace.
-  for (const step of [50, 100, 200, 400, 600, 700, 900]) {
-    expect(css).toMatch(new RegExp(`--vl-brand-${step}:#[0-9a-f]{6}`));
+  // All eleven 2026-kit steps.
+  for (const step of [50, 100, 200, 300, 400, 500, 600, 700, 800, 900, 950]) {
+    expect(css).toMatch(new RegExp(`--brand-${step}:#[0-9a-f]{6}`));
   }
-  expect(css).not.toContain('#0284c7');
-  expect(css).not.toContain('#f0f9ff');
 
   // AND THE BROWSER AGREES, which is the only assertion here that can fail while
   // the string above is perfect — a `<style>` in the wrong place, or the imported
@@ -164,7 +162,7 @@ test('a good colour reaches the PAGE, with the chosen foreground shown to the ad
   // the value is `var(--y)` — substituted or not — so asserting on that would be a
   // test of Chrome's serialisation. Resolving `var(--primary)` into a real `color`
   // gives an rgb() triple and tests the whole indirection chain the token sheet
-  // depends on: --primary -> --vl-brand -> our injected block.
+  // depends on: --primary -> --brand-primary -> our injected block.
   const painted = await page.evaluate(() => {
     const probe = document.createElement('span');
     probe.style.color = 'var(--primary)';

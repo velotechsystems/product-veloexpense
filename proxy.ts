@@ -99,6 +99,12 @@ const PUBLIC = [
   /^\/api\/health$/,
   /^\/_next\//,
   /^\/favicon\.ico$/,
+  // 2026 brand: the wordmark and the favicon render BEFORE anyone signs in — on
+  // the sign-in page and in the tab — so they must never be redirected to it.
+  // (The design system's rollout note: an auth redirect blocked VeloLedger's
+  // logo on its own sign-in page.) Static files only; nothing here reads data.
+  /^\/brand\//,
+  /^\/apple-touch-icon\.png$/,
 ];
 
 export function proxy(req: NextRequest) {
@@ -117,5 +123,5 @@ export function proxy(req: NextRequest) {
 }
 
 export const config = {
-  matcher: ['/((?!api/auth|api/internal|api/platform|api/health$|_next/static|_next/image|favicon.ico|login|approve|signup|invite).*)'],
+  matcher: ['/((?!api/auth|api/internal|api/platform|api/health$|_next/static|_next/image|favicon.ico|brand/|apple-touch-icon.png|login|approve|signup|invite).*)'],
 };

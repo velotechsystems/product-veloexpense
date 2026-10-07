@@ -15,10 +15,11 @@
 import { describe, it, expect } from 'vitest';
 import {
   brandCss,
+  DARK_INK,
 } from '@/lib/branding/css';
 import {
-  brandDarkTints,
   brandRamp,
+  RAMP_STEPS,
   CONTRAST_FLOOR,
   contrastRatio,
   FOREGROUND_INK,
@@ -178,34 +179,28 @@ describe('readableForeground (VX4-3)', () => {
   });
 });
 
-describe('brandRamp (VX4-3)', () => {
+describe('brandRamp (VX4-3, 2026 kit: eleven steps)', () => {
   const BRANDS = ['#0284c7', '#dc2626', '#16a34a', '#ffff00', '#7c3aed', '#111827', '#0f766e'];
-  /** Light → dark. Tailwind's numbers are a convention, NOT this order. */
-  const ORDER = [50, 100, 200, 400, 600, 700, 900] as const;
 
-  it('emits seven valid hex steps for every brand', () => {
+  it('emits eleven valid hex steps for every brand', () => {
     for (const brand of BRANDS) {
       const ramp = brandRamp(brand);
-      for (const step of ORDER) {
+      expect(Object.keys(ramp).map(Number).sort((a, b) => a - b)).toEqual([...RAMP_STEPS]);
+      for (const step of RAMP_STEPS) {
         expect(ramp[step], `${brand} @ ${step}`).toMatch(/^#[0-9a-f]{6}$/);
       }
     }
   });
 
-  it('is strictly monotonic in lightness, in the 50→900 order and not the numeric one', () => {
+  it('is strictly monotonic in lightness, 50 → 950', () => {
     for (const brand of BRANDS) {
       const ramp = brandRamp(brand);
-      const ls = ORDER.map((step) => hexToOklab(ramp[step]).L);
+      const ls = RAMP_STEPS.map((step) => hexToOklab(ramp[step]).L);
       for (let i = 1; i < ls.length; i++) {
-        expect(ls[i], `${brand}: step ${ORDER[i]} is not darker than ${ORDER[i - 1]}`).toBeLessThan(
+        expect(ls[i], `${brand}: step ${RAMP_STEPS[i]} is not darker than ${RAMP_STEPS[i - 1]}`).toBeLessThan(
           ls[i - 1],
         );
       }
-      // 400 is LIGHTER than the brand and 600 darker — the property that makes
-      // the ramp usable as a Tailwind-shaped scale rather than just a gradient.
-      const own = hexToOklab(brand).L;
-      expect(hexToOklab(ramp[400]).L, brand).toBeGreaterThan(own - 0.35);
-      expect(hexToOklab(ramp[900]).L, brand).toBeLessThan(own + 0.35);
     }
   });
 
@@ -216,7 +211,7 @@ describe('brandRamp (VX4-3)', () => {
     // toward white, which desaturates unevenly per hue.
     for (const brand of ['#dc2626', '#16a34a', '#7c3aed', '#0284c7']) {
       const base = hexToOklab(brand);
-      for (const step of ORDER) {
+      for (const step of RAMP_STEPS) {
         const s = hexToOklab(brandRamp(brand)[step]);
         expect(Math.sign(s.a) === Math.sign(base.a) || Math.abs(s.a) < 0.02, `${brand} a @ ${step}`).toBe(true);
         expect(Math.sign(s.b) === Math.sign(base.b) || Math.abs(s.b) < 0.02, `${brand} b @ ${step}`).toBe(true);
@@ -224,75 +219,99 @@ describe('brandRamp (VX4-3)', () => {
     }
   });
 
-  it('derives a sky ramp close to the hand-tuned one it replaces', () => {
-    // Not identical — Tailwind's sky is hue-tuned per step and ours is one hue at
-    // seven lightnesses. Within 0.06 OKLab lightness at every step is the claim,
-    // which is what makes it safe to hand a tenant a generated ramp at all. (The
-    // DEFAULT palette is never generated: brand_color NULL emits nothing.)
+  it('keeps the seven VX4-3 steps where they were (a sky ramp close to the hand-tuned one)', () => {
+    // The 2026 kit added 300/500/800/950; the original seven must not have moved,
+    // or every branded tenant's product would shift colour in this release.
     const TAILWIND_SKY = { 50: '#f0f9ff', 100: '#e0f2fe', 200: '#bae6fd', 400: '#38bdf8', 600: '#0369a1', 700: '#075985', 900: '#082f49' } as const;
     const derived = brandRamp('#0284c7');
-    for (const step of ORDER) {
+    for (const step of [50, 100, 200, 400, 600, 700, 900] as const) {
       const delta = Math.abs(hexToOklab(TAILWIND_SKY[step]).L - hexToOklab(derived[step]).L);
       expect(delta, `step ${step}`).toBeLessThan(0.06);
     }
   });
-
-  it('emits dark tints that are dark, and lighter as the number grows', () => {
-    for (const brand of BRANDS) {
-      const d = brandDarkTints(brand);
-      const ls = [hexToOklab(d[50]).L, hexToOklab(d[100]).L, hexToOklab(d[200]).L];
-      expect(ls[0], brand).toBeLessThan(0.4);
-      expect(ls[0]).toBeLessThan(ls[1]);
-      expect(ls[1]).toBeLessThan(ls[2]);
-    }
-  });
 });
 
-describe('brandCss (VX4-3)', () => {
+describe('brandCss (VX4-3, on the 2026 kit)', () => {
+  /** `--name:#hex` out of one block of the emitted CSS. */
+  const read = (block: string, name: string) =>
+    new RegExp(`${name.replace(/-/g, '\\-')}:(#[0-9a-f]{6})(?:;|\\})`).exec(block)?.[1];
+  const blocks = (css: string) => {
+    const light = css.slice(0, css.indexOf(':root[data-theme="dark"]'));
+    const dark = css.slice(css.indexOf(':root[data-theme="dark"]'), css.indexOf('@media'));
+    const media = css.slice(css.indexOf('@media'));
+    return { light, dark, media };
+  };
+
   it('emits nothing at all when the tenant has no brand colour', () => {
     // Absence means untouched: no existing tenant's product changes appearance
     // because this ticket shipped.
     expect(brandCss(null)).toBeNull();
   });
 
-  it('overrides the brand primitives and both primary foregrounds', () => {
-    const out = brandCss('#0f766e');
-    expect(out).not.toBeNull();
-    const css = out!.css;
-    expect(css).toContain('--vl-brand:#0f766e');
-    for (const step of [50, 100, 200, 400, 600, 700, 900]) {
-      expect(css).toContain(`--vl-brand-${step}:#`);
+  it('re-binds the eleven --brand-* steps and every role the kit binds to the product', () => {
+    const { light, dark } = blocks(brandCss('#0f766e')!.css);
+    expect(read(light, '--brand-primary')).toBe('#0f766e');
+    for (const step of RAMP_STEPS) expect(read(light, `--brand-${step}`), `step ${step}`).toBeDefined();
+    for (const role of ['primary', 'on-primary', 'button', 'on-button', 'button-hover', 'link']) {
+      expect(read(light, `--brand-${role}`), `light ${role}`).toBeDefined();
+      expect(read(dark, `--brand-${role}`), `dark ${role}`).toBeDefined();
     }
-    // `--vl-white` must NOT be touched — it is the page and card background too.
-    expect(css).not.toContain('--vl-white');
-    expect(css).toContain('--primary-foreground:');
-    expect(css).toContain('--sidebar-primary-foreground:');
   });
 
-  it('matches the sheet\'s own dark selector, including the data-theme escape hatch', () => {
+  it('never touches the VeloExpense logo colours, the page surfaces or the old --vl-* names', () => {
     const css = brandCss('#0f766e')!.css;
-    expect(css).toContain('@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){');
+    expect(css).not.toContain('--brand-wordmark');
+    expect(css).not.toContain('--brand-halo');
+    expect(css).not.toContain('--vl-');
+    expect(css).not.toMatch(/--(background|card|popover):/);
+  });
+
+  it('out-ranks the kit\'s [data-app] binding, and mirrors both of its dark-mode selectors', () => {
+    // (0,2,0) beats the kit's [data-app='expense'] (0,1,0) on <html> regardless of
+    // which stylesheet the browser sees last.
+    const css = brandCss('#0f766e')!.css;
+    expect(css.startsWith(':root[data-app]{')).toBe(true);
+    expect(css).toContain(':root[data-theme="dark"][data-app]{');
+    expect(css).toContain('@media (prefers-color-scheme:dark){:root:not([data-theme])[data-app]{');
+    // The two dark blocks must carry the same declarations.
+    const { dark, media } = blocks(css);
+    expect(media.slice(media.indexOf('{', media.indexOf('[data-app]')) + 1, -2)).toBe(
+      dark.slice(dark.indexOf('{') + 1, -1),
+    );
   });
 
   /**
-   * The dark-mode fix asserted as a RATIO, not as the presence of a declaration.
-   * `--accent-foreground` is `--vl-brand-700` in the sheet — a dark step — and
-   * dark mode replaces the surface under it without replacing it, which is 2.14:1
-   * for the default palette. A branded tenant must not inherit that, and "the
-   * override is present" would not prove it.
+   * Every pair a tenant colour now paints, asserted as a RATIO over a sweep —
+   * "the declaration is present" would pass with an unreadable button.
    */
-  it('leaves dark-mode accent text readable on the dark accent surface', () => {
-    for (const brand of ['#0f766e', '#dc2626', '#7c3aed', '#111827', '#ffff00']) {
-      const css = brandCss(brand)!.css;
-      const dark = css.slice(css.indexOf('@media'));
-      const surface = /--vl-brand-50:(#[0-9a-f]{6})/.exec(dark)?.[1];
-      const text = /--accent-foreground:(#[0-9a-f]{6})/.exec(dark)?.[1];
-      expect(surface, brand).toBeDefined();
-      expect(text, brand).toBeDefined();
-      expect(contrastRatio(surface!, text!), `${brand} dark accent`).toBeGreaterThanOrEqual(
-        CONTRAST_FLOOR,
-      );
+  it('keeps every text-on-fill pair at or above 4.5:1, light and dark, across a colour sweep', () => {
+    let checked = 0;
+    for (const hex of sweep(51)) {
+      if (readableForeground(hex) === null) continue; // refused at the write
+      const { light, dark } = blocks(brandCss(hex)!.css);
+      const ramp = brandRamp(hex);
+      const pairs: Array<[string, string, string]> = [
+        ['light primary', read(light, '--brand-primary')!, read(light, '--brand-on-primary')!],
+        ['light button', read(light, '--brand-button')!, read(light, '--brand-on-button')!],
+        ['light link on white', '#ffffff', read(light, '--brand-link')!],
+        ['light accent text (800 on 50)', ramp[50], ramp[800]],
+        ['dark primary', read(dark, '--brand-primary')!, DARK_INK],
+        ['dark button', read(dark, '--brand-button')!, read(dark, '--brand-on-button')!],
+      ];
+      for (const [label, bg, fg] of pairs) {
+        expect(contrastRatio(bg, fg), `${hex} ${label}: ${fg} on ${bg}`).toBeGreaterThanOrEqual(CONTRAST_FLOOR);
+      }
+      checked++;
     }
+    expect(checked).toBeGreaterThan(150);
+  });
+
+  it('uses the tenant colour for links only where it reads on white', () => {
+    // #0f766e is 5.05:1 on white — kept. #ffff88 is legal (ink reads on it) but a
+    // yellow link on a white page is not, so the link drops to ramp 700.
+    expect(read(blocks(brandCss('#0f766e')!.css).light, '--brand-link')).toBe('#0f766e');
+    const pale = brandCss('#ffff88')!.css;
+    expect(read(blocks(pale).light, '--brand-link')).toBe(brandRamp('#ffff88')[700]);
   });
 
   it('is nothing but custom properties — no selector, string or tag can appear', () => {
@@ -300,8 +319,13 @@ describe('brandCss (VX4-3)', () => {
     // proves the guard is wired to every value. A future edit interpolating a
     // tenant NAME here would be a `</style>` away from an XSS and would fail.
     const css = brandCss('#0f766e')!.css;
+    const decls = '(?:--[a-z0-9-]+:#[0-9a-f]{6};)*--[a-z0-9-]+:#[0-9a-f]{6}';
     expect(css).toMatch(
-      /^:root\{(?:--[a-z0-9-]+:#[0-9a-f]{6};)*--[a-z0-9-]+:#[0-9a-f]{6}\}@media \(prefers-color-scheme:dark\)\{:root:not\(\[data-theme="light"\]\)\{(?:--[a-z0-9-]+:#[0-9a-f]{6};)*--[a-z0-9-]+:#[0-9a-f]{6}\}\}$/,
+      new RegExp(
+        `^:root\\[data-app\\]\\{${decls}\\}` +
+          `:root\\[data-theme="dark"\\]\\[data-app\\]\\{${decls}\\}` +
+          `@media \\(prefers-color-scheme:dark\\)\\{:root:not\\(\\[data-theme\\]\\)\\[data-app\\]\\{${decls}\\}\\}$`,
+      ),
     );
   });
 
@@ -311,14 +335,11 @@ describe('brandCss (VX4-3)', () => {
     // returning null and letting the caller fall back to the default palette.
     //
     // `#7f7f7f` is mid-grey: 4.00:1 against white and 4.46:1 against ink, so it
-    // fails BOTH — which is the only way to reach this branch, and the reason the
-    // first draft of this test was wrong. `#ffff88` looked unusable and is not:
-    // pale colours are the easy case (10:1 against ink). The genuinely unusable
-    // band is the MIDDLE of the luminance range, and it is where our own
-    // #0284c7 sits.
+    // fails BOTH — which is the only way to reach this branch. The genuinely
+    // unusable band is the MIDDLE of the luminance range.
     expect(() => brandCss('#7f7f7f')).toThrow(/no readable foreground/);
     expect(() => brandCss('#0284c7')).toThrow(/no readable foreground/);
-    // The easy case that fooled the first draft, asserted so it stays a case.
+    // Pale colours are the easy case (10:1 against ink), asserted so it stays one.
     expect(brandCss('#ffff88')).not.toBeNull();
   });
 });

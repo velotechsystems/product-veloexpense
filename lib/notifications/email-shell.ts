@@ -47,15 +47,14 @@
  * floor against the chosen foreground when it was saved, so the button is
  * readable by construction.
  *
- * A tenant with NO brand colour does NOT get `--vl-brand` (#0284c7), because that
- * colour is **4.10:1 against white and 4.36:1 against ink** — below AA either way
- * (the defect recorded under BR-3). Every other surface in the product already
- * renders it and changing that is not a porting ticket's call, but this surface is
- * NEW, and deliberately choosing a colour we have measured as inaccessible for
- * brand-new code is indefensible. So the default here is the ramp's own 600 step,
- * #0079bb at 4.72:1, derived rather than pasted so it cannot drift from the ramp.
- * The email's blue is therefore a shade deeper than the app's. That is the visible
- * edge of a real defect, and it should stay visible until the sheet is fixed.
+ * A tenant with NO brand colour gets VeloExpense's own primary from the 2026
+ * brand edition, `expense-primary` = oklch(0.55 0.15 222), as a hex because an
+ * email cannot read CSS variables. The guidelines put every product's light
+ * primary at L 0.55 so white text on it passes AA — which is true only once the
+ * colour is gamut-mapped into sRGB (#037e9c, 4.70:1); clipped per channel it is
+ * #0082af at 4.36:1. `oklchToHex` gamut-maps, and the test pins the ratio.
+ * (Before the 2026 kit this was the sky ramp's 600 step, chosen because the old
+ * sky primary #0284c7 failed AA at 4.10:1.)
  *
  * ── Email HTML is not HTML ──────────────────────────────────────────────────
  *
@@ -63,15 +62,15 @@
  * strips much of it), no external anything. `role="presentation"` so a screen
  * reader does not announce the layout scaffolding as a data table.
  */
-import { brandRamp, normaliseHex, readableForeground } from '@/lib/branding/color';
+import { normaliseHex, oklchToHex, readableForeground } from '@/lib/branding/color';
 import { escapeHtml } from '@/lib/notifications/html';
 
 /**
- * The accent for a tenant that has chosen nothing. Derived from the default brand
- * rather than written down, so it tracks the ramp. See the header for why it is
- * not `--vl-brand` itself.
+ * The accent for a tenant that has chosen nothing: VeloExpense's light primary,
+ * `expense-primary` in `app/velotech-tokens.css`. Computed from the same OKLCH
+ * the kit uses rather than pasted, so the test can hold the two together.
  */
-export const DEFAULT_EMAIL_ACCENT = brandRamp('#0284c7')[600];
+export const DEFAULT_EMAIL_ACCENT = oklchToHex(0.55, 0.15, 222);
 
 /** Ink and paper. Fixed: an email is not theme-aware and must not pretend to be. */
 const INK = '#0f172a';
