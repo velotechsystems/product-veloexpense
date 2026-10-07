@@ -39,11 +39,26 @@ ENV NEXT_TELEMETRY_DISABLED=1
 ENV PORT=3000
 ENV HOSTNAME=0.0.0.0
 
+# APK_REPO_SCHEME is "https" (the default) or "http". Pass
+#   --build-arg APK_REPO_SCHEME=http
+# only on a network that re-signs TLS to the Alpine CDN with a certificate authority the
+# container does not hold: John's Mac sits behind E Inc's Cloudflare Gateway, which does
+# that for dl-cdn.alpinelinux.org (found 6 Oct 2026). Over http, apk still verifies every
+# index and package against the Alpine signing keys shipped in the base image, so a
+# tampered package fails the build. What http gives up: privacy of which packages are
+# fetched, and protection from being served an older, still-signed index. ECR's scan of
+# the result reports any stale package that would let in. The repositories file goes
+# back to https before this layer ends, so the image never carries an http source.
+ARG APK_REPO_SCHEME=https
+
 # tini (PID 1, signal handling) is /sbin/tini on Alpine. Then: apply the base image's
 # pending security updates, and remove npm/npx/corepack — the running image only ever
 # runs `node`, and npm's own dependency tree is a scanner finding waiting to happen.
-RUN apk add --no-cache tini \
+RUN case "$APK_REPO_SCHEME" in https|http) ;; *) echo "APK_REPO_SCHEME must be https or http" >&2; exit 1 ;; esac \
+ && sed -i "s#^https://#${APK_REPO_SCHEME}://#" /etc/apk/repositories \
+ && apk add --no-cache tini \
  && apk upgrade --no-cache \
+ && sed -i 's#^http://#https://#' /etc/apk/repositories \
  && rm -rf /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/corepack \
            /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack
 
