@@ -149,6 +149,17 @@ jobs:
       - name: Kit drift guard (vendored design system = published lib-ui-kit)
         run: npm run check:ui-kit
 
+      # Wave 0 of the ExpenseOS port (decided 7 Oct): ported code runs on Prisma.
+      # The client is generated INTO the repo (lib/generated/prisma) so the Docker
+      # build never needs the Prisma CLI or its engine download; this regenerates it
+      # and fails if the committed copy is stale. Then the scope guard: one
+      # PrismaClient (lib/db/prisma.ts, tenant-scoped, throws unscoped) and no
+      # $queryRawUnsafe / $executeRawUnsafe anywhere.
+      - name: Prisma client is current (regenerate, compare)
+        run: npm run prisma:generate && git diff --exit-code lib/generated/prisma
+      - name: Prisma scope guard (one scoped client, no unsafe raw SQL)
+        run: npm run check:prisma
+
       # Build first: Next 16 generates .next/types/** (e.g. LayoutProps) that the
       # standalone `tsc --noEmit` typecheck depends on.
       - name: Build

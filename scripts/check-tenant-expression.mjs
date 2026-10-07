@@ -81,6 +81,10 @@ function isComment(line) {
 function walk(dir, out = []) {
   for (const name of readdirSync(dir)) {
     const p = join(dir, name);
+    // lib/generated/prisma is Prisma's machine output: it inlines prisma/schema.prisma,
+    // whose organization_id default (migration 0044) spells the expression for the
+    // CLIENT's benefit. Nothing there is a query this guard could redirect to ORG.
+    if (p === join('lib', 'generated')) continue;
     if (statSync(p).isDirectory()) walk(p, out);
     else if (/\.tsx?$/.test(p)) out.push(p);
   }

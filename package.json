@@ -27,11 +27,15 @@
     "e2e:crawl": "npm run check:build-fresh && STAGE=test npm run seed && E2E_PORT=3100 E2E_STORAGE_PORT=9501 E2E_SMTP_PORT=2625 E2E_MAIL_HTTP_PORT=2626 E2E_LEDGER_PORT=9511 E2E_LEDGER_CONTROL_PORT=9512 E2E_PLATFORM_PORT=9621 E2E_PLATFORM_CONTROL_PORT=9622 playwright test --config playwright.pseudo.config.ts",
     "check:tenant": "node scripts/check-tenant-expression.mjs",
     "check:rls-suite": "node scripts/check-rls-suite.mjs",
-    "check:ui-kit": "node scripts/check-ui-kit.mjs"
+    "check:ui-kit": "node scripts/check-ui-kit.mjs",
+    "check:prisma": "node scripts/check-prisma-scope.mjs",
+    "prisma:generate": "prisma generate"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1117.0",
     "@aws-sdk/s3-request-presigner": "^3.1117.0",
+    "@prisma/adapter-pg": "^7.8.0",
+    "@prisma/client": "^7.8.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "lucide-react": "^1.52.0",
@@ -54,6 +58,7 @@
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "16.3.8",
+    "prisma": "^7.8.0",
     "s3rver": "^3.7.1",
     "smtp-server": "^3.13.6",
     "tailwindcss": "^4",

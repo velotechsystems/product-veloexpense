@@ -1,0 +1,49 @@
+// VeloExpense — the Prisma view of the database, for code PORTED from ExpenseOS.
+//
+// ── THE SQL MIGRATIONS ARE THE SCHEMA OF RECORD ─────────────────────────────
+// Tables, RLS policies, composite tenant FKs and grants live in
+// prisma/migrations/*.sql, applied by scripts/migrate.mjs. Prisma Migrate is NOT
+// used: it knows nothing of RLS, and VeloExpense's guards check the SQL. This file
+// only DESCRIBES those tables to the Prisma client, and
+// test/prisma-schema.db.test.ts fails if it describes a column the database does
+// not have.
+//
+// ── MODEL AND FIELD NAMES ARE EXPENSEOS'S ───────────────────────────────────
+// So ported code (`db.expenseCategory.findMany({ where: { active: true } })`)
+// carries over unchanged. @@map / @map point those names at VeloExpense's
+// snake_case tables and columns. Models arrive with the wave that ports their
+// code (see the parity doc); this file starts with what Wave 0 needs.
+//
+// ── organizationId ──────────────────────────────────────────────────────────
+// Every tenant model declares it with the database's default (migration 0044),
+// so a ported `create` omits it and Postgres fills in the transaction's tenant.
+
+// The client is GENERATED INTO THE REPO (lib/generated/prisma) and committed, so
+// neither the Docker build nor a fresh clone needs the Prisma CLI or its engine
+// download (binaries.prisma.sh). CI regenerates it and fails if the committed copy
+// differs: `npm run prisma:generate && git diff --exit-code lib/generated/prisma`.
+generator client {
+  provider            = "prisma-client"
+  output              = "../lib/generated/prisma"
+  runtime             = "nodejs"
+  moduleFormat        = "esm"
+  importFileExtension = ""
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model ExpenseCategory {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String   @default(dbgenerated("(NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid")) @map("organization_id") @db.Uuid
+  code           String
+  label          String
+  active         Boolean  @default(true)
+  sortOrder      Int      @default(0) @map("sort_order")
+  glAccountId    String?  @map("gl_account_id") @db.Uuid
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@map("expense_category")
+}

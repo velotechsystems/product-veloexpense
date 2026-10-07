@@ -4,8 +4,22 @@ _Last updated: 2026-08-27 (Phase 1 COMPLETE through VX1-10; Phase 2 IN PROGRESS 
 
 ## 0. What VeloExpense is
 The commercial, **multi-tenant** SaaS expense product, built for third-party SMB
-customers. It is a **rebuild** on the shared Velotech foundation, using the
-mature **ExpenseOS** app as the behavioral spec (NOT a code lift-and-shift).
+customers, on the shared Velotech foundation.
+
+**DECIDED 7 Oct 2026 (John), and it overrides everything below that says otherwise:
+VeloExpense PORTS ExpenseOS — its actual code, not its behaviour.** A port carries
+over ExpenseOS's UI components, layout, logic, packages and tests, and adapts ONLY
+the seams that cannot transfer (data access, API, design system, text catalogue,
+permissions, jobs — see the parity doc,
+https://claude.ai/code/artifact/94417dd3-2d3f-43f2-ad96-6e3fba8807c9). Never
+re-implement from the spec and call it a port; when something was rebuilt instead,
+say so. Until 7 Oct this file said "behavioral spec (NOT a code lift-and-shift)",
+and the screens built under that line are rebuilds that the waves replace.
+Scope (7 Oct): everything in ExpenseOS except E Inc. branding (VeloExpense uses the
+2026 VeloTech kit), virtual cards / BuyerProgram, and ExpenseOS's own password /
+TOTP / passkey sign-in (auth-kit's Google + Microsoft SSO serves). Travel, the
+assistant and MCP are IN. Ported code runs on Prisma (`lib/db/prisma.ts`, tenant-
+scoped; RLS stays the enforcement); the worker is ported as-is in Wave 3.
 Two separate codebases:
 - **ExpenseOS** = EINC's single-tenant instance (the spec source). Repo: `github.com/carmigo/ExpenseOS`. Synced into the Google-Drive "PeopleOS HRIS System/ExpenseOS" folder; pull as gh user `johnrim-lab`.
 - **VeloExpense** = this repo, `github.com/velotechsystems/product-veloexpense`, in the poly-repo monorepo at `~/code/velotechsystems`.
@@ -50,6 +64,7 @@ Two separate codebases:
   QuickBooks reports unavailable until the platform's credentials exist.
 - **Session var name is `app.current_org`** (locked; do not use `app.current_organization_id`).
 - **Architecture = Next.js server actions + `lib/<domain>/` modules. NO tRPC** (matches VeloLedger; the original plan said tRPC — overridden).
+- **Ported ExpenseOS code uses `db` / `withTenantDb` from `lib/db/prisma.ts` (7 Oct).** Prisma describes tables the SQL migrations own (`prisma/schema.prisma`, ExpenseOS's model and field names mapped onto ours); Prisma Migrate is not used. The client is generated into `lib/generated/prisma` and committed (`npm run prisma:generate`; CI fails if stale). `db` throws outside a tenant scope; `check:prisma` fails on a second `PrismaClient` or `$queryRawUnsafe`. Every `organization_id` defaults to the scope (migration 0044), so ported `create` calls need no organization. Proof: `test/prisma-tenancy.db.test.ts`.
 - **Shared libs are VENDORED, not npm deps.** Copy the lib's `src/` into the app and pin the commit. `@velotech/auth-kit` is vendored at `src/auth-kit/` (pinned `e1db5c1`). `@velotech/ui` tokens are vendored at `app/velotech-tokens.css` + `app/tailwind-v4.css`; components come via `npx shadcn add https://velotechsystems.github.io/lib-ui-kit/r/<name>.json`.
 - **Git flow: this repo uses MERGE-COMMIT PRs (not squash).** So stacked branches are simple: `git fetch origin && git checkout -b <next> origin/main`. Always fetch before branching (local `origin/main` goes stale between merges).
 - **Every new tenant table** must have RLS + be added to the isolation test, and **every FK it points at another tenant table must be composite** (above). Three CI guards fail the build otherwise: RLS coverage, isolation-suite coverage, and the tenant-FK guard.
