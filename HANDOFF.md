@@ -349,6 +349,14 @@ So before pushing a new spec:
   never the DB) and public in `proxy.ts`. Mail uses the suite's `velocrm/smtp-credentials`.
 - **Verified 4 Oct, still OPEN:** VeloExpense has NO receipt extraction at all; upstream's is sync by default
   with Batch only for multi-upload, from one request builder.
+- **Dependency security (6 Oct).** `npm audit --omit=dev` found a CRITICAL `next` (three RCE advisories;
+  the Image Optimization one applies — `/_next/image` is served whether or not `next/image` is used) and
+  HIGH `nodemailer`, `sharp`, `source-map-js`, `next-auth`/`@auth/core` (the last two only via nodemailer).
+  Now `next` 16.3.8 (still an exact pin), `nodemailer` ^10.0.15, sharp 0.35.5, source-map-js 1.2.2: zero
+  production advisories. The `overrides` block in package.json lets next-auth/@auth/core accept nodemailer
+  10 — their peer range stops at ^8, and it is an OPTIONAL peer used only by Auth.js's Email provider, which
+  VeloExpense does not use. Remove the override when next-auth widens the range. Dev-only tooling advisories
+  (brace-expansion, braces, vitest mocker) remain; none ships in the image.
 
 ### PHASE 5 — Commercialization & GA. READ THIS FIRST; it is the current phase.
 
