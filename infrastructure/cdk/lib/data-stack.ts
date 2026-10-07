@@ -16,11 +16,11 @@
  *   · ENGINE 16, not 17. CI and every laptop run postgres:16, and the migrations
  *     (btree_gist exclusion constraints, FORCE RLS) are verified against 16.
  *     Moving the major version is its own change with its own test run.
- *   · NO RDS PROXY in staging. On Aurora Serverless v2 the proxy bills a minimum
+ *   · NO RDS PROXY in dev. On Aurora Serverless v2 the proxy bills a minimum
  *     of 8 ACUs (about US$85/month), more than this database costs at minimum.
  *     One web task with PG_POOL_MAX connections, plus a scheduled job now and
  *     then, does not need pooling in front of the pool. Production revisits it.
- *   · NO hosted rotation of the master secret in staging. The rotation Lambda
+ *   · NO hosted rotation of the master secret in dev. The rotation Lambda
  *     needs its own network path and an excludeCharacters set matching ours; it
  *     is production work. The master login is used only by the one-off database
  *     task (bootstrap + migrations), never by the running app.

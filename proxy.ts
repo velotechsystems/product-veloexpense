@@ -62,7 +62,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 //                                       that reason, and the first version of it
 //                                       passed with this entry deleted.
 //
-// Phase 5 staging adds a sixth, and it carries no credential because it
+// Phase 5's first deployment adds a sixth, and it carries no credential because it
 // discloses nothing:
 //   /api/health                         liveness for the load balancer's target
 //                                       group and the container health check,

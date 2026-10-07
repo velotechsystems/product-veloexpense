@@ -69,7 +69,7 @@ export class StorageStack extends Stack {
       enforceSSL: true,
       serverAccessLogsBucket: logBucket,
       serverAccessLogsPrefix: 'receipts/',
-      // Receipts are financial records people were told we keep. Even in staging
+      // Receipts are financial records people were told we keep. Even in a test environment
       // a stack deletion must not take them with it silently.
       removalPolicy: RemovalPolicy.RETAIN,
       cors: [

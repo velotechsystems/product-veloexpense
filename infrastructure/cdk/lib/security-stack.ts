@@ -69,7 +69,7 @@ export class SecurityStack extends Stack {
       enableKeyRotation: true,
       rotationPeriod: Duration.days(365),
       // RETAIN even outside production: a destroyed key makes every snapshot and
-      // every object encrypted under it unrecoverable, staging included.
+      // every object encrypted under it unrecoverable, test environments included.
       removalPolicy: RemovalPolicy.RETAIN,
       pendingWindow: Duration.days(30),
     });
