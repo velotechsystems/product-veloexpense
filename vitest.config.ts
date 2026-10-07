@@ -15,6 +15,7 @@ export default defineConfig({
       { find: /^@expenseos\/i18n\/catalogs\/(.*)$/, replacement: r('packages/i18n/src/catalogs/$1.json') },
       { find: /^@expenseos\/i18n\/(.*)$/, replacement: r('packages/i18n/src/$1.ts') },
       { find: /^@expenseos\/i18n$/, replacement: r('packages/i18n/src/index.ts') },
+      { find: /^@expenseos\/design-system$/, replacement: r('packages/design-system/src/index.ts') },
       { find: /^@\//, replacement: r('') },
     ],
   },
