@@ -22,13 +22,11 @@
  * ships BOTH: the stacked chart carries a legend and a direct label, and every
  * dimension below is a real table with numbers in it.
  *
- * DARK MODE IS NOT A SEPARATE PALETTE HERE, and that is a finding rather than a
- * shortcut: `--background` and `--card` are `var(--vl-white)`, and the dark block
- * in `app/velotech-tokens.css` does not redefine `--vl-white`. The chart surface
- * is #ffffff in both modes, so the palette validated against white IS the dark
- * palette. Validating a second one against a surface nothing renders on would be
- * paperwork. This is the same partial-dark-mode gap as the `--accent-foreground`
- * defect already pinned in `test/branding-color.test.ts`.
+ * DARK MODE (2026 kit): the kit now has a real dark card (L 0.20), which the old
+ * sheet did not. The 400 series reads well on it; the 700 series is darker than
+ * it was against white. NOT re-validated against the dark card yet — stated so
+ * nobody assumes it was. Gridlines and labels now read the kit's --border /
+ * --foreground / --muted-foreground, which flip correctly.
  *
  * ── Forms chosen by the data's job ──────────────────────────────────────────
  *
@@ -64,9 +62,18 @@ export function generateMetadata() {
 
 export const dynamic = 'force-dynamic';
 
-/** Validated: see the header. Committed is the darker, settled one. */
-const COMMITTED = '#075985';
-const PENDING = '#38bdf8';
+/**
+ * Validated: see the header. Committed is the darker, settled one.
+ *
+ * 2026 kit: the same two RAMP POSITIONS the validation picked (700 + 400), now
+ * read from the bound brand ramp instead of pasted sky hexes, so the chart is
+ * VeloExpense teal-blue like the rest of the product and follows a tenant's
+ * brand colour like the rest of the product. The pair keeps the property the
+ * validation rested on — a 0.24 OKLab lightness gap between the two series —
+ * because every kit ramp and every tenant ramp shares one lightness curve.
+ */
+const COMMITTED = 'var(--brand-700)';
+const PENDING = 'var(--brand-400)';
 
 function bigger(a: bigint, b: bigint) {
   return a > b ? a : b;
@@ -330,7 +337,7 @@ function MonthChart({
           y1={H - PAD_B}
           x2={W}
           y2={H - PAD_B}
-          stroke="var(--vl-ink-200, #e2e8f0)"
+          stroke="var(--border)"
           strokeWidth="1"
         />
         {slices.map((s, i) => {
@@ -371,7 +378,7 @@ function MonthChart({
                   y={Math.min(committedY, pendingY) - 6}
                   textAnchor="middle"
                   fontSize="11"
-                  fill="var(--vl-ink-700, #334155)"
+                  fill="var(--foreground)"
                 >
                   {money(total)}
                 </text>
@@ -381,7 +388,7 @@ function MonthChart({
                 y={H - PAD_B + 15}
                 textAnchor="middle"
                 fontSize="10"
-                fill="var(--vl-ink-500, #64748b)"
+                fill="var(--muted-foreground)"
               >
                 {monthLabel(s.label)}
               </text>

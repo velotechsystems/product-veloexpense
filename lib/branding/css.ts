@@ -2,63 +2,57 @@
  * VX4-3 — turning a tenant's brand colour into the CSS that retints the product.
  * PURE: takes a hex, returns a string. No `pg`, no React, no env.
  *
- * ── WHAT IS BEING OVERRIDDEN, AND WHY IT IS SO FEW LINES ────────────────────
+ * ── WHAT IS BEING OVERRIDDEN (2026 KIT) ─────────────────────────────────────
  *
- * `app/velotech-tokens.css` is indirected on purpose: every shadcn variable
- * references a `--vl-*` primitive ("change a --vl-* value and both the legacy vl-
- * UI and the shadcn components follow"). So overriding the eight brand primitives
- * moves `--primary`, `--ring`, `--accent`, the five `--chart-*` and the whole
- * sidebar without naming any of them. That indirection is the reason this is a
- * `:root` block and not the per-component surgery BR-3 describes on their side,
- * where the derived shades are flat hexes in the sheet.
+ * The shell sets `data-app="expense"`, and the kit (`app/velotech-tokens.css`)
+ * binds `--brand-50 … -950` and the roles `--brand-primary`, `-on-primary`,
+ * `-button`, `-on-button`, `-button-hover` and `-link` to VeloExpense's teal.
+ * Every shadcn variable reads those (`--primary`, `--ring`, `--accent`, the
+ * sidebar, the charts), so a branded tenant re-binds the same names and the
+ * product follows without any component being named.
  *
- * TWO THINGS DO NOT FOLLOW and must be named explicitly:
+ * The ROLES are re-bound as well as the ramp because the kit binds each role to
+ * the product's own token (`--brand-button: var(--expense-button)`), not to
+ * `--brand-200`; overriding the ramp alone would leave teal buttons on a
+ * tenant's green.
  *
- *   `--primary-foreground` / `--sidebar-primary-foreground` are `var(--vl-white)`,
- *   and white is not always readable on a tenant's colour. Overriding `--vl-white`
- *   instead would repaint every card and page background in the product, so the
- *   two foregrounds are set directly.
+ * NOT overridden: `--brand-wordmark` and `--brand-halo`. Those colour the
+ * VeloExpense logo, which stays VeloExpense's whichever tenant is signed in.
  *
- *   `--accent-foreground` is `var(--vl-brand-700)`, a DARK step, sitting on
- *   `--accent: var(--vl-brand-50)`. That reads in light mode and not in dark,
- *   where `--vl-brand-50` is itself a deep surface — see the a11y note below.
+ * ── SELECTORS ───────────────────────────────────────────────────────────────
  *
- * ── ABSENT MEANS UNTOUCHED ──────────────────────────────────────────────────
+ * `:root[data-app]` (0,2,0) so the tenant block beats the kit's
+ * `[data-app='expense']` (0,1,0) on the same element whatever order the two
+ * stylesheets load in. Dark mode mirrors the kit: `data-theme="dark"`, or the OS
+ * setting when the app sets no `data-theme`. The kit never flips the ramp in
+ * dark mode; it moves each role to a lighter step with dark ink, and this does
+ * the same with the tenant's ramp.
  *
- * `brand_color IS NULL` emits NOTHING, so the hand-tuned VeloTech sky palette
- * renders exactly as it does today and no existing tenant's product changes
- * appearance because this ticket shipped. 0021's absence-means-off reasoning: an
- * absent brand colour and a brand colour that happens to equal our sky are not
- * the same fact, and only one of them should move when the default does.
+ * ── LIGHT-MODE ROLES, AND WHY EACH IS SAFE ──────────────────────────────────
  *
- * ── THE TWO ACCESSIBILITY DEFECTS THIS WORK FOUND IN THE SHIPPED PALETTE ────
+ *   primary       the tenant's own colour, with the foreground `readableForeground`
+ *                 chose (white or ink) — unchanged from VX4-3.
+ *   button        ramp 200 fill, ramp 800 ink, hover 300: the kit's soft-strong
+ *                 shape. The test asserts >= 4.5:1 across a hue x lightness sweep.
+ *   link          the tenant colour when it reads on white (>= 4.5:1), else ramp
+ *                 700. A pale brand (#ffff88 is legal: ink reads on it) would
+ *                 otherwise be a yellow link on a white page.
  *
- * Both are in the default sheet, both are live today, and NEITHER is fixed here —
- * the sheet is shared VeloTech brand, so recolouring the product is not a call
- * this ticket gets to make. Reported so the numbers exist:
- *
- *   1. `--primary` #0284c7 with `--primary-foreground` white is **4.10:1**, below
- *      AA's 4.5 for the label on every primary button. Ink would be 4.36:1 — so
- *      the shipped pairing is the WORSE of the two available, and both are short.
- *      A consequence worth stating plainly: a tenant who types our own blue into
- *      the branding form is REFUSED by `readableForeground`, while a tenant who
- *      sets nothing is served that same blue. That is not special-cased. It is
- *      the rule reporting the defect.
- *
- *   2. In dark mode, `--accent-foreground` (`--vl-brand-700`, #075985) sits on
- *      `--accent` (`--vl-brand-50`, #0b2236) at **2.14:1** — the same pair is
- *      7.09:1 in light mode. Dark mode overrides the surface and not the text on
- *      it. A BRANDED tenant does not inherit this, because the dark block below
- *      also moves `--accent-foreground` to a light step (11.46:1 for sky), but an
- *      unbranded tenant still has it.
+ * Dark: primary/button = ramp 400 with the kit's dark ink #211c2b, hover 300,
+ * link 400 — the kit's own dark rule, asserted the same way.
  */
 import {
-  brandDarkTints,
   brandRamp,
+  contrastRatio,
+  CONTRAST_FLOOR,
   normaliseHex,
+  RAMP_STEPS,
   readableForeground,
   type BrandRamp,
 } from '@/lib/branding/color';
+
+/** The kit's dark-mode ink on brand fills (`velo-ink`, guidelines p.8). */
+export const DARK_INK = '#211c2b';
 
 const HEX = /^#[0-9a-f]{6}$/;
 
@@ -79,9 +73,7 @@ function token(name: string, value: string): string {
 }
 
 function rampTokens(ramp: BrandRamp): string[] {
-  return (Object.keys(ramp) as unknown as (keyof BrandRamp)[]).map((step) =>
-    token(`--vl-brand-${step}`, ramp[step]),
-  );
+  return RAMP_STEPS.map((step) => token(`--brand-${step}`, ramp[step]));
 }
 
 export interface BrandCssResult {
@@ -102,42 +94,38 @@ export function brandCss(brandColor: string | null): BrandCssResult | null {
   if (brandColor === null) return null;
   const brand = normaliseHex(brandColor);
   if (brand === null) throw new Error(`branding css: not a hex colour: ${JSON.stringify(brandColor)}`);
-
   const fg = readableForeground(brand);
   if (fg === null) {
     throw new Error(
       `branding css: ${brand} has no readable foreground — neither white nor ink reaches 4.5:1`,
     );
   }
+  const ramp = brandRamp(brand);
+  const link = contrastRatio(brand, '#ffffff') >= CONTRAST_FLOOR ? brand : ramp[700];
 
-  const light = brandRamp(brand);
-  const dark = brandDarkTints(brand);
-
-  const root = [
-    token('--vl-brand', brand),
-    ...rampTokens(light),
-    // Chosen per tenant. `--vl-white` is deliberately NOT touched: it is the page
-    // and card background too.
-    token('--primary-foreground', fg.hex),
-    token('--sidebar-primary-foreground', fg.hex),
+  const light = [
+    ...rampTokens(ramp),
+    token('--brand-primary', brand),
+    token('--brand-on-primary', fg.hex),
+    token('--brand-button', ramp[200]),
+    token('--brand-on-button', ramp[800]),
+    token('--brand-button-hover', ramp[300]),
+    token('--brand-link', link),
   ].join(';');
 
-  // Only the three deep surfaces the sheet itself replaces under dark mode, plus
-  // the accent text that the sheet forgets to replace with them (defect 2 above).
-  // The selector matches the sheet's exactly, including the `[data-theme='light']`
-  // escape hatch — a narrower one would leave dark mode half-retinted, which is
-  // the failure this block exists to prevent.
-  const darkBody = [
-    token('--vl-brand-50', dark[50]),
-    token('--vl-brand-100', dark[100]),
-    token('--vl-brand-200', dark[200]),
-    token('--accent-foreground', light[200]),
-    token('--sidebar-accent-foreground', light[200]),
+  const dark = [
+    token('--brand-primary', ramp[400]),
+    token('--brand-on-primary', DARK_INK),
+    token('--brand-button', ramp[400]),
+    token('--brand-on-button', DARK_INK),
+    token('--brand-button-hover', ramp[300]),
+    token('--brand-link', ramp[400]),
   ].join(';');
 
   const css =
-    `:root{${root}}` +
-    `@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){${darkBody}}}`;
+    `:root[data-app]{${light}}` +
+    `:root[data-theme="dark"][data-app]{${dark}}` +
+    `@media (prefers-color-scheme:dark){:root:not([data-theme])[data-app]{${dark}}}`;
 
   return { css, foreground: { hex: fg.hex, ratio: fg.ratio } };
 }

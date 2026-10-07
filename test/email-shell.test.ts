@@ -10,14 +10,13 @@
  *   always wrote white would pass every presence check and ship an invisible
  *   label on a lime-green button.
  *
- *   THE UNBRANDED DEFAULT IS NOT `--vl-brand`. #0284c7 is 4.10:1 against white and
- *   4.36:1 against ink — below AA either way — and this surface is new, so using it
- *   would be knowingly shipping a defect into fresh code. The default is the ramp's
- *   600 step. Pinned, because "just use the brand token" is the obvious future
- *   simplification and it is wrong.
+ *   THE UNBRANDED DEFAULT IS VELOEXPENSE'S OWN PRIMARY, and it is pinned to the
+ *   value in the shipped token sheet: an email cannot read CSS variables, so the
+ *   hex is computed, and this is what keeps it from drifting from the app.
  */
 import { describe, it, expect } from 'vitest';
-import { contrastRatio, CONTRAST_FLOOR, brandRamp } from '@/lib/branding/color';
+import { readFileSync } from 'node:fs';
+import { contrastRatio, CONTRAST_FLOOR } from '@/lib/branding/color';
 import { DEFAULT_EMAIL_ACCENT, emailShell, shellColors } from '@/lib/notifications/email-shell';
 
 const BODY = '<p style="margin:0">Nadia approved EXP-000042.</p>';
@@ -124,11 +123,12 @@ describe('the email shell (VX4-3 part 3)', () => {
 });
 
 describe('the email accent (VX4-3 part 3)', () => {
-  it('does NOT use --vl-brand for an unbranded tenant, because it fails AA', () => {
-    // 4.10:1 white / 4.36:1 ink. This surface is new, so choosing a colour we have
-    // measured as inaccessible would be shipping a known defect into fresh code.
-    expect(DEFAULT_EMAIL_ACCENT).not.toBe('#0284c7');
-    expect(DEFAULT_EMAIL_ACCENT).toBe(brandRamp('#0284c7')[600]);
+  it('defaults to VeloExpense\'s 2026 primary, read from the shipped token sheet, and passes AA', () => {
+    const sheet = readFileSync('app/velotech-tokens.css', 'utf8');
+    // The sheet's light value for expense-primary; the test fails if the kit moves
+    // the colour and the email does not follow.
+    expect(sheet).toMatch(/--expense-primary: oklch\(0\.550 0\.150 222\);/);
+    expect(DEFAULT_EMAIL_ACCENT).toMatch(/^#[0-9a-f]{6}$/);
     expect(contrastRatio(DEFAULT_EMAIL_ACCENT, '#ffffff')).toBeGreaterThanOrEqual(CONTRAST_FLOOR);
   });
 
@@ -185,5 +185,19 @@ describe('the email accent (VX4-3 part 3)', () => {
     });
     expect(html).toContain('color:#0f766e">Acme Inc</td>');
     expect(html).toContain('color:#0f766e;text-decoration:underline');
+  });
+});
+
+describe('oklchToHex gamut-maps rather than clips (2026 kit)', () => {
+  it('chroma-reduces an out-of-sRGB colour at constant lightness', async () => {
+    const { oklchToHex, hexToOklab } = await import('@/lib/branding/color');
+    // VeloExpense's primary is outside sRGB. Per-channel clipping gives #0082af
+    // (4.36:1 on white, under AA); chroma reduction keeps L and passes.
+    const hex = oklchToHex(0.55, 0.15, 222);
+    expect(hex).not.toBe('#0082af');
+    expect(Math.abs(hexToOklab(hex).L - 0.55)).toBeLessThan(0.005);
+    expect(contrastRatio(hex, '#ffffff')).toBeGreaterThanOrEqual(CONTRAST_FLOOR);
+    // An in-gamut colour comes back unchanged in chroma: VeloCRM's primary.
+    expect(oklchToHex(0.55, 0.15, 252)).toBe('#1c73c5');
   });
 });

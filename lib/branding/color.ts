@@ -20,6 +20,9 @@
  * colours pointing at them, so a tenant who overrides only `--vl-brand` gets a
  * green button on sky-blue accents. Deriving the ramp IS the ticket.
  *
+ * (2026 kit: the names are now `--brand-50 … -950` bound through `data-app`,
+ * eleven steps instead of seven; the reasoning is unchanged. See css.ts.)
+ *
  * ── THE TRAP THEIR CODE ALREADY PAID FOR: DERIVED SHADES MUST BE SOLID ──────
  *
  * The obvious implementation is alpha — `bg-primary/15` and be done. Their
@@ -156,26 +159,76 @@ export function oklabToHex({ L, a, b }: Oklab): string {
   ]);
 }
 
+/**
+ * `oklch(L C h)` (h in degrees) as `#rrggbb`, GAMUT-MAPPED the way CSS Color 4
+ * describes: when the colour is outside sRGB, chroma is reduced at constant
+ * lightness until it fits, rather than clipping each channel.
+ *
+ * The difference is not cosmetic. VeloExpense's primary, oklch(0.55 0.15 222),
+ * is outside sRGB; clipped per channel it is #0082af, 4.36:1 against white —
+ * under AA. Chroma-reduced it is #037e9c, 4.70:1. The brand guidelines' "every
+ * product passes at L 0.55" holds only for the second. Email needs a hex, so this
+ * is the one that is written down; see email-shell.ts.
+ */
+export function oklchToHex(L: number, C: number, hDeg: number): string {
+  const h = (hDeg * Math.PI) / 180;
+  const linear = (c: number): [number, number, number] => {
+    const a = c * Math.cos(h);
+    const b = c * Math.sin(h);
+    const l = (L + 0.3963377774 * a + 0.2158037573 * b) ** 3;
+    const m = (L - 0.1055613458 * a - 0.0638541728 * b) ** 3;
+    const s = (L - 0.0894841775 * a - 1.291485548 * b) ** 3;
+    return [
+      4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s,
+      -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s,
+      -0.0041960863 * l - 0.7034186147 * m + 1.707614701 * s,
+    ];
+  };
+  const inGamut = (c: number) => linear(c).every((v) => v >= -1e-4 && v <= 1 + 1e-4);
+  let lo = 0;
+  let hi = C;
+  if (!inGamut(C)) {
+    for (let i = 0; i < 30; i++) {
+      const mid = (lo + hi) / 2;
+      if (inGamut(mid)) lo = mid;
+      else hi = mid;
+    }
+  } else {
+    lo = C;
+  }
+  return oklabToHex({ L, a: lo * Math.cos(h), b: lo * Math.sin(h) });
+}
+
 /* ── the derived ramp ───────────────────────────────────────────────────── */
 
 /**
- * The eight `--vl-*` brand steps the token sheet declares, keyed exactly as the
- * CSS names them so the injector cannot drift from the sheet.
+ * The eleven `--brand-*` steps of the 2026 kit (`app/velotech-tokens.css`), keyed
+ * exactly as the CSS names them so the injector cannot drift from the sheet.
  *
- * `400` is LIGHTER than the brand and `600/700/900` darker, matching the Tailwind
- * sky scale the default palette was taken from — the numbers are Tailwind's
- * convention, not a lightness order, and reading them as one is how somebody
- * eventually emits a ramp that goes backwards.
+ * 2026 brand edition: every product owns an 11-stop ramp (`--<app>-50 … -950`)
+ * and the shell binds it to `--brand-*` through `data-app`. A branded tenant
+ * re-binds the same eleven names. Before the 2026 kit this was seven `--vl-brand-*`
+ * steps; 300, 500, 800 and 950 are new because the kit's roles read them
+ * (button hover = 300, button ink and accent text = 800).
+ *
+ * The numbers are lightness-ordered, light to dark, like the kit's ramps.
  */
 export interface BrandRamp {
   50: string;
   100: string;
   200: string;
+  300: string;
   400: string;
+  500: string;
   600: string;
   700: string;
+  800: string;
   900: string;
+  950: string;
 }
+
+/** The ramp's steps, light to dark. */
+export const RAMP_STEPS = [50, 100, 200, 300, 400, 500, 600, 700, 800, 900, 950] as const;
 
 /**
  * Lightness targets in OKLab, plus a chroma multiplier per step.
@@ -186,47 +239,35 @@ export interface BrandRamp {
  * generated ramp look chosen rather than computed — and it is the same shape
  * Tailwind's own scales have when you measure them.
  *
- * The dark-mode tints are separate rather than derived from the light ones,
- * because dark mode is not "the light ramp inverted": the token sheet overrides
- * only `--vl-brand-50/100/200` under `prefers-color-scheme: dark` (the deep
- * surfaces that sit behind text), and leaves `400..900` alone. Emitting a full
- * inverted ramp would fight the sheet instead of completing it.
+ * The seven original steps are unchanged (VX4-3); 300, 500, 800 and 950 sit
+ * between their neighbours on the same taper. Dark mode needs no separate tints
+ * any more: the 2026 kit never flips the ramp, it only picks a lighter step for
+ * each role (`test/branding-color.test.ts` asserts the contrast of every pair).
  */
 const LIGHT_STEPS: Record<keyof BrandRamp, { L: number; c: number }> = {
   50: { L: 0.977, c: 0.16 },
   100: { L: 0.949, c: 0.3 },
   200: { L: 0.888, c: 0.55 },
+  300: { L: 0.835, c: 0.75 },
   400: { L: 0.783, c: 0.92 },
+  500: { L: 0.66, c: 0.97 },
   600: { L: 0.552, c: 1.0 },
   700: { L: 0.463, c: 0.94 },
+  800: { L: 0.39, c: 0.82 },
   900: { L: 0.323, c: 0.7 },
-};
-
-const DARK_TINTS: Record<50 | 100 | 200, { L: number; c: number }> = {
-  50: { L: 0.244, c: 0.5 },
-  100: { L: 0.288, c: 0.62 },
-  200: { L: 0.35, c: 0.72 },
+  950: { L: 0.245, c: 0.5 },
 };
 
 function atLightness(base: Oklab, L: number, chromaScale: number): string {
   return oklabToHex({ L, a: base.a * chromaScale, b: base.b * chromaScale });
 }
 
-/** The seven light-mode steps, derived from one brand hex. */
+/** The eleven steps, derived from one brand hex. */
 export function brandRamp(brand: string): BrandRamp {
   const base = hexToOklab(brand);
-  const step = (k: keyof BrandRamp) => atLightness(base, LIGHT_STEPS[k].L, LIGHT_STEPS[k].c);
-  return { 50: step(50), 100: step(100), 200: step(200), 400: step(400), 600: step(600), 700: step(700), 900: step(900) };
-}
-
-/** The three deep surfaces dark mode replaces. */
-export function brandDarkTints(brand: string): Record<50 | 100 | 200, string> {
-  const base = hexToOklab(brand);
-  return {
-    50: atLightness(base, DARK_TINTS[50].L, DARK_TINTS[50].c),
-    100: atLightness(base, DARK_TINTS[100].L, DARK_TINTS[100].c),
-    200: atLightness(base, DARK_TINTS[200].L, DARK_TINTS[200].c),
-  };
+  const ramp = {} as BrandRamp;
+  for (const step of RAMP_STEPS) ramp[step] = atLightness(base, LIGHT_STEPS[step].L, LIGHT_STEPS[step].c);
+  return ramp;
 }
 
 /* ── the readable foreground ─────────────────────────────────────────────── */

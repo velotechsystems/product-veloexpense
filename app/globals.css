@@ -1,30 +1,24 @@
-/* VeloExpense — Velotech shared design tokens, vendored from lib-ui-kit. */
+/*
+ * VeloExpense — the VeloTech 2026 kit (lib-ui-kit), vendored. Do not edit the two
+ * imported files here: change lib-ui-kit and re-copy them (scripts/check-ui-kit.mjs
+ * fails CI when they drift from the published kit).
+ *
+ * The product's identity is `data-app="expense"` on <html> (app/layout.tsx), which
+ * binds the kit's --brand-* tokens to VeloExpense's teal-blue (hue 222). A branded
+ * tenant re-binds them on top (lib/branding/css.ts).
+ */
 @import "./velotech-tokens.css";
 @import "./tailwind-v4.css";
 
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
-
+/*
+ * Removed with the 2026 kit: the create-next-app leftovers that overrode the kit —
+ * a #ffffff/#171717 :root, a #0a0a0a dark ground, Geist, and `font-family: Arial`
+ * on <body>. The design system's rollout table named them.
+ */
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-sans);
 }

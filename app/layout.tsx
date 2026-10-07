@@ -17,14 +17,15 @@
  * ── The palette injection ───────────────────────────────────────────────────
  *
  * One `<style>` of custom properties, and `lib/branding/css.ts` explains why it is
- * so few lines: the token sheet is indirected, so overriding eight `--vl-*`
- * primitives moves `--primary`, `--ring`, `--accent`, the five `--chart-*` and the
- * whole sidebar without naming any of them.
+ * so few lines: the 2026 kit binds every shadcn variable to `--brand-*` through
+ * `data-app`, so re-binding the eleven ramp steps and six roles moves `--primary`,
+ * `--ring`, `--accent`, the buttons, the charts and the sidebar without naming any
+ * of them.
  *
- * IT GOES IN `<head>`, AFTER the imported sheet, and both halves of that matter.
- * After, because these are overrides at the same specificity and the later one
- * wins. In `<head>`, because a `<style>` discovered in `<body>` repaints what has
- * already been painted — the tenant's product would flash sky blue on every cold
+ * IT GOES IN `<head>`. Its selectors out-rank the kit's `[data-app]` binding, so
+ * stylesheet order no longer decides it (it used to: same specificity, last one
+ * won). In `<head>`, because a `<style>` discovered in `<body>` repaints what has
+ * already been painted — the tenant's product would flash VeloExpense teal on every cold
  * load, which is the kind of defect that gets called "just a flicker" and never
  * fixed.
  *
@@ -36,22 +37,55 @@
  * fails the suite instead of shipping a `</style>` escape.
  */
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import localFont from "next/font/local";
 import "./globals.css";
 import { brandingForRender } from "@/lib/branding/request";
 import { readerPrefs } from "@/lib/i18n/request";
 import { hostTenantMismatch } from "@/lib/tenant/request";
 import { WrongTenantHost } from "@/app/wrong-tenant-host";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
+/*
+ * 2026 brand edition: Plus Jakarta Sans for the UI, Josefin Sans Light for
+ * taglines and eyebrows, SELF-HOSTED from app/fonts (lib-ui-kit/fonts).
+ * `next/font/google` downloads at build time, which broke VeloCRM's production
+ * image and VeloLedger's CI build (design-system rollout notes), and would put
+ * fonts.googleapis.com on our build's critical path. The kit's tokens read
+ * --font-jakarta / --font-josefin and fall back to the system stack.
+ */
+const jakarta = localFont({
+  src: [
+    { path: "./fonts/PlusJakartaSans-400.woff2", weight: "400", style: "normal" },
+    { path: "./fonts/PlusJakartaSans-500.woff2", weight: "500", style: "normal" },
+    { path: "./fonts/PlusJakartaSans-600.woff2", weight: "600", style: "normal" },
+    { path: "./fonts/PlusJakartaSans-700.woff2", weight: "700", style: "normal" },
+    { path: "./fonts/PlusJakartaSans-800.woff2", weight: "800", style: "normal" },
+  ],
+  variable: "--font-jakarta",
+  display: "swap",
 });
 
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
+const josefin = localFont({
+  src: [
+    { path: "./fonts/JosefinSans-300.woff2", weight: "300", style: "normal" },
+    { path: "./fonts/JosefinSans-400.woff2", weight: "400", style: "normal" },
+  ],
+  variable: "--font-josefin",
+  display: "swap",
 });
+
+/*
+ * The product's own icons (2026 brand: the V from the wordmark on its glow dot).
+ * SVG first, which switches itself in dark mode; then the 16/32/48 .ico; then the
+ * 180px apple-touch icon. All under public/ and outside the sign-in redirect
+ * (proxy.ts). A tenant with a logo still gets its logo in the tab (VX4-3).
+ */
+const PRODUCT_ICONS: Metadata["icons"] = {
+  icon: [
+    { url: "/brand/veloexpense-favicon.svg", type: "image/svg+xml" },
+    { url: "/favicon.ico", sizes: "16x16 32x32 48x48" },
+  ],
+  apple: [{ url: "/apple-touch-icon.png", sizes: "180x180" }],
+};
 
 const PRODUCT = "VeloExpense";
 
@@ -74,11 +108,11 @@ export async function generateMetadata(): Promise<Metadata> {
     description: "Submit, approve, and reconcile expenses across your organization.",
     // The tenant's own wordmark as the tab icon when there is one. Next serves
     // this as a <link rel="icon"> pointing at our route, so the `?v=` stamp and
-    // the immutable cache apply to the favicon too — and a tenant with no logo
-    // gets no icon rather than somebody else's.
+    // the immutable cache apply to the favicon too. A tenant with no logo gets
+    // VeloExpense's own icon set (2026 brand), never another tenant's.
     icons:
       branding?.logo == null
-        ? undefined
+        ? PRODUCT_ICONS
         : [{ url: `/api/branding/logo?v=${branding.logo.updatedAt.getTime()}`, type: branding.logo.mime }],
   };
 }
@@ -104,7 +138,10 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html
       lang={locale}
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
+      // 2026 brand: the shell names the product and the kit binds its colours
+      // (app/velotech-tokens.css). Components never name a hue.
+      data-app="expense"
+      className={`${jakarta.variable} ${josefin.variable} h-full antialiased`}
     >
       <head>
         {css === null ? null : (
