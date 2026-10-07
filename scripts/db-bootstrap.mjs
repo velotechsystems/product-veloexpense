@@ -11,10 +11,17 @@
  *
  * ── WHAT IT DOES ────────────────────────────────────────────────────────────
  *
- *   1. Creates the app role if absent and (re)sets its password from the
- *      generated secret, with NOSUPERUSER NOBYPASSRLS spelled out. A role that
- *      could bypass RLS would make every isolation test in this repo describe a
- *      database the app does not actually run against.
+ *   1. Creates the app role if absent — NOSUPERUSER NOBYPASSRLS NOREPLICATION
+ *      spelled out — and (re)sets its password from the generated secret. A role
+ *      that could bypass RLS would make every isolation test in this repo describe
+ *      a database the app does not actually run against. Those three attributes
+ *      are set at CREATE only, and VERIFIED on every run (end of `bootstrap`):
+ *      Postgres refuses `ALTER ROLE … NOSUPERUSER` (or NOBYPASSRLS, NOREPLICATION)
+ *      from anyone who lacks the attribute themselves — even to turn it off — and
+ *      Aurora's master login is not a superuser. The first deployed run failed
+ *      exactly so ("permission denied to alter role", 6 Oct 2026); CI had not
+ *      caught it because CI's admin login IS a superuser. The test suite now runs
+ *      the bootstrap as a non-superuser too.
  *   2. Grants what HANDOFF §3 grants, on what exists now.
  *   3. ALTER DEFAULT PRIVILEGES — FOR ROLE the migrating login, explicitly — so a
  *      table or sequence a LATER migration creates is usable by the app too.
@@ -81,12 +88,15 @@ export async function bootstrap(client, { appUser, appPassword }) {
     const sql = (await client.query(`SELECT format(${template}) AS s`, args)).rows[0].s;
     await client.query(sql);
   };
-  if (!exists) await ddl(`'CREATE ROLE %I LOGIN', $1::text`, appUser);
-  await ddl(
-    `'ALTER ROLE %I WITH LOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE NOREPLICATION PASSWORD %L', $1::text, $2::text`,
-    appUser,
-    verifier,
-  );
+  if (!exists) {
+    await ddl(
+      `'CREATE ROLE %I WITH LOGIN NOSUPERUSER NOBYPASSRLS NOREPLICATION NOCREATEDB NOCREATEROLE', $1::text`,
+      appUser,
+    );
+  }
+  // No SUPERUSER / BYPASSRLS / REPLICATION here, not even the NO forms: see header §1.
+  // The check at the end catches a role that has drifted to any of them.
+  await ddl(`'ALTER ROLE %I WITH LOGIN NOCREATEDB NOCREATEROLE PASSWORD %L', $1::text, $2::text`, appUser, verifier);
 
   await ddl(`'GRANT CONNECT ON DATABASE %I TO %I', $1::text, $2::text`, who.d, appUser);
   await ddl(`'GRANT USAGE ON SCHEMA public TO %I', $1::text`, appUser);
@@ -135,10 +145,13 @@ export async function bootstrap(client, { appUser, appPassword }) {
   }
 
   const role = (
-    await client.query('SELECT rolsuper, rolbypassrls FROM pg_roles WHERE rolname = $1', [appUser])
+    await client.query('SELECT rolsuper, rolbypassrls, rolreplication FROM pg_roles WHERE rolname = $1', [appUser])
   ).rows[0];
   if (role.rolsuper || role.rolbypassrls) {
     throw new Error(`db-bootstrap: ${appUser} can bypass row level security; refusing.`);
+  }
+  if (role.rolreplication) {
+    throw new Error(`db-bootstrap: ${appUser} has REPLICATION, which can read every row; refusing.`);
   }
   return { created: !exists, database: who.d, migrator: who.u };
 }
@@ -168,7 +181,10 @@ async function main() {
 
 if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
   main().catch((err) => {
-    console.error(err instanceof Error ? err.message : err);
+    // Postgres puts the WHY in `detail` ("Only roles with the SUPERUSER attribute may
+    // change…"); the first deployed failure logged only the message.
+    const detail = err && typeof err === 'object' && 'detail' in err && err.detail ? ` — ${err.detail}` : '';
+    console.error(`${err instanceof Error ? err.message : err}${detail}`);
     process.exit(1);
   });
 }
