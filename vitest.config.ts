@@ -37,6 +37,8 @@ export default defineConfig({
     // `database "<your login>" does not exist` — a message that names the
     // database for a fault that is entirely in the shell. See the file.
     globalSetup: ['./test/support/require-db-env.ts'],
+    // ExpenseOS's per-file setup for its component tests (jsdom polyfills, jest-dom).
+    setupFiles: ['./test/support/ported-dom-setup.ts'],
     // VX2-10. `chain-verify.check.ts` is deliberately OUTSIDE the normal run and
     // has its own config, because it verifies the database AS IT STANDS rather
     // than data it wrote itself. Two reasons it cannot live here:
