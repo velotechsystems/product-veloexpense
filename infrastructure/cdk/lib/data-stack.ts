@@ -36,13 +36,11 @@ import {
   aws_ec2 as ec2,
   aws_kms as kms,
   aws_rds as rds,
+  aws_secretsmanager as secretsmanager,
 } from 'aws-cdk-lib';
 import type { Construct } from 'constructs';
 import type { VeloExpenseConfig } from './config';
 import { importShared } from './shared';
-
-/** Every printable ASCII punctuation character — see "Passwords exclude punctuation". */
-export const PUNCTUATION = ' !"#$%&\'()*+,-./:;<=>?@[\\]^_`{|}~';
 
 /** The master login. Used by the database task only. */
 export const ADMIN_USERNAME = 'veloexpense_admin';
@@ -84,14 +82,28 @@ export class DataStack extends Stack {
       },
     });
 
+    // The master login, generated ALPHANUMERIC. Not `Credentials.fromGeneratedSecret(…,
+    // { excludeCharacters })`: listing every punctuation character there leaves Secrets
+    // Manager's "include each character type" rule unsatisfiable, and the deploy fails
+    // with "All characters of the desired type have been excluded" (found on the first
+    // real deploy, 6 Oct). `excludePunctuation` turns the type off instead — the same
+    // setting SecurityStack's app-db secret uses, which deployed cleanly.
+    const masterSecret = new secretsmanager.Secret(this, 'MasterSecret', {
+      secretName: `${config.secretPrefix}/rds-master`,
+      description: 'VeloExpense Aurora master login - used only by the one-off database task',
+      encryptionKey: masterKey,
+      generateSecretString: {
+        secretStringTemplate: JSON.stringify({ username: ADMIN_USERNAME }),
+        generateStringKey: 'password',
+        passwordLength: 40,
+        excludePunctuation: true,
+      },
+    });
+
     this.cluster = new rds.DatabaseCluster(this, 'DbCluster', {
       clusterIdentifier: prefix,
       engine,
-      credentials: rds.Credentials.fromGeneratedSecret(ADMIN_USERNAME, {
-        secretName: `${config.secretPrefix}/rds-master`,
-        encryptionKey: masterKey,
-        excludeCharacters: PUNCTUATION,
-      }),
+      credentials: rds.Credentials.fromSecret(masterSecret),
       defaultDatabaseName: config.rds.databaseName,
       parameterGroup,
       serverlessV2MinCapacity: config.rds.minAcu,
