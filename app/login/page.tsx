@@ -29,6 +29,7 @@
  */
 import { LoginScreen } from './login-screen';
 import { checkSlug } from '@/lib/onboarding/slug';
+import { safeCallbackPath } from '@/lib/auth/callback-url';
 
 import { pageTitle } from '@/lib/i18n/page-title';
 
@@ -43,13 +44,15 @@ export const dynamic = 'force-dynamic';
 export default async function LoginPage({
   searchParams,
 }: {
-  searchParams: Promise<{ org?: string }>;
+  searchParams: Promise<{ org?: string; callbackUrl?: string }>;
 }) {
-  const { org } = await searchParams;
+  const { org, callbackUrl } = await searchParams;
   // Validated, not trusted. `?org=` is whatever is in the address bar, and it is
   // about to be prefilled into a field whose value goes into an HttpOnly cookie.
   // `setSsoOrgCookie` checks the shape again on the way in — this is the same
   // rule at the other end, so nothing unusable is ever shown as though it were.
   const initialOrgSlug = org !== undefined && checkSlug(org) === null ? org : '';
-  return <LoginScreen initialOrgSlug={initialOrgSlug} />;
+  // Where a successful sign-in lands — see `lib/auth/callback-url.ts` for the bug
+  // that leaving this out caused, and for why the value is narrowed.
+  return <LoginScreen initialOrgSlug={initialOrgSlug} redirectTo={safeCallbackPath(callbackUrl)} />;
 }
