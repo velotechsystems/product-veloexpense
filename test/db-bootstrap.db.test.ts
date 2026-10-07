@@ -52,12 +52,23 @@ async function withAdminClient<T>(fn: (c: import('pg').PoolClient) => Promise<T>
   }
 }
 
+/** Aurora-shaped master for the non-superuser case: CREATEROLE + CREATEDB, NOT superuser. */
+const MASTER = 'vx_boot_master';
+const ROLE_AURORA = 'vx_boot_test_aurora';
+
 async function dropRole() {
   await admin.query('DROP TABLE IF EXISTS public.vx_boot_later');
-  const exists = await admin.query('SELECT 1 FROM pg_roles WHERE rolname = $1', [ROLE]);
-  if (exists.rowCount) {
-    await admin.query(`DROP OWNED BY ${ROLE}`);
-    await admin.query(`DROP ROLE ${ROLE}`);
+  // MASTER first: the Aurora-case app role holds grants MASTER made, which DROP OWNED
+  // BY that role (issued by the table owner) does not revoke; dropping MASTER's
+  // privileges revokes them with it. (Both in ONE DROP OWNED trips a Postgres error,
+  // "could not find tuple for default ACL".)
+  for (const name of [MASTER, ROLE_AURORA, ROLE]) {
+    const exists = await admin.query('SELECT 1 FROM pg_roles WHERE rolname = $1', [name]);
+    if (exists.rowCount) await admin.query(`DROP OWNED BY ${name}`);
+  }
+  for (const name of [ROLE_AURORA, MASTER, ROLE]) {
+    const exists = await admin.query('SELECT 1 FROM pg_roles WHERE rolname = $1', [name]);
+    if (exists.rowCount) await admin.query(`DROP ROLE ${name}`);
   }
 }
 
@@ -139,6 +150,54 @@ describe('bootstrap', () => {
       return bootstrap(skipping, { appUser: ROLE, appPassword: PW2 }).catch((e: unknown) => e);
     });
     expect(String(err)).toMatch(/pg_default_acl is missing grants to vx_boot_test .*: tables .*; sequences/);
+  });
+
+  it('runs as a NON-superuser master, as on Aurora — create, then update', async () => {
+    // CI's admin login is a superuser; Aurora's master is not. ALTER ROLE … NOSUPERUSER
+    // from a non-superuser is refused by Postgres, which only the deployed run found.
+    // SET ROLE makes superuser() false for the statements that follow, exactly as a
+    // separate non-superuser login would.
+    await admin.query(`CREATE ROLE ${MASTER} NOLOGIN CREATEROLE CREATEDB`);
+    // On Aurora the master OWNS what it migrates, so it can pass grants on. Here the
+    // migrations ran as the superuser, so give the master the same reach — with
+    // grant option, nothing more. It still is not a superuser, which is the point.
+    const db = (await admin.query('SELECT current_database() AS d')).rows[0].d as string;
+    await admin.query(`GRANT CONNECT ON DATABASE ${db} TO ${MASTER} WITH GRANT OPTION`);
+    await admin.query(`GRANT USAGE ON SCHEMA public TO ${MASTER} WITH GRANT OPTION`);
+    await admin.query(`GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO ${MASTER} WITH GRANT OPTION`);
+    await admin.query(`GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO ${MASTER} WITH GRANT OPTION`);
+    const runAsMaster = (appPassword: string) =>
+      withAdminClient(async (c) => {
+        await c.query(`SET ROLE ${MASTER}`);
+        try {
+          return await bootstrap(c, { appUser: ROLE_AURORA, appPassword });
+        } finally {
+          await c.query('RESET ROLE');
+        }
+      });
+    const first = await runAsMaster(PW1);
+    expect(first).toMatchObject({ created: true, migrator: MASTER });
+    const second = await runAsMaster(PW2);
+    expect(second).toMatchObject({ created: false, migrator: MASTER });
+    const r = await admin.query(
+      'SELECT rolsuper, rolbypassrls, rolreplication, rolcreatedb, rolcreaterole, rolcanlogin FROM pg_roles WHERE rolname = $1',
+      [ROLE_AURORA],
+    );
+    expect(r.rows[0]).toEqual({
+      rolsuper: false,
+      rolbypassrls: false,
+      rolreplication: false,
+      rolcreatedb: false,
+      rolcreaterole: false,
+      rolcanlogin: true,
+    });
+  });
+
+  it('refuses a role that has drifted to BYPASSRLS, rather than resetting it silently', async () => {
+    await admin.query(`ALTER ROLE ${ROLE_AURORA} BYPASSRLS`);
+    const err = await withAdminClient((c) => bootstrap(c, { appUser: ROLE_AURORA, appPassword: PW2 }).catch((e: unknown) => e));
+    expect(String(err)).toMatch(/can bypass row level security; refusing/);
+    await admin.query(`ALTER ROLE ${ROLE_AURORA} NOBYPASSRLS`);
   });
 
   it.each([
