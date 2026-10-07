@@ -115,6 +115,30 @@ test.describe('the home page', () => {
         page.getByRole('heading', { name: HEADING[firstOutstanding] }),
       ).toBeVisible();
     });
+    test('the checklist can be put away to one line and brought back, never dismissed', async ({
+      page,
+    }) => {
+      // Decided 7 Oct: "Hide" collapses to one line that keeps the count in view.
+      // Only meaningful while something is outstanding, which `setupStatus` says.
+      const status = await withOrg(await demoOrgId(), (tx) => setupStatus(tx));
+      test.skip(status.complete, 'nothing outstanding in the demo tenant: no checklist to hide');
+
+      await page.goto('/');
+      await page.getByRole('button', { name: 'Hide' }).click();
+      const line = page.getByTestId('setup-collapsed');
+      await expect(line).toBeVisible();
+      await expect(line).toContainText(/steps? left/);
+      await expect(page.getByRole('link', { name: 'Set up approvals' })).toBeHidden();
+
+      // Remembered: a fresh load still shows the one line.
+      await page.reload();
+      await expect(page.getByTestId('setup-collapsed')).toBeVisible();
+
+      // And back — which also leaves the tenant as the other specs expect it.
+      await page.getByRole('button', { name: 'Show' }).click();
+      await expect(page.getByTestId('setup-collapsed')).toBeHidden();
+      await expect(page.getByRole('heading', { name: 'Finish setting up' })).toBeVisible();
+    });
   });
 
   test.describe('as an employee', () => {

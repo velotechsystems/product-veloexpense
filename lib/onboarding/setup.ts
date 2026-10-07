@@ -124,3 +124,25 @@ export async function setupStatus(tx: QueryRunner): Promise<SetupStatus> {
     memberCount: members,
   };
 }
+
+/**
+ * Whether THIS admin has collapsed the checklist to one line (migration 0043).
+ *
+ * A per-person display choice, so no audit row: it changes what one reader sees,
+ * not what the organization has decided. RLS scopes the row to the tenant; the
+ * id scopes it to the person.
+ */
+export async function isSetupCollapsed(tx: QueryRunner, userId: string): Promise<boolean> {
+  const r = await tx.query<{ c: boolean }>(
+    'SELECT setup_checklist_collapsed AS c FROM app_user WHERE id = $1',
+    [userId],
+  );
+  return r.rows[0]?.c === true;
+}
+
+export async function setSetupCollapsed(tx: QueryRunner, userId: string, collapsed: boolean): Promise<void> {
+  await tx.query(
+    'UPDATE app_user SET setup_checklist_collapsed = $2, updated_at = now() WHERE id = $1',
+    [userId, collapsed],
+  );
+}

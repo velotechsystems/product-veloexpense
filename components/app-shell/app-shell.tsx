@@ -106,23 +106,27 @@ function Sidebar({ ctx, locale }: { ctx: NavContext; locale: string }) {
         ))}
       </nav>
 
-      <div className="flex items-center gap-3 border-t border-sidebar-border px-4 py-3">
-        <div className="min-w-0 flex-1">
+      <div className="flex flex-col gap-2 border-t border-sidebar-border px-3 py-3">
+        <div className="min-w-0 px-3">
           <p className="truncate text-sm font-medium text-foreground" translate="no">
             {ctx.name}
           </p>
-          <p className="truncate text-xs text-muted-foreground" translate="no">
-            {ctx.email}
-          </p>
+          {/* With no display name the name IS the email; saying it twice is noise. */}
+          {ctx.name !== ctx.email ? (
+            <p className="truncate text-xs text-muted-foreground" translate="no">
+              {ctx.email}
+            </p>
+          ) : null}
         </div>
+        {/* A labelled row, not a bare icon: an unlabelled arrow in the corner was
+            easy to miss on the first dev review (7 Oct). */}
         <form action={signOutAction}>
           <button
             type="submit"
-            title={uiText('nav.sidebar.sign.out', locale)}
-            className="inline-flex size-9 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
           >
-            <LogOut aria-hidden className="size-[18px]" strokeWidth={1.75} />
-            <span className="sr-only">{uiText('nav.sidebar.sign.out', locale)}</span>
+            <LogOut aria-hidden className="size-[18px] shrink-0" strokeWidth={1.75} />
+            {uiText('nav.sidebar.sign.out', locale)}
           </button>
         </form>
       </div>

@@ -9,9 +9,12 @@
  * An employee never asks for the checklist and never gets a refusal page for
  * something that was never theirs to do.
  */
-import { asAdminPage, asMember } from '@/lib/auth/admin-guard';
+import { revalidatePath } from 'next/cache';
+import { redirect } from 'next/navigation';
+import { errorParam } from '@/lib/errors/domain';
+import { asAdmin, asAdminPage, asMember } from '@/lib/auth/admin-guard';
 import { isActiveAdmin } from '@/lib/auth/actor';
-import { setupStatus } from '@/lib/onboarding/setup';
+import { isSetupCollapsed, setSetupCollapsed, setupStatus } from '@/lib/onboarding/setup';
 import { getBranding } from '@/lib/branding/service';
 
 export async function getHomeContext() {
@@ -23,5 +26,26 @@ export async function getHomeContext() {
 }
 
 export async function getSetupStatus() {
-  return asAdminPage((tx) => setupStatus(tx));
+  return asAdminPage(async (tx, actor) => ({
+    ...(await setupStatus(tx)),
+    collapsed: await isSetupCollapsed(tx, actor.id),
+  }));
+}
+
+/**
+ * "Hide" / "Show" on the checklist (decided 7 Oct: collapse to one line, never
+ * dismiss). Admin-gated like the checklist itself. The only input is which way,
+ * read as a closed choice so a hand-edited form cannot store anything else.
+ */
+export async function setSetupCollapsedFromForm(form: FormData) {
+  const collapsed = form.get('collapsed') === '1';
+  let failure: string | null = null;
+  try {
+    await asAdmin((tx, actor) => setSetupCollapsed(tx, actor.id, collapsed));
+  } catch (err) {
+    failure = `/?error=${encodeURIComponent(errorParam(err, 'home'))}`;
+  }
+  // Outside the try: `redirect` works by throwing, and a catch-all would eat it.
+  if (failure) redirect(failure);
+  revalidatePath('/');
 }
