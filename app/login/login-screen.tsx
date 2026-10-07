@@ -19,7 +19,7 @@ import { signIn } from 'next-auth/react';
 import { LoginScreen as AuthKitLoginScreen } from '@/src/auth-kit/login/LoginScreen';
 import { setSsoOrgCookie } from './actions';
 
-export function LoginScreen({ initialOrgSlug }: { initialOrgSlug: string }) {
+export function LoginScreen({ initialOrgSlug, redirectTo }: { initialOrgSlug: string; redirectTo: string }) {
   const [orgSlug, setOrgSlug] = useState(initialOrgSlug);
 
   return (
@@ -52,7 +52,10 @@ export function LoginScreen({ initialOrgSlug }: { initialOrgSlug: string }) {
       onOrgSlugChange={setOrgSlug}
       onSso={async (provider, slug) => {
         const res = await setSsoOrgCookie(slug);
-        if (res.ok) signIn(provider);
+        // `redirectTo` is REQUIRED here: without it next-auth/react returns to
+        // `window.location.href` — this login page — and a successful sign-in
+        // looks like a refused one (lib/auth/callback-url.ts).
+        if (res.ok) signIn(provider, { redirectTo });
       }}
     />
   );
