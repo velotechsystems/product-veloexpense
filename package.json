@@ -56,7 +56,7 @@
     "s3rver": "^3.7.1",
     "smtp-server": "^3.13.6",
     "tailwindcss": "^4",
-    "typescript": "^5",
+    "typescript": "^7",
     "vitest": "^2.1.8"
   },
   "overrides": {
