@@ -13,7 +13,6 @@
  * manager puts them in an approval ladder this product treats as broken rather
  * than blank.
  */
-import Link from 'next/link';
 import { ErrorBanner } from '@/app/expenses/ui';
 import { inviteEmployeeFromForm, getDirectoryOptions } from '../actions';
 import { readerPrefs } from '@/lib/i18n/request';
@@ -21,6 +20,7 @@ import { EmployeeForm } from '../employee-form';
 import { INVITE_TTL_DAYS } from '@/lib/invites/service';
 
 import { pageTitle } from '@/lib/i18n/page-title';
+import { BackLink, PageHeader, Screen } from '@/components/screen';
 
 // UD-16. See `lib/i18n/page-title.ts` for why the title lives here rather than
 // in a map of routes, and `scripts/check-page-titles.mjs` for what enforces it.
@@ -40,21 +40,14 @@ export default async function InviteEmployeePage({
   const options = await getDirectoryOptions();
 
   return (
-    <div className="mx-auto flex w-full max-w-3xl flex-col gap-6 p-6">
-      <header className="flex flex-col gap-1">
-        <Link
-          className="text-sm text-muted-foreground underline-offset-4 hover:underline"
-          href="/admin/employees"
-        >
-          ← Employees
-        </Link>
-        <h1 className="text-2xl font-semibold tracking-tight">Invite someone</h1>
-        <p className="text-sm text-muted-foreground">
-          They get an email inviting them to sign in with their work account. The invitation
-          lasts {INVITE_TTL_DAYS} days, only works for the address you give here, and they
-          appear in your directory once they accept.
-        </p>
-      </header>
+    <Screen width="narrow">
+      <div className="flex flex-col gap-2">
+        <BackLink href="/admin/employees">Employees</BackLink>
+        <PageHeader
+          title="Invite someone"
+          description={`They get an email inviting them to sign in with their work account. The invitation lasts ${INVITE_TTL_DAYS} days, only works for the address you give here, and they appear in your directory once they accept.`}
+        />
+      </div>
 
       <ErrorBanner message={error} />
 
@@ -65,6 +58,6 @@ export default async function InviteEmployeePage({
         showStatus={false}
         submitLabel="Send the invitation"
       />
-    </div>
+    </Screen>
   );
 }

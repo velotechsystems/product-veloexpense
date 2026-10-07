@@ -20,6 +20,9 @@ import { readerPrefs } from '@/lib/i18n/request';
 import { drainNowFromForm, getQueuePage, retryDeliveryFromForm } from './actions';
 
 import { pageTitle } from '@/lib/i18n/page-title';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { TableCard } from '@/components/screen';
+import { PageHeader, Screen } from '@/components/screen';
 
 // UD-16. See `lib/i18n/page-title.ts` for why the title lives here rather than
 // in a map of routes, and `scripts/check-page-titles.mjs` for what enforces it.
@@ -50,31 +53,27 @@ export default async function NotificationDeliveryPage({
   const needsAttention = summary.dead + summary.failed;
 
   return (
-    <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 p-6">
-      <header className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Email delivery</h1>
-          <p className="text-sm text-muted-foreground">
-            {needsAttention === 0
-              ? `${summary.pending} waiting · nothing needs attention`
-              : `${needsAttention} need attention · ${summary.pending} waiting`}
-          </p>
-        </div>
-        <div className="flex items-center gap-3">
-          {/* No admin navigation exists yet — HANDOFF §7. */}
-          <Link href="/admin/notification-templates" className="text-sm underline underline-offset-4">
-            Wording
-          </Link>
-          <Link href="/admin/approval-ladder" className="text-sm underline underline-offset-4">
-            Approval ladder
-          </Link>
-          <form action={drainNowFromForm}>
-            <Button type="submit" variant="outline">
-              Send waiting mail now
+    <Screen width="wide">
+      <PageHeader
+        title="Email delivery"
+        description={
+          needsAttention === 0
+            ? `${summary.pending} waiting · nothing needs attention`
+            : `${needsAttention} need attention · ${summary.pending} waiting`
+        }
+        actions={
+          <>
+            <Button asChild variant="ghost">
+              <Link href="/admin/notification-templates">Wording</Link>
             </Button>
-          </form>
-        </div>
-      </header>
+            <form action={drainNowFromForm}>
+              <Button type="submit" variant="outline">
+                Send waiting mail now
+              </Button>
+            </form>
+          </>
+        }
+      />
 
       <ErrorBanner message={error} />
 
@@ -138,19 +137,19 @@ export default async function NotificationDeliveryPage({
         </span>
       </div>
 
-      <div className="overflow-x-auto rounded-lg border border-border">
-        <table className="w-full min-w-[980px] text-left text-sm">
-          <thead className="bg-muted/50 text-xs uppercase tracking-wide text-muted-foreground">
-            <tr>
-              <th className="px-3 py-2 font-medium">To</th>
-              <th className="px-3 py-2 font-medium">About</th>
-              <th className="px-3 py-2 font-medium">State</th>
-              <th className="px-3 py-2 font-medium">Tries</th>
-              <th className="px-3 py-2 font-medium">What happened</th>
-              <th className="px-3 py-2" />
-            </tr>
-          </thead>
-          <tbody>
+      <TableCard>
+        <Table className="min-w-[980px]">
+          <TableHeader>
+            <TableRow>
+              <TableHead>To</TableHead>
+              <TableHead>About</TableHead>
+              <TableHead>State</TableHead>
+              <TableHead>Tries</TableHead>
+              <TableHead>What happened</TableHead>
+              <TableHead />
+            </TableRow>
+          </TableHeader>
+          <TableBody>
             {rows.length === 0 ? (
               <EmptyRow colSpan={6}>
                 {filter === 'UNSETTLED'
@@ -159,16 +158,16 @@ export default async function NotificationDeliveryPage({
               </EmptyRow>
             ) : (
               rows.map((row) => (
-                <tr key={row.id} className="border-t border-border align-top">
-                  <td className="px-3 py-2">
+                <TableRow key={row.id} className="align-top">
+                  <TableCell>
                     {row.recipientName}
                     <p className="text-xs text-muted-foreground">
                       {/* The address we actually USED, recorded at send time, not
                           the one they have now. */}
                       {row.destination ?? row.recipientEmail}
                     </p>
-                  </td>
-                  <td className="px-3 py-2">
+                  </TableCell>
+                  <TableCell>
                     <Link
                       href={`/expenses/${row.subjectId}`}
                       className="underline underline-offset-4"
@@ -176,8 +175,8 @@ export default async function NotificationDeliveryPage({
                       {row.eventType}
                     </Link>
                     <p className="text-xs text-muted-foreground">{formatInstant(row.createdAt, prefs)}</p>
-                  </td>
-                  <td className="px-3 py-2">
+                  </TableCell>
+                  <TableCell>
                     <span
                       className={`rounded border px-2 py-0.5 text-xs ${STATUS_TONE[row.status] ?? ''}`}
                     >
@@ -198,9 +197,9 @@ export default async function NotificationDeliveryPage({
                         in flight, held by {row.claimedBy ?? 'a sender'}
                       </p>
                     ) : null}
-                  </td>
-                  <td className="px-3 py-2 tabular-nums">{row.attempts}</td>
-                  <td className="px-3 py-2">
+                  </TableCell>
+                  <TableCell className="tabular-nums">{row.attempts}</TableCell>
+                  <TableCell>
                     {/* VERBATIM. Paraphrasing an SMTP rejection is how
                         "delivery failed" becomes the only thing anybody can find
                         out — which is the incident this screen exists for. */}
@@ -211,8 +210,8 @@ export default async function NotificationDeliveryPage({
                     ) : (
                       <span className="text-xs text-muted-foreground">—</span>
                     )}
-                  </td>
-                  <td className="px-3 py-2">
+                  </TableCell>
+                  <TableCell>
                     {row.status === 'FAILED' ||
                     row.status === 'DEAD' ||
                     row.status === 'CANCELLED' ? (
@@ -225,13 +224,13 @@ export default async function NotificationDeliveryPage({
                         Try again
                       </Button>
                     ) : null}
-                  </td>
-                </tr>
+                  </TableCell>
+                </TableRow>
               ))
             )}
-          </tbody>
-        </table>
-      </div>
+          </TableBody>
+        </Table>
+      </TableCard>
 
       {/* The row forms. Outside the table, referenced by `form=` above. */}
       {rows
@@ -247,6 +246,6 @@ export default async function NotificationDeliveryPage({
         delivery again mints new links and retires the old ones, so an earlier copy of the email
         stops working.
       </p>
-    </div>
+    </Screen>
   );
 }

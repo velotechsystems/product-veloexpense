@@ -29,7 +29,7 @@
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { EmptyRow, ErrorBanner, selectClass } from '@/app/expenses/ui';
+import { EmptyRow, ErrorBanner } from '@/app/expenses/ui';
 import { pageTitle } from '@/lib/i18n/page-title';
 
 // UD-16. See `lib/i18n/page-title.ts` for why the title lives here rather than
@@ -49,6 +49,10 @@ import {
   setAccountActiveFromForm,
   setCategoryAccountFromForm,
 } from './actions';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { TableCard } from '@/components/screen';
+import { NativeSelect } from '@/components/ui/native-select';
+import { PageHeader, Screen } from '@/components/screen';
 
 export const dynamic = 'force-dynamic';
 
@@ -85,22 +89,22 @@ export default async function ChartOfAccountsPage({
   const dangling = mappings.filter((m) => m.dangling).length;
 
   return (
-    <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 p-6">
-      <header>
-        <h1 className="text-2xl font-semibold tracking-tight">Chart of accounts</h1>
-        <p className="text-sm text-muted-foreground">
-          {accounts.length === 0
+    <Screen width="wide">
+      <PageHeader
+        title="Chart of accounts"
+        description={
+          accounts.length === 0
             ? 'No accounts yet — choose a starter chart or import your own'
             : `${accounts.length} accounts · ${postable.length} can be posted to · ` +
-              `${unmapped === 0 ? 'every category is mapped' : `${unmapped} category/categories unmapped`}`}
-        </p>
-      </header>
+              `${unmapped === 0 ? 'every category is mapped' : `${unmapped} category/categories unmapped`}`
+        }
+      />
 
       {!moduleEnabled ? (
         // VX4-1. Same reason as the integrations screen: the reads here are
         // ungated so the page can render, so an off module is indistinguishable
         // from an empty chart unless the page says which it is.
-        <div className="rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm">
+        <div className="rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm">
           <strong className="font-medium">
             Accounting integrations are not enabled for this organization.
           </strong>{' '}
@@ -116,12 +120,12 @@ export default async function ChartOfAccountsPage({
 
       <ErrorBanner message={error} />
       {created ? (
-        <p className="rounded-md border border-border bg-muted/40 px-3 py-2 text-sm">
+        <p className="rounded-lg border border-border bg-muted/50 px-3 py-2 text-sm">
           Added {created} accounts.
         </p>
       ) : null}
       {pulled ? (
-        <p className="rounded-md border border-border bg-muted/40 px-3 py-2 text-sm">
+        <p className="rounded-lg border border-border bg-muted/50 px-3 py-2 text-sm">
           Pulled from the ledger — {pulled}.
         </p>
       ) : null}
@@ -129,7 +133,7 @@ export default async function ChartOfAccountsPage({
         // Said rather than done. ExpenseOS deactivates these from a background
         // job; a tenant whose ledger stops reporting an account it has been coding
         // to for a year should be told (AC-12).
-        <div className="rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm">
+        <div className="rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm">
           <strong className="font-medium">
             The ledger no longer reports {orphaned.length} account(s): {orphaned.join(', ')}.
           </strong>{' '}
@@ -138,7 +142,7 @@ export default async function ChartOfAccountsPage({
         </div>
       ) : null}
       {dangling > 0 ? (
-        <div className="rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm">
+        <div className="rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm">
           <strong className="font-medium">
             {dangling} category mapping(s) point at an account that cannot be read.
           </strong>{' '}
@@ -151,7 +155,7 @@ export default async function ChartOfAccountsPage({
       {accounts.length > 0 ? null : (
         <section className="flex flex-col gap-4">
           <div className="rounded-lg border border-border p-4">
-            <h2 className="text-lg font-medium">Start from a template</h2>
+            <h2 className="text-lg leading-7 font-semibold">Start from a template</h2>
             <p className="mt-1 text-sm text-muted-foreground">
               A starter chart you can rename, extend and deactivate from. You can only do this
               while the chart is empty.
@@ -160,7 +164,7 @@ export default async function ChartOfAccountsPage({
               {templates.map((t) => (
                 <li
                   key={t.key}
-                  className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-border p-3"
+                  className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border bg-card p-3"
                 >
                   <div className="max-w-2xl">
                     <p className="font-medium">
@@ -188,7 +192,7 @@ export default async function ChartOfAccountsPage({
             className="flex flex-wrap items-end gap-3 rounded-lg border border-border p-4"
           >
             <div>
-              <h2 className="text-lg font-medium">Or import a CSV</h2>
+              <h2 className="text-lg leading-7 font-semibold">Or import a CSV</h2>
               <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
                 Columns: <code>number, name, type</code> required;{' '}
                 <code>sub_type, parent_number, sort_order, notes</code> optional.{' '}
@@ -216,7 +220,7 @@ export default async function ChartOfAccountsPage({
       {accounts.length === 0 ? null : (
         <section className="flex flex-col gap-3">
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <h2 className="text-lg font-medium">Accounts</h2>
+            <h2 className="text-lg leading-7 font-semibold">Accounts</h2>
             {canPull ? (
               <form action={pullFromLedgerForm}>
                 <Button type="submit" size="sm" variant="outline">
@@ -231,30 +235,25 @@ export default async function ChartOfAccountsPage({
               <p className="text-xs text-destructive">{pullProblem}</p>
             ) : null}
           </div>
-          <div className="overflow-x-auto rounded-lg border border-border">
-            <table className="w-full min-w-[900px] text-left text-sm">
-              <thead className="bg-muted/50 text-xs uppercase tracking-wide text-muted-foreground">
-                <tr>
-                  <th className="px-3 py-2 font-medium">Number</th>
-                  <th className="px-3 py-2 font-medium">Name</th>
-                  <th className="px-3 py-2 font-medium">Type</th>
-                  <th className="px-3 py-2 font-medium">Used by</th>
-                  <th className="px-3 py-2" />
-                </tr>
-              </thead>
-              <tbody>
+          <TableCard>
+            <Table className="min-w-[900px]">
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Number</TableHead>
+                  <TableHead>Name</TableHead>
+                  <TableHead>Type</TableHead>
+                  <TableHead>Used by</TableHead>
+                  <TableHead />
+                </TableRow>
+              </TableHeader>
+              <TableBody>
                 {accounts.map((a) => {
                   const formId = `acct-${a.id}`;
                   const unused = a.line_count === 0 && a.category_count === 0;
                   return (
-                    <tr
-                      key={a.id}
-                      className={`border-t border-border align-middle ${
-                        a.active ? '' : 'text-muted-foreground'
-                      }`}
-                    >
-                      <td className="px-3 py-2 tabular-nums">{a.number}</td>
-                      <td className="px-3 py-2" style={{ paddingLeft: 12 + (indent.get(a.id) ?? 0) * 18 }}>
+                    <TableRow key={a.id} className={`align-middle ${ a.active ? '' : 'text-muted-foreground' }`}>
+                      <TableCell className="tabular-nums">{a.number}</TableCell>
+                      <TableCell style={{ paddingLeft: 12 + (indent.get(a.id) ?? 0) * 18 }}>
                         {a.is_postable ? (
                           <Input
                             form={formId}
@@ -274,18 +273,18 @@ export default async function ChartOfAccountsPage({
                             </span>
                           </span>
                         )}
-                      </td>
-                      <td className="px-3 py-2 text-muted-foreground">
+                      </TableCell>
+                      <TableCell className="text-muted-foreground">
                         {a.type}
                         {a.sub_type ? ` · ${a.sub_type}` : ''}
                         {a.active ? '' : ' · inactive'}
-                      </td>
-                      <td className="px-3 py-2 text-xs text-muted-foreground">
+                      </TableCell>
+                      <TableCell className="text-xs text-muted-foreground">
                         {unused
                           ? 'nothing yet'
                           : `${a.category_count} category/categories, ${a.line_count} line(s)`}
-                      </td>
-                      <td className="px-3 py-2">
+                      </TableCell>
+                      <TableCell>
                         <div className="flex flex-wrap items-center gap-2">
                           {a.is_postable ? (
                             <Button form={formId} type="submit" size="sm" variant="outline">
@@ -306,13 +305,13 @@ export default async function ChartOfAccountsPage({
                             </Button>
                           ) : null}
                         </div>
-                      </td>
-                    </tr>
+                      </TableCell>
+                    </TableRow>
                   );
                 })}
-              </tbody>
-            </table>
-          </div>
+              </TableBody>
+            </Table>
+          </TableCard>
 
           {/* Row forms, outside the table, referenced by `form=` above. */}
           {accounts.map((a) => (
@@ -350,26 +349,26 @@ export default async function ChartOfAccountsPage({
               <label className="text-xs text-muted-foreground" htmlFor="new-type">
                 Type
               </label>
-              <select id="new-type" name="type" className={selectClass} defaultValue="expense">
+              <NativeSelect id="new-type" name="type" defaultValue="expense">
                 <option value="expense">expense</option>
                 <option value="asset">asset</option>
                 <option value="liability">liability</option>
                 <option value="equity">equity</option>
                 <option value="revenue">revenue</option>
-              </select>
+              </NativeSelect>
             </div>
             <div className="flex flex-col gap-1">
               <label className="text-xs text-muted-foreground" htmlFor="new-parent">
                 Under
               </label>
-              <select id="new-parent" name="parentNumber" className={selectClass} defaultValue="">
+              <NativeSelect id="new-parent" name="parentNumber" defaultValue="">
                 <option value="">(top level)</option>
                 {accounts.map((a) => (
                   <option key={a.id} value={a.number}>
                     {a.number} — {a.name}
                   </option>
                 ))}
-              </select>
+              </NativeSelect>
             </div>
             <Button type="submit" size="sm">
               Add account
@@ -386,39 +385,39 @@ export default async function ChartOfAccountsPage({
       {/* ── Category mapping ────────────────────────────────────────────────── */}
       {accounts.length === 0 ? null : (
         <section className="flex flex-col gap-3">
-          <h2 className="text-lg font-medium">What each category posts to</h2>
+          <h2 className="text-lg leading-7 font-semibold">What each category posts to</h2>
           <p className="max-w-3xl text-sm text-muted-foreground">
             An expense line takes its account from its category when the line is written, and keeps
             it afterwards. Changing a mapping here affects new lines, not ones already filed — which
             is deliberate: a report posts to the account it was coded to at the time, not to
             wherever its category points months later.
           </p>
-          <div className="overflow-x-auto rounded-lg border border-border">
-            <table className="w-full min-w-[720px] text-left text-sm">
-              <thead className="bg-muted/50 text-xs uppercase tracking-wide text-muted-foreground">
-                <tr>
-                  <th className="px-3 py-2 font-medium">Category</th>
-                  <th className="px-3 py-2 font-medium">Account</th>
-                  <th className="px-3 py-2" />
-                </tr>
-              </thead>
-              <tbody>
+          <TableCard>
+            <Table className="min-w-[720px]">
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Category</TableHead>
+                  <TableHead>Account</TableHead>
+                  <TableHead />
+                </TableRow>
+              </TableHeader>
+              <TableBody>
                 {mappings.length === 0 ? (
                   <EmptyRow colSpan={3}>This tenant has no expense categories yet.</EmptyRow>
                 ) : (
                   mappings.map((m) => {
                     const formId = `map-${m.id}`;
                     return (
-                      <tr key={m.id} className="border-t border-border align-middle">
-                        <td className="px-3 py-2">
+                      <TableRow key={m.id} className="align-middle">
+                        <TableCell>
                           {m.label}
                           <span className="ml-2 text-xs text-muted-foreground">{m.code}</span>
-                        </td>
-                        <td className="px-3 py-2">
-                          <select
+                        </TableCell>
+                        <TableCell>
+                          <NativeSelect
                             form={formId}
                             name="accountId"
-                            className={selectClass}
+                            className="min-w-40"
                             defaultValue={m.dangling ? '' : (m.gl_account_id ?? '')}
                             aria-label={`Account for ${m.label}`}
                           >
@@ -428,26 +427,26 @@ export default async function ChartOfAccountsPage({
                                 {a.number} — {a.name}
                               </option>
                             ))}
-                          </select>
+                          </NativeSelect>
                           {m.gl_account_id === null ? (
                             <p className="mt-1 text-xs text-muted-foreground">
                               Expenses in this category can still be filed; they will have no
                               account until this is set.
                             </p>
                           ) : null}
-                        </td>
-                        <td className="px-3 py-2">
+                        </TableCell>
+                        <TableCell>
                           <Button form={formId} type="submit" size="sm" variant="outline">
                             Save
                           </Button>
-                        </td>
-                      </tr>
+                        </TableCell>
+                      </TableRow>
                     );
                   })
                 )}
-              </tbody>
-            </table>
-          </div>
+              </TableBody>
+            </Table>
+          </TableCard>
           {mappings.map((m) => (
             <form
               key={m.id}
@@ -460,6 +459,6 @@ export default async function ChartOfAccountsPage({
           ))}
         </section>
       )}
-    </div>
+    </Screen>
   );
 }

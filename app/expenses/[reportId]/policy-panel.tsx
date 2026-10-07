@@ -42,7 +42,7 @@ export function PolicyPanel({
     <section className={`${cardClass} flex flex-col gap-4 p-5`}>
       <header className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2">
-          <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+          <h2 className="velo-eyebrow">
             Policy
           </h2>
           {counts.BLOCK > 0 ? <SeverityBadge severity="BLOCK" locale={locale} /> : null}
@@ -116,7 +116,7 @@ export function PolicyPanel({
 
       {acknowledged.length > 0 ? (
         <div className="flex flex-col gap-2">
-          <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+          <h3 className="velo-eyebrow">
             Acknowledged
           </h3>
           <ul className="flex flex-col gap-2">

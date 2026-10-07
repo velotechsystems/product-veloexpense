@@ -141,7 +141,7 @@ export function ReceiptDrawer({
           <aside className="flex h-full w-full max-w-md flex-col gap-4 overflow-y-auto border-l border-border bg-background p-5 shadow-lg">
             <header className="flex items-start justify-between gap-3">
               <div>
-                <h2 className="text-base font-semibold tracking-tight">Receipts</h2>
+                <h2 className="text-lg leading-7 font-semibold">Receipts</h2>
                 <p className="text-xs text-muted-foreground">{label}</p>
               </div>
               <Button type="button" variant="ghost" size="sm" onClick={() => setOpen(false)}>
@@ -180,7 +180,7 @@ export function ReceiptDrawer({
             ) : null}
 
             <section className="flex flex-col gap-2">
-              <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              <h3 className="velo-eyebrow">
                 Attached
               </h3>
               {receipts.length === 0 ? (
@@ -239,7 +239,7 @@ export function ReceiptDrawer({
 
             {editable ? (
               <section className="flex flex-col gap-2">
-                <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                <h3 className="velo-eyebrow">
                   Your unattached receipts
                 </h3>
                 {inbox.length === 0 ? (

@@ -22,7 +22,7 @@
  * North American zone. A zone setting whose preview never changed the date would
  * look decorative.
  */
-import { ErrorBanner, cardClass, fieldClass, labelClass, selectClass } from '@/app/expenses/ui';
+import { ErrorBanner, cardClass, fieldClass, labelClass } from '@/app/expenses/ui';
 import { Button } from '@/components/ui/button';
 import { localeName } from '@/lib/i18n/locales';
 import { getLocalePage, saveLocaleFromForm } from './actions';
@@ -30,6 +30,10 @@ import { uiText, uiSentence, type UiKey } from '@/lib/i18n/catalog/ui';
 import { readerPrefs } from '@/lib/i18n/request';
 
 import { pageTitle } from '@/lib/i18n/page-title';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { NativeSelect } from '@/components/ui/native-select';
+import { PageHeader, Screen } from '@/components/screen';
+import { Badge } from '@/components/ui/badge';
 
 // UD-16. See `lib/i18n/page-title.ts` for why the title lives here rather than
 // in a map of routes, and `scripts/check-page-titles.mjs` for what enforces it.
@@ -48,11 +52,8 @@ export default async function AdminLocalePage({
   const t = (key: UiKey) => uiText(key, prefs.locale);
 
   return (
-    <main className="mx-auto flex w-full max-w-3xl flex-col gap-6 p-6">
-      <header className="flex flex-col gap-1">
-        <h1 className="text-xl font-semibold">{t('locale.title')}</h1>
-        <p className="text-sm text-muted-foreground">{t('locale.lede')}</p>
-      </header>
+    <Screen width="narrow">
+      <PageHeader title={t('locale.title')} description={t('locale.lede')} />
 
       <ErrorBanner message={error} />
       {changed ? (
@@ -66,11 +67,10 @@ export default async function AdminLocalePage({
           <label className={labelClass} htmlFor="locale">
             {t('locale.language.label')}
           </label>
-          <select
+          <NativeSelect
             id="locale"
             name="locale"
             defaultValue={page.locale}
-            className={selectClass}
             data-testid="org-locale"
           >
             {page.locales.map((locale) => (
@@ -78,18 +78,17 @@ export default async function AdminLocalePage({
                 {localeName(locale)} — {locale}
               </option>
             ))}
-          </select>
+          </NativeSelect>
         </div>
 
         <div className={fieldClass}>
           <label className={labelClass} htmlFor="timeZone">
             {t('locale.timezone.label')}
           </label>
-          <select
+          <NativeSelect
             id="timeZone"
             name="timeZone"
             defaultValue={page.timeZone}
-            className={selectClass}
             data-testid="org-timezone"
           >
             {/* UTC is offered explicitly and first. It is the shipped default and
@@ -103,7 +102,7 @@ export default async function AdminLocalePage({
                 {zone}
               </option>
             ))}
-          </select>
+          </NativeSelect>
           <p className="text-xs text-muted-foreground">{t('locale.timezone.help')}</p>
         </div>
 
@@ -122,31 +121,29 @@ export default async function AdminLocalePage({
               comparative — "which of these do I want" — and a table is what puts
               $10,799.00 directly above CA$10,799.00. That pair IS IL-1. */}
           <div className="overflow-x-auto">
-            <table className="w-full text-sm" data-testid="locale-sample">
-              <thead>
-                <tr className="border-b border-border text-left text-xs uppercase tracking-wide text-muted-foreground">
-                  <th className="py-1.5 pr-4 font-medium">{t('locale.column.language')}</th>
-                  <th className="py-1.5 pr-4 font-medium">{t('locale.column.datetime')}</th>
-                  <th className="py-1.5 font-medium">{t('locale.column.amounts')}</th>
-                </tr>
-              </thead>
-              <tbody>
+            <Table data-testid="locale-sample">
+              <TableHeader>
+                <TableRow>
+                  <TableHead>{t('locale.column.language')}</TableHead>
+                  <TableHead>{t('locale.column.datetime')}</TableHead>
+                  <TableHead>{t('locale.column.amounts')}</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
                 {page.samples.map((s) => (
-                  <tr key={s.locale} className="border-b border-border/60 last:border-0">
-                    <td className="py-2 pr-4">
+                  <TableRow key={s.locale}>
+                    <TableCell>
                       <span className={s.current ? 'font-medium' : ''}>{s.name}</span>
                       {s.current ? (
-                        <span className="ml-2 rounded-full border border-primary/40 px-2 py-0.5 text-xs text-primary">
-                          {t('locale.in.use')}
-                        </span>
+                        <Badge className="ml-2">{t('locale.in.use')}</Badge>
                       ) : null}
-                    </td>
-                    <td className="py-2 pr-4 tabular-nums">{s.date}</td>
-                    <td className="py-2 tabular-nums">{s.money}</td>
-                  </tr>
+                    </TableCell>
+                    <TableCell className="tabular-nums">{s.date}</TableCell>
+                    <TableCell className="tabular-nums">{s.money}</TableCell>
+                  </TableRow>
                 ))}
-              </tbody>
-            </table>
+              </TableBody>
+            </Table>
           </div>
           <div className="flex items-center justify-between gap-3">
             <p className="text-xs text-muted-foreground">{t('locale.audited')}</p>
@@ -154,6 +151,6 @@ export default async function AdminLocalePage({
           </div>
         </div>
       </form>
-    </main>
+    </Screen>
   );
 }

@@ -13,7 +13,8 @@
 import { Button } from '@/components/ui/button';
 import { decideFromForm } from '@/app/approvals/actions';
 import type { InboxTask } from '@/lib/approvals/inbox';
-import { cardClass, labelClass, textareaClass } from '../ui';
+import { cardClass, labelClass } from '../ui';
+import { Textarea } from '@/components/ui/textarea';
 
 export function ApprovalPanel({
   taskId,
@@ -39,7 +40,7 @@ export function ApprovalPanel({
   return (
     <section className={`${cardClass} flex flex-col gap-4 border-primary/40 p-5`}>
       <div className="flex flex-col gap-1">
-        <h2 className="text-lg font-medium">Your decision</h2>
+        <h2 className="text-lg leading-7 font-semibold">Your decision</h2>
         <p className="text-sm text-muted-foreground">
           {rungName ? <strong>{rungName}</strong> : 'Approval'} — step {step} of {totalSteps}.
           {route === 'ROLE_POOL'
@@ -59,11 +60,10 @@ export function ApprovalPanel({
           <label className={labelClass} htmlFor="decision-note">
             Note {requireReceiptViewAck ? '' : '(optional)'}
           </label>
-          <textarea
+          <Textarea
             id="decision-note"
             name="note"
             rows={2}
-            className={textareaClass}
             placeholder="Why you approved, returned, or refused it"
           />
         </div>

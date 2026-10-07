@@ -19,7 +19,6 @@
  * DRAFT renders read-only. The DRAFT→SUBMITTED transition itself is VX1-8.
  */
 import { Fragment } from 'react';
-import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -48,9 +47,7 @@ import {
   cardClass,
   fieldClass,
   labelClass,
-  selectClass,
-  textareaClass,
-} from '../ui';
+  } from '../ui';
 import { formatCalendarDate, formatInstant, toDateInputValue } from '@/lib/i18n/format';
 import { enumLabel, REPORT_STATUS_COPY } from '@/lib/i18n/catalog/enums';
 import { readerPrefs } from '@/lib/i18n/request';
@@ -60,6 +57,11 @@ import { LifecycleBar, ReportHistory } from './lifecycle-bar';
 import { ApprovalPanel } from './approval-panel';
 
 import { dataTitle } from '@/lib/i18n/page-title';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { TableCard } from '@/components/screen';
+import { NativeSelect } from '@/components/ui/native-select';
+import { Textarea } from '@/components/ui/textarea';
+import { BackLink, Screen } from '@/components/screen';
 export const dynamic = 'force-dynamic';
 
 
@@ -105,32 +107,29 @@ export default async function ReportWorkbenchPage({
     formatMinor(amount, report.currency_code, minorUnit, prefs.locale);
 
   return (
-    <div className="mx-auto flex w-full max-w-5xl flex-col gap-6 p-6">
-      <header className="flex flex-col gap-2">
-        <Link
-          className="text-sm text-muted-foreground underline-offset-4 hover:underline"
-          href="/expenses"
-        >
-          ← Back to reports
-        </Link>
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-3">
-            <h1 className="text-2xl font-semibold tracking-tight">{report.title}</h1>
-            <StatusBadge status={report.status} locale={prefs.locale} />
+    <Screen>
+      <div className="flex flex-col gap-2">
+        <BackLink href="/expenses">Back to reports</BackLink>
+        <header className="flex flex-wrap items-start justify-between gap-4">
+          <div className="flex min-w-0 flex-col gap-1">
+            <div className="flex flex-wrap items-center gap-3">
+              <h1 className="text-3xl leading-9 font-bold tracking-tight">{report.title}</h1>
+              <StatusBadge status={report.status} locale={prefs.locale} />
+            </div>
+            <p className="text-sm text-muted-foreground">
+              {report.submitter_name ?? report.submitter_email}
+              {report.business_unit_name ? ` · ${report.business_unit_name}` : ''} · created{' '}
+              {formatInstant(report.created_at, prefs)}
+            </p>
           </div>
           <div className="text-right">
-            <div className="text-2xl font-semibold tabular-nums" data-testid="report-total">
+            <div className="text-3xl leading-9 font-bold tabular-nums" data-testid="report-total">
               {money(report.total_minor)}
             </div>
             <div className="font-mono text-xs text-muted-foreground">{report.number ?? '—'}</div>
           </div>
-        </div>
-        <p className="text-sm text-muted-foreground">
-          {report.submitter_name ?? report.submitter_email}
-          {report.business_unit_name ? ` · ${report.business_unit_name}` : ''} · created{' '}
-          {formatInstant(report.created_at, prefs)}
-        </p>
-      </header>
+        </header>
+      </div>
 
       <ErrorBanner message={error} />
 
@@ -182,7 +181,7 @@ export default async function ReportWorkbenchPage({
 
       {/* ── report header ─────────────────────────────────────────────────── */}
       <section className={`${cardClass} flex flex-col gap-5 p-5`}>
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+        <h2 className="velo-eyebrow">
           Report details
         </h2>
         {editable ? (
@@ -199,10 +198,9 @@ export default async function ReportWorkbenchPage({
                 <label className={labelClass} htmlFor="currencyCode">
                   Currency
                 </label>
-                <select
+                <NativeSelect
                   id="currencyCode"
                   name="currencyCode"
-                  className={selectClass}
                   defaultValue={report.currency_code}
                 >
                   {currencies.map((c) => (
@@ -210,16 +208,15 @@ export default async function ReportWorkbenchPage({
                       {c.code} — {c.name}
                     </option>
                   ))}
-                </select>
+                </NativeSelect>
               </div>
               <div className={fieldClass}>
                 <label className={labelClass} htmlFor="businessUnitId">
                   Business unit
                 </label>
-                <select
+                <NativeSelect
                   id="businessUnitId"
                   name="businessUnitId"
-                  className={selectClass}
                   defaultValue={report.business_unit_id ?? ''}
                 >
                   <option value="">— none —</option>
@@ -228,16 +225,15 @@ export default async function ReportWorkbenchPage({
                       {bu.name}
                     </option>
                   ))}
-                </select>
+                </NativeSelect>
               </div>
               <div className={`${fieldClass} sm:col-span-2`}>
                 <label className={labelClass} htmlFor="purpose">
                   Business purpose
                 </label>
-                <textarea
+                <Textarea
                   id="purpose"
                   name="purpose"
-                  className={textareaClass}
                   defaultValue={report.purpose ?? ''}
                 />
               </div>
@@ -275,7 +271,7 @@ export default async function ReportWorkbenchPage({
           <section key={expense.id} className={`${cardClass} flex flex-col gap-4 p-5`}>
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
-                <h3 className="text-base font-semibold tracking-tight">{expenseLabel}</h3>
+                <h3 className="text-lg leading-7 font-semibold">{expenseLabel}</h3>
                 <p className="text-xs text-muted-foreground">
                   {formatCalendarDate(expense.txn_date, prefs.locale)} · subtotal {money(expense.subtotal_minor)}
                 </p>
@@ -348,31 +344,31 @@ export default async function ReportWorkbenchPage({
               </form>
             ) : null}
 
-            <div className="overflow-x-auto rounded-lg border border-border">
-              <table className="w-full min-w-[680px] text-left text-sm">
-                <thead className="bg-muted/50 text-xs uppercase tracking-wide text-muted-foreground">
-                  <tr>
-                    <th className="px-3 py-2 font-medium">Category</th>
-                    <th className="px-3 py-2 font-medium">Description</th>
-                    <th className="px-3 py-2 text-right font-medium">Amount</th>
-                    <th className="px-3 py-2 text-right font-medium">Tax</th>
-                    {editable ? <th className="px-3 py-2" /> : null}
-                  </tr>
-                </thead>
-                <tbody>
+            <TableCard>
+              <Table className="min-w-[680px]">
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Category</TableHead>
+                    <TableHead>Description</TableHead>
+                    <TableHead className="text-right">Amount</TableHead>
+                    <TableHead className="text-right">Tax</TableHead>
+                    {editable ? <TableHead /> : null}
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
                   {expense.lineItems.length === 0 ? (
                     <EmptyRow colSpan={editable ? 5 : 4}>
                       No line items — code this expense below.
                     </EmptyRow>
                   ) : (
                     expense.lineItems.map((li) => (
-                      <tr key={li.id} className="border-t border-border">
-                        <td className="px-3 py-2">
+                      <TableRow key={li.id}>
+                        <TableCell>
                           {editable ? (
-                            <select
+                            <NativeSelect
                               form={`li-${li.id}`}
                               name="categoryId"
-                              className={selectClass}
+                              className="min-w-40"
                               defaultValue={li.category_id}
                             >
                               {categories.map((c) => (
@@ -383,12 +379,12 @@ export default async function ReportWorkbenchPage({
                               {li.category_active === false ? (
                                 <option value={li.category_id}>{li.category_label} (inactive)</option>
                               ) : null}
-                            </select>
+                            </NativeSelect>
                           ) : (
                             (li.category_label ?? '—')
                           )}
-                        </td>
-                        <td className="px-3 py-2">
+                        </TableCell>
+                        <TableCell>
                           {editable ? (
                             <Input
                               form={`li-${li.id}`}
@@ -398,8 +394,8 @@ export default async function ReportWorkbenchPage({
                           ) : (
                             (li.description ?? '—')
                           )}
-                        </td>
-                        <td className="px-3 py-2 text-right tabular-nums">
+                        </TableCell>
+                        <TableCell className="text-right tabular-nums">
                           {editable ? (
                             <Input
                               form={`li-${li.id}`}
@@ -412,8 +408,8 @@ export default async function ReportWorkbenchPage({
                           ) : (
                             money(li.amount_minor)
                           )}
-                        </td>
-                        <td className="px-3 py-2 text-right tabular-nums">
+                        </TableCell>
+                        <TableCell className="text-right tabular-nums">
                           {editable ? (
                             <Input
                               form={`li-${li.id}`}
@@ -425,9 +421,9 @@ export default async function ReportWorkbenchPage({
                           ) : (
                             money(li.tax_minor)
                           )}
-                        </td>
+                        </TableCell>
                         {editable ? (
-                          <td className="px-3 py-2">
+                          <TableCell>
                             <div className="flex items-center justify-end gap-1">
                               <Button type="submit" form={`li-${li.id}`} size="xs" variant="outline">
                                 Save
@@ -441,25 +437,25 @@ export default async function ReportWorkbenchPage({
                                 Remove
                               </Button>
                             </div>
-                          </td>
+                          </TableCell>
                         ) : null}
-                      </tr>
+                      </TableRow>
                     ))
                   )}
-                </tbody>
+                </TableBody>
                 <tfoot>
-                  <tr className="border-t border-border bg-muted/30">
-                    <td className="px-3 py-2 font-medium" colSpan={2}>
+                  <TableRow className="bg-muted/30">
+                    <TableCell className="font-medium" colSpan={2}>
                       Subtotal
-                    </td>
-                    <td className="px-3 py-2 text-right font-medium tabular-nums">
+                    </TableCell>
+                    <TableCell className="text-right font-medium tabular-nums">
                       {money(expense.subtotal_minor)}
-                    </td>
-                    <td className="px-3 py-2" colSpan={editable ? 2 : 1} />
-                  </tr>
+                    </TableCell>
+                    <TableCell colSpan={editable ? 2 : 1} />
+                  </TableRow>
                 </tfoot>
-              </table>
-            </div>
+              </Table>
+            </TableCard>
 
             {/*
               The per-row forms the table's inputs point at via form="…".
@@ -489,11 +485,11 @@ export default async function ReportWorkbenchPage({
                   <label className={labelClass} htmlFor={`categoryId-${expense.id}`}>
                     Category
                   </label>
-                  <select
+                  <NativeSelect
                     id={`categoryId-${expense.id}`}
                     name="categoryId"
+                    className="min-w-40"
                     required
-                    className={selectClass}
                     defaultValue=""
                   >
                     <option value="" disabled>
@@ -504,7 +500,7 @@ export default async function ReportWorkbenchPage({
                         {c.label}
                       </option>
                     ))}
-                  </select>
+                  </NativeSelect>
                 </div>
                 <div className={`${fieldClass} sm:col-span-2`}>
                   <label className={labelClass} htmlFor={`description-${expense.id}`}>
@@ -544,7 +540,7 @@ export default async function ReportWorkbenchPage({
       {/* ── add an expense ────────────────────────────────────────────────── */}
       {editable ? (
         <section className={`${cardClass} flex flex-col gap-4 p-5`}>
-          <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+          <h2 className="velo-eyebrow">
             Add an expense
           </h2>
           <form action={addExpenseFromForm} className="grid items-end gap-3 sm:grid-cols-4">
@@ -586,6 +582,6 @@ export default async function ReportWorkbenchPage({
           </Button>
         </form>
       ) : null}
-    </div>
+    </Screen>
   );
 }

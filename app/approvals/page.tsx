@@ -20,6 +20,11 @@ import { readerPrefs } from '@/lib/i18n/request';
 import { uiText, uiPlural, uiSentence, uiAround, type UiKey } from '@/lib/i18n/catalog/ui';
 
 import { pageTitle } from '@/lib/i18n/page-title';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { TableCard } from '@/components/screen';
+import { PageHeader, Screen } from '@/components/screen';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
 
 // UD-16. See `lib/i18n/page-title.ts` for why the title lives here rather than
 // in a map of routes, and `scripts/check-page-titles.mjs` for what enforces it.
@@ -57,60 +62,49 @@ export default async function ApprovalsPage({
   const { tasks, actor } = await getInbox();
 
   return (
-    <div className="mx-auto flex w-full max-w-5xl flex-col gap-6 p-6">
-      <header className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">{t('approvals.title')}</h1>
-          <p className="text-sm text-muted-foreground">
-            {tasks.length === 0
-              ? t('approvals.none.waiting')
-              : [
-                  uiPlural('approvals.count.waiting', tasks.length, {}, prefs.locale),
-                  actor.role === 'ADMIN' ? t('approvals.count.admin.suffix') : null,
-                ]
-                  .filter(Boolean)
-                  .join(' ')}
-          </p>
-        </div>
-        <div className="flex items-center gap-3">
-          {/* Reachable from the inbox because that is where somebody realises
-              they are about to be away. No admin nav anywhere yet — HANDOFF §7. */}
-          <Link href="/notifications" className="text-sm underline underline-offset-4">
-            {t('nav.notifications')}
-          </Link>
-          <Link
-            href="/approvals/delegations"
-            className="text-sm underline underline-offset-4"
-          >
-            {t('nav.delegations')}
-          </Link>
-          <Link href="/expenses" className="text-sm underline underline-offset-4">
-            {t('nav.my.expenses')}
-          </Link>
-        </div>
-      </header>
+    <Screen>
+      <PageHeader
+        title={t('approvals.title')}
+        description={
+          tasks.length === 0
+            ? t('approvals.none.waiting')
+            : [
+                uiPlural('approvals.count.waiting', tasks.length, {}, prefs.locale),
+                actor.role === 'ADMIN' ? t('approvals.count.admin.suffix') : null,
+              ]
+                .filter(Boolean)
+                .join(' ')
+        }
+        actions={
+          // Delegations stays one click away: the inbox is where somebody realises
+          // they are about to be away. Everything else is in the sidebar now.
+          <Button asChild variant="outline">
+            <Link href="/approvals/delegations">{t('nav.delegations')}</Link>
+          </Button>
+        }
+      />
 
       <ErrorBanner message={error} />
 
-      <div className="overflow-x-auto rounded-lg border border-border">
-        <table className="w-full min-w-[840px] text-left text-sm">
-          <thead className="bg-muted/50 text-xs uppercase tracking-wide text-muted-foreground">
-            <tr>
-              <th className="px-3 py-2 font-medium">{t('approvals.column.report')}</th>
-              <th className="px-3 py-2 font-medium">{t('approvals.column.submitted.by')}</th>
-              <th className="px-3 py-2 font-medium">{t('approvals.column.total')}</th>
-              <th className="px-3 py-2 font-medium">{t('approvals.column.step')}</th>
-              <th className="px-3 py-2 font-medium">{t('approvals.column.why')}</th>
-              <th className="px-3 py-2 font-medium">{t('approvals.column.waiting.since')}</th>
-            </tr>
-          </thead>
-          <tbody>
+      <TableCard>
+        <Table className="min-w-[840px]">
+          <TableHeader>
+            <TableRow>
+              <TableHead>{t('approvals.column.report')}</TableHead>
+              <TableHead>{t('approvals.column.submitted.by')}</TableHead>
+              <TableHead>{t('approvals.column.total')}</TableHead>
+              <TableHead>{t('approvals.column.step')}</TableHead>
+              <TableHead>{t('approvals.column.why')}</TableHead>
+              <TableHead>{t('approvals.column.waiting.since')}</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
             {tasks.length === 0 ? (
               <EmptyRow colSpan={6}>{t('approvals.empty')}</EmptyRow>
             ) : (
               tasks.map((task) => (
-                <tr key={task.taskId} className="border-t border-border">
-                  <td className="px-3 py-2">
+                <TableRow key={task.taskId}>
+                  <TableCell>
                     <Link
                       href={`/expenses/${task.reportId}`}
                       className="font-medium underline underline-offset-4"
@@ -118,12 +112,12 @@ export default async function ApprovalsPage({
                       {task.reportTitle}
                     </Link>
                     <p className="text-xs text-muted-foreground">{task.reportNumber ?? '—'}</p>
-                  </td>
-                  <td className="px-3 py-2">{task.submitterName}</td>
-                  <td className="px-3 py-2 tabular-nums">
+                  </TableCell>
+                  <TableCell>{task.submitterName}</TableCell>
+                  <TableCell className="tabular-nums">
                     {formatMinor(task.totalMinor, task.currencyCode, undefined, prefs.locale)}
-                  </td>
-                  <td className="px-3 py-2">
+                  </TableCell>
+                  <TableCell>
                     {uiSentence(
                       'approvals.step.of',
                       { step: String(task.step), steps: String(task.totalSteps) },
@@ -132,11 +126,9 @@ export default async function ApprovalsPage({
                     {task.rungName ? (
                       <p className="text-xs text-muted-foreground">{task.rungName}</p>
                     ) : null}
-                  </td>
-                  <td className="px-3 py-2">
-                    <span className="rounded bg-muted px-2 py-0.5 text-xs">
-                      {enumLabel(INBOX_ROUTE_COPY, task.route, prefs.locale)}
-                    </span>
+                  </TableCell>
+                  <TableCell>
+                    <Badge variant="secondary">{enumLabel(INBOX_ROUTE_COPY, task.route, prefs.locale)}</Badge>
                     {task.route === 'DELEGATED' && task.coveringFor ? (
                       <p className="text-xs text-muted-foreground">
                         {uiSentence('approvals.covering.for', { name: task.coveringFor }, prefs.locale)}
@@ -156,14 +148,14 @@ export default async function ApprovalsPage({
                         )}
                       </p>
                     ) : null}
-                  </td>
-                  <td className="px-3 py-2 text-muted-foreground">{formatInstant(task.submittedAt, prefs)}</td>
-                </tr>
+                  </TableCell>
+                  <TableCell className="text-muted-foreground">{formatInstant(task.submittedAt, prefs)}</TableCell>
+                </TableRow>
               ))
             )}
-          </tbody>
-        </table>
-      </div>
+          </TableBody>
+        </Table>
+      </TableCard>
 
       <p className="text-xs text-muted-foreground">
         {(() => {
@@ -179,6 +171,6 @@ export default async function ApprovalsPage({
           );
         })()}
       </p>
-    </div>
+    </Screen>
   );
 }

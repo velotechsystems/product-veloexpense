@@ -12,7 +12,7 @@
  * that becomes visible.
  */
 import Link from 'next/link';
-import { ErrorBanner, cardClass, fieldClass, labelClass, selectClass } from '@/app/expenses/ui';
+import { ErrorBanner, cardClass, fieldClass, labelClass } from '@/app/expenses/ui';
 import { Button } from '@/components/ui/button';
 import { localeName } from '@/lib/i18n/locales';
 import { readerPrefs } from '@/lib/i18n/request';
@@ -20,6 +20,8 @@ import { uiText, type UiKey } from '@/lib/i18n/catalog/ui';
 import { getPreferencesPage, savePreferencesFromForm } from './actions';
 
 import { pageTitle } from '@/lib/i18n/page-title';
+import { NativeSelect } from '@/components/ui/native-select';
+import { PageHeader, Screen } from '@/components/screen';
 
 // UD-16. See `lib/i18n/page-title.ts` for why the title lives here rather than
 // in a map of routes, and `scripts/check-page-titles.mjs` for what enforces it.
@@ -41,11 +43,8 @@ export default async function PreferencesPage({
   const t = (key: UiKey) => uiText(key, locale);
 
   return (
-    <main className="mx-auto flex w-full max-w-3xl flex-col gap-6 p-6">
-      <header className="flex flex-col gap-1">
-        <h1 className="text-xl font-semibold">{t('preferences.title')}</h1>
-        <p className="text-sm text-muted-foreground">{t('preferences.lede')}</p>
-      </header>
+    <Screen width="narrow">
+      <PageHeader title={t('preferences.title')} description={t('preferences.lede')} />
 
       <ErrorBanner message={error} />
       {changed ? (
@@ -59,11 +58,10 @@ export default async function PreferencesPage({
           <label className={labelClass} htmlFor="locale">
             {t('preferences.language.label')}
           </label>
-          <select
+          <NativeSelect
             id="locale"
             name="locale"
             defaultValue={page.locale ?? ''}
-            className={selectClass}
             data-testid="my-locale"
           >
             {/* An em dash, not nested parentheses. `localeName` already returns
@@ -78,18 +76,17 @@ export default async function PreferencesPage({
                 {localeName(locale)}
               </option>
             ))}
-          </select>
+          </NativeSelect>
         </div>
 
         <div className={fieldClass}>
           <label className={labelClass} htmlFor="timeZone">
             {t('preferences.timezone.label')}
           </label>
-          <select
+          <NativeSelect
             id="timeZone"
             name="timeZone"
             defaultValue={page.timeZone ?? ''}
-            className={selectClass}
             data-testid="my-timezone"
           >
             <option value="">
@@ -101,7 +98,7 @@ export default async function PreferencesPage({
                 {zone}
               </option>
             ))}
-          </select>
+          </NativeSelect>
         </div>
 
         <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border pt-4">
@@ -126,6 +123,6 @@ export default async function PreferencesPage({
         </Link>
         .
       </p>
-    </main>
+    </Screen>
   );
 }

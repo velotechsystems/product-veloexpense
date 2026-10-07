@@ -31,6 +31,7 @@
 import Link from 'next/link';
 import { readerPrefs } from '@/lib/i18n/request';
 import { renderUserMessage } from '@/lib/i18n/catalog/errors';
+import { PageHeader, Screen } from '@/components/screen';
 
 export default async function Forbidden() {
   // `readerPrefs()` reads the session, which a refused person still has — they
@@ -38,8 +39,8 @@ export default async function Forbidden() {
   // here: the middleware sends them to /login.
   const prefs = await readerPrefs();
   return (
-    <div className="mx-auto flex w-full max-w-xl flex-col gap-4 p-6">
-      <h1 className="text-2xl font-semibold tracking-tight">This is not yours to see</h1>
+    <Screen width="narrow" className="gap-4">
+      <PageHeader title="This is not yours to see" />
       <p data-testid="forbidden-reason" className="text-sm">
         {renderUserMessage('ADMIN_ONLY', prefs.locale)}
       </p>
@@ -55,6 +56,6 @@ export default async function Forbidden() {
           Approvals
         </Link>
       </div>
-    </div>
+    </Screen>
   );
 }

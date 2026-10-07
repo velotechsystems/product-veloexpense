@@ -39,12 +39,14 @@ import {
   cardClass,
   fieldClass,
   labelClass,
-  selectClass,
-} from '@/app/expenses/ui';
+  } from '@/app/expenses/ui';
 import { formatInstant } from '@/lib/i18n/format';
 import { readerPrefs } from '@/lib/i18n/request';
 
 import { pageTitle } from '@/lib/i18n/page-title';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { NativeSelect } from '@/components/ui/native-select';
+import { PageHeader, ROOMY_CELLS, Screen } from '@/components/screen';
 
 // UD-16. See `lib/i18n/page-title.ts` for why the title lives here rather than
 // in a map of routes, and `scripts/check-page-titles.mjs` for what enforces it.
@@ -80,19 +82,11 @@ export default async function BudgetsPage({
   } = await getBudgetsPage();
 
   return (
-    <main className="mx-auto flex max-w-6xl flex-col gap-6 p-6">
-      <div className="flex items-baseline justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Budgets</h1>
-          <p className="text-sm text-muted-foreground">
-            What a period is allowed to spend on one GL account, what it has spent, and who is told
-            when it gets close.
-          </p>
-        </div>
-        <Link href="/admin/modules" className="text-sm underline underline-offset-4">
-          Modules
-        </Link>
-      </div>
+    <Screen width="wide">
+      <PageHeader
+        title="Budgets"
+        description="What a period is allowed to spend on one GL account, what it has spent, and who is told when it gets close."
+      />
 
       <ErrorBanner message={sp.error} />
 
@@ -125,19 +119,19 @@ export default async function BudgetsPage({
       ) : null}
 
       {/* ── the budgets ───────────────────────────────────────────────────── */}
-      <section className={`${cardClass} overflow-hidden`}>
-        <table className="w-full text-sm">
-          <thead className="bg-muted/40 text-left">
-            <tr>
-              <th className="px-3 py-2 font-medium">Budget</th>
-              <th className="px-3 py-2 font-medium">Scope</th>
-              <th className="px-3 py-2 font-medium">Owner</th>
-              <th className="px-3 py-2 font-medium">Alerts</th>
-              <th className="px-3 py-2 font-medium">Periods</th>
-              <th className="px-3 py-2" />
-            </tr>
-          </thead>
-          <tbody>
+      <section className={`${cardClass} overflow-hidden ${ROOMY_CELLS}`}>
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Budget</TableHead>
+              <TableHead>Scope</TableHead>
+              <TableHead>Owner</TableHead>
+              <TableHead>Alerts</TableHead>
+              <TableHead>Periods</TableHead>
+              <TableHead />
+            </TableRow>
+          </TableHeader>
+          <TableBody>
             {budgets.length === 0 ? (
               <EmptyRow colSpan={6}>
                 {moduleEnabled
@@ -146,17 +140,17 @@ export default async function BudgetsPage({
               </EmptyRow>
             ) : (
               budgets.map((b) => (
-                <tr key={b.id} className="border-t border-border align-top">
-                  <td className="px-3 py-2">
+                <TableRow key={b.id} className="align-top">
+                  <TableCell>
                     <div className="font-medium">{b.name}</div>
                     <div className="text-xs text-muted-foreground">
                       {b.gl_account_number ? `${b.gl_account_number} — ${b.gl_account_name}` : '—'}
                       {' · '}
                       {b.currency_code} · FY{b.fiscal_year}
                     </div>
-                  </td>
-                  <td className="px-3 py-2 text-muted-foreground">{scopeOf(b)}</td>
-                  <td className="px-3 py-2">
+                  </TableCell>
+                  <TableCell className="text-muted-foreground">{scopeOf(b)}</TableCell>
+                  <TableCell>
                     {/* Its own visible form with its own button. The first draft
                         pointed this select at a hidden row form with no trigger,
                         which renders a control that changes nothing — a dead
@@ -165,10 +159,10 @@ export default async function BudgetsPage({
                     <form action={updateBudgetFromForm} className="flex items-end gap-1">
                       <input type="hidden" name="budgetId" value={b.id} />
                       <input type="hidden" name="name" value={b.name} />
-                      <select
+                      <NativeSelect
                         name="ownerId"
+                        className="min-w-40"
                         aria-label={`Owner of ${b.name}`}
-                        className={selectClass}
                         defaultValue={b.owner_id ?? ''}
                       >
                         <option value="">Nobody</option>
@@ -177,7 +171,7 @@ export default async function BudgetsPage({
                             {p.name}
                           </option>
                         ))}
-                      </select>
+                      </NativeSelect>
                       <Button type="submit" variant="outline" size="sm">
                         Save
                       </Button>
@@ -185,10 +179,10 @@ export default async function BudgetsPage({
                     <p className="mt-1 max-w-[16rem] text-xs text-muted-foreground">
                       With nobody, an alert reaches only the recipients named on a threshold.
                     </p>
-                  </td>
+                  </TableCell>
 
                   {/* thresholds + their recipients */}
-                  <td className="px-3 py-2">
+                  <TableCell>
                     {b.thresholds.length === 0 ? (
                       <span className="text-xs text-muted-foreground">
                         No thresholds — nothing will be sent.
@@ -215,7 +209,7 @@ export default async function BudgetsPage({
                             </div>
                             <form action={addRecipientFromForm} className="mt-1 flex gap-1">
                               <input type="hidden" name="thresholdId" value={t.id} />
-                              <select name="userId" className={selectClass} defaultValue="">
+                              <NativeSelect name="userId" className="min-w-40" defaultValue="">
                                 <option value="" disabled>
                                   Also tell…
                                 </option>
@@ -224,7 +218,7 @@ export default async function BudgetsPage({
                                     {p.name}
                                   </option>
                                 ))}
-                              </select>
+                              </NativeSelect>
                               <Button type="submit" variant="outline" size="sm">
                                 Add
                               </Button>
@@ -255,24 +249,24 @@ export default async function BudgetsPage({
                         Alert at
                       </Button>
                     </form>
-                  </td>
+                  </TableCell>
 
                   {/* periods + the rollup */}
-                  <td className="px-3 py-2">
+                  <TableCell>
                     {b.periods.length === 0 ? (
                       <span className="text-xs text-muted-foreground">
                         No periods yet — a budget with no periods measures nothing.
                       </span>
                     ) : (
-                      <table className="text-xs">
-                        <tbody>
+                      <Table className="text-xs">
+                        <TableBody>
                           {b.periods.map((p) => (
-                            <tr key={p.id} data-testid="budget-period">
-                              <td className="pr-3 text-muted-foreground">{p.starts_on}</td>
-                              <td className="pr-3">
+                            <TableRow key={p.id} data-testid="budget-period">
+                              <TableCell className="text-muted-foreground">{p.starts_on}</TableCell>
+                              <TableCell>
                                 {formatMinor(p.amount_minor, b.currency_code, b.minor_unit, prefs.locale)}
-                              </td>
-                              <td className="pr-3">
+                              </TableCell>
+                              <TableCell>
                                 {/* NULL means never calculated, which is not zero
                                     spend — 0024 enforces the distinction with a
                                     CHECK and this is where it has to be visible. */}
@@ -310,14 +304,14 @@ export default async function BudgetsPage({
                                     ) : null}
                                   </>
                                 )}
-                              </td>
-                              <td className="text-muted-foreground">
+                              </TableCell>
+                              <TableCell className="text-muted-foreground">
                                 {p.rolled_up_at === null ? '' : formatInstant(p.rolled_up_at, prefs)}
-                              </td>
-                            </tr>
+                              </TableCell>
+                            </TableRow>
                           ))}
-                        </tbody>
-                      </table>
+                        </TableBody>
+                      </Table>
                     )}
 
                     <form action={seedPeriodsFromForm} className="mt-2 flex items-end gap-1">
@@ -350,26 +344,26 @@ export default async function BudgetsPage({
                       dates, so a 4-4-5 calendar is a different set of rows rather than a schema
                       change. Re-running only adds the months that are missing.
                     </p>
-                  </td>
+                  </TableCell>
 
-                  <td className="px-3 py-2">
+                  <TableCell>
                     <form action={deleteBudgetFromForm}>
                       <input type="hidden" name="budgetId" value={b.id} />
                       <Button type="submit" variant="ghost" size="sm">
                         Delete
                       </Button>
                     </form>
-                  </td>
-                </tr>
+                  </TableCell>
+                </TableRow>
               ))
             )}
-          </tbody>
-        </table>
+          </TableBody>
+        </Table>
       </section>
 
       {/* ── add a budget ──────────────────────────────────────────────────── */}
       <section className={`${cardClass} flex flex-col gap-4 p-5`}>
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+        <h2 className="velo-eyebrow">
           Add a budget
         </h2>
         <form action={createBudgetFromForm} className="grid items-end gap-3 sm:grid-cols-3">
@@ -384,7 +378,7 @@ export default async function BudgetsPage({
             <label className={labelClass} htmlFor="glAccountId">
               GL account
             </label>
-            <select id="glAccountId" name="glAccountId" required className={selectClass} defaultValue="">
+            <NativeSelect id="glAccountId" name="glAccountId" required defaultValue="">
               <option value="" disabled>
                 Choose…
               </option>
@@ -393,48 +387,48 @@ export default async function BudgetsPage({
                   {a.number} — {a.name}
                 </option>
               ))}
-            </select>
+            </NativeSelect>
           </div>
 
           <div className={fieldClass}>
             <label className={labelClass} htmlFor="currencyCode">
               Currency
             </label>
-            <select id="currencyCode" name="currencyCode" required className={selectClass}>
+            <NativeSelect id="currencyCode" name="currencyCode" required>
               {currencies.map((c) => (
                 <option key={c.code} value={c.code}>
                   {c.code}
                 </option>
               ))}
-            </select>
+            </NativeSelect>
           </div>
 
           <div className={fieldClass}>
             <label className={labelClass} htmlFor="businessUnitId">
               Business unit
             </label>
-            <select id="businessUnitId" name="businessUnitId" className={selectClass} defaultValue="">
+            <NativeSelect id="businessUnitId" name="businessUnitId" defaultValue="">
               <option value="">Whole organization</option>
               {businessUnits.map((u) => (
                 <option key={u.id} value={u.id}>
                   {u.name}
                 </option>
               ))}
-            </select>
+            </NativeSelect>
           </div>
 
           <div className={fieldClass}>
             <label className={labelClass} htmlFor="departmentId">
               Department
             </label>
-            <select id="departmentId" name="departmentId" className={selectClass} defaultValue="">
+            <NativeSelect id="departmentId" name="departmentId" defaultValue="">
               <option value="">Whole organization</option>
               {departments.map((d) => (
                 <option key={d.id} value={d.id}>
                   {d.name}
                 </option>
               ))}
-            </select>
+            </NativeSelect>
           </div>
 
           <div className={fieldClass}>
@@ -454,14 +448,14 @@ export default async function BudgetsPage({
             <label className={labelClass} htmlFor="ownerId">
               Owner
             </label>
-            <select id="ownerId" name="ownerId" className={selectClass} defaultValue="">
+            <NativeSelect id="ownerId" name="ownerId" defaultValue="">
               <option value="">Nobody yet</option>
               {people.map((p) => (
                 <option key={p.id} value={p.id}>
                   {p.name}
                 </option>
               ))}
-            </select>
+            </NativeSelect>
           </div>
 
           <div className="sm:col-span-2">
@@ -475,6 +469,6 @@ export default async function BudgetsPage({
           being quietly wrong.
         </p>
       </section>
-    </main>
+    </Screen>
   );
 }

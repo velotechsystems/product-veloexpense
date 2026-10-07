@@ -24,7 +24,6 @@
  * Storing the tagline now costs nothing and means the rebrand is one field, not a
  * migration, when that lands.
  */
-import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { ErrorBanner } from '@/app/expenses/ui';
 import {
@@ -42,6 +41,8 @@ import {
 import { LOGO_MIME_TYPES } from '@/lib/branding/service';
 
 import { pageTitle } from '@/lib/i18n/page-title';
+import { PageHeader, Screen } from '@/components/screen';
+import { Input } from '@/components/ui/input';
 
 // UD-16. See `lib/i18n/page-title.ts` for why the title lives here rather than
 // in a map of routes, and `scripts/check-page-titles.mjs` for what enforces it.
@@ -60,29 +61,19 @@ export default async function BrandingPage({
   const b = await getBrandingPage();
 
   return (
-    <div className="mx-auto flex w-full max-w-3xl flex-col gap-6 p-6">
-      <header className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Branding</h1>
-          <p className="text-sm text-muted-foreground">
-            How VeloExpense looks for {b.name}
-          </p>
-        </div>
-        <Link href="/admin/modules" className="text-sm underline underline-offset-4">
-          Modules
-        </Link>
-      </header>
+    <Screen width="narrow">
+      <PageHeader title="Branding" description={`How VeloExpense looks for ${b.name}`} />
 
       <ErrorBanner message={error} />
       {changed ? (
-        <p className="rounded-md border border-border bg-muted/40 px-3 py-2 text-sm">
+        <p className="rounded-lg border border-border bg-muted/50 px-3 py-2 text-sm">
           Saved. The {changed} applies on the next page load, for everyone in {b.name}.
         </p>
       ) : null}
 
       {/* ── colour ─────────────────────────────────────────────────────── */}
       <section className="rounded-lg border border-border p-4">
-        <h2 className="text-base font-medium">Brand colour</h2>
+        <h2 className="text-lg leading-7 font-semibold">Brand colour</h2>
         <p className="mt-1 text-sm text-muted-foreground">
           One colour. Buttons, links, focus rings, the sidebar and chart series are all
           derived from it — you do not pick them separately.
@@ -91,11 +82,11 @@ export default async function BrandingPage({
         <form action={saveColorFromForm} className="mt-4 flex flex-wrap items-end gap-3">
           <label className="flex flex-col gap-1 text-sm">
             <span className="font-medium">Colour</span>
-            <input
+            <Input
               name="brandColor"
               defaultValue={b.brandColor ?? ''}
               placeholder="#0f766e"
-              className="w-40 rounded-md border border-input bg-background px-3 py-2 font-mono text-sm"
+              className="w-40 font-mono"
             />
           </label>
           <Button type="submit" size="sm">
@@ -123,7 +114,7 @@ export default async function BrandingPage({
           <div className="mt-4 flex flex-wrap items-center gap-4">
             {/* A real button, because "is my label readable" is the question. */}
             <span
-              className="inline-flex items-center rounded-md px-4 py-2 text-sm font-medium"
+              className="inline-flex items-center rounded-lg px-4 py-2 text-sm font-medium"
               style={{
                 backgroundColor: b.brandColor,
                 color: b.contrast?.foreground ?? '#ffffff',
@@ -147,7 +138,7 @@ export default async function BrandingPage({
 
       {/* ── logo ───────────────────────────────────────────────────────── */}
       <section className="rounded-lg border border-border p-4">
-        <h2 className="text-base font-medium">Logo</h2>
+        <h2 className="text-lg leading-7 font-semibold">Logo</h2>
         <p className="mt-1 text-sm text-muted-foreground">
           PNG, JPEG or WebP, up to {b.maxLogoKiB} KiB. SVG is not accepted — it can carry
           script, and this image is rendered inside your team&rsquo;s pages.
@@ -169,7 +160,7 @@ export default async function BrandingPage({
         )}
 
         <form action={saveLogoFromForm} className="mt-4 flex flex-wrap items-end gap-3">
-          <input
+          <Input
             type="file"
             name="logo"
             accept={LOGO_MIME_TYPES.join(',')}
@@ -183,25 +174,25 @@ export default async function BrandingPage({
 
       {/* ── tagline ────────────────────────────────────────────────────── */}
       <section className="rounded-lg border border-border p-4">
-        <h2 className="text-base font-medium">Sign-in tagline</h2>
+        <h2 className="text-lg leading-7 font-semibold">Sign-in tagline</h2>
         <p className="mt-1 text-sm text-muted-foreground">
           Saved now, shown later. The sign-in page is shared across organizations today, so
           it cannot tell whose tagline to show until each organization has its own address —
           that is planned, and this field is ready for it.
         </p>
         <form action={saveTaglineFromForm} className="mt-4 flex flex-wrap items-end gap-3">
-          <input
+          <Input
             name="loginTagline"
             defaultValue={b.loginTagline ?? ''}
             maxLength={200}
             placeholder="Expenses, sorted."
-            className="w-full max-w-md rounded-md border border-input bg-background px-3 py-2 text-sm"
+            className="max-w-md"
           />
           <Button type="submit" size="sm">
             Save tagline
           </Button>
         </form>
       </section>
-    </div>
+    </Screen>
   );
 }

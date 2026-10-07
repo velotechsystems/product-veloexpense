@@ -49,9 +49,9 @@ function Wordmark({ capHeight }: { capHeight: number }) {
       style={{ ['--halo-size' as string]: `${Math.round(capHeight * 8.74)}px` }}
     >
       {/* eslint-disable-next-line @next/next/no-img-element -- a static SVG; next/image adds nothing */}
-      <img className="ve-on-light" src="/brand/veloexpense-nohalo.svg" alt={PRODUCT} width={width} height={height} />
+      <img className="velo-on-light" src="/brand/veloexpense-nohalo.svg" alt={PRODUCT} width={width} height={height} />
       {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img className="ve-on-dark" src="/brand/veloexpense-nohalo-dark.svg" alt={PRODUCT} width={width} height={height} />
+      <img className="velo-on-dark" src="/brand/veloexpense-nohalo-dark.svg" alt={PRODUCT} width={width} height={height} />
     </span>
   );
 }
@@ -145,6 +145,7 @@ export function AppShell({
       brand={<Wordmark capHeight={14} />}
       menuLabel={uiText('nav.sidebar.menu', locale)}
       closeLabel={uiText('nav.sidebar.close', locale)}
+      skipLabel={uiText('nav.sidebar.skip', locale)}
     >
       {children}
     </ShellFrame>

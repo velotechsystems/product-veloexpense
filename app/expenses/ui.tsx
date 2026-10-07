@@ -1,12 +1,16 @@
 /**
  * VX1-6 — the handful of presentational bits the workbench pages share.
  *
- * Server components, no client JS. Classes are the vendored lib-ui-kit tokens
- * (app/velotech-tokens.css) rather than raw colours, so the whole surface
- * follows the shared theme — including dark mode — without a second palette.
- * lib-ui-kit ships no table/select/badge yet, so those are hand-rolled here
- * against the same tokens (see the handoff note).
+ * Server components, no client JS. Since the 2026 kit these are thin wrappers
+ * over the vendored kit parts (`Badge`, `Table*`, the flat `SURFACE`) — they
+ * used to be hand-rolled because lib-ui-kit shipped no table, select or badge.
+ * Selects and textareas are now the kit's `NativeSelect` / `Textarea` at each
+ * call site, so their class strings are gone from here.
  */
+import { CircleAlert } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
+import { TableCell, TableRow } from '@/components/ui/table';
+import { SURFACE } from '@/components/screen';
 import type { ReportStatus } from '@/lib/expenses/service';
 import { enumLabel, REPORT_STATUS_COPY, SEVERITY_COPY } from '@/lib/i18n/catalog/enums';
 import { renderUserMessage } from '@/lib/i18n/catalog/errors';
@@ -14,19 +18,23 @@ import { readerPrefs } from '@/lib/i18n/request';
 
 export const fieldClass = 'flex flex-col gap-1.5';
 export const labelClass = 'text-sm font-medium text-foreground';
-export const selectClass =
-  'h-8 w-full rounded-lg border border-input bg-transparent px-2.5 py-1 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50';
-export const textareaClass =
-  'min-h-16 w-full rounded-lg border border-input bg-transparent px-2.5 py-1.5 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50';
-export const cardClass = 'rounded-xl border border-border bg-background';
+/** The guide's flat card surface (1px border, radius-lg, `--card`). */
+export const cardClass = SURFACE;
 
-const STATUS_TONE: Record<ReportStatus, string> = {
-  DRAFT: 'border-border text-muted-foreground',
-  SUBMITTED: 'border-primary/40 text-primary',
-  APPROVED: 'border-primary/40 text-primary',
-  RETURNED: 'border-destructive/40 text-destructive',
-  REJECTED: 'border-destructive/40 text-destructive',
-  REIMBURSED: 'border-border text-foreground',
+type Tone = 'default' | 'success' | 'warning' | 'destructive' | 'muted' | 'secondary';
+
+/**
+ * Status → the kit badge's semantic variant. Waiting on somebody is the brand
+ * tint; done is success; sent back is a warning (the submitter has work to do);
+ * refused is destructive — a word is always on it, as the guide requires.
+ */
+const STATUS_TONE: Record<ReportStatus, Tone> = {
+  DRAFT: 'muted',
+  SUBMITTED: 'default',
+  APPROVED: 'success',
+  RETURNED: 'warning',
+  REJECTED: 'destructive',
+  REIMBURSED: 'secondary',
 };
 
 /**
@@ -40,31 +48,21 @@ const STATUS_TONE: Record<ReportStatus, string> = {
  */
 export function StatusBadge({ status, locale }: { status: ReportStatus; locale: string }) {
   return (
-    <span
-      className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-medium ${
-        STATUS_TONE[status] ?? 'border-border text-muted-foreground'
-      }`}
-    >
-      {enumLabel(REPORT_STATUS_COPY, status, locale)}
-    </span>
+    <Badge variant={STATUS_TONE[status] ?? 'muted'}>{enumLabel(REPORT_STATUS_COPY, status, locale)}</Badge>
   );
 }
 
-const SEVERITY_TONE: Record<string, string> = {
-  BLOCK: 'border-destructive/40 bg-destructive/10 text-destructive',
-  WARNING: 'border-border bg-muted/60 text-foreground',
-  INFO: 'border-border text-muted-foreground',
+const SEVERITY_TONE: Record<string, Tone> = {
+  BLOCK: 'destructive',
+  WARNING: 'warning',
+  INFO: 'muted',
 };
 
 export function SeverityBadge({ severity, locale }: { severity: string; locale: string }) {
   return (
-    <span
-      className={`inline-flex shrink-0 items-center rounded-full border px-2 py-0.5 text-xs font-medium ${
-        SEVERITY_TONE[severity] ?? SEVERITY_TONE.INFO
-      }`}
-    >
+    <Badge className="shrink-0" variant={SEVERITY_TONE[severity] ?? 'muted'}>
       {enumLabel(SEVERITY_COPY, severity, locale)}
-    </span>
+    </Badge>
   );
 }
 
@@ -96,20 +94,21 @@ export async function ErrorBanner({ message }: { message?: string }) {
     <p
       role="alert"
       data-testid="error-banner"
-      className="rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive"
+      className="flex items-start gap-2 rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive"
     >
-      {text}
+      <CircleAlert aria-hidden className="mt-0.5 size-4 shrink-0" strokeWidth={1.75} />
+      <span>{text}</span>
     </p>
   );
 }
 
 export function EmptyRow({ colSpan, children }: { colSpan: number; children: React.ReactNode }) {
   return (
-    <tr>
-      <td colSpan={colSpan} className="px-4 py-6 text-center text-sm text-muted-foreground">
+    <TableRow className="hover:bg-transparent">
+      <TableCell colSpan={colSpan} className="py-8 text-center whitespace-normal text-muted-foreground">
         {children}
-      </td>
-    </tr>
+      </TableCell>
+    </TableRow>
   );
 }
 

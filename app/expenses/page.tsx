@@ -12,13 +12,18 @@ import { Input } from '@/components/ui/input';
 import { REPORT_STATUSES, type ReportStatus } from '@/lib/expenses/service';
 import { formatMinor } from '@/lib/money';
 import { listReports, getWorkbenchOptions } from './actions';
-import { EmptyRow, ErrorBanner, StatusBadge, selectClass } from './ui';
+import { EmptyRow, ErrorBanner, StatusBadge } from './ui';
 import { formatInstant } from '@/lib/i18n/format';
 import { readerPrefs } from '@/lib/i18n/request';
 import { uiText, uiPlural, uiSentence, uiAround, type UiKey } from '@/lib/i18n/catalog/ui';
 import { enumLabel, REPORT_STATUS_COPY } from '@/lib/i18n/catalog/enums';
 
 import { pageTitle } from '@/lib/i18n/page-title';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { TableCard } from '@/components/screen';
+import { NativeSelect } from '@/components/ui/native-select';
+import { PageHeader, Screen } from '@/components/screen';
+import { Plus } from 'lucide-react';
 
 // UD-16. See `lib/i18n/page-title.ts` for why the title lives here rather than
 // in a map of routes, and `scripts/check-page-titles.mjs` for what enforces it.
@@ -71,49 +76,31 @@ export default async function ExpenseReportsPage({
   };
 
   return (
-    <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 p-6">
-      <header className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          {/*
-            UD-4. Upstream's A6: a manager opened this list looking for a
-            colleague's submission, found their own reports, and concluded it had
-            not arrived — it was in the approvals queue the whole time. *"A list
-            whose scope is invisible gets read as the whole set."*
+    <Screen width="wide">
+      {/*
+        UD-4. Upstream's A6: a manager opened this list looking for a colleague's
+        submission, found their own reports, and concluded it had not arrived — it was
+        in the approvals queue the whole time. *"A list whose scope is invisible gets
+        read as the whole set."* So the scope is in the HEADING, and the line under it
+        says it again: redundancy in a disclosure costs nothing when the whole defect
+        is somebody not reading the second line.
 
-            The sub-line below has always said "submitted by you", which is worth
-            noting because it makes the finding sharper rather than weaker: the
-            scope was disclosed and it was disclosed in the place people skip.
-            The scope belongs in the HEADING, and the sub-line keeps saying it
-            too — this is a disclosure, and redundancy in a disclosure costs
-            nothing when the whole defect is somebody not reading the second line.
-
-            One string in the DOM either way, so the pseudo-locale ratchet for
-            /expenses does not move (VX4-10 owns cataloguing this page's chrome).
-          */}
-          <h1 className="text-2xl font-semibold tracking-tight">
-            {t(orgWide ? 'expenses.title.org' : 'expenses.title.own')}
-          </h1>
-          {/* VX4-10 part 2. Was `{total} {total === 1 ? 'report' : 'reports'}`
-              concatenated with a scope clause — three JSX children assembling one
-              English sentence. Catalogued as whole sentences per plural category,
-              because a language with three plural forms cannot be served by a
-              ternary and a language that puts the scope first cannot be served by
-              concatenation. */}
-          <p className="text-sm text-muted-foreground">
-            {uiPlural(orgWide ? 'expenses.count.org' : 'expenses.count.own', total, {}, prefs.locale)}
-          </p>
-        </div>
-        <div className="flex items-center gap-3">
-          {/* Still no app-wide navigation (HANDOFF §7), so the inbox is linked
-              from the one page every user already visits. */}
-          <Link href="/approvals" className="text-sm underline underline-offset-4">
-            {t('nav.approvals')}
-          </Link>
+        VX4-10 part 2: the count line is catalogued as whole sentences per plural
+        category, not concatenated, because a language with three plural forms cannot
+        be served by a ternary.
+      */}
+      <PageHeader
+        title={t(orgWide ? 'expenses.title.org' : 'expenses.title.own')}
+        description={uiPlural(orgWide ? 'expenses.count.org' : 'expenses.count.own', total, {}, prefs.locale)}
+        actions={
           <Button asChild>
-            <Link href="/expenses/new">{t('expenses.new')}</Link>
+            <Link href="/expenses/new">
+              <Plus aria-hidden />
+              {t('expenses.new')}
+            </Link>
           </Button>
-        </div>
-      </header>
+        }
+      />
 
       <ErrorBanner message={sp.error} />
 
@@ -133,7 +120,7 @@ export default async function ExpenseReportsPage({
           <label className="text-sm font-medium" htmlFor="status">
             {t('expenses.filter.status')}
           </label>
-          <select id="status" name="status" defaultValue={sp.status ?? ''} className={selectClass}>
+          <NativeSelect id="status" name="status" defaultValue={sp.status ?? ''}>
             <option value="">{t('expenses.filter.status.any')}</option>
             {/* The catalogued label, not the member. `StatusBadge` two inches
                 away in the table renders "Returned for changes" for the same
@@ -147,7 +134,7 @@ export default async function ExpenseReportsPage({
                 {enumLabel(REPORT_STATUS_COPY, s, prefs.locale)}
               </option>
             ))}
-          </select>
+          </NativeSelect>
         </div>
         {actor.role === 'ADMIN' ? (
           <label className="flex items-center gap-2 pb-2 text-sm">
@@ -160,22 +147,22 @@ export default async function ExpenseReportsPage({
         </Button>
       </form>
 
-      <div className="overflow-x-auto rounded-lg border border-border">
-        <table className="w-full min-w-[760px] text-left text-sm">
-          <thead className="bg-muted/50 text-xs uppercase tracking-wide text-muted-foreground">
-            <tr>
-              <th className="px-4 py-3 font-medium">{t('expenses.column.report')}</th>
+      <TableCard>
+        <Table className="min-w-[760px]">
+          <TableHeader>
+            <TableRow>
+              <TableHead>{t('expenses.column.report')}</TableHead>
               {orgWide ? (
-                <th className="px-4 py-3 font-medium">{t('expenses.column.submitter')}</th>
+                <TableHead>{t('expenses.column.submitter')}</TableHead>
               ) : null}
-              <th className="px-4 py-3 font-medium">{t('expenses.column.status')}</th>
-              <th className="px-4 py-3 font-medium">{t('expenses.column.expenses')}</th>
-              <th className="px-4 py-3 font-medium">{t('expenses.column.receipts')}</th>
-              <th className="px-4 py-3 font-medium">{t('expenses.column.created')}</th>
-              <th className="px-4 py-3 text-right font-medium">{t('expenses.column.total')}</th>
-            </tr>
-          </thead>
-          <tbody>
+              <TableHead>{t('expenses.column.status')}</TableHead>
+              <TableHead>{t('expenses.column.expenses')}</TableHead>
+              <TableHead>{t('expenses.column.receipts')}</TableHead>
+              <TableHead>{t('expenses.column.created')}</TableHead>
+              <TableHead className="text-right">{t('expenses.column.total')}</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
             {reports.length === 0 ? (
               <EmptyRow colSpan={orgWide ? 7 : 6}>
                 {/* One catalogued sentence with a `{link}` in it, split by
@@ -197,8 +184,8 @@ export default async function ExpenseReportsPage({
               </EmptyRow>
             ) : (
               reports.map((r) => (
-                <tr key={r.id} className="border-t border-border">
-                  <td className="px-4 py-3">
+                <TableRow key={r.id}>
+                  <TableCell>
                     <Link
                       className="font-medium underline-offset-4 hover:underline"
                       href={`/expenses/${r.id}`}
@@ -206,25 +193,25 @@ export default async function ExpenseReportsPage({
                       {r.title}
                     </Link>
                     <div className="font-mono text-xs text-muted-foreground">{r.number ?? '—'}</div>
-                  </td>
+                  </TableCell>
                   {orgWide ? (
-                    <td className="px-4 py-3">{r.submitter_name ?? r.submitter_email}</td>
+                    <TableCell>{r.submitter_name ?? r.submitter_email}</TableCell>
                   ) : null}
-                  <td className="px-4 py-3">
+                  <TableCell>
                     <StatusBadge status={r.status} locale={prefs.locale} />
-                  </td>
-                  <td className="px-4 py-3 text-muted-foreground">{r.expense_count}</td>
-                  <td className="px-4 py-3 text-muted-foreground">{r.receipt_count}</td>
-                  <td className="px-4 py-3 text-muted-foreground">{formatInstant(r.created_at, prefs)}</td>
-                  <td className="px-4 py-3 text-right font-medium tabular-nums">
+                  </TableCell>
+                  <TableCell className="text-muted-foreground">{r.expense_count}</TableCell>
+                  <TableCell className="text-muted-foreground">{r.receipt_count}</TableCell>
+                  <TableCell className="text-muted-foreground">{formatInstant(r.created_at, prefs)}</TableCell>
+                  <TableCell className="text-right font-medium tabular-nums">
                     {formatMinor(r.total_minor, r.currency_code, r.minor_unit, prefs.locale)}
-                  </td>
-                </tr>
+                  </TableCell>
+                </TableRow>
               ))
             )}
-          </tbody>
-        </table>
-      </div>
+          </TableBody>
+        </Table>
+      </TableCard>
 
       {pageCount > 1 ? (
         <nav className="flex items-center gap-3 text-sm">
@@ -247,6 +234,6 @@ export default async function ExpenseReportsPage({
           ) : null}
         </nav>
       ) : null}
-    </div>
+    </Screen>
   );
 }

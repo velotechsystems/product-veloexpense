@@ -83,7 +83,7 @@ export function ReportHistory({
   if (events.length === 0) return null;
   return (
     <section className={`${cardClass} flex flex-col gap-3 p-5`}>
-      <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+      <h2 className="velo-eyebrow">
         History
       </h2>
       <ul className="flex flex-col gap-2 text-sm">

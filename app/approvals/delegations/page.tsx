@@ -27,7 +27,6 @@
  * person who needs a delegation fixed is by definition away, so somebody has to
  * be able to reach it.
  */
-import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
@@ -35,8 +34,7 @@ import {
   ErrorBanner,
   fieldClass,
   labelClass,
-  selectClass,
-} from '@/app/expenses/ui';
+  } from '@/app/expenses/ui';
 import { formatInstant, toDateInputValue } from '@/lib/i18n/format';
 import { enumLabel, DELEGATION_SCOPE_COPY } from '@/lib/i18n/catalog/enums';
 import type { ReaderPrefs } from '@/lib/i18n/resolve';
@@ -54,6 +52,11 @@ import {
   getDelegationsPage,
   revokeDelegationFromForm,
 } from './actions';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { TableCard } from '@/components/screen';
+import { NativeSelect } from '@/components/ui/native-select';
+import { PageHeader, Screen } from '@/components/screen';
+import { Badge } from '@/components/ui/badge';
 
 export const dynamic = 'force-dynamic';
 
@@ -84,24 +87,18 @@ function todayFor(prefs: ReaderPrefs): string {
 function StateBadge({ row }: { row: DelegationCard }) {
   if (row.revoked_at !== null) {
     return (
-      <span className="rounded border border-border px-2 py-0.5 text-xs text-muted-foreground">
-        ended
-      </span>
+      <Badge variant="muted">ended</Badge>
     );
   }
   if (row.active) {
     return (
-      <span className="rounded border border-primary/40 px-2 py-0.5 text-xs text-primary">
-        in force
-      </span>
+      <Badge variant="success">in force</Badge>
     );
   }
   // Not revoked and not active means the window is in the future or the past —
   // "scheduled" would be a lie for the second case, so say neither.
   return (
-    <span className="rounded border border-border px-2 py-0.5 text-xs text-muted-foreground">
-      not today
-    </span>
+    <Badge variant="outline">not today</Badge>
   );
 }
 
@@ -121,30 +118,15 @@ export default async function DelegationsPage({
   const liveMine = mine.filter((c) => c.active && c.revoked_at === null);
 
   return (
-    <div className="mx-auto flex w-full max-w-5xl flex-col gap-6 p-6">
-      <header className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Delegations</h1>
-          <p className="text-sm text-muted-foreground">
-            {liveMine.length === 0
-              ? 'Nobody is standing in for your approvals'
-              : `${liveMine.length === 1 ? liveMine[0].to_name + ' is' : liveMine.length + ' people are'} standing in for your approvals today`}
-          </p>
-        </div>
-        <div className="flex items-center gap-3">
-          <Link href="/approvals" className="text-sm underline underline-offset-4">
-            Approvals
-          </Link>
-          {actor.isAdmin ? (
-            <Link
-              href="/admin/approval-ladder"
-              className="text-sm underline underline-offset-4"
-            >
-              Approval ladder
-            </Link>
-          ) : null}
-        </div>
-      </header>
+    <Screen>
+      <PageHeader
+        title="Delegations"
+        description={
+          liveMine.length === 0
+            ? 'Nobody is standing in for your approvals'
+            : `${liveMine.length === 1 ? liveMine[0].to_name + ' is' : liveMine.length + ' people are'} standing in for your approvals today`
+        }
+      />
 
       <ErrorBanner message={error} />
       {notice ? (
@@ -169,7 +151,7 @@ export default async function DelegationsPage({
 
       {/* ── arrange cover ─────────────────────────────────────────────────── */}
       <section className="rounded-lg border border-border p-4">
-        <h2 className="text-lg font-medium">Arrange cover</h2>
+        <h2 className="text-lg leading-7 font-semibold">Arrange cover</h2>
         <p className="mb-3 text-sm text-muted-foreground">
           Both dates are included. Leave the last day blank for a standing stand-in with no end.
         </p>
@@ -182,10 +164,10 @@ export default async function DelegationsPage({
                 </label>
                 {/* Admin only. `createDelegation` refuses this field for anyone
                     else, so the select and the rule agree by construction. */}
-                <select
+                <div className="w-56">
+                  <NativeSelect
                   id="fromUserId"
                   name="fromUserId"
-                  className={`${selectClass} w-56`}
                   defaultValue={actor.id}
                 >
                   {delegators.map((p) => (
@@ -193,21 +175,24 @@ export default async function DelegationsPage({
                       {p.id === actor.id ? `${p.name} (you)` : p.name}
                     </option>
                   ))}
-                </select>
+                </NativeSelect>
+                </div>
               </div>
             ) : null}
             <div className={fieldClass}>
               <label className={labelClass} htmlFor="toUserId">
                 Who stands in
               </label>
-              <select id="toUserId" name="toUserId" className={`${selectClass} w-56`} required>
+              <div className="w-56">
+                <NativeSelect id="toUserId" name="toUserId" required>
                 <option value="">— choose —</option>
                 {candidates.map((p) => (
                   <option key={p.id} value={p.id}>
                     {p.name}
                   </option>
                 ))}
-              </select>
+              </NativeSelect>
+              </div>
             </div>
             <div className={fieldClass}>
               <label className={labelClass} htmlFor="startsOn">
@@ -238,10 +223,12 @@ export default async function DelegationsPage({
                   the only approval subject. The select exists so that adding
                   travel or card approvals later does not silently widen every
                   delegation written before them (0008). */}
-              <select id="scope" name="scope" className={`${selectClass} w-56`} defaultValue="ALL">
+              <div className="w-56">
+                <NativeSelect id="scope" name="scope" defaultValue="ALL">
                 <option value="ALL">Everything I approve</option>
                 <option value="REPORTS">Expense reports only</option>
-              </select>
+              </NativeSelect>
+              </div>
             </div>
             <div className={`${fieldClass} grow`}>
               <label className={labelClass} htmlFor="note">
@@ -300,7 +287,7 @@ export default async function DelegationsPage({
             <input type="hidden" name="delegationId" value={c.id} />
           </form>
         ))}
-    </div>
+    </Screen>
   );
 }
 
@@ -332,20 +319,20 @@ function DelegationTable({
   const cols = show === 'both' ? 6 : 5;
   return (
     <section className="flex flex-col gap-2">
-      <h2 className="text-lg font-medium">{title}</h2>
-      <div className="overflow-x-auto rounded-lg border border-border">
-        <table className="w-full min-w-[760px] text-left text-sm">
-          <thead className="bg-muted/50 text-xs uppercase tracking-wide text-muted-foreground">
-            <tr>
-              {show !== 'to' ? <th className="px-3 py-2 font-medium">Whose approvals</th> : null}
-              {show !== 'from' ? <th className="px-3 py-2 font-medium">Standing in</th> : null}
-              <th className="px-3 py-2 font-medium">Days</th>
-              <th className="px-3 py-2 font-medium">Covers</th>
-              <th className="px-3 py-2 font-medium">State</th>
-              <th className="px-3 py-2" />
-            </tr>
-          </thead>
-          <tbody>
+      <h2 className="text-lg leading-7 font-semibold">{title}</h2>
+      <TableCard>
+        <Table className="min-w-[760px]">
+          <TableHeader>
+            <TableRow>
+              {show !== 'to' ? <TableHead>Whose approvals</TableHead> : null}
+              {show !== 'from' ? <TableHead>Standing in</TableHead> : null}
+              <TableHead>Days</TableHead>
+              <TableHead>Covers</TableHead>
+              <TableHead>State</TableHead>
+              <TableHead />
+            </TableRow>
+          </TableHeader>
+          <TableBody>
             {rows.length === 0 ? (
               <EmptyRow colSpan={cols}>{empty}</EmptyRow>
             ) : (
@@ -357,10 +344,10 @@ function DelegationTable({
                   row.revoked_at === null &&
                   (row.from_user_id === actorId || row.created_by_id === actorId || isAdmin);
                 return (
-                  <tr key={row.id} className="border-t border-border align-top">
-                    {show !== 'to' ? <td className="px-3 py-2">{row.from_name}</td> : null}
+                  <TableRow key={row.id} className="align-top">
+                    {show !== 'to' ? <TableCell>{row.from_name}</TableCell> : null}
                     {show !== 'from' ? (
-                      <td className="px-3 py-2">
+                      <TableCell>
                         {row.to_name}
                         {row.onwardTo ? (
                           <p className="mt-0.5 text-xs text-destructive">
@@ -368,20 +355,20 @@ function DelegationTable({
                             Delegations do not chain — the work stops at {row.to_name}.
                           </p>
                         ) : null}
-                      </td>
+                      </TableCell>
                     ) : null}
-                    <td className="px-3 py-2 tabular-nums">
+                    <TableCell className="tabular-nums">
                       {row.starts_on}
                       {' → '}
                       {row.ends_on ?? 'open-ended'}
-                    </td>
-                    <td className="px-3 py-2">
+                    </TableCell>
+                    <TableCell>
                       {enumLabel(DELEGATION_SCOPE_COPY, row.scope, prefs.locale)}
                       {row.note ? (
                         <p className="text-xs text-muted-foreground">{row.note}</p>
                       ) : null}
-                    </td>
-                    <td className="px-3 py-2">
+                    </TableCell>
+                    <TableCell>
                       <StateBadge row={row} />
                       {row.revoked_at !== null ? (
                         <p className="mt-0.5 text-xs text-muted-foreground">
@@ -394,8 +381,8 @@ function DelegationTable({
                           arranged by {row.created_by_name}
                         </p>
                       ) : null}
-                    </td>
-                    <td className="px-3 py-2">
+                    </TableCell>
+                    <TableCell>
                       {mayRevoke ? (
                         <Button
                           form={`revoke-${row.id}`}
@@ -406,14 +393,14 @@ function DelegationTable({
                           End it
                         </Button>
                       ) : null}
-                    </td>
-                  </tr>
+                    </TableCell>
+                  </TableRow>
                 );
               })
             )}
-          </tbody>
-        </table>
-      </div>
+          </TableBody>
+        </Table>
+      </TableCard>
     </section>
   );
 }

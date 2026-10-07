@@ -16,6 +16,11 @@ import { readerPrefs } from '@/lib/i18n/request';
 import { EMPLOYEE_STATUSES, type EmployeeStatus } from '@/lib/employees/service';
 
 import { pageTitle } from '@/lib/i18n/page-title';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { TableCard } from '@/components/screen';
+import { NativeSelect } from '@/components/ui/native-select';
+import { PageHeader, Screen } from '@/components/screen';
+import { Badge } from '@/components/ui/badge';
 
 // UD-16. See `lib/i18n/page-title.ts` for why the title lives here rather than
 // in a map of routes, and `scripts/check-page-titles.mjs` for what enforces it.
@@ -31,8 +36,6 @@ function isStatus(value: string | undefined): value is EmployeeStatus {
   return !!value && (EMPLOYEE_STATUSES as string[]).includes(value);
 }
 
-const badgeClass =
-  'inline-flex items-center rounded-full border border-border px-2 py-0.5 text-xs font-medium';
 
 export default async function EmployeeDirectoryPage({
   searchParams,
@@ -79,18 +82,16 @@ export default async function EmployeeDirectoryPage({
   };
 
   return (
-    <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 p-6">
-      <header className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Employees</h1>
-          <p className="text-sm text-muted-foreground">
-            {total} {total === 1 ? 'employee' : 'employees'} in your organization
-          </p>
-        </div>
-        <Button asChild>
-          <Link href="/admin/employees/invite">Invite someone</Link>
-        </Button>
-      </header>
+    <Screen width="wide">
+      <PageHeader
+        title="Employees"
+        description={`${total} ${total === 1 ? 'employee' : 'employees'} in your organization`}
+        actions={
+          <Button asChild>
+            <Link href="/admin/employees/invite">Invite someone</Link>
+          </Button>
+        }
+      />
 
       <ErrorBanner message={sp.error} />
       {sp.invited === 'first' || sp.invited === 'again' ? (
@@ -118,43 +119,43 @@ export default async function EmployeeDirectoryPage({
           <h2 className="text-sm font-medium text-foreground">
             Invited, not yet signed in ({pendingInvites.length})
           </h2>
-          <div className="overflow-x-auto rounded-xl border border-border">
-            <table className="w-full text-sm">
-              <thead className="bg-muted/40 text-left text-xs text-muted-foreground">
-                <tr>
-                  <th className="px-3 py-2 font-medium">Email</th>
-                  <th className="px-3 py-2 font-medium">Role</th>
-                  <th className="px-3 py-2 font-medium">Invited by</th>
-                  <th className="px-3 py-2 font-medium">Expires</th>
-                  <th className="px-3 py-2" />
-                </tr>
-              </thead>
-              <tbody>
+          <TableCard>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Email</TableHead>
+                  <TableHead>Role</TableHead>
+                  <TableHead>Invited by</TableHead>
+                  <TableHead>Expires</TableHead>
+                  <TableHead />
+                </TableRow>
+              </TableHeader>
+              <TableBody>
                 {pendingInvites.map((invite) => (
-                  <tr className="border-t border-border" key={invite.id}>
-                    <td className="px-3 py-2">{invite.email}</td>
-                    <td className="px-3 py-2">
+                  <TableRow key={invite.id}>
+                    <TableCell>{invite.email}</TableCell>
+                    <TableCell>
                       {enumLabel(EMPLOYEE_ROLE_COPY, invite.role, locale)}
-                    </td>
-                    <td className="px-3 py-2 text-muted-foreground">
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">
                       {invite.invitedByName ?? '—'}
-                    </td>
-                    <td className="px-3 py-2 text-muted-foreground">
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">
                       {expiryFormat.format(invite.expiresAt)}
-                    </td>
-                    <td className="px-3 py-2 text-right">
+                    </TableCell>
+                    <TableCell className="text-right">
                       <form action={revokeInviteFromForm}>
                         <input name="inviteId" type="hidden" value={invite.id} />
                         <Button size="sm" type="submit" variant="outline">
                           Withdraw
                         </Button>
                       </form>
-                    </td>
-                  </tr>
+                    </TableCell>
+                  </TableRow>
                 ))}
-              </tbody>
-            </table>
-          </div>
+              </TableBody>
+            </Table>
+          </TableCard>
         </section>
       ) : null}
 
@@ -169,11 +170,11 @@ export default async function EmployeeDirectoryPage({
           <label className="text-sm font-medium" htmlFor="status">
             Status
           </label>
-          <select
+          <NativeSelect
             id="status"
             name="status"
             defaultValue={sp.status ?? ''}
-            className="h-8 rounded-lg border border-input bg-transparent px-3 text-sm shadow-xs outline-none"
+
           >
             <option value="">Any</option>
             {/* Catalogued, like the badge in the table beside it. See
@@ -183,7 +184,7 @@ export default async function EmployeeDirectoryPage({
                 {enumLabel(EMPLOYEE_STATUS_COPY, s, locale)}
               </option>
             ))}
-          </select>
+          </NativeSelect>
         </div>
         <label className="flex items-center gap-2 pb-2 text-sm">
           <input type="checkbox" name="deactivated" value="1" defaultChecked={includeDeactivated} />
@@ -194,49 +195,49 @@ export default async function EmployeeDirectoryPage({
         </Button>
       </form>
 
-      <div className="overflow-x-auto rounded-lg border border-border">
-        <table className="w-full min-w-[720px] text-left text-sm">
-          <thead className="bg-muted/50 text-xs uppercase tracking-wide text-muted-foreground">
-            <tr>
-              <th className="px-4 py-3 font-medium">Name</th>
-              <th className="px-4 py-3 font-medium">Title</th>
-              <th className="px-4 py-3 font-medium">Department</th>
-              <th className="px-4 py-3 font-medium">Manager</th>
-              <th className="px-4 py-3 font-medium">Role</th>
-              <th className="px-4 py-3 font-medium">Status</th>
-            </tr>
-          </thead>
-          <tbody>
+      <TableCard>
+        <Table className="min-w-[720px]">
+          <TableHeader>
+            <TableRow>
+              <TableHead>Name</TableHead>
+              <TableHead>Title</TableHead>
+              <TableHead>Department</TableHead>
+              <TableHead>Manager</TableHead>
+              <TableHead>Role</TableHead>
+              <TableHead>Status</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
             {employees.length === 0 ? (
-              <tr>
-                <td colSpan={6} className="px-4 py-8 text-center text-muted-foreground">
+              <TableRow>
+                <TableCell colSpan={6} className="py-8 text-center text-muted-foreground">
                   No employees match these filters.
-                </td>
-              </tr>
+                </TableCell>
+              </TableRow>
             ) : (
               employees.map((e) => (
-                <tr key={e.id} className="border-t border-border">
-                  <td className="px-4 py-3">
+                <TableRow key={e.id}>
+                  <TableCell>
                     <Link className="font-medium underline-offset-4 hover:underline" href={`/admin/employees/${e.id}`}>
                       {e.display_name ?? e.email}
                     </Link>
                     <div className="text-xs text-muted-foreground">{e.email}</div>
-                  </td>
-                  <td className="px-4 py-3">{e.title ?? '—'}</td>
-                  <td className="px-4 py-3">{e.department_name ?? '—'}</td>
-                  <td className="px-4 py-3">{e.manager_name ?? e.manager_email ?? '—'}</td>
-                  <td className="px-4 py-3">
-                    <span className={badgeClass}>{e.role}</span>
-                  </td>
-                  <td className="px-4 py-3">
-                    <span className={badgeClass}>{e.employee_status}</span>
-                  </td>
-                </tr>
+                  </TableCell>
+                  <TableCell>{e.title ?? '—'}</TableCell>
+                  <TableCell>{e.department_name ?? '—'}</TableCell>
+                  <TableCell>{e.manager_name ?? e.manager_email ?? '—'}</TableCell>
+                  <TableCell>
+                    <Badge variant={e.role === 'ADMIN' ? 'default' : 'muted'}>{e.role}</Badge>
+                  </TableCell>
+                  <TableCell>
+                    <Badge variant={e.employee_status === 'ACTIVE' ? 'success' : 'muted'}>{e.employee_status}</Badge>
+                  </TableCell>
+                </TableRow>
               ))
             )}
-          </tbody>
-        </table>
-      </div>
+          </TableBody>
+        </Table>
+      </TableCard>
 
       {pageCount > 1 ? (
         <nav className="flex items-center gap-3 text-sm">
@@ -255,6 +256,6 @@ export default async function EmployeeDirectoryPage({
           ) : null}
         </nav>
       ) : null}
-    </div>
+    </Screen>
   );
 }

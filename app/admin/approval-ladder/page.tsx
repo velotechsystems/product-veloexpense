@@ -27,7 +27,6 @@
  * says so rather than nagging.
  */
 import { Fragment } from 'react';
-import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { minorToDecimalString } from '@/lib/money';
@@ -43,9 +42,13 @@ import {
   restoreStarterLadderFromForm,
   updateRungFromForm,
 } from './actions';
-import { EmptyRow, ErrorBanner, fieldClass, labelClass, selectClass } from '@/app/expenses/ui';
+import { EmptyRow, ErrorBanner, fieldClass, labelClass } from '@/app/expenses/ui';
 
 import { pageTitle } from '@/lib/i18n/page-title';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { TableCard } from '@/components/screen';
+import { NativeSelect } from '@/components/ui/native-select';
+import { PageHeader, Screen } from '@/components/screen';
 
 // UD-16. See `lib/i18n/page-title.ts` for why the title lives here rather than
 // in a map of routes, and `scripts/check-page-titles.mjs` for what enforces it.
@@ -82,10 +85,9 @@ function ApproverSelect({
   return (
     <div className={fieldClass}>
       <label className="text-xs text-muted-foreground">{label}</label>
-      <select
+      <NativeSelect
         {...(formId ? { form: formId } : {})}
         name="approver"
-        className={selectClass}
         defaultValue={selected}
       >
         <option value="">— none —</option>
@@ -100,7 +102,7 @@ function ApproverSelect({
               ))}
           </optgroup>
         ))}
-      </select>
+      </NativeSelect>
     </div>
   );
 }
@@ -118,33 +120,24 @@ export default async function ApprovalLadderPage({
   const nextSequence = rungs.reduce((max, r) => Math.max(max, r.sequence), 0) + 1;
 
   return (
-    <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 p-6">
-      <header className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Approval ladder</h1>
-          <p className="text-sm text-muted-foreground">
-            {rungs.length === 0
-              ? 'No rungs — every report goes to the submitter’s manager'
-              : `${rungs.length} ${rungs.length === 1 ? 'rung' : 'rungs'} · ${flattenedSteps} approval${flattenedSteps === 1 ? '' : 's'} on a report that meets every threshold`}{' '}
-            · changes apply to the next report submitted, no deploy
-          </p>
-        </div>
-        <div className="flex items-center gap-3">
-          {/* There is no admin navigation anywhere in the app yet, so these two
-              surfaces link to each other. Not a substitute for a real nav —
-              see HANDOFF §7. */}
-          <Link href="/admin/expense-policies" className="text-sm underline underline-offset-4">
-            Expense policies
-          </Link>
-          {rungs.length < MAX_CONFIGURED_RUNGS ? (
+    <Screen width="wide">
+      <PageHeader
+        title="Approval ladder"
+        description={`${
+          rungs.length === 0
+            ? 'No rungs — every report goes to the submitter’s manager'
+            : `${rungs.length} ${rungs.length === 1 ? 'rung' : 'rungs'} · ${flattenedSteps} approval${flattenedSteps === 1 ? '' : 's'} on a report that meets every threshold`
+        } · changes apply to the next report submitted, no deploy`}
+        actions={
+          rungs.length < MAX_CONFIGURED_RUNGS ? (
             <form action={restoreStarterLadderFromForm}>
               <Button type="submit" variant="outline">
                 Add the starter ladder
               </Button>
             </form>
-          ) : null}
-        </div>
-      </header>
+          ) : null
+        }
+      />
 
       <ErrorBanner message={error} />
 
@@ -173,20 +166,20 @@ export default async function ApprovalLadderPage({
         </div>
       ) : null}
 
-      <div className="overflow-x-auto rounded-lg border border-border">
-        <table className="w-full min-w-[980px] text-left text-sm">
-          <thead className="bg-muted/50 text-xs uppercase tracking-wide text-muted-foreground">
-            <tr>
-              <th className="px-3 py-2 font-medium">Order</th>
-              <th className="px-3 py-2 font-medium">Rung</th>
-              <th className="px-3 py-2 font-medium">Applies from</th>
-              <th className="px-3 py-2 font-medium">Approvers, in order</th>
-              <th className="px-3 py-2 font-medium">Receipts</th>
-              <th className="px-3 py-2 font-medium">On</th>
-              <th className="px-3 py-2" />
-            </tr>
-          </thead>
-          <tbody>
+      <TableCard>
+        <Table className="min-w-[980px]">
+          <TableHeader>
+            <TableRow>
+              <TableHead>Order</TableHead>
+              <TableHead>Rung</TableHead>
+              <TableHead>Applies from</TableHead>
+              <TableHead>Approvers, in order</TableHead>
+              <TableHead>Receipts</TableHead>
+              <TableHead>On</TableHead>
+              <TableHead />
+            </TableRow>
+          </TableHeader>
+          <TableBody>
             {rungs.length === 0 ? (
               <EmptyRow colSpan={7}>Nothing configured — add a rung below.</EmptyRow>
             ) : (
@@ -194,8 +187,8 @@ export default async function ApprovalLadderPage({
                 const formId = `rung-${rung.id}`;
                 const external = rung.approvers.filter((a) => a.approver_kind === 'EMAIL');
                 return (
-                  <tr key={rung.id} className="border-t border-border align-top">
-                    <td className="px-3 py-2">
+                  <TableRow key={rung.id} className="align-top">
+                    <TableCell>
                       <Input
                         form={formId}
                         name="sequence"
@@ -205,11 +198,11 @@ export default async function ApprovalLadderPage({
                         defaultValue={rung.sequence}
                         className="w-16"
                       />
-                    </td>
-                    <td className="px-3 py-2">
+                    </TableCell>
+                    <TableCell>
                       <Input form={formId} name="name" defaultValue={rung.name} className="w-48" />
-                    </td>
-                    <td className="px-3 py-2">
+                    </TableCell>
+                    <TableCell>
                       <Input
                         form={formId}
                         name="threshold"
@@ -220,8 +213,8 @@ export default async function ApprovalLadderPage({
                       <p className="mt-1 text-xs text-muted-foreground">
                         {rung.threshold_minor === '0' ? 'every report' : 'and above'}
                       </p>
-                    </td>
-                    <td className="px-3 py-2">
+                    </TableCell>
+                    <TableCell>
                       <div className="flex flex-col gap-2">
                         {rung.approvers
                           .filter((a) => a.approver_kind !== 'EMAIL')
@@ -249,8 +242,8 @@ export default async function ApprovalLadderPage({
                           </p>
                         ) : null}
                       </div>
-                    </td>
-                    <td className="px-3 py-2">
+                    </TableCell>
+                    <TableCell>
                       <label className="flex items-center gap-2 text-xs">
                         <input
                           form={formId}
@@ -260,8 +253,8 @@ export default async function ApprovalLadderPage({
                         />
                         must confirm
                       </label>
-                    </td>
-                    <td className="px-3 py-2">
+                    </TableCell>
+                    <TableCell>
                       <label className="flex items-center gap-2 text-xs">
                         <input
                           form={formId}
@@ -271,8 +264,8 @@ export default async function ApprovalLadderPage({
                         />
                         enabled
                       </label>
-                    </td>
-                    <td className="px-3 py-2">
+                    </TableCell>
+                    <TableCell>
                       <div className="flex gap-2">
                         <Button form={formId} type="submit" size="sm">
                           Save
@@ -281,14 +274,14 @@ export default async function ApprovalLadderPage({
                           Remove
                         </Button>
                       </div>
-                    </td>
-                  </tr>
+                    </TableCell>
+                  </TableRow>
                 );
               })
             )}
-          </tbody>
-        </table>
-      </div>
+          </TableBody>
+        </Table>
+      </TableCard>
 
       {/* The row forms. Outside the table, referenced by `form=` above. */}
       {rungs.map((rung) => (
@@ -304,7 +297,7 @@ export default async function ApprovalLadderPage({
 
       {/* ── add a rung ───────────────────────────────────────────────────── */}
       <section className="rounded-lg border border-border p-4">
-        <h2 className="text-lg font-medium">Add a rung</h2>
+        <h2 className="text-lg leading-7 font-semibold">Add a rung</h2>
         <p className="mb-3 text-sm text-muted-foreground">
           <strong>Order</strong> is who signs first. <strong>Applies from</strong> is the report
           total at which this rung becomes required — leave it at 0 for every report. A report
@@ -365,6 +358,6 @@ export default async function ApprovalLadderPage({
           </div>
         </form>
       </section>
-    </div>
+    </Screen>
   );
 }

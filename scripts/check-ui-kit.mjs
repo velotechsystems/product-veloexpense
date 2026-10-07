@@ -26,6 +26,13 @@ const VENDORED = {
   'tokens-tailwind-v4': 'app/tailwind-v4.css',
   button: 'components/ui/button.tsx',
   input: 'components/ui/input.tsx',
+  textarea: 'components/ui/textarea.tsx',
+  'native-select': 'components/ui/native-select.tsx',
+  field: 'components/ui/field.tsx',
+  table: 'components/ui/table.tsx',
+  card: 'components/ui/card.tsx',
+  badge: 'components/ui/badge.tsx',
+  'page-header': 'components/page-header.tsx',
 };
 
 async function item(name) {

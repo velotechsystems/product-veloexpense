@@ -35,6 +35,9 @@ import { uiText, uiPlural, type UiKey } from '@/lib/i18n/catalog/ui';
 import { getInboxPage, markAllReadFromForm, markReadFromForm } from './actions';
 
 import { pageTitle } from '@/lib/i18n/page-title';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { TableCard } from '@/components/screen';
+import { PageHeader, Screen } from '@/components/screen';
 
 // UD-16. See `lib/i18n/page-title.ts` for why the title lives here rather than
 // in a map of routes, and `scripts/check-page-titles.mjs` for what enforces it.
@@ -74,38 +77,29 @@ export default async function NotificationsPage({
   const { rows, unread: unreadTotal } = await getInboxPage(unreadOnly);
 
   return (
-    <div className="mx-auto flex w-full max-w-4xl flex-col gap-6 p-6">
-      <header className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">{t('notifications.title')}</h1>
-          <p className="text-sm text-muted-foreground">
-            {unreadTotal === 0
-              ? t('notifications.none.unread')
-              : uiPlural('notifications.count.unread', unreadTotal, {}, prefs.locale)}
-          </p>
-        </div>
-        <div className="flex items-center gap-3">
-          {/* No global navigation exists anywhere in the app yet, so the
-              surfaces cross-link each other. Not a substitute for a real nav
-              with an unread badge on it — see HANDOFF §7. */}
-          <Link href="/approvals" className="text-sm underline underline-offset-4">
-            {t('nav.approvals')}
-          </Link>
-          <Link
-            href="/notifications/preferences"
-            className="text-sm underline underline-offset-4"
-          >
-            {t('nav.preferences')}
-          </Link>
-          {unreadTotal > 0 ? (
-            <form action={markAllReadFromForm}>
-              <Button type="submit" variant="outline">
-                {t('notifications.mark.all.read')}
-              </Button>
-            </form>
-          ) : null}
-        </div>
-      </header>
+    <Screen>
+      <PageHeader
+        title={t('notifications.title')}
+        description={
+          unreadTotal === 0
+            ? t('notifications.none.unread')
+            : uiPlural('notifications.count.unread', unreadTotal, {}, prefs.locale)
+        }
+        actions={
+          <>
+            <Button asChild variant="ghost">
+              <Link href="/notifications/preferences">{t('nav.preferences')}</Link>
+            </Button>
+            {unreadTotal > 0 ? (
+              <form action={markAllReadFromForm}>
+                <Button type="submit" variant="outline">
+                  {t('notifications.mark.all.read')}
+                </Button>
+              </form>
+            ) : null}
+          </>
+        }
+      />
 
       <ErrorBanner message={error} />
 
@@ -124,16 +118,16 @@ export default async function NotificationsPage({
         </Link>
       </div>
 
-      <div className="overflow-x-auto rounded-lg border border-border">
-        <table className="w-full min-w-[720px] text-left text-sm">
-          <thead className="bg-muted/50 text-xs uppercase tracking-wide text-muted-foreground">
-            <tr>
-              <th className="px-3 py-2 font-medium">{t('notifications.column.what')}</th>
-              <th className="px-3 py-2 font-medium">{t('notifications.column.when')}</th>
-              <th className="px-3 py-2" />
-            </tr>
-          </thead>
-          <tbody>
+      <TableCard>
+        <Table className="min-w-[720px]">
+          <TableHeader>
+            <TableRow>
+              <TableHead>{t('notifications.column.what')}</TableHead>
+              <TableHead>{t('notifications.column.when')}</TableHead>
+              <TableHead />
+            </TableRow>
+          </TableHeader>
+          <TableBody>
             {rows.length === 0 ? (
               <EmptyRow colSpan={3}>
                 {unreadOnly
@@ -144,13 +138,8 @@ export default async function NotificationsPage({
               rows.map((row) => {
                 const href = subjectHref(row.subjectType, row.subjectId);
                 return (
-                  <tr
-                    key={row.notificationId}
-                    className={`border-t border-border align-top ${
-                      row.readAt === null ? 'bg-primary/5' : ''
-                    }`}
-                  >
-                    <td className="px-3 py-2">
+                  <TableRow key={row.notificationId} className={`align-top ${ row.readAt === null ? 'bg-primary/5' : '' }`}>
+                    <TableCell>
                       <p className={row.readAt === null ? 'font-medium' : ''}>
                         {href ? (
                           <Link href={href} className="underline underline-offset-4">
@@ -176,11 +165,11 @@ export default async function NotificationsPage({
                           prefs.locale,
                         )}
                       </p>
-                    </td>
-                    <td className="px-3 py-2 text-muted-foreground">
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">
                       {formatInstant(row.occurredAt, prefs)}
-                    </td>
-                    <td className="px-3 py-2">
+                    </TableCell>
+                    <TableCell>
                       {row.readAt === null ? (
                         <Button
                           form={`read-${row.notificationId}`}
@@ -191,14 +180,14 @@ export default async function NotificationsPage({
                           {t('notifications.mark.read')}
                         </Button>
                       ) : null}
-                    </td>
-                  </tr>
+                    </TableCell>
+                  </TableRow>
                 );
               })
             )}
-          </tbody>
-        </table>
-      </div>
+          </TableBody>
+        </Table>
+      </TableCard>
 
       {/* The row forms. Outside the table, referenced by `form=` above. */}
       {rows
@@ -215,6 +204,6 @@ export default async function NotificationsPage({
         ))}
 
       <p className="text-xs text-muted-foreground">{t('notifications.footer')}</p>
-    </div>
+    </Screen>
   );
 }
