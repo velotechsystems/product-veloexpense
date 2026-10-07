@@ -1,0 +1,139 @@
+{
+  "title": "Expense analytics",
+  "subtitle": "Spend across expense reports and virtual cards, in {currency}.",
+  "loading": "Loading analytics…",
+  "empty": "No spend in this range yet.",
+  "mobileNotice": {
+    "dashboard": {
+      "sectionLimitedTitle": "Everything below is the unfiltered total.",
+      "sectionLimitedBody": "Filtering by business unit, department or the other dimensions — and looking up an individual transaction — are desktop tasks. Open this page on a larger screen for either."
+    },
+    "period": {
+      "sectionLimitedTitle": "Everything below is the unfiltered comparison.",
+      "sectionLimitedBody": "Narrowing this comparison by business unit, department or the other dimensions is a desktop task — open this page on a larger screen to filter it."
+    }
+  },
+  "tabs": {
+    "dashboard": "Dashboard",
+    "periodAnalysis": "Period analysis",
+    "budgetVsActual": "Budget vs actual"
+  },
+  "sources": {
+    "allOff": "No spend sources are active. Turn on Expense management or Virtual credit cards to see analytics.",
+    "expensesOff": "Expense-report spend is excluded — the Expense management module is off.",
+    "cardsOff": "Virtual-card spend is excluded — the Virtual credit cards module is off."
+  },
+  "filters": {
+    "from": "From",
+    "to": "To",
+    "clear": "Clear",
+    "range": "Date range",
+    "any": "Any",
+    "search": "Search…",
+    "noMatches": "No matches",
+    "businessUnit": "Business unit",
+    "department": "Department",
+    "category": "Category",
+    "employee": "Employee",
+    "month": "Month",
+    "class": "Class",
+    "entity": "Entity",
+    "source": "Source",
+    "sourceExpense": "Expense reports",
+    "sourceCard": "Credit cards"
+  },
+  "kpi": {
+    "totalSpend": "Total spend",
+    "transactions": "Transactions",
+    "topCategory": "Top category",
+    "topBusinessUnit": "Top business unit",
+    "topDepartment": "Top department",
+    "none": "—",
+    "sourceShare": "{percent}% of total · {count, plural, one {# transaction} other {# transactions}}"
+  },
+  "charts": {
+    "monthlyTrend": "Monthly spend",
+    "byCategory": "Spend by category",
+    "byBusinessUnit": "Spend by business unit",
+    "byDepartment": "Spend by department",
+    "byEmployee": "Top employees by spend",
+    "cardSpend": "Card spend",
+    "unassigned": "Unassigned"
+  },
+  "table": {
+    "title": "Transactions",
+    "date": "Date",
+    "employee": "Employee",
+    "category": "Category",
+    "businessUnit": "Business unit",
+    "department": "Department",
+    "merchant": "Merchant",
+    "amount": "Amount",
+    "showing": "Showing {shown} of {total}",
+    "source": "Source",
+    "sourceExpense": "Expense",
+    "sourceCard": "Card",
+    "export": "Export CSV"
+  },
+  "period": {
+    "momTitle": "Month-over-month comparison",
+    "yoyTitle": "Year-over-year comparison",
+    "period1": "Period 1",
+    "period2": "Period 2",
+    "vs": "vs",
+    "noPeriod": "No period",
+    "periodSpend": "{period} spend",
+    "p1Transactions": "Period 1 transactions",
+    "p1Avg": "Period 1 avg per transaction",
+    "yearTransactions": "{year} transactions",
+    "yearAvg": "{year} avg per transaction",
+    "currentYear": "Current year {year}",
+    "priorYear": "Prior year {year}",
+    "variance": "Variance",
+    "pctChange": "% change",
+    "category": "Category",
+    "difference": "Difference"
+  },
+  "budgetVsActual": {
+    "loading": "Loading budgets…",
+    "noFiscalYear": "No fiscal year is marked current, so there is nothing to report against.",
+    "empty": "No active budgets for this fiscal year.",
+    "scopeNote": "{fiscalYear} — budgets you have access to. Actuals include approved-but-unpaid commitments.",
+    "currencyHeading": "{currency} — {count, plural, one {# budget} other {# budgets}}",
+    "consumedOf": "{consumed} of {budget}",
+    "noBudget": "Spend with no budget",
+    "noBudgetShort": "no budget",
+    "monthShort": "M{month}",
+    "gaps": "Not included above",
+    "unattributed": "Spend matching no budget: {amounts}",
+    "unconverted": "{count, plural, one {# contribution} other {# contributions}} could not be converted into the budget currency, so the figures above are incomplete.",
+    "allScope": "All",
+    "status": {
+      "under": "{pct}% consumed",
+      "warning": "{pct}% consumed",
+      "over": "{pct}% — over budget"
+    },
+    "series": {
+      "budget": "Budget (cumulative)",
+      "consumed": "Consumed (cumulative)"
+    },
+    "col": {
+      "glAccount": "GL account",
+      "scope": "Scope",
+      "budget": "Budget",
+      "consumed": "Consumed",
+      "variance": "Variance",
+      "consumedPct": "% used",
+      "currency": "Currency"
+    }
+  },
+  "export": {
+    "metric": "Metric",
+    "popupBlocked": "The print window was blocked. Allow pop-ups for this site, then try again.",
+    "sectionColumn": "Section",
+    "sectionSummary": "Summary",
+    "title": "Spend analytics",
+    "trigger": "Export report",
+    "value": "Amount"
+  }
+}

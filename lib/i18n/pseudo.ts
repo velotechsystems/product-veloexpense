@@ -125,16 +125,25 @@ const KEEP = /(\{\w+\}|[0-9$.,:%\-/⟦⟧])/;
  */
 export function pseudoize(text: string): string {
   if (text === '') return '';
-  const accented = text
-    .split(KEEP)
-    .map((part) => (KEEP.test(part) ? part : part.replace(/[a-z]/gi, (c) => MAP[c] ?? c)))
-    .join('');
+  const accented = accent(text);
   // Padded on the LENGTH OF THE LETTERS, not of the whole string: a sentence
   // that is mostly a formatted amount should not be padded as though it were
   // mostly words.
   const letters = text.replace(/[^a-z]/gi, '').length;
   const pad = '·'.repeat(Math.max(1, Math.round(letters * 0.3)));
   return `${OPEN}${accented}${pad}${CLOSE}`;
+}
+
+/**
+ * The accenting alone, with no brackets or padding — for a caller that brackets a WHOLE
+ * message itself. `i18n/pseudo-messages.ts` needs it: an ICU message is accented one
+ * literal at a time (so `{count, plural, …}` survives), then bracketed once.
+ */
+export function accent(text: string): string {
+  return text
+    .split(KEEP)
+    .map((part) => (KEEP.test(part) ? part : part.replace(/[a-z]/gi, (c) => MAP[c] ?? c)))
+    .join('');
 }
 
 /** Applied by the catalogue funnels; a no-op unless the flag is set at boot. */

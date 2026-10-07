@@ -1,0 +1,139 @@
+{
+  "title": "Analytique des dépenses",
+  "subtitle": "Dépenses des rapports et des cartes virtuelles, en {currency}.",
+  "loading": "Chargement de l'analytique…",
+  "empty": "Aucune dépense dans cette période.",
+  "mobileNotice": {
+    "dashboard": {
+      "sectionLimitedTitle": "Tout ce qui suit est le total non filtré.",
+      "sectionLimitedBody": "Filtrer par unité d’affaires, service ou les autres critères — et consulter une transaction en particulier — sont des tâches réservées à l’ordinateur. Ouvrez cette page sur un écran plus grand pour l’une ou l’autre."
+    },
+    "period": {
+      "sectionLimitedTitle": "Tout ce qui suit est la comparaison non filtrée.",
+      "sectionLimitedBody": "Filtrer cette comparaison par unité d’affaires, service ou les autres critères est une tâche réservée à l’ordinateur — ouvrez cette page sur un écran plus grand pour la filtrer."
+    }
+  },
+  "tabs": {
+    "dashboard": "Tableau de bord",
+    "periodAnalysis": "Analyse par période",
+    "budgetVsActual": "Budget vs réel"
+  },
+  "sources": {
+    "allOff": "Aucune source de dépenses n'est active. Activez Gestion des dépenses ou Cartes de crédit virtuelles pour voir les analyses.",
+    "expensesOff": "Les dépenses des rapports sont exclues — le module Gestion des dépenses est désactivé.",
+    "cardsOff": "Les dépenses par carte virtuelle sont exclues — le module Cartes de crédit virtuelles est désactivé."
+  },
+  "filters": {
+    "from": "Du",
+    "to": "Au",
+    "clear": "Effacer",
+    "range": "Période",
+    "any": "Tous",
+    "search": "Rechercher…",
+    "noMatches": "Aucun résultat",
+    "businessUnit": "Unité d’affaires",
+    "department": "Service",
+    "category": "Catégorie",
+    "employee": "Employé",
+    "month": "Mois",
+    "class": "Classe",
+    "entity": "Entité",
+    "source": "Source",
+    "sourceExpense": "Rapports de dépenses",
+    "sourceCard": "Cartes de crédit"
+  },
+  "kpi": {
+    "totalSpend": "Dépenses totales",
+    "transactions": "Transactions",
+    "topCategory": "Principale catégorie",
+    "topBusinessUnit": "Principale unité d’affaires",
+    "topDepartment": "Service principal",
+    "none": "—",
+    "sourceShare": "{percent} % du total · {count, plural, one {# transaction} other {# transactions}}"
+  },
+  "charts": {
+    "monthlyTrend": "Dépenses mensuelles",
+    "byCategory": "Dépenses par catégorie",
+    "byBusinessUnit": "Dépenses par unité d’affaires",
+    "byDepartment": "Dépenses par service",
+    "byEmployee": "Employés par dépenses",
+    "cardSpend": "Dépenses par carte",
+    "unassigned": "Non attribué"
+  },
+  "table": {
+    "title": "Transactions",
+    "date": "Date",
+    "employee": "Employé",
+    "category": "Catégorie",
+    "businessUnit": "Unité d’affaires",
+    "department": "Service",
+    "merchant": "Commerçant",
+    "amount": "Montant",
+    "showing": "Affichage de {shown} sur {total}",
+    "source": "Source",
+    "sourceExpense": "Dépense",
+    "sourceCard": "Carte",
+    "export": "Exporter CSV"
+  },
+  "period": {
+    "momTitle": "Comparaison d’un mois à l’autre",
+    "yoyTitle": "Comparaison d’une année à l’autre",
+    "period1": "Période 1",
+    "period2": "Période 2",
+    "vs": "c.",
+    "noPeriod": "Aucune période",
+    "periodSpend": "Dépenses de {period}",
+    "p1Transactions": "Transactions période 1",
+    "p1Avg": "Moyenne par transaction période 1",
+    "yearTransactions": "Transactions {year}",
+    "yearAvg": "Moyenne par transaction {year}",
+    "currentYear": "Année courante {year}",
+    "priorYear": "Année précédente {year}",
+    "variance": "Écart",
+    "pctChange": "Variation %",
+    "category": "Catégorie",
+    "difference": "Différence"
+  },
+  "budgetVsActual": {
+    "loading": "Chargement des budgets…",
+    "noFiscalYear": "Aucun exercice n’est marqué courant; il n’y a rien à comparer.",
+    "empty": "Aucun budget actif pour cet exercice.",
+    "scopeNote": "{fiscalYear} — les budgets auxquels vous avez accès. Les données réelles incluent les engagements approuvés mais non payés.",
+    "currencyHeading": "{currency} — {count, plural, one {# budget} other {# budgets}}",
+    "consumedOf": "{consumed} sur {budget}",
+    "noBudget": "Dépense sans budget",
+    "noBudgetShort": "aucun budget",
+    "monthShort": "M{month}",
+    "gaps": "Non inclus ci-dessus",
+    "unattributed": "Dépenses ne correspondant à aucun budget : {amounts}",
+    "unconverted": "{count, plural, one {# contribution n’a pas pu être convertie} other {# contributions n’ont pas pu être converties}} dans la devise du budget; les chiffres ci-dessus sont donc incomplets.",
+    "allScope": "Tous",
+    "status": {
+      "under": "{pct}% utilisé",
+      "warning": "{pct}% utilisé",
+      "over": "{pct}% — dépassement"
+    },
+    "series": {
+      "budget": "Budget (cumulatif)",
+      "consumed": "Consommé (cumulatif)"
+    },
+    "col": {
+      "glAccount": "Compte GL",
+      "scope": "Portée",
+      "budget": "Budget",
+      "consumed": "Consommé",
+      "variance": "Écart",
+      "consumedPct": "% utilisé",
+      "currency": "Devise"
+    }
+  },
+  "export": {
+    "metric": "Indicateur",
+    "popupBlocked": "La fenêtre d'impression a été bloquée. Autorisez les fenêtres contextuelles pour ce site, puis réessayez.",
+    "sectionColumn": "Section",
+    "sectionSummary": "Sommaire",
+    "title": "Analyse des dépenses",
+    "trigger": "Exporter le rapport",
+    "value": "Montant"
+  }
+}

@@ -1,0 +1,44 @@
+{
+  "add": "Ajouter un taux",
+  "edit": "Modifier",
+  "delete": "Supprimer",
+  "actions": "Actions",
+  "cancel": "Annuler",
+  "save": "Enregistrer",
+  "saving": "Enregistrement…",
+  "showing": "Affichage de {shown} sur {total}",
+  "emptyTitle": "Aucun taux d'indemnité journalière",
+  "emptyBody": "Ajoutez un taux pour définir une indemnité quotidienne par catégorie de dépense et par lieu.",
+  "ongoing": "en cours",
+  "scopeTitle": "Portée (facultatif)",
+  "scopeHint": "Laisser vide pour appliquer à tous. Un taux plus précis l'emporte sur un taux général.",
+  "col": {
+    "location": "Lieu",
+    "scope": "Portée",
+    "category": "Catégorie",
+    "amount": "Indemnité / jour",
+    "validity": "En vigueur"
+  },
+  "scope": {
+    "all": "Tous",
+    "le": "Entité juridique",
+    "bu": "Unité d'affaires",
+    "any": "Tous",
+    "anyLevel": "Tout niveau"
+  },
+  "field": {
+    "country": "Pays (ISO-2)",
+    "city": "Ville",
+    "currency": "Devise",
+    "policyCurrency": "Devise de la politique",
+    "category": "Catégorie de dépense",
+    "categoryPlaceholder": "Sélectionner une catégorie",
+    "amount": "Indemnité / jour",
+    "effectiveFrom": "En vigueur à partir du",
+    "effectiveTo": "En vigueur jusqu'au",
+    "firstLastDay": "Réduire de moitié l'indemnité le premier/dernier jour de voyage",
+    "jobLevel": "Niveau de poste",
+    "legalEntity": "Entité juridique",
+    "businessUnit": "Unité d'affaires"
+  }
+}

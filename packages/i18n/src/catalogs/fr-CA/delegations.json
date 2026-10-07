@@ -1,0 +1,60 @@
+{
+  "col": {
+    "delegator": "De",
+    "delegatee": "À",
+    "scope": "Portée",
+    "period": "Période",
+    "status": "Statut",
+    "actions": ""
+  },
+  "edit": "Modifier",
+  "empty": "Les délégations que vous créez apparaîtront ici.",
+  "emptyTitle": "Aucune délégation pour l'instant",
+  "form": {
+    "title": "Nouvelle délégation",
+    "editTitle": "Modifier la délégation",
+    "save": "Enregistrer",
+    "delegatee": "Déléguer à",
+    "delegateePlaceholder": "Rechercher une personne",
+    "startsAt": "Début",
+    "endsAt": "Fin",
+    "endsAtHint": "Laisser vide pour aucune date de fin",
+    "scope": "Portée",
+    "cancel": "Annuler",
+    "submit": "Créer la délégation",
+    "submitting": "Création…",
+    "errEndBeforeStart": "La date de fin doit être postérieure à la date de début.",
+    "errNoDelegatee": "Choisissez une personne à qui déléguer."
+  },
+  "loading": "Chargement des délégations…",
+  "new": "Nouvelle délégation",
+  "period": {
+    "noEnd": "Sans date de fin"
+  },
+  "revoke": "Révoquer",
+  "revokeConfirm": "Révoquer cette délégation? Les approbations seront acheminées normalement de nouveau.",
+  "rowActions": "Actions de délégation",
+  "scope": {
+    "ALL": "Toutes les approbations",
+    "VCC": "Cartes virtuelles",
+    "REPORTS": "Rapports de dépenses"
+  },
+  "showing": "Affichage de {shown} sur {total}",
+  "status": {
+    "active": "Active",
+    "revoked": "Révoquée"
+  },
+  "title": "Délégations",
+  "toggle": {
+    "mine": "Les miennes",
+    "all": "Toutes",
+    "owner": "Délégations"
+  },
+  "views": {
+    "deleteConfirm": "Supprimer « {name} »? Cette action est irréversible.",
+    "nameDefault": "Ma vue",
+    "namePrompt": "Nommer cette vue :",
+    "renamePrompt": "Renommer la vue :",
+    "untitled": "Vue sans titre"
+  }
+}

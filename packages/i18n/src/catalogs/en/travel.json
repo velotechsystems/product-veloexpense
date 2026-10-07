@@ -1,0 +1,242 @@
+{
+  "title": "Travel Requests",
+  "new": "New travel request",
+  "empty": "No travel requests yet.",
+  "emptyApprovals": "Nothing is waiting on you.",
+  "emptyOversight": "No travel requests from your team yet.",
+  "sections": {
+    "mine": "My requests",
+    "approvals": "Awaiting your approval",
+    "oversight": "Your team & past decisions"
+  },
+  "columns": {
+    "number": "Request",
+    "traveller": "Traveller",
+    "destination": "Destination",
+    "dates": "Dates",
+    "budget": "Budget",
+    "status": "Status",
+    "actions": ""
+  },
+  "status": {
+    "DRAFT": "Draft",
+    "SUBMITTED": "Submitted",
+    "APPROVED": "Approved",
+    "REJECTED": "Rejected",
+    "RETURNED": "Returned",
+    "CANCELLED": "Cancelled"
+  },
+  "tripType": {
+    "ROUND_TRIP": "Round trip",
+    "ONE_WAY": "One way",
+    "MULTI_CITY": "Multi-city"
+  },
+  "basis": {
+    "QUOTE": "Quoted",
+    "POLICY_CAP": "Policy cap",
+    "PER_DIEM": "Per diem",
+    "MANUAL": "Planned"
+  },
+  "confidence": {
+    "BELOW_TYPICAL": "Below the usual price",
+    "TYPICAL": "About the usual price",
+    "ABOVE_TYPICAL": "Above the usual price",
+    "UNKNOWN": ""
+  },
+  "form": {
+    "purpose": "Purpose of travel",
+    "purposePlaceholder": "Why this trip is necessary",
+    "notes": "Notes",
+    "destination": "Destination",
+    "origin": "Departing from",
+    "searchCity": "Search for a city",
+    "searching": "Searching…",
+    "noMatches": "No cities match.",
+    "lookupFailed": "Address search failed: {reason}",
+    "typeDestination": "Type a destination",
+    "tripType": "Trip type",
+    "departDate": "Departure",
+    "returnDate": "Return",
+    "includeCar": "Include a rental car",
+    "currency": "Currency",
+    "submit": "Create",
+    "cancel": "Cancel",
+    "saving": "Saving…"
+  },
+  "detail": {
+    "approve": "Approve",
+    "approvedTotal": "Approved total",
+    "budget": "Budget",
+    "buildReport": "Create expense report",
+    "close": "Close",
+    "getPrices": "Get live prices",
+    "noBudget": "Nothing has been budgeted yet.",
+    "noTimeline": "This request has not been submitted for approval.",
+    "note": "Note",
+    "notePlaceholder": "Optional — visible to the traveller",
+    "plannedAddItem": "Add a planned budget item",
+    "plannedAmount": "Amount",
+    "plannedAmountHint": "A category with a policy rate fills its own amount in. Leave the amount blank, or keep the figure it filled in, to let the policy price it — a per-diem for the destination, or a daily cap across the trip. Typing over it needs a note.",
+    "plannedSearchAfterCreateFlight": "Search for flights once the request is created — the fare is quoted against the trip and saved onto this line.",
+    "plannedSearchAfterCreateStay": "Search for hotels once the request is created — the rate is quoted against the trip and saved onto this line.",
+    "plannedCategory": "Category",
+    "plannedCategoryPlaceholder": "Choose a category",
+    "plannedDiscard": "Discard this planned item",
+    "plannedRemove": "Remove {category} from the budget",
+    "pricing": "Fetching prices…",
+    "purpose": "Purpose",
+    "reject": "Reject",
+    "submit": "Submit for approval",
+    "timeline": "Approvals",
+    "total": "Total",
+    "variance": "Budget vs actual",
+    "varianceActual": "Actual",
+    "varianceBudgeted": "Budgeted",
+    "varianceDelta": "Variance",
+    "varianceNone": "Nothing has been filed against this trip yet.",
+    "warnCarUnpriced": "This trip includes a rental car. No travel provider we can reach quotes car hire, so the rental will not appear in the budget unless you add it as a planned item.",
+    "warnNoBudget": "Nothing has been priced for this trip yet, so the approver would see a total of zero. You can still submit it — but recalculating the per diem, fetching live prices or adding a planned item first will give them something to decide on.",
+    "withdraw": "Withdraw"
+  },
+  "quote": {
+    "no-plan": "Live pricing is off — the SerpApi integration is not installed.",
+    "no-airports": "No airports could be found for this route, so flights could not be priced.",
+    "no-results": "No flights or stays were found for these dates.",
+    "past-date": "The departure date has already passed, so nothing can be priced. Update the dates to see live prices.",
+    "provider-error": "Live prices could not be fetched. Your budget is unchanged — enter the amounts by hand, or try again later.",
+    "provider-KEY_REJECTED": "The travel-pricing provider rejected our credentials, so nothing could be priced. An administrator needs to check the SerpApi key.",
+    "provider-PLAN_EXHAUSTED": "The travel-pricing plan has no searches left this cycle, so nothing could be priced. Enter the amounts by hand until it resets.",
+    "provider-BAD_REQUEST": "The travel-pricing provider rejected this search. That is a fault on our side, not something you can fix — please report it.",
+    "provider-UNKNOWN": "Live prices could not be fetched. Your budget is unchanged — enter the amounts by hand, or try again later."
+  },
+  "errors": {
+    "roundTripNeedsReturn": "A round trip needs a return date.",
+    "returnBeforeDepart": "The return date is before the departure date."
+  },
+  "line": {
+    "days": "Days",
+    "dailyCap": "Daily cap",
+    "dailyCapHint": "The policy ceiling per day. The line is priced at this × the days.",
+    "noLiveRate": "No live rate available — priced from the policy cap.",
+    "recalculate": "Apply",
+    "override": "Override amount",
+    "applyOverride": "Apply override",
+    "overrideHint": "An amount you type replaces the derived one permanently. To go back to the derived figure, add a new line in the same category and delete this one.",
+    "notes": "Notes",
+    "notesPlaceholder": "Why this is needed — and on a flight, why this fare…",
+    "summary": {
+      "perDiem": "{days, plural, one {Per diem · # day} other {Per diem · # days}} · {city}",
+      "dailyRate": "{rate}/day",
+      "edgeHalved": "first/last day halved",
+      "nights": "{nights, plural, one {# night} other {# nights}}",
+      "nightly": "{rate}/night",
+      "attendees": "{count, plural, one {# attendee} other {# attendees}}",
+      "perDay": "{count}×/day",
+      "days": "{days, plural, one {# day} other {# days}}",
+      "dailyCap": "{cap}/day cap"
+    },
+    "overridePreview": "Override amount you are entering",
+    "overrode": "Overrode the policy amount of {amount}",
+    "overrides": "Overrides the policy amount of {amount}",
+    "noteRequiredForOverride": "Say why you are overriding the policy amount"
+  },
+  "picker": {
+    "applyCap": "Only show stays within the per-diem cap",
+    "cabin": "Cabin",
+    "cabins": {
+      "ECONOMY": "Economy",
+      "PREMIUM_ECONOMY": "Premium economy",
+      "BUSINESS": "Business",
+      "FIRST": "First"
+    },
+    "checkIn": "Check in",
+    "checkOut": "Check out",
+    "choose": "Choose",
+    "costHint": "Each search uses a paid provider credit.",
+    "deepSearch": "Deep search (slower, costs more)",
+    "flightResults": "Flights found",
+    "level": {
+      "low": "Below typical",
+      "typical": "Typical",
+      "high": "Above typical"
+    },
+    "nonstop": "Nonstop",
+    "rating": "Rated {rating}",
+    "search": "Search",
+    "searching": "Searching…",
+    "stars": "{count, plural, one {# star} other {# stars}}",
+    "stayResults": "Places to stay",
+    "stopCount": "{count, plural, one {# stop} other {# stops}}",
+    "stops": "Stops",
+    "stopsAny": "Any number of stops",
+    "stopsMax": {
+      "0": "Nonstop only",
+      "1": "Up to 1 stop",
+      "2": "Up to 2 stops"
+    },
+    "truncated": "Showing {shown} of {found} results.",
+    "unnamedStay": "Unnamed property"
+  },
+  "attendees": {
+    "add": "Add attendee",
+    "company": "Company",
+    "covers": "{heads} attending · {covers} covers at the allowance",
+    "days": "Days",
+    "external": "Outside the company",
+    "heading": "Who is going",
+    "name": "Name",
+    "none": "Nobody added yet. A meal with no attendees is priced at nothing.",
+    "occurrencesPerDay": "Times per day",
+    "people": "People",
+    "ratePerPerson": "Per person",
+    "ratePlaceholder": "Per diem",
+    "remove": "Remove attendee"
+  },
+  "header": {
+    "edit": "Edit trip",
+    "save": "Save trip",
+    "cancel": "Cancel",
+    "purpose": "Purpose",
+    "notes": "Notes",
+    "departDate": "Departure",
+    "returnDate": "Return",
+    "editHint": "Changing the dates or the destination does not re-price the lines already here — each shows the amount it was created with."
+  },
+  "policy": {
+    "severity": {
+      "INFO": "Note",
+      "WARNING": "Warning",
+      "BLOCK": "Blocked"
+    },
+    "blockHint": "This must be changed before the request can be submitted — it cannot be explained away.",
+    "justify": "Explain",
+    "editJustification": "Edit explanation",
+    "justifyPlaceholder": "Why this is necessary…",
+    "saveJustification": "Save",
+    "blockedSummary": "{count, plural, one {# blocking policy violation must be fixed before this can be submitted.} other {# blocking policy violations must be fixed before this can be submitted.}}",
+    "warnSummary": "{count, plural, one {# warning needs an explanation before this can be submitted.} other {# warnings need an explanation before this can be submitted.}}",
+    "cabin": {
+      "ECONOMY": "economy",
+      "PREMIUM_ECONOMY": "premium economy",
+      "BUSINESS": "business",
+      "FIRST": "first"
+    }
+  },
+  "taskStatus": {
+    "APPROVED": "Approved",
+    "EXPIRED": "Expired",
+    "PENDING": "Waiting",
+    "REJECTED": "Rejected",
+    "SKIPPED": "Skipped"
+  },
+  "nodeLabel": {
+    "acknowledge": "Acknowledgement",
+    "action": "Action",
+    "approval": "Approval",
+    "callWorkflow": "Sub-workflow",
+    "notify": "Notification",
+    "parallel": "Parallel branch",
+    "step": "Step",
+    "switch": "Routing"
+  }
+}

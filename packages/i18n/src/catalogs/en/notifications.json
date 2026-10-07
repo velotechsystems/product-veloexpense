@@ -1,0 +1,159 @@
+{
+  "title": "Notifications",
+  "ariaLabel": "Notifications",
+  "empty": "You're all caught up.",
+  "markAllRead": "Mark all read",
+  "viewAll": "View all",
+  "loadMore": "Load more",
+  "endOfList": "That's everything.",
+  "unreadOne": "1 unread",
+  "unreadMany": "{count} unread",
+  "event": {
+    "COMMENT": "{actor} commented on a card request",
+    "SUBMITTED": "{actor} requested a virtual card",
+    "TASK_ASSIGNED": "A card request awaits your approval",
+    "APPROVED": "Your card request was approved",
+    "REJECTED": "Your card request was declined",
+    "ADJUSTED": "Your card request was updated",
+    "CARD_ISSUED": "Your virtual card is issued and ready to use",
+    "CARD_AWAITING_ISSUE": "A card request is approved and waiting to be issued",
+    "CARD_STATUS": "A card's status changed",
+    "CARD_DEACTIVATED": "Your virtual card was deactivated",
+    "CARD_ONE_TIME_USED": "A single-use card was used and is now frozen",
+    "CARD_LIMIT_REACHED": "A card reached its spend limit",
+    "TASK_EXPIRED": "A card request approval expired",
+    "DEADLINE_NEAR": "A card request approval is due soon",
+    "INVOICE_REMINDER": "{actor} asked you to upload a missing invoice",
+    "RECEIPT_REMINDER": "A draft expense is still missing its receipt",
+    "EXPENSE_REPORT": {
+      "SUBMITTED": "{actor} submitted an expense report for your approval",
+      "TASK_ASSIGNED": "An expense report awaits your approval",
+      "APPROVED": "Your expense report was approved",
+      "REJECTED": "Your expense report was rejected",
+      "RETURNED": "Your expense report was returned for edits",
+      "REIMBURSED": "Your expense report was reimbursed",
+      "TASK_EXPIRED": "An expense report approval expired",
+      "DEADLINE_NEAR": "An expense report approval is due soon",
+      "NOTIFY": "You have an update on an expense report",
+      "RECALLED": "An expense report was recalled by its submitter"
+    },
+    "NOTIFY": "You have an update on a card request",
+    "TRAVEL_REQUEST": {
+      "SUBMITTED": "{actor} submitted a travel request for your approval",
+      "TASK_ASSIGNED": "A travel request awaits your approval",
+      "APPROVED": "Your travel request was approved",
+      "REJECTED": "Your travel request was declined",
+      "RETURNED": "Your travel request was returned for edits",
+      "COMMENT": "{actor} commented on a travel request",
+      "TASK_EXPIRED": "A travel request approval expired",
+      "DEADLINE_NEAR": "A travel request approval is due soon",
+      "NOTIFY": "You have an update on a travel request"
+    },
+    "BUDGET_THRESHOLD": "A budget crossed an alert threshold"
+  },
+  "cardDetail": {
+    "last4": "•••• {last4}",
+    "expires": "Expires {expiry}",
+    "limit": "{amount} · {interval}"
+  },
+  "time": {
+    "now": "just now",
+    "minutes": "{n}m ago",
+    "hours": "{n}h ago",
+    "days": "{n}d ago"
+  },
+  "prefs": {
+    "title": "Notification preferences",
+    "subtitle": "Choose how you're notified. In-app notifications (the bell) are always on.",
+    "email": "Email",
+    "slack": "Slack",
+    "saved": "Saved",
+    "cat": {
+      "approvalNeeded": "A request needs your approval",
+      "deadline": "An approval is due soon",
+      "decision": "Your request was approved or declined",
+      "adjusted": "Your request was updated",
+      "awaitingIssue": "An approved request is waiting for you to issue a card",
+      "issued": "Your card was issued",
+      "expired": "An approval expired",
+      "comment": "New comment on a request",
+      "budgetThreshold": "A budget you own or watch crossed an alert threshold"
+    },
+    "catTitle": {
+      "adjusted": "Request adjusted",
+      "approvalNeeded": "Approval needed",
+      "awaitingIssue": "Card awaiting issuance",
+      "budgetThreshold": "Budget alert",
+      "comment": "New comment",
+      "deadline": "Deadline approaching",
+      "decision": "Decision",
+      "expired": "Approval expired",
+      "issued": "Card issued"
+    },
+    "slackLink": {
+      "checkedAt": "Last checked {date}",
+      "hint": "Changed the email address on your Slack account? Check again so the next notification finds you.",
+      "linked": "Your Slack account is linked. Direct messages will arrive there.",
+      "notLinked": "Slack has no account for your ExpenseOS email address, so Slack notifications cannot be delivered.",
+      "relink": "Check again",
+      "relinked": "Cleared. Your Slack account will be looked up again with your next notification.",
+      "relinking": "Checking…",
+      "title": "Slack account",
+      "unknown": "Your Slack account hasn't been looked up yet. That happens automatically the first time a Slack notification is sent to you."
+    }
+  },
+  "cta": "View in ExpenseOS",
+  "ctaSubject": {
+    "VIRTUAL_CARD_REQUEST": "View card request",
+    "VIRTUAL_CARD_LIMIT_INCREASE": "View limit increase request",
+    "VIRTUAL_CARD": "View card",
+    "VIRTUAL_CARD_TRANSACTION": "View transaction",
+    "EXPENSE_REPORT": "View expense report",
+    "TRAVEL_REQUEST": "View travel request",
+    "BUDGET": "View budget"
+  },
+  "digest": {
+    "subjectOne": "1 new update in ExpenseOS",
+    "subjectMany": "{count} new updates in ExpenseOS",
+    "intro": "Here's a summary of recent activity:"
+  },
+  "receiptsEmail": {
+    "untitled": "Emailed receipts",
+    "filedSubject": "{number}: {title}",
+    "filedBody": "{count} receipt(s) filed on report {number}. ExpenseOS is reading them now — the merchant, date, amount and tax will fill in shortly.\n\nReply to this email to add more receipts to the same report.",
+    "noAccountSubject": "No ExpenseOS account for this address",
+    "noAccountBody": "This address does not have an ExpenseOS account, so the receipts could not be filed. Send them from the address you sign in with.",
+    "noReceiptsSubject": "No receipts found",
+    "noReceiptsBody": "No receipt was attached, so nothing was created. Attach a photo or a PDF and send it again.",
+    "notEditableSubject": "That report can no longer be changed",
+    "notEditableBody": "That expense report has already been submitted, so receipts cannot be added to it. Recall it in ExpenseOS first, or send a new email to start another report."
+  },
+  "subject": {
+    "VIRTUAL_CARD_REQUEST": "Card request",
+    "VIRTUAL_CARD_LIMIT_INCREASE": "Limit increase request",
+    "VIRTUAL_CARD": "Virtual card",
+    "VIRTUAL_CARD_TRANSACTION": "Card transaction",
+    "EXPENSE_REPORT": "Expense report",
+    "TRAVEL_REQUEST": "Travel request",
+    "BUDGET": "Budget"
+  },
+  "emailFooter": "You are receiving this because of your notification settings in ExpenseOS.",
+  "emailReplyHint": "Replying to this email adds a comment to the thread.",
+  "email": {
+    "greeting": "Hello {name}!",
+    "hereIsTheInformation": "Here is the information:",
+    "youCan": "You can:",
+    "replyToDiscuss": "Or reply to this email to start a discussion.",
+    "signOff": "Thanks,",
+    "signature": "The {brand} team"
+  },
+  "cardRequest": {
+    "lead": "{requester} is requesting a {cardType} {link} for {vendor}. Reason: {reason}",
+    "leadNoVendor": "{requester} is requesting a {cardType} {link}. Reason: {reason}",
+    "linkPhrase": "credit card",
+    "cardTypeInSentence": {
+      "virtual": "virtual",
+      "physical": "physical"
+    }
+  }
+}

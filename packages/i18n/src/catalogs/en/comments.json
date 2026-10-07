@@ -1,0 +1,21 @@
+{
+  "heading": "Discussion",
+  "loading": "Loading…",
+  "empty": "No comments yet.",
+  "placeholder": "Write a comment…",
+  "post": "Post",
+  "posting": "Posting…",
+  "via": {
+    "email": "by email ·",
+    "slack": "in Slack ·"
+  },
+  "event": {
+    "SUBMITTED": "submitted this",
+    "APPROVED": "approved this",
+    "REJECTED": "rejected this",
+    "RETURNED": "returned this",
+    "RECALLED": "recalled this",
+    "REIMBURSED": "marked this reimbursed",
+    "ADJUSTED": "adjusted this"
+  }
+}

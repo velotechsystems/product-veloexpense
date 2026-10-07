@@ -1,0 +1,156 @@
+{
+  "viol": {
+    "title": "Violations de politique",
+    "showing": "Affichage de {shown} sur {total}",
+    "emptyTitle": "Aucune violation de politique",
+    "emptyBody": "Les infractions soulevées lors de la validation des rapports et des demandes de voyage apparaissent ici — examinez les avertissements et accusez réception des exceptions.",
+    "col": {
+      "report": "Rapport",
+      "submitter": "Soumetteur",
+      "kind": "Règle",
+      "severity": "Gravité",
+      "message": "Problème",
+      "category": "Catégorie",
+      "status": "Statut",
+      "created": "Soulevée",
+      "subject": "Objet"
+    },
+    "status": {
+      "open": "Ouverte",
+      "resolved": "Accusée"
+    },
+    "resolve": "Accuser réception",
+    "resolveTitle": "Accuser réception de la violation",
+    "resolvePlaceholder": "Ajoutez une note expliquant l’exception…",
+    "resolveHint": "L’accusé de réception enregistre qui a examiné l’exception et pourquoi. Les violations bloquantes ne peuvent pas être accusées — elles doivent être corrigées.",
+    "clear": "Effacer",
+    "resolvedBadge": "Accusée",
+    "unresolvedOnly": "Ouvertes seulement",
+    "actions": "Actions"
+  },
+  "title": "Règles de politique",
+  "add": "Nouvelle règle",
+  "edit": "Modifier la règle",
+  "delete": "Supprimer",
+  "actions": "Actions",
+  "cancel": "Annuler",
+  "save": "Enregistrer",
+  "saving": "Enregistrement…",
+  "showing": "Affichage de {shown} sur {total}",
+  "emptyTitle": "Aucune règle de politique",
+  "emptyBody": "Créez une règle pour appliquer la politique de dépenses au moment de la soumission. Les règles sont créées ici — aucun déploiement requis.",
+  "col": {
+    "kind": "Règle",
+    "scope": "Portée",
+    "severity": "Gravité",
+    "condition": "Condition",
+    "category": "Catégorie",
+    "validity": "Validité",
+    "status": "Statut"
+  },
+  "scope": {
+    "AGGREGATE": "Agrégat",
+    "LINE": "Poste",
+    "REPORT": "Rapport",
+    "TRAVEL_REQUEST": "Demande de voyage",
+    "all": "Tous",
+    "any": "N’importe lequel",
+    "anyLevel": "N’importe quel niveau"
+  },
+  "severity": {
+    "INFO": "Info",
+    "WARNING": "Avertissement",
+    "BLOCK": "Blocage"
+  },
+  "status": {
+    "enabled": "Activée",
+    "disabled": "Désactivée"
+  },
+  "ongoing": "en cours",
+  "field": {
+    "businessUnit": "Unité d’affaires",
+    "category": "Catégorie",
+    "condition": "Condition",
+    "department": "Département",
+    "effectiveFrom": "En vigueur à partir du",
+    "effectiveTo": "En vigueur jusqu’au",
+    "enabled": "Activée",
+    "jobLevel": "Niveau de poste",
+    "kind": "Type de règle",
+    "legalEntity": "Entité juridique",
+    "messageKey": "Clé de message",
+    "params": "Paramètres",
+    "role": "Rôle",
+    "severity": "Gravité"
+  },
+  "kindNoCondition": "Ce type de règle n’a pas de condition — il exécute sa propre vérification intégrée.",
+  "conditionTitle": "Condition",
+  "conditionHint": "La règle se déclenche lorsque les faits correspondent.",
+  "match": {
+    "all": "Correspondre à TOUTES les conditions",
+    "any": "Correspondre à N’IMPORTE QUELLE condition"
+  },
+  "addClause": "Ajouter une condition",
+  "removeClause": "Retirer",
+  "valuePlaceholder": "Valeur",
+  "fieldPlaceholder": "Champ",
+  "scopeTitle": "S’applique à",
+  "scopeHint": "Laisser vide pour s’appliquer à tous. Toute dimension renseignée restreint la règle aux soumetteurs correspondants.",
+  "messageHint": "Une clé de catalogue i18n affichée aux soumetteurs lorsque la règle se déclenche.",
+  "op": {
+    "eq": "égal à",
+    "neq": "différent de",
+    "lt": "inférieur à",
+    "lte": "au plus",
+    "gt": "supérieur à",
+    "gte": "au moins",
+    "in": "est parmi",
+    "nin": "n’est pas parmi"
+  },
+  "params": {
+    "title": "Paramètres pour {kind}",
+    "thresholdMinor": "Seuil",
+    "maxKmPerEntry": "Km maximum par trajet",
+    "maxKmPerMonth": "Km maximum par mois",
+    "requirePurpose": "Exiger un motif d'affaires",
+    "requireAttendees": "Exiger les participants (catégories concernées)",
+    "atLeastOne": "Indiquez au moins un de ces champs.",
+    "cabin": "Cabine",
+    "allowedJobLevelIds": "Échelons autorisés à la demander",
+    "tolerancePercent": "Tolérance (%)",
+    "absoluteFloorMinor": "Dépassement minimal à signaler",
+    "hint": {
+      "allowedJobLevelIds": "Tous les autres ne peuvent pas demander cette cabine. Laissez vide pour la bloquer pour tous les échelons."
+    },
+    "noneSelected": "Personne",
+    "option": {
+      "cabin": {
+        "PREMIUM_ECONOMY": "Économique supérieure",
+        "BUSINESS": "Affaires",
+        "FIRST": "Première"
+      }
+    }
+  },
+  "blocked": "Enregistrement impossible — il manque : {fields}.",
+  "kind": {
+    "AUDIT_THRESHOLD": "Seuil d'audit",
+    "BUDGET_OVERAGE": "Dépassement budgétaire",
+    "CURRENCY_MISMATCH": "Devise non concordante",
+    "DUPLICATE": "Charge en double",
+    "FISCAL_CLOSE": "Période fiscale fermée",
+    "FUTURE_DATED": "Date future",
+    "MILEAGE_MAX": "Plafond kilométrique",
+    "PER_DIEM": "Plafond per diem",
+    "PER_TXN_LIMIT": "Limite par transaction",
+    "PREDICATE_LINE": "Règle personnalisée (ligne)",
+    "PREDICATE_REPORT": "Règle personnalisée (rapport)",
+    "RECEIPT_REQUIRED": "Reçu obligatoire",
+    "RECEIPT_THRESHOLD": "Seuil de reçu",
+    "REQUIRES_APPROVED_TRAVEL": "Voyage approuvé requis",
+    "RUNNING_LIMIT": "Limite cumulative",
+    "TIP_PERCENTAGE": "Pourcentage de pourboire",
+    "TRAVEL_CABIN_CLASS": "Classe de cabine",
+    "TRAVEL_LINE_DETAIL_REQUIRED": "Détail de ligne de voyage requis",
+    "TRAVEL_OVERRUN": "Dépassement du budget de voyage"
+  }
+}

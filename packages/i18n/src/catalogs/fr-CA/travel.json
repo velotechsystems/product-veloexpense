@@ -1,0 +1,242 @@
+{
+  "title": "Demandes de voyage",
+  "new": "Nouvelle demande de voyage",
+  "empty": "Aucune demande de voyage pour l’instant.",
+  "emptyApprovals": "Rien n’attend votre décision.",
+  "emptyOversight": "Aucune demande de voyage de votre équipe pour l’instant.",
+  "sections": {
+    "mine": "Mes demandes",
+    "approvals": "En attente de votre approbation",
+    "oversight": "Votre équipe et décisions passées"
+  },
+  "columns": {
+    "number": "Demande",
+    "traveller": "Voyageur",
+    "destination": "Destination",
+    "dates": "Dates",
+    "budget": "Budget",
+    "status": "Statut",
+    "actions": ""
+  },
+  "status": {
+    "DRAFT": "Brouillon",
+    "SUBMITTED": "Soumise",
+    "APPROVED": "Approuvée",
+    "REJECTED": "Refusée",
+    "RETURNED": "Retournée",
+    "CANCELLED": "Annulée"
+  },
+  "tripType": {
+    "ROUND_TRIP": "Aller-retour",
+    "ONE_WAY": "Aller simple",
+    "MULTI_CITY": "Multi-destinations"
+  },
+  "basis": {
+    "QUOTE": "Prix obtenu",
+    "POLICY_CAP": "Plafond de politique",
+    "PER_DIEM": "Indemnité journalière",
+    "MANUAL": "Planifié"
+  },
+  "confidence": {
+    "BELOW_TYPICAL": "Sous le prix habituel",
+    "TYPICAL": "Environ le prix habituel",
+    "ABOVE_TYPICAL": "Au-dessus du prix habituel",
+    "UNKNOWN": ""
+  },
+  "form": {
+    "purpose": "Motif du voyage",
+    "purposePlaceholder": "Pourquoi ce voyage est nécessaire",
+    "notes": "Notes",
+    "destination": "Destination",
+    "origin": "Départ de",
+    "searchCity": "Rechercher une ville",
+    "searching": "Recherche en cours…",
+    "noMatches": "Aucune ville ne correspond.",
+    "lookupFailed": "Échec de la recherche d’adresse : {reason}",
+    "typeDestination": "Saisir une destination",
+    "tripType": "Type de voyage",
+    "departDate": "Départ",
+    "returnDate": "Retour",
+    "includeCar": "Inclure une voiture de location",
+    "currency": "Devise",
+    "submit": "Créer",
+    "cancel": "Annuler",
+    "saving": "Enregistrement…"
+  },
+  "detail": {
+    "approve": "Approuver",
+    "approvedTotal": "Total approuvé",
+    "budget": "Budget",
+    "buildReport": "Créer la note de frais",
+    "close": "Fermer",
+    "getPrices": "Obtenir les prix en direct",
+    "noBudget": "Rien n’a encore été budgété.",
+    "noTimeline": "Cette demande n’a pas été soumise pour approbation.",
+    "note": "Note",
+    "notePlaceholder": "Facultatif — visible par le voyageur",
+    "plannedAddItem": "Ajouter un poste budgétaire prévu",
+    "plannedAmount": "Montant",
+    "plannedAmountHint": "Une catégorie assortie d’un tarif de la politique remplit son propre montant. Laissez le montant vide, ou gardez le montant rempli, pour que la politique le calcule — une indemnité journalière pour la destination, ou un plafond quotidien sur la durée du voyage. Le remplacer exige une note.",
+    "plannedSearchAfterCreateFlight": "Recherchez des vols une fois la demande créée — le tarif est obtenu pour ce voyage et enregistré sur cette ligne.",
+    "plannedSearchAfterCreateStay": "Recherchez des hôtels une fois la demande créée — le tarif est obtenu pour ce voyage et enregistré sur cette ligne.",
+    "plannedCategory": "Catégorie",
+    "plannedCategoryPlaceholder": "Choisir une catégorie",
+    "plannedDiscard": "Abandonner ce poste prévu",
+    "plannedRemove": "Retirer {category} du budget",
+    "pricing": "Récupération des prix…",
+    "purpose": "Motif",
+    "reject": "Refuser",
+    "submit": "Soumettre pour approbation",
+    "timeline": "Approbations",
+    "total": "Total",
+    "variance": "Budget vs réel",
+    "varianceActual": "Réel",
+    "varianceBudgeted": "Budgété",
+    "varianceDelta": "Écart",
+    "varianceNone": "Rien n’a encore été imputé à ce voyage.",
+    "warnCarUnpriced": "Ce voyage comprend une voiture de location. Aucun fournisseur de voyage que nous pouvons joindre ne cote la location de voitures : la location n’apparaîtra donc pas au budget si vous ne l’ajoutez pas comme élément planifié.",
+    "warnNoBudget": "Rien n’a encore été chiffré pour ce voyage : l’approbateur verrait donc un total de zéro. Vous pouvez tout de même le soumettre, mais recalculer l’indemnité quotidienne, obtenir les prix en direct ou ajouter un élément planifié lui donnera quelque chose à évaluer.",
+    "withdraw": "Retirer"
+  },
+  "quote": {
+    "no-plan": "La tarification en direct est désactivée — l’intégration SerpApi n’est pas installée.",
+    "no-airports": "Aucun aéroport n’a été trouvé pour cet itinéraire, les vols n’ont donc pas pu être cotés.",
+    "no-results": "Aucun vol ni hébergement trouvé pour ces dates.",
+    "past-date": "La date de départ est déjà passée; aucun prix ne peut être obtenu. Modifiez les dates pour voir les prix en direct.",
+    "provider-error": "Les prix en direct n’ont pu être obtenus. Votre budget est inchangé — saisissez les montants à la main ou réessayez plus tard.",
+    "provider-KEY_REJECTED": "Le fournisseur de tarification a refusé nos identifiants; rien n’a pu être chiffré. Un administrateur doit vérifier la clé SerpApi.",
+    "provider-PLAN_EXHAUSTED": "Le forfait de tarification n’a plus de recherches pour ce cycle; rien n’a pu être chiffré. Saisissez les montants à la main jusqu’à la réinitialisation.",
+    "provider-BAD_REQUEST": "Le fournisseur de tarification a refusé cette recherche. Il s’agit d’une erreur de notre côté, que vous ne pouvez pas corriger — veuillez la signaler.",
+    "provider-UNKNOWN": "Les prix en direct n’ont pu être obtenus. Votre budget est inchangé — saisissez les montants à la main ou réessayez plus tard."
+  },
+  "errors": {
+    "roundTripNeedsReturn": "Un aller-retour exige une date de retour.",
+    "returnBeforeDepart": "La date de retour précède la date de départ."
+  },
+  "line": {
+    "days": "Jours",
+    "dailyCap": "Plafond quotidien",
+    "dailyCapHint": "Le plafond de la politique par jour. La ligne est calculée à ce montant × les jours.",
+    "noLiveRate": "Aucun tarif en direct — calculé à partir du plafond de la politique.",
+    "recalculate": "Appliquer",
+    "override": "Montant de remplacement",
+    "applyOverride": "Appliquer le remplacement",
+    "overrideHint": "Un montant que vous saisissez remplace définitivement le montant calculé. Pour revenir au montant calculé, ajoutez une nouvelle ligne dans la même catégorie et supprimez celle-ci.",
+    "notes": "Notes",
+    "notesPlaceholder": "Pourquoi c'est nécessaire — et pour un vol, pourquoi ce tarif…",
+    "summary": {
+      "perDiem": "{days, plural, one {Indemnité · # jour} other {Indemnité · # jours}} · {city}",
+      "dailyRate": "{rate}/jour",
+      "edgeHalved": "premier/dernier jour à moitié",
+      "nights": "{nights, plural, one {# nuit} other {# nuits}}",
+      "nightly": "{rate}/nuit",
+      "attendees": "{count, plural, one {# participant} other {# participants}}",
+      "perDay": "{count}×/jour",
+      "days": "{days, plural, one {# jour} other {# jours}}",
+      "dailyCap": "plafond de {cap}/jour"
+    },
+    "overridePreview": "Montant de remplacement en cours de saisie",
+    "overrode": "A remplacé le montant prévu par la politique de {amount}",
+    "overrides": "Remplace le montant prévu par la politique de {amount}",
+    "noteRequiredForOverride": "Expliquez pourquoi vous remplacez le montant prévu par la politique"
+  },
+  "picker": {
+    "applyCap": "N'afficher que les hébergements dans les limites du per diem",
+    "cabin": "Cabine",
+    "cabins": {
+      "ECONOMY": "Économique",
+      "PREMIUM_ECONOMY": "Économique supérieure",
+      "BUSINESS": "Affaires",
+      "FIRST": "Première"
+    },
+    "checkIn": "Arrivée",
+    "checkOut": "Départ",
+    "choose": "Choisir",
+    "costHint": "Chaque recherche consomme un crédit du fournisseur payant.",
+    "deepSearch": "Recherche approfondie (plus lente, plus coûteuse)",
+    "flightResults": "Vols trouvés",
+    "level": {
+      "low": "Sous la normale",
+      "typical": "Normale",
+      "high": "Au-dessus de la normale"
+    },
+    "nonstop": "Sans escale",
+    "rating": "Noté {rating}",
+    "search": "Rechercher",
+    "searching": "Recherche en cours…",
+    "stars": "{count, plural, one {# étoile} other {# étoiles}}",
+    "stayResults": "Hébergements trouvés",
+    "stopCount": "{count, plural, one {# escale} other {# escales}}",
+    "stops": "Escales",
+    "stopsAny": "N'importe quel nombre d'escales",
+    "stopsMax": {
+      "0": "Sans escale seulement",
+      "1": "Jusqu'à 1 escale",
+      "2": "Jusqu'à 2 escales"
+    },
+    "truncated": "Affichage de {shown} résultats sur {found}.",
+    "unnamedStay": "Établissement sans nom"
+  },
+  "attendees": {
+    "add": "Ajouter un participant",
+    "company": "Entreprise",
+    "covers": "{heads} participants · {covers} couverts au taux",
+    "days": "Jours",
+    "external": "À l'extérieur de l'entreprise",
+    "heading": "Qui participe",
+    "name": "Nom",
+    "none": "Personne pour l'instant. Un repas sans participants n'est chiffré à rien.",
+    "occurrencesPerDay": "Fois par jour",
+    "people": "Personnes",
+    "ratePerPerson": "Par personne",
+    "ratePlaceholder": "Per diem",
+    "remove": "Retirer le participant"
+  },
+  "header": {
+    "edit": "Modifier le voyage",
+    "save": "Enregistrer le voyage",
+    "cancel": "Annuler",
+    "purpose": "Objet",
+    "notes": "Notes",
+    "departDate": "Départ",
+    "returnDate": "Retour",
+    "editHint": "Modifier les dates ou la destination ne recalcule pas les lignes déjà présentes — chacune affiche le montant avec lequel elle a été créée."
+  },
+  "policy": {
+    "severity": {
+      "INFO": "Note",
+      "WARNING": "Avertissement",
+      "BLOCK": "Bloqué"
+    },
+    "blockHint": "Ceci doit être modifié avant que la demande puisse être soumise — il n'est pas possible de le justifier.",
+    "justify": "Expliquer",
+    "editJustification": "Modifier l'explication",
+    "justifyPlaceholder": "Pourquoi est-ce nécessaire…",
+    "saveJustification": "Enregistrer",
+    "blockedSummary": "{count, plural, one {# infraction bloquante doit être corrigée avant la soumission.} other {# infractions bloquantes doivent être corrigées avant la soumission.}}",
+    "warnSummary": "{count, plural, one {# avertissement doit être expliqué avant la soumission.} other {# avertissements doivent être expliqués avant la soumission.}}",
+    "cabin": {
+      "ECONOMY": "économique",
+      "PREMIUM_ECONOMY": "économique supérieure",
+      "BUSINESS": "affaires",
+      "FIRST": "première"
+    }
+  },
+  "taskStatus": {
+    "APPROVED": "Approuvée",
+    "EXPIRED": "Expirée",
+    "PENDING": "En attente",
+    "REJECTED": "Rejetée",
+    "SKIPPED": "Ignorée"
+  },
+  "nodeLabel": {
+    "acknowledge": "Accusé de réception",
+    "action": "Action",
+    "approval": "Approbation",
+    "callWorkflow": "Sous-processus",
+    "notify": "Notification",
+    "parallel": "Branche parallèle",
+    "step": "Étape",
+    "switch": "Acheminement"
+  }
+}

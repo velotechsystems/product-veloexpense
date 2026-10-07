@@ -46,6 +46,7 @@ import { WrongTenantHost } from "@/app/wrong-tenant-host";
 import { AppShell } from "@/components/app-shell/app-shell";
 import { navContext } from "@/lib/nav/context";
 import { Providers } from "@/app/providers";
+import { NextIntlClientProvider } from "next-intl";
 
 /*
  * 2026 brand edition: Plus Jakarta Sans for the UI, Josefin Sans Light for
@@ -173,9 +174,15 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
           ) : nav === null ? (
             children
           ) : (
-            <AppShell ctx={nav} locale={locale}>
-              {children}
-            </AppShell>
+            /* ExpenseOS's message catalogues (i18n/request.ts), for ported screens. Inside
+               the signed-in shell only: next-intl sends the whole catalogue (~150 KB, ~45 KB
+               gzipped) with every page it wraps, and the sign-in, sign-up and approval pages
+               render nothing ported. */
+            <NextIntlClientProvider>
+              <AppShell ctx={nav} locale={locale}>
+                {children}
+              </AppShell>
+            </NextIntlClientProvider>
           )}
         </Providers>
       </body>

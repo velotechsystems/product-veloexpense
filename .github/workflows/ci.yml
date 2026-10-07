@@ -159,6 +159,11 @@ jobs:
         run: npm run prisma:generate && git diff --exit-code lib/generated/prisma
       - name: Prisma scope guard (one scoped client, no unsafe raw SQL)
         run: npm run check:prisma
+      # Wave 0: ExpenseOS's own catalogue gates, ported with its catalogues. Every key in
+      # `en` exists in every other catalogue locale, and every literal key the ported code
+      # asks for (`t('...')`) resolves. packages/i18n/scripts/.
+      - name: Ported catalogues (coverage + used keys)
+        run: npm run check:catalogs
 
       # Build first: Next 16 generates .next/types/** (e.g. LayoutProps) that the
       # standalone `tsc --noEmit` typecheck depends on.

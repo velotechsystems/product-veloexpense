@@ -1,0 +1,27 @@
+{
+  "cards": {
+    "approvals": {
+      "title": "Reports to approve",
+      "loading": "Loading the reports waiting on you",
+      "count": "{count, plural, one {# report} other {# reports}}",
+      "countCapped": "At least {count, plural, one {# report} other {# reports}}",
+      "empty": "Nothing is waiting on your decision.",
+      "emptyHint": "Reports appear here as soon as they reach you.",
+      "viewAll": "View the approvals inbox"
+    },
+    "expenses": {
+      "title": "My expense reports",
+      "loading": "Loading your expense reports",
+      "empty": "No expense reports to show.",
+      "emptyHint": "New reports appear here as soon as they are created.",
+      "viewAll": "View all expense reports"
+    },
+    "travel": {
+      "title": "My travel requests",
+      "loading": "Loading your travel requests",
+      "empty": "No travel requests to show.",
+      "emptyHint": "New trips appear here as soon as they are created.",
+      "viewAll": "View all travel requests"
+    }
+  }
+}

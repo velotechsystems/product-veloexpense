@@ -1,0 +1,48 @@
+{
+  "appName": "ExpenseOS",
+  "loading": "Chargement…",
+  "errorBoundary": "Une erreur s'est produite.",
+  "panelUnavailable": "Cette section n'a pas pu être chargée.",
+  "retry": "Réessayer",
+  "cancel": "Annuler",
+  "save": "Enregistrer",
+  "delete": "Supprimer",
+  "confirm": "Confirmer",
+  "close": "Fermer",
+  "picker": {
+    "minChars": "Saisissez {count} caractères ou plus pour rechercher",
+    "searching": "Recherche…",
+    "empty": "Aucun résultat"
+  },
+  "language": "Langue",
+  "languageDescription": "Choisissez la langue de l’interface. Appliquée immédiatement et enregistrée dans votre profil.",
+  "languageEn": "English",
+  "languageFrCA": "Français (Canada)",
+  "countries": {
+    "CA": "Canada",
+    "US": "États-Unis",
+    "MX": "Mexique",
+    "GB": "Royaume-Uni",
+    "FR": "France",
+    "DE": "Allemagne",
+    "BR": "Brésil"
+  },
+  "desktopOnly": {
+    "title": "Cette page nécessite un écran plus grand",
+    "body": "Cette page est conçue pour un affichage sur ordinateur et n'a pas encore de version pour petit écran. Ouvrez-la sur un écran plus grand pour la voir en entier, ou continuez quand même et faites défiler pour atteindre ce qui dépasse.",
+    "continueAnyway": "Continuer quand même",
+    "goToDashboard": "Aller au tableau de bord"
+  },
+  "notFound": {
+    "backToExpenses": "Aller aux rapports de dépenses",
+    "body": "Le lien est peut-être périmé, ou l'enregistrement a pu être supprimé.",
+    "recordBody": "Il a peut-être été supprimé, ou le lien pointe vers quelque chose qui n'a jamais existé.",
+    "recordTitle": "Cet enregistrement n'existe plus",
+    "title": "Page introuvable"
+  },
+  "offline": {
+    "body": "Vous êtes peut-être hors ligne, ou la connexion a été interrompue. ExpenseOS a besoin d'une connexion Internet et ne conserve rien sur cet appareil. Vérifiez votre connexion, puis réessayez.",
+    "title": "Nous n'avons pas pu joindre ExpenseOS"
+  },
+  "skipToContent": "Aller au contenu"
+}
