@@ -43,6 +43,8 @@ import { brandingForRender } from "@/lib/branding/request";
 import { readerPrefs } from "@/lib/i18n/request";
 import { hostTenantMismatch } from "@/lib/tenant/request";
 import { WrongTenantHost } from "@/app/wrong-tenant-host";
+import { AppShell } from "@/components/app-shell/app-shell";
+import { navContext } from "@/lib/nav/context";
 
 /*
  * 2026 brand edition: Plus Jakarta Sans for the UI, Josefin Sans Light for
@@ -134,6 +136,10 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
   // the session, so this adds no query to the request: see lib/i18n/request.ts.
   const { locale } = await readerPrefs();
   const mismatch = await hostTenantMismatch();
+  // The sidebar (ExpenseOS's app shell, 2026 look). `null` with no session, for a
+  // non-member, or if it could not be read — see lib/nav/context.ts for why the
+  // menu never takes a page down with it. Not asked for on a wrong-tenant host.
+  const nav = mismatch === null ? await navContext() : null;
 
   return (
     <html
@@ -158,7 +164,15 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
             only here would be a check the next caller forgets (MT-3). This is
             for the READER: a person who followed a colleague's link gets a
             sentence and a way out instead of a thrown error. */}
-        {mismatch === null ? children : <WrongTenantHost locale={locale} />}
+        {mismatch !== null ? (
+          <WrongTenantHost locale={locale} />
+        ) : nav === null ? (
+          children
+        ) : (
+          <AppShell ctx={nav} locale={locale}>
+            {children}
+          </AppShell>
+        )}
       </body>
     </html>
   );
