@@ -17,6 +17,13 @@ const PORTED_FROM_EXPENSEOS = [
   "components/ui/drawer.tsx",
   "components/ui/emoji-picker.tsx",
   "hooks/useIsCompact.ts",
+  "components/data-view/**",
+  "components/admin/**",
+  "lib/exportTable.ts",
+  "lib/exportCsv.ts",
+  "lib/useCoarsePointer.ts",
+  "lib/useIsBelowLg.ts",
+  "test-utils/**",
 ];
 
 const eslintConfig = defineConfig([
@@ -24,7 +31,12 @@ const eslintConfig = defineConfig([
   ...nextTs,
   {
     files: PORTED_FROM_EXPENSEOS,
+    // ExpenseOS's own suppressions are written for Biome; ESLint reports the few it carries
+    // for ESLint as unused when its rule set differs. Not a finding in ported code.
+    linterOptions: { reportUnusedDisableDirectives: "off" },
     rules: {
+      // ExpenseOS's (Biome's) convention: a leading underscore marks a deliberately unused name.
+      "@typescript-eslint/no-unused-vars": ["warn", { argsIgnorePattern: "^_", varsIgnorePattern: "^_" }],
       "react-hooks/refs": "off",
       "react-hooks/globals": "off",
       "react-hooks/immutability": "off",

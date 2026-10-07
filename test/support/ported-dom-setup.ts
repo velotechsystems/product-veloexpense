@@ -1,7 +1,6 @@
 /**
  * Ported from ExpenseOS `tests/setup.ts` (550b2945): the polyfills its component tests run
- * with under jsdom. VeloExpense: without jest-axe, which no ported test uses yet; add it back
- * with the first one that does.
+ * with under jsdom, including jest-axe's `toHaveNoViolations` (typed in types/jest-axe.d.ts).
  *
  * Root Vitest setup — runs before every test file.
  *
@@ -11,6 +10,10 @@
  * Per-file setup goes in the test itself, not here.
  */
 import '@testing-library/jest-dom/vitest';
+import { toHaveNoViolations } from 'jest-axe';
+import { expect } from 'vitest';
+
+expect.extend(toHaveNoViolations);
 
 
 // Polyfill `ResizeObserver` (used by Base UI / cmdk in jsdom).
