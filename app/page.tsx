@@ -21,12 +21,13 @@
  * restates another list stops matching it.
  */
 import Link from 'next/link';
-import { Bell, CircleCheck, Receipt } from 'lucide-react';
+import { Bell, ChevronDown, ChevronUp, CircleCheck, Receipt } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader } from '@/components/ui/card';
+import { Card, CardAction, CardContent, CardDescription, CardHeader } from '@/components/ui/card';
+import { ErrorBanner } from '@/app/expenses/ui';
 import { PageHeader, Screen } from '@/components/screen';
 import { SETUP_ITEMS, type SetupItem } from '@/lib/onboarding/setup';
-import { getHomeContext, getSetupStatus } from './actions';
+import { getHomeContext, getSetupStatus, setSetupCollapsedFromForm } from './actions';
 
 import { pageTitle } from '@/lib/i18n/page-title';
 
@@ -86,7 +87,12 @@ const LINKS = [
   { href: '/notifications', label: 'Notifications', hint: 'What has happened recently.', Icon: Bell },
 ];
 
-export default async function HomePage() {
+export default async function HomePage({
+  searchParams,
+}: {
+  searchParams: Promise<{ error?: string }>;
+}) {
+  const { error } = await searchParams;
   const { name, isAdmin, organizationName } = await getHomeContext();
   // Asked for ONLY when the reader is an admin — see `app/actions.ts`.
   const setup = isAdmin ? await getSetupStatus() : null;
@@ -97,11 +103,47 @@ export default async function HomePage() {
     <Screen>
       <PageHeader title={organizationName} description={`Signed in as ${name}.`} />
 
-      {setup !== null && !setup.complete ? (
+      <ErrorBanner message={error} />
+
+      {/* Collapsed (decided 7 Oct): one line, never gone. The admin put the card
+          away; the outstanding count stays in view so "invite an approver" is
+          not lost — a tenant of one still cannot submit anything. */}
+      {setup !== null && !setup.complete && setup.collapsed ? (
+        <section
+          className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border bg-card px-5 py-3"
+          data-testid="setup-collapsed"
+        >
+          <p className="text-sm">
+            <span className="font-semibold">Finish setting up</span>
+            <span className="text-muted-foreground">
+              {' · '}
+              {outstanding.length} {outstanding.length === 1 ? 'step' : 'steps'} left
+            </span>
+          </p>
+          <form action={setSetupCollapsedFromForm}>
+            <input type="hidden" name="collapsed" value="0" />
+            <Button type="submit" size="sm" variant="ghost">
+              <ChevronDown aria-hidden />
+              Show
+            </Button>
+          </form>
+        </section>
+      ) : null}
+
+      {setup !== null && !setup.complete && !setup.collapsed ? (
         <Card>
           <CardHeader>
             {/* A real <h2>: the kit's CardTitle is a <div>, and this is the screen's one section heading. */}
             <h2 className="text-lg leading-7 font-semibold">Finish setting up</h2>
+            <CardAction>
+              <form action={setSetupCollapsedFromForm}>
+                <input type="hidden" name="collapsed" value="1" />
+                <Button type="submit" size="sm" variant="ghost">
+                  <ChevronUp aria-hidden />
+                  Hide
+                </Button>
+              </form>
+            </CardAction>
             <CardDescription>
               {outstanding.length} {outstanding.length === 1 ? 'thing' : 'things'} left. Nothing
               here was decided for you — an approval route or a spend limit is a statement about

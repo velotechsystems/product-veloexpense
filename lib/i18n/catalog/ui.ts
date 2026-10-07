@@ -264,7 +264,7 @@ export const UI_COPY = {
   'nav.sidebar.integrations': { 'en-CA': 'Integrations' },
   'nav.sidebar.modules': { 'en-CA': 'Modules' },
   'nav.sidebar.branding': { 'en-CA': 'Branding' },
-  'nav.sidebar.locale': { 'en-CA': 'Organization language' },
+  'nav.sidebar.locale': { 'en-CA': 'Default language' },
   'nav.sidebar.notification.templates': { 'en-CA': 'Notification wording' },
   'nav.sidebar.notification.delivery': { 'en-CA': 'Email delivery' },
   'nav.sidebar.billing': { 'en-CA': 'Billing' },
