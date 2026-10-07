@@ -330,8 +330,10 @@ So before pushing a new spec:
   carried no reader copy and escapes `openRun` untranslated. Every `RoutingError` now has a
   sentence — SELF_APPROVAL → `SUBMIT_NEEDS_APPROVER` (invite somebody, Employees → Invite
   someone), every other code → `STEP_UNROUTABLE` (this branch).
-- **STAGING INFRASTRUCTURE (5 Oct, this PR) — `infrastructure/cdk`.** DECIDED (John): staging
-  is `https://staging.veloexpense.ai` with TENANT SUBDOMAINS OFF (`AUTH_COOKIE_DOMAIN` unset), on
+- **DEPLOYED TEST ENVIRONMENT (#137, renamed 6 Oct) — `infrastructure/cdk`.** DECIDED (John): VeloExpense's
+  one deployed environment is **dev**, named like VeloCRM's (stage `dev`, `veloexpense-dev-*`, `veloexpense/dev/*`);
+  #137 called it "staging" and was renamed before anything was deployed. It
+  is `https://dev.veloexpense.ai` with TENANT SUBDOMAINS OFF (`AUTH_COOKIE_DOMAIN` unset), on
   the SHARED `velotech-dev` VPC/cluster/ALB that product-velocrm's CDK owns, Cloudflare in front.
   Attachment is via product-velocrm #262's SSM contract (`/velotech/<stage>/shared/*`): we add a
   host rule (priority band 100-199), our ACM cert by SNI, a target group, and our service joins the
@@ -345,7 +347,7 @@ So before pushing a new spec:
   The bootstrap sends the password as a SCRAM verifier, because `log_statement=ddl` and pgaudit
   would otherwise write it to CloudWatch. `/api/internal/*` is finally called on a schedule
   (`scripts/tick.mjs`, EventBridge Scheduler → one Fargate task per route); billing routes stay
-  off until the platform link is configured in staging. `/api/health` is new (liveness only,
+  off until the platform link is configured in dev. `/api/health` is new (liveness only,
   never the DB) and public in `proxy.ts`. Mail uses the suite's `velocrm/smtp-credentials`.
 - **Verified 4 Oct, still OPEN:** VeloExpense has NO receipt extraction at all; upstream's is sync by default
   with Batch only for multi-upload, from one request builder.

@@ -10,7 +10,7 @@
  * parameters at deploy time — so `cdk deploy` here can never redeploy theirs.
  *
  * Usage (from this directory):
- *   VELOEXPENSE_STAGE=staging IMAGE_TAG=<tag> npx cdk deploy --all
+ *   VELOEXPENSE_STAGE=dev IMAGE_TAG=<tag> npx cdk deploy --all
  *
  * IMAGE_TAG is required for Compute, and deliberately has no default: "latest"
  * on an immutable-tag repository would name whichever build happened to be
@@ -26,7 +26,7 @@ import { SecurityStack } from '../lib/security-stack';
 import { StorageStack } from '../lib/storage-stack';
 
 const app = new cdk.App();
-const stage = (app.node.tryGetContext('stage') ?? process.env.VELOEXPENSE_STAGE ?? 'staging') as Stage;
+const stage = (app.node.tryGetContext('stage') ?? process.env.VELOEXPENSE_STAGE ?? 'dev') as Stage;
 
 const config = buildConfig(stage, { albCertificateArn: process.env.ALB_CERTIFICATE_ARN });
 

@@ -19,7 +19,7 @@ const CERT = 'arn:aws:acm:ca-central-1:535079144866:certificate/11111111-2222-33
 
 function synth() {
   const app = new App();
-  const config = buildConfig('staging', { albCertificateArn: CERT });
+  const config = buildConfig('dev', { albCertificateArn: CERT });
   const env = { account: config.accountId, region: config.region };
   const security = new SecurityStack(app, 'Sec', { env, config });
   const network = new NetworkStack(app, 'Net', { env, config });
@@ -105,7 +105,7 @@ describe('the shared listener', () => {
     const p = rule.Properties as { Priority: number; Conditions: unknown; ListenerArn: unknown };
     expect(p.Priority).toBeGreaterThanOrEqual(100);
     expect(p.Priority).toBeLessThanOrEqual(199);
-    expect(json(p.Conditions)).toBe(json([{ Field: 'host-header', HostHeaderConfig: { Values: ['staging.veloexpense.ai'] } }]));
+    expect(json(p.Conditions)).toBe(json([{ Field: 'host-header', HostHeaderConfig: { Values: ['dev.veloexpense.ai'] } }]));
     expect(json(p.ListenerArn)).toContain(sharedParam(s.compute, 'https-listener-arn'));
   });
 
@@ -138,7 +138,7 @@ describe('credentials go only where they are needed', () => {
     });
 
   it('the web task never receives the master login', () => {
-    const web = taskDefs().find((t) => t.family === 'veloexpense-staging-web')!;
+    const web = taskDefs().find((t) => t.family === 'veloexpense-dev-web')!;
     expect(web.secrets.map((x) => x.Name)).not.toContain('DB_ADMIN_PASSWORD');
     expect(json(web.secrets)).not.toContain('rds-master');
     expect(json(web.secrets)).not.toMatch(/DbClusterSecret|MasterDb/);
@@ -149,11 +149,11 @@ describe('credentials go only where they are needed', () => {
 
   it('only the database task does', () => {
     const holders = taskDefs().filter((t) => t.secrets.some((x) => x.Name === 'DB_ADMIN_PASSWORD'));
-    expect(holders.map((t) => t.family)).toEqual(['veloexpense-staging-db']);
+    expect(holders.map((t) => t.family)).toEqual(['veloexpense-dev-db']);
   });
 
   it('a scheduled job receives WORKER_SECRET and nothing else', () => {
-    const ticks = taskDefs().filter((t) => t.family.startsWith('veloexpense-staging-tick-'));
+    const ticks = taskDefs().filter((t) => t.family.startsWith('veloexpense-dev-tick-'));
     expect(ticks.length).toBe(s.config.schedules.length);
     for (const t of ticks) expect(t.secrets.map((x) => x.Name)).toEqual(['WORKER_SECRET']);
   });
@@ -206,15 +206,15 @@ describe('storage', () => {
       .map(([, b]) => b.Properties.CorsConfiguration as { CorsRules: Array<{ AllowedOrigins: string[] }> } | undefined)
       .filter(Boolean);
     expect(cors).toHaveLength(1); // the receipts bucket; the log bucket has none
-    expect(cors[0]!.CorsRules.map((r) => r.AllowedOrigins)).toEqual([['https://staging.veloexpense.ai']]);
+    expect(cors[0]!.CorsRules.map((r) => r.AllowedOrigins)).toEqual([['https://dev.veloexpense.ai']]);
   });
 });
 
 describe('config', () => {
-  it('staging carries its committed, issued certificate; the environment can override it', () => {
-    expect(buildConfig('staging').albCertificateArn).toBe(
-      'arn:aws:acm:ca-central-1:535079144866:certificate/a2c0714c-bf9c-4f69-bed9-a31e1b2a56b9',
+  it('dev carries its committed, issued certificate; the environment can override it', () => {
+    expect(buildConfig('dev').albCertificateArn).toBe(
+      'arn:aws:acm:ca-central-1:535079144866:certificate/b9d463c0-8c2f-4754-bf39-cd4231b92a9c',
     );
-    expect(buildConfig('staging', { albCertificateArn: CERT }).albCertificateArn).toBe(CERT);
+    expect(buildConfig('dev', { albCertificateArn: CERT }).albCertificateArn).toBe(CERT);
   });
 });

@@ -11,11 +11,13 @@
  *     through the SSM parameters that repo publishes (`shared.ts`). So there are
  *     no subnet tags, no edge mode and no CloudFront here: Cloudflare sits in
  *     front of the shared ALB for every product.
- *   · Two names per environment. `stage` is ours ("staging"); `sharedStage` is
- *     the Velotech infrastructure it runs on ("dev"). They differ on purpose: the
- *     first test environment for real people runs on the shared dev
- *     infrastructure, and calling it "dev" would hide that it is the one people
- *     are told to use.
+ *   · Two names per environment, `stage` (ours) and `sharedStage` (the Velotech
+ *     infrastructure it runs on). Today they are the same word: VeloExpense's one
+ *     deployed test environment is "dev", on velotech-dev, at dev.veloexpense.ai —
+ *     named like VeloCRM's dev.velocrm.ai on the same cluster (DECIDED 6 Oct 2026,
+ *     John: suite-consistent names everywhere, rather than "staging"). They stay
+ *     separate fields because production will be stage "prod" on sharedStage
+ *     "prod", and nothing should assume the two always match.
  *   · No Valkey, no worker service, no SES stack. VeloExpense has no queue
  *     process — its background work is `/api/internal/*` routes that a scheduled
  *     task calls — and mail goes through the suite's Google Workspace SMTP
@@ -23,7 +25,7 @@
  */
 
 /** VeloExpense environments. Production is added when it is built, not before. */
-export type Stage = 'staging';
+export type Stage = 'dev';
 
 /** The velotech-<sharedStage> infrastructure an environment runs on. */
 export type SharedStage = 'dev' | 'prod';
@@ -43,7 +45,7 @@ export interface VeloExpenseConfig {
   domainName: string;
   /**
    * `AUTH_COOKIE_DOMAIN`. Undefined means TENANT SUBDOMAINS ARE OFF: every tenant
-   * signs in at `domainName` itself. Staging runs this way so the free one-level
+   * signs in at `domainName` itself. Dev runs this way so the free one-level
    * Cloudflare certificate covers it (decided 5 Oct 2026); production sets it to
    * the apex when `*.veloexpense.ai` tenants are wanted.
    */
@@ -100,17 +102,17 @@ const REGION = 'ca-central-1';
  * Manager under `secretPrefix` and reach the container at task start.
  */
 const STAGES: Record<Stage, Omit<VeloExpenseConfig, 'resourcePrefix' | 'secretPrefix' | 'tags'>> = {
-  staging: {
-    stage: 'staging',
+  dev: {
+    stage: 'dev',
     sharedStage: 'dev',
     accountId: ACCOUNT_ID,
     region: REGION,
-    domainName: 'staging.veloexpense.ai',
+    domainName: 'dev.veloexpense.ai',
     authCookieDomain: undefined,
-    // ACM, ca-central-1, staging.veloexpense.ai — requested and DNS-validated
-    // 5 Oct 2026 (validation CNAME in Cloudflare, DNS only; keep it, renewal uses
-    // it). ALB_CERTIFICATE_ARN in the environment still overrides (bin/app.ts).
-    albCertificateArn: 'arn:aws:acm:ca-central-1:535079144866:certificate/a2c0714c-bf9c-4f69-bed9-a31e1b2a56b9',
+    // ACM, ca-central-1, dev.veloexpense.ai — DNS-validated by a CNAME in
+    // Cloudflare (DNS only; keep it, renewal uses it). ALB_CERTIFICATE_ARN in the
+    // environment still overrides (bin/app.ts).
+    albCertificateArn: 'arn:aws:acm:ca-central-1:535079144866:certificate/b9d463c0-8c2f-4754-bf39-cd4231b92a9c',
     listenerPriority: 100,
     rds: {
       databaseName: 'veloexpense',
