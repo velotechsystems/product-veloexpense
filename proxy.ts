@@ -114,6 +114,16 @@ export function proxy(req: NextRequest) {
     req.cookies.has('authjs.session-token') ||
     req.cookies.has('__Secure-authjs.session-token');
   if (!hasSession) {
+    // The tRPC transport answers in JSON, not with the sign-in page. A redirect would hand
+    // the client an HTML document it cannot parse, and the provider (lib/trpc/client.tsx)
+    // only sends the reader to sign in when it sees a 401 — so without this an expired
+    // session on a ported screen shows as a broken page instead of a sign-in.
+    if (/^\/api\/trpc(\/|$)/.test(pathname)) {
+      return NextResponse.json(
+        { error: { message: 'Please sign in again to continue.', data: { code: 'UNAUTHORIZED', httpStatus: 401 } } },
+        { status: 401 },
+      );
+    }
     const url = req.nextUrl.clone();
     url.pathname = '/login';
     url.searchParams.set('callbackUrl', pathname);
