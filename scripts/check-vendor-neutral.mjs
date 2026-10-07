@@ -255,8 +255,11 @@ for (const full of walk(ROOT)) {
   if (ALLOWED.has(rel)) continue;
 
   const isMigration = rel.startsWith('prisma/migrations/') && rel.endsWith('.sql');
+  // Wave 0: code ported from ExpenseOS keeps ExpenseOS's layout, so it also lives in
+  // server/, packages/, components/ and i18n/. Without these the guard would wave a vendor
+  // name through simply because it arrived in a ported file.
   const isCore =
-    (rel.startsWith('lib/') || rel.startsWith('app/')) &&
+    /^(lib|app|server|packages|components|i18n)\//.test(rel) &&
     (rel.endsWith('.ts') || rel.endsWith('.tsx'));
   if (!isMigration && !isCore) continue;
 

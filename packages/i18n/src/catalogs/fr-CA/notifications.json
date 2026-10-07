@@ -1,0 +1,159 @@
+{
+  "title": "Notifications",
+  "ariaLabel": "Notifications",
+  "empty": "Vous êtes à jour.",
+  "markAllRead": "Tout marquer comme lu",
+  "viewAll": "Voir tout",
+  "loadMore": "Afficher plus",
+  "endOfList": "C'est tout.",
+  "unreadOne": "1 non lue",
+  "unreadMany": "{count} non lues",
+  "event": {
+    "COMMENT": "{actor} a commenté une demande de carte",
+    "SUBMITTED": "{actor} a demandé une carte virtuelle",
+    "TASK_ASSIGNED": "Une demande de carte attend votre approbation",
+    "APPROVED": "Votre demande de carte a été approuvée",
+    "REJECTED": "Votre demande de carte a été refusée",
+    "ADJUSTED": "Votre demande de carte a été modifiée",
+    "CARD_ISSUED": "Votre carte virtuelle est émise et prête à être utilisée",
+    "CARD_AWAITING_ISSUE": "Une demande de carte est approuvée et attend son émission",
+    "CARD_STATUS": "Le statut d'une carte a changé",
+    "CARD_DEACTIVATED": "Votre carte virtuelle a été désactivée",
+    "CARD_ONE_TIME_USED": "Une carte à usage unique a été utilisée et est maintenant gelée",
+    "CARD_LIMIT_REACHED": "Une carte a atteint sa limite de dépenses",
+    "TASK_EXPIRED": "L'approbation d'une demande de carte a expiré",
+    "DEADLINE_NEAR": "Une approbation de demande de carte arrive à échéance",
+    "INVOICE_REMINDER": "{actor} vous a demandé de téléverser une facture manquante",
+    "RECEIPT_REMINDER": "Une dépense en brouillon n’a toujours pas de reçu",
+    "EXPENSE_REPORT": {
+      "SUBMITTED": "{actor} a soumis un rapport de dépenses pour votre approbation",
+      "TASK_ASSIGNED": "Un rapport de dépenses attend votre approbation",
+      "APPROVED": "Votre rapport de dépenses a été approuvé",
+      "REJECTED": "Votre rapport de dépenses a été rejeté",
+      "RETURNED": "Votre rapport de dépenses a été retourné pour modification",
+      "REIMBURSED": "Votre rapport de dépenses a été remboursé",
+      "TASK_EXPIRED": "L'approbation d'un rapport de dépenses a expiré",
+      "DEADLINE_NEAR": "Une approbation de rapport de dépenses arrive à échéance",
+      "NOTIFY": "Vous avez une mise à jour sur un rapport de dépenses",
+      "RECALLED": "Un rapport de dépenses a été retiré par son auteur"
+    },
+    "NOTIFY": "Vous avez une mise à jour sur une demande de carte",
+    "TRAVEL_REQUEST": {
+      "SUBMITTED": "{actor} a soumis une demande de voyage à votre approbation",
+      "TASK_ASSIGNED": "Une demande de voyage attend votre approbation",
+      "APPROVED": "Votre demande de voyage a été approuvée",
+      "REJECTED": "Votre demande de voyage a été refusée",
+      "RETURNED": "Votre demande de voyage a été retournée pour modification",
+      "COMMENT": "{actor} a commenté une demande de voyage",
+      "TASK_EXPIRED": "L’approbation d’une demande de voyage a expiré",
+      "DEADLINE_NEAR": "L’approbation d’une demande de voyage arrive à échéance",
+      "NOTIFY": "Vous avez une mise à jour sur une demande de voyage"
+    },
+    "BUDGET_THRESHOLD": "Un budget a franchi un seuil d'alerte"
+  },
+  "cardDetail": {
+    "last4": "•••• {last4}",
+    "expires": "Expire le {expiry}",
+    "limit": "{amount} · {interval}"
+  },
+  "time": {
+    "now": "à l'instant",
+    "minutes": "il y a {n} min",
+    "hours": "il y a {n} h",
+    "days": "il y a {n} j"
+  },
+  "prefs": {
+    "title": "Préférences de notification",
+    "subtitle": "Choisissez comment vous êtes notifié. Les notifications dans l'application (la cloche) sont toujours activées.",
+    "email": "Courriel",
+    "slack": "Slack",
+    "saved": "Enregistré",
+    "cat": {
+      "approvalNeeded": "Une demande requiert votre approbation",
+      "deadline": "Une approbation arrive à échéance",
+      "decision": "Votre demande a été approuvée ou refusée",
+      "adjusted": "Votre demande a été modifiée",
+      "awaitingIssue": "Une demande approuvée attend que vous émettiez une carte",
+      "issued": "Votre carte a été émise",
+      "expired": "Une approbation a expiré",
+      "comment": "Nouveau commentaire sur une demande",
+      "budgetThreshold": "Un budget que vous détenez ou surveillez a franchi un seuil d'alerte"
+    },
+    "catTitle": {
+      "adjusted": "Demande modifiée",
+      "approvalNeeded": "Approbation requise",
+      "awaitingIssue": "Carte en attente d'émission",
+      "budgetThreshold": "Alerte budgétaire",
+      "comment": "Nouveau commentaire",
+      "deadline": "Échéance proche",
+      "decision": "Décision",
+      "expired": "Approbation expirée",
+      "issued": "Carte émise"
+    },
+    "slackLink": {
+      "checkedAt": "Dernière vérification : {date}",
+      "hint": "Vous avez changé l'adresse courriel de votre compte Slack? Lancez une nouvelle vérification pour que la prochaine notification vous trouve.",
+      "linked": "Votre compte Slack est lié. Les messages directs y seront envoyés.",
+      "notLinked": "Slack n'a aucun compte associé à votre adresse courriel ExpenseOS; les notifications Slack ne peuvent donc pas être livrées.",
+      "relink": "Vérifier de nouveau",
+      "relinked": "Effacé. Votre compte Slack sera recherché de nouveau à votre prochaine notification.",
+      "relinking": "Vérification…",
+      "title": "Compte Slack",
+      "unknown": "Votre compte Slack n'a pas encore été recherché. La recherche se fait automatiquement à la première notification Slack qui vous est destinée."
+    }
+  },
+  "cta": "Voir dans ExpenseOS",
+  "ctaSubject": {
+    "VIRTUAL_CARD_REQUEST": "Voir la demande de carte",
+    "VIRTUAL_CARD_LIMIT_INCREASE": "Voir la demande d'augmentation de limite",
+    "VIRTUAL_CARD": "Voir la carte",
+    "VIRTUAL_CARD_TRANSACTION": "Voir la transaction",
+    "EXPENSE_REPORT": "Voir le rapport de dépenses",
+    "TRAVEL_REQUEST": "Voir la demande de voyage",
+    "BUDGET": "Voir le budget"
+  },
+  "digest": {
+    "subjectOne": "1 nouvelle mise à jour dans ExpenseOS",
+    "subjectMany": "{count} nouvelles mises à jour dans ExpenseOS",
+    "intro": "Voici un résumé de l'activité récente :"
+  },
+  "receiptsEmail": {
+    "untitled": "Reçus envoyés par courriel",
+    "filedSubject": "{number} : {title}",
+    "filedBody": "{count} reçu(s) classé(s) sur la note de frais {number}. ExpenseOS les lit en ce moment — le commerçant, la date, le montant et les taxes seront remplis sous peu.\n\nRépondez à ce courriel pour ajouter d'autres reçus à la même note de frais.",
+    "noAccountSubject": "Aucun compte ExpenseOS pour cette adresse",
+    "noAccountBody": "Cette adresse n'a pas de compte ExpenseOS ; les reçus n'ont donc pas été classés. Envoyez-les depuis l'adresse avec laquelle vous vous connectez.",
+    "noReceiptsSubject": "Aucun reçu trouvé",
+    "noReceiptsBody": "Aucun reçu n'était joint ; rien n'a donc été créé. Joignez une photo ou un PDF et envoyez de nouveau.",
+    "notEditableSubject": "Cette note de frais ne peut plus être modifiée",
+    "notEditableBody": "Cette note de frais a déjà été soumise ; il n'est donc pas possible d'y ajouter des reçus. Rappelez-la d'abord dans ExpenseOS, ou envoyez un nouveau courriel pour créer une autre note."
+  },
+  "subject": {
+    "VIRTUAL_CARD_REQUEST": "Demande de carte",
+    "VIRTUAL_CARD_LIMIT_INCREASE": "Demande d’augmentation de limite",
+    "VIRTUAL_CARD": "Carte virtuelle",
+    "VIRTUAL_CARD_TRANSACTION": "Transaction de carte",
+    "EXPENSE_REPORT": "Note de frais",
+    "TRAVEL_REQUEST": "Demande de voyage",
+    "BUDGET": "Budget"
+  },
+  "emailFooter": "Vous recevez ce message en raison de vos préférences de notification dans ExpenseOS.",
+  "emailReplyHint": "Répondre à ce courriel ajoute un commentaire au fil.",
+  "email": {
+    "greeting": "Bonjour {name}!",
+    "hereIsTheInformation": "Voici les renseignements :",
+    "youCan": "Vous pouvez :",
+    "replyToDiscuss": "Ou répondez à ce courriel pour lancer une discussion.",
+    "signOff": "Merci,",
+    "signature": "L’équipe {brand}"
+  },
+  "cardRequest": {
+    "lead": "{requester} demande une {link} {cardType} pour {vendor}. Motif : {reason}",
+    "leadNoVendor": "{requester} demande une {link} {cardType}. Motif : {reason}",
+    "linkPhrase": "carte de crédit",
+    "cardTypeInSentence": {
+      "virtual": "virtuelle",
+      "physical": "physique"
+    }
+  }
+}

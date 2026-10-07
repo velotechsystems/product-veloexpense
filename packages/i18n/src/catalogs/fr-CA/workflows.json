@@ -1,0 +1,137 @@
+{
+  "list": {
+    "newWorkflow": "Nouveau flux",
+    "empty": "Aucun flux d'approbation pour le moment.",
+    "loading": "Chargement…",
+    "colName": "Flux",
+    "colSubject": "S'applique à",
+    "colPriority": "Priorité",
+    "colStatus": "Statut",
+    "default": "Par défaut",
+    "showing": "{shown} de {total} flux",
+    "reorderHint": "Glissez pour réordonner — plus haut dans la liste l'emporte en cas de correspondances multiples. Le flux par défaut s'applique toujours en dernier."
+  },
+  "subject": {
+    "EXPENSE_REPORT": "Rapports de dépenses",
+    "TRAVEL_REQUEST": "Demandes de voyage",
+    "VIRTUAL_CARD_LIMIT_INCREASE": "Augmentations de limite de carte",
+    "VIRTUAL_CARD_REQUEST": "Demandes de carte virtuelle"
+  },
+  "status": {
+    "draft": "Brouillon",
+    "published": "Publié",
+    "archived": "Archivé",
+    "noVersion": "Non publié",
+    "draftPending": "Brouillon (modifications non publiées)"
+  },
+  "actions": {
+    "edit": "Ouvrir l'éditeur",
+    "editMeta": "Modifier les détails",
+    "publish": "Publier",
+    "activate": "Activer",
+    "deactivate": "Désactiver",
+    "menu": "Actions du flux"
+  },
+  "create": {
+    "title": "Nouveau flux d'approbation",
+    "name": "Nom",
+    "namePlaceholder": "p. ex. Cartes à forte valeur",
+    "key": "Clé",
+    "keyHint": "Lettres minuscules, chiffres et tirets — usage interne.",
+    "description": "Description",
+    "subject": "S'applique à",
+    "priority": "Priorité",
+    "priorityHint": "La priorité la plus élevée l'emporte en cas de correspondances multiples.",
+    "isDefault": "Valeur par défaut (attrape-tout)",
+    "cancel": "Annuler",
+    "submit": "Créer",
+    "submitting": "Création…"
+  },
+  "meta": {
+    "title": "Modifier les détails",
+    "save": "Enregistrer",
+    "saving": "Enregistrement…"
+  },
+  "publishConfirm": "Publier ce flux ? Les nouvelles demandes l'utiliseront immédiatement.",
+  "runtimeNote": "Les flux de priorité supérieure sont évalués en premier; le flux par défaut attrape le reste.",
+  "breadcrumb": {
+    "root": "Flux d'approbation"
+  },
+  "editor": {
+    "save": "Enregistrer le brouillon",
+    "saving": "Enregistrement…",
+    "publish": "Publier",
+    "publishing": "Publication…",
+    "valid": "Valide",
+    "issues": "{count} problème(s)",
+    "savedAt": "Enregistré {time}",
+    "matchCondition": "S'applique lorsque",
+    "config": "Nœud",
+    "validation": "Validation",
+    "allChecksPass": "Toutes les vérifications structurelles réussissent.",
+    "selectNode": "Sélectionnez un nœud pour le configurer.",
+    "deleteNode": "Supprimer le nœud",
+    "done": "Terminé",
+    "nodes": "Nœuds",
+    "collapse": "Réduire",
+    "expand": "Développer"
+  },
+  "settings": {
+    "title": "Paramètres",
+    "trigger": "Condition de déclenchement",
+    "triggerHint": "Ce flux régit une demande uniquement lorsque ces conditions correspondent.",
+    "savedWithDraft": "Enregistré lors de l'enregistrement du brouillon.",
+    "saveDetails": "Enregistrer les détails",
+    "defaultNote": "Un flux par défaut (attrape-tout) s'applique à toutes les demandes — il n'a pas de condition de déclenchement."
+  },
+  "history": {
+    "title": "Historique",
+    "current": "En vigueur",
+    "preview": "Aperçu",
+    "restore": "Restaurer",
+    "previewing": "Aperçu de la v{version} (lecture seule)",
+    "exitPreview": "Quitter l'aperçu"
+  },
+  "sim": {
+    "title": "Simuler",
+    "amount": "Montant (devise de base)",
+    "department": "Département",
+    "jobLevel": "Niveau de poste",
+    "run": "Lancer",
+    "running": "Exécution…",
+    "failed": "La simulation n’a pas pu s’exécuter. Rien n’a été modifié — vérifiez les valeurs et réessayez.",
+    "matched": "Flux correspondant",
+    "none": "Aucun flux ne correspond à ces entrées.",
+    "noSteps": "Aucune étape d'approbation — approuvé automatiquement.",
+    "close": "Fermer",
+    "category": "Contient la catégorie",
+    "maxLine": "Montant de ligne le plus élevé",
+    "requiresApproval": "Catégorie nécessitant une approbation",
+    "hasPolicyViolation": "Avertissement de politique",
+    "overPerDiem": "Dépasse l'indemnité journalière",
+    "overBudget": "Dépassement budgétaire",
+    "yes": "Oui",
+    "no": "Non",
+    "approver": {
+      "filter": "bassin d'approbateurs",
+      "manager": "gestionnaire direct",
+      "managerChain": "chaîne hiérarchique"
+    }
+  },
+  "approver": {
+    "fallbackLabel": "S’il n’y a aucun gestionnaire",
+    "fallbackHint": "La personne au sommet de l’organigramme n’a aucun gestionnaire vers qui acheminer la demande. Sans approbateur de repli, sa demande reste non assignée et n’importe quel approbateur peut se l’attribuer.",
+    "fallbackNone": "Laisser au groupe d’approbateurs",
+    "fallbackUser": "Une personne précise",
+    "fallbackRole": "Un rôle",
+    "fallbackUserLabel": "Personne",
+    "fallbackUserPlaceholder": "Sélectionner une personne…",
+    "fallbackRoleLabel": "Rôle",
+    "fallbackRoleHint": "Tout titulaire actif de ce rôle peut s’attribuer la demande et la décider — et personne d’autre.",
+    "fallbackRolePlaceholder": "Sélectionner un rôle…"
+  },
+  "renameHint": "Double-cliquer pour renommer",
+  "renameAria": "Renommer le flux",
+  "directManager": "Gestionnaire direct",
+  "anyLevel": "Tout niveau"
+}

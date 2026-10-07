@@ -1,0 +1,44 @@
+{
+  "add": "Add rate",
+  "edit": "Edit",
+  "delete": "Delete",
+  "actions": "Actions",
+  "cancel": "Cancel",
+  "save": "Save",
+  "saving": "Saving…",
+  "showing": "Showing {shown} of {total}",
+  "emptyTitle": "No per-diem rates",
+  "emptyBody": "Add a rate to set a daily allowance per expense category and location.",
+  "ongoing": "ongoing",
+  "scopeTitle": "Scope (optional)",
+  "scopeHint": "Leave blank to apply to everyone. A more specific rate wins over a general one.",
+  "col": {
+    "location": "Location",
+    "scope": "Scope",
+    "category": "Category",
+    "amount": "Allowance / day",
+    "validity": "Effective"
+  },
+  "scope": {
+    "all": "All",
+    "le": "Legal entity",
+    "bu": "Business unit",
+    "any": "Any",
+    "anyLevel": "Any level"
+  },
+  "field": {
+    "country": "Country (ISO-2)",
+    "city": "City",
+    "currency": "Currency",
+    "policyCurrency": "Policy currency",
+    "category": "Expense category",
+    "categoryPlaceholder": "Select a category",
+    "amount": "Allowance / day",
+    "effectiveFrom": "Effective from",
+    "effectiveTo": "Effective to",
+    "firstLastDay": "Halve the allowance on the first/last day of travel",
+    "jobLevel": "Job level",
+    "legalEntity": "Legal entity",
+    "businessUnit": "Business unit"
+  }
+}

@@ -1,0 +1,204 @@
+{
+  "title": "People",
+  "subtitle": "{count, plural, one {# person} other {# people}}",
+  "scope": {
+    "label": "Show",
+    "all": "All employees",
+    "direct": "My direct reports",
+    "indirect": "My indirect reports",
+    "chain": "My team",
+    "self": "Just me"
+  },
+  "addUser": "Add user",
+  "comingSoon": "Not available yet",
+  "search": {
+    "placeholder": "Search by name or email…",
+    "label": "Search"
+  },
+  "filters": {
+    "status": "Status",
+    "anyStatus": "Any status",
+    "businessUnit": "Business unit",
+    "anyBusinessUnit": "Any business unit",
+    "department": "Department",
+    "anyDepartment": "Any department"
+  },
+  "columns": {
+    "name": "Employee Name",
+    "externalIds": "External IDs",
+    "email": "Email",
+    "entity": "Legal Entity",
+    "businessUnit": "Business Unit",
+    "department": "Department",
+    "jobLevel": "Job Level",
+    "nsClass": "NetSuite Class",
+    "nsBusinessUnit": "NetSuite Business Unit",
+    "manager": "Manager",
+    "mfaEnrolled": "MFA",
+    "status": "Status",
+    "access": "Access"
+  },
+  "detail": {
+    "notFound": "User not found.",
+    "identity": "Identity",
+    "reporting": "Reporting",
+    "organization": "Organization",
+    "externalSystems": "External systems",
+    "virtualCards": "Virtual cards",
+    "activity": "Activity",
+    "role": "Role",
+    "onLeaveSince": "On leave since",
+    "termination": "Termination",
+    "lastLogin": "Last login",
+    "directReports": "Direct reports ({count})",
+    "none": "None",
+    "andMore": "+ {count} more",
+    "country": "Country",
+    "homeCurrency": "Home currency",
+    "expenseReports": "Expense reports",
+    "delegations": "Delegations",
+    "noCards": "No virtual cards.",
+    "cardFallback": "Card",
+    "restricted": "You do not have permission to see this.",
+    "noReports": "No expense reports.",
+    "noDelegations": "No delegations.",
+    "delegatesTo": "Delegates to",
+    "actsFor": "Acts for",
+    "delegationEnded": "Ended"
+  },
+  "selectAll": "Select all visible rows",
+  "groupBy": {
+    "label": "Group by",
+    "none": "No grouping",
+    "manager": "Manager",
+    "department": "Department",
+    "businessUnit": "Business unit",
+    "status": "Status",
+    "unassigned": "— Unassigned —",
+    "rowCount": "{count, plural, one {# person} other {# people}}"
+  },
+  "status": {
+    "ACTIVE": "Active",
+    "ON_LEAVE": "On leave",
+    "DEACTIVATED": "Deactivated",
+    "TERMINATED": "Terminated"
+  },
+  "actions": {
+    "label": "Actions",
+    "menu": "Actions",
+    "selectedSuffix": "selected",
+    "export": "Export",
+    "select": "Select row",
+    "view": "View",
+    "edit": "Edit",
+    "setRole": "Change role",
+    "setOnLeave": "Set on leave",
+    "resetPassword": "Reset password",
+    "deactivate": "Deactivate"
+  },
+  "mfa": {
+    "enrolled": "Enrolled",
+    "notEnrolled": "Not enrolled"
+  },
+  "resetPassword": {
+    "title": "Reset password",
+    "for": "for {name}",
+    "modeLabel": "How would you like to reset the password?",
+    "modeGenerate": "Automatically generate a password",
+    "modeManual": "Set the password manually",
+    "modeEmailLink": "Email a reset link to the user",
+    "manualLabel": "New password",
+    "manualHint": "At least 12 characters.",
+    "forceLabel": "Require a password change on next sign-in",
+    "emailNote": "A single-use reset link will be emailed to {email}. It expires after {minutes} minutes.",
+    "submit": "Reset password",
+    "submitting": "Resetting…",
+    "cancel": "Cancel",
+    "close": "Close",
+    "tooShort": "Password must be at least 12 characters.",
+    "successGenerateTitle": "Password reset",
+    "successGenerateBody": "Share this password securely — it won't be shown again.",
+    "copy": "Copy",
+    "copied": "Copied",
+    "successEmailTitle": "Reset link sent",
+    "successEmailBody": "A reset link was emailed to {email}.",
+    "successManualTitle": "Password reset",
+    "successManualBody": "The new password is now active."
+  },
+  "setRole": {
+    "title": "Change role",
+    "for": "For {name}",
+    "roleLabel": "Role",
+    "rolePlaceholder": "Select a role…",
+    "cancel": "Cancel",
+    "submit": "Save",
+    "submitting": "Saving…"
+  },
+  "edit": {
+    "title": "Edit employee",
+    "for": "{name}",
+    "firstName": "First name",
+    "lastName": "Last name",
+    "status": "Status",
+    "country": "Country (ISO-2)",
+    "countryPlaceholder": "US",
+    "none": "None",
+    "cancel": "Cancel",
+    "save": "Save changes",
+    "saving": "Saving…"
+  },
+  "empty": {
+    "title": "No employees match your filters",
+    "body": "Try clearing one or more filters or refining your search."
+  },
+  "lastLogin": {
+    "never": "Never",
+    "today": "Today",
+    "yesterday": "Yesterday",
+    "daysAgo": "{days, plural, one {# day ago} other {# days ago}}"
+  },
+  "page": {
+    "showing": "Showing {shown} of {total, plural, one {# person} other {# people}}",
+    "selected": "Selected {n}",
+    "loading": "Loading…",
+    "endOfList": "End of list"
+  },
+  "add": {
+    "title": "Add user",
+    "description": "Enter their work email. Everything else — name, department, business unit, legal entity, manager — comes from Google Workspace and stays in sync with it.",
+    "emailLabel": "Work email",
+    "emailPlaceholder": "name@e.inc",
+    "submit": "Add user",
+    "adding": "Adding…",
+    "synced": "Added, with their profile from Google Workspace ({email}).",
+    "aliasOfExisting": "That address is an alias of {email}, who is already here. Their profile was refreshed instead.",
+    "notInDirectory": "Added. Google Workspace has no account for that address yet, so only the email is on file — the daily directory sync will fill in the rest once it appears.",
+    "directoryOff": "Added with the email only: the Google Workspace directory is not enabled in this environment. Their profile fills in on first sign-in.",
+    "exists": "{name} is already in the directory.",
+    "existsDeactivated": "{name} is already in the directory, deactivated. Reactivate them rather than adding them again."
+  },
+  "access": {
+    "granted": "Can sign in",
+    "denied": "No access",
+    "revoke": "Revoke",
+    "grant": "Grant"
+  },
+  "sync": {
+    "badge": "NetSuite",
+    "badgeTitle": "NetSuite disagrees on {count, plural, one {# field} other {# fields}} — see People ↔ NetSuite",
+    "section": "People ↔ NetSuite",
+    "explain": "NetSuite holds a different value for these fields. ExpenseOS follows ADP through Google and never overwrites either; a reviewer rules which system is right.",
+    "review": "Review on People ↔ NetSuite",
+    "hrIt": "HR / IT",
+    "hrItHelp": "Adopted from NetSuite while Google still says otherwise — HR or IT need to correct the upstream record.",
+    "editNotice": "NetSuite disagrees about: {fields}. Changing these here does not settle it.",
+    "field": {
+      "LEGAL_ENTITY": "Legal entity",
+      "DEPARTMENT": "Department",
+      "BUSINESS_UNIT": "Business unit",
+      "CLASS": "Class",
+      "MANAGER": "Manager",
+      "EMPLOYEE_STATUS": "Employment status"
+    }
+  }
+}

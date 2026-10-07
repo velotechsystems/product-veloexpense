@@ -1,0 +1,28 @@
+{
+  "expenses": {
+    "reportNotEditable": "Ce rapport ne peut plus être modifié. Seul un brouillon ou un rapport retourné peut être changé.",
+    "documentsClosed": "Aucun document ne peut être ajouté une fois le rapport tranché.",
+    "documentsRereadClosed": "Les documents ne peuvent pas être relus une fois le rapport tranché.",
+    "taxExceedsAmount": "La taxe de {tax} dépasse le montant de la dépense, soit {amount}. La taxe ne peut pas excéder ce qui a été payé.",
+    "taxExceedsAmountAt": "{merchant} : la taxe de {tax} dépasse le montant de la dépense, soit {amount}. La taxe ne peut pas excéder ce qui a été payé."
+  },
+  "fx": {
+    "overrideNotSubmitted": "Le taux de change manuel ne peut être défini ou retiré que pendant que le rapport est soumis et en attente de décision. Une fois tranché, ses montants sont ceux qui ont été approuvés.",
+    "rateOutOfBounds": "Le taux doit être un nombre positif ne dépassant pas {max, number}.",
+    "rateFarFromDaily": "Le taux {rate} s’écarte de plus de {band}× du taux quotidien {reference} pour {from}→{home}. Un taux de relevé diffère du taux quotidien de quelques pour cent, pas de plusieurs fois.",
+    "rateFarFromPrior": "{base}→{quote} a été enregistré pour la dernière fois à {prior} le {on}. {rate} s’en écarte de {deviation} %, soit plus que le {bound} % qu’un taux peut varier sans justification. Si c’est le taux précédent qui était erroné, ajoutez celui-ci avec une raison qui le dit."
+  },
+  "ledger": {
+    "adoptUnmapped": "Aucun enregistrement ExpenseOS n’est associé à l’enregistrement NetSuite « {value} » : il n’y a donc aucune valeur à adopter. Associez-le d’abord dans la page d’administration correspondante, ou choisissez « Conserver ExpenseOS, corriger NetSuite » pour corriger NetSuite.",
+    "referenceInUse": "Cette référence ne peut pas être supprimée, car des enregistrements y renvoient encore. La liste ci-dessous indique exactement lesquels. Rien n’a été supprimé et aucune association n’a été retirée.",
+    "referenceActive": "Seule une référence inactive peut être supprimée. Désactivez d’abord celle-ci, puis supprimez-la.",
+    "reconcileNotImported": "Cette charge a été saisie manuellement dans ExpenseOS et non importée du flux de cartes : il n’y a donc rien dans NetSuite avec quoi la rapprocher.",
+    "reconcileProcessing": "ExpenseOS publie cette charge dans NetSuite en ce moment. Attendez le résultat avant de la marquer comme publiée manuellement.",
+    "reconcileAlreadyReconciled": "Cette charge est déjà marquée comme publiée manuellement dans NetSuite.",
+    "reconcileChangedConcurrently": "Cette charge a changé pendant que vous la marquiez : rien n’a été enregistré. Actualisez la page pour voir son état actuel."
+  },
+  "expenseCategories": {
+    "nsCategoryMissing": "Cette catégorie de dépense NetSuite ne figure plus dans la liste synchronisée. Lancez une synchronisation des données de référence, ou choisissez-en une autre.",
+    "nsCategoryInactive": "Cette catégorie de dépense NetSuite est inactive dans NetSuite. Choisissez-en une active, ou retirez la substitution pour revenir à la correspondance par nom."
+  }
+}

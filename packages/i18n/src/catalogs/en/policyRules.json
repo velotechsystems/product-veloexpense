@@ -1,0 +1,156 @@
+{
+  "viol": {
+    "title": "Policy Violations",
+    "showing": "Showing {shown} of {total}",
+    "emptyTitle": "No policy violations",
+    "emptyBody": "Violations raised when reports and travel requests are validated appear here — review warnings and acknowledge exceptions.",
+    "col": {
+      "report": "Report",
+      "submitter": "Submitter",
+      "kind": "Rule",
+      "severity": "Severity",
+      "message": "Issue",
+      "category": "Category",
+      "status": "Status",
+      "created": "Raised",
+      "subject": "Subject"
+    },
+    "status": {
+      "open": "Open",
+      "resolved": "Acknowledged"
+    },
+    "resolve": "Acknowledge",
+    "resolveTitle": "Acknowledge violation",
+    "resolvePlaceholder": "Add a note explaining the exception…",
+    "resolveHint": "Acknowledging records who reviewed the exception and why. Blocking violations can’t be acknowledged — they must be fixed.",
+    "clear": "Clear",
+    "resolvedBadge": "Acknowledged",
+    "unresolvedOnly": "Open only",
+    "actions": "Actions"
+  },
+  "title": "Policy Rules",
+  "add": "New Rule",
+  "edit": "Edit Rule",
+  "delete": "Delete",
+  "actions": "Actions",
+  "cancel": "Cancel",
+  "save": "Save",
+  "saving": "Saving…",
+  "showing": "Showing {shown} of {total}",
+  "emptyTitle": "No policy rules yet",
+  "emptyBody": "Create a rule to enforce spending policy at submit time. Rules are authored here — no deploy required.",
+  "col": {
+    "kind": "Rule",
+    "scope": "Scope",
+    "severity": "Severity",
+    "condition": "Condition",
+    "category": "Category",
+    "validity": "Validity",
+    "status": "Status"
+  },
+  "scope": {
+    "AGGREGATE": "Aggregate",
+    "LINE": "Line item",
+    "REPORT": "Report",
+    "TRAVEL_REQUEST": "Travel request",
+    "all": "All",
+    "any": "Any",
+    "anyLevel": "Any level"
+  },
+  "severity": {
+    "INFO": "Info",
+    "WARNING": "Warning",
+    "BLOCK": "Block"
+  },
+  "status": {
+    "enabled": "Enabled",
+    "disabled": "Disabled"
+  },
+  "ongoing": "ongoing",
+  "field": {
+    "businessUnit": "Business unit",
+    "category": "Category",
+    "condition": "Condition",
+    "department": "Department",
+    "effectiveFrom": "Effective from",
+    "effectiveTo": "Effective to",
+    "enabled": "Enabled",
+    "jobLevel": "Job level",
+    "kind": "Rule type",
+    "legalEntity": "Legal entity",
+    "messageKey": "Message key",
+    "params": "Parameters",
+    "role": "Role",
+    "severity": "Severity"
+  },
+  "kindNoCondition": "This rule type has no condition — it runs its own built-in check.",
+  "conditionTitle": "Condition",
+  "conditionHint": "The rule fires when the fact set matches.",
+  "match": {
+    "all": "Match ALL of",
+    "any": "Match ANY of"
+  },
+  "addClause": "Add condition",
+  "removeClause": "Remove",
+  "valuePlaceholder": "Value",
+  "fieldPlaceholder": "Field",
+  "scopeTitle": "Applies to",
+  "scopeHint": "Leave blank to apply to everyone. Any set dimension narrows the rule to matching submitters.",
+  "messageHint": "An i18n catalog key rendered to submitters when the rule fires.",
+  "op": {
+    "eq": "equals",
+    "neq": "not equals",
+    "lt": "less than",
+    "lte": "at most",
+    "gt": "greater than",
+    "gte": "at least",
+    "in": "is one of",
+    "nin": "is not one of"
+  },
+  "params": {
+    "title": "Parameters for {kind}",
+    "thresholdMinor": "Threshold",
+    "maxKmPerEntry": "Max km per trip",
+    "maxKmPerMonth": "Max km per month",
+    "requirePurpose": "Require a business purpose",
+    "requireAttendees": "Require attendees (categories that ask for them)",
+    "atLeastOne": "Set at least one of these.",
+    "cabin": "Cabin",
+    "allowedJobLevelIds": "Job levels allowed to request it",
+    "tolerancePercent": "Tolerance (%)",
+    "absoluteFloorMinor": "Minimum overrun to flag",
+    "hint": {
+      "allowedJobLevelIds": "Everyone else is blocked from requesting this cabin. Leave empty to block it for all job levels."
+    },
+    "noneSelected": "Nobody",
+    "option": {
+      "cabin": {
+        "PREMIUM_ECONOMY": "Premium economy",
+        "BUSINESS": "Business",
+        "FIRST": "First"
+      }
+    }
+  },
+  "blocked": "Cannot save yet — still needed: {fields}.",
+  "kind": {
+    "AUDIT_THRESHOLD": "Audit threshold",
+    "BUDGET_OVERAGE": "Over budget",
+    "CURRENCY_MISMATCH": "Currency mismatch",
+    "DUPLICATE": "Duplicate charge",
+    "FISCAL_CLOSE": "Fiscal period closed",
+    "FUTURE_DATED": "Future-dated",
+    "MILEAGE_MAX": "Mileage cap",
+    "PER_DIEM": "Per-diem cap",
+    "PER_TXN_LIMIT": "Per-transaction limit",
+    "PREDICATE_LINE": "Custom rule (line)",
+    "PREDICATE_REPORT": "Custom rule (report)",
+    "RECEIPT_REQUIRED": "Receipt required",
+    "RECEIPT_THRESHOLD": "Receipt threshold",
+    "REQUIRES_APPROVED_TRAVEL": "Approved travel required",
+    "RUNNING_LIMIT": "Running limit",
+    "TIP_PERCENTAGE": "Tip percentage",
+    "TRAVEL_CABIN_CLASS": "Cabin class",
+    "TRAVEL_LINE_DETAIL_REQUIRED": "Travel line detail required",
+    "TRAVEL_OVERRUN": "Travel budget overrun"
+  }
+}

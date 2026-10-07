@@ -1,0 +1,137 @@
+{
+  "list": {
+    "newWorkflow": "New workflow",
+    "empty": "No approval workflows yet.",
+    "loading": "Loading…",
+    "colName": "Workflow",
+    "colSubject": "Applies to",
+    "colPriority": "Priority",
+    "colStatus": "Status",
+    "default": "Default",
+    "showing": "{shown} of {total} workflows",
+    "reorderHint": "Drag to reorder — higher in the list wins when multiple workflows match. The default catch-all always applies last."
+  },
+  "subject": {
+    "EXPENSE_REPORT": "Expense reports",
+    "TRAVEL_REQUEST": "Travel requests",
+    "VIRTUAL_CARD_LIMIT_INCREASE": "Card limit increases",
+    "VIRTUAL_CARD_REQUEST": "Virtual card requests"
+  },
+  "status": {
+    "draft": "Draft",
+    "published": "Published",
+    "archived": "Archived",
+    "noVersion": "Not published",
+    "draftPending": "Draft (unpublished changes)"
+  },
+  "actions": {
+    "edit": "Open editor",
+    "editMeta": "Edit details",
+    "publish": "Publish",
+    "activate": "Activate",
+    "deactivate": "Deactivate",
+    "menu": "Workflow actions"
+  },
+  "create": {
+    "title": "New approval workflow",
+    "name": "Name",
+    "namePlaceholder": "e.g. High-value cards",
+    "key": "Key",
+    "keyHint": "Lowercase letters, digits, and dashes — used internally.",
+    "description": "Description",
+    "subject": "Applies to",
+    "priority": "Priority",
+    "priorityHint": "Higher priority wins when multiple workflows match.",
+    "isDefault": "Catch-all default",
+    "cancel": "Cancel",
+    "submit": "Create",
+    "submitting": "Creating…"
+  },
+  "meta": {
+    "title": "Edit details",
+    "save": "Save",
+    "saving": "Saving…"
+  },
+  "publishConfirm": "Publish this workflow? New requests will use it immediately.",
+  "runtimeNote": "Higher-priority workflows match first; the default catches the rest.",
+  "breadcrumb": {
+    "root": "Approval workflows"
+  },
+  "editor": {
+    "save": "Save draft",
+    "saving": "Saving…",
+    "publish": "Publish",
+    "publishing": "Publishing…",
+    "valid": "Valid",
+    "issues": "{count} issue(s)",
+    "savedAt": "Saved {time}",
+    "matchCondition": "Applies when",
+    "config": "Node",
+    "validation": "Validation",
+    "allChecksPass": "All structural checks pass.",
+    "selectNode": "Select a node to configure it.",
+    "deleteNode": "Delete node",
+    "done": "Done",
+    "nodes": "Nodes",
+    "collapse": "Collapse",
+    "expand": "Expand"
+  },
+  "settings": {
+    "title": "Settings",
+    "trigger": "Trigger condition",
+    "triggerHint": "This workflow governs a request only when these conditions match.",
+    "savedWithDraft": "Saved when you save the draft.",
+    "saveDetails": "Save details",
+    "defaultNote": "A catch-all default applies to every request — it has no trigger condition."
+  },
+  "history": {
+    "title": "History",
+    "current": "Live",
+    "preview": "Preview",
+    "restore": "Restore",
+    "previewing": "Previewing v{version} (read-only)",
+    "exitPreview": "Exit preview"
+  },
+  "sim": {
+    "title": "Simulate",
+    "amount": "Amount (base currency)",
+    "department": "Department",
+    "jobLevel": "Job level",
+    "run": "Run",
+    "running": "Running…",
+    "failed": "The simulation could not run. Nothing was changed — check the inputs and try again.",
+    "matched": "Matched workflow",
+    "none": "No workflow matches these inputs.",
+    "noSteps": "No approval steps — auto-approved.",
+    "close": "Close",
+    "category": "Contains category",
+    "maxLine": "Largest line amount",
+    "requiresApproval": "Approval-required category",
+    "hasPolicyViolation": "Has policy warning",
+    "overPerDiem": "Over per-diem",
+    "overBudget": "Over budget",
+    "yes": "Yes",
+    "no": "No",
+    "approver": {
+      "filter": "approver pool",
+      "manager": "direct manager",
+      "managerChain": "manager chain"
+    }
+  },
+  "approver": {
+    "fallbackLabel": "If they have no manager",
+    "fallbackHint": "The person at the top of the org chart has no manager to route to. Without a fallback their request parks unassigned and any approver may claim it.",
+    "fallbackNone": "Leave it to the approver pool",
+    "fallbackUser": "A specific person",
+    "fallbackRole": "A role",
+    "fallbackUserLabel": "Person",
+    "fallbackUserPlaceholder": "Select a person…",
+    "fallbackRoleLabel": "Role",
+    "fallbackRoleHint": "Any active holder of this role can claim and decide it — and nobody else.",
+    "fallbackRolePlaceholder": "Select a role…"
+  },
+  "renameHint": "Double-click to rename",
+  "renameAria": "Rename workflow",
+  "directManager": "Direct manager",
+  "anyLevel": "Any level"
+}

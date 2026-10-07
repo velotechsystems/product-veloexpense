@@ -12,6 +12,9 @@ export default defineConfig({
       { find: /^@expenseos\/rbac\/(.*)$/, replacement: r('packages/rbac/src/$1.ts') },
       { find: /^@expenseos\/rbac$/, replacement: r('packages/rbac/src/index.ts') },
       { find: /^@expenseos\/platform$/, replacement: r('server/platform/modules.ts') },
+      { find: /^@expenseos\/i18n\/catalogs\/(.*)$/, replacement: r('packages/i18n/src/catalogs/$1.json') },
+      { find: /^@expenseos\/i18n\/(.*)$/, replacement: r('packages/i18n/src/$1.ts') },
+      { find: /^@expenseos\/i18n$/, replacement: r('packages/i18n/src/index.ts') },
       { find: /^@\//, replacement: r('') },
     ],
   },
@@ -23,11 +26,11 @@ export default defineConfig({
     include: [
       'test/**/*.test.ts',
       // Tests ported from ExpenseOS stay beside the code they test, as they were there.
-      '{packages,server,lib,app,components}/**/*.test.{ts,tsx}',
+      '{packages,server,lib,app,components,i18n}/**/*.test.{ts,tsx}',
     ],
     // ExpenseOS runs its colocated tests under jsdom (its `unit` project); a file that
     // needs node says so with `// @vitest-environment node`, as several do.
-    environmentMatchGlobs: [['{packages,server,lib,app,components}/**/*.test.{ts,tsx}', 'jsdom']],
+    environmentMatchGlobs: [['{packages,server,lib,app,components,i18n}/**/*.test.{ts,tsx}', 'jsdom']],
     // Fails the run ONCE, naming the shell, when DATABASE_URL /
     // ADMIN_DATABASE_URL are missing or point at nothing. Without it a
     // forgotten `. scripts/dev-env.sh` surfaces as 55 files reporting

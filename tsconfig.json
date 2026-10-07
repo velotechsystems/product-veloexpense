@@ -24,7 +24,11 @@
       "@expenseos/rbac/server": ["./packages/rbac/src/server.ts"],
       "@expenseos/rbac/permissions": ["./packages/rbac/src/permissions.ts"],
       "@expenseos/rbac/systemRoles": ["./packages/rbac/src/systemRoles.ts"],
-      "@expenseos/platform": ["./server/platform/modules.ts"]
+      "@expenseos/platform": ["./server/platform/modules.ts"],
+      "@expenseos/i18n": ["./packages/i18n/src/index.ts"],
+      "@expenseos/i18n/locales": ["./packages/i18n/src/locales.ts"],
+      "@expenseos/i18n/getLocalized": ["./packages/i18n/src/getLocalized.ts"],
+      "@expenseos/i18n/load": ["./packages/i18n/src/load.ts"]
     }
   },
   "include": [

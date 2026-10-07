@@ -1,0 +1,204 @@
+{
+  "title": "Personnes",
+  "subtitle": "{count, plural, one {# personne} other {# personnes}}",
+  "scope": {
+    "label": "Afficher",
+    "all": "Tous les employés",
+    "direct": "Mes subordonnés directs",
+    "indirect": "Mes subordonnés indirects",
+    "chain": "Mon équipe",
+    "self": "Moi seul"
+  },
+  "addUser": "Ajouter un utilisateur",
+  "comingSoon": "Pas encore disponible",
+  "search": {
+    "placeholder": "Rechercher par nom ou courriel…",
+    "label": "Rechercher"
+  },
+  "filters": {
+    "status": "Statut",
+    "anyStatus": "Tous les statuts",
+    "businessUnit": "Unité d'affaires",
+    "anyBusinessUnit": "Toutes les unités",
+    "department": "Département",
+    "anyDepartment": "Tous les départements"
+  },
+  "columns": {
+    "name": "Nom de l'employé",
+    "externalIds": "Identifiants externes",
+    "email": "Courriel",
+    "entity": "Entité légale",
+    "businessUnit": "Unité d'affaires",
+    "department": "Département",
+    "jobLevel": "Niveau de poste",
+    "nsClass": "Classe NetSuite",
+    "nsBusinessUnit": "Unité d'affaires NetSuite",
+    "manager": "Gestionnaire",
+    "mfaEnrolled": "AMF",
+    "status": "Statut",
+    "access": "Accès"
+  },
+  "detail": {
+    "notFound": "Utilisateur introuvable.",
+    "identity": "Identité",
+    "reporting": "Hiérarchie",
+    "organization": "Organisation",
+    "externalSystems": "Systèmes externes",
+    "virtualCards": "Cartes virtuelles",
+    "activity": "Activité",
+    "role": "Rôle",
+    "onLeaveSince": "En congé depuis",
+    "termination": "Fin d'emploi",
+    "lastLogin": "Dernière connexion",
+    "directReports": "Subordonnés directs ({count})",
+    "none": "Aucun",
+    "andMore": "+ {count} de plus",
+    "country": "Pays",
+    "homeCurrency": "Devise d'origine",
+    "expenseReports": "Notes de frais",
+    "delegations": "Délégations",
+    "noCards": "Aucune carte virtuelle.",
+    "cardFallback": "Carte",
+    "restricted": "Vous n'avez pas la permission de voir ceci.",
+    "noReports": "Aucune note de frais.",
+    "noDelegations": "Aucune délégation.",
+    "delegatesTo": "Délègue à",
+    "actsFor": "Agit pour",
+    "delegationEnded": "Terminée"
+  },
+  "selectAll": "Sélectionner toutes les lignes visibles",
+  "groupBy": {
+    "label": "Grouper par",
+    "none": "Aucun groupement",
+    "manager": "Gestionnaire",
+    "department": "Département",
+    "businessUnit": "Unité d'affaires",
+    "status": "Statut",
+    "unassigned": "— Non assigné —",
+    "rowCount": "{count, plural, one {# personne} other {# personnes}}"
+  },
+  "status": {
+    "ACTIVE": "Actif",
+    "ON_LEAVE": "En congé",
+    "DEACTIVATED": "Désactivé",
+    "TERMINATED": "Terminé"
+  },
+  "actions": {
+    "label": "Actions",
+    "menu": "Actions",
+    "selectedSuffix": "sélectionné(s)",
+    "export": "Exporter",
+    "select": "Sélectionner la ligne",
+    "view": "Voir",
+    "edit": "Modifier",
+    "setRole": "Changer de rôle",
+    "setOnLeave": "Mettre en congé",
+    "resetPassword": "Réinitialiser le mot de passe",
+    "deactivate": "Désactiver"
+  },
+  "mfa": {
+    "enrolled": "Activée",
+    "notEnrolled": "Non activée"
+  },
+  "resetPassword": {
+    "title": "Réinitialiser le mot de passe",
+    "for": "pour {name}",
+    "modeLabel": "Comment voulez-vous réinitialiser le mot de passe?",
+    "modeGenerate": "Générer automatiquement un mot de passe",
+    "modeManual": "Définir le mot de passe manuellement",
+    "modeEmailLink": "Envoyer un lien de réinitialisation par courriel",
+    "manualLabel": "Nouveau mot de passe",
+    "manualHint": "Au moins 12 caractères.",
+    "forceLabel": "Exiger un changement de mot de passe à la prochaine connexion",
+    "emailNote": "Un lien de réinitialisation à usage unique sera envoyé à {email}. Il expire après {minutes} minutes.",
+    "submit": "Réinitialiser le mot de passe",
+    "submitting": "Réinitialisation…",
+    "cancel": "Annuler",
+    "close": "Fermer",
+    "tooShort": "Le mot de passe doit comporter au moins 12 caractères.",
+    "successGenerateTitle": "Mot de passe réinitialisé",
+    "successGenerateBody": "Partagez ce mot de passe de façon sécurisée — il ne sera plus affiché.",
+    "copy": "Copier",
+    "copied": "Copié",
+    "successEmailTitle": "Lien de réinitialisation envoyé",
+    "successEmailBody": "Un lien de réinitialisation a été envoyé à {email}.",
+    "successManualTitle": "Mot de passe réinitialisé",
+    "successManualBody": "Le nouveau mot de passe est maintenant actif."
+  },
+  "setRole": {
+    "title": "Changer le rôle",
+    "for": "Pour {name}",
+    "roleLabel": "Rôle",
+    "rolePlaceholder": "Sélectionner un rôle…",
+    "cancel": "Annuler",
+    "submit": "Enregistrer",
+    "submitting": "Enregistrement…"
+  },
+  "edit": {
+    "title": "Modifier l’employé",
+    "for": "{name}",
+    "firstName": "Prénom",
+    "lastName": "Nom",
+    "status": "Statut",
+    "country": "Pays (ISO-2)",
+    "countryPlaceholder": "CA",
+    "none": "Aucun",
+    "cancel": "Annuler",
+    "save": "Enregistrer les modifications",
+    "saving": "Enregistrement…"
+  },
+  "empty": {
+    "title": "Aucun employé ne correspond à vos filtres",
+    "body": "Essayez de réinitialiser un ou plusieurs filtres ou d'affiner votre recherche."
+  },
+  "lastLogin": {
+    "never": "Jamais",
+    "today": "Aujourd'hui",
+    "yesterday": "Hier",
+    "daysAgo": "Il y a {days, plural, one {# jour} other {# jours}}"
+  },
+  "page": {
+    "showing": "Affichage de {shown} sur {total, plural, one {# personne} other {# personnes}}",
+    "selected": "Sélectionné {n}",
+    "loading": "Chargement…",
+    "endOfList": "Fin de la liste"
+  },
+  "add": {
+    "title": "Ajouter un utilisateur",
+    "description": "Saisissez son courriel professionnel. Tout le reste — nom, service, unité d’affaires, entité juridique, gestionnaire — provient de Google Workspace et reste synchronisé avec celui-ci.",
+    "emailLabel": "Courriel professionnel",
+    "emailPlaceholder": "nom@e.inc",
+    "submit": "Ajouter l’utilisateur",
+    "adding": "Ajout en cours…",
+    "synced": "Ajouté, avec son profil provenant de Google Workspace ({email}).",
+    "aliasOfExisting": "Cette adresse est un alias de {email}, déjà présent. Son profil a été actualisé à la place.",
+    "notInDirectory": "Ajouté. Google Workspace n’a encore aucun compte pour cette adresse; seul le courriel est enregistré — la synchronisation quotidienne du répertoire complétera le reste dès qu’il apparaîtra.",
+    "directoryOff": "Ajouté avec le courriel seulement : le répertoire Google Workspace n’est pas activé dans cet environnement. Son profil sera complété à la première connexion.",
+    "exists": "{name} est déjà dans le répertoire.",
+    "existsDeactivated": "{name} est déjà dans le répertoire, mais désactivé. Réactivez cette personne plutôt que de l’ajouter de nouveau."
+  },
+  "access": {
+    "granted": "Peut se connecter",
+    "denied": "Aucun accès",
+    "revoke": "Révoquer",
+    "grant": "Accorder"
+  },
+  "sync": {
+    "badge": "NetSuite",
+    "badgeTitle": "NetSuite diverge sur {count, plural, one {# champ} other {# champs}} — voir Personnes ↔ NetSuite",
+    "section": "Personnes ↔ NetSuite",
+    "explain": "NetSuite détient une valeur différente pour ces champs. ExpenseOS suit ADP via Google et n’écrase ni l’un ni l’autre ; un réviseur tranche quel système a raison.",
+    "review": "Réviser dans Personnes ↔ NetSuite",
+    "hrIt": "RH / TI",
+    "hrItHelp": "Adopté de NetSuite alors que Google dit encore autre chose — les RH ou les TI doivent corriger la fiche en amont.",
+    "editNotice": "NetSuite diverge sur : {fields}. Modifier ces champs ici ne règle pas la question.",
+    "field": {
+      "LEGAL_ENTITY": "Entité juridique",
+      "DEPARTMENT": "Département",
+      "BUSINESS_UNIT": "Unité d’affaires",
+      "CLASS": "Classe",
+      "MANAGER": "Gestionnaire",
+      "EMPLOYEE_STATUS": "Statut d’emploi"
+    }
+  }
+}

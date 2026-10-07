@@ -1,0 +1,27 @@
+{
+  "cards": {
+    "approvals": {
+      "title": "Rapports à approuver",
+      "loading": "Chargement des rapports en attente de votre décision",
+      "count": "{count, plural, one {# rapport} other {# rapports}}",
+      "countCapped": "Au moins {count, plural, one {# rapport} other {# rapports}}",
+      "empty": "Aucun rapport n’attend votre décision.",
+      "emptyHint": "Les rapports apparaissent ici dès qu’ils vous sont acheminés.",
+      "viewAll": "Voir la boîte d’approbations"
+    },
+    "expenses": {
+      "title": "Mes rapports de dépenses",
+      "loading": "Chargement de vos rapports de dépenses",
+      "empty": "Aucun rapport de dépenses à afficher.",
+      "emptyHint": "Les nouveaux rapports apparaissent ici dès leur création.",
+      "viewAll": "Voir tous les rapports de dépenses"
+    },
+    "travel": {
+      "title": "Mes demandes de voyage",
+      "loading": "Chargement de vos demandes de voyage",
+      "empty": "Aucune demande de voyage à afficher.",
+      "emptyHint": "Les nouveaux voyages apparaissent ici dès leur création.",
+      "viewAll": "Voir toutes les demandes de voyage"
+    }
+  }
+}

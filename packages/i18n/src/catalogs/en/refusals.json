@@ -1,0 +1,28 @@
+{
+  "expenses": {
+    "reportNotEditable": "This report can no longer be edited. Only a draft or a returned report can be changed.",
+    "documentsClosed": "Documents cannot be added once the report has been decided.",
+    "documentsRereadClosed": "Documents cannot be re-read once the report has been decided.",
+    "taxExceedsAmount": "Tax of {tax} exceeds the expense amount of {amount}. Tax cannot be more than what was paid.",
+    "taxExceedsAmountAt": "{merchant}: tax of {tax} exceeds the expense amount of {amount}. Tax cannot be more than what was paid."
+  },
+  "fx": {
+    "overrideNotSubmitted": "The FX override can only be set or cleared while the report is submitted and awaiting a decision. Once decided, its amounts are what was approved.",
+    "rateOutOfBounds": "The rate must be a positive number no greater than {max, number}.",
+    "rateFarFromDaily": "Rate {rate} is more than {band}× away from the daily rate {reference} for {from}→{home}. A statement rate differs from the daily rate by a few percent, not by multiples.",
+    "rateFarFromPrior": "{base}→{quote} was last recorded at {prior} on {on}. {rate} is {deviation}% away from that — more than the {bound}% a rate may move without a reason. If the earlier rate was the wrong one, add this one with a reason saying so."
+  },
+  "ledger": {
+    "adoptUnmapped": "Nothing in ExpenseOS is mapped to the NetSuite record “{value}”, so there is no value to adopt. Map it on the matching admin page first, or choose “Keep ExpenseOS, fix NetSuite” to correct NetSuite instead.",
+    "referenceInUse": "This reference cannot be removed because records still point at it. The list below shows exactly where. Nothing was deleted and nothing was unmapped.",
+    "referenceActive": "Only an inactive reference can be removed. Deactivate this one first, then delete it.",
+    "reconcileNotImported": "This charge was entered by hand in ExpenseOS, not imported from the card feed, so there is nothing in NetSuite to reconcile it with.",
+    "reconcileProcessing": "ExpenseOS is posting this charge to NetSuite right now. Wait for the result before marking it as posted by hand.",
+    "reconcileAlreadyReconciled": "This charge is already marked as posted in NetSuite by hand.",
+    "reconcileChangedConcurrently": "This charge changed while you were marking it, so nothing was recorded. Refresh to see its current state."
+  },
+  "expenseCategories": {
+    "nsCategoryMissing": "That NetSuite expense category is no longer in the synced list. Run a reference sync, or choose another one.",
+    "nsCategoryInactive": "That NetSuite expense category is inactive in NetSuite. Choose an active one, or clear the override to match by name."
+  }
+}

@@ -1,0 +1,48 @@
+{
+  "appName": "ExpenseOS",
+  "loading": "Loading…",
+  "errorBoundary": "Something went wrong.",
+  "panelUnavailable": "This section could not be loaded.",
+  "retry": "Retry",
+  "cancel": "Cancel",
+  "save": "Save",
+  "delete": "Delete",
+  "confirm": "Confirm",
+  "close": "Close",
+  "picker": {
+    "minChars": "Type {count}+ characters to search",
+    "searching": "Searching…",
+    "empty": "No matches"
+  },
+  "language": "Language",
+  "languageDescription": "Choose the language for the app interface. Applies immediately and is saved to your profile.",
+  "languageEn": "English",
+  "languageFrCA": "Français (Canada)",
+  "countries": {
+    "CA": "Canada",
+    "US": "United States",
+    "MX": "Mexico",
+    "GB": "United Kingdom",
+    "FR": "France",
+    "DE": "Germany",
+    "BR": "Brazil"
+  },
+  "desktopOnly": {
+    "title": "This page needs a larger screen",
+    "body": "This page is built for a desktop layout and does not have a small-screen version yet. Open it on a larger screen for the full page, or continue anyway and scroll to reach what does not fit.",
+    "continueAnyway": "Continue anyway",
+    "goToDashboard": "Go to dashboard"
+  },
+  "notFound": {
+    "backToExpenses": "Go to expense reports",
+    "body": "The link may be out of date, or the record may have been deleted.",
+    "recordBody": "It may have been deleted, or the link may point at something that was never here.",
+    "recordTitle": "This record no longer exists",
+    "title": "We could not find that page"
+  },
+  "offline": {
+    "body": "You may be offline, or the connection dropped. ExpenseOS needs an internet connection and saves nothing on this device. Check your connection, then try again.",
+    "title": "We could not reach ExpenseOS"
+  },
+  "skipToContent": "Skip to content"
+}

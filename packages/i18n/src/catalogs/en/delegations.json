@@ -1,0 +1,60 @@
+{
+  "col": {
+    "delegator": "From",
+    "delegatee": "To",
+    "scope": "Scope",
+    "period": "Period",
+    "status": "Status",
+    "actions": ""
+  },
+  "edit": "Edit",
+  "empty": "Delegations you create will appear here.",
+  "emptyTitle": "No delegations yet",
+  "form": {
+    "title": "New delegation",
+    "editTitle": "Edit delegation",
+    "save": "Save changes",
+    "delegatee": "Delegate to",
+    "delegateePlaceholder": "Search for a person",
+    "startsAt": "Starts",
+    "endsAt": "Ends",
+    "endsAtHint": "Leave empty for no end date",
+    "scope": "Scope",
+    "cancel": "Cancel",
+    "submit": "Create delegation",
+    "submitting": "Creating…",
+    "errEndBeforeStart": "The end date must be after the start date.",
+    "errNoDelegatee": "Choose someone to delegate to."
+  },
+  "loading": "Loading delegations…",
+  "new": "New delegation",
+  "period": {
+    "noEnd": "No end date"
+  },
+  "revoke": "Revoke",
+  "revokeConfirm": "Revoke this delegation? Approvals will route normally again.",
+  "rowActions": "Delegation actions",
+  "scope": {
+    "ALL": "All approvals",
+    "VCC": "Virtual cards",
+    "REPORTS": "Expense reports"
+  },
+  "showing": "Showing {shown} of {total}",
+  "status": {
+    "active": "Active",
+    "revoked": "Revoked"
+  },
+  "title": "Delegations",
+  "toggle": {
+    "mine": "Mine",
+    "all": "All",
+    "owner": "Delegations"
+  },
+  "views": {
+    "deleteConfirm": "Delete “{name}”? This cannot be undone.",
+    "nameDefault": "My view",
+    "namePrompt": "Name this view:",
+    "renamePrompt": "Rename view:",
+    "untitled": "Untitled view"
+  }
+}

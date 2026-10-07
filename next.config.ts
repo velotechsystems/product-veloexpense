@@ -1,4 +1,9 @@
 import type { NextConfig } from "next";
+import createNextIntlPlugin from "next-intl/plugin";
+
+// Wave 0: ExpenseOS's next-intl, for ported screens. i18n/request.ts says how VeloExpense
+// chooses the language (a stored preference, not a URL segment).
+const withNextIntl = createNextIntlPlugin("./i18n/request.ts");
 
 // @velotech/* libs ship TypeScript source (main = src/index.ts), so Next must
 // transpile them rather than expecting pre-built JS.
@@ -32,4 +37,4 @@ const nextConfig: NextConfig = {
   experimental: { authInterrupts: true },
 };
 
-export default nextConfig;
+export default withNextIntl(nextConfig);

@@ -22,7 +22,9 @@ const CORE = Symbol('core');
 export const MODULE_FOR_SLUG: Readonly<Record<string, string | typeof CORE>> = {
   'expense-management': CORE,
   travel: 'travel',
-  'netsuite-gl': 'accounting',
+  // ExpenseOS's `netsuite-gl`, renamed for the vendor guard (as the `ledger.*` permissions
+  // are); ported calls say moduleActive('ledger-gl').
+  'ledger-gl': 'accounting',
   'compliance-audit': 'compliance',
   'finance-reporting': 'analytics',
   // Out of scope (7 Oct): virtual cards. No entry, so OFF.

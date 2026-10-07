@@ -305,7 +305,7 @@ describe('capability coverage', () => {
     expect(SYSTEM_ROLE_PERMISSIONS['ap-clerk']).toContain('ledger.sync.push');
   });
 
-  it('lets only the module-owning admins both restate FX and post to NetSuite', () => {
+  it('lets only the module-owning admins both restate FX and post to the ledger', () => {
     /**
      * Role shape can separate the two duties everywhere except inside the roles that own
      * the whole module — `admin` and `expense-administrator` spread all of `P.expense`
@@ -335,13 +335,13 @@ describe('capability coverage', () => {
     expect(cardPerms.filter((p) => p.startsWith('config.'))).toEqual([]);
   });
 
-  it('reserves the NetSuite reference resync for admins', () => {
+  it('reserves the ledger reference resync for admins', () => {
     // A locked decision: a full reference resync is disruptive, so it stays
     // admin-only however many module-admin roles exist.
     expect(holders('ledger.reference.sync')).toEqual(['admin']);
   });
 
-  it('reserves deleting a NetSuite reference record for admins', () => {
+  it('reserves deleting a ledger reference record for admins', () => {
     // Worse than a resync: irreversible. The next sync will not bring the row back,
     // because NetSuite no longer returns it. Admin gets it for free — `collectAdmin()`
     // spreads `...flatten(P.ledger)` — and every other role lists its NetSuite
