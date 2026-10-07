@@ -192,9 +192,13 @@ describe('the database', () => {
   });
 
   it('generates alphanumeric passwords, which the entrypoint puts in a URL unescaped', () => {
-    const [[, master]] = resources(s.data, 'AWS::SecretsManager::Secret');
-    const excluded = (master.Properties.GenerateSecretString as { ExcludeCharacters: string }).ExcludeCharacters;
-    for (const ch of ['@', ':', '/', '?', '#', '%', '&']) expect(excluded).toContain(ch);
+    // ExcludePunctuation, NOT an ExcludeCharacters list of every punctuation mark:
+    // the latter cannot satisfy Secrets Manager's each-type rule and fails the deploy.
+    const masters = resources(s.data, 'AWS::SecretsManager::Secret');
+    expect(masters).toHaveLength(1);
+    const gen = masters[0][1].Properties.GenerateSecretString as { ExcludePunctuation?: boolean; ExcludeCharacters?: string };
+    expect(gen.ExcludePunctuation).toBe(true);
+    expect(gen.ExcludeCharacters ?? '').not.toMatch(/[!-/:-@[-`{-~]{20,}/);
     const app = resources(s.security, 'AWS::SecretsManager::Secret').find(([id]) => id.startsWith('AppDbSecret'))!;
     expect((app[1].Properties.GenerateSecretString as { ExcludePunctuation: boolean }).ExcludePunctuation).toBe(true);
   });
