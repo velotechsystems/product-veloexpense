@@ -58,7 +58,9 @@ test.describe('the home page', () => {
       // The scaffold, gone. Pinned by name because "it renders" was true of the
       // scaffold too, and a future regression would look exactly like that.
       await expect(page.getByText('edit the')).toBeHidden();
-      await expect(page.getByRole('link', { name: 'Templates' })).toBeHidden();
+      // Exact: the sidebar's "Notification Templates" (ExpenseOS's label, Wave 0 shell)
+      // contains the word, and is not the scaffold.
+      await expect(page.getByRole('link', { name: 'Templates', exact: true })).toBeHidden();
       await expect(page.locator('img[src*="next.svg"]')).toHaveCount(0);
     });
 

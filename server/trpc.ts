@@ -5,7 +5,7 @@ import { initTRPC, TRPCError } from '@trpc/server';
 import superjson from 'superjson';
 import { ZodError } from 'zod';
 import { auth } from '@/auth';
-import { db, withTenantDb } from '@/lib/db/prisma';
+import { db, type TenantDb, withTenantDb } from '@/lib/db/prisma';
 import { hostTenantSlug } from '@/lib/tenant/request';
 import { refusalData } from '@/server/refusal';
 
@@ -36,6 +36,8 @@ export interface Session {
   user: {
     /** `app_user.id` — what ExpenseOS's routers write as createdById, submitterId, … */
     id: string;
+    /** `app_user.display_name`; the sidebar falls back to the email when it is empty. */
+    name: string | null;
     email: string;
     roleId: string;
     roleLabel: string;
@@ -44,7 +46,7 @@ export interface Session {
 }
 
 /** What the session says before the tenant middleware has read the database. */
-interface Caller {
+export interface Caller {
   email: string;
   organizationId: string;
 }
@@ -209,45 +211,61 @@ const tenant = t.middleware(async ({ ctx, next }) => {
   const caller = ctx.caller;
   const hostSlug = await hostTenantSlug();
   return withTenantDb(caller.organizationId, async (tx) => {
-    if (hostSlug !== null) {
-      // `organization` has no tenant column and so no RLS policy: filtered by id, as
-      // lib/tenant/request.ts does, or this would read every tenant's slug.
-      const [org] = await tx.$queryRaw<{ slug: string }[]>`
-        SELECT slug FROM organization WHERE id = ${caller.organizationId}::uuid`;
-      if ((org?.slug ?? '') !== hostSlug) {
-        throw new TRPCError({ code: 'FORBIDDEN', message: 'This address belongs to another organization.' });
-      }
-    }
-    // The role comes from the DATABASE on every request, never from the session token:
-    // a token outlives a demotion or a deactivation (lib/auth/actor.ts).
-    const [member] = await tx.$queryRaw<
-      { id: string; role: VeloExpenseRole; deleted_at: Date | null }[]
-    >`SELECT id, role, deleted_at FROM app_user WHERE lower(email) = lower(${caller.email}) LIMIT 1`;
-    if (!member) {
-      throw new TRPCError({ code: 'FORBIDDEN', message: 'You are not a member of this organization.' });
-    }
-    if (member.deleted_at !== null) {
-      throw new TRPCError({ code: 'FORBIDDEN', message: 'This account has been deactivated.' });
-    }
-    const kind = systemRoleFor(member.role);
-    const roleId = SYSTEM_ROLE_IDS[kind];
-    // VeloExpense: English until the reader's locale reaches the tRPC context with next-intl.
-    const roleLabel = SYSTEM_ROLE_LABELS[kind].en ?? kind;
-    const session: Session = {
-      user: {
-        id: member.id,
-        email: caller.email,
-        roleId,
-        roleLabel,
-        organizationId: caller.organizationId,
-      },
-    };
-    const rbac = await resolveRbacUser(tx, { userId: member.id, roleId, roleLabel });
+    const { session, rbac } = await resolveTenantMember(tx, caller, hostSlug);
     const result = await next({ ctx: { ...ctx, session, rbac } });
     if (!result.ok) throw result.error;
     return result;
   });
 });
+
+/**
+ * VeloExpense: who the caller is in their tenant — the ExpenseOS-shaped `session.user` and
+ * `rbac`. Shared by the tRPC `tenant` middleware and the server shell (`server/shell.ts`),
+ * so the menu and the procedures can never disagree about who is asking. Runs inside the
+ * caller's `withTenantDb` scope; refuses with a FORBIDDEN `TRPCError`.
+ */
+export async function resolveTenantMember(
+  tx: TenantDb,
+  caller: Caller,
+  hostSlug: string | null,
+): Promise<{ session: Session; rbac: Awaited<ReturnType<typeof resolveRbacUser>> }> {
+  if (hostSlug !== null) {
+    // `organization` has no tenant column and so no RLS policy: filtered by id, as
+    // lib/tenant/request.ts does, or this would read every tenant's slug.
+    const [org] = await tx.$queryRaw<{ slug: string }[]>`
+      SELECT slug FROM organization WHERE id = ${caller.organizationId}::uuid`;
+    if ((org?.slug ?? '') !== hostSlug) {
+      throw new TRPCError({ code: 'FORBIDDEN', message: 'This address belongs to another organization.' });
+    }
+  }
+  // The role comes from the DATABASE on every request, never from the session token:
+  // a token outlives a demotion or a deactivation (lib/auth/actor.ts).
+  const [member] = await tx.$queryRaw<
+    { id: string; display_name: string | null; role: VeloExpenseRole; deleted_at: Date | null }[]
+  >`SELECT id, display_name, role, deleted_at FROM app_user WHERE lower(email) = lower(${caller.email}) LIMIT 1`;
+  if (!member) {
+    throw new TRPCError({ code: 'FORBIDDEN', message: 'You are not a member of this organization.' });
+  }
+  if (member.deleted_at !== null) {
+    throw new TRPCError({ code: 'FORBIDDEN', message: 'This account has been deactivated.' });
+  }
+  const kind = systemRoleFor(member.role);
+  const roleId = SYSTEM_ROLE_IDS[kind];
+  // VeloExpense: English until the reader's locale reaches the tRPC context with next-intl.
+  const roleLabel = SYSTEM_ROLE_LABELS[kind].en ?? kind;
+  const session: Session = {
+    user: {
+      id: member.id,
+      name: member.display_name,
+      email: caller.email,
+      roleId,
+      roleLabel,
+      organizationId: caller.organizationId,
+    },
+  };
+  const rbac = await resolveRbacUser(tx, { userId: member.id, roleId, roleLabel });
+  return { session, rbac };
+}
 
 export const router = t.router;
 export const publicProcedure = t.procedure.use(domainErrors).use(tenant);

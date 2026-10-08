@@ -24,6 +24,10 @@ const PORTED_FROM_EXPENSEOS = [
   "lib/useCoarsePointer.ts",
   "lib/useIsBelowLg.ts",
   "test-utils/**",
+  // Wave 0 shell: ExpenseOS's app shell and the kit's sidebar primitives.
+  "app/(app)/**",
+  "components/navigation/**",
+  "components/ui/alert.tsx",
 ];
 
 const eslintConfig = defineConfig([
@@ -42,6 +46,12 @@ const eslintConfig = defineConfig([
       "react-hooks/immutability": "off",
       "react-hooks/set-state-in-effect": "off",
     },
+  },
+  {
+    // ExpenseOS's Avatar renders a remote profile photo (Google) with a plain <img>, and the
+    // kit's components must not depend on Next; see the note in the component.
+    files: ["components/data-display/Avatar.tsx"],
+    rules: { "@next/next/no-img-element": "off" },
   },
   // Override default ignores of eslint-config-next.
   globalIgnores([

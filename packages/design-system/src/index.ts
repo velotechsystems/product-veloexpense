@@ -9,6 +9,13 @@
  */
 
 // ── data-display ─────────────────────────────────────────────────────
+export {
+  Avatar,
+  type AvatarProps,
+  type AvatarSize,
+  type AvatarVariant,
+} from '@/components/data-display/Avatar';
+export { initialsFrom, initialsFromDisplayName } from '@/components/data-display/initials';
 export * from '@/components/data-display/data-table';
 export type { FilterLabels } from '@/components/data-display/filters';
 export {
@@ -43,7 +50,15 @@ export {
   ViewsBar,
 } from '@/components/data-display/saved-views';
 
+// ── navigation ───────────────────────────────────────────────────────
+export { NavLink, type NavLinkProps } from '@/components/navigation/NavLink';
+export { Sidebar, type SidebarProps } from '@/components/navigation/Sidebar';
+export { SidebarHeader, type SidebarHeaderProps } from '@/components/navigation/SidebarHeader';
+export { SidebarProfile, type SidebarProfileProps } from '@/components/navigation/SidebarProfile';
+export { SidebarSection, type SidebarSectionProps } from '@/components/navigation/SidebarSection';
+
 // ── ui ───────────────────────────────────────────────────────────────
+export { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 export { Badge, badgeVariants } from '@/components/ui/badge';
 export { Button, buttonVariants } from '@/components/ui/button';
 export { Checkbox } from '@/components/ui/checkbox';
