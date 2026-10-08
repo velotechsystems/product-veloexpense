@@ -17,7 +17,11 @@ jobs:
   quality:
     name: Typecheck, build, RLS gate
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # Everything from install to the audit-chain check runs in this one job. Wave 1
+    # took it to ~15 minutes (unit + DB suite ~5, Playwright ~5-6, build, crawl), so the
+    # old 15-minute ceiling started cancelling green runs mid-e2e. 30 leaves room for the
+    # waves still to come; a step that genuinely hangs still fails the run.
+    timeout-minutes: 30
     env:
       AUTH_SECRET: ci-test-only-not-a-real-secret
       # VX3-3. 32 bytes of base64 — the integration-credential envelope refuses
