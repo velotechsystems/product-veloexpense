@@ -1,6 +1,6 @@
-import { render, screen } from '@testing-library/react';
+import { act, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { AsyncCombobox, Combobox } from '@/components/ui/combobox';
 
 /**
@@ -16,6 +16,10 @@ import { AsyncCombobox, Combobox } from '@/components/ui/combobox';
  * seeds its internal input text from that. It re-syncs on focus/blur, which is why
  * clicking in and out "fixed" it.
  *
+ * Oct 2026: the combobox moved from Base UI to Radix Popover + cmdk (the kit standard).
+ * The field is now a button showing the selected label, not a text input, so these read
+ * its text rather than an input value; the cases are unchanged.
+ *
  * The fix is a `selectedItem` fallback, the same escape hatch AsyncCombobox already has
  * for exactly this reason.
  */
@@ -25,12 +29,13 @@ const ITEMS = [
   { value: 'dept-2', label: 'Operations' },
 ];
 
-const input = () => screen.getByRole('combobox') as HTMLInputElement;
+/** What the field shows — the selected label, or the placeholder. */
+const shown = () => screen.getByRole('combobox').textContent ?? '';
 
 describe('Combobox', () => {
   it('shows the selected label when the item is in items', () => {
     render(<Combobox items={ITEMS} value="dept-2" onValueChange={() => {}} />);
-    expect(input().value).toBe('Operations');
+    expect(shown()).toBe('Operations');
   });
 
   it('shows the selected label from selectedItem when items are still empty', () => {
@@ -43,7 +48,7 @@ describe('Combobox', () => {
         onValueChange={() => {}}
       />,
     );
-    expect(input().value).toBe('Operations');
+    expect(shown()).toBe('Operations');
   });
 
   it('prefers the real item over the fallback once the list arrives', () => {
@@ -57,7 +62,7 @@ describe('Combobox', () => {
         onValueChange={() => {}}
       />,
     );
-    expect(input().value).toBe('Operations (renamed)');
+    expect(shown()).toBe('Operations (renamed)');
   });
 
   it('ignores a stale fallback that no longer matches the value', () => {
@@ -71,7 +76,7 @@ describe('Combobox', () => {
         onValueChange={() => {}}
       />,
     );
-    expect(input().value).toBe('');
+    expect(shown()).toBe('');
   });
 
   it('recovers when the option list arrives after the first render', () => {
@@ -79,14 +84,14 @@ describe('Combobox', () => {
     // items=[] and fills in a moment later. If Base UI only re-seeds its input text on
     // focus/blur, this is the case that leaves a field looking empty.
     const { rerender } = render(<Combobox items={[]} value="dept-2" onValueChange={() => {}} />);
-    expect(input().value).toBe('');
+    expect(shown()).toBe('');
     rerender(<Combobox items={ITEMS} value="dept-2" onValueChange={() => {}} />);
-    expect(input().value).toBe('Operations');
+    expect(shown()).toBe('Operations');
   });
 
   it('shows nothing for no value', () => {
     render(<Combobox items={ITEMS} value={null} onValueChange={() => {}} />);
-    expect(input().value).toBe('');
+    expect(shown()).toBe('');
   });
 
   it('takes an accessible name', () => {
@@ -112,7 +117,6 @@ describe('Combobox', () => {
  * is no second source for the label to recover from.
  */
 describe('AsyncCombobox', () => {
-  const asyncInput = () => screen.getByRole('combobox') as HTMLInputElement;
 
   it('shows the label when selectedItem is known up front', () => {
     render(
@@ -124,7 +128,7 @@ describe('AsyncCombobox', () => {
         onSearchChange={() => {}}
       />,
     );
-    expect(asyncInput().value).toBe('620103 · Mileage');
+    expect(shown()).toBe('620103 · Mileage');
   });
 
   it('takes an accessible name, like the plain variant', () => {
@@ -151,7 +155,7 @@ describe('AsyncCombobox', () => {
         onSearchChange={() => {}}
       />,
     );
-    expect(asyncInput().value).toBe('');
+    expect(shown()).toBe('');
     rerender(
       <AsyncCombobox
         items={[]}
@@ -161,7 +165,7 @@ describe('AsyncCombobox', () => {
         onSearchChange={() => {}}
       />,
     );
-    expect(asyncInput().value).toBe('620103 · Mileage');
+    expect(shown()).toBe('620103 · Mileage');
   });
 });
 
@@ -188,37 +192,40 @@ describe('AsyncCombobox', () => {
 const UNBREAKABLE = 'Courier/Shipping/Freight/Postage';
 
 /**
- * Open the popup and hand back the popup + option class strings.
+ * Open the popup and hand back the popup, list and option class strings.
  *
- * ArrowDown on the input, not a click on the chevron: Base UI's trigger is `tabindex="-1"`
- * and a synthetic click on it leaves `aria-expanded="false"` in jsdom, which would make
- * every assertion below silently vacuous. The popup is found as the listbox's parent —
- * structure, not class name, so a renamed utility cannot disguise itself as a pass.
+ * The popup is the Radix popover content that holds the listbox, found by its
+ * `data-slot` (the kit's popover sets it) from the listbox upwards — so an assertion
+ * cannot pass against some other element. `aria-expanded` is checked first, or every
+ * assertion below would be silently vacuous.
  */
-async function openAndRead(): Promise<{ popup: string; item: string }> {
+async function openAndRead(): Promise<{ popup: string; list: string; item: string }> {
   const user = userEvent.setup();
   await user.click(screen.getByRole('combobox'));
-  await user.keyboard('{ArrowDown}');
+  expect(screen.getByRole('combobox')).toHaveAttribute('aria-expanded', 'true');
   const listbox = screen.getByRole('listbox');
-  const popup = listbox.parentElement;
+  const popup = listbox.closest('[data-slot="popover-content"]');
   expect(popup, 'the popup did not open — nothing was measured').not.toBeNull();
   return {
     popup: (popup as HTMLElement).className,
+    // cmdk's list is the scroll container, so the height cap lives on it.
+    list: (listbox.closest('[cmdk-list]') as HTMLElement).className,
     item: screen.getByRole('option', { name: UNBREAKABLE }).className,
   };
 }
 
 /** Asserted identically for both twins: the AsyncCombobox popup is the easy one to miss. */
-function assertPopupCanGrow(cls: string): void {
+function assertPopupCanGrow({ popup, list }: { popup: string; list: string }): void {
   // The bug: pinned to the trigger, so a long option had nowhere to go.
-  expect(cls).not.toMatch(/(^|\s)w-\[var\(--anchor-width\)\]/);
-  expect(cls).toContain('w-auto');
-  expect(cls).toContain('min-w-[max(8rem,var(--anchor-width))]');
-  // …but never past the screen, or a fixed-position overlay walks off a 375px viewport
-  // where nothing can scroll it back.
-  expect(cls).toContain('max-w-[min(92vw,32rem)]');
+  expect(popup).not.toMatch(/(^|\s)w-\[var\(--radix-popover-trigger-width\)\]/);
+  expect(popup).not.toMatch(/(^|\s)w-72(\s|$)/); // the kit popover's default width
+  expect(popup).toContain('w-auto');
+  expect(popup).toContain('min-w-[max(8rem,var(--radix-popover-trigger-width))]');
+  // …but never past the screen, or the overlay walks off a 375px viewport where
+  // nothing can scroll it back.
+  expect(popup).toContain('max-w-[min(92vw,32rem)]');
   // Deliberately NOT select.tsx's max-h-96 — the combobox panel keeps its shorter height.
-  expect(cls).toContain('max-h-72');
+  expect(list).toContain('max-h-72');
 }
 
 function assertItemWraps(cls: string): void {
@@ -245,7 +252,7 @@ describe('<Combobox> popup overflow behaviour', () => {
 
   it('sizes the popup to at least the trigger, free to grow, capped to the viewport', async () => {
     renderCombobox();
-    assertPopupCanGrow((await openAndRead()).popup);
+    assertPopupCanGrow(await openAndRead());
   });
 
   it('wraps long option text rather than clipping it', async () => {
@@ -286,11 +293,290 @@ describe('<AsyncCombobox> popup overflow behaviour', () => {
 
   it('sizes the popup to at least the trigger, free to grow, capped to the viewport', async () => {
     renderAsync();
-    assertPopupCanGrow((await openAndRead()).popup);
+    assertPopupCanGrow(await openAndRead());
   });
 
   it('wraps long option text rather than clipping it', async () => {
     renderAsync();
     assertItemWraps((await openAndRead()).item);
+  });
+});
+
+/**
+ * Behaviour of the Radix + cmdk implementation (Oct 2026) — what a user does with it.
+ * jsdom stands in for the browser here; the dialog / drawer cases (wheel scrolling,
+ * focus) were checked in a real browser, since jsdom has no scroll lock or layout.
+ */
+describe('Combobox behaviour', () => {
+  const MANY = [
+    { value: 'a', label: 'Courier/Shipping/Freight/Postage' },
+    { value: 'b', label: 'Meals and entertainment' },
+    { value: 'c', label: 'Office supplies' },
+    // Same label, different value: must stay two separate rows.
+    { value: 'd', label: 'Travel' },
+    { value: 'e', label: 'Travel' },
+  ];
+
+  it('filters on every typed word and picks with the keyboard', async () => {
+    const user = userEvent.setup();
+    const onValueChange = vi.fn();
+    render(<Combobox items={MANY} value={null} onValueChange={onValueChange} aria-label="Category" />);
+    await user.click(screen.getByRole('combobox'));
+    // Focus lands in the search box, so typing filters straight away.
+    await user.keyboard('ent meals');
+    expect(screen.getAllByRole('option').map((o) => o.textContent)).toEqual(['Meals and entertainment']);
+    await user.keyboard('{Enter}');
+    expect(onValueChange).toHaveBeenCalledWith('b');
+    expect(screen.queryByRole('listbox')).toBeNull();
+  });
+
+  it('keeps same-labelled items apart, keyed by value', async () => {
+    const user = userEvent.setup();
+    const onValueChange = vi.fn();
+    render(<Combobox items={MANY} value={null} onValueChange={onValueChange} />);
+    await user.click(screen.getByRole('combobox'));
+    await user.keyboard('travel');
+    const rows = screen.getAllByRole('option');
+    expect(rows).toHaveLength(2);
+    await user.click(rows[1]);
+    expect(onValueChange).toHaveBeenCalledWith('e');
+  });
+
+  it('shows the empty text when nothing matches', async () => {
+    const user = userEvent.setup();
+    render(<Combobox items={MANY} value={null} onValueChange={() => {}} emptyText="Nothing here" />);
+    await user.click(screen.getByRole('combobox'));
+    await user.keyboard('zzz');
+    expect(screen.getByText('Nothing here')).toBeInTheDocument();
+  });
+
+  it('marks the selected row', async () => {
+    const user = userEvent.setup();
+    render(<Combobox items={MANY} value="c" onValueChange={() => {}} />);
+    await user.click(screen.getByRole('combobox'));
+    expect(screen.getByRole('option', { name: 'Office supplies' })).toHaveAttribute('data-checked', 'true');
+    expect(screen.getByRole('option', { name: 'Meals and entertainment' })).toHaveAttribute('data-checked', 'false');
+  });
+
+  it('closes on Escape without changing the value, and clears the search', async () => {
+    const user = userEvent.setup();
+    const onValueChange = vi.fn();
+    render(<Combobox items={MANY} value="c" onValueChange={onValueChange} />);
+    await user.click(screen.getByRole('combobox'));
+    await user.keyboard('meal{Escape}');
+    expect(screen.queryByRole('listbox')).toBeNull();
+    expect(onValueChange).not.toHaveBeenCalled();
+    expect(shown()).toBe('Office supplies');
+    await user.click(screen.getByRole('combobox'));
+    expect(screen.getAllByRole('option')).toHaveLength(MANY.length);
+  });
+
+  it('cannot be opened when disabled', async () => {
+    const user = userEvent.setup();
+    render(<Combobox items={MANY} value={null} onValueChange={() => {}} disabled />);
+    await user.click(screen.getByRole('combobox'));
+    expect(screen.queryByRole('listbox')).toBeNull();
+  });
+
+  it('shows the icon with the label in the field and the row', async () => {
+    const user = userEvent.setup();
+    render(
+      <Combobox items={[{ value: 'f', label: 'Fuel', icon: '⛽' }]} value="f" onValueChange={() => {}} />,
+    );
+    expect(shown()).toBe('⛽ Fuel');
+    await user.click(screen.getByRole('combobox'));
+    expect(screen.getByRole('option')).toHaveTextContent('⛽Fuel');
+  });
+});
+
+describe('AsyncCombobox behaviour', () => {
+  it('asks the parent to search only past minChars, debounced and trimmed', async () => {
+    const user = userEvent.setup();
+    const onSearchChange = vi.fn();
+    render(
+      <AsyncCombobox
+        items={[]}
+        value={null}
+        onValueChange={() => {}}
+        onSearchChange={onSearchChange}
+        minChars={3}
+        debounceMs={20}
+      />,
+    );
+    await user.click(screen.getByRole('combobox'));
+    expect(screen.getByRole('status')).toHaveTextContent('Type 3 or more characters to search');
+    await user.keyboard('62');
+    expect(onSearchChange).not.toHaveBeenCalledWith('62');
+    await user.keyboard('0 ');
+    await act(() => new Promise((r) => setTimeout(r, 60)));
+    expect(onSearchChange).toHaveBeenLastCalledWith('620');
+  });
+
+  it('shows loading, then results, and Enter picks the first result', async () => {
+    const user = userEvent.setup();
+    const onValueChange = vi.fn();
+    const props = {
+      value: null,
+      onValueChange,
+      onSearchChange: () => {},
+      minChars: 1,
+      debounceMs: 0,
+    };
+    const { rerender } = render(<AsyncCombobox {...props} items={[]} loading />);
+    await user.click(screen.getByRole('combobox'));
+    await user.keyboard('62');
+    expect(screen.getByRole('status')).toHaveTextContent('Searching…');
+    // Results replace the list; Enter takes the first of the new results.
+    rerender(
+      <AsyncCombobox
+        {...props}
+        items={[
+          { value: 'gl-2', label: '620200 · Parking' },
+          { value: 'gl-1', label: '620103 · Mileage' },
+        ]}
+      />,
+    );
+    await user.keyboard('{Enter}');
+    expect(onValueChange).toHaveBeenCalledWith('gl-2', { value: 'gl-2', label: '620200 · Parking' });
+  });
+
+  it('says so when a search finds nothing', async () => {
+    const user = userEvent.setup();
+    render(
+      <AsyncCombobox items={[]} value={null} onValueChange={() => {}} onSearchChange={() => {}} minChars={1} emptyText="No accounts" />,
+    );
+    await user.click(screen.getByRole('combobox'));
+    await user.keyboard('x');
+    expect(screen.getByRole('status')).toHaveTextContent('No accounts');
+  });
+
+  it('lists the current selection before anything is typed', async () => {
+    const user = userEvent.setup();
+    render(
+      <AsyncCombobox
+        items={[]}
+        value="gl-1"
+        selectedItem={{ value: 'gl-1', label: '620103 · Mileage' }}
+        onValueChange={() => {}}
+        onSearchChange={() => {}}
+      />,
+    );
+    await user.click(screen.getByRole('combobox'));
+    expect(screen.getByRole('option', { name: '620103 · Mileage' })).toHaveAttribute('data-checked', 'true');
+  });
+
+  it('autoFocus opens it; onClose fires on Escape but not on selection (inline editors)', async () => {
+    const user = userEvent.setup();
+    const onClose = vi.fn();
+    const onValueChange = vi.fn();
+    const items = [{ value: 'gl-1', label: '620103 · Mileage' }];
+    const { unmount } = render(
+      <AsyncCombobox items={items} value={null} onValueChange={onValueChange} onSearchChange={() => {}} autoFocus onClose={onClose} minChars={0} />,
+    );
+    expect(screen.getByRole('listbox')).toBeInTheDocument();
+    await user.click(screen.getByRole('option', { name: '620103 · Mileage' }));
+    expect(onValueChange).toHaveBeenCalled();
+    expect(onClose).not.toHaveBeenCalled();
+    unmount();
+
+    render(
+      <AsyncCombobox items={items} value={null} onValueChange={() => {}} onSearchChange={() => {}} autoFocus onClose={onClose} />,
+    );
+    await user.keyboard('{Escape}');
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('AsyncCombobox keeps the picked label', () => {
+  it('after the parent clears its results (no selectedItem passed)', async () => {
+    // Closing clears the query; the parent resets `items` to []. The field must still
+    // name what was picked.
+    const user = userEvent.setup();
+    let value: string | null = null;
+    const results = [{ value: 'gl-1', label: '620103 · Mileage' }];
+    const props = { onSearchChange: () => {}, minChars: 0 };
+    const { rerender } = render(
+      <AsyncCombobox {...props} items={results} value={value} onValueChange={(v) => (value = v)} />,
+    );
+    await user.click(screen.getByRole('combobox'));
+    await user.click(screen.getByRole('option', { name: '620103 · Mileage' }));
+    rerender(<AsyncCombobox {...props} items={[]} value={value} onValueChange={() => {}} />);
+    expect(shown()).toBe('620103 · Mileage');
+    // …and a later, different value is not mislabelled by the remembered pick.
+    rerender(<AsyncCombobox {...props} items={[]} value="gl-9" onValueChange={() => {}} />);
+    expect(shown()).toBe('');
+  });
+});
+
+/** Optional props added for VeloCRM's and VeloLedger's pickers (Oct 2026). */
+describe('description, keywords, clearable, searchPlaceholder, hasMore', () => {
+  const PEOPLE = [
+    { value: 'c1', label: 'Jane Smith', description: 'jane@acme.com', keywords: ['Acme Corp'] },
+    { value: 'c2', label: 'Jane Smith', description: 'jane2@globex.com', keywords: ['Globex'] },
+  ];
+
+  it('shows the description in the row but not in the field, and searches it and the keywords', async () => {
+    const user = userEvent.setup();
+    render(<Combobox items={PEOPLE} value="c2" onValueChange={() => {}} searchPlaceholder="Search name, email or company…" />);
+    expect(shown()).toBe('Jane Smith');
+    await user.click(screen.getByRole('combobox'));
+    expect(screen.getByPlaceholderText('Search name, email or company…')).toBeInTheDocument();
+    expect(screen.getAllByRole('option').map((o) => o.textContent)).toEqual([
+      'Jane Smith · jane@acme.com',
+      'Jane Smith · jane2@globex.com',
+    ]);
+    await user.keyboard('globex');
+    expect(screen.getAllByRole('option')).toHaveLength(1);
+    await user.clear(screen.getByPlaceholderText('Search name, email or company…'));
+    await user.keyboard('jane acme');
+    expect(screen.getAllByRole('option').map((o) => o.textContent)).toEqual(['Jane Smith · jane@acme.com']);
+  });
+
+  it('clearable: a first row clears the value, hidden while searching', async () => {
+    const user = userEvent.setup();
+    const onValueChange = vi.fn();
+    render(<Combobox items={PEOPLE} value="c1" onValueChange={onValueChange} placeholder="Select a contact" clearable />);
+    await user.click(screen.getByRole('combobox'));
+    const rows = screen.getAllByRole('option');
+    expect(rows[0]).toHaveTextContent('Select a contact');
+    expect(rows[0]).toHaveAttribute('data-checked', 'false');
+    await user.keyboard('jane');
+    expect(screen.queryByRole('option', { name: 'Select a contact' })).toBeNull();
+    await user.clear(screen.getByPlaceholderText('Search…'));
+    await user.click(screen.getByRole('option', { name: 'Select a contact' }));
+    expect(onValueChange).toHaveBeenCalledWith(null);
+  });
+
+  it('not clearable by default', async () => {
+    const user = userEvent.setup();
+    render(<Combobox items={PEOPLE} value="c1" onValueChange={() => {}} placeholder="Select a contact" />);
+    await user.click(screen.getByRole('combobox'));
+    expect(screen.getAllByRole('option')).toHaveLength(2);
+  });
+
+  it('AsyncCombobox: clear row, hasMore hint, description rows', async () => {
+    const user = userEvent.setup();
+    const onValueChange = vi.fn();
+    render(
+      <AsyncCombobox
+        items={PEOPLE}
+        value="c1"
+        onValueChange={onValueChange}
+        onSearchChange={() => {}}
+        minChars={0}
+        placeholder="Select a contact"
+        clearable
+        hasMore
+      />,
+    );
+    await user.click(screen.getByRole('combobox'));
+    expect(screen.getAllByRole('option').map((o) => o.textContent)).toEqual([
+      'Select a contact',
+      'Jane Smith · jane@acme.com',
+      'Jane Smith · jane2@globex.com',
+    ]);
+    expect(screen.getByText('More matches — keep typing to narrow the list.')).toBeInTheDocument();
+    await user.click(screen.getByRole('option', { name: 'Select a contact' }));
+    expect(onValueChange).toHaveBeenCalledWith(null, null);
   });
 });

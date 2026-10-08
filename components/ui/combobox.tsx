@@ -1,18 +1,44 @@
 'use client';
 
-import { Combobox as ComboboxPrimitive } from '@base-ui-components/react/combobox';
-import { IconCheck, IconChevronDown } from '@tabler/icons-react';
+import { Command as CommandPrimitive } from 'cmdk';
+import { CheckIcon, ChevronDownIcon } from 'lucide-react';
 import * as React from 'react';
+import { Command, CommandEmpty, CommandInput, CommandList } from '@/components/ui/command';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { cn } from '@/lib/utils';
 
 /**
- * Combobox — a searchable single-select built on the Base UI Combobox.
+ * Combobox — the suite's searchable single-select, on Radix Popover + cmdk.
  *
- * Differs from <Select>: the field is a text input you can type into to
- * filter, and the options panel opens *below* the field (not overlaid on
- * top of it). Values are constrained to `items` — free text isn't accepted;
- * it only filters. Pass plain `{ value, label }` items; Base UI uses `label`
- * for display/filtering and `value` for the selected value automatically.
+ * The kit standard (Oct 2026). Built on the same primitives as the kit's dialog,
+ * popover and dropdown, so a combobox opened inside a dialog shares one focus /
+ * dismiss / scroll-lock stack instead of two libraries contending for it. It
+ * replaces the Base UI combobox ported from ExpenseOS; the exported API —
+ * `Combobox`, `AsyncCombobox`, `ComboboxItem` and their props — is unchanged, so
+ * call sites need no edits. Its interaction comes from VeloCRM's SearchableSelect
+ * and VeloLedger's AccountSelect.
+ *
+ * The field is a button showing the selected label; it opens a panel with a search
+ * box and the options. Values are constrained to `items` — typing only filters.
+ *
+ * Decisions carried by both variants (see `ComboboxShell`):
+ *  - The popover is `modal`. Inside a Radix dialog the dialog's scroll lock
+ *    swallows wheel events on anything portalled outside it; a modal popover puts
+ *    its own lock on top, so its list scrolls and focus stays in it until it closes.
+ *  - It opens on mouse-down, as a native <select> does. Opening a form focuses its
+ *    first field; clicking a picker blurs that field, a "required" message appears,
+ *    the layout shifts between mouse-down and mouse-up and the click lands beside
+ *    the trigger — the popover never opened.
+ *  - In async mode cmdk's highlight is controlled: when server results replace the
+ *    list, cmdk can be left highlighting nothing (seen with React Query results),
+ *    so Enter did nothing. The highlight is moved to the first result.
+ *  - Items are keyed by `value` (labels need not be unique) with a word-substring
+ *    filter on the label: every word typed must appear in it.
+ *  - Popup width: at least the trigger, free to grow to the longest option, capped
+ *    to the viewport; options wrap (`break-words` — slash-joined labels such as
+ *    "Courier/Shipping/Freight/Postage" have no soft break point) and the check
+ *    pins to the top of a wrapped row. Both are UAT fixes from ExpenseOS;
+ *    `combobox.test.tsx` pins them on both variants.
  */
 
 export interface ComboboxItem {
@@ -23,15 +49,31 @@ export interface ComboboxItem {
    * built from data (an expense category's `icon`, a country's flag) rather than
    * from components.
    *
-   * Rendered in the option row AND folded into the field's display string, so a
-   * chosen item still looks like the thing that was chosen. Showing it only in
-   * the dropdown is what makes a picked category read as a different, plainer
-   * entry than the one clicked.
+   * Rendered in the option row AND in the field, so a chosen item still looks
+   * like the thing that was chosen.
    */
   icon?: string;
+  /** Secondary text shown muted after the label in the row (e.g. a contact's email);
+   *  searchable, not shown in the field. */
+  description?: string;
+  /** Extra text the client-side filter matches on (e.g. a contact's company). */
+  keywords?: string[];
 }
 
-export interface ComboboxProps {
+/** Options both variants take. */
+interface SharedProps {
+  /** Placeholder of the search box inside the panel. Default "Search…". */
+  searchPlaceholder?: string;
+  /**
+   * Adds a first row that clears the selection (`onValueChange(null)`), labelled with
+   * `clearLabel` (default: the placeholder). For optional fields, where "none" is a
+   * valid answer the user must be able to get back to.
+   */
+  clearable?: boolean;
+  clearLabel?: string;
+}
+
+export interface ComboboxProps extends SharedProps {
   items: ComboboxItem[];
   value: string | null;
   onValueChange: (value: string | null) => void;
@@ -46,20 +88,247 @@ export interface ComboboxProps {
    *
    * `selected` is otherwise found only by scanning `items`, so a field whose options
    * load asynchronously renders blank on the first pass even though the value is known.
-   * Same escape hatch AsyncCombobox has, for the same reason. Ignored unless its
-   * `value` matches — a leftover from a previously-rendered row must never label a
-   * different selection.
+   * Ignored unless its `value` matches — a leftover from a previously-rendered row must
+   * never label a different selection.
    */
   selectedItem?: ComboboxItem | null;
   /**
-   * Accessible name for the input.
+   * Accessible name for the field.
    *
-   * A combobox whose visible label is a plain `<span>` beside it — the common
-   * shape in this app — is announced as an unnamed "combobox": a screen reader
-   * user is told a control exists but not what it chooses. Pass this wherever
-   * there is no `<label htmlFor={id}>`.
+   * A combobox whose visible label is a plain `<span>` beside it is announced as an
+   * unnamed "combobox". Pass this wherever there is no `<label htmlFor={id}>`.
    */
   'aria-label'?: string;
+}
+
+/** Label shown in the field for an item — the icon rides along. */
+function itemText(item: ComboboxItem): string {
+  return item.icon ? `${item.icon} ${item.label}` : item.label;
+}
+
+/** Every word typed must appear in the label, description or keywords (case-insensitive). */
+function wordFilter(value: string, search: string, keywords?: string[]): number {
+  // The clear row shows only while nothing is typed.
+  if (value === CLEAR_VALUE) return search.trim() ? 0 : 1;
+  const text = (keywords ?? []).join(' ').toLowerCase();
+  const words = search.toLowerCase().split(/\s+/).filter(Boolean);
+  return words.every((w) => text.includes(w)) ? 1 : 0;
+}
+
+/**
+ * Selected item and the list with it spliced in when the list does not hold it.
+ *
+ * Label sources, in order: the item in `items`; the caller's `selectedItem`; the item
+ * the user last picked here. The last matters for AsyncCombobox: closing the picker
+ * clears the query, the parent resets its results to [], and without it the field of a
+ * caller that passes no `selectedItem` went blank right after a pick. (Base UI kept the
+ * label as the input's own text, so the old component never showed this.) Every
+ * fallback counts only for the value actually selected — a leftover must never label a
+ * different selection.
+ */
+function useSelection(
+  items: ComboboxItem[],
+  value: string | null,
+  selectedItem: ComboboxItem | null,
+  picked: ComboboxItem | null,
+) {
+  const selected = React.useMemo(() => {
+    if (value == null) return null;
+    return (
+      items.find((i) => i.value === value) ??
+      (selectedItem?.value === value ? selectedItem : null) ??
+      (picked?.value === value ? picked : null)
+    );
+  }, [items, value, selectedItem, picked]);
+  // The dropdown shows the current selection rather than looking like it vanished —
+  // for the async picker that is the state before anyone has typed a query.
+  const listItems = React.useMemo(
+    () =>
+      selected && !items.some((i) => i.value === selected.value) ? [selected, ...items] : items,
+    [items, selected],
+  );
+  return { selected, listItems };
+}
+
+const ITEM_CLASS = cn(
+  'relative flex w-full cursor-default select-none items-start rounded-sm py-1.5 pr-2 pl-8 text-sm outline-none',
+  // Wrap instead of clipping; `break-words` is the load-bearing half — CSS does not
+  // break after a slash. `items-start` and the indicator's `top-2` are one decision:
+  // a wrapped row is tall, and a centred check would float mid-block.
+  'whitespace-normal break-words',
+  'data-[selected=true]:bg-muted data-[selected=true]:text-foreground',
+  'data-[disabled=true]:pointer-events-none data-[disabled=true]:opacity-50',
+);
+
+function OptionRow({
+  item,
+  checked,
+  onPick,
+  filterable,
+}: {
+  item: ComboboxItem;
+  checked: boolean;
+  onPick: (item: ComboboxItem) => void;
+  filterable: boolean;
+}) {
+  return (
+    <CommandPrimitive.Item
+      value={item.value}
+      keywords={
+        filterable ? [item.label, item.description ?? '', ...(item.keywords ?? [])] : undefined
+      }
+      onSelect={() => onPick(item)}
+      data-checked={checked}
+      className={ITEM_CLASS}
+    >
+      <span className="absolute top-2 left-2 flex h-3.5 w-3.5 items-center justify-center">
+        <CheckIcon className={cn('h-4 w-4', checked ? 'opacity-100' : 'opacity-0')} />
+      </span>
+      {item.icon && <span className="mr-1.5 shrink-0">{item.icon}</span>}
+      <span>
+        {item.label}
+        {item.description && <span className="text-muted-foreground"> · {item.description}</span>}
+      </span>
+    </CommandPrimitive.Item>
+  );
+}
+
+const CLEAR_VALUE = '__combobox_clear__';
+
+/** The "no selection" row a `clearable` field starts with. */
+function ClearRow({ label, checked, onClear }: { label: string; checked: boolean; onClear: () => void }) {
+  return (
+    <CommandPrimitive.Item
+      value={CLEAR_VALUE}
+      keywords={[]}
+      onSelect={onClear}
+      data-checked={checked}
+      className={ITEM_CLASS}
+    >
+      <span className="absolute top-2 left-2 flex h-3.5 w-3.5 items-center justify-center">
+        <CheckIcon className={cn('h-4 w-4', checked ? 'opacity-100' : 'opacity-0')} />
+      </span>
+      <span className="text-muted-foreground">{label}</span>
+    </CommandPrimitive.Item>
+  );
+}
+
+interface ShellProps {
+  id?: string;
+  className?: string;
+  placeholder?: string;
+  disabled?: boolean;
+  ariaLabel?: string;
+  searchPlaceholder?: string;
+  selected: ComboboxItem | null;
+  /** Typed search text (owned by the variant). */
+  query: string;
+  onQueryChange: (q: string) => void;
+  /** false = the caller already filtered (server search). */
+  filter: boolean;
+  /** Async mode: first listed value — the highlight follows it when results change. */
+  firstValue?: string;
+  autoFocus?: boolean;
+  /** Called on Escape / outside-click, never on selection. */
+  onDismiss?: () => void;
+  children: (close: () => void) => React.ReactNode;
+}
+
+function ComboboxShell({
+  id,
+  className,
+  placeholder,
+  disabled,
+  ariaLabel,
+  searchPlaceholder = 'Search…',
+  selected,
+  query,
+  onQueryChange,
+  filter,
+  firstValue = '',
+  autoFocus,
+  onDismiss,
+  children,
+}: ShellProps) {
+  const [open, setOpen] = React.useState(!!autoFocus && !disabled);
+  const openedOnPointerDown = React.useRef(false);
+  // Highlight, reset to the first result whenever the first result changes — adjusted
+  // during render (React's pattern for state derived from props), not in an effect.
+  const [highlight, setHighlight] = React.useState({ first: firstValue, value: firstValue });
+  let active = highlight.value;
+  if (!filter && highlight.first !== firstValue) {
+    setHighlight({ first: firstValue, value: firstValue });
+    active = firstValue;
+  }
+  const setActive = (v: string) => setHighlight((h) => ({ ...h, value: v }));
+
+  const handleOpenChange = (next: boolean) => {
+    setOpen(next);
+    if (!next && query) onQueryChange('');
+  };
+  const close = () => handleOpenChange(false);
+
+  return (
+    <Popover open={open} onOpenChange={handleOpenChange} modal>
+      <PopoverTrigger asChild>
+        {/* Radix's trigger adds aria-controls and aria-haspopup at runtime, so
+            jsx-a11y's static "combobox needs aria-controls" warning is a false alarm. */}
+        <button
+          type="button"
+          role="combobox"
+          id={id}
+          disabled={disabled}
+          aria-expanded={open}
+          aria-label={ariaLabel}
+          onPointerDown={(e) => {
+            if (disabled || e.button !== 0 || e.pointerType !== 'mouse') return;
+            openedOnPointerDown.current = true;
+            handleOpenChange(!open);
+          }}
+          onClick={(e) => {
+            // Already toggled on pointer-down; stop Radix toggling it back.
+            if (openedOnPointerDown.current) {
+              openedOnPointerDown.current = false;
+              e.preventDefault();
+            }
+          }}
+          className={cn(
+            'relative flex h-10 w-full items-center rounded-md border border-input bg-background py-2 pr-9 pl-3 text-left text-sm',
+            'focus-visible:border-ring focus-visible:outline-none',
+            'disabled:cursor-not-allowed disabled:opacity-50',
+            className,
+          )}
+        >
+          <span className={cn('truncate', !selected && 'text-muted-foreground')}>
+            {selected ? itemText(selected) : (placeholder ?? '')}
+          </span>
+          <ChevronDownIcon className="pointer-events-none absolute top-1/2 right-2 h-4 w-4 -translate-y-1/2 text-muted-foreground opacity-50" />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent
+        align="start"
+        sideOffset={4}
+        onEscapeKeyDown={() => onDismiss?.()}
+        onInteractOutside={() => onDismiss?.()}
+        className={cn(
+          // Width: AT LEAST the trigger, free to grow to fit the longest option, capped
+          // to the viewport. Pinning it to the trigger width clipped option text on narrow
+          // fields and small screens (ExpenseOS UAT, reported twice).
+          'z-[70] w-auto min-w-[max(8rem,var(--radix-popover-trigger-width))] max-w-[min(92vw,32rem)] gap-0 p-0',
+        )}
+      >
+        <Command
+          // Controlled only in async mode; cmdk manages it when it filters itself.
+          {...(filter ? {} : { value: active, onValueChange: setActive })}
+          shouldFilter={filter}
+          filter={wordFilter}
+        >
+          <CommandInput placeholder={searchPlaceholder} value={query} onValueChange={onQueryChange} />
+          {children(close)}
+        </Command>
+      </PopoverContent>
+    </Popover>
+  );
 }
 
 export function Combobox({
@@ -73,167 +342,75 @@ export function Combobox({
   emptyText = 'No results',
   selectedItem = null,
   'aria-label': ariaLabel,
+  searchPlaceholder,
+  clearable = false,
+  clearLabel,
 }: ComboboxProps) {
-  const selected = React.useMemo(
-    () =>
-      items.find((i) => i.value === value) ??
-      // The fallback stands in only while the real option is missing, and only for the
-      // value actually selected.
-      (selectedItem && selectedItem.value === value ? selectedItem : null),
-    [items, value, selectedItem],
-  );
-  // Base UI seeds the input's text by locating the controlled `value` inside `items`, so
-  // a selection that is not in the list has no label to render and the field shows blank.
-  // Splicing it in fixes the display AND means the dropdown shows the current selection
-  // rather than looking like it vanished — for the async picker that is the state before
-  // anyone has typed a query.
-  const rootItems = React.useMemo(
-    () =>
-      selected && !items.some((i) => i.value === selected.value) ? [selected, ...items] : items,
-    [items, selected],
-  );
+  const [picked, setPicked] = React.useState<ComboboxItem | null>(null);
+  const { selected, listItems } = useSelection(items, value, selectedItem, picked);
+  const [query, setQuery] = React.useState('');
   return (
-    <ComboboxPrimitive.Root
-      items={rootItems}
-      // Stay controlled for the component's lifetime. `selected` is
-      // ComboboxItem | null (never undefined); Base UI reads `undefined` as
-      // UNCONTROLLED, so coercing null → undefined flips uncontrolled→controlled
-      // once a value (or the async `items`) arrives — a React error. Pass null
-      // (controlled-empty). The Base UI RC types `value` as `ComboboxItem |
-      // undefined` though the runtime accepts null (cf. onValueChange /
-      // defaultValue, both typed with null) — cast the type gap.
-      value={selected as ComboboxItem | undefined}
-      onValueChange={(item: ComboboxItem | null) => onValueChange(item ? item.value : null)}
-      // Compare by `value` so a re-rendered/rebuilt `items` array (new object
-      // identities for the same options) doesn't read as a value change and
-      // resync/flicker the field.
-      isItemEqualToValue={(a: ComboboxItem, b: ComboboxItem) => a?.value === b?.value}
-      // What the text field shows for the selected item. The icon rides along so
-      // it survives selection; filtering still matches on the label because the
-      // glyph is a prefix, not a substitute.
-      itemToStringLabel={(item: ComboboxItem) =>
-        item?.icon ? `${item.icon} ${item.label}` : (item?.label ?? '')
-      }
+    <ComboboxShell
+      id={id}
+      className={className}
+      placeholder={placeholder}
       disabled={disabled}
+      ariaLabel={ariaLabel}
+      searchPlaceholder={searchPlaceholder}
+      selected={selected}
+      query={query}
+      onQueryChange={setQuery}
+      filter
     >
-      <div className={cn('relative', className)}>
-        <ComboboxPrimitive.Input
-          id={id}
-          aria-label={ariaLabel}
-          placeholder={placeholder}
-          // Select the existing text on focus, so the first keystroke REPLACES the
-          // selected item's label instead of appending to it. Before the field showed a
-          // label at all this was moot; now that it does, typing "acme" into a field
-          // reading "Acme Corp" would search for "Acme Corpacme".
-          onFocus={(e) => e.currentTarget.select()}
-          className={cn(
-            'flex h-10 w-full rounded-md border border-input bg-background py-2 pr-9 pl-3 text-sm',
-            'placeholder:text-muted-foreground',
-            'focus-visible:border-ring focus-visible:outline-none',
-            'disabled:cursor-not-allowed disabled:opacity-50',
+      {(close) => (
+        <CommandList className="max-h-72 p-1">
+          <CommandEmpty>{emptyText}</CommandEmpty>
+          {clearable && (
+            <ClearRow
+              label={clearLabel ?? placeholder ?? 'None'}
+              checked={value == null}
+              onClear={() => {
+                onValueChange(null);
+                close();
+              }}
+            />
           )}
-        />
-        <ComboboxPrimitive.Trigger
-          aria-label="Toggle options"
-          className="absolute top-1/2 right-2 inline-flex h-5 w-5 -translate-y-1/2 items-center justify-center text-muted-foreground disabled:opacity-50"
-        >
-          <IconChevronDown className="h-4 w-4 opacity-50" />
-        </ComboboxPrimitive.Trigger>
-      </div>
-      <ComboboxPrimitive.Portal>
-        <ComboboxPrimitive.Positioner
-          side="bottom"
-          align="start"
-          sideOffset={4}
-          positionMethod="fixed"
-          className="z-[70]"
-        >
-          <ComboboxPrimitive.Popup
-            className={cn(
-              // Width: AT LEAST the trigger, free to grow to fit the longest option, capped to
-              // the viewport. Pinning it to the trigger width (`w-[var(--anchor-width)]`) clipped
-              // option text on narrow fields and small screens — reported twice from UAT as
-              // "fields cut off in the dropdown because of screen size". So `--anchor-width` is a
-              // FLOOR here, never a ceiling, and the 92vw cap is what keeps the widening bounded.
-              //
-              // Two deliberate departures from `select.tsx`, which set this precedent, so that a
-              // later make-it-consistent pass does not undo them: `max-h-72` is kept rather than
-              // normalised to select's `max-h-96`, and `relative` is NOT added. Select's popup
-              // needs `relative` to be the containing block for its `ScrollUpArrow` /
-              // `ScrollDownArrow`; this popup has no absolutely-positioned children of its own —
-              // the check indicator's containing block is the `Item`, which carries its own
-              // `relative`, and that is also what makes the indicator's `top-2` resolve against
-              // the row. `combobox.test.tsx` pins this string on BOTH twins.
-              'z-[70] max-h-72 w-auto min-w-[max(8rem,var(--anchor-width))] max-w-[min(92vw,32rem)] overflow-y-auto rounded-md border border-input bg-popover p-1 text-popover-foreground shadow-md',
-              'data-[closed]:animate-out data-[open]:animate-in',
-            )}
-          >
-            {/* Base UI keeps Empty in the DOM as a polite aria-live region.
-                `empty:hidden` collapses it to zero height when there's no
-                visible content, so the popup doesn't show a blank top row
-                when the filter has matches. */}
-            <ComboboxPrimitive.Empty className="px-2 py-4 text-center text-muted-foreground text-sm empty:hidden">
-              {emptyText}
-            </ComboboxPrimitive.Empty>
-            <ComboboxPrimitive.List>
-              {(item: ComboboxItem) => (
-                <ComboboxPrimitive.Item
-                  key={item.value}
-                  value={item}
-                  className={cn(
-                    'relative flex w-full cursor-default select-none items-start rounded-sm py-1.5 pr-2 pl-8 text-sm outline-none',
-                    // Wrap instead of clipping, and `break-words` is the load-bearing half rather
-                    // than decoration. The labels that actually clipped are slash-joined —
-                    // "Courier/Shipping/Freight/Postage",
-                    // "Messagerie/Expédition/Fret/Affranchissement" — and CSS does not break after
-                    // a slash, so `whitespace-normal` alone leaves the row unable to wrap and the
-                    // popup unable to fit it.
-                    //
-                    // `items-start` and the indicator's `top-2` below are the same decision, not
-                    // two: once a row can be two lines tall, a vertically centred check floats in
-                    // the middle of the block instead of marking the row it belongs to. Change one
-                    // and the other is wrong. Measured in `e2e/combobox-popup-width.spec.ts`.
-                    'whitespace-normal break-words',
-                    'data-[highlighted]:bg-muted data-[highlighted]:text-foreground',
-                    'data-[disabled]:pointer-events-none data-[disabled]:opacity-50',
-                  )}
-                >
-                  <span className="absolute top-2 left-2 flex h-3.5 w-3.5 items-center justify-center">
-                    <ComboboxPrimitive.ItemIndicator>
-                      <IconCheck className="h-4 w-4" />
-                    </ComboboxPrimitive.ItemIndicator>
-                  </span>
-                  {item.icon && <span className="mr-1.5 shrink-0">{item.icon}</span>}
-                  {item.label}
-                </ComboboxPrimitive.Item>
-              )}
-            </ComboboxPrimitive.List>
-          </ComboboxPrimitive.Popup>
-        </ComboboxPrimitive.Positioner>
-      </ComboboxPrimitive.Portal>
-    </ComboboxPrimitive.Root>
+          {listItems.map((item) => (
+            <OptionRow
+              key={item.value}
+              item={item}
+              checked={item.value === value}
+              filterable
+              onPick={(item) => {
+                setPicked(item);
+                onValueChange(item.value);
+                close();
+              }}
+            />
+          ))}
+        </CommandList>
+      )}
+    </ComboboxShell>
   );
 }
 Combobox.displayName = 'Combobox';
 
 /**
- * AsyncCombobox — server-search variant of {@link Combobox}, built on the same
- * Base UI primitive. Instead of filtering a pre-loaded `items` array on the
- * client, it observes what the user types, debounces it, and (only once at
- * least `minChars` characters are entered) calls `onSearchChange` so the parent
- * can run a server query and feed back the matching `items`. Client-side
- * filtering is disabled (`filter={null}`) so the server's results render as-is.
+ * AsyncCombobox — server-search variant of {@link Combobox}. Instead of filtering a
+ * pre-loaded `items` array on the client, it observes what the user types, debounces
+ * it, and (only once at least `minChars` characters are entered) calls
+ * `onSearchChange` so the parent can run a server query and feed back the matching
+ * `items`. Client-side filtering is off, so the server's results render as-is.
  *
- * This is the shared pattern for high-cardinality pickers (vendors, GL
- * accounts, users …) where loading the full list would freeze the browser.
- * The parent owns the data; this component owns the UX (debounce, min-chars
- * gate, loading / empty hints, selected-label display).
+ * The shared pattern for high-cardinality pickers (vendors, GL accounts, users …).
+ * The parent owns the data; this component owns the UX (debounce, min-chars gate,
+ * loading / empty hints, selected-label display).
  *
- * Selected-label display: pass `selectedItem` so the field can show the label
- * of the current `value` even when that item isn't in the latest search
- * `items` (e.g. when editing a record whose vendor is already set).
+ * Pass `selectedItem` so the field shows the label of the current `value` even when
+ * that item isn't in the latest search `items` (e.g. editing a record whose GL
+ * account is already set).
  */
-export interface AsyncComboboxProps {
+export interface AsyncComboboxProps extends SharedProps {
   /** Currently selected value id (or null). */
   value: string | null;
   /** Fired when the selection changes; `item` is null when cleared. */
@@ -244,7 +421,6 @@ export interface AsyncComboboxProps {
    * Called with the trimmed query the parent should search — debounced, and
    * only once `minChars` is reached. Called with `''` when the input is below
    * the threshold or cleared (parent should disable / reset its query then).
-   * Pass a stable reference (e.g. a `useState` setter or `useCallback`).
    */
   onSearchChange: (query: string) => void;
   /** The selected item, so its label shows when not present in `items`. */
@@ -262,15 +438,19 @@ export interface AsyncComboboxProps {
   loadingText?: string;
   /** Shown when a search returned no matches. */
   emptyText?: string;
+  /** More records match than `items` holds (the parent fetched a page). */
+  hasMore?: boolean;
+  /** Shown under the results when `hasMore`. */
+  moreText?: string;
   disabled?: boolean;
   id?: string;
   className?: string;
-  /** Focus the input on mount — useful for inline (in-cell) editors. */
+  /** Open the picker on mount — useful for inline (in-cell) editors. */
   autoFocus?: boolean;
   /** Called when the popup is dismissed by outside-click or Escape (NOT on
    *  selection). Lets an inline editor exit edit mode on a click-away / Esc. */
   onClose?: () => void;
-  /** Accessible name for the input — see ComboboxProps. */
+  /** Accessible name for the field — see ComboboxProps. */
   'aria-label'?: string;
 }
 
@@ -284,29 +464,34 @@ export function AsyncCombobox({
   minChars = 3,
   debounceMs = 300,
   placeholder,
-  minCharsHint = `Type ${3} or more characters to search`,
+  minCharsHint,
   loadingText = 'Searching…',
   emptyText = 'No matches',
+  hasMore = false,
+  moreText = 'More matches — keep typing to narrow the list.',
   disabled,
   id,
   className,
   autoFocus,
   onClose,
   'aria-label': ariaLabel,
+  searchPlaceholder,
+  clearable = false,
+  clearLabel,
 }: AsyncComboboxProps) {
   const [query, setQuery] = React.useState('');
   const trimmed = query.trim();
   const belowMin = trimmed.length < minChars;
 
-  // `onSearchChange` is read through a ref so an inline arrow at the call site
-  // (the common case) can't put a new identity in the dep array below and re-run
-  // the effect on every parent render — which, sub-threshold, fired
-  // `onSearchChange('')` continuously and reset the caller's query mid-typing.
+  // Read through a ref so an inline arrow at the call site can't put a new identity
+  // in the dep array below and re-run the effect on every parent render — which,
+  // sub-threshold, fired `onSearchChange('')` continuously and reset the caller's
+  // query mid-typing.
   const onSearchChangeRef = React.useRef(onSearchChange);
-  onSearchChangeRef.current = onSearchChange;
+  React.useEffect(() => {
+    onSearchChangeRef.current = onSearchChange;
+  });
 
-  // Debounce the typed query; only search past the min-chars threshold. A
-  // sub-threshold / empty input resets the parent's query immediately.
   React.useEffect(() => {
     if (belowMin) {
       onSearchChangeRef.current('');
@@ -316,171 +501,73 @@ export function AsyncCombobox({
     return () => clearTimeout(handle);
   }, [trimmed, belowMin, debounceMs]);
 
-  // Resolve the object to display for the current value: prefer the
-  // caller-provided selected item (survives when it's not in `items`).
-  //
-  // Held in a ref and replaced only when the (value, label) PAIR changes, not
-  // when the object identity does. Callers routinely build `selectedItem` as an
-  // inline literal — `initialItem={row.vendor ? { value: …, label: … } : null}` —
-  // so it gets a fresh identity on every parent render. Feeding that straight to
-  // Base UI made it treat the selection as changed and rewrite the input text
-  // from the selected label, which wiped whatever the user had just typed. Since
-  // this component's own `query` state re-renders the parent chain on each
-  // keystroke, the effect was that typing cleared itself.
-  const selectedRef = React.useRef<ComboboxItem | null>(null);
-  const nextSelected = selectedItem ?? items.find((i) => i.value === value) ?? null;
-  if (
-    (nextSelected?.value ?? null) !== (selectedRef.current?.value ?? null) ||
-    (nextSelected?.label ?? null) !== (selectedRef.current?.label ?? null)
-  ) {
-    selectedRef.current = nextSelected;
-  }
-  const selected = selectedRef.current;
-
-  // Base UI seeds the input's text by locating the controlled `value` inside `items`, so
-  // a selection that is not in the list has no label to render and the field shows blank.
-  // Splicing it in fixes the display AND means the dropdown shows the current selection
-  // rather than looking like it vanished — for the async picker that is the state before
-  // anyone has typed a query.
-  const rootItems = React.useMemo(
-    () =>
-      selected && !items.some((i) => i.value === selected.value) ? [selected, ...items] : items,
-    [items, selected],
-  );
+  const [picked, setPicked] = React.useState<ComboboxItem | null>(null);
+  const { selected, listItems } = useSelection(items, value, selectedItem, picked);
+  // While a query is typed, show only the server's results; before that, the
+  // current selection (if any) so the panel doesn't look like it lost it.
+  const shown = trimmed ? items : listItems;
+  const showClear = clearable && !trimmed;
+  const status =
+    shown.length > 0
+      ? null
+      : belowMin
+        ? (minCharsHint ?? `Type ${minChars} or more characters to search`)
+        : loading
+          ? loadingText
+          : emptyText;
 
   return (
-    <ComboboxPrimitive.Root
-      items={rootItems}
-      // Pass null (not undefined) for the empty state so the field stays
-      // controlled — Base UI reads `undefined` as uncontrolled. The RC types
-      // `value` without null though the runtime accepts it — cast the gap.
-      value={selected as ComboboxItem | undefined}
-      onValueChange={(item: ComboboxItem | null) => onValueChange(item ? item.value : null, item)}
-      // Match the controlled value to list items by `value`, not object
-      // identity. Search results arrive as fresh objects every query, so an
-      // identity comparison would see the selection "change" on every refetch
-      // and resync the input — the value blinking. Comparing by `.value` keeps
-      // it stable across refetches.
-      isItemEqualToValue={(a: ComboboxItem, b: ComboboxItem) => a?.value === b?.value}
-      // What the text field shows for the selected item — the same mapping the plain
-      // Combobox passes. Without it Base UI has no way to render a selection as text, so
-      // a field with a perfectly good `selectedItem` displayed BLANK and only filled in
-      // after a focus/blur resync. That is the "all fields empty until you click in and
-      // out" report; the value was never missing, only unprintable.
-      itemToStringLabel={(item: ComboboxItem) =>
-        item?.icon ? `${item.icon} ${item.label}` : (item?.label ?? '')
-      }
-      onInputValueChange={(v: string, details: { reason?: string }) => {
-        // Only a genuine keystroke/paste/clear drives a new search. Base UI
-        // also fires this when it writes the selected item's label back into
-        // the field on selection; feeding THAT into the query re-searched for
-        // the label, producing new items → selection churn → flicker. Ignore
-        // every non-user-input reason so selection never re-triggers a search.
-        if (
-          details.reason === 'input-change' ||
-          details.reason === 'input-paste' ||
-          details.reason === 'input-clear'
-        ) {
-          setQuery(v);
-        }
-      }}
-      onOpenChange={(open, details) => {
-        // Only an explicit dismissal (outside-click / Esc) exits an inline
-        // editor — a selection-driven close is handled by onValueChange.
-        if (!open && (details.reason === 'outside-press' || details.reason === 'escape-key')) {
-          onClose?.();
-        }
-      }}
-      // Server already filtered — don't filter again on the client.
-      filter={null}
+    <ComboboxShell
+      id={id}
+      className={className}
+      placeholder={placeholder}
       disabled={disabled}
+      ariaLabel={ariaLabel}
+      searchPlaceholder={searchPlaceholder}
+      selected={selected}
+      query={query}
+      onQueryChange={setQuery}
+      filter={false}
+      firstValue={showClear ? CLEAR_VALUE : (shown[0]?.value ?? '')}
+      autoFocus={autoFocus}
+      onDismiss={onClose}
     >
-      <div className={cn('relative', className)}>
-        <ComboboxPrimitive.Input
-          id={id}
-          autoFocus={autoFocus}
-          aria-label={ariaLabel}
-          placeholder={placeholder}
-          // Select the existing text on focus, so the first keystroke REPLACES the
-          // selected item's label instead of appending to it. Before the field showed a
-          // label at all this was moot; now that it does, typing "acme" into a field
-          // reading "Acme Corp" would search for "Acme Corpacme".
-          onFocus={(e) => e.currentTarget.select()}
-          className={cn(
-            'flex h-10 w-full rounded-md border border-input bg-background py-2 pr-9 pl-3 text-sm',
-            'placeholder:text-muted-foreground',
-            'focus-visible:border-ring focus-visible:outline-none',
-            'disabled:cursor-not-allowed disabled:opacity-50',
+      {(close) => (
+        <CommandList className="max-h-72 p-1">
+          {showClear && (
+            <ClearRow
+              label={clearLabel ?? placeholder ?? 'None'}
+              checked={value == null}
+              onClear={() => {
+                onValueChange(null, null);
+                close();
+              }}
+            />
           )}
-        />
-        <ComboboxPrimitive.Trigger
-          aria-label="Toggle options"
-          className="absolute top-1/2 right-2 inline-flex h-5 w-5 -translate-y-1/2 items-center justify-center text-muted-foreground disabled:opacity-50"
-        >
-          <IconChevronDown className="h-4 w-4 opacity-50" />
-        </ComboboxPrimitive.Trigger>
-      </div>
-      <ComboboxPrimitive.Portal>
-        <ComboboxPrimitive.Positioner
-          side="bottom"
-          align="start"
-          sideOffset={4}
-          positionMethod="fixed"
-          className="z-[70]"
-        >
-          <ComboboxPrimitive.Popup
-            className={cn(
-              // Same width contract as `Combobox`'s popup above, and deliberately identical:
-              // `--anchor-width` is a floor, not a ceiling. Re-pinning this to
-              // `w-[var(--anchor-width)]` is precisely the revert that clipped option text on
-              // narrow fields — see that comment for the UAT provenance and for the two
-              // deliberate departures from `select.tsx`. `combobox.test.tsx` asserts both twins,
-              // because a half-applied fix on this one is the easy miss.
-              'z-[70] max-h-72 w-auto min-w-[max(8rem,var(--anchor-width))] max-w-[min(92vw,32rem)] overflow-y-auto rounded-md border border-input bg-popover p-1 text-popover-foreground shadow-md',
-              'data-[closed]:animate-out data-[open]:animate-in',
-            )}
-          >
-            {/* Status row: below-threshold hint, loading, or no-matches. Only
-                rendered when there are no items, so it collapses (empty:hidden)
-                as soon as the server returns matches. */}
-            <ComboboxPrimitive.Empty className="px-2 py-4 text-center text-muted-foreground text-sm empty:hidden">
-              {items.length === 0
-                ? belowMin
-                  ? minCharsHint
-                  : loading
-                    ? loadingText
-                    : emptyText
-                : null}
-            </ComboboxPrimitive.Empty>
-            <ComboboxPrimitive.List>
-              {(item: ComboboxItem) => (
-                <ComboboxPrimitive.Item
-                  key={item.value}
-                  value={item}
-                  className={cn(
-                    'relative flex w-full cursor-default select-none items-start rounded-sm py-1.5 pr-2 pl-8 text-sm outline-none',
-                    // Same wrap contract as `Combobox`'s item above: `break-words` is required
-                    // because the labels that clip are slash-joined and CSS does not break after a
-                    // slash, and `items-start` plus the indicator's `top-2` are one decision rather
-                    // than two.
-                    'whitespace-normal break-words',
-                    'data-[highlighted]:bg-muted data-[highlighted]:text-foreground',
-                    'data-[disabled]:pointer-events-none data-[disabled]:opacity-50',
-                  )}
-                >
-                  <span className="absolute top-2 left-2 flex h-3.5 w-3.5 items-center justify-center">
-                    <ComboboxPrimitive.ItemIndicator>
-                      <IconCheck className="h-4 w-4" />
-                    </ComboboxPrimitive.ItemIndicator>
-                  </span>
-                  {item.label}
-                </ComboboxPrimitive.Item>
-              )}
-            </ComboboxPrimitive.List>
-          </ComboboxPrimitive.Popup>
-        </ComboboxPrimitive.Positioner>
-      </ComboboxPrimitive.Portal>
-    </ComboboxPrimitive.Root>
+          {status && (
+            <div className="px-2 py-4 text-center text-muted-foreground text-sm" role="status">
+              {status}
+            </div>
+          )}
+          {shown.map((item) => (
+            <OptionRow
+              key={item.value}
+              item={item}
+              checked={item.value === value}
+              filterable={false}
+              onPick={(item) => {
+                setPicked(item);
+                onValueChange(item.value, item);
+                close();
+              }}
+            />
+          ))}
+          {hasMore && shown.length > 0 && (
+            <div className="px-2 py-1.5 text-muted-foreground text-xs">{moreText}</div>
+          )}
+        </CommandList>
+      )}
+    </ComboboxShell>
   );
 }
 AsyncCombobox.displayName = 'AsyncCombobox';
