@@ -23,5 +23,9 @@ export const auditActions = {
     legalEntityUpdate: 'LEGAL_ENTITY_UPDATED',
     /** As for business units: a deactivation. */
     legalEntityDelete: 'LEGAL_ENTITY_DEACTIVATED',
+    departmentCreate: 'DEPARTMENT_CREATED',
+    departmentUpdate: 'DEPARTMENT_UPDATED',
+    /** As for business units: a deactivation. */
+    departmentDelete: 'DEPARTMENT_DEACTIVATED',
   },
 } as const satisfies Record<string, Record<string, AuditAction>>;

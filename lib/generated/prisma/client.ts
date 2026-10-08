@@ -91,3 +91,13 @@ export type LegalEntityExternalId = Prisma.LegalEntityExternalIdModel
  * 
  */
 export type Currency = Prisma.CurrencyModel
+/**
+ * Model Department
+ * 
+ */
+export type Department = Prisma.DepartmentModel
+/**
+ * Model DepartmentExternalId
+ * 
+ */
+export type DepartmentExternalId = Prisma.DepartmentExternalIdModel

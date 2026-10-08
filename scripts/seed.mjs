@@ -290,7 +290,7 @@ async function seedReportingLine(orgId, opts = {}) {
           AND d.organization_id  = $1
           AND bu.organization_id = $1
           AND le.organization_id = $1
-          AND d.name  = 'General & Admin'
+          AND d.label ->> 'en' = 'General & Admin'
           AND bu.label ->> 'en' = 'Head Office'
           AND le.label ->> 'en' = $2`,
       [orgId, entityName],
@@ -433,8 +433,10 @@ async function seedReferenceData(orgId, entityName = 'Demo Co Inc.') {
          VALUES ($1, jsonb_build_object('en', $2::text), 'CA', 'CAD')
          ON CONFLICT (organization_id, lower(btrim(label ->> 'en'))) DO NOTHING`, [orgId, entityName]);
     await client.query(
-      `INSERT INTO department (organization_id, name) VALUES ($1, 'General & Admin')
-         ON CONFLICT (organization_id, name) DO NOTHING`, [orgId]);
+      // `label` is { en, fr-CA } JSON since migration 0049, as for business units.
+      `INSERT INTO department (organization_id, label)
+         VALUES ($1, jsonb_build_object('en', 'General & Admin'))
+         ON CONFLICT (organization_id, lower(btrim(label ->> 'en'))) DO NOTHING`, [orgId]);
     // ── One demo FX rate, and the tenant's policy currency ───────────────────
     // Global table, so ON CONFLICT DO NOTHING rather than an update: two tenants
     // seeded in one run must not fight over it, and a real rate loaded later must

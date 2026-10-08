@@ -107,6 +107,7 @@ describe("an admin's menu", () => {
         // Ported in Wave 1.
         '/admin/business-units',
         '/admin/legal-entities',
+        '/admin/departments',
       ].sort(),
     );
   });
@@ -170,6 +171,7 @@ describe('isPortedScreen', () => {
       '/admin/expense-categories',
       '/admin/business-units',
       '/admin/legal-entities',
+      '/admin/departments',
     ]);
   });
 });

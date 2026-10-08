@@ -80,8 +80,9 @@ beforeAll(async () => {
 
   await withOrg(orgId, async (tx) => {
     const d = await tx.query(
-      `INSERT INTO department (organization_id, name) VALUES ($1,'Engineering'),($1,'Sales')
-       RETURNING id, name`,
+      `INSERT INTO department (organization_id, label)
+       VALUES ($1,'{"en":"Engineering"}'),($1,'{"en":"Sales"}')
+       RETURNING id, label ->> 'en' AS name`,
       [orgId],
     );
     engineeringId = d.rows.find((r) => r.name === 'Engineering').id;

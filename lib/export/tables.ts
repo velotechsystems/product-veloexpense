@@ -90,6 +90,7 @@ export const EXPORTED: Readonly<Record<string, ExportedTable>> = {
   external_id_source: { file: 'external-id-sources.csv' },
   business_unit_external_id: { file: 'business-unit-external-ids.csv' },
   legal_entity_external_id: { file: 'legal-entity-external-ids.csv' },
+  department_external_id: { file: 'department-external-ids.csv' },
   legal_entity: { file: 'legal-entities.csv' },
   invite: {
     file: 'invites.csv',

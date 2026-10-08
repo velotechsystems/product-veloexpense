@@ -230,7 +230,7 @@ describe('the setup checklist', () => {
         [orgId],
       );
       await tx.query(
-        `INSERT INTO department (organization_id, name) VALUES ($1, 'Finance')`,
+        `INSERT INTO department (organization_id, label) VALUES ($1, '{"en":"Finance"}')`,
         [orgId],
       );
     });

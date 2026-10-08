@@ -25,9 +25,8 @@ import { makeContext } from '../__test-helpers__/trpcCaller';
  * And one that `departments` adds: a parent that would close a hierarchy cycle is
  * refused, with the upward walk bounded so pre-existing bad data cannot hang a save.
  *
- * VeloExpense: ported with business units (Wave 1). The `departments` cases arrive with
- * the departments port (w1-03) — the router they exercise is not here yet — and are left
- * out until then. The External IDs source is found or created per tenant rather than
+ * VeloExpense: ported with business units (Wave 1); the `departments` cases with the
+ * departments port (w1-03). The External IDs source is found or created per tenant rather than
  * upserted (see `syncEntityAliases`), and the label rules follow `labelSchema`'s
  * VeloExpense note; both marked below. The same rules against Postgres are in
  * test/business-units.db.test.ts.
@@ -90,11 +89,26 @@ async function businessUnits(db: unknown, permissions: readonly string[]) {
   );
 }
 
+async function departments(db: unknown, permissions: readonly string[]) {
+  const { createCallerFactory } = await import('@/server/trpc');
+  const { departmentsRouter } = await import('./departments');
+  return createCallerFactory(departmentsRouter)(
+    makeContext({ db, userId: ME, permissions, roleLabel: 'Admin' }),
+  );
+}
+
 const BU_PERMS = [
   P.admin.businessUnit.list,
   P.admin.businessUnit.create,
   P.admin.businessUnit.update,
   P.admin.businessUnit.delete,
+] as const;
+
+const DEPT_PERMS = [
+  P.admin.department.list,
+  P.admin.department.create,
+  P.admin.department.update,
+  P.admin.department.delete,
 ] as const;
 
 beforeEach(() => {
@@ -116,6 +130,13 @@ describe('permission gates', () => {
     await expect(lister.setActive({ id: BU, active: false })).rejects.toMatchObject({
       code: 'FORBIDDEN',
     });
+  });
+
+  it('does not let one lookup’s permissions reach another', async () => {
+    // Managing business units is not managing departments.
+    const db = makeDb('department');
+    const c = await departments(db, [...BU_PERMS]);
+    await expect(c.list()).rejects.toMatchObject({ code: 'FORBIDDEN' });
   });
 });
 
@@ -277,5 +298,84 @@ describe('setActive — the soft delete', () => {
     const c = await businessUnits(db, BU_PERMS);
     await c.setActive({ id: BU, active: false });
     expect(withAuditCalls[0]?.details).toEqual({ active: false });
+  });
+});
+
+describe('departments — the hierarchy guard', () => {
+  it('refuses a department as its own parent', async () => {
+    const db = makeDb('department');
+    const c = await departments(db, DEPT_PERMS);
+    await expect(
+      c.update({ id: BU, patch: { label: LABEL, parentId: BU } } as never),
+    ).rejects.toThrow(/Cannot set self as parent/);
+  });
+
+  it('refuses a parent that would close a cycle', async () => {
+    /**
+     * A → B → A. Walking UP from the proposed parent reaches the department being
+     * edited, so the edit is refused. Left in, every tree walk over departments loops
+     * until its depth bound saves it.
+     */
+    const db = makeDb('department');
+    db.department.findUnique.mockResolvedValue({ parentId: BU });
+    const c = await departments(db, DEPT_PERMS);
+    await expect(
+      c.update({ id: BU, patch: { label: LABEL, parentId: U('3') } } as never),
+    ).rejects.toThrow(/hierarchy cycle/);
+  });
+
+  it('allows a parent whose chain terminates above', async () => {
+    const db = makeDb('department');
+    db.department.findUnique.mockResolvedValue({ parentId: null });
+    const c = await departments(db, DEPT_PERMS);
+    await expect(
+      c.update({ id: BU, patch: { label: LABEL, parentId: U('3') } } as never),
+    ).resolves.toBeTruthy();
+  });
+
+  it('bounds the upward walk', async () => {
+    // Pre-existing bad data must not hang a save.
+    const db = makeDb('department');
+    db.department.findUnique.mockResolvedValue({ parentId: U('4') });
+    const c = await departments(db, DEPT_PERMS);
+    await c.update({ id: BU, patch: { label: LABEL, parentId: U('3') } } as never);
+    // MAX_DEPTH hops of the walk, plus the one read the write path does anyway.
+    // VeloExpense: plus one — the parent is first looked up to be the tenant's own.
+    expect(db.department.findUnique.mock.calls.length).toBeLessThanOrEqual(22);
+  });
+
+  it('skips the walk entirely when no parent is being set', async () => {
+    const db = makeDb('department');
+    const c = await departments(db, DEPT_PERMS);
+    await c.update({ id: BU, patch: { label: LABEL } } as never);
+    // Exactly one read — the write path's own re-read — and none of the walk's.
+    expect(db.department.findUnique).toHaveBeenCalledOnce();
+  });
+
+  it('skips the walk when the parent is being cleared', async () => {
+    // Detaching a subtree cannot create a cycle.
+    const db = makeDb('department');
+    const c = await departments(db, DEPT_PERMS);
+    await c.update({ id: BU, patch: { label: LABEL, parentId: null } } as never);
+    expect(db.department.findUnique).toHaveBeenCalledOnce();
+  });
+
+  it('rejects a non-uuid parent', async () => {
+    const c = await departments(makeDb('department'), DEPT_PERMS);
+    await expect(
+      c.update({ id: BU, patch: { label: LABEL, parentId: 'nope' } } as never),
+    ).rejects.toThrow();
+  });
+});
+
+describe('departments — VeloExpense: the parent must be the tenant’s own', () => {
+  it('refuses a parent it cannot find — another tenant’s, hidden by RLS — before writing', async () => {
+    const db = makeDb('department');
+    db.department.findUnique.mockResolvedValue(null);
+    const c = await departments(db, DEPT_PERMS);
+    await expect(
+      c.update({ id: BU, patch: { label: LABEL, parentId: U('3') } } as never),
+    ).rejects.toMatchObject({ code: 'BAD_REQUEST', message: 'Parent department not found' });
+    expect(db.department.update).not.toHaveBeenCalled();
   });
 });

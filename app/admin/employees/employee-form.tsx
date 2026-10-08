@@ -21,7 +21,7 @@ import { NativeSelect } from '@/components/ui/native-select';
 import { activeChoices } from '@/lib/employees/active-choices';
 
 type Options = {
-  departments: Array<{ id: string; name: string }>;
+  departments: Array<{ id: string; name: string; active: boolean }>;
   businessUnits: Array<{ id: string; name: string; active: boolean }>;
   legalEntities: Array<{ id: string; name: string; active: boolean }>;
   managers: Array<{ id: string; email: string; display_name: string | null }>;
@@ -144,7 +144,8 @@ export function EmployeeForm({
             defaultValue={employee?.department_id ?? ''}
           >
             <option value="">— none —</option>
-            {options.departments.map((d) => (
+            {/* Active departments, plus this person's own if it has been deactivated since. */}
+            {activeChoices(options.departments, employee?.department_id).map((d) => (
               <option key={d.id} value={d.id}>
                 {d.name}
               </option>

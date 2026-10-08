@@ -78,6 +78,7 @@ const PAGES = [
   '/admin/expense-categories',
   '/admin/business-units',
   '/admin/legal-entities',
+  '/admin/departments',
 ] as const;
 
 /**

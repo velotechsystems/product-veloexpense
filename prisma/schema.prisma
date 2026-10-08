@@ -159,6 +159,7 @@ model ExternalIdSource {
 
   businessUnitAliases BusinessUnitExternalId[]
   legalEntityAliases  LegalEntityExternalId[]
+  departmentAliases   DepartmentExternalId[]
 
   @@unique([organizationId, code])
   @@unique([organizationId, id])
@@ -242,4 +243,46 @@ model Currency {
   legalEntities LegalEntity[]
 
   @@map("currency")
+}
+
+// ExpenseOS's `Department` (Wave 1). Migration 0049 brought `department` to this shape.
+// VeloExpense differences:
+//   · the parent is VeloExpense's `parent_department_id` (ExpenseOS's `parentId`), a
+//     composite tenant FK (0019). Only the scalar is described: ported code reads and
+//     writes `parentId` and walks it with `findUnique`, and never uses ExpenseOS's
+//     `parent` / `children` relations;
+//   · no createdBy / updatedBy (the audit chain records who);
+//   · the English name is unique per tenant (0049's index).
+model Department {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String   @default(dbgenerated("(NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid")) @map("organization_id") @db.Uuid
+  label          Json
+  description    Json?
+  parentId       String?  @map("parent_department_id") @db.Uuid
+  active         Boolean  @default(true)
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  externalIds DepartmentExternalId[]
+
+  @@unique([organizationId, id])
+  @@map("department")
+}
+
+// ExpenseOS's `DepartmentExternalId`: one department's id in one outside system.
+model DepartmentExternalId {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String   @default(dbgenerated("(NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid")) @map("organization_id") @db.Uuid
+  sourceId       String   @map("source_id") @db.Uuid
+  sourceValue    String   @map("source_value")
+  departmentId   String   @map("department_id") @db.Uuid
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  source     ExternalIdSource @relation(fields: [organizationId, sourceId], references: [organizationId, id], onDelete: Cascade)
+  department Department       @relation(fields: [organizationId, departmentId], references: [organizationId, id], onDelete: Cascade)
+
+  @@unique([sourceId, sourceValue])
+  @@index([departmentId])
+  @@map("department_external_id")
 }
