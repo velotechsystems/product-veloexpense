@@ -57,7 +57,10 @@ export const ModelName = {
   User: 'User',
   BusinessUnit: 'BusinessUnit',
   ExternalIdSource: 'ExternalIdSource',
-  BusinessUnitExternalId: 'BusinessUnitExternalId'
+  BusinessUnitExternalId: 'BusinessUnitExternalId',
+  LegalEntity: 'LegalEntity',
+  LegalEntityExternalId: 'LegalEntityExternalId',
+  Currency: 'Currency'
 } as const
 
 export type ModelName = (typeof ModelName)[keyof typeof ModelName]
@@ -178,6 +181,44 @@ export const BusinessUnitExternalIdScalarFieldEnum = {
 } as const
 
 export type BusinessUnitExternalIdScalarFieldEnum = (typeof BusinessUnitExternalIdScalarFieldEnum)[keyof typeof BusinessUnitExternalIdScalarFieldEnum]
+
+
+export const LegalEntityScalarFieldEnum = {
+  id: 'id',
+  organizationId: 'organizationId',
+  label: 'label',
+  description: 'description',
+  country: 'country',
+  homeCurrencyId: 'homeCurrencyId',
+  active: 'active',
+  itcRecoverable: 'itcRecoverable',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+} as const
+
+export type LegalEntityScalarFieldEnum = (typeof LegalEntityScalarFieldEnum)[keyof typeof LegalEntityScalarFieldEnum]
+
+
+export const LegalEntityExternalIdScalarFieldEnum = {
+  id: 'id',
+  organizationId: 'organizationId',
+  sourceId: 'sourceId',
+  sourceValue: 'sourceValue',
+  legalEntityId: 'legalEntityId',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+} as const
+
+export type LegalEntityExternalIdScalarFieldEnum = (typeof LegalEntityExternalIdScalarFieldEnum)[keyof typeof LegalEntityExternalIdScalarFieldEnum]
+
+
+export const CurrencyScalarFieldEnum = {
+  code: 'code',
+  name: 'name',
+  minorUnit: 'minorUnit'
+} as const
+
+export type CurrencyScalarFieldEnum = (typeof CurrencyScalarFieldEnum)[keyof typeof CurrencyScalarFieldEnum]
 
 
 export const SortOrder = {

@@ -70,7 +70,6 @@ export const VELOEXPENSE_ROUTES: Readonly<Record<string, string | null>> = {
   '/admin/fraud-detection': null,
   '/admin/control-evaluation': null,
   '/admin/roles': null,
-  '/admin/legal-entities': null,
   '/admin/departments': null,
   '/admin/job-levels': null,
   '/admin/fiscal-years': null,
@@ -172,6 +171,7 @@ export const VELOEXPENSE_ITEMS: Readonly<Record<string, readonly VeloExpenseNavI
 export const PORTED_SCREENS: readonly string[] = [
   '/admin/expense-categories',
   '/admin/business-units',
+  '/admin/legal-entities',
 ];
 
 /** Whether the top bar should title this path: it is a ported ExpenseOS screen. */

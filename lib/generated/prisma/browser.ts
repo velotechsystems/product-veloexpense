@@ -52,3 +52,18 @@ export type ExternalIdSource = Prisma.ExternalIdSourceModel
  * 
  */
 export type BusinessUnitExternalId = Prisma.BusinessUnitExternalIdModel
+/**
+ * Model LegalEntity
+ * 
+ */
+export type LegalEntity = Prisma.LegalEntityModel
+/**
+ * Model LegalEntityExternalId
+ * 
+ */
+export type LegalEntityExternalId = Prisma.LegalEntityExternalIdModel
+/**
+ * Model Currency
+ * 
+ */
+export type Currency = Prisma.CurrencyModel

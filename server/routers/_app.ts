@@ -1,7 +1,9 @@
 import { router } from '@/server/trpc';
+import { appSettingsRouter } from './appSettings';
 import { businessUnitsRouter } from './businessUnits';
 import { expenseApprovalsRouter } from './expenseApprovals';
 import { expenseCategoriesRouter } from './expenseCategories';
+import { legalEntitiesRouter } from './legalEntities';
 import { pickersRouter } from './pickers';
 
 /**
@@ -13,10 +15,12 @@ import { pickersRouter } from './pickers';
  * kept in ExpenseOS's order so the two files stay comparable.
  */
 export const appRouter = router({
+  appSettings: appSettingsRouter,
   businessUnits: businessUnitsRouter,
   expenseCategories: expenseCategoriesRouter,
   // VeloExpense stand-in until Wave 4: `myTasks` only, for the sidebar's Approvals count.
   expenseApprovals: expenseApprovalsRouter,
+  legalEntities: legalEntitiesRouter,
   pickers: pickersRouter,
 });
 

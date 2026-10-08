@@ -215,6 +215,7 @@ export const UI_COPY = {
   'title.admin.employees.one': { 'en-CA': 'Employee' },
   'title.admin.expense.policies': { 'en-CA': 'Expense policies' },
   'title.admin.integrations': { 'en-CA': 'Accounting integrations' },
+  'title.admin.legal.entities': { 'en-CA': 'Legal entities' },
   'title.admin.ledger.queue': { 'en-CA': 'Ledger queue' },
   'title.admin.locale': { 'en-CA': 'Language and time' },
   'title.admin.expense.categories': { 'en-CA': 'Expense categories' },

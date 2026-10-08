@@ -107,7 +107,7 @@ const EMPLOYEE_COLUMNS = `
   u.manager_id, m.display_name AS manager_name, m.email AS manager_email,
   u.department_id, d.name AS department_name,
   u.business_unit_id, bu.label ->> 'en' AS business_unit_name,
-  u.legal_entity_id, le.name AS legal_entity_name,
+  u.legal_entity_id, le.label ->> 'en' AS legal_entity_name,
   u.deleted_at, u.created_at, u.updated_at`;
 
 const EMPLOYEE_FROM = `
@@ -445,7 +445,7 @@ export async function listDepartments(tx: QueryRunner) {
  * deactivated rather than deleted (ExpenseOS's soft delete), and a deactivated one must
  * not be OFFERED — but a record already pointing at one must keep showing it, or the
  * form's select would fall back to "none" and a save would silently unassign it. So the
- * callers offer `active || id === current` (`businessUnitChoices`).
+ * callers offer `active || id === current` (`activeChoices`).
  *
  * The name is the English one (`label` is `{ en, fr-CA }` JSON since migration 0047).
  */
@@ -459,11 +459,23 @@ export async function listBusinessUnits(tx: QueryRunner) {
 }
 
 
-export { businessUnitChoices } from './business-unit-choices';
+export { activeChoices } from './active-choices';
 
+/** Every legal entity with whether it is active — callers offer `activeChoices` (see
+ *  `listBusinessUnits`). The name is the English one (`label`, migration 0048). */
 export async function listLegalEntities(tx: QueryRunner) {
-  const r = await tx.query('SELECT id, name, country, currency_code FROM legal_entity ORDER BY name');
-  return r.rows as Array<{ id: string; name: string; country: string | null; currency_code: string | null }>;
+  const r = await tx.query(
+    `SELECT id, label ->> 'en' AS name, country, currency_code, active
+       FROM legal_entity
+      ORDER BY lower(label ->> 'en')`,
+  );
+  return r.rows as Array<{
+    id: string;
+    name: string;
+    country: string | null;
+    currency_code: string | null;
+    active: boolean;
+  }>;
 }
 
 /** Everything the employee form needs to render its pickers, in one round trip. */

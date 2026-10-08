@@ -89,6 +89,7 @@ export const EXPORTED: Readonly<Record<string, ExportedTable>> = {
   // business unit's id in them. The tenant's own mapping, so it leaves with the tenant.
   external_id_source: { file: 'external-id-sources.csv' },
   business_unit_external_id: { file: 'business-unit-external-ids.csv' },
+  legal_entity_external_id: { file: 'legal-entity-external-ids.csv' },
   legal_entity: { file: 'legal-entities.csv' },
   invite: {
     file: 'invites.csv',

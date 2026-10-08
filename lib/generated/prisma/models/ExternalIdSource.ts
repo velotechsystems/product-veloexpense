@@ -195,6 +195,7 @@ export type ExternalIdSourceWhereInput = {
   createdAt?: Prisma.DateTimeFilter<"ExternalIdSource"> | Date | string
   updatedAt?: Prisma.DateTimeFilter<"ExternalIdSource"> | Date | string
   businessUnitAliases?: Prisma.BusinessUnitExternalIdListRelationFilter
+  legalEntityAliases?: Prisma.LegalEntityExternalIdListRelationFilter
 }
 
 export type ExternalIdSourceOrderByWithRelationInput = {
@@ -206,6 +207,7 @@ export type ExternalIdSourceOrderByWithRelationInput = {
   createdAt?: Prisma.SortOrder
   updatedAt?: Prisma.SortOrder
   businessUnitAliases?: Prisma.BusinessUnitExternalIdOrderByRelationAggregateInput
+  legalEntityAliases?: Prisma.LegalEntityExternalIdOrderByRelationAggregateInput
 }
 
 export type ExternalIdSourceWhereUniqueInput = Prisma.AtLeast<{
@@ -222,6 +224,7 @@ export type ExternalIdSourceWhereUniqueInput = Prisma.AtLeast<{
   createdAt?: Prisma.DateTimeFilter<"ExternalIdSource"> | Date | string
   updatedAt?: Prisma.DateTimeFilter<"ExternalIdSource"> | Date | string
   businessUnitAliases?: Prisma.BusinessUnitExternalIdListRelationFilter
+  legalEntityAliases?: Prisma.LegalEntityExternalIdListRelationFilter
 }, "id" | "organizationId_code" | "organizationId_id">
 
 export type ExternalIdSourceOrderByWithAggregationInput = {
@@ -259,6 +262,7 @@ export type ExternalIdSourceCreateInput = {
   createdAt?: Date | string
   updatedAt?: Date | string
   businessUnitAliases?: Prisma.BusinessUnitExternalIdCreateNestedManyWithoutSourceInput
+  legalEntityAliases?: Prisma.LegalEntityExternalIdCreateNestedManyWithoutSourceInput
 }
 
 export type ExternalIdSourceUncheckedCreateInput = {
@@ -270,6 +274,7 @@ export type ExternalIdSourceUncheckedCreateInput = {
   createdAt?: Date | string
   updatedAt?: Date | string
   businessUnitAliases?: Prisma.BusinessUnitExternalIdUncheckedCreateNestedManyWithoutSourceInput
+  legalEntityAliases?: Prisma.LegalEntityExternalIdUncheckedCreateNestedManyWithoutSourceInput
 }
 
 export type ExternalIdSourceUpdateInput = {
@@ -281,6 +286,7 @@ export type ExternalIdSourceUpdateInput = {
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   businessUnitAliases?: Prisma.BusinessUnitExternalIdUpdateManyWithoutSourceNestedInput
+  legalEntityAliases?: Prisma.LegalEntityExternalIdUpdateManyWithoutSourceNestedInput
 }
 
 export type ExternalIdSourceUncheckedUpdateInput = {
@@ -292,6 +298,7 @@ export type ExternalIdSourceUncheckedUpdateInput = {
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   businessUnitAliases?: Prisma.BusinessUnitExternalIdUncheckedUpdateManyWithoutSourceNestedInput
+  legalEntityAliases?: Prisma.LegalEntityExternalIdUncheckedUpdateManyWithoutSourceNestedInput
 }
 
 export type ExternalIdSourceCreateManyInput = {
@@ -381,6 +388,20 @@ export type ExternalIdSourceUpdateOneRequiredWithoutBusinessUnitAliasesNestedInp
   update?: Prisma.XOR<Prisma.XOR<Prisma.ExternalIdSourceUpdateToOneWithWhereWithoutBusinessUnitAliasesInput, Prisma.ExternalIdSourceUpdateWithoutBusinessUnitAliasesInput>, Prisma.ExternalIdSourceUncheckedUpdateWithoutBusinessUnitAliasesInput>
 }
 
+export type ExternalIdSourceCreateNestedOneWithoutLegalEntityAliasesInput = {
+  create?: Prisma.XOR<Prisma.ExternalIdSourceCreateWithoutLegalEntityAliasesInput, Prisma.ExternalIdSourceUncheckedCreateWithoutLegalEntityAliasesInput>
+  connectOrCreate?: Prisma.ExternalIdSourceCreateOrConnectWithoutLegalEntityAliasesInput
+  connect?: Prisma.ExternalIdSourceWhereUniqueInput
+}
+
+export type ExternalIdSourceUpdateOneRequiredWithoutLegalEntityAliasesNestedInput = {
+  create?: Prisma.XOR<Prisma.ExternalIdSourceCreateWithoutLegalEntityAliasesInput, Prisma.ExternalIdSourceUncheckedCreateWithoutLegalEntityAliasesInput>
+  connectOrCreate?: Prisma.ExternalIdSourceCreateOrConnectWithoutLegalEntityAliasesInput
+  upsert?: Prisma.ExternalIdSourceUpsertWithoutLegalEntityAliasesInput
+  connect?: Prisma.ExternalIdSourceWhereUniqueInput
+  update?: Prisma.XOR<Prisma.XOR<Prisma.ExternalIdSourceUpdateToOneWithWhereWithoutLegalEntityAliasesInput, Prisma.ExternalIdSourceUpdateWithoutLegalEntityAliasesInput>, Prisma.ExternalIdSourceUncheckedUpdateWithoutLegalEntityAliasesInput>
+}
+
 export type ExternalIdSourceCreateWithoutBusinessUnitAliasesInput = {
   id?: string
   organizationId?: string
@@ -389,6 +410,7 @@ export type ExternalIdSourceCreateWithoutBusinessUnitAliasesInput = {
   active?: boolean
   createdAt?: Date | string
   updatedAt?: Date | string
+  legalEntityAliases?: Prisma.LegalEntityExternalIdCreateNestedManyWithoutSourceInput
 }
 
 export type ExternalIdSourceUncheckedCreateWithoutBusinessUnitAliasesInput = {
@@ -399,6 +421,7 @@ export type ExternalIdSourceUncheckedCreateWithoutBusinessUnitAliasesInput = {
   active?: boolean
   createdAt?: Date | string
   updatedAt?: Date | string
+  legalEntityAliases?: Prisma.LegalEntityExternalIdUncheckedCreateNestedManyWithoutSourceInput
 }
 
 export type ExternalIdSourceCreateOrConnectWithoutBusinessUnitAliasesInput = {
@@ -425,6 +448,7 @@ export type ExternalIdSourceUpdateWithoutBusinessUnitAliasesInput = {
   active?: Prisma.BoolFieldUpdateOperationsInput | boolean
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  legalEntityAliases?: Prisma.LegalEntityExternalIdUpdateManyWithoutSourceNestedInput
 }
 
 export type ExternalIdSourceUncheckedUpdateWithoutBusinessUnitAliasesInput = {
@@ -435,6 +459,67 @@ export type ExternalIdSourceUncheckedUpdateWithoutBusinessUnitAliasesInput = {
   active?: Prisma.BoolFieldUpdateOperationsInput | boolean
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  legalEntityAliases?: Prisma.LegalEntityExternalIdUncheckedUpdateManyWithoutSourceNestedInput
+}
+
+export type ExternalIdSourceCreateWithoutLegalEntityAliasesInput = {
+  id?: string
+  organizationId?: string
+  code: string
+  label: Prisma.JsonNullValueInput | runtime.InputJsonValue
+  active?: boolean
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  businessUnitAliases?: Prisma.BusinessUnitExternalIdCreateNestedManyWithoutSourceInput
+}
+
+export type ExternalIdSourceUncheckedCreateWithoutLegalEntityAliasesInput = {
+  id?: string
+  organizationId?: string
+  code: string
+  label: Prisma.JsonNullValueInput | runtime.InputJsonValue
+  active?: boolean
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  businessUnitAliases?: Prisma.BusinessUnitExternalIdUncheckedCreateNestedManyWithoutSourceInput
+}
+
+export type ExternalIdSourceCreateOrConnectWithoutLegalEntityAliasesInput = {
+  where: Prisma.ExternalIdSourceWhereUniqueInput
+  create: Prisma.XOR<Prisma.ExternalIdSourceCreateWithoutLegalEntityAliasesInput, Prisma.ExternalIdSourceUncheckedCreateWithoutLegalEntityAliasesInput>
+}
+
+export type ExternalIdSourceUpsertWithoutLegalEntityAliasesInput = {
+  update: Prisma.XOR<Prisma.ExternalIdSourceUpdateWithoutLegalEntityAliasesInput, Prisma.ExternalIdSourceUncheckedUpdateWithoutLegalEntityAliasesInput>
+  create: Prisma.XOR<Prisma.ExternalIdSourceCreateWithoutLegalEntityAliasesInput, Prisma.ExternalIdSourceUncheckedCreateWithoutLegalEntityAliasesInput>
+  where?: Prisma.ExternalIdSourceWhereInput
+}
+
+export type ExternalIdSourceUpdateToOneWithWhereWithoutLegalEntityAliasesInput = {
+  where?: Prisma.ExternalIdSourceWhereInput
+  data: Prisma.XOR<Prisma.ExternalIdSourceUpdateWithoutLegalEntityAliasesInput, Prisma.ExternalIdSourceUncheckedUpdateWithoutLegalEntityAliasesInput>
+}
+
+export type ExternalIdSourceUpdateWithoutLegalEntityAliasesInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  organizationId?: Prisma.StringFieldUpdateOperationsInput | string
+  code?: Prisma.StringFieldUpdateOperationsInput | string
+  label?: Prisma.JsonNullValueInput | runtime.InputJsonValue
+  active?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  businessUnitAliases?: Prisma.BusinessUnitExternalIdUpdateManyWithoutSourceNestedInput
+}
+
+export type ExternalIdSourceUncheckedUpdateWithoutLegalEntityAliasesInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  organizationId?: Prisma.StringFieldUpdateOperationsInput | string
+  code?: Prisma.StringFieldUpdateOperationsInput | string
+  label?: Prisma.JsonNullValueInput | runtime.InputJsonValue
+  active?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  businessUnitAliases?: Prisma.BusinessUnitExternalIdUncheckedUpdateManyWithoutSourceNestedInput
 }
 
 
@@ -444,10 +529,12 @@ export type ExternalIdSourceUncheckedUpdateWithoutBusinessUnitAliasesInput = {
 
 export type ExternalIdSourceCountOutputType = {
   businessUnitAliases: number
+  legalEntityAliases: number
 }
 
 export type ExternalIdSourceCountOutputTypeSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   businessUnitAliases?: boolean | ExternalIdSourceCountOutputTypeCountBusinessUnitAliasesArgs
+  legalEntityAliases?: boolean | ExternalIdSourceCountOutputTypeCountLegalEntityAliasesArgs
 }
 
 /**
@@ -467,6 +554,13 @@ export type ExternalIdSourceCountOutputTypeCountBusinessUnitAliasesArgs<ExtArgs 
   where?: Prisma.BusinessUnitExternalIdWhereInput
 }
 
+/**
+ * ExternalIdSourceCountOutputType without action
+ */
+export type ExternalIdSourceCountOutputTypeCountLegalEntityAliasesArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  where?: Prisma.LegalEntityExternalIdWhereInput
+}
+
 
 export type ExternalIdSourceSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetSelect<{
   id?: boolean
@@ -477,6 +571,7 @@ export type ExternalIdSourceSelect<ExtArgs extends runtime.Types.Extensions.Inte
   createdAt?: boolean
   updatedAt?: boolean
   businessUnitAliases?: boolean | Prisma.ExternalIdSource$businessUnitAliasesArgs<ExtArgs>
+  legalEntityAliases?: boolean | Prisma.ExternalIdSource$legalEntityAliasesArgs<ExtArgs>
   _count?: boolean | Prisma.ExternalIdSourceCountOutputTypeDefaultArgs<ExtArgs>
 }, ExtArgs["result"]["externalIdSource"]>
 
@@ -513,6 +608,7 @@ export type ExternalIdSourceSelectScalar = {
 export type ExternalIdSourceOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "organizationId" | "code" | "label" | "active" | "createdAt" | "updatedAt", ExtArgs["result"]["externalIdSource"]>
 export type ExternalIdSourceInclude<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   businessUnitAliases?: boolean | Prisma.ExternalIdSource$businessUnitAliasesArgs<ExtArgs>
+  legalEntityAliases?: boolean | Prisma.ExternalIdSource$legalEntityAliasesArgs<ExtArgs>
   _count?: boolean | Prisma.ExternalIdSourceCountOutputTypeDefaultArgs<ExtArgs>
 }
 export type ExternalIdSourceIncludeCreateManyAndReturn<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {}
@@ -522,6 +618,7 @@ export type $ExternalIdSourcePayload<ExtArgs extends runtime.Types.Extensions.In
   name: "ExternalIdSource"
   objects: {
     businessUnitAliases: Prisma.$BusinessUnitExternalIdPayload<ExtArgs>[]
+    legalEntityAliases: Prisma.$LegalEntityExternalIdPayload<ExtArgs>[]
   }
   scalars: runtime.Types.Extensions.GetPayloadResult<{
     id: string
@@ -926,6 +1023,7 @@ readonly fields: ExternalIdSourceFieldRefs;
 export interface Prisma__ExternalIdSourceClient<T, Null = never, ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs, GlobalOmitOptions = {}> extends Prisma.PrismaPromise<T> {
   readonly [Symbol.toStringTag]: "PrismaPromise"
   businessUnitAliases<T extends Prisma.ExternalIdSource$businessUnitAliasesArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.ExternalIdSource$businessUnitAliasesArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$BusinessUnitExternalIdPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
+  legalEntityAliases<T extends Prisma.ExternalIdSource$legalEntityAliasesArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.ExternalIdSource$legalEntityAliasesArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$LegalEntityExternalIdPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
   /**
    * Attaches callbacks for the resolution and/or rejection of the Promise.
    * @param onfulfilled The callback to execute when the Promise is resolved.
@@ -1376,6 +1474,30 @@ export type ExternalIdSource$businessUnitAliasesArgs<ExtArgs extends runtime.Typ
   take?: number
   skip?: number
   distinct?: Prisma.BusinessUnitExternalIdScalarFieldEnum | Prisma.BusinessUnitExternalIdScalarFieldEnum[]
+}
+
+/**
+ * ExternalIdSource.legalEntityAliases
+ */
+export type ExternalIdSource$legalEntityAliasesArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  /**
+   * Select specific fields to fetch from the LegalEntityExternalId
+   */
+  select?: Prisma.LegalEntityExternalIdSelect<ExtArgs> | null
+  /**
+   * Omit specific fields from the LegalEntityExternalId
+   */
+  omit?: Prisma.LegalEntityExternalIdOmit<ExtArgs> | null
+  /**
+   * Choose, which related nodes to fetch as well
+   */
+  include?: Prisma.LegalEntityExternalIdInclude<ExtArgs> | null
+  where?: Prisma.LegalEntityExternalIdWhereInput
+  orderBy?: Prisma.LegalEntityExternalIdOrderByWithRelationInput | Prisma.LegalEntityExternalIdOrderByWithRelationInput[]
+  cursor?: Prisma.LegalEntityExternalIdWhereUniqueInput
+  take?: number
+  skip?: number
+  distinct?: Prisma.LegalEntityExternalIdScalarFieldEnum | Prisma.LegalEntityExternalIdScalarFieldEnum[]
 }
 
 /**

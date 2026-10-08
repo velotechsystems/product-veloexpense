@@ -59,10 +59,15 @@ export function SelectWidget(props: WidgetProps) {
  * chrome that used to live here moved to Field.
  */
 export function CheckboxWidget(props: WidgetProps) {
-  const { id, value, disabled, readonly, onChange } = props;
+  const { id, value, disabled, readonly, onChange, label } = props;
   return (
     <Checkbox
       id={id}
+      // VeloExpense kit: Base UI's checkbox is a <span role="checkbox"> with an id of its
+      // own, so the Field's <label for={id}> names nothing and the box was announced with
+      // no name ("Active", "Reclaims ITCs" were silent to a screen reader). The schema
+      // title names it directly. Found by VeloExpense's legal-entities e2e.
+      aria-label={label || undefined}
       checked={value === true}
       disabled={disabled || readonly}
       onCheckedChange={(checked) => onChange(checked === true)}

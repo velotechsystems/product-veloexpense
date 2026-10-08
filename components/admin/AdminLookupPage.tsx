@@ -26,9 +26,7 @@
  *     in Wave 4 (decided 8 Oct, d15). The filter pills, columns, export and bulk actions
  *     are unchanged;
  *   · the French name and description are not asked for or shown while French is
- *     switched off (`ENABLED_LOCALES`, 7 Oct), as on the categories screen;
- *   · the country and currency picker widgets (`ADMIN_PICKER_WIDGETS`) arrive with legal
- *     entities (w1-02), the first screen with a picker field.
+ *     switched off (`ENABLED_LOCALES`, 7 Oct), as on the categories screen.
  */
 import {
   Badge,
@@ -77,6 +75,7 @@ import {
   DataTable,
   type DataTableState,
 } from '@/components/data-view/DataTable';
+import { ADMIN_PICKER_WIDGETS } from '@/components/pickers/CountryDisplay';
 import {
   adminToRjsf,
   buildLookupSchema,
@@ -1075,8 +1074,7 @@ export function AdminLookupPage<Row extends BaseLookupRow, ColumnId extends stri
                   schema={lookupSchema.schema}
                   uiSchema={lookupSchema.uiSchema}
                   fields={lookupFields}
-                  // VeloExpense: ExpenseOS passes `widgets={ADMIN_PICKER_WIDGETS}` (country,
-                  // currency); they arrive with legal entities (w1-02), the first user.
+                  widgets={ADMIN_PICKER_WIDGETS}
                   formData={adminToRjsf(form, config.extraFields)}
                   onChange={(data) => setForm(rjsfToAdmin(data, config.extraFields))}
                   onSubmit={(data) => save(rjsfToAdmin(data, config.extraFields))}

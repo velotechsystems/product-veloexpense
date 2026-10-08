@@ -17,7 +17,7 @@
 import { redirect } from 'next/navigation';
 import { errorParam } from '@/lib/errors/domain';
 import { revalidatePath } from 'next/cache';
-import { businessUnitChoices, listBusinessUnits, listDepartments } from '@/lib/employees/service';
+import { activeChoices, listBusinessUnits, listDepartments } from '@/lib/employees/service';
 import { listCurrencies } from '@/lib/expenses/service';
 import { listPostableAccounts } from '@/lib/accounts/service';
 import { isModuleEnabled } from '@/lib/modules/service';
@@ -44,7 +44,7 @@ export async function getBudgetsPage() {
     departments: await listDepartments(tx),
     // A new budget may be scoped to an ACTIVE business unit only; deactivated ones are
     // retired (the Wave 1 port's soft delete). Existing budgets keep theirs, by name.
-    businessUnits: businessUnitChoices(await listBusinessUnits(tx)),
+    businessUnits: activeChoices(await listBusinessUnits(tx)),
     currencies: await listCurrencies(tx),
     people: await tx.query(
       `SELECT id, COALESCE(display_name, email) AS name, email

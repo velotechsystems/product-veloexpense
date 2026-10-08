@@ -390,7 +390,10 @@ export const ModelName = {
   User: 'User',
   BusinessUnit: 'BusinessUnit',
   ExternalIdSource: 'ExternalIdSource',
-  BusinessUnitExternalId: 'BusinessUnitExternalId'
+  BusinessUnitExternalId: 'BusinessUnitExternalId',
+  LegalEntity: 'LegalEntity',
+  LegalEntityExternalId: 'LegalEntityExternalId',
+  Currency: 'Currency'
 } as const
 
 export type ModelName = (typeof ModelName)[keyof typeof ModelName]
@@ -406,7 +409,7 @@ export type TypeMap<ExtArgs extends runtime.Types.Extensions.InternalArgs = runt
     omit: GlobalOmitOptions
   }
   meta: {
-    modelProps: "expenseCategory" | "glAccount" | "expenseLineItem" | "user" | "businessUnit" | "externalIdSource" | "businessUnitExternalId"
+    modelProps: "expenseCategory" | "glAccount" | "expenseLineItem" | "user" | "businessUnit" | "externalIdSource" | "businessUnitExternalId" | "legalEntity" | "legalEntityExternalId" | "currency"
     txIsolationLevel: TransactionIsolationLevel
   }
   model: {
@@ -928,6 +931,228 @@ export type TypeMap<ExtArgs extends runtime.Types.Extensions.InternalArgs = runt
         }
       }
     }
+    LegalEntity: {
+      payload: Prisma.$LegalEntityPayload<ExtArgs>
+      fields: Prisma.LegalEntityFieldRefs
+      operations: {
+        findUnique: {
+          args: Prisma.LegalEntityFindUniqueArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$LegalEntityPayload> | null
+        }
+        findUniqueOrThrow: {
+          args: Prisma.LegalEntityFindUniqueOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$LegalEntityPayload>
+        }
+        findFirst: {
+          args: Prisma.LegalEntityFindFirstArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$LegalEntityPayload> | null
+        }
+        findFirstOrThrow: {
+          args: Prisma.LegalEntityFindFirstOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$LegalEntityPayload>
+        }
+        findMany: {
+          args: Prisma.LegalEntityFindManyArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$LegalEntityPayload>[]
+        }
+        create: {
+          args: Prisma.LegalEntityCreateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$LegalEntityPayload>
+        }
+        createMany: {
+          args: Prisma.LegalEntityCreateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        createManyAndReturn: {
+          args: Prisma.LegalEntityCreateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$LegalEntityPayload>[]
+        }
+        delete: {
+          args: Prisma.LegalEntityDeleteArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$LegalEntityPayload>
+        }
+        update: {
+          args: Prisma.LegalEntityUpdateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$LegalEntityPayload>
+        }
+        deleteMany: {
+          args: Prisma.LegalEntityDeleteManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateMany: {
+          args: Prisma.LegalEntityUpdateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateManyAndReturn: {
+          args: Prisma.LegalEntityUpdateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$LegalEntityPayload>[]
+        }
+        upsert: {
+          args: Prisma.LegalEntityUpsertArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$LegalEntityPayload>
+        }
+        aggregate: {
+          args: Prisma.LegalEntityAggregateArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.AggregateLegalEntity>
+        }
+        groupBy: {
+          args: Prisma.LegalEntityGroupByArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.LegalEntityGroupByOutputType>[]
+        }
+        count: {
+          args: Prisma.LegalEntityCountArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.LegalEntityCountAggregateOutputType> | number
+        }
+      }
+    }
+    LegalEntityExternalId: {
+      payload: Prisma.$LegalEntityExternalIdPayload<ExtArgs>
+      fields: Prisma.LegalEntityExternalIdFieldRefs
+      operations: {
+        findUnique: {
+          args: Prisma.LegalEntityExternalIdFindUniqueArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$LegalEntityExternalIdPayload> | null
+        }
+        findUniqueOrThrow: {
+          args: Prisma.LegalEntityExternalIdFindUniqueOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$LegalEntityExternalIdPayload>
+        }
+        findFirst: {
+          args: Prisma.LegalEntityExternalIdFindFirstArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$LegalEntityExternalIdPayload> | null
+        }
+        findFirstOrThrow: {
+          args: Prisma.LegalEntityExternalIdFindFirstOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$LegalEntityExternalIdPayload>
+        }
+        findMany: {
+          args: Prisma.LegalEntityExternalIdFindManyArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$LegalEntityExternalIdPayload>[]
+        }
+        create: {
+          args: Prisma.LegalEntityExternalIdCreateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$LegalEntityExternalIdPayload>
+        }
+        createMany: {
+          args: Prisma.LegalEntityExternalIdCreateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        createManyAndReturn: {
+          args: Prisma.LegalEntityExternalIdCreateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$LegalEntityExternalIdPayload>[]
+        }
+        delete: {
+          args: Prisma.LegalEntityExternalIdDeleteArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$LegalEntityExternalIdPayload>
+        }
+        update: {
+          args: Prisma.LegalEntityExternalIdUpdateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$LegalEntityExternalIdPayload>
+        }
+        deleteMany: {
+          args: Prisma.LegalEntityExternalIdDeleteManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateMany: {
+          args: Prisma.LegalEntityExternalIdUpdateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateManyAndReturn: {
+          args: Prisma.LegalEntityExternalIdUpdateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$LegalEntityExternalIdPayload>[]
+        }
+        upsert: {
+          args: Prisma.LegalEntityExternalIdUpsertArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$LegalEntityExternalIdPayload>
+        }
+        aggregate: {
+          args: Prisma.LegalEntityExternalIdAggregateArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.AggregateLegalEntityExternalId>
+        }
+        groupBy: {
+          args: Prisma.LegalEntityExternalIdGroupByArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.LegalEntityExternalIdGroupByOutputType>[]
+        }
+        count: {
+          args: Prisma.LegalEntityExternalIdCountArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.LegalEntityExternalIdCountAggregateOutputType> | number
+        }
+      }
+    }
+    Currency: {
+      payload: Prisma.$CurrencyPayload<ExtArgs>
+      fields: Prisma.CurrencyFieldRefs
+      operations: {
+        findUnique: {
+          args: Prisma.CurrencyFindUniqueArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$CurrencyPayload> | null
+        }
+        findUniqueOrThrow: {
+          args: Prisma.CurrencyFindUniqueOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$CurrencyPayload>
+        }
+        findFirst: {
+          args: Prisma.CurrencyFindFirstArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$CurrencyPayload> | null
+        }
+        findFirstOrThrow: {
+          args: Prisma.CurrencyFindFirstOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$CurrencyPayload>
+        }
+        findMany: {
+          args: Prisma.CurrencyFindManyArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$CurrencyPayload>[]
+        }
+        create: {
+          args: Prisma.CurrencyCreateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$CurrencyPayload>
+        }
+        createMany: {
+          args: Prisma.CurrencyCreateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        createManyAndReturn: {
+          args: Prisma.CurrencyCreateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$CurrencyPayload>[]
+        }
+        delete: {
+          args: Prisma.CurrencyDeleteArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$CurrencyPayload>
+        }
+        update: {
+          args: Prisma.CurrencyUpdateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$CurrencyPayload>
+        }
+        deleteMany: {
+          args: Prisma.CurrencyDeleteManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateMany: {
+          args: Prisma.CurrencyUpdateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateManyAndReturn: {
+          args: Prisma.CurrencyUpdateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$CurrencyPayload>[]
+        }
+        upsert: {
+          args: Prisma.CurrencyUpsertArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$CurrencyPayload>
+        }
+        aggregate: {
+          args: Prisma.CurrencyAggregateArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.AggregateCurrency>
+        }
+        groupBy: {
+          args: Prisma.CurrencyGroupByArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.CurrencyGroupByOutputType>[]
+        }
+        count: {
+          args: Prisma.CurrencyCountArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.CurrencyCountAggregateOutputType> | number
+        }
+      }
+    }
   }
 } & {
   other: {
@@ -1069,6 +1294,44 @@ export const BusinessUnitExternalIdScalarFieldEnum = {
 } as const
 
 export type BusinessUnitExternalIdScalarFieldEnum = (typeof BusinessUnitExternalIdScalarFieldEnum)[keyof typeof BusinessUnitExternalIdScalarFieldEnum]
+
+
+export const LegalEntityScalarFieldEnum = {
+  id: 'id',
+  organizationId: 'organizationId',
+  label: 'label',
+  description: 'description',
+  country: 'country',
+  homeCurrencyId: 'homeCurrencyId',
+  active: 'active',
+  itcRecoverable: 'itcRecoverable',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+} as const
+
+export type LegalEntityScalarFieldEnum = (typeof LegalEntityScalarFieldEnum)[keyof typeof LegalEntityScalarFieldEnum]
+
+
+export const LegalEntityExternalIdScalarFieldEnum = {
+  id: 'id',
+  organizationId: 'organizationId',
+  sourceId: 'sourceId',
+  sourceValue: 'sourceValue',
+  legalEntityId: 'legalEntityId',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+} as const
+
+export type LegalEntityExternalIdScalarFieldEnum = (typeof LegalEntityExternalIdScalarFieldEnum)[keyof typeof LegalEntityExternalIdScalarFieldEnum]
+
+
+export const CurrencyScalarFieldEnum = {
+  code: 'code',
+  name: 'name',
+  minorUnit: 'minorUnit'
+} as const
+
+export type CurrencyScalarFieldEnum = (typeof CurrencyScalarFieldEnum)[keyof typeof CurrencyScalarFieldEnum]
 
 
 export const SortOrder = {
@@ -1318,6 +1581,9 @@ export type GlobalOmitConfig = {
   businessUnit?: Prisma.BusinessUnitOmit
   externalIdSource?: Prisma.ExternalIdSourceOmit
   businessUnitExternalId?: Prisma.BusinessUnitExternalIdOmit
+  legalEntity?: Prisma.LegalEntityOmit
+  legalEntityExternalId?: Prisma.LegalEntityExternalIdOmit
+  currency?: Prisma.CurrencyOmit
 }
 
 /* Types for Logging */
