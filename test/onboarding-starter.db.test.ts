@@ -11,7 +11,7 @@ import { readFileSync } from 'node:fs';
 import { Pool } from 'pg';
 import { withOrg } from '@/lib/tenant/context';
 import { createOrganization } from '@/lib/onboarding/provision';
-import { STARTER_CATEGORIES, seedStarterCategories } from '@/lib/onboarding/starter';
+import { STARTER_CATEGORIES, STARTER_CATEGORY_TRAITS, seedStarterCategories } from '@/lib/onboarding/starter';
 import { setupStatus, SETUP_ITEMS } from '@/lib/onboarding/setup';
 import * as expenses from '@/lib/expenses/service';
 import { submitReport } from '@/lib/expenses/lifecycle';
@@ -83,6 +83,35 @@ describe('a tenant that has just been created', () => {
     expect(genesis.rows[0].details).toMatchObject({
       seeded_categories: STARTER_CATEGORIES.length,
     });
+  });
+
+  it('gives each starter category ExpenseOS’s traits: 50% ITC and a tip on meals, icons and colours', async () => {
+    const rows = await withOrg(orgId, (tx) =>
+      tx.query(
+        `SELECT code, icon, color, itc_gst_hst_rate, itc_qst_rate, accepts_tip, pst_recoverable,
+                requires_attendees, is_mileage
+           FROM expense_category ORDER BY sort_order`,
+      ),
+    );
+    for (const r of rows.rows) {
+      const t = STARTER_CATEGORY_TRAITS[r.code];
+      expect(r, r.code).toMatchObject({
+        icon: t.icon,
+        color: t.color,
+        itc_gst_hst_rate: t.itcGstHstRate,
+        itc_qst_rate: t.itcQstRate,
+        accepts_tip: t.acceptsTip,
+        pst_recoverable: false,
+        requires_attendees: false,
+        is_mileage: false,
+      });
+    }
+    // The CRA meal limitation, spelled out rather than only read back from the table.
+    expect(rows.rows.find((r) => r.code === 'meals')).toMatchObject({ itc_gst_hst_rate: 50, itc_qst_rate: 50 });
+  });
+
+  it('has traits for every starter code, and none for a code that is not one', () => {
+    expect(Object.keys(STARTER_CATEGORY_TRAITS).sort()).toEqual(STARTER_CATEGORIES.map(([c]) => c).sort());
   });
 
   it('seeding again writes nothing and does not disturb a renamed category', async () => {
@@ -249,6 +278,11 @@ describe('the hand-kept copy in scripts/seed.mjs', () => {
     for (const [code, label] of STARTER_CATEGORIES) {
       expect(block, `seed.mjs should carry ${code}`).toContain(`'${code}'`);
       expect(block, `seed.mjs should label ${code} the same way`).toContain(`'${label}'`);
+      const t = STARTER_CATEGORY_TRAITS[code];
+      const line = block.split('\n').find((l) => l.includes(`['${code}'`)) ?? '';
+      expect(line, `seed.mjs should give ${code} the same traits`).toContain(
+        `'${t.icon}', '${t.color}', ${t.itcGstHstRate}, ${t.itcQstRate}, ${t.acceptsTip}]`,
+      );
     }
   });
 });
