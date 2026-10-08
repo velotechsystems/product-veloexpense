@@ -76,7 +76,7 @@ describe('reads', () => {
 describe('writes', () => {
   it('a create with no organization lands in the scoped tenant', async () => {
     const made = await withTenantDb(A, () =>
-      db.expenseCategory.create({ data: { code: 'PRISMA_TEST', label: 'Prisma test' } }),
+      db.expenseCategory.create({ data: { code: 'PRISMA_TEST', label: { en: 'Prisma test' } } }),
     );
     expect(made.organizationId).toBe(A);
   });
@@ -84,7 +84,7 @@ describe('writes', () => {
   it("naming another tenant is refused by the policy's WITH CHECK", async () => {
     await expect(
       withTenantDb(A, () =>
-        db.expenseCategory.create({ data: { code: 'SNEAK', label: 'Sneak', organizationId: B } }),
+        db.expenseCategory.create({ data: { code: 'SNEAK', label: { en: 'Sneak' }, organizationId: B } }),
       ),
     ).rejects.toThrow();
     const [row] = (await admin.query("SELECT count(*)::int AS n FROM expense_category WHERE code = 'SNEAK'")).rows;
@@ -93,7 +93,7 @@ describe('writes', () => {
 
   it("an update cannot reach the other tenant's rows", async () => {
     const res = await withTenantDb(A, () =>
-      db.expenseCategory.updateMany({ where: { organizationId: B }, data: { label: 'hijacked' } }),
+      db.expenseCategory.updateMany({ where: { organizationId: B }, data: { label: { en: 'hijacked' } } }),
     );
     expect(res.count).toBe(0);
   });
@@ -126,6 +126,24 @@ describe('scope', () => {
     await expect(withTenantDb(A, () => withTenantDb(B, () => db.expenseCategory.count()))).rejects.toBeInstanceOf(
       TenantScopeError,
     );
+  });
+
+  it('reads a timestamp as the instant it is, whatever the database’s time zone', async () => {
+    /**
+     * The driver adapter ignores a timestamptz's UTC offset when it parses one, so with a
+     * session TimeZone other than UTC every DateTime came back off by that offset (four
+     * hours, on a database set to America/Toronto). withTenantDb pins the transaction to
+     * UTC. Both halves are asserted: the setting itself — which holds wherever this runs,
+     * including a CI database already on UTC — and the instant, compared with `pg`'s.
+     */
+    const zone = await withTenantDb(A, (tx) => tx.$queryRaw<{ z: string }[]>`SELECT current_setting('TimeZone') AS z`);
+    expect(zone[0].z).toBe('UTC');
+    const row = (await admin.query('SELECT id, created_at FROM expense_category WHERE organization_id = $1 LIMIT 1', [A]))
+      .rows[0];
+    const viaPrisma = await withTenantDb(A, () =>
+      db.expenseCategory.findUnique({ where: { id: row.id }, select: { createdAt: true } }),
+    );
+    expect(viaPrisma?.createdAt.toISOString()).toBe((row.created_at as Date).toISOString());
   });
 
   it('the scope does not outlive its transaction on a pooled connection', async () => {

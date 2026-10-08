@@ -1,5 +1,7 @@
 import { router } from '@/server/trpc';
 import { expenseApprovalsRouter } from './expenseApprovals';
+import { expenseCategoriesRouter } from './expenseCategories';
+import { pickersRouter } from './pickers';
 
 /**
  * Root tRPC router — composes per-domain sub-routers. Add a new module's
@@ -10,8 +12,10 @@ import { expenseApprovalsRouter } from './expenseApprovals';
  * kept in ExpenseOS's order so the two files stay comparable.
  */
 export const appRouter = router({
+  expenseCategories: expenseCategoriesRouter,
   // VeloExpense stand-in until Wave 4: `myTasks` only, for the sidebar's Approvals count.
   expenseApprovals: expenseApprovalsRouter,
+  pickers: pickersRouter,
 });
 
 /** Exported type used by the client to derive typed hooks. */

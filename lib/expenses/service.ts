@@ -555,7 +555,7 @@ export async function getReportWorkbench(
     [reportId],
   );
   const linesRes = await tx.query(
-    `SELECT li.*, cat.code AS category_code, cat.label AS category_label, cat.active AS category_active
+    `SELECT li.*, cat.code AS category_code, cat.label ->> 'en' AS category_label, cat.active AS category_active
        FROM expense_line_item li
        JOIN expense e ON e.id = li.expense_id
        LEFT JOIN expense_category cat ON cat.id = li.category_id
@@ -979,12 +979,12 @@ export async function listCategories(
   opts: { includeInactive?: boolean } = {},
 ): Promise<CategoryOption[]> {
   const r = await tx.query(
-    `SELECT c.id, c.code, c.label, c.active,
+    `SELECT c.id, c.code, c.label ->> 'en' AS label, c.active,
             CASE WHEN g.id IS NULL THEN NULL ELSE g.number || ' — ' || g.name END AS gl_account
        FROM expense_category c
        LEFT JOIN gl_account g ON g.id = c.gl_account_id AND g.active
       ${opts.includeInactive ? '' : 'WHERE c.active'}
-      ORDER BY c.sort_order, c.label`,
+      ORDER BY c.sort_order, c.label ->> 'en'`,
   );
   return r.rows as CategoryOption[];
 }

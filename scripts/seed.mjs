@@ -473,7 +473,7 @@ async function seedReferenceData(orgId, entityName = 'Demo Co Inc.') {
     for (const [code, label, glNumber, sort] of STARTER_CATEGORIES) {
       await client.query(
         `INSERT INTO expense_category (organization_id, code, label, sort_order, gl_account_id)
-           VALUES ($1, $2, $3, $4, (SELECT id FROM gl_account
+           VALUES ($1, $2, jsonb_build_object('en', $3::text), $4, (SELECT id FROM gl_account
                                      WHERE organization_id = $1 AND number = $5))
            ON CONFLICT (organization_id, code)
            DO UPDATE SET gl_account_id = EXCLUDED.gl_account_id`,

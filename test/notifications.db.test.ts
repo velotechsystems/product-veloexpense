@@ -122,7 +122,7 @@ beforeAll(async () => {
   bystander = await mkUser('by@notif.test', 'MANAGER');
   await withOrg(orgId, async (tx) => {
     const c = await tx.query(
-      "INSERT INTO expense_category (organization_id, code, label) VALUES ($1,'meals','Meals') RETURNING id",
+      `INSERT INTO expense_category (organization_id, code, label) VALUES ($1,'meals','{"en":"Meals"}') RETURNING id`,
       [orgId],
     );
     categoryId = c.rows[0].id;

@@ -23,6 +23,16 @@ export * from './enums';
  */
 export type ExpenseCategory = Prisma.ExpenseCategoryModel
 /**
+ * Model GlAccount
+ * 
+ */
+export type GlAccount = Prisma.GlAccountModel
+/**
+ * Model ExpenseLineItem
+ * 
+ */
+export type ExpenseLineItem = Prisma.ExpenseLineItemModel
+/**
  * Model User
  * 
  */

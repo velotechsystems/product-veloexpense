@@ -69,10 +69,10 @@ beforeAll(async () => {
   // VX1-1: a reference table (expense_category) per org, to prove the new
   // tenant tables are isolated too.
   await withOrg(orgA, (tx) =>
-    tx.query("INSERT INTO expense_category (organization_id, code, label) VALUES ($1,'meals','Meals A')", [orgA]),
+    tx.query(`INSERT INTO expense_category (organization_id, code, label) VALUES ($1,'meals','{"en":"Meals A"}')`, [orgA]),
   );
   await withOrg(orgB, (tx) =>
-    tx.query("INSERT INTO expense_category (organization_id, code, label) VALUES ($1,'meals','Meals B')", [orgB]),
+    tx.query(`INSERT INTO expense_category (organization_id, code, label) VALUES ($1,'meals','{"en":"Meals B"}')`, [orgB]),
   );
   // VX1-1's OTHER three reference tables — legal_entity, business_unit,
   // department — added by VX2-10, and found by the coverage guard it introduced
@@ -130,7 +130,7 @@ beforeAll(async () => {
       );
       await tx.query(
         `INSERT INTO expense_category (organization_id, code, label, gl_account_id)
-         VALUES ($1, 'travel', $2, $3)`,
+         VALUES ($1, 'travel', jsonb_build_object('en', $2::text), $3)`,
         [org, `Travel ${label}`, leaf.rows[0].id],
       );
       // VX3-3: a connected integration per tenant. Both use the SAME `code`
@@ -396,7 +396,7 @@ describe('RLS tenant isolation', () => {
 
   it('reference tables are tenant-isolated (expense_category)', async () => {
     const a = await withOrg(orgA, (tx) =>
-      tx.query('SELECT label FROM expense_category ORDER BY label'),
+      tx.query("SELECT label ->> 'en' AS label FROM expense_category ORDER BY label ->> 'en'"),
     );
     // 'Travel A' arrived with VX3-1's fixture, which needed a category to map to
     // an account. This exact-list pin is why that showed up as a failing test

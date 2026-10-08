@@ -183,7 +183,7 @@ async function loadGroups(tx: QueryRunner, range: SpendRange): Promise<GroupRow[
             sum(li.amount_minor)::text AS amount_minor,
             to_char(${ON_DATE}, 'YYYY-MM') AS month,
             li.category_id::text          AS category_id,
-            c.label                       AS category_label,
+            c.label ->> 'en'              AS category_label,
             li.gl_account_id::text        AS gl_account_id,
             g.number || ' — ' || g.name   AS gl_account_label,
             r.department_id::text         AS department_id,
@@ -202,7 +202,7 @@ async function loadGroups(tx: QueryRunner, range: SpendRange): Promise<GroupRow[
        LEFT JOIN business_unit bu ON bu.id = r.business_unit_id
       WHERE r.status = ANY($1::expense_report_status[])
         AND ${ON_DATE} BETWEEN $2::date AND $3::date
-      GROUP BY e.currency_code, ${ON_DATE}, r.status, li.category_id, c.label,
+      GROUP BY e.currency_code, ${ON_DATE}, r.status, li.category_id, c.label ->> 'en',
                li.gl_account_id, g.number, g.name, r.department_id, d.name,
                r.business_unit_id, bu.name, r.submitter_id, u.display_name, u.email`,
     [COUNTED_STATUSES, range.from, range.to],

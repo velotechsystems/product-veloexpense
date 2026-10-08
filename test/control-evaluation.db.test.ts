@@ -152,7 +152,7 @@ beforeAll(async () => {
   );
   const mapped = await admin.query(
     `INSERT INTO expense_category (organization_id, code, label, gl_account_id)
-     VALUES ($1, 'meals', 'Meals', $2) RETURNING id`,
+     VALUES ($1, 'meals', '{"en":"Meals"}', $2) RETURNING id`,
     [orgId, acct.rows[0].id],
   );
   mappedCategoryId = mapped.rows[0].id;
@@ -169,7 +169,7 @@ beforeAll(async () => {
   );
   const unmapped = await admin.query(
     `INSERT INTO expense_category (organization_id, code, label)
-     VALUES ($1, 'sundry', 'Sundry') RETURNING id`,
+     VALUES ($1, 'sundry', '{"en":"Sundry"}') RETURNING id`,
     [orgId],
   );
   unmappedCategoryId = unmapped.rows[0].id;

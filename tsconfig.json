@@ -30,7 +30,8 @@
       "@expenseos/i18n/getLocalized": ["./packages/i18n/src/getLocalized.ts"],
       "@expenseos/i18n/load": ["./packages/i18n/src/load.ts"],
       "@expenseos/i18n/catalogs/*": ["./packages/i18n/src/catalogs/*.json"],
-      "@expenseos/design-system": ["./packages/design-system/src/index.ts"]
+      "@expenseos/design-system": ["./packages/design-system/src/index.ts"],
+      "@expenseos/audit": ["./packages/audit/src/index.ts"]
     }
   },
   "include": [

@@ -65,7 +65,7 @@ beforeAll(async () => {
     reportId = rep.rows[0].id;
     const cat = await tx.query(
       `INSERT INTO expense_category (organization_id, code, label)
-       VALUES ($1,'meals','Meals') RETURNING id`,
+       VALUES ($1,'meals','{"en":"Meals"}') RETURNING id`,
       [orgId],
     );
     const exp = await tx.query(

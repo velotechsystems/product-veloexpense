@@ -86,6 +86,14 @@ export async function withTenantDb<T>(
   return baseClient().$transaction(
     async (tx) => {
       await tx.$executeRaw`SELECT set_config('app.current_org', ${orgId}, true)`;
+      // The Prisma driver adapter reads a timestamptz's text without honouring its UTC
+      // offset, so every DateTime it returns is off by the SESSION's offset unless that
+      // offset is zero — found on a database whose TimeZone is America/Toronto, where
+      // `createdAt` came back four hours early. RDS defaults to UTC, which is why nothing
+      // in production showed it; it is set here, transaction-local, so it cannot depend
+      // on that. The `pg` pool's own sessions (lib/db/client.ts) are untouched.
+      // test/prisma-tenancy.db.test.ts pins it.
+      await tx.$executeRaw`SELECT set_config('TimeZone', 'UTC', true)`;
       return scope.run({ orgId, tx }, () => fn(tx));
     },
     { timeout: options.timeoutMs ?? 30_000, maxWait: 10_000 },

@@ -64,7 +64,7 @@ async function category(code: string) {
   return withOrg(orgId, async (tx) => {
     const r = await tx.query(
       `INSERT INTO expense_category (organization_id, code, label)
-       VALUES ($1, $2, $2) RETURNING id`,
+       VALUES ($1, $2, jsonb_build_object('en', $2::text)) RETURNING id`,
       [orgId, code],
     );
     return r.rows[0].id as string;

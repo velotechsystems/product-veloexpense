@@ -28,20 +28,31 @@ export type AggregateExpenseCategory = {
 
 export type ExpenseCategoryAvgAggregateOutputType = {
   sortOrder: number | null
+  itcGstHstRate: number | null
+  itcQstRate: number | null
 }
 
 export type ExpenseCategorySumAggregateOutputType = {
   sortOrder: number | null
+  itcGstHstRate: number | null
+  itcQstRate: number | null
 }
 
 export type ExpenseCategoryMinAggregateOutputType = {
   id: string | null
   organizationId: string | null
   code: string | null
-  label: string | null
+  glAccountId: string | null
+  icon: string | null
   active: boolean | null
   sortOrder: number | null
-  glAccountId: string | null
+  itcGstHstRate: number | null
+  itcQstRate: number | null
+  pstRecoverable: boolean | null
+  requiresAttendees: boolean | null
+  isMileage: boolean | null
+  acceptsTip: boolean | null
+  color: string | null
   createdAt: Date | null
   updatedAt: Date | null
 }
@@ -50,10 +61,17 @@ export type ExpenseCategoryMaxAggregateOutputType = {
   id: string | null
   organizationId: string | null
   code: string | null
-  label: string | null
+  glAccountId: string | null
+  icon: string | null
   active: boolean | null
   sortOrder: number | null
-  glAccountId: string | null
+  itcGstHstRate: number | null
+  itcQstRate: number | null
+  pstRecoverable: boolean | null
+  requiresAttendees: boolean | null
+  isMileage: boolean | null
+  acceptsTip: boolean | null
+  color: string | null
   createdAt: Date | null
   updatedAt: Date | null
 }
@@ -63,9 +81,17 @@ export type ExpenseCategoryCountAggregateOutputType = {
   organizationId: number
   code: number
   label: number
+  glAccountId: number
+  icon: number
   active: number
   sortOrder: number
-  glAccountId: number
+  itcGstHstRate: number
+  itcQstRate: number
+  pstRecoverable: number
+  requiresAttendees: number
+  isMileage: number
+  acceptsTip: number
+  color: number
   createdAt: number
   updatedAt: number
   _all: number
@@ -74,20 +100,31 @@ export type ExpenseCategoryCountAggregateOutputType = {
 
 export type ExpenseCategoryAvgAggregateInputType = {
   sortOrder?: true
+  itcGstHstRate?: true
+  itcQstRate?: true
 }
 
 export type ExpenseCategorySumAggregateInputType = {
   sortOrder?: true
+  itcGstHstRate?: true
+  itcQstRate?: true
 }
 
 export type ExpenseCategoryMinAggregateInputType = {
   id?: true
   organizationId?: true
   code?: true
-  label?: true
+  glAccountId?: true
+  icon?: true
   active?: true
   sortOrder?: true
-  glAccountId?: true
+  itcGstHstRate?: true
+  itcQstRate?: true
+  pstRecoverable?: true
+  requiresAttendees?: true
+  isMileage?: true
+  acceptsTip?: true
+  color?: true
   createdAt?: true
   updatedAt?: true
 }
@@ -96,10 +133,17 @@ export type ExpenseCategoryMaxAggregateInputType = {
   id?: true
   organizationId?: true
   code?: true
-  label?: true
+  glAccountId?: true
+  icon?: true
   active?: true
   sortOrder?: true
-  glAccountId?: true
+  itcGstHstRate?: true
+  itcQstRate?: true
+  pstRecoverable?: true
+  requiresAttendees?: true
+  isMileage?: true
+  acceptsTip?: true
+  color?: true
   createdAt?: true
   updatedAt?: true
 }
@@ -109,9 +153,17 @@ export type ExpenseCategoryCountAggregateInputType = {
   organizationId?: true
   code?: true
   label?: true
+  glAccountId?: true
+  icon?: true
   active?: true
   sortOrder?: true
-  glAccountId?: true
+  itcGstHstRate?: true
+  itcQstRate?: true
+  pstRecoverable?: true
+  requiresAttendees?: true
+  isMileage?: true
+  acceptsTip?: true
+  color?: true
   createdAt?: true
   updatedAt?: true
   _all?: true
@@ -207,10 +259,18 @@ export type ExpenseCategoryGroupByOutputType = {
   id: string
   organizationId: string
   code: string
-  label: string
+  label: runtime.JsonValue
+  glAccountId: string | null
+  icon: string | null
   active: boolean
   sortOrder: number
-  glAccountId: string | null
+  itcGstHstRate: number
+  itcQstRate: number
+  pstRecoverable: boolean
+  requiresAttendees: boolean
+  isMileage: boolean
+  acceptsTip: boolean
+  color: string | null
   createdAt: Date
   updatedAt: Date
   _count: ExpenseCategoryCountAggregateOutputType | null
@@ -242,12 +302,22 @@ export type ExpenseCategoryWhereInput = {
   id?: Prisma.UuidFilter<"ExpenseCategory"> | string
   organizationId?: Prisma.UuidFilter<"ExpenseCategory"> | string
   code?: Prisma.StringFilter<"ExpenseCategory"> | string
-  label?: Prisma.StringFilter<"ExpenseCategory"> | string
+  label?: Prisma.JsonFilter<"ExpenseCategory">
+  glAccountId?: Prisma.UuidNullableFilter<"ExpenseCategory"> | string | null
+  icon?: Prisma.StringNullableFilter<"ExpenseCategory"> | string | null
   active?: Prisma.BoolFilter<"ExpenseCategory"> | boolean
   sortOrder?: Prisma.IntFilter<"ExpenseCategory"> | number
-  glAccountId?: Prisma.UuidNullableFilter<"ExpenseCategory"> | string | null
+  itcGstHstRate?: Prisma.IntFilter<"ExpenseCategory"> | number
+  itcQstRate?: Prisma.IntFilter<"ExpenseCategory"> | number
+  pstRecoverable?: Prisma.BoolFilter<"ExpenseCategory"> | boolean
+  requiresAttendees?: Prisma.BoolFilter<"ExpenseCategory"> | boolean
+  isMileage?: Prisma.BoolFilter<"ExpenseCategory"> | boolean
+  acceptsTip?: Prisma.BoolFilter<"ExpenseCategory"> | boolean
+  color?: Prisma.StringNullableFilter<"ExpenseCategory"> | string | null
   createdAt?: Prisma.DateTimeFilter<"ExpenseCategory"> | Date | string
   updatedAt?: Prisma.DateTimeFilter<"ExpenseCategory"> | Date | string
+  glAccount?: Prisma.XOR<Prisma.GlAccountNullableScalarRelationFilter, Prisma.GlAccountWhereInput> | null
+  lineItems?: Prisma.ExpenseLineItemListRelationFilter
 }
 
 export type ExpenseCategoryOrderByWithRelationInput = {
@@ -255,36 +325,65 @@ export type ExpenseCategoryOrderByWithRelationInput = {
   organizationId?: Prisma.SortOrder
   code?: Prisma.SortOrder
   label?: Prisma.SortOrder
+  glAccountId?: Prisma.SortOrderInput | Prisma.SortOrder
+  icon?: Prisma.SortOrderInput | Prisma.SortOrder
   active?: Prisma.SortOrder
   sortOrder?: Prisma.SortOrder
-  glAccountId?: Prisma.SortOrderInput | Prisma.SortOrder
+  itcGstHstRate?: Prisma.SortOrder
+  itcQstRate?: Prisma.SortOrder
+  pstRecoverable?: Prisma.SortOrder
+  requiresAttendees?: Prisma.SortOrder
+  isMileage?: Prisma.SortOrder
+  acceptsTip?: Prisma.SortOrder
+  color?: Prisma.SortOrderInput | Prisma.SortOrder
   createdAt?: Prisma.SortOrder
   updatedAt?: Prisma.SortOrder
+  glAccount?: Prisma.GlAccountOrderByWithRelationInput
+  lineItems?: Prisma.ExpenseLineItemOrderByRelationAggregateInput
 }
 
 export type ExpenseCategoryWhereUniqueInput = Prisma.AtLeast<{
   id?: string
+  organizationId_id?: Prisma.ExpenseCategoryOrganizationIdIdCompoundUniqueInput
   AND?: Prisma.ExpenseCategoryWhereInput | Prisma.ExpenseCategoryWhereInput[]
   OR?: Prisma.ExpenseCategoryWhereInput[]
   NOT?: Prisma.ExpenseCategoryWhereInput | Prisma.ExpenseCategoryWhereInput[]
   organizationId?: Prisma.UuidFilter<"ExpenseCategory"> | string
   code?: Prisma.StringFilter<"ExpenseCategory"> | string
-  label?: Prisma.StringFilter<"ExpenseCategory"> | string
+  label?: Prisma.JsonFilter<"ExpenseCategory">
+  glAccountId?: Prisma.UuidNullableFilter<"ExpenseCategory"> | string | null
+  icon?: Prisma.StringNullableFilter<"ExpenseCategory"> | string | null
   active?: Prisma.BoolFilter<"ExpenseCategory"> | boolean
   sortOrder?: Prisma.IntFilter<"ExpenseCategory"> | number
-  glAccountId?: Prisma.UuidNullableFilter<"ExpenseCategory"> | string | null
+  itcGstHstRate?: Prisma.IntFilter<"ExpenseCategory"> | number
+  itcQstRate?: Prisma.IntFilter<"ExpenseCategory"> | number
+  pstRecoverable?: Prisma.BoolFilter<"ExpenseCategory"> | boolean
+  requiresAttendees?: Prisma.BoolFilter<"ExpenseCategory"> | boolean
+  isMileage?: Prisma.BoolFilter<"ExpenseCategory"> | boolean
+  acceptsTip?: Prisma.BoolFilter<"ExpenseCategory"> | boolean
+  color?: Prisma.StringNullableFilter<"ExpenseCategory"> | string | null
   createdAt?: Prisma.DateTimeFilter<"ExpenseCategory"> | Date | string
   updatedAt?: Prisma.DateTimeFilter<"ExpenseCategory"> | Date | string
-}, "id">
+  glAccount?: Prisma.XOR<Prisma.GlAccountNullableScalarRelationFilter, Prisma.GlAccountWhereInput> | null
+  lineItems?: Prisma.ExpenseLineItemListRelationFilter
+}, "id" | "organizationId_id">
 
 export type ExpenseCategoryOrderByWithAggregationInput = {
   id?: Prisma.SortOrder
   organizationId?: Prisma.SortOrder
   code?: Prisma.SortOrder
   label?: Prisma.SortOrder
+  glAccountId?: Prisma.SortOrderInput | Prisma.SortOrder
+  icon?: Prisma.SortOrderInput | Prisma.SortOrder
   active?: Prisma.SortOrder
   sortOrder?: Prisma.SortOrder
-  glAccountId?: Prisma.SortOrderInput | Prisma.SortOrder
+  itcGstHstRate?: Prisma.SortOrder
+  itcQstRate?: Prisma.SortOrder
+  pstRecoverable?: Prisma.SortOrder
+  requiresAttendees?: Prisma.SortOrder
+  isMileage?: Prisma.SortOrder
+  acceptsTip?: Prisma.SortOrder
+  color?: Prisma.SortOrderInput | Prisma.SortOrder
   createdAt?: Prisma.SortOrder
   updatedAt?: Prisma.SortOrder
   _count?: Prisma.ExpenseCategoryCountOrderByAggregateInput
@@ -301,82 +400,138 @@ export type ExpenseCategoryScalarWhereWithAggregatesInput = {
   id?: Prisma.UuidWithAggregatesFilter<"ExpenseCategory"> | string
   organizationId?: Prisma.UuidWithAggregatesFilter<"ExpenseCategory"> | string
   code?: Prisma.StringWithAggregatesFilter<"ExpenseCategory"> | string
-  label?: Prisma.StringWithAggregatesFilter<"ExpenseCategory"> | string
+  label?: Prisma.JsonWithAggregatesFilter<"ExpenseCategory">
+  glAccountId?: Prisma.UuidNullableWithAggregatesFilter<"ExpenseCategory"> | string | null
+  icon?: Prisma.StringNullableWithAggregatesFilter<"ExpenseCategory"> | string | null
   active?: Prisma.BoolWithAggregatesFilter<"ExpenseCategory"> | boolean
   sortOrder?: Prisma.IntWithAggregatesFilter<"ExpenseCategory"> | number
-  glAccountId?: Prisma.UuidNullableWithAggregatesFilter<"ExpenseCategory"> | string | null
+  itcGstHstRate?: Prisma.IntWithAggregatesFilter<"ExpenseCategory"> | number
+  itcQstRate?: Prisma.IntWithAggregatesFilter<"ExpenseCategory"> | number
+  pstRecoverable?: Prisma.BoolWithAggregatesFilter<"ExpenseCategory"> | boolean
+  requiresAttendees?: Prisma.BoolWithAggregatesFilter<"ExpenseCategory"> | boolean
+  isMileage?: Prisma.BoolWithAggregatesFilter<"ExpenseCategory"> | boolean
+  acceptsTip?: Prisma.BoolWithAggregatesFilter<"ExpenseCategory"> | boolean
+  color?: Prisma.StringNullableWithAggregatesFilter<"ExpenseCategory"> | string | null
   createdAt?: Prisma.DateTimeWithAggregatesFilter<"ExpenseCategory"> | Date | string
   updatedAt?: Prisma.DateTimeWithAggregatesFilter<"ExpenseCategory"> | Date | string
 }
 
 export type ExpenseCategoryCreateInput = {
   id?: string
-  organizationId?: string
-  code: string
-  label: string
+  code?: string
+  label: Prisma.JsonNullValueInput | runtime.InputJsonValue
+  icon?: string | null
   active?: boolean
   sortOrder?: number
-  glAccountId?: string | null
+  itcGstHstRate?: number
+  itcQstRate?: number
+  pstRecoverable?: boolean
+  requiresAttendees?: boolean
+  isMileage?: boolean
+  acceptsTip?: boolean
+  color?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
+  glAccount?: Prisma.GlAccountCreateNestedOneWithoutExpenseCategoriesInput
+  lineItems?: Prisma.ExpenseLineItemCreateNestedManyWithoutCategoryInput
 }
 
 export type ExpenseCategoryUncheckedCreateInput = {
   id?: string
   organizationId?: string
-  code: string
-  label: string
+  code?: string
+  label: Prisma.JsonNullValueInput | runtime.InputJsonValue
+  glAccountId?: string | null
+  icon?: string | null
   active?: boolean
   sortOrder?: number
-  glAccountId?: string | null
+  itcGstHstRate?: number
+  itcQstRate?: number
+  pstRecoverable?: boolean
+  requiresAttendees?: boolean
+  isMileage?: boolean
+  acceptsTip?: boolean
+  color?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
+  lineItems?: Prisma.ExpenseLineItemUncheckedCreateNestedManyWithoutCategoryInput
 }
 
 export type ExpenseCategoryUpdateInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
-  organizationId?: Prisma.StringFieldUpdateOperationsInput | string
   code?: Prisma.StringFieldUpdateOperationsInput | string
-  label?: Prisma.StringFieldUpdateOperationsInput | string
+  label?: Prisma.JsonNullValueInput | runtime.InputJsonValue
+  icon?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   active?: Prisma.BoolFieldUpdateOperationsInput | boolean
   sortOrder?: Prisma.IntFieldUpdateOperationsInput | number
-  glAccountId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  itcGstHstRate?: Prisma.IntFieldUpdateOperationsInput | number
+  itcQstRate?: Prisma.IntFieldUpdateOperationsInput | number
+  pstRecoverable?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  requiresAttendees?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  isMileage?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  acceptsTip?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  color?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  glAccount?: Prisma.GlAccountUpdateOneWithoutExpenseCategoriesNestedInput
+  lineItems?: Prisma.ExpenseLineItemUpdateManyWithoutCategoryNestedInput
 }
 
 export type ExpenseCategoryUncheckedUpdateInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
   organizationId?: Prisma.StringFieldUpdateOperationsInput | string
   code?: Prisma.StringFieldUpdateOperationsInput | string
-  label?: Prisma.StringFieldUpdateOperationsInput | string
+  label?: Prisma.JsonNullValueInput | runtime.InputJsonValue
+  glAccountId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  icon?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   active?: Prisma.BoolFieldUpdateOperationsInput | boolean
   sortOrder?: Prisma.IntFieldUpdateOperationsInput | number
-  glAccountId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  itcGstHstRate?: Prisma.IntFieldUpdateOperationsInput | number
+  itcQstRate?: Prisma.IntFieldUpdateOperationsInput | number
+  pstRecoverable?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  requiresAttendees?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  isMileage?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  acceptsTip?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  color?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  lineItems?: Prisma.ExpenseLineItemUncheckedUpdateManyWithoutCategoryNestedInput
 }
 
 export type ExpenseCategoryCreateManyInput = {
   id?: string
   organizationId?: string
-  code: string
-  label: string
+  code?: string
+  label: Prisma.JsonNullValueInput | runtime.InputJsonValue
+  glAccountId?: string | null
+  icon?: string | null
   active?: boolean
   sortOrder?: number
-  glAccountId?: string | null
+  itcGstHstRate?: number
+  itcQstRate?: number
+  pstRecoverable?: boolean
+  requiresAttendees?: boolean
+  isMileage?: boolean
+  acceptsTip?: boolean
+  color?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
 }
 
 export type ExpenseCategoryUpdateManyMutationInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
-  organizationId?: Prisma.StringFieldUpdateOperationsInput | string
   code?: Prisma.StringFieldUpdateOperationsInput | string
-  label?: Prisma.StringFieldUpdateOperationsInput | string
+  label?: Prisma.JsonNullValueInput | runtime.InputJsonValue
+  icon?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   active?: Prisma.BoolFieldUpdateOperationsInput | boolean
   sortOrder?: Prisma.IntFieldUpdateOperationsInput | number
-  glAccountId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  itcGstHstRate?: Prisma.IntFieldUpdateOperationsInput | number
+  itcQstRate?: Prisma.IntFieldUpdateOperationsInput | number
+  pstRecoverable?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  requiresAttendees?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  isMileage?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  acceptsTip?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  color?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
 }
@@ -385,12 +540,25 @@ export type ExpenseCategoryUncheckedUpdateManyInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
   organizationId?: Prisma.StringFieldUpdateOperationsInput | string
   code?: Prisma.StringFieldUpdateOperationsInput | string
-  label?: Prisma.StringFieldUpdateOperationsInput | string
+  label?: Prisma.JsonNullValueInput | runtime.InputJsonValue
+  glAccountId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  icon?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   active?: Prisma.BoolFieldUpdateOperationsInput | boolean
   sortOrder?: Prisma.IntFieldUpdateOperationsInput | number
-  glAccountId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  itcGstHstRate?: Prisma.IntFieldUpdateOperationsInput | number
+  itcQstRate?: Prisma.IntFieldUpdateOperationsInput | number
+  pstRecoverable?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  requiresAttendees?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  isMileage?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  acceptsTip?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  color?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+}
+
+export type ExpenseCategoryOrganizationIdIdCompoundUniqueInput = {
+  organizationId: string
+  id: string
 }
 
 export type ExpenseCategoryCountOrderByAggregateInput = {
@@ -398,25 +566,42 @@ export type ExpenseCategoryCountOrderByAggregateInput = {
   organizationId?: Prisma.SortOrder
   code?: Prisma.SortOrder
   label?: Prisma.SortOrder
+  glAccountId?: Prisma.SortOrder
+  icon?: Prisma.SortOrder
   active?: Prisma.SortOrder
   sortOrder?: Prisma.SortOrder
-  glAccountId?: Prisma.SortOrder
+  itcGstHstRate?: Prisma.SortOrder
+  itcQstRate?: Prisma.SortOrder
+  pstRecoverable?: Prisma.SortOrder
+  requiresAttendees?: Prisma.SortOrder
+  isMileage?: Prisma.SortOrder
+  acceptsTip?: Prisma.SortOrder
+  color?: Prisma.SortOrder
   createdAt?: Prisma.SortOrder
   updatedAt?: Prisma.SortOrder
 }
 
 export type ExpenseCategoryAvgOrderByAggregateInput = {
   sortOrder?: Prisma.SortOrder
+  itcGstHstRate?: Prisma.SortOrder
+  itcQstRate?: Prisma.SortOrder
 }
 
 export type ExpenseCategoryMaxOrderByAggregateInput = {
   id?: Prisma.SortOrder
   organizationId?: Prisma.SortOrder
   code?: Prisma.SortOrder
-  label?: Prisma.SortOrder
+  glAccountId?: Prisma.SortOrder
+  icon?: Prisma.SortOrder
   active?: Prisma.SortOrder
   sortOrder?: Prisma.SortOrder
-  glAccountId?: Prisma.SortOrder
+  itcGstHstRate?: Prisma.SortOrder
+  itcQstRate?: Prisma.SortOrder
+  pstRecoverable?: Prisma.SortOrder
+  requiresAttendees?: Prisma.SortOrder
+  isMileage?: Prisma.SortOrder
+  acceptsTip?: Prisma.SortOrder
+  color?: Prisma.SortOrder
   createdAt?: Prisma.SortOrder
   updatedAt?: Prisma.SortOrder
 }
@@ -425,20 +610,48 @@ export type ExpenseCategoryMinOrderByAggregateInput = {
   id?: Prisma.SortOrder
   organizationId?: Prisma.SortOrder
   code?: Prisma.SortOrder
-  label?: Prisma.SortOrder
+  glAccountId?: Prisma.SortOrder
+  icon?: Prisma.SortOrder
   active?: Prisma.SortOrder
   sortOrder?: Prisma.SortOrder
-  glAccountId?: Prisma.SortOrder
+  itcGstHstRate?: Prisma.SortOrder
+  itcQstRate?: Prisma.SortOrder
+  pstRecoverable?: Prisma.SortOrder
+  requiresAttendees?: Prisma.SortOrder
+  isMileage?: Prisma.SortOrder
+  acceptsTip?: Prisma.SortOrder
+  color?: Prisma.SortOrder
   createdAt?: Prisma.SortOrder
   updatedAt?: Prisma.SortOrder
 }
 
 export type ExpenseCategorySumOrderByAggregateInput = {
   sortOrder?: Prisma.SortOrder
+  itcGstHstRate?: Prisma.SortOrder
+  itcQstRate?: Prisma.SortOrder
+}
+
+export type ExpenseCategoryListRelationFilter = {
+  every?: Prisma.ExpenseCategoryWhereInput
+  some?: Prisma.ExpenseCategoryWhereInput
+  none?: Prisma.ExpenseCategoryWhereInput
+}
+
+export type ExpenseCategoryOrderByRelationAggregateInput = {
+  _count?: Prisma.SortOrder
+}
+
+export type ExpenseCategoryScalarRelationFilter = {
+  is?: Prisma.ExpenseCategoryWhereInput
+  isNot?: Prisma.ExpenseCategoryWhereInput
 }
 
 export type StringFieldUpdateOperationsInput = {
   set?: string
+}
+
+export type NullableStringFieldUpdateOperationsInput = {
+  set?: string | null
 }
 
 export type BoolFieldUpdateOperationsInput = {
@@ -453,14 +666,350 @@ export type IntFieldUpdateOperationsInput = {
   divide?: number
 }
 
-export type NullableStringFieldUpdateOperationsInput = {
-  set?: string | null
-}
-
 export type DateTimeFieldUpdateOperationsInput = {
   set?: Date | string
 }
 
+export type ExpenseCategoryCreateNestedManyWithoutGlAccountInput = {
+  create?: Prisma.XOR<Prisma.ExpenseCategoryCreateWithoutGlAccountInput, Prisma.ExpenseCategoryUncheckedCreateWithoutGlAccountInput> | Prisma.ExpenseCategoryCreateWithoutGlAccountInput[] | Prisma.ExpenseCategoryUncheckedCreateWithoutGlAccountInput[]
+  connectOrCreate?: Prisma.ExpenseCategoryCreateOrConnectWithoutGlAccountInput | Prisma.ExpenseCategoryCreateOrConnectWithoutGlAccountInput[]
+  createMany?: Prisma.ExpenseCategoryCreateManyGlAccountInputEnvelope
+  connect?: Prisma.ExpenseCategoryWhereUniqueInput | Prisma.ExpenseCategoryWhereUniqueInput[]
+}
+
+export type ExpenseCategoryUncheckedCreateNestedManyWithoutGlAccountInput = {
+  create?: Prisma.XOR<Prisma.ExpenseCategoryCreateWithoutGlAccountInput, Prisma.ExpenseCategoryUncheckedCreateWithoutGlAccountInput> | Prisma.ExpenseCategoryCreateWithoutGlAccountInput[] | Prisma.ExpenseCategoryUncheckedCreateWithoutGlAccountInput[]
+  connectOrCreate?: Prisma.ExpenseCategoryCreateOrConnectWithoutGlAccountInput | Prisma.ExpenseCategoryCreateOrConnectWithoutGlAccountInput[]
+  createMany?: Prisma.ExpenseCategoryCreateManyGlAccountInputEnvelope
+  connect?: Prisma.ExpenseCategoryWhereUniqueInput | Prisma.ExpenseCategoryWhereUniqueInput[]
+}
+
+export type ExpenseCategoryUpdateManyWithoutGlAccountNestedInput = {
+  create?: Prisma.XOR<Prisma.ExpenseCategoryCreateWithoutGlAccountInput, Prisma.ExpenseCategoryUncheckedCreateWithoutGlAccountInput> | Prisma.ExpenseCategoryCreateWithoutGlAccountInput[] | Prisma.ExpenseCategoryUncheckedCreateWithoutGlAccountInput[]
+  connectOrCreate?: Prisma.ExpenseCategoryCreateOrConnectWithoutGlAccountInput | Prisma.ExpenseCategoryCreateOrConnectWithoutGlAccountInput[]
+  upsert?: Prisma.ExpenseCategoryUpsertWithWhereUniqueWithoutGlAccountInput | Prisma.ExpenseCategoryUpsertWithWhereUniqueWithoutGlAccountInput[]
+  createMany?: Prisma.ExpenseCategoryCreateManyGlAccountInputEnvelope
+  set?: Prisma.ExpenseCategoryWhereUniqueInput | Prisma.ExpenseCategoryWhereUniqueInput[]
+  disconnect?: Prisma.ExpenseCategoryWhereUniqueInput | Prisma.ExpenseCategoryWhereUniqueInput[]
+  delete?: Prisma.ExpenseCategoryWhereUniqueInput | Prisma.ExpenseCategoryWhereUniqueInput[]
+  connect?: Prisma.ExpenseCategoryWhereUniqueInput | Prisma.ExpenseCategoryWhereUniqueInput[]
+  update?: Prisma.ExpenseCategoryUpdateWithWhereUniqueWithoutGlAccountInput | Prisma.ExpenseCategoryUpdateWithWhereUniqueWithoutGlAccountInput[]
+  updateMany?: Prisma.ExpenseCategoryUpdateManyWithWhereWithoutGlAccountInput | Prisma.ExpenseCategoryUpdateManyWithWhereWithoutGlAccountInput[]
+  deleteMany?: Prisma.ExpenseCategoryScalarWhereInput | Prisma.ExpenseCategoryScalarWhereInput[]
+}
+
+export type ExpenseCategoryUncheckedUpdateManyWithoutGlAccountNestedInput = {
+  create?: Prisma.XOR<Prisma.ExpenseCategoryCreateWithoutGlAccountInput, Prisma.ExpenseCategoryUncheckedCreateWithoutGlAccountInput> | Prisma.ExpenseCategoryCreateWithoutGlAccountInput[] | Prisma.ExpenseCategoryUncheckedCreateWithoutGlAccountInput[]
+  connectOrCreate?: Prisma.ExpenseCategoryCreateOrConnectWithoutGlAccountInput | Prisma.ExpenseCategoryCreateOrConnectWithoutGlAccountInput[]
+  upsert?: Prisma.ExpenseCategoryUpsertWithWhereUniqueWithoutGlAccountInput | Prisma.ExpenseCategoryUpsertWithWhereUniqueWithoutGlAccountInput[]
+  createMany?: Prisma.ExpenseCategoryCreateManyGlAccountInputEnvelope
+  set?: Prisma.ExpenseCategoryWhereUniqueInput | Prisma.ExpenseCategoryWhereUniqueInput[]
+  disconnect?: Prisma.ExpenseCategoryWhereUniqueInput | Prisma.ExpenseCategoryWhereUniqueInput[]
+  delete?: Prisma.ExpenseCategoryWhereUniqueInput | Prisma.ExpenseCategoryWhereUniqueInput[]
+  connect?: Prisma.ExpenseCategoryWhereUniqueInput | Prisma.ExpenseCategoryWhereUniqueInput[]
+  update?: Prisma.ExpenseCategoryUpdateWithWhereUniqueWithoutGlAccountInput | Prisma.ExpenseCategoryUpdateWithWhereUniqueWithoutGlAccountInput[]
+  updateMany?: Prisma.ExpenseCategoryUpdateManyWithWhereWithoutGlAccountInput | Prisma.ExpenseCategoryUpdateManyWithWhereWithoutGlAccountInput[]
+  deleteMany?: Prisma.ExpenseCategoryScalarWhereInput | Prisma.ExpenseCategoryScalarWhereInput[]
+}
+
+export type ExpenseCategoryCreateNestedOneWithoutLineItemsInput = {
+  create?: Prisma.XOR<Prisma.ExpenseCategoryCreateWithoutLineItemsInput, Prisma.ExpenseCategoryUncheckedCreateWithoutLineItemsInput>
+  connectOrCreate?: Prisma.ExpenseCategoryCreateOrConnectWithoutLineItemsInput
+  connect?: Prisma.ExpenseCategoryWhereUniqueInput
+}
+
+export type ExpenseCategoryUpdateOneRequiredWithoutLineItemsNestedInput = {
+  create?: Prisma.XOR<Prisma.ExpenseCategoryCreateWithoutLineItemsInput, Prisma.ExpenseCategoryUncheckedCreateWithoutLineItemsInput>
+  connectOrCreate?: Prisma.ExpenseCategoryCreateOrConnectWithoutLineItemsInput
+  upsert?: Prisma.ExpenseCategoryUpsertWithoutLineItemsInput
+  connect?: Prisma.ExpenseCategoryWhereUniqueInput
+  update?: Prisma.XOR<Prisma.XOR<Prisma.ExpenseCategoryUpdateToOneWithWhereWithoutLineItemsInput, Prisma.ExpenseCategoryUpdateWithoutLineItemsInput>, Prisma.ExpenseCategoryUncheckedUpdateWithoutLineItemsInput>
+}
+
+export type ExpenseCategoryCreateWithoutGlAccountInput = {
+  id?: string
+  code?: string
+  label: Prisma.JsonNullValueInput | runtime.InputJsonValue
+  icon?: string | null
+  active?: boolean
+  sortOrder?: number
+  itcGstHstRate?: number
+  itcQstRate?: number
+  pstRecoverable?: boolean
+  requiresAttendees?: boolean
+  isMileage?: boolean
+  acceptsTip?: boolean
+  color?: string | null
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  lineItems?: Prisma.ExpenseLineItemCreateNestedManyWithoutCategoryInput
+}
+
+export type ExpenseCategoryUncheckedCreateWithoutGlAccountInput = {
+  id?: string
+  code?: string
+  label: Prisma.JsonNullValueInput | runtime.InputJsonValue
+  icon?: string | null
+  active?: boolean
+  sortOrder?: number
+  itcGstHstRate?: number
+  itcQstRate?: number
+  pstRecoverable?: boolean
+  requiresAttendees?: boolean
+  isMileage?: boolean
+  acceptsTip?: boolean
+  color?: string | null
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  lineItems?: Prisma.ExpenseLineItemUncheckedCreateNestedManyWithoutCategoryInput
+}
+
+export type ExpenseCategoryCreateOrConnectWithoutGlAccountInput = {
+  where: Prisma.ExpenseCategoryWhereUniqueInput
+  create: Prisma.XOR<Prisma.ExpenseCategoryCreateWithoutGlAccountInput, Prisma.ExpenseCategoryUncheckedCreateWithoutGlAccountInput>
+}
+
+export type ExpenseCategoryCreateManyGlAccountInputEnvelope = {
+  data: Prisma.ExpenseCategoryCreateManyGlAccountInput | Prisma.ExpenseCategoryCreateManyGlAccountInput[]
+  skipDuplicates?: boolean
+}
+
+export type ExpenseCategoryUpsertWithWhereUniqueWithoutGlAccountInput = {
+  where: Prisma.ExpenseCategoryWhereUniqueInput
+  update: Prisma.XOR<Prisma.ExpenseCategoryUpdateWithoutGlAccountInput, Prisma.ExpenseCategoryUncheckedUpdateWithoutGlAccountInput>
+  create: Prisma.XOR<Prisma.ExpenseCategoryCreateWithoutGlAccountInput, Prisma.ExpenseCategoryUncheckedCreateWithoutGlAccountInput>
+}
+
+export type ExpenseCategoryUpdateWithWhereUniqueWithoutGlAccountInput = {
+  where: Prisma.ExpenseCategoryWhereUniqueInput
+  data: Prisma.XOR<Prisma.ExpenseCategoryUpdateWithoutGlAccountInput, Prisma.ExpenseCategoryUncheckedUpdateWithoutGlAccountInput>
+}
+
+export type ExpenseCategoryUpdateManyWithWhereWithoutGlAccountInput = {
+  where: Prisma.ExpenseCategoryScalarWhereInput
+  data: Prisma.XOR<Prisma.ExpenseCategoryUpdateManyMutationInput, Prisma.ExpenseCategoryUncheckedUpdateManyWithoutGlAccountInput>
+}
+
+export type ExpenseCategoryScalarWhereInput = {
+  AND?: Prisma.ExpenseCategoryScalarWhereInput | Prisma.ExpenseCategoryScalarWhereInput[]
+  OR?: Prisma.ExpenseCategoryScalarWhereInput[]
+  NOT?: Prisma.ExpenseCategoryScalarWhereInput | Prisma.ExpenseCategoryScalarWhereInput[]
+  id?: Prisma.UuidFilter<"ExpenseCategory"> | string
+  organizationId?: Prisma.UuidFilter<"ExpenseCategory"> | string
+  code?: Prisma.StringFilter<"ExpenseCategory"> | string
+  label?: Prisma.JsonFilter<"ExpenseCategory">
+  glAccountId?: Prisma.UuidNullableFilter<"ExpenseCategory"> | string | null
+  icon?: Prisma.StringNullableFilter<"ExpenseCategory"> | string | null
+  active?: Prisma.BoolFilter<"ExpenseCategory"> | boolean
+  sortOrder?: Prisma.IntFilter<"ExpenseCategory"> | number
+  itcGstHstRate?: Prisma.IntFilter<"ExpenseCategory"> | number
+  itcQstRate?: Prisma.IntFilter<"ExpenseCategory"> | number
+  pstRecoverable?: Prisma.BoolFilter<"ExpenseCategory"> | boolean
+  requiresAttendees?: Prisma.BoolFilter<"ExpenseCategory"> | boolean
+  isMileage?: Prisma.BoolFilter<"ExpenseCategory"> | boolean
+  acceptsTip?: Prisma.BoolFilter<"ExpenseCategory"> | boolean
+  color?: Prisma.StringNullableFilter<"ExpenseCategory"> | string | null
+  createdAt?: Prisma.DateTimeFilter<"ExpenseCategory"> | Date | string
+  updatedAt?: Prisma.DateTimeFilter<"ExpenseCategory"> | Date | string
+}
+
+export type ExpenseCategoryCreateWithoutLineItemsInput = {
+  id?: string
+  code?: string
+  label: Prisma.JsonNullValueInput | runtime.InputJsonValue
+  icon?: string | null
+  active?: boolean
+  sortOrder?: number
+  itcGstHstRate?: number
+  itcQstRate?: number
+  pstRecoverable?: boolean
+  requiresAttendees?: boolean
+  isMileage?: boolean
+  acceptsTip?: boolean
+  color?: string | null
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  glAccount?: Prisma.GlAccountCreateNestedOneWithoutExpenseCategoriesInput
+}
+
+export type ExpenseCategoryUncheckedCreateWithoutLineItemsInput = {
+  id?: string
+  organizationId?: string
+  code?: string
+  label: Prisma.JsonNullValueInput | runtime.InputJsonValue
+  glAccountId?: string | null
+  icon?: string | null
+  active?: boolean
+  sortOrder?: number
+  itcGstHstRate?: number
+  itcQstRate?: number
+  pstRecoverable?: boolean
+  requiresAttendees?: boolean
+  isMileage?: boolean
+  acceptsTip?: boolean
+  color?: string | null
+  createdAt?: Date | string
+  updatedAt?: Date | string
+}
+
+export type ExpenseCategoryCreateOrConnectWithoutLineItemsInput = {
+  where: Prisma.ExpenseCategoryWhereUniqueInput
+  create: Prisma.XOR<Prisma.ExpenseCategoryCreateWithoutLineItemsInput, Prisma.ExpenseCategoryUncheckedCreateWithoutLineItemsInput>
+}
+
+export type ExpenseCategoryUpsertWithoutLineItemsInput = {
+  update: Prisma.XOR<Prisma.ExpenseCategoryUpdateWithoutLineItemsInput, Prisma.ExpenseCategoryUncheckedUpdateWithoutLineItemsInput>
+  create: Prisma.XOR<Prisma.ExpenseCategoryCreateWithoutLineItemsInput, Prisma.ExpenseCategoryUncheckedCreateWithoutLineItemsInput>
+  where?: Prisma.ExpenseCategoryWhereInput
+}
+
+export type ExpenseCategoryUpdateToOneWithWhereWithoutLineItemsInput = {
+  where?: Prisma.ExpenseCategoryWhereInput
+  data: Prisma.XOR<Prisma.ExpenseCategoryUpdateWithoutLineItemsInput, Prisma.ExpenseCategoryUncheckedUpdateWithoutLineItemsInput>
+}
+
+export type ExpenseCategoryUpdateWithoutLineItemsInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  code?: Prisma.StringFieldUpdateOperationsInput | string
+  label?: Prisma.JsonNullValueInput | runtime.InputJsonValue
+  icon?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  active?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  sortOrder?: Prisma.IntFieldUpdateOperationsInput | number
+  itcGstHstRate?: Prisma.IntFieldUpdateOperationsInput | number
+  itcQstRate?: Prisma.IntFieldUpdateOperationsInput | number
+  pstRecoverable?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  requiresAttendees?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  isMileage?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  acceptsTip?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  color?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  glAccount?: Prisma.GlAccountUpdateOneWithoutExpenseCategoriesNestedInput
+}
+
+export type ExpenseCategoryUncheckedUpdateWithoutLineItemsInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  organizationId?: Prisma.StringFieldUpdateOperationsInput | string
+  code?: Prisma.StringFieldUpdateOperationsInput | string
+  label?: Prisma.JsonNullValueInput | runtime.InputJsonValue
+  glAccountId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  icon?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  active?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  sortOrder?: Prisma.IntFieldUpdateOperationsInput | number
+  itcGstHstRate?: Prisma.IntFieldUpdateOperationsInput | number
+  itcQstRate?: Prisma.IntFieldUpdateOperationsInput | number
+  pstRecoverable?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  requiresAttendees?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  isMileage?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  acceptsTip?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  color?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+}
+
+export type ExpenseCategoryCreateManyGlAccountInput = {
+  id?: string
+  code?: string
+  label: Prisma.JsonNullValueInput | runtime.InputJsonValue
+  icon?: string | null
+  active?: boolean
+  sortOrder?: number
+  itcGstHstRate?: number
+  itcQstRate?: number
+  pstRecoverable?: boolean
+  requiresAttendees?: boolean
+  isMileage?: boolean
+  acceptsTip?: boolean
+  color?: string | null
+  createdAt?: Date | string
+  updatedAt?: Date | string
+}
+
+export type ExpenseCategoryUpdateWithoutGlAccountInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  code?: Prisma.StringFieldUpdateOperationsInput | string
+  label?: Prisma.JsonNullValueInput | runtime.InputJsonValue
+  icon?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  active?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  sortOrder?: Prisma.IntFieldUpdateOperationsInput | number
+  itcGstHstRate?: Prisma.IntFieldUpdateOperationsInput | number
+  itcQstRate?: Prisma.IntFieldUpdateOperationsInput | number
+  pstRecoverable?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  requiresAttendees?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  isMileage?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  acceptsTip?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  color?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  lineItems?: Prisma.ExpenseLineItemUpdateManyWithoutCategoryNestedInput
+}
+
+export type ExpenseCategoryUncheckedUpdateWithoutGlAccountInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  code?: Prisma.StringFieldUpdateOperationsInput | string
+  label?: Prisma.JsonNullValueInput | runtime.InputJsonValue
+  icon?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  active?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  sortOrder?: Prisma.IntFieldUpdateOperationsInput | number
+  itcGstHstRate?: Prisma.IntFieldUpdateOperationsInput | number
+  itcQstRate?: Prisma.IntFieldUpdateOperationsInput | number
+  pstRecoverable?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  requiresAttendees?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  isMileage?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  acceptsTip?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  color?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  lineItems?: Prisma.ExpenseLineItemUncheckedUpdateManyWithoutCategoryNestedInput
+}
+
+export type ExpenseCategoryUncheckedUpdateManyWithoutGlAccountInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  code?: Prisma.StringFieldUpdateOperationsInput | string
+  label?: Prisma.JsonNullValueInput | runtime.InputJsonValue
+  icon?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  active?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  sortOrder?: Prisma.IntFieldUpdateOperationsInput | number
+  itcGstHstRate?: Prisma.IntFieldUpdateOperationsInput | number
+  itcQstRate?: Prisma.IntFieldUpdateOperationsInput | number
+  pstRecoverable?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  requiresAttendees?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  isMileage?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  acceptsTip?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  color?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+}
+
+
+/**
+ * Count Type ExpenseCategoryCountOutputType
+ */
+
+export type ExpenseCategoryCountOutputType = {
+  lineItems: number
+}
+
+export type ExpenseCategoryCountOutputTypeSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  lineItems?: boolean | ExpenseCategoryCountOutputTypeCountLineItemsArgs
+}
+
+/**
+ * ExpenseCategoryCountOutputType without action
+ */
+export type ExpenseCategoryCountOutputTypeDefaultArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  /**
+   * Select specific fields to fetch from the ExpenseCategoryCountOutputType
+   */
+  select?: Prisma.ExpenseCategoryCountOutputTypeSelect<ExtArgs> | null
+}
+
+/**
+ * ExpenseCategoryCountOutputType without action
+ */
+export type ExpenseCategoryCountOutputTypeCountLineItemsArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  where?: Prisma.ExpenseLineItemWhereInput
+}
 
 
 export type ExpenseCategorySelect<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetSelect<{
@@ -468,11 +1017,22 @@ export type ExpenseCategorySelect<ExtArgs extends runtime.Types.Extensions.Inter
   organizationId?: boolean
   code?: boolean
   label?: boolean
+  glAccountId?: boolean
+  icon?: boolean
   active?: boolean
   sortOrder?: boolean
-  glAccountId?: boolean
+  itcGstHstRate?: boolean
+  itcQstRate?: boolean
+  pstRecoverable?: boolean
+  requiresAttendees?: boolean
+  isMileage?: boolean
+  acceptsTip?: boolean
+  color?: boolean
   createdAt?: boolean
   updatedAt?: boolean
+  glAccount?: boolean | Prisma.ExpenseCategory$glAccountArgs<ExtArgs>
+  lineItems?: boolean | Prisma.ExpenseCategory$lineItemsArgs<ExtArgs>
+  _count?: boolean | Prisma.ExpenseCategoryCountOutputTypeDefaultArgs<ExtArgs>
 }, ExtArgs["result"]["expenseCategory"]>
 
 export type ExpenseCategorySelectCreateManyAndReturn<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetSelect<{
@@ -480,11 +1040,20 @@ export type ExpenseCategorySelectCreateManyAndReturn<ExtArgs extends runtime.Typ
   organizationId?: boolean
   code?: boolean
   label?: boolean
+  glAccountId?: boolean
+  icon?: boolean
   active?: boolean
   sortOrder?: boolean
-  glAccountId?: boolean
+  itcGstHstRate?: boolean
+  itcQstRate?: boolean
+  pstRecoverable?: boolean
+  requiresAttendees?: boolean
+  isMileage?: boolean
+  acceptsTip?: boolean
+  color?: boolean
   createdAt?: boolean
   updatedAt?: boolean
+  glAccount?: boolean | Prisma.ExpenseCategory$glAccountArgs<ExtArgs>
 }, ExtArgs["result"]["expenseCategory"]>
 
 export type ExpenseCategorySelectUpdateManyAndReturn<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetSelect<{
@@ -492,11 +1061,20 @@ export type ExpenseCategorySelectUpdateManyAndReturn<ExtArgs extends runtime.Typ
   organizationId?: boolean
   code?: boolean
   label?: boolean
+  glAccountId?: boolean
+  icon?: boolean
   active?: boolean
   sortOrder?: boolean
-  glAccountId?: boolean
+  itcGstHstRate?: boolean
+  itcQstRate?: boolean
+  pstRecoverable?: boolean
+  requiresAttendees?: boolean
+  isMileage?: boolean
+  acceptsTip?: boolean
+  color?: boolean
   createdAt?: boolean
   updatedAt?: boolean
+  glAccount?: boolean | Prisma.ExpenseCategory$glAccountArgs<ExtArgs>
 }, ExtArgs["result"]["expenseCategory"]>
 
 export type ExpenseCategorySelectScalar = {
@@ -504,26 +1082,61 @@ export type ExpenseCategorySelectScalar = {
   organizationId?: boolean
   code?: boolean
   label?: boolean
+  glAccountId?: boolean
+  icon?: boolean
   active?: boolean
   sortOrder?: boolean
-  glAccountId?: boolean
+  itcGstHstRate?: boolean
+  itcQstRate?: boolean
+  pstRecoverable?: boolean
+  requiresAttendees?: boolean
+  isMileage?: boolean
+  acceptsTip?: boolean
+  color?: boolean
   createdAt?: boolean
   updatedAt?: boolean
 }
 
-export type ExpenseCategoryOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "organizationId" | "code" | "label" | "active" | "sortOrder" | "glAccountId" | "createdAt" | "updatedAt", ExtArgs["result"]["expenseCategory"]>
+export type ExpenseCategoryOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "organizationId" | "code" | "label" | "glAccountId" | "icon" | "active" | "sortOrder" | "itcGstHstRate" | "itcQstRate" | "pstRecoverable" | "requiresAttendees" | "isMileage" | "acceptsTip" | "color" | "createdAt" | "updatedAt", ExtArgs["result"]["expenseCategory"]>
+export type ExpenseCategoryInclude<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  glAccount?: boolean | Prisma.ExpenseCategory$glAccountArgs<ExtArgs>
+  lineItems?: boolean | Prisma.ExpenseCategory$lineItemsArgs<ExtArgs>
+  _count?: boolean | Prisma.ExpenseCategoryCountOutputTypeDefaultArgs<ExtArgs>
+}
+export type ExpenseCategoryIncludeCreateManyAndReturn<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  glAccount?: boolean | Prisma.ExpenseCategory$glAccountArgs<ExtArgs>
+}
+export type ExpenseCategoryIncludeUpdateManyAndReturn<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  glAccount?: boolean | Prisma.ExpenseCategory$glAccountArgs<ExtArgs>
+}
 
 export type $ExpenseCategoryPayload<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   name: "ExpenseCategory"
-  objects: {}
+  objects: {
+    glAccount: Prisma.$GlAccountPayload<ExtArgs> | null
+    lineItems: Prisma.$ExpenseLineItemPayload<ExtArgs>[]
+  }
   scalars: runtime.Types.Extensions.GetPayloadResult<{
     id: string
     organizationId: string
+    /**
+     * ExpenseOS: optional. VeloExpense: the caller may omit it and the table mints one
+     * (migration 0045's trigger), so it is never null when read. `dbgenerated` tells
+     * the client the database supplies it; the expression is not used.
+     */
     code: string
-    label: string
+    label: runtime.JsonValue
+    glAccountId: string | null
+    icon: string | null
     active: boolean
     sortOrder: number
-    glAccountId: string | null
+    itcGstHstRate: number
+    itcQstRate: number
+    pstRecoverable: boolean
+    requiresAttendees: boolean
+    isMileage: boolean
+    acceptsTip: boolean
+    color: string | null
     createdAt: Date
     updatedAt: Date
   }, ExtArgs["result"]["expenseCategory"]>
@@ -920,6 +1533,8 @@ readonly fields: ExpenseCategoryFieldRefs;
  */
 export interface Prisma__ExpenseCategoryClient<T, Null = never, ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs, GlobalOmitOptions = {}> extends Prisma.PrismaPromise<T> {
   readonly [Symbol.toStringTag]: "PrismaPromise"
+  glAccount<T extends Prisma.ExpenseCategory$glAccountArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.ExpenseCategory$glAccountArgs<ExtArgs>>): Prisma.Prisma__GlAccountClient<runtime.Types.Result.GetResult<Prisma.$GlAccountPayload<ExtArgs>, T, "findUniqueOrThrow", GlobalOmitOptions> | null, null, ExtArgs, GlobalOmitOptions>
+  lineItems<T extends Prisma.ExpenseCategory$lineItemsArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.ExpenseCategory$lineItemsArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$ExpenseLineItemPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
   /**
    * Attaches callbacks for the resolution and/or rejection of the Promise.
    * @param onfulfilled The callback to execute when the Promise is resolved.
@@ -952,10 +1567,18 @@ export interface ExpenseCategoryFieldRefs {
   readonly id: Prisma.FieldRef<"ExpenseCategory", 'String'>
   readonly organizationId: Prisma.FieldRef<"ExpenseCategory", 'String'>
   readonly code: Prisma.FieldRef<"ExpenseCategory", 'String'>
-  readonly label: Prisma.FieldRef<"ExpenseCategory", 'String'>
+  readonly label: Prisma.FieldRef<"ExpenseCategory", 'Json'>
+  readonly glAccountId: Prisma.FieldRef<"ExpenseCategory", 'String'>
+  readonly icon: Prisma.FieldRef<"ExpenseCategory", 'String'>
   readonly active: Prisma.FieldRef<"ExpenseCategory", 'Boolean'>
   readonly sortOrder: Prisma.FieldRef<"ExpenseCategory", 'Int'>
-  readonly glAccountId: Prisma.FieldRef<"ExpenseCategory", 'String'>
+  readonly itcGstHstRate: Prisma.FieldRef<"ExpenseCategory", 'Int'>
+  readonly itcQstRate: Prisma.FieldRef<"ExpenseCategory", 'Int'>
+  readonly pstRecoverable: Prisma.FieldRef<"ExpenseCategory", 'Boolean'>
+  readonly requiresAttendees: Prisma.FieldRef<"ExpenseCategory", 'Boolean'>
+  readonly isMileage: Prisma.FieldRef<"ExpenseCategory", 'Boolean'>
+  readonly acceptsTip: Prisma.FieldRef<"ExpenseCategory", 'Boolean'>
+  readonly color: Prisma.FieldRef<"ExpenseCategory", 'String'>
   readonly createdAt: Prisma.FieldRef<"ExpenseCategory", 'DateTime'>
   readonly updatedAt: Prisma.FieldRef<"ExpenseCategory", 'DateTime'>
 }
@@ -975,6 +1598,10 @@ export type ExpenseCategoryFindUniqueArgs<ExtArgs extends runtime.Types.Extensio
    */
   omit?: Prisma.ExpenseCategoryOmit<ExtArgs> | null
   /**
+   * Choose, which related nodes to fetch as well
+   */
+  include?: Prisma.ExpenseCategoryInclude<ExtArgs> | null
+  /**
    * Filter, which ExpenseCategory to fetch.
    */
   where: Prisma.ExpenseCategoryWhereUniqueInput
@@ -993,6 +1620,10 @@ export type ExpenseCategoryFindUniqueOrThrowArgs<ExtArgs extends runtime.Types.E
    */
   omit?: Prisma.ExpenseCategoryOmit<ExtArgs> | null
   /**
+   * Choose, which related nodes to fetch as well
+   */
+  include?: Prisma.ExpenseCategoryInclude<ExtArgs> | null
+  /**
    * Filter, which ExpenseCategory to fetch.
    */
   where: Prisma.ExpenseCategoryWhereUniqueInput
@@ -1010,6 +1641,10 @@ export type ExpenseCategoryFindFirstArgs<ExtArgs extends runtime.Types.Extension
    * Omit specific fields from the ExpenseCategory
    */
   omit?: Prisma.ExpenseCategoryOmit<ExtArgs> | null
+  /**
+   * Choose, which related nodes to fetch as well
+   */
+  include?: Prisma.ExpenseCategoryInclude<ExtArgs> | null
   /**
    * Filter, which ExpenseCategory to fetch.
    */
@@ -1059,6 +1694,10 @@ export type ExpenseCategoryFindFirstOrThrowArgs<ExtArgs extends runtime.Types.Ex
    */
   omit?: Prisma.ExpenseCategoryOmit<ExtArgs> | null
   /**
+   * Choose, which related nodes to fetch as well
+   */
+  include?: Prisma.ExpenseCategoryInclude<ExtArgs> | null
+  /**
    * Filter, which ExpenseCategory to fetch.
    */
   where?: Prisma.ExpenseCategoryWhereInput
@@ -1106,6 +1745,10 @@ export type ExpenseCategoryFindManyArgs<ExtArgs extends runtime.Types.Extensions
    * Omit specific fields from the ExpenseCategory
    */
   omit?: Prisma.ExpenseCategoryOmit<ExtArgs> | null
+  /**
+   * Choose, which related nodes to fetch as well
+   */
+  include?: Prisma.ExpenseCategoryInclude<ExtArgs> | null
   /**
    * Filter, which ExpenseCategories to fetch.
    */
@@ -1155,6 +1798,10 @@ export type ExpenseCategoryCreateArgs<ExtArgs extends runtime.Types.Extensions.I
    */
   omit?: Prisma.ExpenseCategoryOmit<ExtArgs> | null
   /**
+   * Choose, which related nodes to fetch as well
+   */
+  include?: Prisma.ExpenseCategoryInclude<ExtArgs> | null
+  /**
    * The data needed to create a ExpenseCategory.
    */
   data: Prisma.XOR<Prisma.ExpenseCategoryCreateInput, Prisma.ExpenseCategoryUncheckedCreateInput>
@@ -1188,6 +1835,10 @@ export type ExpenseCategoryCreateManyAndReturnArgs<ExtArgs extends runtime.Types
    */
   data: Prisma.ExpenseCategoryCreateManyInput | Prisma.ExpenseCategoryCreateManyInput[]
   skipDuplicates?: boolean
+  /**
+   * Choose, which related nodes to fetch as well
+   */
+  include?: Prisma.ExpenseCategoryIncludeCreateManyAndReturn<ExtArgs> | null
 }
 
 /**
@@ -1202,6 +1853,10 @@ export type ExpenseCategoryUpdateArgs<ExtArgs extends runtime.Types.Extensions.I
    * Omit specific fields from the ExpenseCategory
    */
   omit?: Prisma.ExpenseCategoryOmit<ExtArgs> | null
+  /**
+   * Choose, which related nodes to fetch as well
+   */
+  include?: Prisma.ExpenseCategoryInclude<ExtArgs> | null
   /**
    * The data needed to update a ExpenseCategory.
    */
@@ -1254,6 +1909,10 @@ export type ExpenseCategoryUpdateManyAndReturnArgs<ExtArgs extends runtime.Types
    * Limit how many ExpenseCategories to update.
    */
   limit?: number
+  /**
+   * Choose, which related nodes to fetch as well
+   */
+  include?: Prisma.ExpenseCategoryIncludeUpdateManyAndReturn<ExtArgs> | null
 }
 
 /**
@@ -1268,6 +1927,10 @@ export type ExpenseCategoryUpsertArgs<ExtArgs extends runtime.Types.Extensions.I
    * Omit specific fields from the ExpenseCategory
    */
   omit?: Prisma.ExpenseCategoryOmit<ExtArgs> | null
+  /**
+   * Choose, which related nodes to fetch as well
+   */
+  include?: Prisma.ExpenseCategoryInclude<ExtArgs> | null
   /**
    * The filter to search for the ExpenseCategory to update in case it exists.
    */
@@ -1295,6 +1958,10 @@ export type ExpenseCategoryDeleteArgs<ExtArgs extends runtime.Types.Extensions.I
    */
   omit?: Prisma.ExpenseCategoryOmit<ExtArgs> | null
   /**
+   * Choose, which related nodes to fetch as well
+   */
+  include?: Prisma.ExpenseCategoryInclude<ExtArgs> | null
+  /**
    * Filter which ExpenseCategory to delete.
    */
   where: Prisma.ExpenseCategoryWhereUniqueInput
@@ -1315,6 +1982,49 @@ export type ExpenseCategoryDeleteManyArgs<ExtArgs extends runtime.Types.Extensio
 }
 
 /**
+ * ExpenseCategory.glAccount
+ */
+export type ExpenseCategory$glAccountArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  /**
+   * Select specific fields to fetch from the GlAccount
+   */
+  select?: Prisma.GlAccountSelect<ExtArgs> | null
+  /**
+   * Omit specific fields from the GlAccount
+   */
+  omit?: Prisma.GlAccountOmit<ExtArgs> | null
+  /**
+   * Choose, which related nodes to fetch as well
+   */
+  include?: Prisma.GlAccountInclude<ExtArgs> | null
+  where?: Prisma.GlAccountWhereInput
+}
+
+/**
+ * ExpenseCategory.lineItems
+ */
+export type ExpenseCategory$lineItemsArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  /**
+   * Select specific fields to fetch from the ExpenseLineItem
+   */
+  select?: Prisma.ExpenseLineItemSelect<ExtArgs> | null
+  /**
+   * Omit specific fields from the ExpenseLineItem
+   */
+  omit?: Prisma.ExpenseLineItemOmit<ExtArgs> | null
+  /**
+   * Choose, which related nodes to fetch as well
+   */
+  include?: Prisma.ExpenseLineItemInclude<ExtArgs> | null
+  where?: Prisma.ExpenseLineItemWhereInput
+  orderBy?: Prisma.ExpenseLineItemOrderByWithRelationInput | Prisma.ExpenseLineItemOrderByWithRelationInput[]
+  cursor?: Prisma.ExpenseLineItemWhereUniqueInput
+  take?: number
+  skip?: number
+  distinct?: Prisma.ExpenseLineItemScalarFieldEnum | Prisma.ExpenseLineItemScalarFieldEnum[]
+}
+
+/**
  * ExpenseCategory without action
  */
 export type ExpenseCategoryDefaultArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
@@ -1326,4 +2036,8 @@ export type ExpenseCategoryDefaultArgs<ExtArgs extends runtime.Types.Extensions.
    * Omit specific fields from the ExpenseCategory
    */
   omit?: Prisma.ExpenseCategoryOmit<ExtArgs> | null
+  /**
+   * Choose, which related nodes to fetch as well
+   */
+  include?: Prisma.ExpenseCategoryInclude<ExtArgs> | null
 }

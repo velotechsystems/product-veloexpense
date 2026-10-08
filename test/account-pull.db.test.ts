@@ -119,7 +119,7 @@ describe('reconciling', () => {
     const catId = await withOrg(orgId, async (tx) => {
       const r = await tx.query(
         `INSERT INTO expense_category (organization_id, code, label, gl_account_id)
-         VALUES ($1,'travel','Travel',$2) RETURNING id`,
+         VALUES ($1,'travel','{"en":"Travel"}',$2) RETURNING id`,
         [orgId, travel.id],
       );
       return r.rows[0].id as string;

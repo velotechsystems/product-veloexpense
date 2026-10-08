@@ -45,7 +45,7 @@ const testRouter = router({
     ctx.db.expenseCategory.findMany({ select: { organizationId: true } }),
   ),
   writeThenFail: protectedProcedure.mutation(async ({ ctx }) => {
-    await ctx.db.expenseCategory.create({ data: { code: 'ROLLED_BACK', label: 'Rolled back' } });
+    await ctx.db.expenseCategory.create({ data: { code: 'ROLLED_BACK', label: { en: 'Rolled back' } } });
     throw new TRPCError({ code: 'PRECONDITION_FAILED', message: 'Refused after writing.' });
   }),
   adminOnly: withPermission(P.admin.role.create).query(() => 'ok'),

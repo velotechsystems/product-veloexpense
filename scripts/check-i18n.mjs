@@ -609,6 +609,7 @@ const BARE_SUBTAGS = ['en', 'fr'];
 
 function findings(text, locales, filePath, isCopyFile) {
   const out = [];
+  const isTestFile = /\.test\.tsx?$/.test(filePath);
   const lines = text.split('\n');
 
   lines.forEach((line, i) => {
@@ -638,8 +639,17 @@ function findings(text, locales, filePath, isCopyFile) {
         new RegExp(`locale\\s*[:=]\\s*['"\`]${bare}['"\`]`),
         new RegExp(`Intl\\.[A-Za-z]+\\(\\s*['"\`]${bare}['"\`]`),
         new RegExp(`toLocale[A-Za-z]*\\(\\s*['"\`]${bare}['"\`]`),
-        new RegExp(`['"\`]${bare}['"\`]\\s*:\\s*['"\`]`), // { 'en': 'some copy' }
-        new RegExp(`\\{\\s*${bare}\\s*:\\s*['"\`]`), // { en: 'some copy' }
+        // The two locale-MAP patterns are skipped in a test file. Wave 0's ported ExpenseOS
+        // screens store names as `{ en, fr-CA }` JSON (migration 0045), keyed by ExpenseOS's
+        // catalogue locales, and their tests build that DATA as fixtures — a row whose
+        // English name is "Meals" is not a locale decision. Product code is still held to
+        // both patterns, and a test file still to the four above.
+        ...(isTestFile
+          ? []
+          : [
+              new RegExp(`['"\`]${bare}['"\`]\\s*:\\s*['"\`]`), // { 'en': 'some copy' }
+              new RegExp(`\\{\\s*${bare}\\s*:\\s*['"\`]`), // { en: 'some copy' }
+            ]),
       ];
       if (patterns.some((p) => p.test(code))) {
         out.push({ line: i + 1, text: line.trim(), found: bare, kind: 'bare-subtag' });
