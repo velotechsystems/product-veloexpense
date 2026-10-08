@@ -69,6 +69,35 @@ export const STARTER_CATEGORIES: ReadonlyArray<readonly [string, string, number]
 ];
 
 /**
+ * Wave 1 — what each starter category IS, beyond its name: ExpenseOS's seeded values
+ * for the matching ExpenseOS category (`packages/db/prisma/seed-data/expense-categories.json`
+ * and `seed.ts`'s `categoryItc`, 550b2945), keyed by VeloExpense's starter code.
+ *
+ *   · ITC: CRA's meal and entertainment limitation — GST/HST and QST are 50% recoverable
+ *     on meals, 100% on everything else. PST is never recoverable (the column default).
+ *   · Tip: offered on meals and ground transportation (ExpenseOS's `clientMeals`,
+ *     `travelMeals`, `travelTaxi`), nowhere else.
+ *   · Icon and pill colour: ExpenseOS's, for the category each one corresponds to.
+ *   · Attendees: not required by default in ExpenseOS's seed either; a tenant turns it on.
+ *
+ * Applied when a tenant is created and, for tenants created before this, by migration
+ * 0046 — which changes a starter row only if nobody has edited those fields since.
+ */
+export const STARTER_CATEGORY_TRAITS: Readonly<
+  Record<
+    string,
+    { icon: string; color: string; itcGstHstRate: number; itcQstRate: number; acceptsTip: boolean }
+  >
+> = {
+  meals: { icon: '🍽️', color: '#d97706', itcGstHstRate: 50, itcQstRate: 50, acceptsTip: true },
+  travel_air: { icon: '✈️', color: '#2563eb', itcGstHstRate: 100, itcQstRate: 100, acceptsTip: false },
+  travel_lodging: { icon: '🏨', color: '#2563eb', itcGstHstRate: 100, itcQstRate: 100, acceptsTip: false },
+  ground: { icon: '🚕', color: '#2563eb', itcGstHstRate: 100, itcQstRate: 100, acceptsTip: true },
+  office: { icon: '📎', color: '#0d9488', itcGstHstRate: 100, itcQstRate: 100, acceptsTip: false },
+  software: { icon: '💻', color: '#4f46e5', itcGstHstRate: 100, itcQstRate: 100, acceptsTip: false },
+};
+
+/**
  * Write the starter categories for the CURRENT tenant.
  *
  * Called inside `createOrganization`'s single transaction, after the context has
@@ -82,14 +111,23 @@ export const STARTER_CATEGORIES: ReadonlyArray<readonly [string, string, number]
  */
 export async function seedStarterCategories(tx: QueryRunner): Promise<number> {
   const r = await tx.query(
-    `INSERT INTO expense_category (organization_id, code, label, sort_order)
-     SELECT ${ORG}, c.code, jsonb_build_object('en', c.label), c.sort_order
-       FROM unnest($1::text[], $2::text[], $3::int[]) AS c(code, label, sort_order)
+    `INSERT INTO expense_category (organization_id, code, label, sort_order,
+                                   icon, color, itc_gst_hst_rate, itc_qst_rate, accepts_tip)
+     SELECT ${ORG}, c.code, jsonb_build_object('en', c.label), c.sort_order,
+            c.icon, c.color, c.itc_gst_hst_rate, c.itc_qst_rate, c.accepts_tip
+       FROM unnest($1::text[], $2::text[], $3::int[], $4::text[], $5::text[], $6::int[],
+                   $7::int[], $8::boolean[])
+         AS c(code, label, sort_order, icon, color, itc_gst_hst_rate, itc_qst_rate, accepts_tip)
      ON CONFLICT (organization_id, code) DO NOTHING`,
     [
       STARTER_CATEGORIES.map(([code]) => code),
       STARTER_CATEGORIES.map(([, label]) => label),
       STARTER_CATEGORIES.map(([, , sort]) => sort),
+      STARTER_CATEGORIES.map(([code]) => STARTER_CATEGORY_TRAITS[code].icon),
+      STARTER_CATEGORIES.map(([code]) => STARTER_CATEGORY_TRAITS[code].color),
+      STARTER_CATEGORIES.map(([code]) => STARTER_CATEGORY_TRAITS[code].itcGstHstRate),
+      STARTER_CATEGORIES.map(([code]) => STARTER_CATEGORY_TRAITS[code].itcQstRate),
+      STARTER_CATEGORIES.map(([code]) => STARTER_CATEGORY_TRAITS[code].acceptsTip),
     ],
   );
   return r.rowCount ?? 0;

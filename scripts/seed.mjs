@@ -341,13 +341,16 @@ async function seedReportingLine(orgId, opts = {}) {
 // accounts is not a category list, and three ways of travelling are one line in
 // the general ledger. Meals go to 68200 instead because they are 50% deductible
 // in Canada and travel is not.
+// `[code, label, glNumber, sortOrder, icon, color, itcGstHstRate, itcQstRate, acceptsTip]`.
+// The traits are lib/onboarding/starter.ts's STARTER_CATEGORY_TRAITS (ExpenseOS's seeded
+// values); test/onboarding-starter.db.test.ts pins the copy.
 const STARTER_CATEGORIES = [
-  ['meals', 'Meals & Entertainment', '68200', 10],
-  ['travel_air', 'Airfare', '68100', 20],
-  ['travel_lodging', 'Lodging', '68100', 30],
-  ['ground', 'Ground Transportation', '68100', 40],
-  ['office', 'Office Supplies', '67100', 50],
-  ['software', 'Software & Subscriptions', '66100', 60],
+  ['meals', 'Meals & Entertainment', '68200', 10, '🍽️', '#d97706', 50, 50, true],
+  ['travel_air', 'Airfare', '68100', 20, '✈️', '#2563eb', 100, 100, false],
+  ['travel_lodging', 'Lodging', '68100', 30, '🏨', '#2563eb', 100, 100, false],
+  ['ground', 'Ground Transportation', '68100', 40, '🚕', '#2563eb', 100, 100, true],
+  ['office', 'Office Supplies', '67100', 50, '📎', '#0d9488', 100, 100, false],
+  ['software', 'Software & Subscriptions', '66100', 60, '💻', '#4f46e5', 100, 100, false],
 ];
 
 /** The starter template every seeded tenant gets. */
@@ -470,14 +473,16 @@ async function seedReferenceData(orgId, entityName = 'Demo Co Inc.') {
           AND g.parent_id IS NULL`,
       [orgId, COA_TEMPLATE]);
 
-    for (const [code, label, glNumber, sort] of STARTER_CATEGORIES) {
+    for (const [code, label, glNumber, sort, icon, color, itcGst, itcQst, tip] of STARTER_CATEGORIES) {
       await client.query(
-        `INSERT INTO expense_category (organization_id, code, label, sort_order, gl_account_id)
+        `INSERT INTO expense_category (organization_id, code, label, sort_order, gl_account_id,
+                                       icon, color, itc_gst_hst_rate, itc_qst_rate, accepts_tip)
            VALUES ($1, $2, jsonb_build_object('en', $3::text), $4, (SELECT id FROM gl_account
-                                     WHERE organization_id = $1 AND number = $5))
+                                     WHERE organization_id = $1 AND number = $5),
+                   $6, $7, $8, $9, $10)
            ON CONFLICT (organization_id, code)
            DO UPDATE SET gl_account_id = EXCLUDED.gl_account_id`,
-        [orgId, code, label, sort, glNumber]);
+        [orgId, code, label, sort, glNumber, icon, color, itcGst, itcQst, tip]);
     }
     await client.query('COMMIT');
   } catch (err) {
