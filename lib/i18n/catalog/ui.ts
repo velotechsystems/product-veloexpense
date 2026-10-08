@@ -227,50 +227,10 @@ export const UI_COPY = {
   // both of these appear on two screens today and the key is what a translator
   // sees. A `expenses.approvals.link` that also renders on /approvals is a key
   // that lies about where its copy lives.
-  'nav.approvals': { 'en-CA': 'Approvals' },
-  'nav.notifications': { 'en-CA': 'Notifications' },
   'nav.delegations': { 'en-CA': 'Delegations' },
-  'nav.my.expenses': { 'en-CA': 'My expenses' },
 
-  /* ── the app shell's sidebar (every signed-in screen; components/app-shell) ─ */
-  //
-  // Ported from ExpenseOS's `Sidebar.tsx` SECTIONS. Item labels that already had
-  // a shared `nav.*` key above (approvals, notifications, delegations, my
-  // expenses) reuse it; everything else is `nav.sidebar.*`. Deliberately NOT the
-  // `title.*` keys even where the English matches: a sidebar entry and a tab
-  // title are different places a translator may want different words (the
-  // same rule as the titles block above).
-  'nav.sidebar.label': { 'en-CA': 'Main navigation' },
-  'nav.sidebar.menu': { 'en-CA': 'Menu' },
-  'nav.sidebar.close': { 'en-CA': 'Close' },
-  'nav.sidebar.skip': { 'en-CA': 'Skip to content' },
-  'nav.sidebar.pending': { 'en-CA': 'waiting' },
-  'nav.sidebar.home': { 'en-CA': 'Home' },
-  'nav.sidebar.section.expenses': { 'en-CA': 'Expenses' },
-  'nav.sidebar.section.approvals': { 'en-CA': 'Approvals' },
-  'nav.sidebar.section.finance': { 'en-CA': 'Finance and reporting' },
-  'nav.sidebar.section.compliance': { 'en-CA': 'Policy and compliance' },
-  'nav.sidebar.section.administration': { 'en-CA': 'Administration' },
-  'nav.sidebar.section.you': { 'en-CA': 'You' },
-  'nav.sidebar.analytics': { 'en-CA': 'Spend analytics' },
-  'nav.sidebar.budgets': { 'en-CA': 'Budgets' },
-  'nav.sidebar.reimbursements': { 'en-CA': 'Reimbursements' },
-  'nav.sidebar.ledger.queue': { 'en-CA': 'Ledger queue' },
-  'nav.sidebar.expense.policies': { 'en-CA': 'Expense policies' },
-  'nav.sidebar.compliance': { 'en-CA': 'Compliance' },
-  'nav.sidebar.people': { 'en-CA': 'Employees' },
-  'nav.sidebar.approval.ladder': { 'en-CA': 'Approval ladder' },
-  'nav.sidebar.chart.of.accounts': { 'en-CA': 'Chart of accounts' },
-  'nav.sidebar.integrations': { 'en-CA': 'Integrations' },
-  'nav.sidebar.modules': { 'en-CA': 'Modules' },
-  'nav.sidebar.branding': { 'en-CA': 'Branding' },
-  'nav.sidebar.locale': { 'en-CA': 'Default language' },
-  'nav.sidebar.notification.templates': { 'en-CA': 'Notification wording' },
-  'nav.sidebar.notification.delivery': { 'en-CA': 'Email delivery' },
-  'nav.sidebar.billing': { 'en-CA': 'Billing' },
-  'nav.sidebar.preferences': { 'en-CA': 'Language and time' },
-  'nav.sidebar.notification.preferences': { 'en-CA': 'Notification preferences' },
-  'nav.sidebar.sign.out': { 'en-CA': 'Sign out' },
+  /* The #147 sidebar's `nav.sidebar.*` keys are gone with it: the ported ExpenseOS
+     shell (app/(app)/) reads ExpenseOS's catalogue, `nav.items.*` (packages/i18n). */
   'pager.previous': { 'en-CA': 'Previous' },
   'pager.next': { 'en-CA': 'Next' },
 
@@ -405,7 +365,6 @@ export const UI_COPY = {
   'policies.field.effective.to': { 'en-CA': 'Effective to' },
   'policies.field.enabled': { 'en-CA': 'Enabled' },
   'policies.add.submit': { 'en-CA': 'Add rule' },
-  'nav.approval.ladder': { 'en-CA': 'Approval ladder' },
   'nav.employees': { 'en-CA': 'Employees' },
 
   /* ── /admin/locale (VX4-7 part 2a's screen) ─────────────────────────────── */

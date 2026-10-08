@@ -27,6 +27,9 @@ export const MODULE_FOR_SLUG: Readonly<Record<string, string | typeof CORE>> = {
   'ledger-gl': 'accounting',
   'compliance-audit': 'compliance',
   'finance-reporting': 'analytics',
+  // VeloExpense-only slug: VeloExpense's budgets screen has a module of its own, where
+  // ExpenseOS's budget tracking sits under finance-reporting (app/(app)/veloexpenseNav.ts).
+  budgets: 'budgets',
   // Out of scope (7 Oct): virtual cards. No entry, so OFF.
   // Not yet a VeloExpense module: the assistant (Wave 6). No entry, so OFF.
 };
@@ -39,4 +42,22 @@ export async function isModuleActive(_db: unknown, slug: string): Promise<boolea
   // Outside a tenant scope there is no tenant to ask about; refuse rather than guess.
   if (orgId === null) return false;
   return withOrg(orgId, (tx) => isModuleEnabled(tx, code));
+}
+
+/**
+ * ExpenseOS's `activeModuleSlugs(db)`: every slug whose module is on for the current tenant,
+ * for the sidebar's module gates. One transaction for all of them rather than one per slug
+ * (`isModuleActive` above opens its own), since the shell asks on every page render.
+ */
+export async function activeModuleSlugs(_db?: unknown): Promise<Set<string>> {
+  const active = new Set<string>();
+  const orgId = currentTenantId();
+  for (const [slug, code] of Object.entries(MODULE_FOR_SLUG)) if (code === CORE) active.add(slug);
+  if (orgId === null) return active;
+  await withOrg(orgId, async (tx) => {
+    for (const [slug, code] of Object.entries(MODULE_FOR_SLUG)) {
+      if (code !== CORE && (await isModuleEnabled(tx, code))) active.add(slug);
+    }
+  });
+  return active;
 }

@@ -7,7 +7,7 @@
     "financeReporting": "FINANCE & REPORTING",
     "complianceAudit": "COMPLIANCE & AUDIT",
     "administration": "ADMINISTRATION",
-    "netsuite": "NETSUITE"
+    "ledger": "NETSUITE"
   },
   "items": {
     "allExpenses": "All expenses",
@@ -71,7 +71,16 @@
     "travelCategories": "Travel Categories",
     "travelRequests": "Travel Requests",
     "virtualCards": "Cards",
-    "nsPeople": "People ↔ NetSuite"
+    "nsPeople": "People ↔ NetSuite",
+    "reimbursements": "Reimbursements",
+    "compliance": "Compliance",
+    "employees": "Employees",
+    "chartOfAccounts": "Chart of accounts",
+    "ledgerQueue": "Ledger queue",
+    "branding": "Branding",
+    "defaultLanguage": "Default language",
+    "emailDelivery": "Email delivery",
+    "billing": "Billing"
   },
   "profile": {
     "installApp": "Install ExpenseOS",

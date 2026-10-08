@@ -47,3 +47,24 @@ model ExpenseCategory {
 
   @@map("expense_category")
 }
+
+// ExpenseOS's `User`, on VeloExpense's `app_user`. Wave 0 carries only the columns the
+// shell reads (canSeeOthers: managerId, deletedAt) and the ones whose names already match
+// ExpenseOS's. VeloExpense differences, mapped when the People port needs them:
+//   · the name is one column (`display_name`), not firstName/lastName;
+//   · the role is a text column (`role`), not a roleId into a roles table;
+//   · employeeStatus is text with a CHECK, not a Prisma enum.
+model User {
+  id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String    @default(dbgenerated("(NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid")) @map("organization_id") @db.Uuid
+  email          String
+  managerId      String?   @map("manager_id") @db.Uuid
+  departmentId   String?   @map("department_id") @db.Uuid
+  businessUnitId String?   @map("business_unit_id") @db.Uuid
+  legalEntityId  String?   @map("legal_entity_id") @db.Uuid
+  deletedAt      DateTime? @map("deleted_at") @db.Timestamptz(6)
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@map("app_user")
+}

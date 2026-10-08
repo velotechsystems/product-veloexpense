@@ -43,15 +43,17 @@ const VENDORED = {
   'emoji-picker': 'components/ui/emoji-picker.tsx',
   breakpoints: 'lib/breakpoints.ts',
   'use-is-compact': 'hooks/useIsCompact.ts',
+  // Wave 0 shell: ExpenseOS's Alert (InterruptedWorkNotice, DesktopOnlyNotice).
+  alert: 'components/ui/alert.tsx',
 };
 
 /**
  * Items with MORE THAN ONE file, compared file by file at each file's own `target`.
  * `data-display` is ExpenseOS's data-table, filter and saved-view components (31 files),
  * ported into the kit for Wave 0; a single-file comparison would check one and wave the
- * other thirty through.
+ * other thirty through. `navigation` is ExpenseOS's sidebar primitives (the Wave 0 shell).
  */
-const VENDORED_MULTI = ['data-display'];
+const VENDORED_MULTI = ['data-display', 'navigation'];
 
 async function item(name) {
   if (!/^https?:/.test(REGISTRY)) return JSON.parse(readFileSync(join(REGISTRY, `${name}.json`), 'utf8'));

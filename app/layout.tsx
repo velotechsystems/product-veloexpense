@@ -43,8 +43,8 @@ import { brandingForRender } from "@/lib/branding/request";
 import { readerPrefs } from "@/lib/i18n/request";
 import { hostTenantMismatch } from "@/lib/tenant/request";
 import { WrongTenantHost } from "@/app/wrong-tenant-host";
-import { AppShell } from "@/components/app-shell/app-shell";
-import { navContext } from "@/lib/nav/context";
+import { ShellGate } from "@/app/(app)/ShellGate";
+import { shellContext } from "@/server/shell";
 import { Providers } from "@/app/providers";
 import { NextIntlClientProvider } from "next-intl";
 
@@ -138,10 +138,10 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
   // the session, so this adds no query to the request: see lib/i18n/request.ts.
   const { locale } = await readerPrefs();
   const mismatch = await hostTenantMismatch();
-  // The sidebar (ExpenseOS's app shell, 2026 look). `null` with no session, for a
-  // non-member, or if it could not be read — see lib/nav/context.ts for why the
-  // menu never takes a page down with it. Not asked for on a wrong-tenant host.
-  const nav = mismatch === null ? await navContext() : null;
+  // ExpenseOS's app shell (app/(app)/AppShell.tsx), ported in Wave 0. `null` with no
+  // session, for a non-member, or if it could not be read — see server/shell.ts for why
+  // the menu never takes a page down with it. Not asked for on a wrong-tenant host.
+  const shell = mismatch === null ? await shellContext() : null;
 
   return (
     <html
@@ -171,7 +171,7 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
         <Providers>
           {mismatch !== null ? (
             <WrongTenantHost locale={locale} />
-          ) : nav === null ? (
+          ) : shell === null ? (
             children
           ) : (
             /* ExpenseOS's message catalogues (i18n/request.ts), for ported screens. Inside
@@ -179,9 +179,7 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
                gzipped) with every page it wraps, and the sign-in, sign-up and approval pages
                render nothing ported. */
             <NextIntlClientProvider>
-              <AppShell ctx={nav} locale={locale}>
-                {children}
-              </AppShell>
+              <ShellGate shell={shell}>{children}</ShellGate>
             </NextIntlClientProvider>
           )}
         </Providers>

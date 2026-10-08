@@ -46,3 +46,8 @@ export { Prisma }
  * 
  */
 export type ExpenseCategory = Prisma.ExpenseCategoryModel
+/**
+ * Model User
+ * 
+ */
+export type User = Prisma.UserModel

@@ -7,7 +7,7 @@
     "financeReporting": "FINANCES ET RAPPORTS",
     "complianceAudit": "CONFORMITÉ ET AUDIT",
     "administration": "ADMINISTRATION",
-    "netsuite": "NETSUITE"
+    "ledger": "NETSUITE"
   },
   "items": {
     "allExpenses": "Toutes les dépenses",
@@ -71,7 +71,16 @@
     "travelCategories": "Catégories de voyage",
     "travelRequests": "Demandes de voyage",
     "virtualCards": "Cartes",
-    "nsPeople": "Personnes ↔ NetSuite"
+    "nsPeople": "Personnes ↔ NetSuite",
+    "reimbursements": "Remboursements",
+    "compliance": "Conformité",
+    "employees": "Employés",
+    "chartOfAccounts": "Plan comptable",
+    "ledgerQueue": "File du grand livre",
+    "branding": "Image de marque",
+    "defaultLanguage": "Langue par défaut",
+    "emailDelivery": "Envoi des courriels",
+    "billing": "Facturation"
   },
   "profile": {
     "installApp": "Installer ExpenseOS",

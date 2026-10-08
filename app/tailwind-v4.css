@@ -253,3 +253,137 @@
     accent-color: var(--primary);
   }
 }
+
+/* ── ExpenseOS app-shell chrome ─────────────────────────────────────────────
+   ExpenseOS's navigation components (registry item `navigation`) and the app
+   shell built on them read these by name. ExpenseOS paints them navy and
+   orange; here they are mapped onto the kit's own sidebar roles, so the shell
+   takes each product's brand and follows light / dark like every other
+   surface. `--sidebar-border` is the kit's already and is not redefined. */
+@layer base {
+  :root {
+    --sidebar-width: 240px;
+    --sidebar-bg: var(--sidebar);
+    --sidebar-scrollbar: color-mix(in oklch, var(--sidebar-foreground) 15%, transparent);
+    --sidebar-scrollbar-hover: color-mix(in oklch, var(--sidebar-foreground) 30%, transparent);
+    --sidebar-section-color: var(--muted-foreground);
+    /* The 2026 guide's sidebar (VeloCRM's): the active row is the brand tint
+       (`--sidebar-accent`) with a brand-coloured edge, not a solid fill; hover is
+       a lighter wash of the same tint. */
+    --sidebar-item-text: var(--sidebar-foreground);
+    --sidebar-item-text-hover: var(--sidebar-accent-foreground);
+    --sidebar-item-text-active: var(--sidebar-accent-foreground);
+    --sidebar-item-bg-active: var(--sidebar-accent);
+    --sidebar-item-bg-hover: color-mix(in oklch, var(--sidebar-accent) 55%, transparent);
+    --sidebar-item-accent-color: var(--sidebar-primary);
+    --sidebar-item-accent-color-hover: color-mix(in oklch, var(--sidebar-primary) 35%, transparent);
+    --sidebar-profile-role-color: var(--muted-foreground);
+
+    /* Plain aliases for env(safe-area-inset-*), which the shell's outermost
+       boxes use on notched phones (ExpenseOS's names). */
+    --safe-area-top: env(safe-area-inset-top, 0px);
+    --safe-area-right: env(safe-area-inset-right, 0px);
+    --safe-area-bottom: env(safe-area-inset-bottom, 0px);
+    --safe-area-left: env(safe-area-inset-left, 0px);
+  }
+}
+
+@layer components {
+  /* The sidebar's scroll body (ExpenseOS's class name, kept so the ported
+     component is unchanged). Pseudo-elements cannot be inline styles. */
+  .einc-sidebar-scroll::-webkit-scrollbar {
+    width: 4px;
+  }
+  .einc-sidebar-scroll::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .einc-sidebar-scroll::-webkit-scrollbar-thumb {
+    background: var(--sidebar-scrollbar);
+    border-radius: 4px;
+  }
+  .einc-sidebar-scroll::-webkit-scrollbar-thumb:hover {
+    background: var(--sidebar-scrollbar-hover);
+  }
+  .einc-sidebar-scroll {
+    scrollbar-width: thin;
+    scrollbar-color: var(--sidebar-scrollbar) transparent;
+  }
+}
+
+/* ── Touch slop (pointer: coarse only) ──────────────────────────────── */
+/* Grows a control's TAP TARGET to 44px without growing the control itself, via
+   an invisible `::after` that overflows it. `.einc-tap-slop` slops the vertical
+   axis only; `.einc-tap-slop-both` slops both.
+
+   44px is WCAG 2.2 SC 2.5.5 (Target Size — Enhanced) and the Apple HIG minimum.
+   It is written once, here, rather than as a per-size slop value: the control
+   sizes that carry these classes are 40 / 36 / 32 / 28 / 24px tall, and seven
+   hardcoded slop values would be seven chances to drift the day one size's
+   `h-*` changes. `lg` is already 44px and deliberately gets no class.
+
+   Everything is inside `@media (pointer: coarse)`, `position: relative`
+   included, so with a mouse the control is untouched — no pseudo-element at all
+   (`content` is `none`) and its own `position` is still `static`. Adding one of
+   these classes therefore cannot disturb a pointer-fine layout.
+
+   `height: 100%` with `min-height: 44px`, not a flat `height: 44px`: the used
+   height is then `max(control, 44px)`, which can never shrink the hit region
+   below the control's own visible box the way a flat 44px would on anything
+   taller. On the short controls this exists for it resolves to exactly 44px —
+   not "44px plus margin" — which is what lets a 6px slop meet a 6px `gap-1.5`
+   gutter at tangency rather than overlapping into it.
+
+   Centred with `top: 50%` + `translateY(-50%)` so the slop is symmetric about
+   the control's own box on each slopped axis and `(44 - rendered) / 2` per side
+   falls out of the geometry — hit-tested at 6px per slopped side on a 32px
+   control, and 0px on the unslopped axis.
+
+   Only `top` and `left` are specified; `bottom` and `right` are left `auto`, so
+   the box is never over-constrained. Do not assert on any of the four regardless:
+   `getComputedStyle` reports offsets as resolved used values, so on that same
+   32px control `top` reads `16px` — the percentage, before the transform that
+   does the actual centring — and `bottom` reads `-28px`. Read `height` /
+   `min-height` / `width` / `min-width` off the pseudo-element instead; those are
+   the honest numbers.
+
+   It paints nothing — no background, no border — and it must NOT get
+   `pointer-events: none`, because receiving the pointer is the whole mechanism.
+   It overflows the control by design, so an ancestor clipping overflow clips
+   the extra hit area too.
+
+   Kit note: ported from ExpenseOS's design system (550b2945) with its class
+   names, which ExpenseOS components use directly. The kit's own Button does not
+   carry these classes; adding them there is a separate decision for every
+   product.
+
+   `.einc-tap-slop` is vertical ONLY, and that is load-bearing: horizontal slop
+   on an `icon-sm` / `icon-xs` control in a row would reach over part of a
+   neighbouring text input's or chip's own box and, painting above it, win the
+   tap — and four of the five `icon-xs` call sites are destructive removes. So
+   the horizontal extent stays exactly the control's own (`left: 0` +
+   `width: 100%`), and only the `-both` variant floors it. */
+@media (pointer: coarse) {
+  .einc-tap-slop,
+  .einc-tap-slop-both {
+    position: relative;
+  }
+
+  .einc-tap-slop::after,
+  .einc-tap-slop-both::after {
+    content: "";
+    position: absolute;
+    top: 50%;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    min-height: 44px;
+    transform: translateY(-50%);
+  }
+
+  /* Same box, plus a horizontal floor and horizontal centring. */
+  .einc-tap-slop-both::after {
+    left: 50%;
+    min-width: 44px;
+    transform: translate(-50%, -50%);
+  }
+}

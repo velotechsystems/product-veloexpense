@@ -22,3 +22,8 @@ export * from './enums';
  * 
  */
 export type ExpenseCategory = Prisma.ExpenseCategoryModel
+/**
+ * Model User
+ * 
+ */
+export type User = Prisma.UserModel
