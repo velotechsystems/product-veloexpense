@@ -143,7 +143,7 @@ test('spend with no exchange rate is named, and left out of the total (AN-7)', a
     `INSERT INTO expense_line_item (organization_id, expense_id, category_id, amount_minor, gl_account_id)
      SELECT $1, $2, c.id, 5000, c.gl_account_id
        FROM expense_category c
-      WHERE c.organization_id = $1 AND c.label = 'Ground Transportation'`,
+      WHERE c.organization_id = $1 AND c.label ->> 'en' = 'Ground Transportation'`,
     [r.rows[0].organization_id, e.rows[0].id],
   );
 

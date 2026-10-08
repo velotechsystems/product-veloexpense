@@ -71,7 +71,7 @@ describe('a tenant that has just been created', () => {
 
   it('seeds exactly the starter list, once, and says so in the genesis audit row', async () => {
     const rows = await withOrg(orgId, (tx) =>
-      tx.query('SELECT code, label, sort_order FROM expense_category ORDER BY sort_order'),
+      tx.query("SELECT code, label ->> 'en' AS label, sort_order FROM expense_category ORDER BY sort_order"),
     );
     expect(rows.rows.map((r) => [r.code, r.label, r.sort_order])).toEqual(
       STARTER_CATEGORIES.map((c) => [...c]),
@@ -87,12 +87,12 @@ describe('a tenant that has just been created', () => {
 
   it('seeding again writes nothing and does not disturb a renamed category', async () => {
     await withOrg(orgId, (tx) =>
-      tx.query("UPDATE expense_category SET label = 'Client dinners' WHERE code = 'meals'"),
+      tx.query(`UPDATE expense_category SET label = '{"en":"Client dinners"}' WHERE code = 'meals'`),
     );
     const wrote = await withOrg(orgId, (tx) => seedStarterCategories(tx));
     expect(wrote).toBe(0);
     const label = await withOrg(orgId, (tx) =>
-      tx.query("SELECT label FROM expense_category WHERE code = 'meals'"),
+      tx.query("SELECT label ->> 'en' AS label FROM expense_category WHERE code = 'meals'"),
     );
     expect(label.rows[0].label).toBe('Client dinners');
   });

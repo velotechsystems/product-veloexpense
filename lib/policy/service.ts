@@ -412,14 +412,14 @@ export async function setPolicyCurrency(tx: QueryRunner, code: string): Promise<
 /* ── policy CRUD ───────────────────────────────────────────────────────────── */
 
 const SELECT_POLICY = `
-  SELECT p.id, p.kind, p.severity, p.enabled, p.category_id, c.label AS category_label,
+  SELECT p.id, p.kind, p.severity, p.enabled, p.category_id, c.label ->> 'en' AS category_label,
          p.currency_code, p.params, p.effective_from, p.effective_to,
          p.created_at, p.updated_at
     FROM expense_policy p
     LEFT JOIN expense_category c ON c.id = p.category_id`;
 
 export async function listPolicies(tx: QueryRunner): Promise<PolicyRow[]> {
-  const r = await tx.query(`${SELECT_POLICY} ORDER BY p.kind, c.label NULLS FIRST`);
+  const r = await tx.query(`${SELECT_POLICY} ORDER BY p.kind, c.label ->> 'en' NULLS FIRST`);
   return r.rows as PolicyRow[];
 }
 

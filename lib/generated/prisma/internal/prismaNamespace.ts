@@ -385,6 +385,8 @@ type FieldRefInputType<Model, FieldType> = Model extends never ? never : FieldRe
 
 export const ModelName = {
   ExpenseCategory: 'ExpenseCategory',
+  GlAccount: 'GlAccount',
+  ExpenseLineItem: 'ExpenseLineItem',
   User: 'User'
 } as const
 
@@ -401,7 +403,7 @@ export type TypeMap<ExtArgs extends runtime.Types.Extensions.InternalArgs = runt
     omit: GlobalOmitOptions
   }
   meta: {
-    modelProps: "expenseCategory" | "user"
+    modelProps: "expenseCategory" | "glAccount" | "expenseLineItem" | "user"
     txIsolationLevel: TransactionIsolationLevel
   }
   model: {
@@ -476,6 +478,154 @@ export type TypeMap<ExtArgs extends runtime.Types.Extensions.InternalArgs = runt
         count: {
           args: Prisma.ExpenseCategoryCountArgs<ExtArgs>
           result: runtime.Types.Utils.Optional<Prisma.ExpenseCategoryCountAggregateOutputType> | number
+        }
+      }
+    }
+    GlAccount: {
+      payload: Prisma.$GlAccountPayload<ExtArgs>
+      fields: Prisma.GlAccountFieldRefs
+      operations: {
+        findUnique: {
+          args: Prisma.GlAccountFindUniqueArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$GlAccountPayload> | null
+        }
+        findUniqueOrThrow: {
+          args: Prisma.GlAccountFindUniqueOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$GlAccountPayload>
+        }
+        findFirst: {
+          args: Prisma.GlAccountFindFirstArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$GlAccountPayload> | null
+        }
+        findFirstOrThrow: {
+          args: Prisma.GlAccountFindFirstOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$GlAccountPayload>
+        }
+        findMany: {
+          args: Prisma.GlAccountFindManyArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$GlAccountPayload>[]
+        }
+        create: {
+          args: Prisma.GlAccountCreateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$GlAccountPayload>
+        }
+        createMany: {
+          args: Prisma.GlAccountCreateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        createManyAndReturn: {
+          args: Prisma.GlAccountCreateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$GlAccountPayload>[]
+        }
+        delete: {
+          args: Prisma.GlAccountDeleteArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$GlAccountPayload>
+        }
+        update: {
+          args: Prisma.GlAccountUpdateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$GlAccountPayload>
+        }
+        deleteMany: {
+          args: Prisma.GlAccountDeleteManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateMany: {
+          args: Prisma.GlAccountUpdateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateManyAndReturn: {
+          args: Prisma.GlAccountUpdateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$GlAccountPayload>[]
+        }
+        upsert: {
+          args: Prisma.GlAccountUpsertArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$GlAccountPayload>
+        }
+        aggregate: {
+          args: Prisma.GlAccountAggregateArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.AggregateGlAccount>
+        }
+        groupBy: {
+          args: Prisma.GlAccountGroupByArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.GlAccountGroupByOutputType>[]
+        }
+        count: {
+          args: Prisma.GlAccountCountArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.GlAccountCountAggregateOutputType> | number
+        }
+      }
+    }
+    ExpenseLineItem: {
+      payload: Prisma.$ExpenseLineItemPayload<ExtArgs>
+      fields: Prisma.ExpenseLineItemFieldRefs
+      operations: {
+        findUnique: {
+          args: Prisma.ExpenseLineItemFindUniqueArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ExpenseLineItemPayload> | null
+        }
+        findUniqueOrThrow: {
+          args: Prisma.ExpenseLineItemFindUniqueOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ExpenseLineItemPayload>
+        }
+        findFirst: {
+          args: Prisma.ExpenseLineItemFindFirstArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ExpenseLineItemPayload> | null
+        }
+        findFirstOrThrow: {
+          args: Prisma.ExpenseLineItemFindFirstOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ExpenseLineItemPayload>
+        }
+        findMany: {
+          args: Prisma.ExpenseLineItemFindManyArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ExpenseLineItemPayload>[]
+        }
+        create: {
+          args: Prisma.ExpenseLineItemCreateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ExpenseLineItemPayload>
+        }
+        createMany: {
+          args: Prisma.ExpenseLineItemCreateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        createManyAndReturn: {
+          args: Prisma.ExpenseLineItemCreateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ExpenseLineItemPayload>[]
+        }
+        delete: {
+          args: Prisma.ExpenseLineItemDeleteArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ExpenseLineItemPayload>
+        }
+        update: {
+          args: Prisma.ExpenseLineItemUpdateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ExpenseLineItemPayload>
+        }
+        deleteMany: {
+          args: Prisma.ExpenseLineItemDeleteManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateMany: {
+          args: Prisma.ExpenseLineItemUpdateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateManyAndReturn: {
+          args: Prisma.ExpenseLineItemUpdateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ExpenseLineItemPayload>[]
+        }
+        upsert: {
+          args: Prisma.ExpenseLineItemUpsertArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ExpenseLineItemPayload>
+        }
+        aggregate: {
+          args: Prisma.ExpenseLineItemAggregateArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.AggregateExpenseLineItem>
+        }
+        groupBy: {
+          args: Prisma.ExpenseLineItemGroupByArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.ExpenseLineItemGroupByOutputType>[]
+        }
+        count: {
+          args: Prisma.ExpenseLineItemCountArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.ExpenseLineItemCountAggregateOutputType> | number
         }
       }
     }
@@ -597,9 +747,17 @@ export const ExpenseCategoryScalarFieldEnum = {
   organizationId: 'organizationId',
   code: 'code',
   label: 'label',
+  glAccountId: 'glAccountId',
+  icon: 'icon',
   active: 'active',
   sortOrder: 'sortOrder',
-  glAccountId: 'glAccountId',
+  itcGstHstRate: 'itcGstHstRate',
+  itcQstRate: 'itcQstRate',
+  pstRecoverable: 'pstRecoverable',
+  requiresAttendees: 'requiresAttendees',
+  isMileage: 'isMileage',
+  acceptsTip: 'acceptsTip',
+  color: 'color',
   createdAt: 'createdAt',
   updatedAt: 'updatedAt'
 } as const
@@ -607,10 +765,36 @@ export const ExpenseCategoryScalarFieldEnum = {
 export type ExpenseCategoryScalarFieldEnum = (typeof ExpenseCategoryScalarFieldEnum)[keyof typeof ExpenseCategoryScalarFieldEnum]
 
 
+export const GlAccountScalarFieldEnum = {
+  id: 'id',
+  organizationId: 'organizationId',
+  number: 'number',
+  name: 'name',
+  type: 'type',
+  isPostable: 'isPostable',
+  isActive: 'isActive',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+} as const
+
+export type GlAccountScalarFieldEnum = (typeof GlAccountScalarFieldEnum)[keyof typeof GlAccountScalarFieldEnum]
+
+
+export const ExpenseLineItemScalarFieldEnum = {
+  id: 'id',
+  organizationId: 'organizationId',
+  categoryId: 'categoryId'
+} as const
+
+export type ExpenseLineItemScalarFieldEnum = (typeof ExpenseLineItemScalarFieldEnum)[keyof typeof ExpenseLineItemScalarFieldEnum]
+
+
 export const UserScalarFieldEnum = {
   id: 'id',
   organizationId: 'organizationId',
   email: 'email',
+  name: 'name',
+  employeeStatus: 'employeeStatus',
   managerId: 'managerId',
   departmentId: 'departmentId',
   businessUnitId: 'businessUnitId',
@@ -631,12 +815,28 @@ export const SortOrder = {
 export type SortOrder = (typeof SortOrder)[keyof typeof SortOrder]
 
 
+export const JsonNullValueInput = {
+  JsonNull: JsonNull
+} as const
+
+export type JsonNullValueInput = (typeof JsonNullValueInput)[keyof typeof JsonNullValueInput]
+
+
 export const QueryMode = {
   default: 'default',
   insensitive: 'insensitive'
 } as const
 
 export type QueryMode = (typeof QueryMode)[keyof typeof QueryMode]
+
+
+export const JsonNullValueFilter = {
+  DbNull: DbNull,
+  JsonNull: JsonNull,
+  AnyNull: AnyNull
+} as const
+
+export type JsonNullValueFilter = (typeof JsonNullValueFilter)[keyof typeof JsonNullValueFilter]
 
 
 export const NullsOrder = {
@@ -664,6 +864,20 @@ export type StringFieldRefInput<$PrismaModel> = FieldRefInputType<$PrismaModel, 
  * Reference to a field of type 'String[]'
  */
 export type ListStringFieldRefInput<$PrismaModel> = FieldRefInputType<$PrismaModel, 'String[]'>
+    
+
+
+/**
+ * Reference to a field of type 'Json'
+ */
+export type JsonFieldRefInput<$PrismaModel> = FieldRefInputType<$PrismaModel, 'Json'>
+    
+
+
+/**
+ * Reference to a field of type 'QueryMode'
+ */
+export type EnumQueryModeFieldRefInput<$PrismaModel> = FieldRefInputType<$PrismaModel, 'QueryMode'>
     
 
 
@@ -826,6 +1040,8 @@ export type PrismaClientOptions = ({
 }
 export type GlobalOmitConfig = {
   expenseCategory?: Prisma.ExpenseCategoryOmit
+  glAccount?: Prisma.GlAccountOmit
+  expenseLineItem?: Prisma.ExpenseLineItemOmit
   user?: Prisma.UserOmit
 }
 

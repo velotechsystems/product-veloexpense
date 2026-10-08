@@ -83,7 +83,7 @@ export const STARTER_CATEGORIES: ReadonlyArray<readonly [string, string, number]
 export async function seedStarterCategories(tx: QueryRunner): Promise<number> {
   const r = await tx.query(
     `INSERT INTO expense_category (organization_id, code, label, sort_order)
-     SELECT ${ORG}, c.code, c.label, c.sort_order
+     SELECT ${ORG}, c.code, jsonb_build_object('en', c.label), c.sort_order
        FROM unnest($1::text[], $2::text[], $3::int[]) AS c(code, label, sort_order)
      ON CONFLICT (organization_id, code) DO NOTHING`,
     [

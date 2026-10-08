@@ -28,6 +28,8 @@ export type UserMinAggregateOutputType = {
   id: string | null
   organizationId: string | null
   email: string | null
+  name: string | null
+  employeeStatus: string | null
   managerId: string | null
   departmentId: string | null
   businessUnitId: string | null
@@ -41,6 +43,8 @@ export type UserMaxAggregateOutputType = {
   id: string | null
   organizationId: string | null
   email: string | null
+  name: string | null
+  employeeStatus: string | null
   managerId: string | null
   departmentId: string | null
   businessUnitId: string | null
@@ -54,6 +58,8 @@ export type UserCountAggregateOutputType = {
   id: number
   organizationId: number
   email: number
+  name: number
+  employeeStatus: number
   managerId: number
   departmentId: number
   businessUnitId: number
@@ -69,6 +75,8 @@ export type UserMinAggregateInputType = {
   id?: true
   organizationId?: true
   email?: true
+  name?: true
+  employeeStatus?: true
   managerId?: true
   departmentId?: true
   businessUnitId?: true
@@ -82,6 +90,8 @@ export type UserMaxAggregateInputType = {
   id?: true
   organizationId?: true
   email?: true
+  name?: true
+  employeeStatus?: true
   managerId?: true
   departmentId?: true
   businessUnitId?: true
@@ -95,6 +105,8 @@ export type UserCountAggregateInputType = {
   id?: true
   organizationId?: true
   email?: true
+  name?: true
+  employeeStatus?: true
   managerId?: true
   departmentId?: true
   businessUnitId?: true
@@ -181,6 +193,8 @@ export type UserGroupByOutputType = {
   id: string
   organizationId: string
   email: string
+  name: string | null
+  employeeStatus: string
   managerId: string | null
   departmentId: string | null
   businessUnitId: string | null
@@ -215,6 +229,8 @@ export type UserWhereInput = {
   id?: Prisma.UuidFilter<"User"> | string
   organizationId?: Prisma.UuidFilter<"User"> | string
   email?: Prisma.StringFilter<"User"> | string
+  name?: Prisma.StringNullableFilter<"User"> | string | null
+  employeeStatus?: Prisma.StringFilter<"User"> | string
   managerId?: Prisma.UuidNullableFilter<"User"> | string | null
   departmentId?: Prisma.UuidNullableFilter<"User"> | string | null
   businessUnitId?: Prisma.UuidNullableFilter<"User"> | string | null
@@ -228,6 +244,8 @@ export type UserOrderByWithRelationInput = {
   id?: Prisma.SortOrder
   organizationId?: Prisma.SortOrder
   email?: Prisma.SortOrder
+  name?: Prisma.SortOrderInput | Prisma.SortOrder
+  employeeStatus?: Prisma.SortOrder
   managerId?: Prisma.SortOrderInput | Prisma.SortOrder
   departmentId?: Prisma.SortOrderInput | Prisma.SortOrder
   businessUnitId?: Prisma.SortOrderInput | Prisma.SortOrder
@@ -244,6 +262,8 @@ export type UserWhereUniqueInput = Prisma.AtLeast<{
   NOT?: Prisma.UserWhereInput | Prisma.UserWhereInput[]
   organizationId?: Prisma.UuidFilter<"User"> | string
   email?: Prisma.StringFilter<"User"> | string
+  name?: Prisma.StringNullableFilter<"User"> | string | null
+  employeeStatus?: Prisma.StringFilter<"User"> | string
   managerId?: Prisma.UuidNullableFilter<"User"> | string | null
   departmentId?: Prisma.UuidNullableFilter<"User"> | string | null
   businessUnitId?: Prisma.UuidNullableFilter<"User"> | string | null
@@ -257,6 +277,8 @@ export type UserOrderByWithAggregationInput = {
   id?: Prisma.SortOrder
   organizationId?: Prisma.SortOrder
   email?: Prisma.SortOrder
+  name?: Prisma.SortOrderInput | Prisma.SortOrder
+  employeeStatus?: Prisma.SortOrder
   managerId?: Prisma.SortOrderInput | Prisma.SortOrder
   departmentId?: Prisma.SortOrderInput | Prisma.SortOrder
   businessUnitId?: Prisma.SortOrderInput | Prisma.SortOrder
@@ -276,6 +298,8 @@ export type UserScalarWhereWithAggregatesInput = {
   id?: Prisma.UuidWithAggregatesFilter<"User"> | string
   organizationId?: Prisma.UuidWithAggregatesFilter<"User"> | string
   email?: Prisma.StringWithAggregatesFilter<"User"> | string
+  name?: Prisma.StringNullableWithAggregatesFilter<"User"> | string | null
+  employeeStatus?: Prisma.StringWithAggregatesFilter<"User"> | string
   managerId?: Prisma.UuidNullableWithAggregatesFilter<"User"> | string | null
   departmentId?: Prisma.UuidNullableWithAggregatesFilter<"User"> | string | null
   businessUnitId?: Prisma.UuidNullableWithAggregatesFilter<"User"> | string | null
@@ -289,6 +313,8 @@ export type UserCreateInput = {
   id?: string
   organizationId?: string
   email: string
+  name?: string | null
+  employeeStatus?: string
   managerId?: string | null
   departmentId?: string | null
   businessUnitId?: string | null
@@ -302,6 +328,8 @@ export type UserUncheckedCreateInput = {
   id?: string
   organizationId?: string
   email: string
+  name?: string | null
+  employeeStatus?: string
   managerId?: string | null
   departmentId?: string | null
   businessUnitId?: string | null
@@ -315,6 +343,8 @@ export type UserUpdateInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
   organizationId?: Prisma.StringFieldUpdateOperationsInput | string
   email?: Prisma.StringFieldUpdateOperationsInput | string
+  name?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  employeeStatus?: Prisma.StringFieldUpdateOperationsInput | string
   managerId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   departmentId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   businessUnitId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -328,6 +358,8 @@ export type UserUncheckedUpdateInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
   organizationId?: Prisma.StringFieldUpdateOperationsInput | string
   email?: Prisma.StringFieldUpdateOperationsInput | string
+  name?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  employeeStatus?: Prisma.StringFieldUpdateOperationsInput | string
   managerId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   departmentId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   businessUnitId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -341,6 +373,8 @@ export type UserCreateManyInput = {
   id?: string
   organizationId?: string
   email: string
+  name?: string | null
+  employeeStatus?: string
   managerId?: string | null
   departmentId?: string | null
   businessUnitId?: string | null
@@ -354,6 +388,8 @@ export type UserUpdateManyMutationInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
   organizationId?: Prisma.StringFieldUpdateOperationsInput | string
   email?: Prisma.StringFieldUpdateOperationsInput | string
+  name?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  employeeStatus?: Prisma.StringFieldUpdateOperationsInput | string
   managerId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   departmentId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   businessUnitId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -367,6 +403,8 @@ export type UserUncheckedUpdateManyInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
   organizationId?: Prisma.StringFieldUpdateOperationsInput | string
   email?: Prisma.StringFieldUpdateOperationsInput | string
+  name?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  employeeStatus?: Prisma.StringFieldUpdateOperationsInput | string
   managerId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   departmentId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   businessUnitId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -380,6 +418,8 @@ export type UserCountOrderByAggregateInput = {
   id?: Prisma.SortOrder
   organizationId?: Prisma.SortOrder
   email?: Prisma.SortOrder
+  name?: Prisma.SortOrder
+  employeeStatus?: Prisma.SortOrder
   managerId?: Prisma.SortOrder
   departmentId?: Prisma.SortOrder
   businessUnitId?: Prisma.SortOrder
@@ -393,6 +433,8 @@ export type UserMaxOrderByAggregateInput = {
   id?: Prisma.SortOrder
   organizationId?: Prisma.SortOrder
   email?: Prisma.SortOrder
+  name?: Prisma.SortOrder
+  employeeStatus?: Prisma.SortOrder
   managerId?: Prisma.SortOrder
   departmentId?: Prisma.SortOrder
   businessUnitId?: Prisma.SortOrder
@@ -406,6 +448,8 @@ export type UserMinOrderByAggregateInput = {
   id?: Prisma.SortOrder
   organizationId?: Prisma.SortOrder
   email?: Prisma.SortOrder
+  name?: Prisma.SortOrder
+  employeeStatus?: Prisma.SortOrder
   managerId?: Prisma.SortOrder
   departmentId?: Prisma.SortOrder
   businessUnitId?: Prisma.SortOrder
@@ -425,6 +469,8 @@ export type UserSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs = r
   id?: boolean
   organizationId?: boolean
   email?: boolean
+  name?: boolean
+  employeeStatus?: boolean
   managerId?: boolean
   departmentId?: boolean
   businessUnitId?: boolean
@@ -438,6 +484,8 @@ export type UserSelectCreateManyAndReturn<ExtArgs extends runtime.Types.Extensio
   id?: boolean
   organizationId?: boolean
   email?: boolean
+  name?: boolean
+  employeeStatus?: boolean
   managerId?: boolean
   departmentId?: boolean
   businessUnitId?: boolean
@@ -451,6 +499,8 @@ export type UserSelectUpdateManyAndReturn<ExtArgs extends runtime.Types.Extensio
   id?: boolean
   organizationId?: boolean
   email?: boolean
+  name?: boolean
+  employeeStatus?: boolean
   managerId?: boolean
   departmentId?: boolean
   businessUnitId?: boolean
@@ -464,6 +514,8 @@ export type UserSelectScalar = {
   id?: boolean
   organizationId?: boolean
   email?: boolean
+  name?: boolean
+  employeeStatus?: boolean
   managerId?: boolean
   departmentId?: boolean
   businessUnitId?: boolean
@@ -473,7 +525,7 @@ export type UserSelectScalar = {
   updatedAt?: boolean
 }
 
-export type UserOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "organizationId" | "email" | "managerId" | "departmentId" | "businessUnitId" | "legalEntityId" | "deletedAt" | "createdAt" | "updatedAt", ExtArgs["result"]["user"]>
+export type UserOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "organizationId" | "email" | "name" | "employeeStatus" | "managerId" | "departmentId" | "businessUnitId" | "legalEntityId" | "deletedAt" | "createdAt" | "updatedAt", ExtArgs["result"]["user"]>
 
 export type $UserPayload<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   name: "User"
@@ -482,6 +534,14 @@ export type $UserPayload<ExtArgs extends runtime.Types.Extensions.InternalArgs =
     id: string
     organizationId: string
     email: string
+    /**
+     * ExpenseOS has firstName/lastName; VeloExpense has one display name.
+     */
+    name: string | null
+    /**
+     * ExpenseOS's EmployeeStatus enum; text with a CHECK here (ACTIVE, ON_LEAVE, DEACTIVATED).
+     */
+    employeeStatus: string
     managerId: string | null
     departmentId: string | null
     businessUnitId: string | null
@@ -915,6 +975,8 @@ export interface UserFieldRefs {
   readonly id: Prisma.FieldRef<"User", 'String'>
   readonly organizationId: Prisma.FieldRef<"User", 'String'>
   readonly email: Prisma.FieldRef<"User", 'String'>
+  readonly name: Prisma.FieldRef<"User", 'String'>
+  readonly employeeStatus: Prisma.FieldRef<"User", 'String'>
   readonly managerId: Prisma.FieldRef<"User", 'String'>
   readonly departmentId: Prisma.FieldRef<"User", 'String'>
   readonly businessUnitId: Prisma.FieldRef<"User", 'String'>

@@ -9,5 +9,7 @@
  * 🟢 You can import this file directly.
  */
 export type * from './models/ExpenseCategory'
+export type * from './models/GlAccount'
+export type * from './models/ExpenseLineItem'
 export type * from './models/User'
 export type * from './commonInputTypes'

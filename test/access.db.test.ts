@@ -75,7 +75,7 @@ beforeAll(async () => {
     boss = await seedUser(tx, 'boss@access.test', 'ADMIN');
     manager = await seedUser(tx, 'manager@access.test', 'MANAGER');
     const c = await tx.query(
-      "INSERT INTO expense_category (organization_id, code, label) VALUES ($1,'meals','Meals') RETURNING id",
+      `INSERT INTO expense_category (organization_id, code, label) VALUES ($1,'meals','{"en":"Meals"}') RETURNING id`,
       [orgId],
     );
     categoryId = c.rows[0].id;

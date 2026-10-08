@@ -135,7 +135,7 @@ beforeAll(async () => {
       [orgId],
     );
     const meals = await tx.query(
-      "INSERT INTO expense_category (organization_id, code, label) VALUES ($1,'meals','Meals') RETURNING id",
+      `INSERT INTO expense_category (organization_id, code, label) VALUES ($1,'meals','{"en":"Meals"}') RETURNING id`,
       [orgId],
     );
     mealsId = meals.rows[0].id;

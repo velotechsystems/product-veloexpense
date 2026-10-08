@@ -577,7 +577,7 @@ export async function dryRun(tx: QueryRunner, postId: string): Promise<DryRun | 
 
   const lines = await tx.query(
     `SELECT li.description, li.amount_minor, li.tax_minor,
-            c.label AS category_label,
+            c.label ->> 'en' AS category_label,
             coalesce(lg.number, cg.number) AS gl_account_number,
             coalesce(lg.name, cg.name)     AS gl_account_name
        FROM expense_line_item li

@@ -100,7 +100,7 @@ async function loadPostable(tx: QueryRunner, reportId: string): Promise<Postable
 
   const lines = await tx.query(
     `SELECT li.id, li.description, li.amount_minor, li.tax_minor,
-            c.code AS category_code, c.label AS category_label,
+            c.code AS category_code, c.label ->> 'en' AS category_label,
             coalesce(lg.number, cg.number) AS gl_account_number,
             coalesce(lg.name, cg.name)     AS gl_account_name,
             e.txn_date, e.merchant

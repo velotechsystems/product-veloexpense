@@ -113,7 +113,7 @@ beforeAll(async () => {
     acctId = a.rows[0].id;
     const c = await tx.query(
       `INSERT INTO expense_category (organization_id,code,label,gl_account_id)
-       VALUES ($1,'travel','Travel',$2) RETURNING id`, [orgId, acctId]);
+       VALUES ($1,'travel','{"en":"Travel"}',$2) RETURNING id`, [orgId, acctId]);
     catId = c.rows[0].id;
   });
   const i = await withOrg(orgId, (tx) => installIntegration(tx, {

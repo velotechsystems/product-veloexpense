@@ -74,6 +74,8 @@ const PAGES = [
   '/admin/notification-delivery',
   '/admin/reimbursements',
   '/admin/analytics',
+  // Wave 0: the first ExpenseOS screen ported to its own path (app/(app)/admin/).
+  '/admin/expense-categories',
 ] as const;
 
 /**

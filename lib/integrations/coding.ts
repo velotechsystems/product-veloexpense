@@ -90,7 +90,7 @@ export async function uncodedCategories(
   reportId: string,
 ): Promise<UncodedCategory[]> {
   const r = await tx.query(
-    `SELECT c.id, c.code, c.label, count(li.id)::int AS line_items
+    `SELECT c.id, c.code, c.label ->> 'en' AS label, count(li.id)::int AS line_items
        FROM expense_line_item li
        JOIN expense e ON e.id = li.expense_id
        JOIN expense_category c ON c.id = li.category_id
@@ -98,7 +98,7 @@ export async function uncodedCategories(
        LEFT JOIN gl_account cg ON cg.id = c.gl_account_id
       WHERE e.report_id = $1
         AND coalesce(lg.number, cg.number) IS NULL
-      GROUP BY c.id, c.code, c.label
+      GROUP BY c.id, c.code, c.label ->> 'en'
       ORDER BY count(li.id) DESC, c.code`,
     [reportId],
   );

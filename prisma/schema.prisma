@@ -34,30 +34,85 @@ datasource db {
   provider = "postgresql"
 }
 
+// ExpenseOS's `ExpenseCategory`, field for field, minus its NetSuite override
+// (`nsCategoryId`; VeloExpense codes to its own chart). Migration 0045 brought the
+// table to this shape. `label` is `{ en, fr-CA }` JSON as in ExpenseOS; the
+// database requires an English name.
 model ExpenseCategory {
-  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  organizationId String   @default(dbgenerated("(NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid")) @map("organization_id") @db.Uuid
-  code           String
-  label          String
-  active         Boolean  @default(true)
-  sortOrder      Int      @default(0) @map("sort_order")
-  glAccountId    String?  @map("gl_account_id") @db.Uuid
-  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt      DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  id                String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId    String   @default(dbgenerated("(NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid")) @map("organization_id") @db.Uuid
+  /// ExpenseOS: optional. VeloExpense: the caller may omit it and the table mints one
+  /// (migration 0045's trigger), so it is never null when read. `dbgenerated` tells
+  /// the client the database supplies it; the expression is not used.
+  code              String   @default(dbgenerated("NULL"))
+  label             Json
+  glAccountId       String?  @map("gl_account_id") @db.Uuid
+  glAccount         GlAccount? @relation(fields: [organizationId, glAccountId], references: [organizationId, id])
+  icon              String?
+  active            Boolean  @default(true)
+  sortOrder         Int      @default(0) @map("sort_order")
+  itcGstHstRate     Int      @default(100) @map("itc_gst_hst_rate")
+  itcQstRate        Int      @default(100) @map("itc_qst_rate")
+  pstRecoverable    Boolean  @default(false) @map("pst_recoverable")
+  requiresAttendees Boolean  @default(false) @map("requires_attendees")
+  isMileage         Boolean  @default(false) @map("is_mileage")
+  acceptsTip        Boolean  @default(false) @map("accepts_tip")
+  color             String?
+  createdAt         DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
+  lineItems ExpenseLineItem[]
+
+  @@unique([organizationId, id])
   @@map("expense_category")
 }
 
-// ExpenseOS's `User`, on VeloExpense's `app_user`. Wave 0 carries only the columns the
-// shell reads (canSeeOthers: managerId, deletedAt) and the ones whose names already match
-// ExpenseOS's. VeloExpense differences, mapped when the People port needs them:
-//   · the name is one column (`display_name`), not firstName/lastName;
+// VeloExpense's chart of accounts (`gl_account`) — what ExpenseOS's
+// `NetSuiteAccount` is to its categories. Only the columns the category port reads.
+// `isActive` is ExpenseOS's name for VeloExpense's `active`.
+model GlAccount {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String   @default(dbgenerated("(NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid")) @map("organization_id") @db.Uuid
+  number         String
+  name           String
+  type           String
+  isPostable     Boolean  @default(true) @map("is_postable")
+  isActive       Boolean  @default(true) @map("active")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  expenseCategories ExpenseCategory[]
+
+  @@unique([organizationId, id])
+  @@map("gl_account")
+}
+
+// Only so `_count: { lineItems }` works — ExpenseOS's guard on changing a category's
+// kind once anything is filed against it. The line-item port (Wave 2) fills it in.
+model ExpenseLineItem {
+  id             String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String @default(dbgenerated("(NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid")) @map("organization_id") @db.Uuid
+  categoryId     String @map("category_id") @db.Uuid
+
+  category ExpenseCategory @relation(fields: [organizationId, categoryId], references: [organizationId, id])
+
+  @@map("expense_line_item")
+}
+
+// ExpenseOS's `User`, on VeloExpense's `app_user`. Wave 0 carries the columns the shell
+// (canSeeOthers) and the user picker read, and the ones whose names already match
+// ExpenseOS's. VeloExpense differences:
+//   · the name is one column (`display_name`, here `name`), not firstName/lastName;
 //   · the role is a text column (`role`), not a roleId into a roles table;
 //   · employeeStatus is text with a CHECK, not a Prisma enum.
 model User {
   id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   organizationId String    @default(dbgenerated("(NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid")) @map("organization_id") @db.Uuid
   email          String
+  /// ExpenseOS has firstName/lastName; VeloExpense has one display name.
+  name           String?   @map("display_name")
+  /// ExpenseOS's EmployeeStatus enum; text with a CHECK here (ACTIVE, ON_LEAVE, DEACTIVATED).
+  employeeStatus String    @default("ACTIVE") @map("employee_status")
   managerId      String?   @map("manager_id") @db.Uuid
   departmentId   String?   @map("department_id") @db.Uuid
   businessUnitId String?   @map("business_unit_id") @db.Uuid

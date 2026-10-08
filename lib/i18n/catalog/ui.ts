@@ -216,6 +216,7 @@ export const UI_COPY = {
   'title.admin.integrations': { 'en-CA': 'Accounting integrations' },
   'title.admin.ledger.queue': { 'en-CA': 'Ledger queue' },
   'title.admin.locale': { 'en-CA': 'Language and time' },
+  'title.admin.expense.categories': { 'en-CA': 'Expense categories' },
   'title.admin.modules': { 'en-CA': 'Modules' },
   'title.admin.notification.delivery': { 'en-CA': 'Email delivery' },
   'title.admin.notification.templates': { 'en-CA': 'Notification wording' },

@@ -102,13 +102,15 @@ describe("an admin's menu", () => {
         '/admin/modules',
         '/admin/integrations',
         '/admin/approval-ladder',
+        // Ported in Wave 0 — the first ExpenseOS screen at its own path.
+        '/admin/expense-categories',
       ].sort(),
     );
   });
 
   it('offers no ExpenseOS screen that is not ported yet', () => {
     show('admin');
-    for (const unported of ['/admin/roles', '/users', '/expenses/all', '/travel', '/admin/expense-categories']) {
+    for (const unported of ['/admin/roles', '/users', '/expenses/all', '/travel']) {
       expect(hrefs()).not.toContain(unported);
     }
   });
@@ -159,8 +161,8 @@ describe('isPortedScreen', () => {
     expect(isPortedScreen('/admin', ported)).toBe(false);
   });
 
-  it('titles nothing yet: no screen has been ported', async () => {
+  it('titles the screens ported so far, and only those', async () => {
     const { PORTED_SCREENS } = await import('./veloexpenseNav');
-    expect(PORTED_SCREENS).toEqual([]);
+    expect(PORTED_SCREENS).toEqual(['/admin/expense-categories']);
   });
 });

@@ -22,7 +22,7 @@ beforeAll(async () => {
   await withOrg(orgId, async (tx) => {
     await tx.query("INSERT INTO app_user (organization_id, email, display_name) VALUES ($1,'u@acme.test','U')", [orgId]);
     const c = await tx.query(
-      "INSERT INTO expense_category (organization_id, code, label) VALUES ($1,'meals','Meals') RETURNING id",
+      `INSERT INTO expense_category (organization_id, code, label) VALUES ($1,'meals','{"en":"Meals"}') RETURNING id`,
       [orgId],
     );
     categoryId = c.rows[0].id;
@@ -229,7 +229,7 @@ describe('expense workbench (VX1-6)', () => {
   it('lists only active categories for the picker', async () => {
     const codes = await withOrg(orgId, async (tx) => {
       await tx.query(
-        "INSERT INTO expense_category (organization_id, code, label, active) VALUES ($1,'retired','Retired',false)",
+        `INSERT INTO expense_category (organization_id, code, label, active) VALUES ($1,'retired','{"en":"Retired"}',false)`,
         [orgId],
       );
       const active = await svc.listCategories(tx);

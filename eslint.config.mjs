@@ -28,6 +28,12 @@ const PORTED_FROM_EXPENSEOS = [
   "app/(app)/**",
   "components/navigation/**",
   "components/ui/alert.tsx",
+  // Wave 0 expense categories: the router, the pickers and ExpenseOS's audit API.
+  "server/routers/expenseCategories*.ts",
+  "server/routers/pickers*.ts",
+  "server/__test-helpers__/**",
+  "components/pickers/**",
+  "packages/audit/**",
 ];
 
 const eslintConfig = defineConfig([

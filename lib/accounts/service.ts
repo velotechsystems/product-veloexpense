@@ -480,13 +480,13 @@ export interface CategoryMappingRow {
  */
 export async function listCategoryMappings(tx: QueryRunner): Promise<CategoryMappingRow[]> {
   const r = await tx.query(
-    `SELECT c.id, c.code, c.label, c.gl_account_id,
+    `SELECT c.id, c.code, c.label ->> 'en' AS label, c.gl_account_id,
             g.number AS gl_account_number, g.name AS gl_account_name,
             (c.gl_account_id IS NOT NULL AND g.id IS NULL) AS dangling
        FROM expense_category c
        LEFT JOIN gl_account g ON g.id = c.gl_account_id
       WHERE c.active
-      ORDER BY c.sort_order, c.label`,
+      ORDER BY c.sort_order, c.label ->> 'en'`,
   );
   return r.rows as CategoryMappingRow[];
 }

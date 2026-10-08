@@ -118,7 +118,7 @@ beforeAll(async () => {
     accountId = acct.rows[0].id;
     const cat = await tx.query(
       `INSERT INTO expense_category (organization_id, code, label, gl_account_id)
-       VALUES ($1,'travel','Travel',$2) RETURNING id`,
+       VALUES ($1,'travel','{"en":"Travel"}',$2) RETURNING id`,
       [orgId, accountId],
     );
     categoryId = cat.rows[0].id;

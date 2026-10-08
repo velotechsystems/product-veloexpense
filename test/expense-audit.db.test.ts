@@ -121,7 +121,7 @@ beforeAll(async () => {
     owner = auditActorOf(u.rows[0]);
     const c = await tx.query(
       `INSERT INTO expense_category (organization_id, code, label) VALUES
-         ($1,'meals','Meals'), ($1,'travel','Travel') RETURNING id, code`,
+         ($1,'meals','{"en":"Meals"}'), ($1,'travel','{"en":"Travel"}') RETURNING id, code`,
       [orgId],
     );
     categoryId = c.rows.find((r: { code: string }) => r.code === 'meals').id;

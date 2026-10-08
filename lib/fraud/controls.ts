@@ -498,7 +498,7 @@ export async function checkGlMappingGaps(
   period: Period,
 ): Promise<ControlFinding[]> {
   const r = await tx.query(
-    `SELECT cat.id, cat.code, cat.label,
+    `SELECT cat.id, cat.code, cat.label ->> 'en' AS label,
             count(li.id) AS line_items,
             array_agg(DISTINCT e.currency_code ORDER BY e.currency_code) AS currencies
        FROM expense_line_item li
@@ -507,7 +507,7 @@ export async function checkGlMappingGaps(
        JOIN expense_report rep ON rep.id = e.report_id
       WHERE rep.created_at >= $1 AND rep.created_at < $2
         AND cat.gl_account_id IS NULL
-      GROUP BY cat.id, cat.code, cat.label
+      GROUP BY cat.id, cat.code, cat.label ->> 'en'
       ORDER BY count(li.id) DESC, cat.code`,
     [period.start, period.end],
   );

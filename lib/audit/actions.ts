@@ -123,6 +123,11 @@ export const AUDIT_ACTIONS = [
   'NOTIFICATION_TEMPLATE_RESET',
 
   /* tenant configuration */
+  /* Expense categories — the Wave 0 ExpenseOS port (packages/audit/src/actions.ts maps
+     ExpenseOS's `admin.expenseCategory.*` onto these). A reorder is an UPDATED, as in
+     ExpenseOS. */
+  'EXPENSE_CATEGORY_CREATED',
+  'EXPENSE_CATEGORY_UPDATED',
   'MODULE_ENABLED',
   'MODULE_DISABLED',
   'USER_LOCALE_CHANGED',
