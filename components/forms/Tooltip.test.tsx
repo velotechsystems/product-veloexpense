@@ -1,7 +1,7 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it } from 'vitest';
-import { Tooltip } from './tooltip';
+import { Tooltip } from './Tooltip';
 
 /**
  * VeloExpense: ExpenseOS's `<Tooltip content>` call shape on the kit's Radix parts. Two ported

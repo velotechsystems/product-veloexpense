@@ -128,6 +128,11 @@ export const AUDIT_ACTIONS = [
      ExpenseOS. */
   'EXPENSE_CATEGORY_CREATED',
   'EXPENSE_CATEGORY_UPDATED',
+  /* Business units — the Wave 1 port (admin.businessUnit.*). ExpenseOS's `delete` is the
+     soft deactivation; a reactivation is an UPDATED, as in ExpenseOS. */
+  'BUSINESS_UNIT_CREATED',
+  'BUSINESS_UNIT_UPDATED',
+  'BUSINESS_UNIT_DEACTIVATED',
   'MODULE_ENABLED',
   'MODULE_DISABLED',
   'USER_LOCALE_CHANGED',

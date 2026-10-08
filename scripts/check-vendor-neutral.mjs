@@ -258,9 +258,15 @@ for (const full of walk(ROOT)) {
   // Wave 0: code ported from ExpenseOS keeps ExpenseOS's layout, so it also lives in
   // server/, packages/, components/ and i18n/. Without these the guard would wave a vendor
   // name through simply because it arrived in a ported file.
+  //
+  // A ported ExpenseOS TEST is not core: it never runs in the product, and ExpenseOS's
+  // tests of its generic External IDs editor use real system names ("netsuite") as
+  // fixture data (Wave 1). A vendor name in a fixture is data, like a seed row. Tests
+  // under test/ were never scanned; this extends the same to the colocated ones.
   const isCore =
     /^(lib|app|server|packages|components|i18n)\//.test(rel) &&
-    (rel.endsWith('.ts') || rel.endsWith('.tsx'));
+    (rel.endsWith('.ts') || rel.endsWith('.tsx')) &&
+    !/\.test\.tsx?$/.test(rel);
   if (!isMigration && !isCore) continue;
 
   const original = readFileSync(full, 'utf8');

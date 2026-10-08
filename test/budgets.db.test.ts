@@ -282,7 +282,7 @@ describe('the budget schema refuses independently of any service (0024)', () => 
 
   it('allows the same account narrowed to DIFFERENT business units', async () => {
     const bu = await admin.query(
-      `INSERT INTO business_unit (organization_id, name) VALUES ($1,'West'),($1,'East')
+      `INSERT INTO business_unit (organization_id, label) VALUES ($1,'{"en":"West"}'),($1,'{"en":"East"}')
        RETURNING id`,
       [orgId],
     );

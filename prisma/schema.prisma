@@ -123,3 +123,61 @@ model User {
 
   @@map("app_user")
 }
+
+// ExpenseOS's `BusinessUnit` (Wave 1). Migration 0047 brought `business_unit` to this
+// shape: `label` and `description` are `{ en, fr-CA }` JSON, and `active` is the soft
+// toggle. VeloExpense differences:
+//   · no createdBy / updatedBy columns (the audit chain records who, as for categories);
+//   · the English name is unique per tenant (0047's index), as it always was here.
+// The back-relations to ExpenseOS's other models arrive with those models.
+model BusinessUnit {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String   @default(dbgenerated("(NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid")) @map("organization_id") @db.Uuid
+  label          Json
+  description    Json?
+  active         Boolean  @default(true)
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  externalIds BusinessUnitExternalId[]
+
+  @@unique([organizationId, id])
+  @@map("business_unit")
+}
+
+// ExpenseOS's `ExternalIdSource`: an outside system a tenant federates to. VeloExpense:
+// per tenant (`code` is unique within the organization, not globally), and without
+// ExpenseOS's `integrationId` (migration 0047).
+model ExternalIdSource {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String   @default(dbgenerated("(NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid")) @map("organization_id") @db.Uuid
+  code           String
+  label          Json
+  active         Boolean  @default(true)
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  businessUnitAliases BusinessUnitExternalId[]
+
+  @@unique([organizationId, code])
+  @@unique([organizationId, id])
+  @@map("external_id_source")
+}
+
+// ExpenseOS's `BusinessUnitExternalId`: one business unit's id in one outside system.
+model BusinessUnitExternalId {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String   @default(dbgenerated("(NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid")) @map("organization_id") @db.Uuid
+  sourceId       String   @map("source_id") @db.Uuid
+  sourceValue    String   @map("source_value")
+  businessUnitId String   @map("business_unit_id") @db.Uuid
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  source       ExternalIdSource @relation(fields: [organizationId, sourceId], references: [organizationId, id], onDelete: Cascade)
+  businessUnit BusinessUnit     @relation(fields: [organizationId, businessUnitId], references: [organizationId, id], onDelete: Cascade)
+
+  @@unique([sourceId, sourceValue])
+  @@index([businessUnitId])
+  @@map("business_unit_external_id")
+}

@@ -20,8 +20,8 @@
  *     accounts: the database refuses a heading account on a category
  *     (`gl_account_must_be_postable`), so offering one would be offering a refusal.
  *   · People have one name column (`display_name`), not first/last.
- *   · `vendors` and `externalIdSources` are not ported: VeloExpense has no vendor list
- *     or external-id sources yet. They arrive with the screens that need them.
+ *   · `vendors` is not ported: VeloExpense has no vendor list yet. It arrives with the
+ *     screen that needs it. (`externalIdSources` arrived with business units, Wave 1.)
  */
 import { z } from 'zod';
 import { protectedProcedure, router } from '@/server/trpc';
@@ -129,5 +129,25 @@ export const pickersRouter = router({
       });
       return u ? { value: u.id, label: personLabel(u) } : null;
     }),
+  }),
+  /**
+   * The systems this tenant federates identifiers to — every active `ExternalIdSource`.
+   *
+   * Not a search: the list is a handful of rows and every external-id sub-form in the
+   * product needs all of them at once. It lives here rather than on `users` because it
+   * is not about users: `users.listFilterFacets` was the only way to reach it, so the
+   * admin lookups fell back to a HARDCODED list of four system names — wrong in both
+   * directions, offering systems a tenant does not use and unable to offer one they
+   * had added.
+   *
+   * Ordered by code so the picker does not reshuffle between renders.
+   */
+  externalIdSources: protectedProcedure.query(async ({ ctx }) => {
+    const rows = await ctx.db.externalIdSource.findMany({
+      where: { active: true },
+      select: { code: true, label: true },
+      orderBy: { code: 'asc' },
+    });
+    return rows.map((r) => ({ code: r.code, label: r.label }));
   }),
 });

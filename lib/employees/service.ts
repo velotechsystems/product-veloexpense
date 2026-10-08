@@ -106,7 +106,7 @@ const EMPLOYEE_COLUMNS = `
   u.id, u.email, u.display_name, u.title, u.role, u.employee_status,
   u.manager_id, m.display_name AS manager_name, m.email AS manager_email,
   u.department_id, d.name AS department_name,
-  u.business_unit_id, bu.name AS business_unit_name,
+  u.business_unit_id, bu.label ->> 'en' AS business_unit_name,
   u.legal_entity_id, le.name AS legal_entity_name,
   u.deleted_at, u.created_at, u.updated_at`;
 
@@ -440,10 +440,26 @@ export async function listDepartments(tx: QueryRunner) {
   return r.rows as Array<{ id: string; name: string; parent_department_id: string | null }>;
 }
 
+/**
+ * Every business unit, with whether it is active. Since the Wave 1 port a unit is
+ * deactivated rather than deleted (ExpenseOS's soft delete), and a deactivated one must
+ * not be OFFERED — but a record already pointing at one must keep showing it, or the
+ * form's select would fall back to "none" and a save would silently unassign it. So the
+ * callers offer `active || id === current` (`businessUnitChoices`).
+ *
+ * The name is the English one (`label` is `{ en, fr-CA }` JSON since migration 0047).
+ */
 export async function listBusinessUnits(tx: QueryRunner) {
-  const r = await tx.query('SELECT id, name FROM business_unit ORDER BY name');
-  return r.rows as Array<{ id: string; name: string }>;
+  const r = await tx.query(
+    `SELECT id, label ->> 'en' AS name, active
+       FROM business_unit
+      ORDER BY lower(label ->> 'en')`,
+  );
+  return r.rows as Array<{ id: string; name: string; active: boolean }>;
 }
+
+
+export { businessUnitChoices } from './business-unit-choices';
 
 export async function listLegalEntities(tx: QueryRunner) {
   const r = await tx.query('SELECT id, name, country, currency_code FROM legal_entity ORDER BY name');

@@ -203,6 +203,7 @@ export const UI_COPY = {
   'title.admin.analytics': { 'en-CA': 'Spend analytics' },
   'title.admin.approval.ladder': { 'en-CA': 'Approval ladder' },
   'title.admin.billing': { 'en-CA': 'Billing' },
+  'title.admin.business.units': { 'en-CA': 'Business units' },
   'title.admin.branding': { 'en-CA': 'Branding' },
   'title.admin.budgets': { 'en-CA': 'Budgets' },
   'title.admin.chart.of.accounts': { 'en-CA': 'Chart of accounts' },

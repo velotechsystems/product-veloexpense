@@ -495,7 +495,7 @@ export async function listReports(
     `SELECT r.id, r.number, r.title, r.status, r.total_minor, r.currency_code,
             c.minor_unit,
             r.submitter_id, u.display_name AS submitter_name, u.email AS submitter_email,
-            bu.name AS business_unit_name,
+            bu.label ->> 'en' AS business_unit_name,
             (SELECT COUNT(*) FROM expense e WHERE e.report_id = r.id) AS expense_count,
             (SELECT COUNT(*) FROM receipt rc JOIN expense e2 ON e2.id = rc.expense_id
               WHERE e2.report_id = r.id AND rc.status = 'STORED') AS receipt_count,
@@ -540,7 +540,7 @@ export async function getReportWorkbench(
   const reportRes = await tx.query(
     `SELECT r.*, c.minor_unit,
             u.display_name AS submitter_name, u.email AS submitter_email,
-            bu.name AS business_unit_name
+            bu.label ->> 'en' AS business_unit_name
        FROM expense_report r
        JOIN app_user u ON u.id = r.submitter_id
        JOIN currency c ON c.code = r.currency_code
