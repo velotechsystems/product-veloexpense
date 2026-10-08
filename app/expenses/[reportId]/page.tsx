@@ -62,6 +62,7 @@ import { TableCard } from '@/components/screen';
 import { NativeSelect } from '@/components/ui/native-select';
 import { Textarea } from '@/components/ui/textarea';
 import { BackLink, Screen } from '@/components/screen';
+import { businessUnitChoices } from '@/lib/employees/business-unit-choices';
 export const dynamic = 'force-dynamic';
 
 
@@ -220,7 +221,8 @@ export default async function ReportWorkbenchPage({
                   defaultValue={report.business_unit_id ?? ''}
                 >
                   <option value="">— none —</option>
-                  {businessUnits.map((bu) => (
+                  {/* Active units, plus the report's own if it has been deactivated since. */}
+                  {businessUnitChoices(businessUnits, report.business_unit_id).map((bu) => (
                     <option key={bu.id} value={bu.id}>
                       {bu.name}
                     </option>

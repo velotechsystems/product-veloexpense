@@ -291,7 +291,7 @@ async function seedReportingLine(orgId, opts = {}) {
           AND bu.organization_id = $1
           AND le.organization_id = $1
           AND d.name  = 'General & Admin'
-          AND bu.name = 'Head Office'
+          AND bu.label ->> 'en' = 'Head Office'
           AND le.name = $2`,
       [orgId, entityName],
     );
@@ -422,8 +422,11 @@ async function seedReferenceData(orgId, entityName = 'Demo Co Inc.') {
     await client.query('BEGIN');
     await client.query("SELECT set_config('app.current_org', $1, true)", [orgId]);
     await client.query(
-      `INSERT INTO business_unit (organization_id, name) VALUES ($1, 'Head Office')
-         ON CONFLICT (organization_id, name) DO NOTHING`, [orgId]);
+      // `label` is { en, fr-CA } JSON since migration 0047 (the Wave 1 port); the English
+      // name is unique per tenant, case-insensitively.
+      `INSERT INTO business_unit (organization_id, label)
+         VALUES ($1, jsonb_build_object('en', 'Head Office'))
+         ON CONFLICT (organization_id, lower(btrim(label ->> 'en'))) DO NOTHING`, [orgId]);
     await client.query(
       `INSERT INTO legal_entity (organization_id, name, country, currency_code)
          VALUES ($1, $2, 'CA', 'CAD')

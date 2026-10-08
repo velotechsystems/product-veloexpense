@@ -31,6 +31,11 @@ export {
   parseLastNDays,
   resolveDateFilter,
 } from '@/components/data-display/filters';
+export {
+  ExternalIdsBlock,
+  ExternalIdsCell,
+  externalIdEntries,
+} from '@/components/data-display/ExternalIds';
 export { ScopeChip } from '@/components/data-display/ScopeChip';
 export { Scroll2D } from '@/components/data-display/Scroll2D';
 export {
@@ -49,6 +54,34 @@ export {
   ViewDropdown,
   ViewsBar,
 } from '@/components/data-display/saved-views';
+
+// ── forms ────────────────────────────────────────────────────────────
+export { ColorInput, type ColorInputProps } from '@/components/forms/ColorInput';
+export {
+  type ExternalIdEntry,
+  type ExternalIdSourceOption,
+  ExternalIdsEditor,
+  type ExternalIdsEditorProps,
+  entriesFromMap,
+  mapFromEntries,
+} from '@/components/forms/ExternalIdsEditor';
+export { Fieldset, type FieldsetProps } from '@/components/forms/Fieldset';
+export { AlignedFields, Field, type FieldProps } from '@/components/forms/field/Field';
+export { HexInput, type HexInputProps, isValidHex } from '@/components/forms/HexInput';
+export { MultiSelectDropdown } from '@/components/forms/MultiSelectDropdown';
+export type { MultiSelectDropdownProps } from '@/components/forms/MultiSelectDropdown.types';
+export { NumberStepper, type NumberStepperProps } from '@/components/forms/NumberStepper';
+export {
+  SchemaForm,
+  type SchemaFormHandle,
+  type SchemaFormProps,
+  schemaFormValidator,
+} from '@/components/forms/schema-form';
+
+// ── icons ────────────────────────────────────────────────────────────
+// ExpenseOS's barrel re-exports the Tabler icons its screens use (`src/icons`); each lands
+// here with the first ported screen that imports it from this barrel.
+export { IconEdit, IconPlus } from '@tabler/icons-react';
 
 // ── navigation ───────────────────────────────────────────────────────
 export { NavLink, type NavLinkProps } from '@/components/navigation/NavLink';
@@ -96,7 +129,9 @@ export {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-export { Tooltip } from './tooltip';
+// VeloExpense: ExpenseOS's one-component Tooltip, on the kit's parts — in the kit's `forms`
+// item since Wave 1 (it was this package's own file in Wave 0).
+export { Tooltip } from '@/components/forms/Tooltip';
 
 // ── hooks, tokens, utils ─────────────────────────────────────────────
 export { useIsCompact } from '@/hooks/useIsCompact';

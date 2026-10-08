@@ -17,7 +17,7 @@
 import { redirect } from 'next/navigation';
 import { errorParam } from '@/lib/errors/domain';
 import { revalidatePath } from 'next/cache';
-import { listDepartments } from '@/lib/employees/service';
+import { businessUnitChoices, listBusinessUnits, listDepartments } from '@/lib/employees/service';
 import { listCurrencies } from '@/lib/expenses/service';
 import { listPostableAccounts } from '@/lib/accounts/service';
 import { isModuleEnabled } from '@/lib/modules/service';
@@ -42,13 +42,9 @@ export async function getBudgetsPage() {
     accountingEnabled: await isModuleEnabled(tx, 'accounting'),
     accounts: await listPostableAccounts(tx),
     departments: await listDepartments(tx),
-    // Read here rather than through a service function: `lib/employees/service.ts`
-    // has `listDepartments` and no business-unit equivalent, and adding one to a
-    // service this page is the only caller of would be a wider change than the
-    // query it replaces.
-    businessUnits: await tx
-      .query('SELECT id, name FROM business_unit ORDER BY name')
-      .then((r) => r.rows as Array<{ id: string; name: string }>),
+    // A new budget may be scoped to an ACTIVE business unit only; deactivated ones are
+    // retired (the Wave 1 port's soft delete). Existing budgets keep theirs, by name.
+    businessUnits: businessUnitChoices(await listBusinessUnits(tx)),
     currencies: await listCurrencies(tx),
     people: await tx.query(
       `SELECT id, COALESCE(display_name, email) AS name, email

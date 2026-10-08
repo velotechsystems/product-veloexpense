@@ -45,6 +45,15 @@ const VENDORED = {
   'use-is-compact': 'hooks/useIsCompact.ts',
   // Wave 0 shell: ExpenseOS's Alert (InterruptedWorkNotice, DesktopOnlyNotice).
   alert: 'components/ui/alert.tsx',
+  // Wave 1: what ExpenseOS's form kit (`forms`, below) is built on.
+  label: 'components/ui/label.tsx',
+  radio: 'components/ui/radio.tsx',
+  slider: 'components/ui/slider.tsx',
+  'markdown-text': 'components/ui/markdown-text.tsx',
+  'description-text': 'components/ui/description-text.tsx',
+  'input-group': 'components/ui/input-group.tsx',
+  command: 'components/ui/command.tsx',
+  dialog: 'components/ui/dialog.tsx',
 };
 
 /**
@@ -52,8 +61,9 @@ const VENDORED = {
  * `data-display` is ExpenseOS's data-table, filter and saved-view components (31 files),
  * ported into the kit for Wave 0; a single-file comparison would check one and wave the
  * other thirty through. `navigation` is ExpenseOS's sidebar primitives (the Wave 0 shell).
+ * `forms` is ExpenseOS's form kit (SchemaForm, Field, the External IDs editor; Wave 1).
  */
-const VENDORED_MULTI = ['data-display', 'navigation'];
+const VENDORED_MULTI = ['data-display', 'navigation', 'forms'];
 
 async function item(name) {
   if (!/^https?:/.test(REGISTRY)) return JSON.parse(readFileSync(join(REGISTRY, `${name}.json`), 'utf8'));

@@ -95,7 +95,7 @@ beforeAll(async () => {
         [org, `Entity ${label}`],
       );
       await tx.query(
-        'INSERT INTO business_unit (organization_id, name) VALUES ($1, $2)',
+        "INSERT INTO business_unit (organization_id, label) VALUES ($1, jsonb_build_object('en', $2::text))",
         [org, `Unit ${label}`],
       );
       // A parent and a child, so the SELF-REFERENCE is exercised too:
@@ -516,7 +516,7 @@ describe('RLS tenant isolation', () => {
   it('the reference tables — entities, units and departments — are tenant-isolated', async () => {
     const a = await withOrg(orgA, async (tx) => ({
       entities: (await tx.query('SELECT name FROM legal_entity')).rows.map((r) => r.name),
-      units: (await tx.query('SELECT name FROM business_unit')).rows.map((r) => r.name),
+      units: (await tx.query("SELECT label ->> 'en' AS name FROM business_unit")).rows.map((r) => r.name),
       departments: (await tx.query('SELECT name FROM department ORDER BY name')).rows.map(
         (r) => r.name,
       ),
@@ -1810,6 +1810,94 @@ describe('RLS tenant isolation', () => {
     expect(blind.rows[0].n).toBe(0);
 
     await admin.query('DELETE FROM subscription_meter_reading');
+  });
+
+  /* ── External IDs (the Wave 1 business-unit port, migration 0047) ─────────
+   *
+   * ExpenseOS's `ExternalIdSource` and `BusinessUnitExternalId`, made per tenant.
+   * The ordinary claim for both, no hatch, and the composite FKs pinned
+   * concretely: Postgres checks referential integrity with RLS BYPASSED, so a
+   * single-column reference would let an alias name another tenant's source or
+   * business unit.
+   */
+  it("external-id sources and business-unit aliases are tenant-isolated, and cannot name another tenant's rows", async () => {
+    await admin.query('DELETE FROM business_unit_external_id');
+    await admin.query('DELETE FROM external_id_source');
+    const seed = async (org: string, value: string) =>
+      withOrg(org, async (tx) => {
+        const bu = (await tx.query("SELECT id FROM business_unit LIMIT 1")).rows[0].id as string;
+        const src = (
+          await tx.query(
+            `INSERT INTO external_id_source (organization_id, code, label)
+             VALUES ($1, 'ledger', '{"en":"Ledger"}') RETURNING id`,
+            [org],
+          )
+        ).rows[0].id as string;
+        await tx.query(
+          `INSERT INTO business_unit_external_id (organization_id, source_id, source_value, business_unit_id)
+           VALUES ($1, $2, $3, $4)`,
+          [org, src, value, bu],
+        );
+        return { bu, src };
+      });
+    const a = await seed(orgA, 'A-1');
+    const b = await seed(orgB, 'B-1');
+
+    for (const [org, expected] of [
+      [orgA, 'A-1'],
+      [orgB, 'B-1'],
+    ] as const) {
+      const seen = await withOrg(org, async (tx) => ({
+        sources: (await tx.query('SELECT code FROM external_id_source')).rows.map((r) => r.code),
+        aliases: (await tx.query('SELECT source_value FROM business_unit_external_id')).rows.map(
+          (r) => r.source_value,
+        ),
+      }));
+      expect(seen).toEqual({ sources: ['ledger'], aliases: [expected] });
+    }
+
+    // WITH CHECK: naming another tenant does not write there.
+    await expect(
+      withOrg(orgB, (tx) =>
+        tx.query(
+          `INSERT INTO external_id_source (organization_id, code, label) VALUES ($1, 'x', '{"en":"X"}')`,
+          [orgA],
+        ),
+      ),
+    ).rejects.toThrow(/row-level security|violates/i);
+
+    // The composite FKs: B cannot point an alias at A's source, or at A's unit.
+    await expect(
+      withOrg(orgB, (tx) =>
+        tx.query(
+          `INSERT INTO business_unit_external_id (organization_id, source_id, source_value, business_unit_id)
+           VALUES ($1, $2, 'B-2', $3)`,
+          [orgB, a.src, b.bu],
+        ),
+      ),
+    ).rejects.toThrow(/foreign key/i);
+    await expect(
+      withOrg(orgB, (tx) =>
+        tx.query(
+          `INSERT INTO business_unit_external_id (organization_id, source_id, source_value, business_unit_id)
+           VALUES ($1, $2, 'B-3', $3)`,
+          [orgB, b.src, a.bu],
+        ),
+      ),
+    ).rejects.toThrow(/foreign key/i);
+
+    // NO HATCH, and nothing without a tenant.
+    for (const table of ['external_id_source', 'business_unit_external_id']) {
+      const viaPlatform = await withPlatformRead((tx) =>
+        tx.query(`SELECT count(*)::int AS n FROM ${table}`),
+      );
+      expect(viaPlatform.rows[0].n).toBe(0);
+      const blind = await withoutOrg((tx) => tx.query(`SELECT count(*)::int AS n FROM ${table}`));
+      expect(blind.rows[0].n).toBe(0);
+    }
+
+    await admin.query('DELETE FROM business_unit_external_id');
+    await admin.query('DELETE FROM external_id_source');
   });
 
   /* ── export requests (VX5-12, migration 0041) ─────────────────────────────

@@ -70,7 +70,6 @@ export const VELOEXPENSE_ROUTES: Readonly<Record<string, string | null>> = {
   '/admin/fraud-detection': null,
   '/admin/control-evaluation': null,
   '/admin/roles': null,
-  '/admin/business-units': null,
   '/admin/legal-entities': null,
   '/admin/departments': null,
   '/admin/job-levels': null,
@@ -170,7 +169,10 @@ export const VELOEXPENSE_ITEMS: Readonly<Record<string, readonly VeloExpenseNavI
  * it would put two headings with the same name on the page. Grows by one entry per ported
  * screen, and goes when every page is a port.
  */
-export const PORTED_SCREENS: readonly string[] = ['/admin/expense-categories'];
+export const PORTED_SCREENS: readonly string[] = [
+  '/admin/expense-categories',
+  '/admin/business-units',
+];
 
 /** Whether the top bar should title this path: it is a ported ExpenseOS screen. */
 export function isPortedScreen(pathname: string, ported: readonly string[] = PORTED_SCREENS): boolean {

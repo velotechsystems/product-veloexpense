@@ -85,6 +85,10 @@ export const EXPORTED: Readonly<Record<string, ExportedTable>> = {
   app_user: { file: 'users.csv' },
   department: { file: 'departments.csv' },
   business_unit: { file: 'business-units.csv' },
+  // External IDs (the Wave 1 port): the outside systems the tenant federates to, and each
+  // business unit's id in them. The tenant's own mapping, so it leaves with the tenant.
+  external_id_source: { file: 'external-id-sources.csv' },
+  business_unit_external_id: { file: 'business-unit-external-ids.csv' },
   legal_entity: { file: 'legal-entities.csv' },
   invite: {
     file: 'invites.csv',

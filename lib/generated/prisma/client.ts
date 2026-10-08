@@ -61,3 +61,18 @@ export type ExpenseLineItem = Prisma.ExpenseLineItemModel
  * 
  */
 export type User = Prisma.UserModel
+/**
+ * Model BusinessUnit
+ * 
+ */
+export type BusinessUnit = Prisma.BusinessUnitModel
+/**
+ * Model ExternalIdSource
+ * 
+ */
+export type ExternalIdSource = Prisma.ExternalIdSourceModel
+/**
+ * Model BusinessUnitExternalId
+ * 
+ */
+export type BusinessUnitExternalId = Prisma.BusinessUnitExternalIdModel

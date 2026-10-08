@@ -4,10 +4,11 @@
  * ExpenseOS's `Tooltip` API — `<Tooltip content={…}>trigger</Tooltip>`, with `asChild` — on the
  * kit's Radix tooltip parts.
  *
- * VeloExpense: ExpenseOS's design system exports a single convenience component (Base UI
- * underneath); the kit exports shadcn's compound parts. Ported screens keep ExpenseOS's call
- * shape, so the difference is absorbed here, once, instead of in every screen. The classes are
- * ExpenseOS's own (popover surface, small text, 6px offset).
+ * VeloExpense kit: ExpenseOS's design system exports a single convenience component (Base UI
+ * underneath); the kit exports shadcn's compound parts. The ported form components keep
+ * ExpenseOS's call shape, so the difference is absorbed here, once. The classes are ExpenseOS's
+ * own (popover surface, small text, 6px offset). Products that port ExpenseOS screens can use
+ * it too.
  */
 import type * as React from 'react';
 import { Tooltip as Root, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
