@@ -158,6 +158,7 @@ model ExternalIdSource {
   updatedAt      DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   businessUnitAliases BusinessUnitExternalId[]
+  legalEntityAliases  LegalEntityExternalId[]
 
   @@unique([organizationId, code])
   @@unique([organizationId, id])
@@ -180,4 +181,65 @@ model BusinessUnitExternalId {
   @@unique([sourceId, sourceValue])
   @@index([businessUnitId])
   @@map("business_unit_external_id")
+}
+
+// ExpenseOS's `LegalEntity` (Wave 1). Migration 0048 brought `legal_entity` to this shape.
+// VeloExpense differences:
+//   · the home currency is VeloExpense's `currency_code`, a foreign key to the shared
+//     `currency` table by ISO code. ExpenseOS's `homeCurrencyId` is a uuid FK to its
+//     Currency row; VeloExpense's currency row is keyed by the code, so the field keeps
+//     ExpenseOS's name and holds the code;
+//   · no createdBy / updatedBy (the audit chain records who);
+//   · the English name is unique per tenant (0048's index).
+model LegalEntity {
+  id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String    @default(dbgenerated("(NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid")) @map("organization_id") @db.Uuid
+  label          Json
+  description    Json?
+  /// ISO-3166-1 alpha-2 country code (e.g. "CA", "US").
+  country        String?
+  /// VeloExpense: the ISO-4217 code (the `currency` row's key), not a uuid.
+  homeCurrencyId String?   @map("currency_code")
+  homeCurrency   Currency? @relation(fields: [homeCurrencyId], references: [code], onDelete: Restrict)
+  active         Boolean   @default(true)
+  itcRecoverable Boolean   @default(true) @map("itc_recoverable")
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  externalIds LegalEntityExternalId[]
+
+  @@unique([organizationId, id])
+  @@map("legal_entity")
+}
+
+// ExpenseOS's `LegalEntityExternalId`: one legal entity's id in one outside system.
+model LegalEntityExternalId {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String   @default(dbgenerated("(NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid")) @map("organization_id") @db.Uuid
+  sourceId       String   @map("source_id") @db.Uuid
+  sourceValue    String   @map("source_value")
+  legalEntityId  String   @map("legal_entity_id") @db.Uuid
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  source      ExternalIdSource @relation(fields: [organizationId, sourceId], references: [organizationId, id], onDelete: Cascade)
+  legalEntity LegalEntity      @relation(fields: [organizationId, legalEntityId], references: [organizationId, id], onDelete: Cascade)
+
+  @@unique([sourceId, sourceValue])
+  @@index([legalEntityId])
+  @@map("legal_entity_external_id")
+}
+
+// VeloExpense's shared `currency` reference table (migration 0001; not tenant-scoped).
+// ExpenseOS's `Currency` has a uuid id, a localized label, a symbol and an active flag;
+// VeloExpense's row is the ISO code, an English name and the minor units. Only what the
+// ported code reads is described here.
+model Currency {
+  code      String @id
+  name      String
+  minorUnit Int    @map("minor_unit") @db.SmallInt
+
+  legalEntities LegalEntity[]
+
+  @@map("currency")
 }

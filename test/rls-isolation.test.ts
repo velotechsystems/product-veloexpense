@@ -90,8 +90,8 @@ beforeAll(async () => {
   ] as const) {
     await withOrg(org, async (tx) => {
       await tx.query(
-        `INSERT INTO legal_entity (organization_id, name, country, currency_code)
-         VALUES ($1, $2, 'CA', 'CAD')`,
+        `INSERT INTO legal_entity (organization_id, label, country, currency_code)
+         VALUES ($1, jsonb_build_object('en', $2::text), 'CA', 'CAD')`,
         [org, `Entity ${label}`],
       );
       await tx.query(
@@ -515,7 +515,9 @@ describe('RLS tenant isolation', () => {
 
   it('the reference tables — entities, units and departments — are tenant-isolated', async () => {
     const a = await withOrg(orgA, async (tx) => ({
-      entities: (await tx.query('SELECT name FROM legal_entity')).rows.map((r) => r.name),
+      entities: (await tx.query("SELECT label ->> 'en' AS name FROM legal_entity")).rows.map(
+        (r) => r.name,
+      ),
       units: (await tx.query("SELECT label ->> 'en' AS name FROM business_unit")).rows.map((r) => r.name),
       departments: (await tx.query('SELECT name FROM department ORDER BY name')).rows.map(
         (r) => r.name,
@@ -1821,6 +1823,7 @@ describe('RLS tenant isolation', () => {
    * business unit.
    */
   it("external-id sources and business-unit aliases are tenant-isolated, and cannot name another tenant's rows", async () => {
+    await admin.query('DELETE FROM legal_entity_external_id');
     await admin.query('DELETE FROM business_unit_external_id');
     await admin.query('DELETE FROM external_id_source');
     const seed = async (org: string, value: string) =>
@@ -1897,6 +1900,83 @@ describe('RLS tenant isolation', () => {
     }
 
     await admin.query('DELETE FROM business_unit_external_id');
+    await admin.query('DELETE FROM external_id_source');
+  });
+
+  /* ── Legal-entity External IDs (the Wave 1 legal-entity port, migration 0048) ──
+   *
+   * The same claim as the business-unit aliases above, for `legal_entity_external_id`:
+   * tenant-isolated, WITH CHECK holds, no hatch, and the composite FKs refuse another
+   * tenant's source or entity.
+   */
+  it("legal-entity aliases are tenant-isolated, and cannot name another tenant's rows", async () => {
+    await admin.query('DELETE FROM legal_entity_external_id');
+    await admin.query('DELETE FROM business_unit_external_id');
+    await admin.query('DELETE FROM external_id_source');
+    const seed = async (org: string, value: string) =>
+      withOrg(org, async (tx) => {
+        const le = (await tx.query('SELECT id FROM legal_entity LIMIT 1')).rows[0].id as string;
+        const src = (
+          await tx.query(
+            `INSERT INTO external_id_source (organization_id, code, label)
+             VALUES ($1, 'ledger', '{"en":"Ledger"}') RETURNING id`,
+            [org],
+          )
+        ).rows[0].id as string;
+        await tx.query(
+          `INSERT INTO legal_entity_external_id (organization_id, source_id, source_value, legal_entity_id)
+           VALUES ($1, $2, $3, $4)`,
+          [org, src, value, le],
+        );
+        return { le, src };
+      });
+    const a = await seed(orgA, 'LE-A');
+    const b = await seed(orgB, 'LE-B');
+
+    for (const [org, expected] of [
+      [orgA, 'LE-A'],
+      [orgB, 'LE-B'],
+    ] as const) {
+      const seen = await withOrg(org, (tx) => tx.query('SELECT source_value FROM legal_entity_external_id'));
+      expect(seen.rows.map((r) => r.source_value)).toEqual([expected]);
+    }
+
+    await expect(
+      withOrg(orgB, (tx) =>
+        tx.query(
+          `INSERT INTO legal_entity_external_id (organization_id, source_id, source_value, legal_entity_id)
+           VALUES ($1, $2, 'X', $3)`,
+          [orgA, a.src, a.le],
+        ),
+      ),
+    ).rejects.toThrow(/row-level security|violates/i);
+    await expect(
+      withOrg(orgB, (tx) =>
+        tx.query(
+          `INSERT INTO legal_entity_external_id (organization_id, source_id, source_value, legal_entity_id)
+           VALUES ($1, $2, 'LE-B2', $3)`,
+          [orgB, a.src, b.le],
+        ),
+      ),
+    ).rejects.toThrow(/foreign key/i);
+    await expect(
+      withOrg(orgB, (tx) =>
+        tx.query(
+          `INSERT INTO legal_entity_external_id (organization_id, source_id, source_value, legal_entity_id)
+           VALUES ($1, $2, 'LE-B3', $3)`,
+          [orgB, b.src, a.le],
+        ),
+      ),
+    ).rejects.toThrow(/foreign key/i);
+
+    const viaPlatform = await withPlatformRead((tx) =>
+      tx.query('SELECT count(*)::int AS n FROM legal_entity_external_id'),
+    );
+    expect(viaPlatform.rows[0].n).toBe(0);
+    const blind = await withoutOrg((tx) => tx.query('SELECT count(*)::int AS n FROM legal_entity_external_id'));
+    expect(blind.rows[0].n).toBe(0);
+
+    await admin.query('DELETE FROM legal_entity_external_id');
     await admin.query('DELETE FROM external_id_source');
   });
 

@@ -106,6 +106,7 @@ describe("an admin's menu", () => {
         '/admin/expense-categories',
         // Ported in Wave 1.
         '/admin/business-units',
+        '/admin/legal-entities',
       ].sort(),
     );
   });
@@ -165,6 +166,10 @@ describe('isPortedScreen', () => {
 
   it('titles the screens ported so far, and only those', async () => {
     const { PORTED_SCREENS } = await import('./veloexpenseNav');
-    expect(PORTED_SCREENS).toEqual(['/admin/expense-categories', '/admin/business-units']);
+    expect(PORTED_SCREENS).toEqual([
+      '/admin/expense-categories',
+      '/admin/business-units',
+      '/admin/legal-entities',
+    ]);
   });
 });

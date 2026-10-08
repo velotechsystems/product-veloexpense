@@ -12,7 +12,7 @@ import { pageTitle } from '@/lib/i18n/page-title';
 import { NativeSelect } from '@/components/ui/native-select';
 import { Textarea } from '@/components/ui/textarea';
 import { BackLink, PageHeader, Screen } from '@/components/screen';
-import { businessUnitChoices } from '@/lib/employees/business-unit-choices';
+import { activeChoices } from '@/lib/employees/active-choices';
 
 // UD-16. See `lib/i18n/page-title.ts` for why the title lives here rather than
 // in a map of routes, and `scripts/check-page-titles.mjs` for what enforces it.
@@ -85,7 +85,7 @@ export default async function NewReportPage({
             <NativeSelect id="businessUnitId" name="businessUnitId" defaultValue="">
               <option value="">— none —</option>
               {/* A new report may only name an active unit. */}
-              {businessUnitChoices(businessUnits).map((bu) => (
+              {activeChoices(businessUnits).map((bu) => (
                 <option key={bu.id} value={bu.id}>
                   {bu.name}
                 </option>

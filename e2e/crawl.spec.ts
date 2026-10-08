@@ -77,6 +77,7 @@ const PAGES = [
   // Wave 0: the first ExpenseOS screen ported to its own path (app/(app)/admin/).
   '/admin/expense-categories',
   '/admin/business-units',
+  '/admin/legal-entities',
 ] as const;
 
 /**

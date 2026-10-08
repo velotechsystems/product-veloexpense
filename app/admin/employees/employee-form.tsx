@@ -18,12 +18,12 @@ import {
   type EmployeeRow,
 } from '@/lib/employees/service';
 import { NativeSelect } from '@/components/ui/native-select';
-import { businessUnitChoices } from '@/lib/employees/business-unit-choices';
+import { activeChoices } from '@/lib/employees/active-choices';
 
 type Options = {
   departments: Array<{ id: string; name: string }>;
   businessUnits: Array<{ id: string; name: string; active: boolean }>;
-  legalEntities: Array<{ id: string; name: string }>;
+  legalEntities: Array<{ id: string; name: string; active: boolean }>;
   managers: Array<{ id: string; email: string; display_name: string | null }>;
 };
 
@@ -163,7 +163,7 @@ export function EmployeeForm({
           >
             <option value="">— none —</option>
             {/* Active units, plus this person's own if it has been deactivated since. */}
-            {businessUnitChoices(options.businessUnits, employee?.business_unit_id).map((bu) => (
+            {activeChoices(options.businessUnits, employee?.business_unit_id).map((bu) => (
               <option key={bu.id} value={bu.id}>
                 {bu.name}
               </option>
@@ -181,7 +181,8 @@ export function EmployeeForm({
             defaultValue={employee?.legal_entity_id ?? ''}
           >
             <option value="">— none —</option>
-            {options.legalEntities.map((le) => (
+            {/* Active entities, plus this person's own if it has been deactivated since. */}
+            {activeChoices(options.legalEntities, employee?.legal_entity_id).map((le) => (
               <option key={le.id} value={le.id}>
                 {le.name}
               </option>

@@ -19,5 +19,9 @@ export const auditActions = {
     businessUnitUpdate: 'BUSINESS_UNIT_UPDATED',
     /** ExpenseOS's `delete` is a deactivation: lookup rows are never deleted (`setActive`). */
     businessUnitDelete: 'BUSINESS_UNIT_DEACTIVATED',
+    legalEntityCreate: 'LEGAL_ENTITY_CREATED',
+    legalEntityUpdate: 'LEGAL_ENTITY_UPDATED',
+    /** As for business units: a deactivation. */
+    legalEntityDelete: 'LEGAL_ENTITY_DEACTIVATED',
   },
 } as const satisfies Record<string, Record<string, AuditAction>>;
