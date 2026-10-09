@@ -63,6 +63,7 @@ import {
 } from '@/components/data-view/DataTable';
 import { ExternalIdsField } from '@/components/external-ids/ExternalIdsField';
 import { trpc } from '@/lib/trpc/client';
+import { useRefusalText } from '@/lib/trpc/refusal';
 
 /** VeloExpense: whether admins are asked for (and shown) French text (`ENABLED_LOCALES`, 7 Oct). */
 const FRENCH_ON = ENABLED_LOCALES.includes('fr-CA');
@@ -159,6 +160,7 @@ export function FiscalYearsAdmin({ canEdit }: { canEdit: boolean }) {
   const toolbarLabels = useToolbarLabels();
   const tableLabels = useTableLabels();
   const tc = useTranslations('admin.common');
+  const refusalText = useRefusalText(); // VeloExpense: see onSave's catch.
   const tf = useTranslations('admin.fiscalYears');
   const locale = useLocale() as Locale;
   const utils = trpc.useUtils();
@@ -465,7 +467,10 @@ export function FiscalYearsAdmin({ canEdit }: { canEdit: boolean }) {
       }
       closeDrawer();
     } catch (err) {
-      setSaveError(err instanceof Error ? err.message : tc('unknownError'));
+      // VeloExpense: through `useRefusalText` (lib/trpc/refusal.ts) — a catalogued refusal
+      // in the reader's language, else the error's own sentence — rather than reading
+      // `err.message` here (check:i18n).
+      setSaveError(refusalText(err, tc('unknownError')));
     }
   };
 
