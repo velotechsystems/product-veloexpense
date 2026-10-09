@@ -83,6 +83,7 @@ const PAGES = [
   '/admin/fiscal-years',
   '/admin/fx-rates',
   '/admin/mileage-rates',
+  '/admin/per-diem-rates',
 ] as const;
 
 /**

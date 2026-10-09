@@ -47,11 +47,17 @@ import {
  * reachable by an ordinary admin — a row another tenant owns (hidden by RLS, so Prisma
  * reports it missing, P2025), a duplicate code (P2002), or a fiscal year whose patched end
  * falls before its stored start (0050's `fiscal_year_dates` CHECK, which the router's own
- * test cannot see when only one date is patched).
+ * test cannot see when only one date is patched), or a delete another row still
+ * references (P2003: a job level a per-diem rate is scoped to, 0053).
  */
 function databaseRefusal(cause: unknown): TRPCError | null {
   const err = cause as { code?: string; name?: string; message?: string } | null;
   if (err?.code === 'P2025') return new TRPCError({ code: 'NOT_FOUND', cause });
+  // A row something else still points at, refused by a foreign key's ON DELETE
+  // RESTRICT — a job level a per-diem rate is scoped to (0053), say.
+  if (err?.code === 'P2003') {
+    return new TRPCError({ code: 'BAD_REQUEST', message: 'It is still in use elsewhere.', cause });
+  }
   if (err?.code === 'P2002') {
     return new TRPCError({ code: 'CONFLICT', message: 'That code is already in use.', cause });
   }

@@ -103,6 +103,8 @@ export const EXPORTED: Readonly<Record<string, ExportedTable>> = {
   mileage_rate: { file: 'mileage-rates.csv' },
   mileage_rate_tier: { file: 'mileage-rate-tiers.csv' },
   mileage_rate_subject: { file: 'mileage-rate-subjects.csv' },
+  // Per-diem rates (the Wave 1 port, 0053).
+  per_diem_rate: { file: 'per-diem-rates.csv' },
   legal_entity: { file: 'legal-entities.csv' },
   invite: {
     file: 'invites.csv',

@@ -83,6 +83,11 @@ export type MileageRateTier = Prisma.MileageRateTierModel
  */
 export type MileageRateSubject = Prisma.MileageRateSubjectModel
 /**
+ * Model PerDiemRate
+ * 
+ */
+export type PerDiemRate = Prisma.PerDiemRateModel
+/**
  * Model Currency
  * 
  */

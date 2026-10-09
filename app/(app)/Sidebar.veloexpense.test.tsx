@@ -112,6 +112,7 @@ describe("an admin's menu", () => {
         '/admin/fiscal-years',
         '/admin/fx-rates',
         '/admin/mileage-rates',
+        '/admin/per-diem-rates',
       ].sort(),
     );
   });
@@ -180,6 +181,7 @@ describe('isPortedScreen', () => {
       '/admin/fiscal-years',
       '/admin/fx-rates',
       '/admin/mileage-rates',
+      '/admin/per-diem-rates',
     ]);
   });
 });

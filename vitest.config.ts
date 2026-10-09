@@ -17,6 +17,7 @@ export default defineConfig({
       { find: /^@expenseos\/i18n$/, replacement: r('packages/i18n/src/index.ts') },
       { find: /^@expenseos\/design-system$/, replacement: r('packages/design-system/src/index.ts') },
       { find: /^@expenseos\/audit$/, replacement: r('packages/audit/src/index.ts') },
+      { find: /^@expenseos\/money$/, replacement: r('packages/money/src/index.ts') },
       { find: /^@\//, replacement: r('') },
     ],
   },

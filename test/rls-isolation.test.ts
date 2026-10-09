@@ -2343,6 +2343,82 @@ describe('RLS tenant isolation', () => {
     await admin.query('DELETE FROM mileage_rate');
   });
 
+  /* ── Per-diem rates (the Wave 1 port, migration 0053) ──────────────────────
+   *
+   * The ordinary claim, and the composite FKs: a rate cannot name another tenant's
+   * expense category or be scoped to another tenant's job level.
+   */
+  it("per-diem rates are tenant-isolated, and cannot name another tenant's category or scope", async () => {
+    await admin.query('DELETE FROM per_diem_rate');
+    const seed = async (org: string, city: string) =>
+      withOrg(org, async (tx) => {
+        const cat = (
+          await tx.query(
+            `INSERT INTO expense_category (organization_id, code, label) VALUES ($1, $2, '{"en":"Meals"}') RETURNING id`,
+            [org, `pd-${city.toLowerCase()}`],
+          )
+        ).rows[0].id as string;
+        const level = (
+          await tx.query(
+            `INSERT INTO job_level (organization_id, code, track, label, sort_order) VALUES ($1, 'PD1', 'MANAGER', '{"en":"M"}', 1) RETURNING id`,
+            [org],
+          )
+        ).rows[0].id as string;
+        await tx.query(
+          `INSERT INTO per_diem_rate (organization_id, country, city, category_id, amount_minor, effective_from)
+           VALUES ($1, 'CA', $2, $3, 7500, now())`,
+          [org, city, cat],
+        );
+        return { cat, level };
+      });
+    const a = await seed(orgA, 'Toronto');
+    const b = await seed(orgB, 'Montreal');
+
+    for (const [org, city] of [
+      [orgA, 'Toronto'],
+      [orgB, 'Montreal'],
+    ] as const) {
+      const seen = await withOrg(org, (tx) => tx.query('SELECT city FROM per_diem_rate'));
+      expect(seen.rows.map((r) => r.city)).toEqual([city]);
+    }
+    await expect(
+      withOrg(orgB, (tx) =>
+        tx.query(
+          `INSERT INTO per_diem_rate (organization_id, country, city, category_id, amount_minor, effective_from)
+           VALUES ($1, 'CA', 'X', $2, 1, now())`,
+          [orgA, a.cat],
+        ),
+      ),
+    ).rejects.toThrow(/row-level security|violates/i);
+    await expect(
+      withOrg(orgB, (tx) =>
+        tx.query(
+          `INSERT INTO per_diem_rate (organization_id, country, city, category_id, amount_minor, effective_from)
+           VALUES ($1, 'CA', 'X', $2, 1, now())`,
+          [orgB, a.cat],
+        ),
+      ),
+    ).rejects.toThrow(/foreign key/i);
+    await expect(
+      withOrg(orgB, (tx) =>
+        tx.query(
+          `INSERT INTO per_diem_rate (organization_id, country, city, category_id, amount_minor, effective_from, job_level_id)
+           VALUES ($1, 'CA', 'X', $2, 1, now(), $3)`,
+          [orgB, b.cat, a.level],
+        ),
+      ),
+    ).rejects.toThrow(/foreign key/i);
+
+    const viaPlatform = await withPlatformRead((tx) => tx.query('SELECT count(*)::int AS n FROM per_diem_rate'));
+    expect(viaPlatform.rows[0].n).toBe(0);
+    const blind = await withoutOrg((tx) => tx.query('SELECT count(*)::int AS n FROM per_diem_rate'));
+    expect(blind.rows[0].n).toBe(0);
+
+    await admin.query('DELETE FROM per_diem_rate');
+    await admin.query(`DELETE FROM job_level WHERE code = 'PD1'`);
+    await admin.query(`DELETE FROM expense_category WHERE code LIKE 'pd-%'`);
+  });
+
   /* ── export requests (VX5-12, migration 0041) ─────────────────────────────
    *
    * The ordinary tenant claim, and then the two things specific to this table,

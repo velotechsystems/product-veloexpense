@@ -19,7 +19,8 @@
  *
  * Ported from ExpenseOS `apps/web/src/server/routers/policies.ts` (550b2945), one
  * sub-router at a time as its screen is ported: `fxRate` with /admin/fx-rates (w1-07),
- * `mileageRate` with /admin/mileage-rates (w1-08).
+ * `mileageRate` with /admin/mileage-rates (w1-08), `perDiemRate` with /admin/per-diem-rates
+ * (w1-09).
  * The others arrive with their screens (mileage and per-diem rates later in Wave 1; the
  * expense policy and custom fields with theirs). VeloExpense differences, marked below:
  * `fx_rate` is per tenant (0051, d18), so every read and write is the tenant's own; a
@@ -29,7 +30,11 @@
  * is one display name (VeloExpense's `app_user`), returned in ExpenseOS's first/last
  * shape; another tenant's person, a GL account that is not the tenant's own postable
  * one, or a negative rate is BAD_REQUEST rather than a 500 from the table; a rule that
- * is not the tenant's is NOT_FOUND on delete; and the delete is audited.
+ * is not the tenant's is NOT_FOUND on delete; and the delete is audited. For per-diem
+ * rates: the currency is the ISO code (VeloExpense keys a currency by it), every write is
+ * audited (ExpenseOS's per-diem writes are not, though this header says they are), and a
+ * refusal the table makes — another tenant's category or scope, an end before the
+ * start, a negative cap — is a 4xx (`perDiemWrite`).
  */
 
 import { auditActions, withAudit } from '@expenseos/audit';
@@ -132,6 +137,89 @@ const requiredMinorInput = z.union([z.string(), z.number(), z.bigint()]).transfo
   if (typeof v === 'bigint') return v;
   return BigInt(typeof v === 'string' ? v : Math.round(v));
 });
+
+// ── PerDiemRate ──────────────────────────────────────────────────────
+
+const perDiemRatePatch = z.object({
+  country: z.string().min(2).max(2),
+  city: z.string().min(1).max(100),
+  // The per-diem "bucket" is the expense category — one allowance per category.
+  categoryId: z.string().uuid(),
+  amountMinor: requiredMinorInput,
+  firstLastDay: z.boolean().optional(),
+  effectiveFrom: z.coerce.date(),
+  effectiveTo: z.coerce.date().nullable().optional(),
+  // Optional scoping dimensions (null = applies to everyone). See the
+  // per-diem resolver in @expenseos/approvals.
+  jobLevelId: z.string().uuid().nullable().optional(),
+  legalEntityId: z.string().uuid().nullable().optional(),
+  businessUnitId: z.string().uuid().nullable().optional(),
+  // VeloExpense: the ISO code — VeloExpense keys a currency by it (0053).
+  currencyId: z
+    .string()
+    .regex(/^[A-Z]{3}$/)
+    .nullable()
+    .optional(),
+});
+
+/**
+ * VeloExpense: the refusals `per_diem_rate` makes, answered with the code they mean
+ * rather than a 500 — ExpenseOS's router writes straight through and lets its own
+ * database errors out. A reference the tenant cannot see (another tenant's category or
+ * scope, an unknown currency) fails a foreign key (P2003); a rate that is not the
+ * tenant's is missing (P2025); and the table's checks hold an ISO country, a city, a
+ * non-negative cap and an end that does not precede the start.
+ */
+function perDiemRefusal(cause: unknown): TRPCError | null {
+  const err = cause as { code?: string; name?: string; message?: string } | null;
+  if (err?.code === 'P2025') return new TRPCError({ code: 'NOT_FOUND', cause });
+  if (err?.code === 'P2003') {
+    return new TRPCError({
+      code: 'BAD_REQUEST',
+      message: 'The category, scope or currency is not one this organization has.',
+      cause,
+    });
+  }
+  const check = err?.message?.match(/violates check constraint "(per_diem_rate_\w+)"/)?.[1];
+  if (check) {
+    const why: Record<string, string> = {
+      per_diem_rate_country_iso: 'Use a two-letter country code (e.g. CA).',
+      per_diem_rate_city: 'A city is required.',
+      per_diem_rate_amount_nonnegative: 'A daily cap cannot be negative.',
+      per_diem_rate_window: 'A rate cannot end before it starts.',
+    };
+    return new TRPCError({ code: 'BAD_REQUEST', message: why[check] ?? 'That rate is not valid.', cause });
+  }
+  return null;
+}
+
+/** VeloExpense: `withPermission` for the per-diem writes, with `perDiemRefusal` applied. */
+function perDiemWrite() {
+  return withPermission(P.config.perDiemUpdate).use(async ({ next }) => {
+    const result = await next();
+    if (!result.ok) {
+      const refusal = perDiemRefusal(result.error.cause);
+      if (refusal) throw refusal;
+    }
+    return result;
+  });
+}
+
+/**
+ * VeloExpense: a currency's symbol, which ExpenseOS's `Currency` row stores and
+ * VeloExpense's does not — the narrow symbol the platform's own formatter prints.
+ */
+function currencySymbol(code: string): string {
+  try {
+    return (
+      new Intl.NumberFormat('en-CA', { style: 'currency', currency: code, currencyDisplay: 'narrowSymbol' })
+        .formatToParts(0)
+        .find((p) => p.type === 'currency')?.value ?? code
+    );
+  } catch {
+    return code;
+  }
+}
 
 // ── MileageRate ──────────────────────────────────────────────────────
 
@@ -378,6 +466,113 @@ export const policiesRouter = router({
         return { ...row, rate: row.rate.toString() };
       }),
   }),
+  // ── PerDiemRate ────────────────────────────────────────────────
+  perDiemRate: router({
+    list: withPermission(P.config.policyRead).query(async ({ ctx }) => {
+      const rows = await ctx.db.perDiemRate.findMany({
+        orderBy: [{ country: 'asc' }, { city: 'asc' }, { effectiveFrom: 'desc' }],
+      });
+      return rows.map((r) => ({ ...r, amountMinor: r.amountMinor.toString() }));
+    }),
+    /** Option lists for the create/edit form's category + scoping pickers. */
+    options: withPermission(P.config.policyRead).query(async ({ ctx }) => {
+      const [categories, jobLevels, legalEntities, businessUnits, currencyRows] = await Promise.all([
+        ctx.db.expenseCategory.findMany({
+          where: { active: true },
+          select: { id: true, label: true },
+          orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }],
+        }),
+        ctx.db.jobLevel.findMany({
+          where: { active: true },
+          select: { id: true, code: true, label: true, sortOrder: true },
+          orderBy: { sortOrder: 'asc' },
+        }),
+        ctx.db.legalEntity.findMany({
+          where: { active: true },
+          select: { id: true, label: true },
+          orderBy: { createdAt: 'asc' },
+        }),
+        ctx.db.businessUnit.findMany({
+          where: { active: true },
+          select: { id: true, label: true },
+          orderBy: { createdAt: 'asc' },
+        }),
+        // VeloExpense: every currency row is usable (no `active` column), keyed by code.
+        ctx.db.currency.findMany({
+          select: { code: true },
+          orderBy: { code: 'asc' },
+        }),
+      ]);
+      // VeloExpense: ExpenseOS's `{ id, code, symbol }`, the code as the id (the value
+      // `currencyId` carries here) and the symbol from the platform (`currencySymbol`).
+      const currencies = currencyRows.map((c) => ({ id: c.code, code: c.code, symbol: currencySymbol(c.code) }));
+      return { categories, jobLevels, legalEntities, businessUnits, currencies };
+    }),
+    create: perDiemWrite()
+      .input(perDiemRatePatch)
+      .mutation(async ({ ctx, input }) => {
+        // VeloExpense: audited, as every other write in this router is.
+        const row = await withAudit(
+          ctx.db,
+          {
+            action: 'PER_DIEM_RATE_CREATED',
+            entityType: 'PerDiemRate',
+            actor: {
+              kind: 'user',
+              id: ctx.rbac.id,
+              name: ctx.session.user.name ?? ctx.session.user.email,
+              roleLabel: ctx.rbac.roleLabel,
+            },
+            details: { country: input.country, city: input.city, categoryId: input.categoryId },
+          },
+          (tx) => tx.perDiemRate.create({ data: input }),
+          (r) => r.id,
+        );
+        return { ...row, amountMinor: row.amountMinor.toString() };
+      }),
+    update: perDiemWrite()
+      .input(z.object({ id: z.string().uuid(), patch: perDiemRatePatch.partial() }))
+      .mutation(async ({ ctx, input }) => {
+        const row = await withAudit(
+          ctx.db,
+          {
+            action: 'PER_DIEM_RATE_UPDATED',
+            entityType: 'PerDiemRate',
+            entityId: input.id,
+            actor: {
+              kind: 'user',
+              id: ctx.rbac.id,
+              name: ctx.session.user.name ?? ctx.session.user.email,
+              roleLabel: ctx.rbac.roleLabel,
+            },
+            details: { changedFields: Object.keys(input.patch) },
+          },
+          (tx) => tx.perDiemRate.update({ where: { id: input.id }, data: input.patch }),
+        );
+        return { ...row, amountMinor: row.amountMinor.toString() };
+      }),
+    delete: perDiemWrite()
+      .input(z.object({ id: z.string().uuid() }))
+      .mutation(async ({ ctx, input }) => {
+        await withAudit(
+          ctx.db,
+          {
+            action: 'PER_DIEM_RATE_DELETED',
+            entityType: 'PerDiemRate',
+            entityId: input.id,
+            actor: {
+              kind: 'user',
+              id: ctx.rbac.id,
+              name: ctx.session.user.name ?? ctx.session.user.email,
+              roleLabel: ctx.rbac.roleLabel,
+            },
+          },
+          (tx) => tx.perDiemRate.delete({ where: { id: input.id } }),
+        );
+        return { ok: true };
+      }),
+  }),
+
   // ── MileageRate ────────────────────────────────────────────────
   //
   // Rules are always enforced: there is no draft or disabled state. Creating a

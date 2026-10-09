@@ -158,6 +158,11 @@ export const AUDIT_ACTIONS = [
      delete; VeloExpense does (MILEAGE_RATE_DELETED). */
   'MILEAGE_RATE_CHANGED',
   'MILEAGE_RATE_DELETED',
+  /* Per-diem rates — the Wave 1 port. ExpenseOS writes these without an audit row;
+     VeloExpense audits each. */
+  'PER_DIEM_RATE_CREATED',
+  'PER_DIEM_RATE_UPDATED',
+  'PER_DIEM_RATE_DELETED',
   'MODULE_ENABLED',
   'MODULE_DISABLED',
   'USER_LOCALE_CHANGED',

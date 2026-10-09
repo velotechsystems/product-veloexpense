@@ -51,7 +51,6 @@ export const VELOEXPENSE_ROUTES: Readonly<Record<string, string | null>> = {
   '/users': null,
   '/expenses/all': null,
   '/travel': null,
-  '/admin/per-diem-rates': null,
   '/admin/travel-categories': null,
   '/admin/policy-rules': null,
   '/admin/policy-violations': null,
@@ -172,6 +171,7 @@ export const PORTED_SCREENS: readonly string[] = [
   '/admin/fiscal-years',
   '/admin/fx-rates',
   '/admin/mileage-rates',
+  '/admin/per-diem-rates',
 ];
 
 /** Whether the top bar should title this path: it is a ported ExpenseOS screen. */
