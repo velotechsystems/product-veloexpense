@@ -2419,6 +2419,116 @@ describe('RLS tenant isolation', () => {
     await admin.query(`DELETE FROM expense_category WHERE code LIKE 'pd-%'`);
   });
 
+  /* ── Expense allocations and attendees (the Wave 2 schema, migration 0054) ──
+   *
+   * The ordinary claim, and the composite FKs: an allocation cannot hang off another
+   * tenant's expense or code to another tenant's business unit or department, and an
+   * attendee cannot be added to another tenant's expense.
+   */
+  it("expense allocations and attendees are tenant-isolated, and cannot name another tenant's rows", async () => {
+    const seed = async (org: string, label: string) =>
+      withOrg(org, async (tx) => {
+        const user = (await tx.query('SELECT id FROM app_user WHERE organization_id = $1 LIMIT 1', [org])).rows[0]
+          .id as string;
+        const report = (
+          await tx.query(
+            `INSERT INTO expense_report (organization_id, title, currency_code, submitter_id)
+             VALUES ($1, $2, 'CAD', $3) RETURNING id`,
+            [org, `Alloc ${label}`, user],
+          )
+        ).rows[0].id as string;
+        const expense = (
+          await tx.query(`INSERT INTO expense (organization_id, report_id, currency_code) VALUES ($1, $2, 'CAD') RETURNING id`, [
+            org,
+            report,
+          ])
+        ).rows[0].id as string;
+        const bu = (
+          await tx.query(`INSERT INTO business_unit (organization_id, label) VALUES ($1, $2) RETURNING id`, [
+            org,
+            JSON.stringify({ en: `BU 0054 ${label}` }),
+          ])
+        ).rows[0].id as string;
+        const dept = (
+          await tx.query(`INSERT INTO department (organization_id, label) VALUES ($1, $2) RETURNING id`, [
+            org,
+            JSON.stringify({ en: `Dept 0054 ${label}` }),
+          ])
+        ).rows[0].id as string;
+        await tx.query(
+          `INSERT INTO expense_allocation (organization_id, expense_id, percent_bp, business_unit_id, department_id)
+           VALUES ($1, $2, 10000, $3, $4)`,
+          [org, expense, bu, dept],
+        );
+        await tx.query(`INSERT INTO expense_attendee (organization_id, expense_id, name) VALUES ($1, $2, $3)`, [
+          org,
+          expense,
+          `Guest ${label}`,
+        ]);
+        return { report, expense, bu, dept };
+      });
+    const a = await seed(orgA, 'A');
+    const b = await seed(orgB, 'B');
+
+    for (const [org, label, own] of [
+      [orgA, 'A', a],
+      [orgB, 'B', b],
+    ] as const) {
+      const alloc = await withOrg(org, (tx) => tx.query('SELECT expense_id FROM expense_allocation'));
+      expect(alloc.rows.map((r) => r.expense_id)).toEqual([own.expense]);
+      const att = await withOrg(org, (tx) => tx.query('SELECT name FROM expense_attendee'));
+      expect(att.rows.map((r) => r.name)).toEqual([`Guest ${label}`]);
+    }
+
+    // WITH CHECK: naming the other tenant is refused outright.
+    for (const sql of [
+      `INSERT INTO expense_allocation (organization_id, expense_id, percent_bp) VALUES ($1, $2, 10000)`,
+      `INSERT INTO expense_attendee (organization_id, expense_id, name) VALUES ($1, $2, 'X')`,
+    ]) {
+      await expect(withOrg(orgB, (tx) => tx.query(sql, [orgA, a.expense]))).rejects.toThrow(
+        /row-level security|violates/i,
+      );
+    }
+    // Composite FKs: B's own row may not point at A's expense, business unit or department.
+    await expect(
+      withOrg(orgB, (tx) =>
+        tx.query(`INSERT INTO expense_allocation (organization_id, expense_id, percent_bp) VALUES ($1, $2, 10000)`, [
+          orgB,
+          a.expense,
+        ]),
+      ),
+    ).rejects.toThrow(/foreign key/i);
+    await expect(
+      withOrg(orgB, (tx) =>
+        tx.query(`INSERT INTO expense_attendee (organization_id, expense_id, name) VALUES ($1, $2, 'X')`, [orgB, a.expense]),
+      ),
+    ).rejects.toThrow(/foreign key/i);
+    for (const [col, id] of [
+      ['business_unit_id', a.bu],
+      ['department_id', a.dept],
+    ] as const) {
+      await expect(
+        withOrg(orgB, (tx) =>
+          tx.query(
+            `INSERT INTO expense_allocation (organization_id, expense_id, percent_bp, ${col}) VALUES ($1, $2, 10000, $3)`,
+            [orgB, b.expense, id],
+          ),
+        ),
+      ).rejects.toThrow(/foreign key/i);
+    }
+
+    for (const table of ['expense_allocation', 'expense_attendee']) {
+      const viaPlatform = await withPlatformRead((tx) => tx.query(`SELECT count(*)::int AS n FROM ${table}`));
+      expect(viaPlatform.rows[0].n, table).toBe(0);
+      const blind = await withoutOrg((tx) => tx.query(`SELECT count(*)::int AS n FROM ${table}`));
+      expect(blind.rows[0].n, table).toBe(0);
+    }
+
+    await admin.query(`DELETE FROM expense_report WHERE title LIKE 'Alloc %'`);
+    await admin.query(`DELETE FROM business_unit WHERE label->>'en' LIKE 'BU 0054 %'`);
+    await admin.query(`DELETE FROM department WHERE label->>'en' LIKE 'Dept 0054 %'`);
+  });
+
   /* ── export requests (VX5-12, migration 0041) ─────────────────────────────
    *
    * The ordinary tenant claim, and then the two things specific to this table,

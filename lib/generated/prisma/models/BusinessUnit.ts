@@ -190,6 +190,7 @@ export type BusinessUnitWhereInput = {
   active?: Prisma.BoolFilter<"BusinessUnit"> | boolean
   createdAt?: Prisma.DateTimeFilter<"BusinessUnit"> | Date | string
   updatedAt?: Prisma.DateTimeFilter<"BusinessUnit"> | Date | string
+  allocations?: Prisma.ExpenseAllocationListRelationFilter
   externalIds?: Prisma.BusinessUnitExternalIdListRelationFilter
 }
 
@@ -201,6 +202,7 @@ export type BusinessUnitOrderByWithRelationInput = {
   active?: Prisma.SortOrder
   createdAt?: Prisma.SortOrder
   updatedAt?: Prisma.SortOrder
+  allocations?: Prisma.ExpenseAllocationOrderByRelationAggregateInput
   externalIds?: Prisma.BusinessUnitExternalIdOrderByRelationAggregateInput
 }
 
@@ -216,6 +218,7 @@ export type BusinessUnitWhereUniqueInput = Prisma.AtLeast<{
   active?: Prisma.BoolFilter<"BusinessUnit"> | boolean
   createdAt?: Prisma.DateTimeFilter<"BusinessUnit"> | Date | string
   updatedAt?: Prisma.DateTimeFilter<"BusinessUnit"> | Date | string
+  allocations?: Prisma.ExpenseAllocationListRelationFilter
   externalIds?: Prisma.BusinessUnitExternalIdListRelationFilter
 }, "id" | "organizationId_id">
 
@@ -253,6 +256,7 @@ export type BusinessUnitCreateInput = {
   active?: boolean
   createdAt?: Date | string
   updatedAt?: Date | string
+  allocations?: Prisma.ExpenseAllocationCreateNestedManyWithoutBusinessUnitInput
   externalIds?: Prisma.BusinessUnitExternalIdCreateNestedManyWithoutBusinessUnitInput
 }
 
@@ -264,6 +268,7 @@ export type BusinessUnitUncheckedCreateInput = {
   active?: boolean
   createdAt?: Date | string
   updatedAt?: Date | string
+  allocations?: Prisma.ExpenseAllocationUncheckedCreateNestedManyWithoutBusinessUnitInput
   externalIds?: Prisma.BusinessUnitExternalIdUncheckedCreateNestedManyWithoutBusinessUnitInput
 }
 
@@ -275,6 +280,7 @@ export type BusinessUnitUpdateInput = {
   active?: Prisma.BoolFieldUpdateOperationsInput | boolean
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  allocations?: Prisma.ExpenseAllocationUpdateManyWithoutBusinessUnitNestedInput
   externalIds?: Prisma.BusinessUnitExternalIdUpdateManyWithoutBusinessUnitNestedInput
 }
 
@@ -286,6 +292,7 @@ export type BusinessUnitUncheckedUpdateInput = {
   active?: Prisma.BoolFieldUpdateOperationsInput | boolean
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  allocations?: Prisma.ExpenseAllocationUncheckedUpdateManyWithoutBusinessUnitNestedInput
   externalIds?: Prisma.BusinessUnitExternalIdUncheckedUpdateManyWithoutBusinessUnitNestedInput
 }
 
@@ -317,6 +324,11 @@ export type BusinessUnitUncheckedUpdateManyInput = {
   active?: Prisma.BoolFieldUpdateOperationsInput | boolean
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+}
+
+export type BusinessUnitNullableScalarRelationFilter = {
+  is?: Prisma.BusinessUnitWhereInput | null
+  isNot?: Prisma.BusinessUnitWhereInput | null
 }
 
 export type BusinessUnitOrganizationIdIdCompoundUniqueInput = {
@@ -355,6 +367,22 @@ export type BusinessUnitScalarRelationFilter = {
   isNot?: Prisma.BusinessUnitWhereInput
 }
 
+export type BusinessUnitCreateNestedOneWithoutAllocationsInput = {
+  create?: Prisma.XOR<Prisma.BusinessUnitCreateWithoutAllocationsInput, Prisma.BusinessUnitUncheckedCreateWithoutAllocationsInput>
+  connectOrCreate?: Prisma.BusinessUnitCreateOrConnectWithoutAllocationsInput
+  connect?: Prisma.BusinessUnitWhereUniqueInput
+}
+
+export type BusinessUnitUpdateOneWithoutAllocationsNestedInput = {
+  create?: Prisma.XOR<Prisma.BusinessUnitCreateWithoutAllocationsInput, Prisma.BusinessUnitUncheckedCreateWithoutAllocationsInput>
+  connectOrCreate?: Prisma.BusinessUnitCreateOrConnectWithoutAllocationsInput
+  upsert?: Prisma.BusinessUnitUpsertWithoutAllocationsInput
+  disconnect?: Prisma.BusinessUnitWhereInput | boolean
+  delete?: Prisma.BusinessUnitWhereInput | boolean
+  connect?: Prisma.BusinessUnitWhereUniqueInput
+  update?: Prisma.XOR<Prisma.XOR<Prisma.BusinessUnitUpdateToOneWithWhereWithoutAllocationsInput, Prisma.BusinessUnitUpdateWithoutAllocationsInput>, Prisma.BusinessUnitUncheckedUpdateWithoutAllocationsInput>
+}
+
 export type BusinessUnitCreateNestedOneWithoutExternalIdsInput = {
   create?: Prisma.XOR<Prisma.BusinessUnitCreateWithoutExternalIdsInput, Prisma.BusinessUnitUncheckedCreateWithoutExternalIdsInput>
   connectOrCreate?: Prisma.BusinessUnitCreateOrConnectWithoutExternalIdsInput
@@ -369,6 +397,66 @@ export type BusinessUnitUpdateOneRequiredWithoutExternalIdsNestedInput = {
   update?: Prisma.XOR<Prisma.XOR<Prisma.BusinessUnitUpdateToOneWithWhereWithoutExternalIdsInput, Prisma.BusinessUnitUpdateWithoutExternalIdsInput>, Prisma.BusinessUnitUncheckedUpdateWithoutExternalIdsInput>
 }
 
+export type BusinessUnitCreateWithoutAllocationsInput = {
+  id?: string
+  organizationId?: string
+  label: Prisma.JsonNullValueInput | runtime.InputJsonValue
+  description?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  active?: boolean
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  externalIds?: Prisma.BusinessUnitExternalIdCreateNestedManyWithoutBusinessUnitInput
+}
+
+export type BusinessUnitUncheckedCreateWithoutAllocationsInput = {
+  id?: string
+  organizationId?: string
+  label: Prisma.JsonNullValueInput | runtime.InputJsonValue
+  description?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  active?: boolean
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  externalIds?: Prisma.BusinessUnitExternalIdUncheckedCreateNestedManyWithoutBusinessUnitInput
+}
+
+export type BusinessUnitCreateOrConnectWithoutAllocationsInput = {
+  where: Prisma.BusinessUnitWhereUniqueInput
+  create: Prisma.XOR<Prisma.BusinessUnitCreateWithoutAllocationsInput, Prisma.BusinessUnitUncheckedCreateWithoutAllocationsInput>
+}
+
+export type BusinessUnitUpsertWithoutAllocationsInput = {
+  update: Prisma.XOR<Prisma.BusinessUnitUpdateWithoutAllocationsInput, Prisma.BusinessUnitUncheckedUpdateWithoutAllocationsInput>
+  create: Prisma.XOR<Prisma.BusinessUnitCreateWithoutAllocationsInput, Prisma.BusinessUnitUncheckedCreateWithoutAllocationsInput>
+  where?: Prisma.BusinessUnitWhereInput
+}
+
+export type BusinessUnitUpdateToOneWithWhereWithoutAllocationsInput = {
+  where?: Prisma.BusinessUnitWhereInput
+  data: Prisma.XOR<Prisma.BusinessUnitUpdateWithoutAllocationsInput, Prisma.BusinessUnitUncheckedUpdateWithoutAllocationsInput>
+}
+
+export type BusinessUnitUpdateWithoutAllocationsInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  organizationId?: Prisma.StringFieldUpdateOperationsInput | string
+  label?: Prisma.JsonNullValueInput | runtime.InputJsonValue
+  description?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  active?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  externalIds?: Prisma.BusinessUnitExternalIdUpdateManyWithoutBusinessUnitNestedInput
+}
+
+export type BusinessUnitUncheckedUpdateWithoutAllocationsInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  organizationId?: Prisma.StringFieldUpdateOperationsInput | string
+  label?: Prisma.JsonNullValueInput | runtime.InputJsonValue
+  description?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  active?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  externalIds?: Prisma.BusinessUnitExternalIdUncheckedUpdateManyWithoutBusinessUnitNestedInput
+}
+
 export type BusinessUnitCreateWithoutExternalIdsInput = {
   id?: string
   organizationId?: string
@@ -377,6 +465,7 @@ export type BusinessUnitCreateWithoutExternalIdsInput = {
   active?: boolean
   createdAt?: Date | string
   updatedAt?: Date | string
+  allocations?: Prisma.ExpenseAllocationCreateNestedManyWithoutBusinessUnitInput
 }
 
 export type BusinessUnitUncheckedCreateWithoutExternalIdsInput = {
@@ -387,6 +476,7 @@ export type BusinessUnitUncheckedCreateWithoutExternalIdsInput = {
   active?: boolean
   createdAt?: Date | string
   updatedAt?: Date | string
+  allocations?: Prisma.ExpenseAllocationUncheckedCreateNestedManyWithoutBusinessUnitInput
 }
 
 export type BusinessUnitCreateOrConnectWithoutExternalIdsInput = {
@@ -413,6 +503,7 @@ export type BusinessUnitUpdateWithoutExternalIdsInput = {
   active?: Prisma.BoolFieldUpdateOperationsInput | boolean
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  allocations?: Prisma.ExpenseAllocationUpdateManyWithoutBusinessUnitNestedInput
 }
 
 export type BusinessUnitUncheckedUpdateWithoutExternalIdsInput = {
@@ -423,6 +514,7 @@ export type BusinessUnitUncheckedUpdateWithoutExternalIdsInput = {
   active?: Prisma.BoolFieldUpdateOperationsInput | boolean
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  allocations?: Prisma.ExpenseAllocationUncheckedUpdateManyWithoutBusinessUnitNestedInput
 }
 
 
@@ -431,10 +523,12 @@ export type BusinessUnitUncheckedUpdateWithoutExternalIdsInput = {
  */
 
 export type BusinessUnitCountOutputType = {
+  allocations: number
   externalIds: number
 }
 
 export type BusinessUnitCountOutputTypeSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  allocations?: boolean | BusinessUnitCountOutputTypeCountAllocationsArgs
   externalIds?: boolean | BusinessUnitCountOutputTypeCountExternalIdsArgs
 }
 
@@ -446,6 +540,13 @@ export type BusinessUnitCountOutputTypeDefaultArgs<ExtArgs extends runtime.Types
    * Select specific fields to fetch from the BusinessUnitCountOutputType
    */
   select?: Prisma.BusinessUnitCountOutputTypeSelect<ExtArgs> | null
+}
+
+/**
+ * BusinessUnitCountOutputType without action
+ */
+export type BusinessUnitCountOutputTypeCountAllocationsArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  where?: Prisma.ExpenseAllocationWhereInput
 }
 
 /**
@@ -464,6 +565,7 @@ export type BusinessUnitSelect<ExtArgs extends runtime.Types.Extensions.Internal
   active?: boolean
   createdAt?: boolean
   updatedAt?: boolean
+  allocations?: boolean | Prisma.BusinessUnit$allocationsArgs<ExtArgs>
   externalIds?: boolean | Prisma.BusinessUnit$externalIdsArgs<ExtArgs>
   _count?: boolean | Prisma.BusinessUnitCountOutputTypeDefaultArgs<ExtArgs>
 }, ExtArgs["result"]["businessUnit"]>
@@ -500,6 +602,7 @@ export type BusinessUnitSelectScalar = {
 
 export type BusinessUnitOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "organizationId" | "label" | "description" | "active" | "createdAt" | "updatedAt", ExtArgs["result"]["businessUnit"]>
 export type BusinessUnitInclude<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  allocations?: boolean | Prisma.BusinessUnit$allocationsArgs<ExtArgs>
   externalIds?: boolean | Prisma.BusinessUnit$externalIdsArgs<ExtArgs>
   _count?: boolean | Prisma.BusinessUnitCountOutputTypeDefaultArgs<ExtArgs>
 }
@@ -509,6 +612,7 @@ export type BusinessUnitIncludeUpdateManyAndReturn<ExtArgs extends runtime.Types
 export type $BusinessUnitPayload<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   name: "BusinessUnit"
   objects: {
+    allocations: Prisma.$ExpenseAllocationPayload<ExtArgs>[]
     externalIds: Prisma.$BusinessUnitExternalIdPayload<ExtArgs>[]
   }
   scalars: runtime.Types.Extensions.GetPayloadResult<{
@@ -913,6 +1017,7 @@ readonly fields: BusinessUnitFieldRefs;
  */
 export interface Prisma__BusinessUnitClient<T, Null = never, ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs, GlobalOmitOptions = {}> extends Prisma.PrismaPromise<T> {
   readonly [Symbol.toStringTag]: "PrismaPromise"
+  allocations<T extends Prisma.BusinessUnit$allocationsArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.BusinessUnit$allocationsArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$ExpenseAllocationPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
   externalIds<T extends Prisma.BusinessUnit$externalIdsArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.BusinessUnit$externalIdsArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$BusinessUnitExternalIdPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
   /**
    * Attaches callbacks for the resolution and/or rejection of the Promise.
@@ -1340,6 +1445,30 @@ export type BusinessUnitDeleteManyArgs<ExtArgs extends runtime.Types.Extensions.
    * Limit how many BusinessUnits to delete.
    */
   limit?: number
+}
+
+/**
+ * BusinessUnit.allocations
+ */
+export type BusinessUnit$allocationsArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  /**
+   * Select specific fields to fetch from the ExpenseAllocation
+   */
+  select?: Prisma.ExpenseAllocationSelect<ExtArgs> | null
+  /**
+   * Omit specific fields from the ExpenseAllocation
+   */
+  omit?: Prisma.ExpenseAllocationOmit<ExtArgs> | null
+  /**
+   * Choose, which related nodes to fetch as well
+   */
+  include?: Prisma.ExpenseAllocationInclude<ExtArgs> | null
+  where?: Prisma.ExpenseAllocationWhereInput
+  orderBy?: Prisma.ExpenseAllocationOrderByWithRelationInput | Prisma.ExpenseAllocationOrderByWithRelationInput[]
+  cursor?: Prisma.ExpenseAllocationWhereUniqueInput
+  take?: number
+  skip?: number
+  distinct?: Prisma.ExpenseAllocationScalarFieldEnum | Prisma.ExpenseAllocationScalarFieldEnum[]
 }
 
 /**

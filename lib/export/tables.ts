@@ -118,6 +118,9 @@ export const EXPORTED: Readonly<Record<string, ExportedTable>> = {
   /* ── the expense record itself ────────────────────────────────────────── */
   expense: { file: 'expenses.csv' },
   expense_line_item: { file: 'expense-line-items.csv' },
+  // The Wave 2 schema (0054): how each expense is coded, and who was at it.
+  expense_allocation: { file: 'expense-allocations.csv' },
+  expense_attendee: { file: 'expense-attendees.csv' },
   expense_category: { file: 'expense-categories.csv' },
   expense_report: { file: 'expense-reports.csv' },
   expense_report_event: { file: 'expense-report-events.csv' },

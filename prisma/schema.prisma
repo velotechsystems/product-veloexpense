@@ -81,25 +81,230 @@ model GlAccount {
   createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt      DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
+  expenseLines      ExpenseLineItem[] @relation("ExpenseLineGlAccount")
   expenseCategories ExpenseCategory[]
 
   @@unique([organizationId, id])
   @@map("gl_account")
 }
 
-// Only so `_count: { lineItems }` works — ExpenseOS's guard on changing a category's
-// kind once anything is filed against it. The line-item port (Wave 2) fills it in.
+// ── The expense core (Wave 2) ───────────────────────────────────────────────
+// ExpenseOS's `ExpenseReport`, `Expense`, `ExpenseLineItem`, `Receipt`,
+// `ExpenseAllocation`, `ExpenseAttendee` and `TaxJurisdiction`, on the tables
+// migration 0054 reshaped in place (d22). Shared VeloExpense differences:
+//   · per tenant: the database's foreign keys are composite through organization_id
+//     (0019). Relations name only the id, which is all Prisma needs to join and nest
+//     (as for the mileage models); `category` keeps the composite it already had;
+//   · `currencyId` is the ISO code in `currency_code` (as `homeCurrencyId`, 0048);
+//   · ExpenseOS's Postgres enums are text with a CHECK here, so those fields are
+//     `String` — except the report status, which VeloExpense already had as an enum;
+//   · only the relations the ported code reaches are described. ExpenseOS's
+//     violations, fraud flags, determinations, external ids, approval instance and
+//     travel request arrive with their own waves; VeloExpense's own columns on these
+//     tables (the report's business unit, department and reimbursement stamp, the
+//     expense's notes, the line's tax_minor, the receipt's upload status) are left
+//     to VeloExpense's SQL readers.
+
+enum ExpenseReportStatus {
+  DRAFT
+  SUBMITTED
+  APPROVED
+  REJECTED
+  RETURNED
+  REIMBURSED
+
+  @@map("expense_report_status")
+}
+
+model ExpenseReport {
+  id                     String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId         String              @default(dbgenerated("(NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid")) @map("organization_id") @db.Uuid
+  /// VeloExpense: nullable and unique per tenant; ExpenseOS mints it from a sequence.
+  number                 String?
+  title                  String
+  purpose                String?
+  status                 ExpenseReportStatus @default(DRAFT)
+  totalMinor             BigInt              @default(0) @map("total_minor")
+  /// VeloExpense: the ISO code (`currency_code`), not a uuid.
+  currencyId             String              @map("currency_code")
+  currency               Currency            @relation("ExpenseReportCurrency", fields: [currencyId], references: [code], onDelete: Restrict)
+  submitterId            String              @map("submitter_id") @db.Uuid
+  submitter              User                @relation("ReportSubmitter", fields: [submitterId], references: [id], onDelete: Restrict)
+  metadata               Json                @default("{}")
+  fxRateOverride         Decimal?            @map("fx_rate_override") @db.Decimal(18, 8)
+  /// VeloExpense: a foreign key to `currency` (ExpenseOS: a bare code).
+  fxRateOverrideCurrency String?             @map("fx_rate_override_currency")
+  fxRateOverrideAt       DateTime?           @map("fx_rate_override_at") @db.Timestamptz(6)
+  fxRateOverrideById     String?             @map("fx_rate_override_by_id") @db.Uuid
+  createdAt              DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt              DateTime            @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  submittedAt            DateTime?           @map("submitted_at") @db.Timestamptz(6)
+  approvedAt             DateTime?           @map("approved_at") @db.Timestamptz(6)
+
+  expenses Expense[]
+
+  @@unique([organizationId, id])
+  @@map("expense_report")
+}
+
+model Expense {
+  id                     String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId         String        @default(dbgenerated("(NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid")) @map("organization_id") @db.Uuid
+  reportId               String        @map("report_id") @db.Uuid
+  report                 ExpenseReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  /// The report's submitter. VeloExpense: a row inserted without one takes it (0054's
+  /// trigger), for VeloExpense's own writer.
+  ownerId                String        @map("owner_id") @db.Uuid
+  owner                  User          @relation("ExpenseOwner", fields: [ownerId], references: [id], onDelete: Restrict)
+  merchant               String?
+  placeText              String?       @map("place_text")
+  /// VeloExpense: `txn_date`, a date, and nullable (VeloExpense's writer allows a
+  /// blank one); ExpenseOS's `date` is a required timestamp.
+  date                   DateTime?     @map("txn_date") @db.Date
+  /// Entry total in `currency`. Must equal the sum of its line items.
+  amountMinor            BigInt        @default(0) @map("amount_minor")
+  /// VeloExpense: the ISO code (`currency_code`), not a uuid.
+  currencyId             String        @map("currency_code")
+  currency               Currency      @relation("ExpenseCurrency", fields: [currencyId], references: [code], onDelete: Restrict)
+  /// OUT_OF_POCKET | VIRTUAL_CARD | PHYSICAL_CARD (a CHECK in the table).
+  paymentMethod          String        @default("OUT_OF_POCKET") @map("payment_method")
+  purpose                String?
+  explanation            String?
+  subtotalMinor          BigInt?       @map("subtotal_minor")
+  fxRate                 Decimal?      @map("fx_rate") @db.Decimal(18, 8)
+  /// MANUAL | EXTRACTED | CALCULATED (a CHECK in the table).
+  fxRateSource           String?       @map("fx_rate_source")
+  homeCurrency           String?       @map("home_currency")
+  homeAmountMinor        BigInt?       @map("home_amount_minor")
+  taxGstHstMinor         BigInt?       @map("tax_gst_hst_minor")
+  taxQstMinor            BigInt?       @map("tax_qst_minor")
+  taxPstMinor            BigInt?       @map("tax_pst_minor")
+  recoverableGstHstMinor BigInt?       @map("recoverable_gst_hst_minor")
+  recoverableQstMinor    BigInt?       @map("recoverable_qst_minor")
+  /// MANUAL | EXTRACTED | CALCULATED (a CHECK in the table).
+  taxSource              String        @default("CALCULATED") @map("tax_source")
+  taxJurisdictionId      String?          @map("tax_jurisdiction_id") @db.Uuid
+  taxJurisdiction        TaxJurisdiction? @relation(fields: [taxJurisdictionId], references: [id], onDelete: SetNull)
+  createdAt              DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt              DateTime      @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  lineItems   ExpenseLineItem[]
+  receipts    Receipt[]
+  attendees   ExpenseAttendee[]
+  allocations ExpenseAllocation[]
+
+  @@unique([organizationId, id])
+  @@map("expense")
+}
+
+/// VeloExpense: no NetSuite class or NetSuite business unit (0054).
+model ExpenseAllocation {
+  id             String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String        @default(dbgenerated("(NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid")) @map("organization_id") @db.Uuid
+  expenseId      String        @map("expense_id") @db.Uuid
+  expense        Expense       @relation(fields: [expenseId], references: [id], onDelete: Cascade)
+  /// Basis points of the expense total; an expense's rows sum to 10000.
+  percentBp      Int           @map("percent_bp")
+  businessUnitId String?       @map("business_unit_id") @db.Uuid
+  businessUnit   BusinessUnit? @relation("ExpenseAllocationBusinessUnit", fields: [businessUnitId], references: [id], onDelete: Restrict)
+  departmentId   String?       @map("department_id") @db.Uuid
+  department     Department?   @relation("ExpenseAllocationDepartment", fields: [departmentId], references: [id], onDelete: Restrict)
+  createdAt      DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime      @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@unique([organizationId, id])
+  @@map("expense_allocation")
+}
+
+model ExpenseAttendee {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String   @default(dbgenerated("(NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid")) @map("organization_id") @db.Uuid
+  expenseId      String   @map("expense_id") @db.Uuid
+  expense        Expense  @relation(fields: [expenseId], references: [id], onDelete: Cascade)
+  name           String
+  company        String?
+  isExternal     Boolean  @default(false) @map("is_external")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@unique([organizationId, id])
+  @@map("expense_attendee")
+}
+
 model ExpenseLineItem {
-  id             String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  organizationId String @default(dbgenerated("(NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid")) @map("organization_id") @db.Uuid
-  categoryId     String @map("category_id") @db.Uuid
-  /// ExpenseOS's `mileageRateId` (migration 0052): the rule a mileage claim was priced
-  /// under. Nothing prices one yet (Wave 2); the mileage router's delete guard reads it.
-  mileageRateId  String? @map("mileage_rate_id") @db.Uuid
+  id                      String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId          String          @default(dbgenerated("(NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid")) @map("organization_id") @db.Uuid
+  expenseId               String          @map("expense_id") @db.Uuid
+  expense                 Expense         @relation(fields: [expenseId], references: [id], onDelete: Cascade)
+  /// STANDARD | STANDARD_WITH_TIP | MILEAGE (a CHECK in the table).
+  kind                    String          @default("STANDARD")
+  payload                 Json?
+  categoryId              String          @map("category_id") @db.Uuid
+  category                ExpenseCategory @relation(fields: [organizationId, categoryId], references: [organizationId, id])
+  /// VeloExpense: the tenant's `gl_account` (ExpenseOS: NetSuiteAccount), held
+  /// postable by a trigger (0014).
+  glAccountId             String?         @map("gl_account_id") @db.Uuid
+  glAccount               GlAccount?      @relation("ExpenseLineGlAccount", fields: [glAccountId], references: [id], onDelete: Restrict)
+  amountMinor             BigInt          @map("amount_minor")
+  /// VeloExpense: the existing `description` column.
+  notes                   String?         @map("description")
+  mileageDistance         Decimal?        @map("mileage_distance") @db.Decimal(12, 2)
+  /// KM | MI (a CHECK in the table).
+  mileageUnit             String?         @map("mileage_unit")
+  mileageRateId           String?         @map("mileage_rate_id") @db.Uuid
+  mileageRate             MileageRate?    @relation(fields: [mileageRateId], references: [id], onDelete: SetNull)
+  mileageYtdBefore        Decimal?        @map("mileage_ytd_before") @db.Decimal(12, 2)
+  mileageBreakdown        Json?           @map("mileage_breakdown")
+  mileageRoute            Json?           @map("mileage_route")
+  mileageDistanceOverride Decimal?        @map("mileage_distance_override") @db.Decimal(12, 2)
+  createdAt               DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt               DateTime        @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  category ExpenseCategory @relation(fields: [organizationId, categoryId], references: [organizationId, id])
-
+  @@unique([organizationId, id])
   @@map("expense_line_item")
+}
+
+model Receipt {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String   @default(dbgenerated("(NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid")) @map("organization_id") @db.Uuid
+  expenseId      String?  @map("expense_id") @db.Uuid
+  expense        Expense? @relation(fields: [expenseId], references: [id], onDelete: Cascade)
+  /// RECEIPT | ITEMIZED_BILL | CARD_COPY | BANK_STATEMENT | OTHER (a CHECK in the table).
+  kind           String   @default("OTHER")
+  /// VeloExpense: unique per tenant, not globally.
+  s3Key          String   @map("s3_key")
+  filename       String
+  contentType    String   @map("content_type")
+  /// VeloExpense: nullable (set once the upload is stored).
+  sizeBytes      Int?     @map("size_bytes")
+  uploadedById   String   @map("uploaded_by_id") @db.Uuid
+  uploadedBy     User     @relation("ReceiptUploader", fields: [uploadedById], references: [id], onDelete: Restrict)
+  uploadedAt     DateTime @default(now()) @map("uploaded_at") @db.Timestamptz(6)
+
+  @@unique([organizationId, s3Key])
+  @@map("receipt")
+}
+
+/// GLOBAL and platform-seeded (d24): the app role can read it and cannot write it.
+model TaxJurisdiction {
+  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  countryCode  String   @map("country_code")
+  code         String
+  label        Json
+  gstRate      Decimal  @default(0) @map("gst_rate") @db.Decimal(6, 3)
+  hstRate      Decimal  @default(0) @map("hst_rate") @db.Decimal(6, 3)
+  pstRate      Decimal  @default(0) @map("pst_rate") @db.Decimal(6, 3)
+  qstRate      Decimal  @default(0) @map("qst_rate") @db.Decimal(6, 3)
+  salesTaxRate Decimal  @default(0) @map("sales_tax_rate") @db.Decimal(6, 3)
+  taxType      String   @map("tax_type")
+  version      String?
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  expenses Expense[]
+
+  @@unique([countryCode, code])
+  @@map("tax_jurisdiction")
 }
 
 // ExpenseOS's `User`, on VeloExpense's `app_user`. Wave 0 carries the columns the shell
@@ -126,6 +331,9 @@ model User {
   createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt      DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
+  reports      ExpenseReport[] @relation("ReportSubmitter")
+  expenses     Expense[]       @relation("ExpenseOwner")
+  receipts     Receipt[]       @relation("ReceiptUploader")
   mileageRates MileageRateSubject[] @relation("MileageRateSubject")
 
   @@map("app_user")
@@ -146,6 +354,7 @@ model BusinessUnit {
   createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt      DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
+  allocations ExpenseAllocation[] @relation("ExpenseAllocationBusinessUnit")
   externalIds BusinessUnitExternalId[]
 
   @@unique([organizationId, id])
@@ -289,6 +498,7 @@ model MileageRate {
   updatedAt      DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
   createdBy      String?   @map("created_by") @db.Uuid
 
+  lineItems ExpenseLineItem[]
   tiers    MileageRateTier[]
   subjects MileageRateSubject[]
 
@@ -351,6 +561,8 @@ model Currency {
   name      String
   minorUnit Int    @map("minor_unit") @db.SmallInt
 
+  reports       ExpenseReport[] @relation("ExpenseReportCurrency")
+  expenses      Expense[]       @relation("ExpenseCurrency")
   legalEntities LegalEntity[]
 
   @@map("currency")
@@ -374,6 +586,7 @@ model Department {
   createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt      DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
+  allocations ExpenseAllocation[] @relation("ExpenseAllocationDepartment")
   externalIds DepartmentExternalId[]
 
   @@unique([organizationId, id])

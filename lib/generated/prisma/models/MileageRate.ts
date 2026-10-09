@@ -230,6 +230,7 @@ export type MileageRateWhereInput = {
   createdAt?: Prisma.DateTimeFilter<"MileageRate"> | Date | string
   updatedAt?: Prisma.DateTimeFilter<"MileageRate"> | Date | string
   createdBy?: Prisma.UuidNullableFilter<"MileageRate"> | string | null
+  lineItems?: Prisma.ExpenseLineItemListRelationFilter
   tiers?: Prisma.MileageRateTierListRelationFilter
   subjects?: Prisma.MileageRateSubjectListRelationFilter
 }
@@ -246,6 +247,7 @@ export type MileageRateOrderByWithRelationInput = {
   createdAt?: Prisma.SortOrder
   updatedAt?: Prisma.SortOrder
   createdBy?: Prisma.SortOrderInput | Prisma.SortOrder
+  lineItems?: Prisma.ExpenseLineItemOrderByRelationAggregateInput
   tiers?: Prisma.MileageRateTierOrderByRelationAggregateInput
   subjects?: Prisma.MileageRateSubjectOrderByRelationAggregateInput
 }
@@ -266,6 +268,7 @@ export type MileageRateWhereUniqueInput = Prisma.AtLeast<{
   createdAt?: Prisma.DateTimeFilter<"MileageRate"> | Date | string
   updatedAt?: Prisma.DateTimeFilter<"MileageRate"> | Date | string
   createdBy?: Prisma.UuidNullableFilter<"MileageRate"> | string | null
+  lineItems?: Prisma.ExpenseLineItemListRelationFilter
   tiers?: Prisma.MileageRateTierListRelationFilter
   subjects?: Prisma.MileageRateSubjectListRelationFilter
 }, "id" | "supersededById" | "organizationId_id">
@@ -316,6 +319,7 @@ export type MileageRateCreateInput = {
   createdAt?: Date | string
   updatedAt?: Date | string
   createdBy?: string | null
+  lineItems?: Prisma.ExpenseLineItemCreateNestedManyWithoutMileageRateInput
   tiers?: Prisma.MileageRateTierCreateNestedManyWithoutRateInput
   subjects?: Prisma.MileageRateSubjectCreateNestedManyWithoutRateInput
 }
@@ -332,6 +336,7 @@ export type MileageRateUncheckedCreateInput = {
   createdAt?: Date | string
   updatedAt?: Date | string
   createdBy?: string | null
+  lineItems?: Prisma.ExpenseLineItemUncheckedCreateNestedManyWithoutMileageRateInput
   tiers?: Prisma.MileageRateTierUncheckedCreateNestedManyWithoutRateInput
   subjects?: Prisma.MileageRateSubjectUncheckedCreateNestedManyWithoutRateInput
 }
@@ -348,6 +353,7 @@ export type MileageRateUpdateInput = {
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   createdBy?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  lineItems?: Prisma.ExpenseLineItemUpdateManyWithoutMileageRateNestedInput
   tiers?: Prisma.MileageRateTierUpdateManyWithoutRateNestedInput
   subjects?: Prisma.MileageRateSubjectUpdateManyWithoutRateNestedInput
 }
@@ -364,6 +370,7 @@ export type MileageRateUncheckedUpdateInput = {
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   createdBy?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  lineItems?: Prisma.ExpenseLineItemUncheckedUpdateManyWithoutMileageRateNestedInput
   tiers?: Prisma.MileageRateTierUncheckedUpdateManyWithoutRateNestedInput
   subjects?: Prisma.MileageRateSubjectUncheckedUpdateManyWithoutRateNestedInput
 }
@@ -408,6 +415,11 @@ export type MileageRateUncheckedUpdateManyInput = {
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   createdBy?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+}
+
+export type MileageRateNullableScalarRelationFilter = {
+  is?: Prisma.MileageRateWhereInput | null
+  isNot?: Prisma.MileageRateWhereInput | null
 }
 
 export type MileageRateOrganizationIdIdCompoundUniqueInput = {
@@ -462,6 +474,22 @@ export type MileageRateScalarRelationFilter = {
   isNot?: Prisma.MileageRateWhereInput
 }
 
+export type MileageRateCreateNestedOneWithoutLineItemsInput = {
+  create?: Prisma.XOR<Prisma.MileageRateCreateWithoutLineItemsInput, Prisma.MileageRateUncheckedCreateWithoutLineItemsInput>
+  connectOrCreate?: Prisma.MileageRateCreateOrConnectWithoutLineItemsInput
+  connect?: Prisma.MileageRateWhereUniqueInput
+}
+
+export type MileageRateUpdateOneWithoutLineItemsNestedInput = {
+  create?: Prisma.XOR<Prisma.MileageRateCreateWithoutLineItemsInput, Prisma.MileageRateUncheckedCreateWithoutLineItemsInput>
+  connectOrCreate?: Prisma.MileageRateCreateOrConnectWithoutLineItemsInput
+  upsert?: Prisma.MileageRateUpsertWithoutLineItemsInput
+  disconnect?: Prisma.MileageRateWhereInput | boolean
+  delete?: Prisma.MileageRateWhereInput | boolean
+  connect?: Prisma.MileageRateWhereUniqueInput
+  update?: Prisma.XOR<Prisma.XOR<Prisma.MileageRateUpdateToOneWithWhereWithoutLineItemsInput, Prisma.MileageRateUpdateWithoutLineItemsInput>, Prisma.MileageRateUncheckedUpdateWithoutLineItemsInput>
+}
+
 export type MileageRateCreateNestedOneWithoutTiersInput = {
   create?: Prisma.XOR<Prisma.MileageRateCreateWithoutTiersInput, Prisma.MileageRateUncheckedCreateWithoutTiersInput>
   connectOrCreate?: Prisma.MileageRateCreateOrConnectWithoutTiersInput
@@ -490,6 +518,86 @@ export type MileageRateUpdateOneRequiredWithoutSubjectsNestedInput = {
   update?: Prisma.XOR<Prisma.XOR<Prisma.MileageRateUpdateToOneWithWhereWithoutSubjectsInput, Prisma.MileageRateUpdateWithoutSubjectsInput>, Prisma.MileageRateUncheckedUpdateWithoutSubjectsInput>
 }
 
+export type MileageRateCreateWithoutLineItemsInput = {
+  id?: string
+  organizationId?: string
+  country: string
+  unit: string
+  effectiveFrom: Date | string
+  effectiveTo?: Date | string | null
+  supersededById?: string | null
+  glAccountId?: string | null
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  createdBy?: string | null
+  tiers?: Prisma.MileageRateTierCreateNestedManyWithoutRateInput
+  subjects?: Prisma.MileageRateSubjectCreateNestedManyWithoutRateInput
+}
+
+export type MileageRateUncheckedCreateWithoutLineItemsInput = {
+  id?: string
+  organizationId?: string
+  country: string
+  unit: string
+  effectiveFrom: Date | string
+  effectiveTo?: Date | string | null
+  supersededById?: string | null
+  glAccountId?: string | null
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  createdBy?: string | null
+  tiers?: Prisma.MileageRateTierUncheckedCreateNestedManyWithoutRateInput
+  subjects?: Prisma.MileageRateSubjectUncheckedCreateNestedManyWithoutRateInput
+}
+
+export type MileageRateCreateOrConnectWithoutLineItemsInput = {
+  where: Prisma.MileageRateWhereUniqueInput
+  create: Prisma.XOR<Prisma.MileageRateCreateWithoutLineItemsInput, Prisma.MileageRateUncheckedCreateWithoutLineItemsInput>
+}
+
+export type MileageRateUpsertWithoutLineItemsInput = {
+  update: Prisma.XOR<Prisma.MileageRateUpdateWithoutLineItemsInput, Prisma.MileageRateUncheckedUpdateWithoutLineItemsInput>
+  create: Prisma.XOR<Prisma.MileageRateCreateWithoutLineItemsInput, Prisma.MileageRateUncheckedCreateWithoutLineItemsInput>
+  where?: Prisma.MileageRateWhereInput
+}
+
+export type MileageRateUpdateToOneWithWhereWithoutLineItemsInput = {
+  where?: Prisma.MileageRateWhereInput
+  data: Prisma.XOR<Prisma.MileageRateUpdateWithoutLineItemsInput, Prisma.MileageRateUncheckedUpdateWithoutLineItemsInput>
+}
+
+export type MileageRateUpdateWithoutLineItemsInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  organizationId?: Prisma.StringFieldUpdateOperationsInput | string
+  country?: Prisma.StringFieldUpdateOperationsInput | string
+  unit?: Prisma.StringFieldUpdateOperationsInput | string
+  effectiveFrom?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  effectiveTo?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  supersededById?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  glAccountId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  createdBy?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  tiers?: Prisma.MileageRateTierUpdateManyWithoutRateNestedInput
+  subjects?: Prisma.MileageRateSubjectUpdateManyWithoutRateNestedInput
+}
+
+export type MileageRateUncheckedUpdateWithoutLineItemsInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  organizationId?: Prisma.StringFieldUpdateOperationsInput | string
+  country?: Prisma.StringFieldUpdateOperationsInput | string
+  unit?: Prisma.StringFieldUpdateOperationsInput | string
+  effectiveFrom?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  effectiveTo?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  supersededById?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  glAccountId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  createdBy?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  tiers?: Prisma.MileageRateTierUncheckedUpdateManyWithoutRateNestedInput
+  subjects?: Prisma.MileageRateSubjectUncheckedUpdateManyWithoutRateNestedInput
+}
+
 export type MileageRateCreateWithoutTiersInput = {
   id?: string
   organizationId?: string
@@ -502,6 +610,7 @@ export type MileageRateCreateWithoutTiersInput = {
   createdAt?: Date | string
   updatedAt?: Date | string
   createdBy?: string | null
+  lineItems?: Prisma.ExpenseLineItemCreateNestedManyWithoutMileageRateInput
   subjects?: Prisma.MileageRateSubjectCreateNestedManyWithoutRateInput
 }
 
@@ -517,6 +626,7 @@ export type MileageRateUncheckedCreateWithoutTiersInput = {
   createdAt?: Date | string
   updatedAt?: Date | string
   createdBy?: string | null
+  lineItems?: Prisma.ExpenseLineItemUncheckedCreateNestedManyWithoutMileageRateInput
   subjects?: Prisma.MileageRateSubjectUncheckedCreateNestedManyWithoutRateInput
 }
 
@@ -548,6 +658,7 @@ export type MileageRateUpdateWithoutTiersInput = {
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   createdBy?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  lineItems?: Prisma.ExpenseLineItemUpdateManyWithoutMileageRateNestedInput
   subjects?: Prisma.MileageRateSubjectUpdateManyWithoutRateNestedInput
 }
 
@@ -563,6 +674,7 @@ export type MileageRateUncheckedUpdateWithoutTiersInput = {
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   createdBy?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  lineItems?: Prisma.ExpenseLineItemUncheckedUpdateManyWithoutMileageRateNestedInput
   subjects?: Prisma.MileageRateSubjectUncheckedUpdateManyWithoutRateNestedInput
 }
 
@@ -578,6 +690,7 @@ export type MileageRateCreateWithoutSubjectsInput = {
   createdAt?: Date | string
   updatedAt?: Date | string
   createdBy?: string | null
+  lineItems?: Prisma.ExpenseLineItemCreateNestedManyWithoutMileageRateInput
   tiers?: Prisma.MileageRateTierCreateNestedManyWithoutRateInput
 }
 
@@ -593,6 +706,7 @@ export type MileageRateUncheckedCreateWithoutSubjectsInput = {
   createdAt?: Date | string
   updatedAt?: Date | string
   createdBy?: string | null
+  lineItems?: Prisma.ExpenseLineItemUncheckedCreateNestedManyWithoutMileageRateInput
   tiers?: Prisma.MileageRateTierUncheckedCreateNestedManyWithoutRateInput
 }
 
@@ -624,6 +738,7 @@ export type MileageRateUpdateWithoutSubjectsInput = {
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   createdBy?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  lineItems?: Prisma.ExpenseLineItemUpdateManyWithoutMileageRateNestedInput
   tiers?: Prisma.MileageRateTierUpdateManyWithoutRateNestedInput
 }
 
@@ -639,6 +754,7 @@ export type MileageRateUncheckedUpdateWithoutSubjectsInput = {
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   createdBy?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  lineItems?: Prisma.ExpenseLineItemUncheckedUpdateManyWithoutMileageRateNestedInput
   tiers?: Prisma.MileageRateTierUncheckedUpdateManyWithoutRateNestedInput
 }
 
@@ -648,11 +764,13 @@ export type MileageRateUncheckedUpdateWithoutSubjectsInput = {
  */
 
 export type MileageRateCountOutputType = {
+  lineItems: number
   tiers: number
   subjects: number
 }
 
 export type MileageRateCountOutputTypeSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  lineItems?: boolean | MileageRateCountOutputTypeCountLineItemsArgs
   tiers?: boolean | MileageRateCountOutputTypeCountTiersArgs
   subjects?: boolean | MileageRateCountOutputTypeCountSubjectsArgs
 }
@@ -665,6 +783,13 @@ export type MileageRateCountOutputTypeDefaultArgs<ExtArgs extends runtime.Types.
    * Select specific fields to fetch from the MileageRateCountOutputType
    */
   select?: Prisma.MileageRateCountOutputTypeSelect<ExtArgs> | null
+}
+
+/**
+ * MileageRateCountOutputType without action
+ */
+export type MileageRateCountOutputTypeCountLineItemsArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  where?: Prisma.ExpenseLineItemWhereInput
 }
 
 /**
@@ -694,6 +819,7 @@ export type MileageRateSelect<ExtArgs extends runtime.Types.Extensions.InternalA
   createdAt?: boolean
   updatedAt?: boolean
   createdBy?: boolean
+  lineItems?: boolean | Prisma.MileageRate$lineItemsArgs<ExtArgs>
   tiers?: boolean | Prisma.MileageRate$tiersArgs<ExtArgs>
   subjects?: boolean | Prisma.MileageRate$subjectsArgs<ExtArgs>
   _count?: boolean | Prisma.MileageRateCountOutputTypeDefaultArgs<ExtArgs>
@@ -743,6 +869,7 @@ export type MileageRateSelectScalar = {
 
 export type MileageRateOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "organizationId" | "country" | "unit" | "effectiveFrom" | "effectiveTo" | "supersededById" | "glAccountId" | "createdAt" | "updatedAt" | "createdBy", ExtArgs["result"]["mileageRate"]>
 export type MileageRateInclude<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  lineItems?: boolean | Prisma.MileageRate$lineItemsArgs<ExtArgs>
   tiers?: boolean | Prisma.MileageRate$tiersArgs<ExtArgs>
   subjects?: boolean | Prisma.MileageRate$subjectsArgs<ExtArgs>
   _count?: boolean | Prisma.MileageRateCountOutputTypeDefaultArgs<ExtArgs>
@@ -753,6 +880,7 @@ export type MileageRateIncludeUpdateManyAndReturn<ExtArgs extends runtime.Types.
 export type $MileageRatePayload<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   name: "MileageRate"
   objects: {
+    lineItems: Prisma.$ExpenseLineItemPayload<ExtArgs>[]
     tiers: Prisma.$MileageRateTierPayload<ExtArgs>[]
     subjects: Prisma.$MileageRateSubjectPayload<ExtArgs>[]
   }
@@ -1165,6 +1293,7 @@ readonly fields: MileageRateFieldRefs;
  */
 export interface Prisma__MileageRateClient<T, Null = never, ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs, GlobalOmitOptions = {}> extends Prisma.PrismaPromise<T> {
   readonly [Symbol.toStringTag]: "PrismaPromise"
+  lineItems<T extends Prisma.MileageRate$lineItemsArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.MileageRate$lineItemsArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$ExpenseLineItemPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
   tiers<T extends Prisma.MileageRate$tiersArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.MileageRate$tiersArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$MileageRateTierPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
   subjects<T extends Prisma.MileageRate$subjectsArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.MileageRate$subjectsArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$MileageRateSubjectPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
   /**
@@ -1597,6 +1726,30 @@ export type MileageRateDeleteManyArgs<ExtArgs extends runtime.Types.Extensions.I
    * Limit how many MileageRates to delete.
    */
   limit?: number
+}
+
+/**
+ * MileageRate.lineItems
+ */
+export type MileageRate$lineItemsArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  /**
+   * Select specific fields to fetch from the ExpenseLineItem
+   */
+  select?: Prisma.ExpenseLineItemSelect<ExtArgs> | null
+  /**
+   * Omit specific fields from the ExpenseLineItem
+   */
+  omit?: Prisma.ExpenseLineItemOmit<ExtArgs> | null
+  /**
+   * Choose, which related nodes to fetch as well
+   */
+  include?: Prisma.ExpenseLineItemInclude<ExtArgs> | null
+  where?: Prisma.ExpenseLineItemWhereInput
+  orderBy?: Prisma.ExpenseLineItemOrderByWithRelationInput | Prisma.ExpenseLineItemOrderByWithRelationInput[]
+  cursor?: Prisma.ExpenseLineItemWhereUniqueInput
+  take?: number
+  skip?: number
+  distinct?: Prisma.ExpenseLineItemScalarFieldEnum | Prisma.ExpenseLineItemScalarFieldEnum[]
 }
 
 /**

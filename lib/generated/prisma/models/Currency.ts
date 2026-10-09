@@ -200,6 +200,8 @@ export type CurrencyWhereInput = {
   code?: Prisma.StringFilter<"Currency"> | string
   name?: Prisma.StringFilter<"Currency"> | string
   minorUnit?: Prisma.IntFilter<"Currency"> | number
+  reports?: Prisma.ExpenseReportListRelationFilter
+  expenses?: Prisma.ExpenseListRelationFilter
   legalEntities?: Prisma.LegalEntityListRelationFilter
 }
 
@@ -207,6 +209,8 @@ export type CurrencyOrderByWithRelationInput = {
   code?: Prisma.SortOrder
   name?: Prisma.SortOrder
   minorUnit?: Prisma.SortOrder
+  reports?: Prisma.ExpenseReportOrderByRelationAggregateInput
+  expenses?: Prisma.ExpenseOrderByRelationAggregateInput
   legalEntities?: Prisma.LegalEntityOrderByRelationAggregateInput
 }
 
@@ -217,6 +221,8 @@ export type CurrencyWhereUniqueInput = Prisma.AtLeast<{
   NOT?: Prisma.CurrencyWhereInput | Prisma.CurrencyWhereInput[]
   name?: Prisma.StringFilter<"Currency"> | string
   minorUnit?: Prisma.IntFilter<"Currency"> | number
+  reports?: Prisma.ExpenseReportListRelationFilter
+  expenses?: Prisma.ExpenseListRelationFilter
   legalEntities?: Prisma.LegalEntityListRelationFilter
 }, "code">
 
@@ -244,6 +250,8 @@ export type CurrencyCreateInput = {
   code: string
   name: string
   minorUnit: number
+  reports?: Prisma.ExpenseReportCreateNestedManyWithoutCurrencyInput
+  expenses?: Prisma.ExpenseCreateNestedManyWithoutCurrencyInput
   legalEntities?: Prisma.LegalEntityCreateNestedManyWithoutHomeCurrencyInput
 }
 
@@ -251,6 +259,8 @@ export type CurrencyUncheckedCreateInput = {
   code: string
   name: string
   minorUnit: number
+  reports?: Prisma.ExpenseReportUncheckedCreateNestedManyWithoutCurrencyInput
+  expenses?: Prisma.ExpenseUncheckedCreateNestedManyWithoutCurrencyInput
   legalEntities?: Prisma.LegalEntityUncheckedCreateNestedManyWithoutHomeCurrencyInput
 }
 
@@ -258,6 +268,8 @@ export type CurrencyUpdateInput = {
   code?: Prisma.StringFieldUpdateOperationsInput | string
   name?: Prisma.StringFieldUpdateOperationsInput | string
   minorUnit?: Prisma.IntFieldUpdateOperationsInput | number
+  reports?: Prisma.ExpenseReportUpdateManyWithoutCurrencyNestedInput
+  expenses?: Prisma.ExpenseUpdateManyWithoutCurrencyNestedInput
   legalEntities?: Prisma.LegalEntityUpdateManyWithoutHomeCurrencyNestedInput
 }
 
@@ -265,6 +277,8 @@ export type CurrencyUncheckedUpdateInput = {
   code?: Prisma.StringFieldUpdateOperationsInput | string
   name?: Prisma.StringFieldUpdateOperationsInput | string
   minorUnit?: Prisma.IntFieldUpdateOperationsInput | number
+  reports?: Prisma.ExpenseReportUncheckedUpdateManyWithoutCurrencyNestedInput
+  expenses?: Prisma.ExpenseUncheckedUpdateManyWithoutCurrencyNestedInput
   legalEntities?: Prisma.LegalEntityUncheckedUpdateManyWithoutHomeCurrencyNestedInput
 }
 
@@ -284,6 +298,11 @@ export type CurrencyUncheckedUpdateManyInput = {
   code?: Prisma.StringFieldUpdateOperationsInput | string
   name?: Prisma.StringFieldUpdateOperationsInput | string
   minorUnit?: Prisma.IntFieldUpdateOperationsInput | number
+}
+
+export type CurrencyScalarRelationFilter = {
+  is?: Prisma.CurrencyWhereInput
+  isNot?: Prisma.CurrencyWhereInput
 }
 
 export type CurrencyNullableScalarRelationFilter = {
@@ -317,6 +336,34 @@ export type CurrencySumOrderByAggregateInput = {
   minorUnit?: Prisma.SortOrder
 }
 
+export type CurrencyCreateNestedOneWithoutReportsInput = {
+  create?: Prisma.XOR<Prisma.CurrencyCreateWithoutReportsInput, Prisma.CurrencyUncheckedCreateWithoutReportsInput>
+  connectOrCreate?: Prisma.CurrencyCreateOrConnectWithoutReportsInput
+  connect?: Prisma.CurrencyWhereUniqueInput
+}
+
+export type CurrencyUpdateOneRequiredWithoutReportsNestedInput = {
+  create?: Prisma.XOR<Prisma.CurrencyCreateWithoutReportsInput, Prisma.CurrencyUncheckedCreateWithoutReportsInput>
+  connectOrCreate?: Prisma.CurrencyCreateOrConnectWithoutReportsInput
+  upsert?: Prisma.CurrencyUpsertWithoutReportsInput
+  connect?: Prisma.CurrencyWhereUniqueInput
+  update?: Prisma.XOR<Prisma.XOR<Prisma.CurrencyUpdateToOneWithWhereWithoutReportsInput, Prisma.CurrencyUpdateWithoutReportsInput>, Prisma.CurrencyUncheckedUpdateWithoutReportsInput>
+}
+
+export type CurrencyCreateNestedOneWithoutExpensesInput = {
+  create?: Prisma.XOR<Prisma.CurrencyCreateWithoutExpensesInput, Prisma.CurrencyUncheckedCreateWithoutExpensesInput>
+  connectOrCreate?: Prisma.CurrencyCreateOrConnectWithoutExpensesInput
+  connect?: Prisma.CurrencyWhereUniqueInput
+}
+
+export type CurrencyUpdateOneRequiredWithoutExpensesNestedInput = {
+  create?: Prisma.XOR<Prisma.CurrencyCreateWithoutExpensesInput, Prisma.CurrencyUncheckedCreateWithoutExpensesInput>
+  connectOrCreate?: Prisma.CurrencyCreateOrConnectWithoutExpensesInput
+  upsert?: Prisma.CurrencyUpsertWithoutExpensesInput
+  connect?: Prisma.CurrencyWhereUniqueInput
+  update?: Prisma.XOR<Prisma.XOR<Prisma.CurrencyUpdateToOneWithWhereWithoutExpensesInput, Prisma.CurrencyUpdateWithoutExpensesInput>, Prisma.CurrencyUncheckedUpdateWithoutExpensesInput>
+}
+
 export type CurrencyCreateNestedOneWithoutLegalEntitiesInput = {
   create?: Prisma.XOR<Prisma.CurrencyCreateWithoutLegalEntitiesInput, Prisma.CurrencyUncheckedCreateWithoutLegalEntitiesInput>
   connectOrCreate?: Prisma.CurrencyCreateOrConnectWithoutLegalEntitiesInput
@@ -333,16 +380,116 @@ export type CurrencyUpdateOneWithoutLegalEntitiesNestedInput = {
   update?: Prisma.XOR<Prisma.XOR<Prisma.CurrencyUpdateToOneWithWhereWithoutLegalEntitiesInput, Prisma.CurrencyUpdateWithoutLegalEntitiesInput>, Prisma.CurrencyUncheckedUpdateWithoutLegalEntitiesInput>
 }
 
+export type CurrencyCreateWithoutReportsInput = {
+  code: string
+  name: string
+  minorUnit: number
+  expenses?: Prisma.ExpenseCreateNestedManyWithoutCurrencyInput
+  legalEntities?: Prisma.LegalEntityCreateNestedManyWithoutHomeCurrencyInput
+}
+
+export type CurrencyUncheckedCreateWithoutReportsInput = {
+  code: string
+  name: string
+  minorUnit: number
+  expenses?: Prisma.ExpenseUncheckedCreateNestedManyWithoutCurrencyInput
+  legalEntities?: Prisma.LegalEntityUncheckedCreateNestedManyWithoutHomeCurrencyInput
+}
+
+export type CurrencyCreateOrConnectWithoutReportsInput = {
+  where: Prisma.CurrencyWhereUniqueInput
+  create: Prisma.XOR<Prisma.CurrencyCreateWithoutReportsInput, Prisma.CurrencyUncheckedCreateWithoutReportsInput>
+}
+
+export type CurrencyUpsertWithoutReportsInput = {
+  update: Prisma.XOR<Prisma.CurrencyUpdateWithoutReportsInput, Prisma.CurrencyUncheckedUpdateWithoutReportsInput>
+  create: Prisma.XOR<Prisma.CurrencyCreateWithoutReportsInput, Prisma.CurrencyUncheckedCreateWithoutReportsInput>
+  where?: Prisma.CurrencyWhereInput
+}
+
+export type CurrencyUpdateToOneWithWhereWithoutReportsInput = {
+  where?: Prisma.CurrencyWhereInput
+  data: Prisma.XOR<Prisma.CurrencyUpdateWithoutReportsInput, Prisma.CurrencyUncheckedUpdateWithoutReportsInput>
+}
+
+export type CurrencyUpdateWithoutReportsInput = {
+  code?: Prisma.StringFieldUpdateOperationsInput | string
+  name?: Prisma.StringFieldUpdateOperationsInput | string
+  minorUnit?: Prisma.IntFieldUpdateOperationsInput | number
+  expenses?: Prisma.ExpenseUpdateManyWithoutCurrencyNestedInput
+  legalEntities?: Prisma.LegalEntityUpdateManyWithoutHomeCurrencyNestedInput
+}
+
+export type CurrencyUncheckedUpdateWithoutReportsInput = {
+  code?: Prisma.StringFieldUpdateOperationsInput | string
+  name?: Prisma.StringFieldUpdateOperationsInput | string
+  minorUnit?: Prisma.IntFieldUpdateOperationsInput | number
+  expenses?: Prisma.ExpenseUncheckedUpdateManyWithoutCurrencyNestedInput
+  legalEntities?: Prisma.LegalEntityUncheckedUpdateManyWithoutHomeCurrencyNestedInput
+}
+
+export type CurrencyCreateWithoutExpensesInput = {
+  code: string
+  name: string
+  minorUnit: number
+  reports?: Prisma.ExpenseReportCreateNestedManyWithoutCurrencyInput
+  legalEntities?: Prisma.LegalEntityCreateNestedManyWithoutHomeCurrencyInput
+}
+
+export type CurrencyUncheckedCreateWithoutExpensesInput = {
+  code: string
+  name: string
+  minorUnit: number
+  reports?: Prisma.ExpenseReportUncheckedCreateNestedManyWithoutCurrencyInput
+  legalEntities?: Prisma.LegalEntityUncheckedCreateNestedManyWithoutHomeCurrencyInput
+}
+
+export type CurrencyCreateOrConnectWithoutExpensesInput = {
+  where: Prisma.CurrencyWhereUniqueInput
+  create: Prisma.XOR<Prisma.CurrencyCreateWithoutExpensesInput, Prisma.CurrencyUncheckedCreateWithoutExpensesInput>
+}
+
+export type CurrencyUpsertWithoutExpensesInput = {
+  update: Prisma.XOR<Prisma.CurrencyUpdateWithoutExpensesInput, Prisma.CurrencyUncheckedUpdateWithoutExpensesInput>
+  create: Prisma.XOR<Prisma.CurrencyCreateWithoutExpensesInput, Prisma.CurrencyUncheckedCreateWithoutExpensesInput>
+  where?: Prisma.CurrencyWhereInput
+}
+
+export type CurrencyUpdateToOneWithWhereWithoutExpensesInput = {
+  where?: Prisma.CurrencyWhereInput
+  data: Prisma.XOR<Prisma.CurrencyUpdateWithoutExpensesInput, Prisma.CurrencyUncheckedUpdateWithoutExpensesInput>
+}
+
+export type CurrencyUpdateWithoutExpensesInput = {
+  code?: Prisma.StringFieldUpdateOperationsInput | string
+  name?: Prisma.StringFieldUpdateOperationsInput | string
+  minorUnit?: Prisma.IntFieldUpdateOperationsInput | number
+  reports?: Prisma.ExpenseReportUpdateManyWithoutCurrencyNestedInput
+  legalEntities?: Prisma.LegalEntityUpdateManyWithoutHomeCurrencyNestedInput
+}
+
+export type CurrencyUncheckedUpdateWithoutExpensesInput = {
+  code?: Prisma.StringFieldUpdateOperationsInput | string
+  name?: Prisma.StringFieldUpdateOperationsInput | string
+  minorUnit?: Prisma.IntFieldUpdateOperationsInput | number
+  reports?: Prisma.ExpenseReportUncheckedUpdateManyWithoutCurrencyNestedInput
+  legalEntities?: Prisma.LegalEntityUncheckedUpdateManyWithoutHomeCurrencyNestedInput
+}
+
 export type CurrencyCreateWithoutLegalEntitiesInput = {
   code: string
   name: string
   minorUnit: number
+  reports?: Prisma.ExpenseReportCreateNestedManyWithoutCurrencyInput
+  expenses?: Prisma.ExpenseCreateNestedManyWithoutCurrencyInput
 }
 
 export type CurrencyUncheckedCreateWithoutLegalEntitiesInput = {
   code: string
   name: string
   minorUnit: number
+  reports?: Prisma.ExpenseReportUncheckedCreateNestedManyWithoutCurrencyInput
+  expenses?: Prisma.ExpenseUncheckedCreateNestedManyWithoutCurrencyInput
 }
 
 export type CurrencyCreateOrConnectWithoutLegalEntitiesInput = {
@@ -365,12 +512,16 @@ export type CurrencyUpdateWithoutLegalEntitiesInput = {
   code?: Prisma.StringFieldUpdateOperationsInput | string
   name?: Prisma.StringFieldUpdateOperationsInput | string
   minorUnit?: Prisma.IntFieldUpdateOperationsInput | number
+  reports?: Prisma.ExpenseReportUpdateManyWithoutCurrencyNestedInput
+  expenses?: Prisma.ExpenseUpdateManyWithoutCurrencyNestedInput
 }
 
 export type CurrencyUncheckedUpdateWithoutLegalEntitiesInput = {
   code?: Prisma.StringFieldUpdateOperationsInput | string
   name?: Prisma.StringFieldUpdateOperationsInput | string
   minorUnit?: Prisma.IntFieldUpdateOperationsInput | number
+  reports?: Prisma.ExpenseReportUncheckedUpdateManyWithoutCurrencyNestedInput
+  expenses?: Prisma.ExpenseUncheckedUpdateManyWithoutCurrencyNestedInput
 }
 
 
@@ -379,10 +530,14 @@ export type CurrencyUncheckedUpdateWithoutLegalEntitiesInput = {
  */
 
 export type CurrencyCountOutputType = {
+  reports: number
+  expenses: number
   legalEntities: number
 }
 
 export type CurrencyCountOutputTypeSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  reports?: boolean | CurrencyCountOutputTypeCountReportsArgs
+  expenses?: boolean | CurrencyCountOutputTypeCountExpensesArgs
   legalEntities?: boolean | CurrencyCountOutputTypeCountLegalEntitiesArgs
 }
 
@@ -399,6 +554,20 @@ export type CurrencyCountOutputTypeDefaultArgs<ExtArgs extends runtime.Types.Ext
 /**
  * CurrencyCountOutputType without action
  */
+export type CurrencyCountOutputTypeCountReportsArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  where?: Prisma.ExpenseReportWhereInput
+}
+
+/**
+ * CurrencyCountOutputType without action
+ */
+export type CurrencyCountOutputTypeCountExpensesArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  where?: Prisma.ExpenseWhereInput
+}
+
+/**
+ * CurrencyCountOutputType without action
+ */
 export type CurrencyCountOutputTypeCountLegalEntitiesArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   where?: Prisma.LegalEntityWhereInput
 }
@@ -408,6 +577,8 @@ export type CurrencySelect<ExtArgs extends runtime.Types.Extensions.InternalArgs
   code?: boolean
   name?: boolean
   minorUnit?: boolean
+  reports?: boolean | Prisma.Currency$reportsArgs<ExtArgs>
+  expenses?: boolean | Prisma.Currency$expensesArgs<ExtArgs>
   legalEntities?: boolean | Prisma.Currency$legalEntitiesArgs<ExtArgs>
   _count?: boolean | Prisma.CurrencyCountOutputTypeDefaultArgs<ExtArgs>
 }, ExtArgs["result"]["currency"]>
@@ -432,6 +603,8 @@ export type CurrencySelectScalar = {
 
 export type CurrencyOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"code" | "name" | "minorUnit", ExtArgs["result"]["currency"]>
 export type CurrencyInclude<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  reports?: boolean | Prisma.Currency$reportsArgs<ExtArgs>
+  expenses?: boolean | Prisma.Currency$expensesArgs<ExtArgs>
   legalEntities?: boolean | Prisma.Currency$legalEntitiesArgs<ExtArgs>
   _count?: boolean | Prisma.CurrencyCountOutputTypeDefaultArgs<ExtArgs>
 }
@@ -441,6 +614,8 @@ export type CurrencyIncludeUpdateManyAndReturn<ExtArgs extends runtime.Types.Ext
 export type $CurrencyPayload<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   name: "Currency"
   objects: {
+    reports: Prisma.$ExpenseReportPayload<ExtArgs>[]
+    expenses: Prisma.$ExpensePayload<ExtArgs>[]
     legalEntities: Prisma.$LegalEntityPayload<ExtArgs>[]
   }
   scalars: runtime.Types.Extensions.GetPayloadResult<{
@@ -841,6 +1016,8 @@ readonly fields: CurrencyFieldRefs;
  */
 export interface Prisma__CurrencyClient<T, Null = never, ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs, GlobalOmitOptions = {}> extends Prisma.PrismaPromise<T> {
   readonly [Symbol.toStringTag]: "PrismaPromise"
+  reports<T extends Prisma.Currency$reportsArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.Currency$reportsArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$ExpenseReportPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
+  expenses<T extends Prisma.Currency$expensesArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.Currency$expensesArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$ExpensePayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
   legalEntities<T extends Prisma.Currency$legalEntitiesArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.Currency$legalEntitiesArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$LegalEntityPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
   /**
    * Attaches callbacks for the resolution and/or rejection of the Promise.
@@ -1264,6 +1441,54 @@ export type CurrencyDeleteManyArgs<ExtArgs extends runtime.Types.Extensions.Inte
    * Limit how many Currencies to delete.
    */
   limit?: number
+}
+
+/**
+ * Currency.reports
+ */
+export type Currency$reportsArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  /**
+   * Select specific fields to fetch from the ExpenseReport
+   */
+  select?: Prisma.ExpenseReportSelect<ExtArgs> | null
+  /**
+   * Omit specific fields from the ExpenseReport
+   */
+  omit?: Prisma.ExpenseReportOmit<ExtArgs> | null
+  /**
+   * Choose, which related nodes to fetch as well
+   */
+  include?: Prisma.ExpenseReportInclude<ExtArgs> | null
+  where?: Prisma.ExpenseReportWhereInput
+  orderBy?: Prisma.ExpenseReportOrderByWithRelationInput | Prisma.ExpenseReportOrderByWithRelationInput[]
+  cursor?: Prisma.ExpenseReportWhereUniqueInput
+  take?: number
+  skip?: number
+  distinct?: Prisma.ExpenseReportScalarFieldEnum | Prisma.ExpenseReportScalarFieldEnum[]
+}
+
+/**
+ * Currency.expenses
+ */
+export type Currency$expensesArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  /**
+   * Select specific fields to fetch from the Expense
+   */
+  select?: Prisma.ExpenseSelect<ExtArgs> | null
+  /**
+   * Omit specific fields from the Expense
+   */
+  omit?: Prisma.ExpenseOmit<ExtArgs> | null
+  /**
+   * Choose, which related nodes to fetch as well
+   */
+  include?: Prisma.ExpenseInclude<ExtArgs> | null
+  where?: Prisma.ExpenseWhereInput
+  orderBy?: Prisma.ExpenseOrderByWithRelationInput | Prisma.ExpenseOrderByWithRelationInput[]
+  cursor?: Prisma.ExpenseWhereUniqueInput
+  take?: number
+  skip?: number
+  distinct?: Prisma.ExpenseScalarFieldEnum | Prisma.ExpenseScalarFieldEnum[]
 }
 
 /**

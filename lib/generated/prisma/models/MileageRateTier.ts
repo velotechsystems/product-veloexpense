@@ -415,14 +415,6 @@ export type MileageRateTierUncheckedUpdateManyWithoutRateNestedInput = {
   deleteMany?: Prisma.MileageRateTierScalarWhereInput | Prisma.MileageRateTierScalarWhereInput[]
 }
 
-export type BigIntFieldUpdateOperationsInput = {
-  set?: bigint | number
-  increment?: bigint | number
-  decrement?: bigint | number
-  multiply?: bigint | number
-  divide?: bigint | number
-}
-
 export type MileageRateTierCreateWithoutRateInput = {
   id?: string
   organizationId?: string

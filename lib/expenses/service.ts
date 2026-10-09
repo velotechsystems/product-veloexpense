@@ -954,6 +954,19 @@ export async function recomputeReportTotal(tx: QueryRunner, reportId: string) {
       'REPORT_NOT_DRAFT',
     );
   }
+  // ExpenseOS's invariant since migration 0054: an expense's `amount_minor` is the sum
+  // of its line items. The ported router keeps it (its `recomputeTotals`); this writer
+  // predates the column, so it keeps it too until the ported screens replace it (d25).
+  await tx.query(
+    `UPDATE expense e
+        SET amount_minor = s.total, updated_at = now()
+       FROM (SELECT x.id, COALESCE(SUM(li.amount_minor), 0) AS total
+               FROM expense x LEFT JOIN expense_line_item li ON li.expense_id = x.id
+              WHERE x.report_id = $1
+              GROUP BY x.id) s
+      WHERE e.id = s.id AND e.amount_minor IS DISTINCT FROM s.total`,
+    [reportId],
+  );
   return BigInt(s.rows[0].total);
 }
 

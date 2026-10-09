@@ -10,7 +10,13 @@
  */
 export type * from './models/ExpenseCategory'
 export type * from './models/GlAccount'
+export type * from './models/ExpenseReport'
+export type * from './models/Expense'
+export type * from './models/ExpenseAllocation'
+export type * from './models/ExpenseAttendee'
 export type * from './models/ExpenseLineItem'
+export type * from './models/Receipt'
+export type * from './models/TaxJurisdiction'
 export type * from './models/User'
 export type * from './models/BusinessUnit'
 export type * from './models/ExternalIdSource'
