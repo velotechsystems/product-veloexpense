@@ -246,6 +246,7 @@ export type UserWhereInput = {
   deletedAt?: Prisma.DateTimeNullableFilter<"User"> | Date | string | null
   createdAt?: Prisma.DateTimeFilter<"User"> | Date | string
   updatedAt?: Prisma.DateTimeFilter<"User"> | Date | string
+  entity?: Prisma.XOR<Prisma.LegalEntityNullableScalarRelationFilter, Prisma.LegalEntityWhereInput> | null
   reports?: Prisma.ExpenseReportListRelationFilter
   expenses?: Prisma.ExpenseListRelationFilter
   receipts?: Prisma.ReceiptListRelationFilter
@@ -266,6 +267,7 @@ export type UserOrderByWithRelationInput = {
   deletedAt?: Prisma.SortOrderInput | Prisma.SortOrder
   createdAt?: Prisma.SortOrder
   updatedAt?: Prisma.SortOrder
+  entity?: Prisma.LegalEntityOrderByWithRelationInput
   reports?: Prisma.ExpenseReportOrderByRelationAggregateInput
   expenses?: Prisma.ExpenseOrderByRelationAggregateInput
   receipts?: Prisma.ReceiptOrderByRelationAggregateInput
@@ -289,6 +291,7 @@ export type UserWhereUniqueInput = Prisma.AtLeast<{
   deletedAt?: Prisma.DateTimeNullableFilter<"User"> | Date | string | null
   createdAt?: Prisma.DateTimeFilter<"User"> | Date | string
   updatedAt?: Prisma.DateTimeFilter<"User"> | Date | string
+  entity?: Prisma.XOR<Prisma.LegalEntityNullableScalarRelationFilter, Prisma.LegalEntityWhereInput> | null
   reports?: Prisma.ExpenseReportListRelationFilter
   expenses?: Prisma.ExpenseListRelationFilter
   receipts?: Prisma.ReceiptListRelationFilter
@@ -342,11 +345,11 @@ export type UserCreateInput = {
   managerId?: string | null
   departmentId?: string | null
   businessUnitId?: string | null
-  legalEntityId?: string | null
   jobLevelId?: string | null
   deletedAt?: Date | string | null
   createdAt?: Date | string
   updatedAt?: Date | string
+  entity?: Prisma.LegalEntityCreateNestedOneWithoutUsersInput
   reports?: Prisma.ExpenseReportCreateNestedManyWithoutSubmitterInput
   expenses?: Prisma.ExpenseCreateNestedManyWithoutOwnerInput
   receipts?: Prisma.ReceiptCreateNestedManyWithoutUploadedByInput
@@ -382,11 +385,11 @@ export type UserUpdateInput = {
   managerId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   departmentId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   businessUnitId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
-  legalEntityId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   jobLevelId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   deletedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  entity?: Prisma.LegalEntityUpdateOneWithoutUsersNestedInput
   reports?: Prisma.ExpenseReportUpdateManyWithoutSubmitterNestedInput
   expenses?: Prisma.ExpenseUpdateManyWithoutOwnerNestedInput
   receipts?: Prisma.ReceiptUpdateManyWithoutUploadedByNestedInput
@@ -438,7 +441,6 @@ export type UserUpdateManyMutationInput = {
   managerId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   departmentId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   businessUnitId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
-  legalEntityId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   jobLevelId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   deletedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -514,6 +516,16 @@ export type UserMinOrderByAggregateInput = {
   updatedAt?: Prisma.SortOrder
 }
 
+export type UserListRelationFilter = {
+  every?: Prisma.UserWhereInput
+  some?: Prisma.UserWhereInput
+  none?: Prisma.UserWhereInput
+}
+
+export type UserOrderByRelationAggregateInput = {
+  _count?: Prisma.SortOrder
+}
+
 export type UserCreateNestedOneWithoutReportsInput = {
   create?: Prisma.XOR<Prisma.UserCreateWithoutReportsInput, Prisma.UserUncheckedCreateWithoutReportsInput>
   connectOrCreate?: Prisma.UserCreateOrConnectWithoutReportsInput
@@ -556,6 +568,48 @@ export type UserUpdateOneRequiredWithoutReceiptsNestedInput = {
   update?: Prisma.XOR<Prisma.XOR<Prisma.UserUpdateToOneWithWhereWithoutReceiptsInput, Prisma.UserUpdateWithoutReceiptsInput>, Prisma.UserUncheckedUpdateWithoutReceiptsInput>
 }
 
+export type UserCreateNestedManyWithoutEntityInput = {
+  create?: Prisma.XOR<Prisma.UserCreateWithoutEntityInput, Prisma.UserUncheckedCreateWithoutEntityInput> | Prisma.UserCreateWithoutEntityInput[] | Prisma.UserUncheckedCreateWithoutEntityInput[]
+  connectOrCreate?: Prisma.UserCreateOrConnectWithoutEntityInput | Prisma.UserCreateOrConnectWithoutEntityInput[]
+  createMany?: Prisma.UserCreateManyEntityInputEnvelope
+  connect?: Prisma.UserWhereUniqueInput | Prisma.UserWhereUniqueInput[]
+}
+
+export type UserUncheckedCreateNestedManyWithoutEntityInput = {
+  create?: Prisma.XOR<Prisma.UserCreateWithoutEntityInput, Prisma.UserUncheckedCreateWithoutEntityInput> | Prisma.UserCreateWithoutEntityInput[] | Prisma.UserUncheckedCreateWithoutEntityInput[]
+  connectOrCreate?: Prisma.UserCreateOrConnectWithoutEntityInput | Prisma.UserCreateOrConnectWithoutEntityInput[]
+  createMany?: Prisma.UserCreateManyEntityInputEnvelope
+  connect?: Prisma.UserWhereUniqueInput | Prisma.UserWhereUniqueInput[]
+}
+
+export type UserUpdateManyWithoutEntityNestedInput = {
+  create?: Prisma.XOR<Prisma.UserCreateWithoutEntityInput, Prisma.UserUncheckedCreateWithoutEntityInput> | Prisma.UserCreateWithoutEntityInput[] | Prisma.UserUncheckedCreateWithoutEntityInput[]
+  connectOrCreate?: Prisma.UserCreateOrConnectWithoutEntityInput | Prisma.UserCreateOrConnectWithoutEntityInput[]
+  upsert?: Prisma.UserUpsertWithWhereUniqueWithoutEntityInput | Prisma.UserUpsertWithWhereUniqueWithoutEntityInput[]
+  createMany?: Prisma.UserCreateManyEntityInputEnvelope
+  set?: Prisma.UserWhereUniqueInput | Prisma.UserWhereUniqueInput[]
+  disconnect?: Prisma.UserWhereUniqueInput | Prisma.UserWhereUniqueInput[]
+  delete?: Prisma.UserWhereUniqueInput | Prisma.UserWhereUniqueInput[]
+  connect?: Prisma.UserWhereUniqueInput | Prisma.UserWhereUniqueInput[]
+  update?: Prisma.UserUpdateWithWhereUniqueWithoutEntityInput | Prisma.UserUpdateWithWhereUniqueWithoutEntityInput[]
+  updateMany?: Prisma.UserUpdateManyWithWhereWithoutEntityInput | Prisma.UserUpdateManyWithWhereWithoutEntityInput[]
+  deleteMany?: Prisma.UserScalarWhereInput | Prisma.UserScalarWhereInput[]
+}
+
+export type UserUncheckedUpdateManyWithoutEntityNestedInput = {
+  create?: Prisma.XOR<Prisma.UserCreateWithoutEntityInput, Prisma.UserUncheckedCreateWithoutEntityInput> | Prisma.UserCreateWithoutEntityInput[] | Prisma.UserUncheckedCreateWithoutEntityInput[]
+  connectOrCreate?: Prisma.UserCreateOrConnectWithoutEntityInput | Prisma.UserCreateOrConnectWithoutEntityInput[]
+  upsert?: Prisma.UserUpsertWithWhereUniqueWithoutEntityInput | Prisma.UserUpsertWithWhereUniqueWithoutEntityInput[]
+  createMany?: Prisma.UserCreateManyEntityInputEnvelope
+  set?: Prisma.UserWhereUniqueInput | Prisma.UserWhereUniqueInput[]
+  disconnect?: Prisma.UserWhereUniqueInput | Prisma.UserWhereUniqueInput[]
+  delete?: Prisma.UserWhereUniqueInput | Prisma.UserWhereUniqueInput[]
+  connect?: Prisma.UserWhereUniqueInput | Prisma.UserWhereUniqueInput[]
+  update?: Prisma.UserUpdateWithWhereUniqueWithoutEntityInput | Prisma.UserUpdateWithWhereUniqueWithoutEntityInput[]
+  updateMany?: Prisma.UserUpdateManyWithWhereWithoutEntityInput | Prisma.UserUpdateManyWithWhereWithoutEntityInput[]
+  deleteMany?: Prisma.UserScalarWhereInput | Prisma.UserScalarWhereInput[]
+}
+
 export type UserCreateNestedOneWithoutMileageRatesInput = {
   create?: Prisma.XOR<Prisma.UserCreateWithoutMileageRatesInput, Prisma.UserUncheckedCreateWithoutMileageRatesInput>
   connectOrCreate?: Prisma.UserCreateOrConnectWithoutMileageRatesInput
@@ -579,11 +633,11 @@ export type UserCreateWithoutReportsInput = {
   managerId?: string | null
   departmentId?: string | null
   businessUnitId?: string | null
-  legalEntityId?: string | null
   jobLevelId?: string | null
   deletedAt?: Date | string | null
   createdAt?: Date | string
   updatedAt?: Date | string
+  entity?: Prisma.LegalEntityCreateNestedOneWithoutUsersInput
   expenses?: Prisma.ExpenseCreateNestedManyWithoutOwnerInput
   receipts?: Prisma.ReceiptCreateNestedManyWithoutUploadedByInput
   mileageRates?: Prisma.MileageRateSubjectCreateNestedManyWithoutUserInput
@@ -633,11 +687,11 @@ export type UserUpdateWithoutReportsInput = {
   managerId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   departmentId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   businessUnitId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
-  legalEntityId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   jobLevelId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   deletedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  entity?: Prisma.LegalEntityUpdateOneWithoutUsersNestedInput
   expenses?: Prisma.ExpenseUpdateManyWithoutOwnerNestedInput
   receipts?: Prisma.ReceiptUpdateManyWithoutUploadedByNestedInput
   mileageRates?: Prisma.MileageRateSubjectUpdateManyWithoutUserNestedInput
@@ -671,11 +725,11 @@ export type UserCreateWithoutExpensesInput = {
   managerId?: string | null
   departmentId?: string | null
   businessUnitId?: string | null
-  legalEntityId?: string | null
   jobLevelId?: string | null
   deletedAt?: Date | string | null
   createdAt?: Date | string
   updatedAt?: Date | string
+  entity?: Prisma.LegalEntityCreateNestedOneWithoutUsersInput
   reports?: Prisma.ExpenseReportCreateNestedManyWithoutSubmitterInput
   receipts?: Prisma.ReceiptCreateNestedManyWithoutUploadedByInput
   mileageRates?: Prisma.MileageRateSubjectCreateNestedManyWithoutUserInput
@@ -725,11 +779,11 @@ export type UserUpdateWithoutExpensesInput = {
   managerId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   departmentId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   businessUnitId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
-  legalEntityId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   jobLevelId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   deletedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  entity?: Prisma.LegalEntityUpdateOneWithoutUsersNestedInput
   reports?: Prisma.ExpenseReportUpdateManyWithoutSubmitterNestedInput
   receipts?: Prisma.ReceiptUpdateManyWithoutUploadedByNestedInput
   mileageRates?: Prisma.MileageRateSubjectUpdateManyWithoutUserNestedInput
@@ -763,11 +817,11 @@ export type UserCreateWithoutReceiptsInput = {
   managerId?: string | null
   departmentId?: string | null
   businessUnitId?: string | null
-  legalEntityId?: string | null
   jobLevelId?: string | null
   deletedAt?: Date | string | null
   createdAt?: Date | string
   updatedAt?: Date | string
+  entity?: Prisma.LegalEntityCreateNestedOneWithoutUsersInput
   reports?: Prisma.ExpenseReportCreateNestedManyWithoutSubmitterInput
   expenses?: Prisma.ExpenseCreateNestedManyWithoutOwnerInput
   mileageRates?: Prisma.MileageRateSubjectCreateNestedManyWithoutUserInput
@@ -817,11 +871,11 @@ export type UserUpdateWithoutReceiptsInput = {
   managerId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   departmentId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   businessUnitId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
-  legalEntityId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   jobLevelId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   deletedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  entity?: Prisma.LegalEntityUpdateOneWithoutUsersNestedInput
   reports?: Prisma.ExpenseReportUpdateManyWithoutSubmitterNestedInput
   expenses?: Prisma.ExpenseUpdateManyWithoutOwnerNestedInput
   mileageRates?: Prisma.MileageRateSubjectUpdateManyWithoutUserNestedInput
@@ -846,6 +900,89 @@ export type UserUncheckedUpdateWithoutReceiptsInput = {
   mileageRates?: Prisma.MileageRateSubjectUncheckedUpdateManyWithoutUserNestedInput
 }
 
+export type UserCreateWithoutEntityInput = {
+  id?: string
+  organizationId?: string
+  email: string
+  name?: string | null
+  employeeStatus?: string
+  managerId?: string | null
+  departmentId?: string | null
+  businessUnitId?: string | null
+  jobLevelId?: string | null
+  deletedAt?: Date | string | null
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  reports?: Prisma.ExpenseReportCreateNestedManyWithoutSubmitterInput
+  expenses?: Prisma.ExpenseCreateNestedManyWithoutOwnerInput
+  receipts?: Prisma.ReceiptCreateNestedManyWithoutUploadedByInput
+  mileageRates?: Prisma.MileageRateSubjectCreateNestedManyWithoutUserInput
+}
+
+export type UserUncheckedCreateWithoutEntityInput = {
+  id?: string
+  organizationId?: string
+  email: string
+  name?: string | null
+  employeeStatus?: string
+  managerId?: string | null
+  departmentId?: string | null
+  businessUnitId?: string | null
+  jobLevelId?: string | null
+  deletedAt?: Date | string | null
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  reports?: Prisma.ExpenseReportUncheckedCreateNestedManyWithoutSubmitterInput
+  expenses?: Prisma.ExpenseUncheckedCreateNestedManyWithoutOwnerInput
+  receipts?: Prisma.ReceiptUncheckedCreateNestedManyWithoutUploadedByInput
+  mileageRates?: Prisma.MileageRateSubjectUncheckedCreateNestedManyWithoutUserInput
+}
+
+export type UserCreateOrConnectWithoutEntityInput = {
+  where: Prisma.UserWhereUniqueInput
+  create: Prisma.XOR<Prisma.UserCreateWithoutEntityInput, Prisma.UserUncheckedCreateWithoutEntityInput>
+}
+
+export type UserCreateManyEntityInputEnvelope = {
+  data: Prisma.UserCreateManyEntityInput | Prisma.UserCreateManyEntityInput[]
+  skipDuplicates?: boolean
+}
+
+export type UserUpsertWithWhereUniqueWithoutEntityInput = {
+  where: Prisma.UserWhereUniqueInput
+  update: Prisma.XOR<Prisma.UserUpdateWithoutEntityInput, Prisma.UserUncheckedUpdateWithoutEntityInput>
+  create: Prisma.XOR<Prisma.UserCreateWithoutEntityInput, Prisma.UserUncheckedCreateWithoutEntityInput>
+}
+
+export type UserUpdateWithWhereUniqueWithoutEntityInput = {
+  where: Prisma.UserWhereUniqueInput
+  data: Prisma.XOR<Prisma.UserUpdateWithoutEntityInput, Prisma.UserUncheckedUpdateWithoutEntityInput>
+}
+
+export type UserUpdateManyWithWhereWithoutEntityInput = {
+  where: Prisma.UserScalarWhereInput
+  data: Prisma.XOR<Prisma.UserUpdateManyMutationInput, Prisma.UserUncheckedUpdateManyWithoutEntityInput>
+}
+
+export type UserScalarWhereInput = {
+  AND?: Prisma.UserScalarWhereInput | Prisma.UserScalarWhereInput[]
+  OR?: Prisma.UserScalarWhereInput[]
+  NOT?: Prisma.UserScalarWhereInput | Prisma.UserScalarWhereInput[]
+  id?: Prisma.UuidFilter<"User"> | string
+  organizationId?: Prisma.UuidFilter<"User"> | string
+  email?: Prisma.StringFilter<"User"> | string
+  name?: Prisma.StringNullableFilter<"User"> | string | null
+  employeeStatus?: Prisma.StringFilter<"User"> | string
+  managerId?: Prisma.UuidNullableFilter<"User"> | string | null
+  departmentId?: Prisma.UuidNullableFilter<"User"> | string | null
+  businessUnitId?: Prisma.UuidNullableFilter<"User"> | string | null
+  legalEntityId?: Prisma.UuidNullableFilter<"User"> | string | null
+  jobLevelId?: Prisma.UuidNullableFilter<"User"> | string | null
+  deletedAt?: Prisma.DateTimeNullableFilter<"User"> | Date | string | null
+  createdAt?: Prisma.DateTimeFilter<"User"> | Date | string
+  updatedAt?: Prisma.DateTimeFilter<"User"> | Date | string
+}
+
 export type UserCreateWithoutMileageRatesInput = {
   id?: string
   organizationId?: string
@@ -855,11 +992,11 @@ export type UserCreateWithoutMileageRatesInput = {
   managerId?: string | null
   departmentId?: string | null
   businessUnitId?: string | null
-  legalEntityId?: string | null
   jobLevelId?: string | null
   deletedAt?: Date | string | null
   createdAt?: Date | string
   updatedAt?: Date | string
+  entity?: Prisma.LegalEntityCreateNestedOneWithoutUsersInput
   reports?: Prisma.ExpenseReportCreateNestedManyWithoutSubmitterInput
   expenses?: Prisma.ExpenseCreateNestedManyWithoutOwnerInput
   receipts?: Prisma.ReceiptCreateNestedManyWithoutUploadedByInput
@@ -909,11 +1046,11 @@ export type UserUpdateWithoutMileageRatesInput = {
   managerId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   departmentId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   businessUnitId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
-  legalEntityId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   jobLevelId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   deletedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  entity?: Prisma.LegalEntityUpdateOneWithoutUsersNestedInput
   reports?: Prisma.ExpenseReportUpdateManyWithoutSubmitterNestedInput
   expenses?: Prisma.ExpenseUpdateManyWithoutOwnerNestedInput
   receipts?: Prisma.ReceiptUpdateManyWithoutUploadedByNestedInput
@@ -936,6 +1073,74 @@ export type UserUncheckedUpdateWithoutMileageRatesInput = {
   reports?: Prisma.ExpenseReportUncheckedUpdateManyWithoutSubmitterNestedInput
   expenses?: Prisma.ExpenseUncheckedUpdateManyWithoutOwnerNestedInput
   receipts?: Prisma.ReceiptUncheckedUpdateManyWithoutUploadedByNestedInput
+}
+
+export type UserCreateManyEntityInput = {
+  id?: string
+  organizationId?: string
+  email: string
+  name?: string | null
+  employeeStatus?: string
+  managerId?: string | null
+  departmentId?: string | null
+  businessUnitId?: string | null
+  jobLevelId?: string | null
+  deletedAt?: Date | string | null
+  createdAt?: Date | string
+  updatedAt?: Date | string
+}
+
+export type UserUpdateWithoutEntityInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  organizationId?: Prisma.StringFieldUpdateOperationsInput | string
+  email?: Prisma.StringFieldUpdateOperationsInput | string
+  name?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  employeeStatus?: Prisma.StringFieldUpdateOperationsInput | string
+  managerId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  departmentId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  businessUnitId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  jobLevelId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  deletedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  reports?: Prisma.ExpenseReportUpdateManyWithoutSubmitterNestedInput
+  expenses?: Prisma.ExpenseUpdateManyWithoutOwnerNestedInput
+  receipts?: Prisma.ReceiptUpdateManyWithoutUploadedByNestedInput
+  mileageRates?: Prisma.MileageRateSubjectUpdateManyWithoutUserNestedInput
+}
+
+export type UserUncheckedUpdateWithoutEntityInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  organizationId?: Prisma.StringFieldUpdateOperationsInput | string
+  email?: Prisma.StringFieldUpdateOperationsInput | string
+  name?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  employeeStatus?: Prisma.StringFieldUpdateOperationsInput | string
+  managerId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  departmentId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  businessUnitId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  jobLevelId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  deletedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  reports?: Prisma.ExpenseReportUncheckedUpdateManyWithoutSubmitterNestedInput
+  expenses?: Prisma.ExpenseUncheckedUpdateManyWithoutOwnerNestedInput
+  receipts?: Prisma.ReceiptUncheckedUpdateManyWithoutUploadedByNestedInput
+  mileageRates?: Prisma.MileageRateSubjectUncheckedUpdateManyWithoutUserNestedInput
+}
+
+export type UserUncheckedUpdateManyWithoutEntityInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  organizationId?: Prisma.StringFieldUpdateOperationsInput | string
+  email?: Prisma.StringFieldUpdateOperationsInput | string
+  name?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  employeeStatus?: Prisma.StringFieldUpdateOperationsInput | string
+  managerId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  departmentId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  businessUnitId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  jobLevelId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  deletedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
 }
 
 
@@ -1010,6 +1215,7 @@ export type UserSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs = r
   deletedAt?: boolean
   createdAt?: boolean
   updatedAt?: boolean
+  entity?: boolean | Prisma.User$entityArgs<ExtArgs>
   reports?: boolean | Prisma.User$reportsArgs<ExtArgs>
   expenses?: boolean | Prisma.User$expensesArgs<ExtArgs>
   receipts?: boolean | Prisma.User$receiptsArgs<ExtArgs>
@@ -1031,6 +1237,7 @@ export type UserSelectCreateManyAndReturn<ExtArgs extends runtime.Types.Extensio
   deletedAt?: boolean
   createdAt?: boolean
   updatedAt?: boolean
+  entity?: boolean | Prisma.User$entityArgs<ExtArgs>
 }, ExtArgs["result"]["user"]>
 
 export type UserSelectUpdateManyAndReturn<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetSelect<{
@@ -1047,6 +1254,7 @@ export type UserSelectUpdateManyAndReturn<ExtArgs extends runtime.Types.Extensio
   deletedAt?: boolean
   createdAt?: boolean
   updatedAt?: boolean
+  entity?: boolean | Prisma.User$entityArgs<ExtArgs>
 }, ExtArgs["result"]["user"]>
 
 export type UserSelectScalar = {
@@ -1067,18 +1275,28 @@ export type UserSelectScalar = {
 
 export type UserOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "organizationId" | "email" | "name" | "employeeStatus" | "managerId" | "departmentId" | "businessUnitId" | "legalEntityId" | "jobLevelId" | "deletedAt" | "createdAt" | "updatedAt", ExtArgs["result"]["user"]>
 export type UserInclude<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  entity?: boolean | Prisma.User$entityArgs<ExtArgs>
   reports?: boolean | Prisma.User$reportsArgs<ExtArgs>
   expenses?: boolean | Prisma.User$expensesArgs<ExtArgs>
   receipts?: boolean | Prisma.User$receiptsArgs<ExtArgs>
   mileageRates?: boolean | Prisma.User$mileageRatesArgs<ExtArgs>
   _count?: boolean | Prisma.UserCountOutputTypeDefaultArgs<ExtArgs>
 }
-export type UserIncludeCreateManyAndReturn<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {}
-export type UserIncludeUpdateManyAndReturn<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {}
+export type UserIncludeCreateManyAndReturn<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  entity?: boolean | Prisma.User$entityArgs<ExtArgs>
+}
+export type UserIncludeUpdateManyAndReturn<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  entity?: boolean | Prisma.User$entityArgs<ExtArgs>
+}
 
 export type $UserPayload<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   name: "User"
   objects: {
+    /**
+     * ExpenseOS's `entity` (the person's legal entity): the reader's and the payee's home
+     * currency come through it (Wave 2). The database's FK is composite (0019).
+     */
+    entity: Prisma.$LegalEntityPayload<ExtArgs> | null
     reports: Prisma.$ExpenseReportPayload<ExtArgs>[]
     expenses: Prisma.$ExpensePayload<ExtArgs>[]
     receipts: Prisma.$ReceiptPayload<ExtArgs>[]
@@ -1501,6 +1719,7 @@ readonly fields: UserFieldRefs;
  */
 export interface Prisma__UserClient<T, Null = never, ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs, GlobalOmitOptions = {}> extends Prisma.PrismaPromise<T> {
   readonly [Symbol.toStringTag]: "PrismaPromise"
+  entity<T extends Prisma.User$entityArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.User$entityArgs<ExtArgs>>): Prisma.Prisma__LegalEntityClient<runtime.Types.Result.GetResult<Prisma.$LegalEntityPayload<ExtArgs>, T, "findUniqueOrThrow", GlobalOmitOptions> | null, null, ExtArgs, GlobalOmitOptions>
   reports<T extends Prisma.User$reportsArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.User$reportsArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$ExpenseReportPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
   expenses<T extends Prisma.User$expensesArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.User$expensesArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$ExpensePayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
   receipts<T extends Prisma.User$receiptsArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.User$receiptsArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$ReceiptPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
@@ -1801,6 +2020,10 @@ export type UserCreateManyAndReturnArgs<ExtArgs extends runtime.Types.Extensions
    */
   data: Prisma.UserCreateManyInput | Prisma.UserCreateManyInput[]
   skipDuplicates?: boolean
+  /**
+   * Choose, which related nodes to fetch as well
+   */
+  include?: Prisma.UserIncludeCreateManyAndReturn<ExtArgs> | null
 }
 
 /**
@@ -1871,6 +2094,10 @@ export type UserUpdateManyAndReturnArgs<ExtArgs extends runtime.Types.Extensions
    * Limit how many Users to update.
    */
   limit?: number
+  /**
+   * Choose, which related nodes to fetch as well
+   */
+  include?: Prisma.UserIncludeUpdateManyAndReturn<ExtArgs> | null
 }
 
 /**
@@ -1937,6 +2164,25 @@ export type UserDeleteManyArgs<ExtArgs extends runtime.Types.Extensions.Internal
    * Limit how many Users to delete.
    */
   limit?: number
+}
+
+/**
+ * User.entity
+ */
+export type User$entityArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  /**
+   * Select specific fields to fetch from the LegalEntity
+   */
+  select?: Prisma.LegalEntitySelect<ExtArgs> | null
+  /**
+   * Omit specific fields from the LegalEntity
+   */
+  omit?: Prisma.LegalEntityOmit<ExtArgs> | null
+  /**
+   * Choose, which related nodes to fetch as well
+   */
+  include?: Prisma.LegalEntityInclude<ExtArgs> | null
+  where?: Prisma.LegalEntityWhereInput
 }
 
 /**

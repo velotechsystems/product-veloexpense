@@ -42,6 +42,8 @@ import { permissions as P } from '@expenseos/rbac';
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 import { Prisma, type TenantDb } from '@/lib/db/prisma';
+// VeloExpense: ExpenseOS's `Currency.symbol`, from the platform (shared with the expenses router).
+import { currencySymbol } from '@/server/lib/currencySymbol';
 import { REFUSAL_KEYS, refusal } from '@/server/refusal';
 import { router, withPermission } from '@/server/trpc';
 
@@ -203,22 +205,6 @@ function perDiemWrite() {
     }
     return result;
   });
-}
-
-/**
- * VeloExpense: a currency's symbol, which ExpenseOS's `Currency` row stores and
- * VeloExpense's does not — the narrow symbol the platform's own formatter prints.
- */
-function currencySymbol(code: string): string {
-  try {
-    return (
-      new Intl.NumberFormat('en-CA', { style: 'currency', currency: code, currencyDisplay: 'narrowSymbol' })
-        .formatToParts(0)
-        .find((p) => p.type === 'currency')?.value ?? code
-    );
-  } catch {
-    return code;
-  }
 }
 
 // ── MileageRate ──────────────────────────────────────────────────────

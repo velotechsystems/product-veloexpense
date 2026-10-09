@@ -36,6 +36,15 @@ const adminAndOthers = {
     fiscalYearSetCurrent: 'FISCAL_YEAR_SET_CURRENT',
     fiscalYearDelete: 'FISCAL_YEAR_DELETED',
   },
+  /**
+   * ExpenseOS's `report.*` keys (Wave 2), on VeloExpense's names for the same events
+   * (lib/audit/actions.ts, UD-11). Only the keys the ported procedures write so far; the
+   * rest arrive with the procedures that write them.
+   */
+  report: {
+    update: 'REPORT_EDITED',
+    delete: 'REPORT_DELETED',
+  },
 } as const satisfies Record<string, Record<string, AuditAction>>;
 
 /**
