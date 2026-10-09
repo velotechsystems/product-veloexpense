@@ -62,7 +62,11 @@ export const ModelName = {
   LegalEntityExternalId: 'LegalEntityExternalId',
   Currency: 'Currency',
   Department: 'Department',
-  DepartmentExternalId: 'DepartmentExternalId'
+  DepartmentExternalId: 'DepartmentExternalId',
+  JobLevel: 'JobLevel',
+  JobLevelExternalId: 'JobLevelExternalId',
+  FiscalYear: 'FiscalYear',
+  FiscalYearExternalId: 'FiscalYearExternalId'
 } as const
 
 export type ModelName = (typeof ModelName)[keyof typeof ModelName]
@@ -138,6 +142,7 @@ export const UserScalarFieldEnum = {
   departmentId: 'departmentId',
   businessUnitId: 'businessUnitId',
   legalEntityId: 'legalEntityId',
+  jobLevelId: 'jobLevelId',
   deletedAt: 'deletedAt',
   createdAt: 'createdAt',
   updatedAt: 'updatedAt'
@@ -248,6 +253,62 @@ export const DepartmentExternalIdScalarFieldEnum = {
 } as const
 
 export type DepartmentExternalIdScalarFieldEnum = (typeof DepartmentExternalIdScalarFieldEnum)[keyof typeof DepartmentExternalIdScalarFieldEnum]
+
+
+export const JobLevelScalarFieldEnum = {
+  id: 'id',
+  organizationId: 'organizationId',
+  code: 'code',
+  track: 'track',
+  label: 'label',
+  sortOrder: 'sortOrder',
+  active: 'active',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+} as const
+
+export type JobLevelScalarFieldEnum = (typeof JobLevelScalarFieldEnum)[keyof typeof JobLevelScalarFieldEnum]
+
+
+export const JobLevelExternalIdScalarFieldEnum = {
+  id: 'id',
+  organizationId: 'organizationId',
+  sourceId: 'sourceId',
+  sourceValue: 'sourceValue',
+  jobLevelId: 'jobLevelId',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+} as const
+
+export type JobLevelExternalIdScalarFieldEnum = (typeof JobLevelExternalIdScalarFieldEnum)[keyof typeof JobLevelExternalIdScalarFieldEnum]
+
+
+export const FiscalYearScalarFieldEnum = {
+  id: 'id',
+  organizationId: 'organizationId',
+  label: 'label',
+  startDate: 'startDate',
+  endDate: 'endDate',
+  isCurrent: 'isCurrent',
+  closed: 'closed',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+} as const
+
+export type FiscalYearScalarFieldEnum = (typeof FiscalYearScalarFieldEnum)[keyof typeof FiscalYearScalarFieldEnum]
+
+
+export const FiscalYearExternalIdScalarFieldEnum = {
+  id: 'id',
+  organizationId: 'organizationId',
+  sourceId: 'sourceId',
+  sourceValue: 'sourceValue',
+  fiscalYearId: 'fiscalYearId',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+} as const
+
+export type FiscalYearExternalIdScalarFieldEnum = (typeof FiscalYearExternalIdScalarFieldEnum)[keyof typeof FiscalYearExternalIdScalarFieldEnum]
 
 
 export const SortOrder = {

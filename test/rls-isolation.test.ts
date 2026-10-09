@@ -2058,6 +2058,159 @@ describe('RLS tenant isolation', () => {
     await admin.query('DELETE FROM external_id_source');
   });
 
+  /* ── Job levels and fiscal years (the Wave 1 port, migration 0050) ─────────
+   *
+   * Two new tenant tables and their External IDs. The ordinary claim for each —
+   * a tenant sees its own rows only, WITH CHECK refuses naming another tenant,
+   * and neither the platform hatch nor a missing tenant opens them — and then
+   * what is specific here: the alias tables' composite FKs refuse another
+   * tenant's source or row, `app_user.job_level_id` cannot point at another
+   * tenant's level, and "one current fiscal year" is per tenant, not global.
+   */
+  it("job levels, fiscal years and their aliases are tenant-isolated, and cannot name another tenant's rows", async () => {
+    await admin.query('DELETE FROM job_level_external_id');
+    await admin.query('DELETE FROM fiscal_year_external_id');
+    await admin.query('UPDATE app_user SET job_level_id = NULL');
+    await admin.query('DELETE FROM job_level');
+    await admin.query('DELETE FROM fiscal_year');
+    await admin.query('DELETE FROM external_id_source');
+    const seed = async (org: string, tag: string) =>
+      withOrg(org, async (tx) => {
+        const jl = (
+          await tx.query(
+            `INSERT INTO job_level (organization_id, code, track, label, sort_order)
+             VALUES ($1, $2, 'MANAGER', '{"en":"Manager"}', 10) RETURNING id`,
+            [org, `M-${tag}`],
+          )
+        ).rows[0].id as string;
+        // Both tenants hold a CURRENT year: the partial unique index is per tenant.
+        const fy = (
+          await tx.query(
+            `INSERT INTO fiscal_year (organization_id, label, start_date, end_date, is_current)
+             VALUES ($1, $2, '2026-01-01', '2026-12-31', true) RETURNING id`,
+            [org, JSON.stringify({ en: `FY-${tag}` })],
+          )
+        ).rows[0].id as string;
+        const src = (
+          await tx.query(
+            `INSERT INTO external_id_source (organization_id, code, label)
+             VALUES ($1, 'ledger', '{"en":"Ledger"}') RETURNING id`,
+            [org],
+          )
+        ).rows[0].id as string;
+        await tx.query(
+          `INSERT INTO job_level_external_id (organization_id, source_id, source_value, job_level_id)
+           VALUES ($1, $2, $3, $4)`,
+          [org, src, `JL-${tag}`, jl],
+        );
+        await tx.query(
+          `INSERT INTO fiscal_year_external_id (organization_id, source_id, source_value, fiscal_year_id)
+           VALUES ($1, $2, $3, $4)`,
+          [org, src, `FY-${tag}`, fy],
+        );
+        const user = (await tx.query('SELECT id FROM app_user LIMIT 1')).rows[0].id as string;
+        return { jl, fy, src, user };
+      });
+    const a = await seed(orgA, 'A');
+    const b = await seed(orgB, 'B');
+
+    for (const [org, tag] of [
+      [orgA, 'A'],
+      [orgB, 'B'],
+    ] as const) {
+      const seen = await withOrg(org, async (tx) => ({
+        levels: (await tx.query('SELECT code FROM job_level')).rows.map((r) => r.code),
+        years: (await tx.query(`SELECT label ->> 'en' AS en FROM fiscal_year`)).rows.map((r) => r.en),
+        levelAliases: (await tx.query('SELECT source_value FROM job_level_external_id')).rows.map(
+          (r) => r.source_value,
+        ),
+        yearAliases: (await tx.query('SELECT source_value FROM fiscal_year_external_id')).rows.map(
+          (r) => r.source_value,
+        ),
+      }));
+      expect(seen).toEqual({
+        levels: [`M-${tag}`],
+        years: [`FY-${tag}`],
+        levelAliases: [`JL-${tag}`],
+        yearAliases: [`FY-${tag}`],
+      });
+    }
+
+    // WITH CHECK: naming another tenant does not write there.
+    await expect(
+      withOrg(orgB, (tx) =>
+        tx.query(
+          `INSERT INTO job_level (organization_id, code, track, label, sort_order)
+           VALUES ($1, 'X', 'MANAGER', '{"en":"X"}', 1)`,
+          [orgA],
+        ),
+      ),
+    ).rejects.toThrow(/row-level security|violates/i);
+    await expect(
+      withOrg(orgB, (tx) =>
+        tx.query(
+          `INSERT INTO fiscal_year (organization_id, label, start_date, end_date)
+           VALUES ($1, '{"en":"X"}', '2027-01-01', '2027-12-31')`,
+          [orgA],
+        ),
+      ),
+    ).rejects.toThrow(/row-level security|violates/i);
+    await expect(
+      withOrg(orgB, (tx) =>
+        tx.query(
+          `INSERT INTO job_level_external_id (organization_id, source_id, source_value, job_level_id)
+           VALUES ($1, $2, 'X', $3)`,
+          [orgA, a.src, a.jl],
+        ),
+      ),
+    ).rejects.toThrow(/row-level security|violates/i);
+    await expect(
+      withOrg(orgB, (tx) =>
+        tx.query(
+          `INSERT INTO fiscal_year_external_id (organization_id, source_id, source_value, fiscal_year_id)
+           VALUES ($1, $2, 'X', $3)`,
+          [orgA, a.src, a.fy],
+        ),
+      ),
+    ).rejects.toThrow(/row-level security|violates/i);
+
+    // The composite FKs: another tenant's source, row or level is refused.
+    await expect(
+      withOrg(orgB, (tx) =>
+        tx.query(
+          `INSERT INTO job_level_external_id (organization_id, source_id, source_value, job_level_id)
+           VALUES ($1, $2, 'JL-B2', $3)`,
+          [orgB, a.src, b.jl],
+        ),
+      ),
+    ).rejects.toThrow(/foreign key/i);
+    await expect(
+      withOrg(orgB, (tx) =>
+        tx.query(
+          `INSERT INTO fiscal_year_external_id (organization_id, source_id, source_value, fiscal_year_id)
+           VALUES ($1, $2, 'FY-B2', $3)`,
+          [orgB, b.src, a.fy],
+        ),
+      ),
+    ).rejects.toThrow(/foreign key/i);
+    await expect(
+      withOrg(orgB, (tx) => tx.query('UPDATE app_user SET job_level_id = $1 WHERE id = $2', [a.jl, b.user])),
+    ).rejects.toThrow(/foreign key/i);
+
+    for (const table of ['job_level', 'job_level_external_id', 'fiscal_year', 'fiscal_year_external_id']) {
+      const viaPlatform = await withPlatformRead((tx) => tx.query(`SELECT count(*)::int AS n FROM ${table}`));
+      expect(viaPlatform.rows[0].n, table).toBe(0);
+      const blind = await withoutOrg((tx) => tx.query(`SELECT count(*)::int AS n FROM ${table}`));
+      expect(blind.rows[0].n, table).toBe(0);
+    }
+
+    await admin.query('DELETE FROM job_level_external_id');
+    await admin.query('DELETE FROM fiscal_year_external_id');
+    await admin.query('DELETE FROM job_level');
+    await admin.query('DELETE FROM fiscal_year');
+    await admin.query('DELETE FROM external_id_source');
+  });
+
   /* ── export requests (VX5-12, migration 0041) ─────────────────────────────
    *
    * The ordinary tenant claim, and then the two things specific to this table,

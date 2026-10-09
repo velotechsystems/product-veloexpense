@@ -27,5 +27,13 @@ export const auditActions = {
     departmentUpdate: 'DEPARTMENT_UPDATED',
     /** As for business units: a deactivation. */
     departmentDelete: 'DEPARTMENT_DEACTIVATED',
+    jobLevelCreate: 'JOB_LEVEL_CREATED',
+    jobLevelUpdate: 'JOB_LEVEL_UPDATED',
+    /** A job level is really deleted (ExpenseOS's `delete`), and only when nobody is on it. */
+    jobLevelDelete: 'JOB_LEVEL_DELETED',
+    fiscalYearCreate: 'FISCAL_YEAR_CREATED',
+    fiscalYearUpdate: 'FISCAL_YEAR_UPDATED',
+    fiscalYearSetCurrent: 'FISCAL_YEAR_SET_CURRENT',
+    fiscalYearDelete: 'FISCAL_YEAR_DELETED',
   },
 } as const satisfies Record<string, Record<string, AuditAction>>;
