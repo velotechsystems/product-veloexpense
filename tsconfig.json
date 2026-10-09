@@ -32,7 +32,9 @@
       "@expenseos/i18n/catalogs/*": ["./packages/i18n/src/catalogs/*.json"],
       "@expenseos/design-system": ["./packages/design-system/src/index.ts"],
       "@expenseos/audit": ["./packages/audit/src/index.ts"],
-      "@expenseos/money": ["./packages/money/src/index.ts"]
+      "@expenseos/money": ["./packages/money/src/index.ts"],
+      "@expenseos/tax": ["./packages/tax/src/index.ts"],
+      "@expenseos/expense-lines": ["./packages/expense-lines/src/index.ts"]
     }
   },
   "include": [

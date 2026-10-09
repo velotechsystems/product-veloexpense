@@ -34,6 +34,9 @@ const PORTED_FROM_EXPENSEOS = [
   "server/__test-helpers__/**",
   "components/pickers/**",
   "packages/audit/**",
+  // Wave 2: ExpenseOS's tax engine and expense-line kinds, verbatim.
+  "packages/tax/**",
+  "packages/expense-lines/**",
 ];
 
 const eslintConfig = defineConfig([
@@ -45,8 +48,10 @@ const eslintConfig = defineConfig([
     // for ESLint as unused when its rule set differs. Not a finding in ported code.
     linterOptions: { reportUnusedDisableDirectives: "off" },
     rules: {
-      // ExpenseOS's (Biome's) convention: a leading underscore marks a deliberately unused name.
-      "@typescript-eslint/no-unused-vars": ["warn", { argsIgnorePattern: "^_", varsIgnorePattern: "^_" }],
+      // ExpenseOS's (Biome's) convention: a leading underscore marks a deliberately unused name,
+      // and a name dropped by destructuring the rest of an object (`{ trace: _t, ...rest }`) is
+      // not "unused" — Biome ignores rest siblings.
+      "@typescript-eslint/no-unused-vars": ["warn", { argsIgnorePattern: "^_", varsIgnorePattern: "^_", ignoreRestSiblings: true }],
       "react-hooks/refs": "off",
       "react-hooks/globals": "off",
       "react-hooks/immutability": "off",
