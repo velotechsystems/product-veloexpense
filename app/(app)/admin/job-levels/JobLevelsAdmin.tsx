@@ -631,8 +631,11 @@ export function JobLevelsAdmin({ canEdit }: { canEdit: boolean }) {
                   controlPosition="inline-leading"
                   description={tj('activeHelp')}
                 >
+                  {/* VeloExpense: named by aria-label — Base UI's checkbox is a span the
+                      field's <label for> does not name (f10). */}
                   <Checkbox
                     id="jobLevel-active"
+                    aria-label={tc('active')}
                     checked={form.active}
                     onCheckedChange={(v) => setForm({ ...form, active: v === true })}
                   />

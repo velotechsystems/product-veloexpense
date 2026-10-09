@@ -98,7 +98,7 @@ const ERROR_QUERY_RE = /[?&]error=\$\{([^}]*)\}/g;
  * TWO checks, with different scopes, because the first draft of this had one and
  * it was wrong in both directions.
  *
- * ── CHECK A: the raw-message SPELLING, in `app/` only ──────────────────────
+ * ── CHECK A: the raw-message SPELLING, in `app/` and `components/` ─────────
  *
  * `err instanceof Error ? err.message : 'Something went wrong'` was the pattern
  * at eleven call sites, and it printed whatever ANY exception carried — a
@@ -116,6 +116,11 @@ const ERROR_QUERY_RE = /[?&]error=\$\{([^}]*)\}/g;
  * What it still earns its place for is the case with no URL in it at all: 2c-1
  * found two `setError(err instanceof Error ? err.message : …)` calls in the
  * receipt drawer, the one client component, which no destination check can see.
+ *
+ * `components/` joined `app/` in Wave 1 (flag f11): the ported ExpenseOS admin shell
+ * (`components/admin/AdminLookupPage.tsx`) is client UI like `app/`, and had this
+ * exact spelling twice where the check could not see it. The match also runs over
+ * the whole file now, not line by line, so a ternary broken across lines is caught.
  *
  * ── CHECK B: the DESTINATION, everywhere ───────────────────────────────────
  *
@@ -135,13 +140,14 @@ function rawErrorMessage(text, filePath) {
   const out = [];
   const lines = text.split('\n');
 
-  // CHECK A — app/ only. See the header on why this is not `lib/` too.
-  if (rel.startsWith('app/')) {
-    lines.forEach((line, i) => {
-      if (RAW_MESSAGE_RE.test(line)) {
-        out.push({ file: rel, line: i + 1, text: line.trim(), why: 'raw exception message' });
-      }
-    });
+  // CHECK A — app/ and components/. See the header on why this is not `lib/` too.
+  // Matched against the whole file, so a ternary broken across lines is still found;
+  // the line reported is where the match starts.
+  if (rel.startsWith('app/') || rel.startsWith('components/')) {
+    for (const m of text.matchAll(new RegExp(RAW_MESSAGE_RE.source, 'g'))) {
+      const lineNo = text.slice(0, m.index).split('\n').length;
+      out.push({ file: rel, line: lineNo, text: lines[lineNo - 1].trim(), why: 'raw exception message' });
+    }
   }
 
   // CHECK B — everywhere. `lib/errors/domain.ts` documents the old spelling in
@@ -776,9 +782,18 @@ async function main() {
     dateInputs.push(...dateInputMisuse(text, file));
   }
 
+  // components/ is scanned for CHECK A only (the raw-message spelling, f11): its other
+  // checks are about catalogue keys and locale literals, which `components/` does not
+  // hold in the same shapes and which nobody has asked of it.
+  let componentFiles = 0;
+  for await (const file of sourceFiles(join(repoRoot, 'components'))) {
+    componentFiles += 1;
+    rawErrors.push(...rawErrorMessage(await readFile(file, 'utf8'), file));
+  }
+
   console.log(
     `check:i18n — registry: ${locales.join(', ')} (default ${defaultLocale}); ` +
-      `scanned ${files.length} files in ${SCAN_ROOTS.join(', ')}; ` +
+      `scanned ${files.length} files in ${SCAN_ROOTS.join(', ')} (+${componentFiles} in components for raw messages); ` +
       codeSets.map((c) => `${c.declared.length} ${c.label} message codes`).join('; '),
   );
 
