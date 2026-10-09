@@ -53,7 +53,13 @@ export const AnyNull = runtime.AnyNull
 export const ModelName = {
   ExpenseCategory: 'ExpenseCategory',
   GlAccount: 'GlAccount',
+  ExpenseReport: 'ExpenseReport',
+  Expense: 'Expense',
+  ExpenseAllocation: 'ExpenseAllocation',
+  ExpenseAttendee: 'ExpenseAttendee',
   ExpenseLineItem: 'ExpenseLineItem',
+  Receipt: 'Receipt',
+  TaxJurisdiction: 'TaxJurisdiction',
   User: 'User',
   BusinessUnit: 'BusinessUnit',
   ExternalIdSource: 'ExternalIdSource',
@@ -128,14 +134,147 @@ export const GlAccountScalarFieldEnum = {
 export type GlAccountScalarFieldEnum = (typeof GlAccountScalarFieldEnum)[keyof typeof GlAccountScalarFieldEnum]
 
 
+export const ExpenseReportScalarFieldEnum = {
+  id: 'id',
+  organizationId: 'organizationId',
+  number: 'number',
+  title: 'title',
+  purpose: 'purpose',
+  status: 'status',
+  totalMinor: 'totalMinor',
+  currencyId: 'currencyId',
+  submitterId: 'submitterId',
+  metadata: 'metadata',
+  fxRateOverride: 'fxRateOverride',
+  fxRateOverrideCurrency: 'fxRateOverrideCurrency',
+  fxRateOverrideAt: 'fxRateOverrideAt',
+  fxRateOverrideById: 'fxRateOverrideById',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt',
+  submittedAt: 'submittedAt',
+  approvedAt: 'approvedAt'
+} as const
+
+export type ExpenseReportScalarFieldEnum = (typeof ExpenseReportScalarFieldEnum)[keyof typeof ExpenseReportScalarFieldEnum]
+
+
+export const ExpenseScalarFieldEnum = {
+  id: 'id',
+  organizationId: 'organizationId',
+  reportId: 'reportId',
+  ownerId: 'ownerId',
+  merchant: 'merchant',
+  placeText: 'placeText',
+  date: 'date',
+  amountMinor: 'amountMinor',
+  currencyId: 'currencyId',
+  paymentMethod: 'paymentMethod',
+  purpose: 'purpose',
+  explanation: 'explanation',
+  subtotalMinor: 'subtotalMinor',
+  fxRate: 'fxRate',
+  fxRateSource: 'fxRateSource',
+  homeCurrency: 'homeCurrency',
+  homeAmountMinor: 'homeAmountMinor',
+  taxGstHstMinor: 'taxGstHstMinor',
+  taxQstMinor: 'taxQstMinor',
+  taxPstMinor: 'taxPstMinor',
+  recoverableGstHstMinor: 'recoverableGstHstMinor',
+  recoverableQstMinor: 'recoverableQstMinor',
+  taxSource: 'taxSource',
+  taxJurisdictionId: 'taxJurisdictionId',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+} as const
+
+export type ExpenseScalarFieldEnum = (typeof ExpenseScalarFieldEnum)[keyof typeof ExpenseScalarFieldEnum]
+
+
+export const ExpenseAllocationScalarFieldEnum = {
+  id: 'id',
+  organizationId: 'organizationId',
+  expenseId: 'expenseId',
+  percentBp: 'percentBp',
+  businessUnitId: 'businessUnitId',
+  departmentId: 'departmentId',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+} as const
+
+export type ExpenseAllocationScalarFieldEnum = (typeof ExpenseAllocationScalarFieldEnum)[keyof typeof ExpenseAllocationScalarFieldEnum]
+
+
+export const ExpenseAttendeeScalarFieldEnum = {
+  id: 'id',
+  organizationId: 'organizationId',
+  expenseId: 'expenseId',
+  name: 'name',
+  company: 'company',
+  isExternal: 'isExternal',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+} as const
+
+export type ExpenseAttendeeScalarFieldEnum = (typeof ExpenseAttendeeScalarFieldEnum)[keyof typeof ExpenseAttendeeScalarFieldEnum]
+
+
 export const ExpenseLineItemScalarFieldEnum = {
   id: 'id',
   organizationId: 'organizationId',
+  expenseId: 'expenseId',
+  kind: 'kind',
+  payload: 'payload',
   categoryId: 'categoryId',
-  mileageRateId: 'mileageRateId'
+  glAccountId: 'glAccountId',
+  amountMinor: 'amountMinor',
+  notes: 'notes',
+  mileageDistance: 'mileageDistance',
+  mileageUnit: 'mileageUnit',
+  mileageRateId: 'mileageRateId',
+  mileageYtdBefore: 'mileageYtdBefore',
+  mileageBreakdown: 'mileageBreakdown',
+  mileageRoute: 'mileageRoute',
+  mileageDistanceOverride: 'mileageDistanceOverride',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
 } as const
 
 export type ExpenseLineItemScalarFieldEnum = (typeof ExpenseLineItemScalarFieldEnum)[keyof typeof ExpenseLineItemScalarFieldEnum]
+
+
+export const ReceiptScalarFieldEnum = {
+  id: 'id',
+  organizationId: 'organizationId',
+  expenseId: 'expenseId',
+  kind: 'kind',
+  s3Key: 's3Key',
+  filename: 'filename',
+  contentType: 'contentType',
+  sizeBytes: 'sizeBytes',
+  uploadedById: 'uploadedById',
+  uploadedAt: 'uploadedAt'
+} as const
+
+export type ReceiptScalarFieldEnum = (typeof ReceiptScalarFieldEnum)[keyof typeof ReceiptScalarFieldEnum]
+
+
+export const TaxJurisdictionScalarFieldEnum = {
+  id: 'id',
+  countryCode: 'countryCode',
+  code: 'code',
+  label: 'label',
+  gstRate: 'gstRate',
+  hstRate: 'hstRate',
+  pstRate: 'pstRate',
+  qstRate: 'qstRate',
+  salesTaxRate: 'salesTaxRate',
+  taxType: 'taxType',
+  version: 'version',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+} as const
+
+export type TaxJurisdictionScalarFieldEnum = (typeof TaxJurisdictionScalarFieldEnum)[keyof typeof TaxJurisdictionScalarFieldEnum]
 
 
 export const UserScalarFieldEnum = {

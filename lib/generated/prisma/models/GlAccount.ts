@@ -214,6 +214,7 @@ export type GlAccountWhereInput = {
   isActive?: Prisma.BoolFilter<"GlAccount"> | boolean
   createdAt?: Prisma.DateTimeFilter<"GlAccount"> | Date | string
   updatedAt?: Prisma.DateTimeFilter<"GlAccount"> | Date | string
+  expenseLines?: Prisma.ExpenseLineItemListRelationFilter
   expenseCategories?: Prisma.ExpenseCategoryListRelationFilter
 }
 
@@ -227,6 +228,7 @@ export type GlAccountOrderByWithRelationInput = {
   isActive?: Prisma.SortOrder
   createdAt?: Prisma.SortOrder
   updatedAt?: Prisma.SortOrder
+  expenseLines?: Prisma.ExpenseLineItemOrderByRelationAggregateInput
   expenseCategories?: Prisma.ExpenseCategoryOrderByRelationAggregateInput
 }
 
@@ -244,6 +246,7 @@ export type GlAccountWhereUniqueInput = Prisma.AtLeast<{
   isActive?: Prisma.BoolFilter<"GlAccount"> | boolean
   createdAt?: Prisma.DateTimeFilter<"GlAccount"> | Date | string
   updatedAt?: Prisma.DateTimeFilter<"GlAccount"> | Date | string
+  expenseLines?: Prisma.ExpenseLineItemListRelationFilter
   expenseCategories?: Prisma.ExpenseCategoryListRelationFilter
 }, "id" | "organizationId_id">
 
@@ -287,6 +290,7 @@ export type GlAccountCreateInput = {
   isActive?: boolean
   createdAt?: Date | string
   updatedAt?: Date | string
+  expenseLines?: Prisma.ExpenseLineItemCreateNestedManyWithoutGlAccountInput
   expenseCategories?: Prisma.ExpenseCategoryCreateNestedManyWithoutGlAccountInput
 }
 
@@ -300,6 +304,7 @@ export type GlAccountUncheckedCreateInput = {
   isActive?: boolean
   createdAt?: Date | string
   updatedAt?: Date | string
+  expenseLines?: Prisma.ExpenseLineItemUncheckedCreateNestedManyWithoutGlAccountInput
   expenseCategories?: Prisma.ExpenseCategoryUncheckedCreateNestedManyWithoutGlAccountInput
 }
 
@@ -313,6 +318,7 @@ export type GlAccountUpdateInput = {
   isActive?: Prisma.BoolFieldUpdateOperationsInput | boolean
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  expenseLines?: Prisma.ExpenseLineItemUpdateManyWithoutGlAccountNestedInput
   expenseCategories?: Prisma.ExpenseCategoryUpdateManyWithoutGlAccountNestedInput
 }
 
@@ -326,6 +332,7 @@ export type GlAccountUncheckedUpdateInput = {
   isActive?: Prisma.BoolFieldUpdateOperationsInput | boolean
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  expenseLines?: Prisma.ExpenseLineItemUncheckedUpdateManyWithoutGlAccountNestedInput
   expenseCategories?: Prisma.ExpenseCategoryUncheckedUpdateManyWithoutGlAccountNestedInput
 }
 
@@ -427,6 +434,22 @@ export type GlAccountUpdateOneWithoutExpenseCategoriesNestedInput = {
   update?: Prisma.XOR<Prisma.XOR<Prisma.GlAccountUpdateToOneWithWhereWithoutExpenseCategoriesInput, Prisma.GlAccountUpdateWithoutExpenseCategoriesInput>, Prisma.GlAccountUncheckedUpdateWithoutExpenseCategoriesInput>
 }
 
+export type GlAccountCreateNestedOneWithoutExpenseLinesInput = {
+  create?: Prisma.XOR<Prisma.GlAccountCreateWithoutExpenseLinesInput, Prisma.GlAccountUncheckedCreateWithoutExpenseLinesInput>
+  connectOrCreate?: Prisma.GlAccountCreateOrConnectWithoutExpenseLinesInput
+  connect?: Prisma.GlAccountWhereUniqueInput
+}
+
+export type GlAccountUpdateOneWithoutExpenseLinesNestedInput = {
+  create?: Prisma.XOR<Prisma.GlAccountCreateWithoutExpenseLinesInput, Prisma.GlAccountUncheckedCreateWithoutExpenseLinesInput>
+  connectOrCreate?: Prisma.GlAccountCreateOrConnectWithoutExpenseLinesInput
+  upsert?: Prisma.GlAccountUpsertWithoutExpenseLinesInput
+  disconnect?: Prisma.GlAccountWhereInput | boolean
+  delete?: Prisma.GlAccountWhereInput | boolean
+  connect?: Prisma.GlAccountWhereUniqueInput
+  update?: Prisma.XOR<Prisma.XOR<Prisma.GlAccountUpdateToOneWithWhereWithoutExpenseLinesInput, Prisma.GlAccountUpdateWithoutExpenseLinesInput>, Prisma.GlAccountUncheckedUpdateWithoutExpenseLinesInput>
+}
+
 export type GlAccountCreateWithoutExpenseCategoriesInput = {
   id?: string
   organizationId?: string
@@ -437,6 +460,7 @@ export type GlAccountCreateWithoutExpenseCategoriesInput = {
   isActive?: boolean
   createdAt?: Date | string
   updatedAt?: Date | string
+  expenseLines?: Prisma.ExpenseLineItemCreateNestedManyWithoutGlAccountInput
 }
 
 export type GlAccountUncheckedCreateWithoutExpenseCategoriesInput = {
@@ -449,6 +473,7 @@ export type GlAccountUncheckedCreateWithoutExpenseCategoriesInput = {
   isActive?: boolean
   createdAt?: Date | string
   updatedAt?: Date | string
+  expenseLines?: Prisma.ExpenseLineItemUncheckedCreateNestedManyWithoutGlAccountInput
 }
 
 export type GlAccountCreateOrConnectWithoutExpenseCategoriesInput = {
@@ -477,6 +502,7 @@ export type GlAccountUpdateWithoutExpenseCategoriesInput = {
   isActive?: Prisma.BoolFieldUpdateOperationsInput | boolean
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  expenseLines?: Prisma.ExpenseLineItemUpdateManyWithoutGlAccountNestedInput
 }
 
 export type GlAccountUncheckedUpdateWithoutExpenseCategoriesInput = {
@@ -489,6 +515,75 @@ export type GlAccountUncheckedUpdateWithoutExpenseCategoriesInput = {
   isActive?: Prisma.BoolFieldUpdateOperationsInput | boolean
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  expenseLines?: Prisma.ExpenseLineItemUncheckedUpdateManyWithoutGlAccountNestedInput
+}
+
+export type GlAccountCreateWithoutExpenseLinesInput = {
+  id?: string
+  organizationId?: string
+  number: string
+  name: string
+  type: string
+  isPostable?: boolean
+  isActive?: boolean
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  expenseCategories?: Prisma.ExpenseCategoryCreateNestedManyWithoutGlAccountInput
+}
+
+export type GlAccountUncheckedCreateWithoutExpenseLinesInput = {
+  id?: string
+  organizationId?: string
+  number: string
+  name: string
+  type: string
+  isPostable?: boolean
+  isActive?: boolean
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  expenseCategories?: Prisma.ExpenseCategoryUncheckedCreateNestedManyWithoutGlAccountInput
+}
+
+export type GlAccountCreateOrConnectWithoutExpenseLinesInput = {
+  where: Prisma.GlAccountWhereUniqueInput
+  create: Prisma.XOR<Prisma.GlAccountCreateWithoutExpenseLinesInput, Prisma.GlAccountUncheckedCreateWithoutExpenseLinesInput>
+}
+
+export type GlAccountUpsertWithoutExpenseLinesInput = {
+  update: Prisma.XOR<Prisma.GlAccountUpdateWithoutExpenseLinesInput, Prisma.GlAccountUncheckedUpdateWithoutExpenseLinesInput>
+  create: Prisma.XOR<Prisma.GlAccountCreateWithoutExpenseLinesInput, Prisma.GlAccountUncheckedCreateWithoutExpenseLinesInput>
+  where?: Prisma.GlAccountWhereInput
+}
+
+export type GlAccountUpdateToOneWithWhereWithoutExpenseLinesInput = {
+  where?: Prisma.GlAccountWhereInput
+  data: Prisma.XOR<Prisma.GlAccountUpdateWithoutExpenseLinesInput, Prisma.GlAccountUncheckedUpdateWithoutExpenseLinesInput>
+}
+
+export type GlAccountUpdateWithoutExpenseLinesInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  organizationId?: Prisma.StringFieldUpdateOperationsInput | string
+  number?: Prisma.StringFieldUpdateOperationsInput | string
+  name?: Prisma.StringFieldUpdateOperationsInput | string
+  type?: Prisma.StringFieldUpdateOperationsInput | string
+  isPostable?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  isActive?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  expenseCategories?: Prisma.ExpenseCategoryUpdateManyWithoutGlAccountNestedInput
+}
+
+export type GlAccountUncheckedUpdateWithoutExpenseLinesInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  organizationId?: Prisma.StringFieldUpdateOperationsInput | string
+  number?: Prisma.StringFieldUpdateOperationsInput | string
+  name?: Prisma.StringFieldUpdateOperationsInput | string
+  type?: Prisma.StringFieldUpdateOperationsInput | string
+  isPostable?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  isActive?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  expenseCategories?: Prisma.ExpenseCategoryUncheckedUpdateManyWithoutGlAccountNestedInput
 }
 
 
@@ -497,10 +592,12 @@ export type GlAccountUncheckedUpdateWithoutExpenseCategoriesInput = {
  */
 
 export type GlAccountCountOutputType = {
+  expenseLines: number
   expenseCategories: number
 }
 
 export type GlAccountCountOutputTypeSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  expenseLines?: boolean | GlAccountCountOutputTypeCountExpenseLinesArgs
   expenseCategories?: boolean | GlAccountCountOutputTypeCountExpenseCategoriesArgs
 }
 
@@ -512,6 +609,13 @@ export type GlAccountCountOutputTypeDefaultArgs<ExtArgs extends runtime.Types.Ex
    * Select specific fields to fetch from the GlAccountCountOutputType
    */
   select?: Prisma.GlAccountCountOutputTypeSelect<ExtArgs> | null
+}
+
+/**
+ * GlAccountCountOutputType without action
+ */
+export type GlAccountCountOutputTypeCountExpenseLinesArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  where?: Prisma.ExpenseLineItemWhereInput
 }
 
 /**
@@ -532,6 +636,7 @@ export type GlAccountSelect<ExtArgs extends runtime.Types.Extensions.InternalArg
   isActive?: boolean
   createdAt?: boolean
   updatedAt?: boolean
+  expenseLines?: boolean | Prisma.GlAccount$expenseLinesArgs<ExtArgs>
   expenseCategories?: boolean | Prisma.GlAccount$expenseCategoriesArgs<ExtArgs>
   _count?: boolean | Prisma.GlAccountCountOutputTypeDefaultArgs<ExtArgs>
 }, ExtArgs["result"]["glAccount"]>
@@ -574,6 +679,7 @@ export type GlAccountSelectScalar = {
 
 export type GlAccountOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "organizationId" | "number" | "name" | "type" | "isPostable" | "isActive" | "createdAt" | "updatedAt", ExtArgs["result"]["glAccount"]>
 export type GlAccountInclude<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  expenseLines?: boolean | Prisma.GlAccount$expenseLinesArgs<ExtArgs>
   expenseCategories?: boolean | Prisma.GlAccount$expenseCategoriesArgs<ExtArgs>
   _count?: boolean | Prisma.GlAccountCountOutputTypeDefaultArgs<ExtArgs>
 }
@@ -583,6 +689,7 @@ export type GlAccountIncludeUpdateManyAndReturn<ExtArgs extends runtime.Types.Ex
 export type $GlAccountPayload<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   name: "GlAccount"
   objects: {
+    expenseLines: Prisma.$ExpenseLineItemPayload<ExtArgs>[]
     expenseCategories: Prisma.$ExpenseCategoryPayload<ExtArgs>[]
   }
   scalars: runtime.Types.Extensions.GetPayloadResult<{
@@ -989,6 +1096,7 @@ readonly fields: GlAccountFieldRefs;
  */
 export interface Prisma__GlAccountClient<T, Null = never, ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs, GlobalOmitOptions = {}> extends Prisma.PrismaPromise<T> {
   readonly [Symbol.toStringTag]: "PrismaPromise"
+  expenseLines<T extends Prisma.GlAccount$expenseLinesArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.GlAccount$expenseLinesArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$ExpenseLineItemPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
   expenseCategories<T extends Prisma.GlAccount$expenseCategoriesArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.GlAccount$expenseCategoriesArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$ExpenseCategoryPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
   /**
    * Attaches callbacks for the resolution and/or rejection of the Promise.
@@ -1418,6 +1526,30 @@ export type GlAccountDeleteManyArgs<ExtArgs extends runtime.Types.Extensions.Int
    * Limit how many GlAccounts to delete.
    */
   limit?: number
+}
+
+/**
+ * GlAccount.expenseLines
+ */
+export type GlAccount$expenseLinesArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  /**
+   * Select specific fields to fetch from the ExpenseLineItem
+   */
+  select?: Prisma.ExpenseLineItemSelect<ExtArgs> | null
+  /**
+   * Omit specific fields from the ExpenseLineItem
+   */
+  omit?: Prisma.ExpenseLineItemOmit<ExtArgs> | null
+  /**
+   * Choose, which related nodes to fetch as well
+   */
+  include?: Prisma.ExpenseLineItemInclude<ExtArgs> | null
+  where?: Prisma.ExpenseLineItemWhereInput
+  orderBy?: Prisma.ExpenseLineItemOrderByWithRelationInput | Prisma.ExpenseLineItemOrderByWithRelationInput[]
+  cursor?: Prisma.ExpenseLineItemWhereUniqueInput
+  take?: number
+  skip?: number
+  distinct?: Prisma.ExpenseLineItemScalarFieldEnum | Prisma.ExpenseLineItemScalarFieldEnum[]
 }
 
 /**

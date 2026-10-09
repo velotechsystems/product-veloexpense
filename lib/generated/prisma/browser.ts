@@ -28,10 +28,40 @@ export type ExpenseCategory = Prisma.ExpenseCategoryModel
  */
 export type GlAccount = Prisma.GlAccountModel
 /**
+ * Model ExpenseReport
+ * 
+ */
+export type ExpenseReport = Prisma.ExpenseReportModel
+/**
+ * Model Expense
+ * 
+ */
+export type Expense = Prisma.ExpenseModel
+/**
+ * Model ExpenseAllocation
+ * VeloExpense: no NetSuite class or NetSuite business unit (0054).
+ */
+export type ExpenseAllocation = Prisma.ExpenseAllocationModel
+/**
+ * Model ExpenseAttendee
+ * 
+ */
+export type ExpenseAttendee = Prisma.ExpenseAttendeeModel
+/**
  * Model ExpenseLineItem
  * 
  */
 export type ExpenseLineItem = Prisma.ExpenseLineItemModel
+/**
+ * Model Receipt
+ * 
+ */
+export type Receipt = Prisma.ReceiptModel
+/**
+ * Model TaxJurisdiction
+ * GLOBAL and platform-seeded (d24): the app role can read it and cannot write it.
+ */
+export type TaxJurisdiction = Prisma.TaxJurisdictionModel
 /**
  * Model User
  * 

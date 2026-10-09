@@ -20,52 +20,154 @@ export type ExpenseLineItemModel = runtime.Types.Result.DefaultSelection<Prisma.
 
 export type AggregateExpenseLineItem = {
   _count: ExpenseLineItemCountAggregateOutputType | null
+  _avg: ExpenseLineItemAvgAggregateOutputType | null
+  _sum: ExpenseLineItemSumAggregateOutputType | null
   _min: ExpenseLineItemMinAggregateOutputType | null
   _max: ExpenseLineItemMaxAggregateOutputType | null
+}
+
+export type ExpenseLineItemAvgAggregateOutputType = {
+  amountMinor: number | null
+  mileageDistance: runtime.Decimal | null
+  mileageYtdBefore: runtime.Decimal | null
+  mileageDistanceOverride: runtime.Decimal | null
+}
+
+export type ExpenseLineItemSumAggregateOutputType = {
+  amountMinor: bigint | null
+  mileageDistance: runtime.Decimal | null
+  mileageYtdBefore: runtime.Decimal | null
+  mileageDistanceOverride: runtime.Decimal | null
 }
 
 export type ExpenseLineItemMinAggregateOutputType = {
   id: string | null
   organizationId: string | null
+  expenseId: string | null
+  kind: string | null
   categoryId: string | null
+  glAccountId: string | null
+  amountMinor: bigint | null
+  notes: string | null
+  mileageDistance: runtime.Decimal | null
+  mileageUnit: string | null
   mileageRateId: string | null
+  mileageYtdBefore: runtime.Decimal | null
+  mileageDistanceOverride: runtime.Decimal | null
+  createdAt: Date | null
+  updatedAt: Date | null
 }
 
 export type ExpenseLineItemMaxAggregateOutputType = {
   id: string | null
   organizationId: string | null
+  expenseId: string | null
+  kind: string | null
   categoryId: string | null
+  glAccountId: string | null
+  amountMinor: bigint | null
+  notes: string | null
+  mileageDistance: runtime.Decimal | null
+  mileageUnit: string | null
   mileageRateId: string | null
+  mileageYtdBefore: runtime.Decimal | null
+  mileageDistanceOverride: runtime.Decimal | null
+  createdAt: Date | null
+  updatedAt: Date | null
 }
 
 export type ExpenseLineItemCountAggregateOutputType = {
   id: number
   organizationId: number
+  expenseId: number
+  kind: number
+  payload: number
   categoryId: number
+  glAccountId: number
+  amountMinor: number
+  notes: number
+  mileageDistance: number
+  mileageUnit: number
   mileageRateId: number
+  mileageYtdBefore: number
+  mileageBreakdown: number
+  mileageRoute: number
+  mileageDistanceOverride: number
+  createdAt: number
+  updatedAt: number
   _all: number
 }
 
 
+export type ExpenseLineItemAvgAggregateInputType = {
+  amountMinor?: true
+  mileageDistance?: true
+  mileageYtdBefore?: true
+  mileageDistanceOverride?: true
+}
+
+export type ExpenseLineItemSumAggregateInputType = {
+  amountMinor?: true
+  mileageDistance?: true
+  mileageYtdBefore?: true
+  mileageDistanceOverride?: true
+}
+
 export type ExpenseLineItemMinAggregateInputType = {
   id?: true
   organizationId?: true
+  expenseId?: true
+  kind?: true
   categoryId?: true
+  glAccountId?: true
+  amountMinor?: true
+  notes?: true
+  mileageDistance?: true
+  mileageUnit?: true
   mileageRateId?: true
+  mileageYtdBefore?: true
+  mileageDistanceOverride?: true
+  createdAt?: true
+  updatedAt?: true
 }
 
 export type ExpenseLineItemMaxAggregateInputType = {
   id?: true
   organizationId?: true
+  expenseId?: true
+  kind?: true
   categoryId?: true
+  glAccountId?: true
+  amountMinor?: true
+  notes?: true
+  mileageDistance?: true
+  mileageUnit?: true
   mileageRateId?: true
+  mileageYtdBefore?: true
+  mileageDistanceOverride?: true
+  createdAt?: true
+  updatedAt?: true
 }
 
 export type ExpenseLineItemCountAggregateInputType = {
   id?: true
   organizationId?: true
+  expenseId?: true
+  kind?: true
+  payload?: true
   categoryId?: true
+  glAccountId?: true
+  amountMinor?: true
+  notes?: true
+  mileageDistance?: true
+  mileageUnit?: true
   mileageRateId?: true
+  mileageYtdBefore?: true
+  mileageBreakdown?: true
+  mileageRoute?: true
+  mileageDistanceOverride?: true
+  createdAt?: true
+  updatedAt?: true
   _all?: true
 }
 
@@ -107,6 +209,18 @@ export type ExpenseLineItemAggregateArgs<ExtArgs extends runtime.Types.Extension
   /**
    * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
    * 
+   * Select which fields to average
+  **/
+  _avg?: ExpenseLineItemAvgAggregateInputType
+  /**
+   * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
+   * 
+   * Select which fields to sum
+  **/
+  _sum?: ExpenseLineItemSumAggregateInputType
+  /**
+   * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
+   * 
    * Select which fields to find the minimum value
   **/
   _min?: ExpenseLineItemMinAggregateInputType
@@ -137,6 +251,8 @@ export type ExpenseLineItemGroupByArgs<ExtArgs extends runtime.Types.Extensions.
   take?: number
   skip?: number
   _count?: ExpenseLineItemCountAggregateInputType | true
+  _avg?: ExpenseLineItemAvgAggregateInputType
+  _sum?: ExpenseLineItemSumAggregateInputType
   _min?: ExpenseLineItemMinAggregateInputType
   _max?: ExpenseLineItemMaxAggregateInputType
 }
@@ -144,9 +260,25 @@ export type ExpenseLineItemGroupByArgs<ExtArgs extends runtime.Types.Extensions.
 export type ExpenseLineItemGroupByOutputType = {
   id: string
   organizationId: string
+  expenseId: string
+  kind: string
+  payload: runtime.JsonValue | null
   categoryId: string
+  glAccountId: string | null
+  amountMinor: bigint
+  notes: string | null
+  mileageDistance: runtime.Decimal | null
+  mileageUnit: string | null
   mileageRateId: string | null
+  mileageYtdBefore: runtime.Decimal | null
+  mileageBreakdown: runtime.JsonValue | null
+  mileageRoute: runtime.JsonValue | null
+  mileageDistanceOverride: runtime.Decimal | null
+  createdAt: Date
+  updatedAt: Date
   _count: ExpenseLineItemCountAggregateOutputType | null
+  _avg: ExpenseLineItemAvgAggregateOutputType | null
+  _sum: ExpenseLineItemSumAggregateOutputType | null
   _min: ExpenseLineItemMinAggregateOutputType | null
   _max: ExpenseLineItemMaxAggregateOutputType | null
 }
@@ -172,38 +304,106 @@ export type ExpenseLineItemWhereInput = {
   NOT?: Prisma.ExpenseLineItemWhereInput | Prisma.ExpenseLineItemWhereInput[]
   id?: Prisma.UuidFilter<"ExpenseLineItem"> | string
   organizationId?: Prisma.UuidFilter<"ExpenseLineItem"> | string
+  expenseId?: Prisma.UuidFilter<"ExpenseLineItem"> | string
+  kind?: Prisma.StringFilter<"ExpenseLineItem"> | string
+  payload?: Prisma.JsonNullableFilter<"ExpenseLineItem">
   categoryId?: Prisma.UuidFilter<"ExpenseLineItem"> | string
+  glAccountId?: Prisma.UuidNullableFilter<"ExpenseLineItem"> | string | null
+  amountMinor?: Prisma.BigIntFilter<"ExpenseLineItem"> | bigint | number
+  notes?: Prisma.StringNullableFilter<"ExpenseLineItem"> | string | null
+  mileageDistance?: Prisma.DecimalNullableFilter<"ExpenseLineItem"> | runtime.Decimal | runtime.DecimalJsLike | number | string | null
+  mileageUnit?: Prisma.StringNullableFilter<"ExpenseLineItem"> | string | null
   mileageRateId?: Prisma.UuidNullableFilter<"ExpenseLineItem"> | string | null
+  mileageYtdBefore?: Prisma.DecimalNullableFilter<"ExpenseLineItem"> | runtime.Decimal | runtime.DecimalJsLike | number | string | null
+  mileageBreakdown?: Prisma.JsonNullableFilter<"ExpenseLineItem">
+  mileageRoute?: Prisma.JsonNullableFilter<"ExpenseLineItem">
+  mileageDistanceOverride?: Prisma.DecimalNullableFilter<"ExpenseLineItem"> | runtime.Decimal | runtime.DecimalJsLike | number | string | null
+  createdAt?: Prisma.DateTimeFilter<"ExpenseLineItem"> | Date | string
+  updatedAt?: Prisma.DateTimeFilter<"ExpenseLineItem"> | Date | string
+  expense?: Prisma.XOR<Prisma.ExpenseScalarRelationFilter, Prisma.ExpenseWhereInput>
   category?: Prisma.XOR<Prisma.ExpenseCategoryScalarRelationFilter, Prisma.ExpenseCategoryWhereInput>
+  glAccount?: Prisma.XOR<Prisma.GlAccountNullableScalarRelationFilter, Prisma.GlAccountWhereInput> | null
+  mileageRate?: Prisma.XOR<Prisma.MileageRateNullableScalarRelationFilter, Prisma.MileageRateWhereInput> | null
 }
 
 export type ExpenseLineItemOrderByWithRelationInput = {
   id?: Prisma.SortOrder
   organizationId?: Prisma.SortOrder
+  expenseId?: Prisma.SortOrder
+  kind?: Prisma.SortOrder
+  payload?: Prisma.SortOrderInput | Prisma.SortOrder
   categoryId?: Prisma.SortOrder
+  glAccountId?: Prisma.SortOrderInput | Prisma.SortOrder
+  amountMinor?: Prisma.SortOrder
+  notes?: Prisma.SortOrderInput | Prisma.SortOrder
+  mileageDistance?: Prisma.SortOrderInput | Prisma.SortOrder
+  mileageUnit?: Prisma.SortOrderInput | Prisma.SortOrder
   mileageRateId?: Prisma.SortOrderInput | Prisma.SortOrder
+  mileageYtdBefore?: Prisma.SortOrderInput | Prisma.SortOrder
+  mileageBreakdown?: Prisma.SortOrderInput | Prisma.SortOrder
+  mileageRoute?: Prisma.SortOrderInput | Prisma.SortOrder
+  mileageDistanceOverride?: Prisma.SortOrderInput | Prisma.SortOrder
+  createdAt?: Prisma.SortOrder
+  updatedAt?: Prisma.SortOrder
+  expense?: Prisma.ExpenseOrderByWithRelationInput
   category?: Prisma.ExpenseCategoryOrderByWithRelationInput
+  glAccount?: Prisma.GlAccountOrderByWithRelationInput
+  mileageRate?: Prisma.MileageRateOrderByWithRelationInput
 }
 
 export type ExpenseLineItemWhereUniqueInput = Prisma.AtLeast<{
   id?: string
+  organizationId_id?: Prisma.ExpenseLineItemOrganizationIdIdCompoundUniqueInput
   AND?: Prisma.ExpenseLineItemWhereInput | Prisma.ExpenseLineItemWhereInput[]
   OR?: Prisma.ExpenseLineItemWhereInput[]
   NOT?: Prisma.ExpenseLineItemWhereInput | Prisma.ExpenseLineItemWhereInput[]
   organizationId?: Prisma.UuidFilter<"ExpenseLineItem"> | string
+  expenseId?: Prisma.UuidFilter<"ExpenseLineItem"> | string
+  kind?: Prisma.StringFilter<"ExpenseLineItem"> | string
+  payload?: Prisma.JsonNullableFilter<"ExpenseLineItem">
   categoryId?: Prisma.UuidFilter<"ExpenseLineItem"> | string
+  glAccountId?: Prisma.UuidNullableFilter<"ExpenseLineItem"> | string | null
+  amountMinor?: Prisma.BigIntFilter<"ExpenseLineItem"> | bigint | number
+  notes?: Prisma.StringNullableFilter<"ExpenseLineItem"> | string | null
+  mileageDistance?: Prisma.DecimalNullableFilter<"ExpenseLineItem"> | runtime.Decimal | runtime.DecimalJsLike | number | string | null
+  mileageUnit?: Prisma.StringNullableFilter<"ExpenseLineItem"> | string | null
   mileageRateId?: Prisma.UuidNullableFilter<"ExpenseLineItem"> | string | null
+  mileageYtdBefore?: Prisma.DecimalNullableFilter<"ExpenseLineItem"> | runtime.Decimal | runtime.DecimalJsLike | number | string | null
+  mileageBreakdown?: Prisma.JsonNullableFilter<"ExpenseLineItem">
+  mileageRoute?: Prisma.JsonNullableFilter<"ExpenseLineItem">
+  mileageDistanceOverride?: Prisma.DecimalNullableFilter<"ExpenseLineItem"> | runtime.Decimal | runtime.DecimalJsLike | number | string | null
+  createdAt?: Prisma.DateTimeFilter<"ExpenseLineItem"> | Date | string
+  updatedAt?: Prisma.DateTimeFilter<"ExpenseLineItem"> | Date | string
+  expense?: Prisma.XOR<Prisma.ExpenseScalarRelationFilter, Prisma.ExpenseWhereInput>
   category?: Prisma.XOR<Prisma.ExpenseCategoryScalarRelationFilter, Prisma.ExpenseCategoryWhereInput>
-}, "id">
+  glAccount?: Prisma.XOR<Prisma.GlAccountNullableScalarRelationFilter, Prisma.GlAccountWhereInput> | null
+  mileageRate?: Prisma.XOR<Prisma.MileageRateNullableScalarRelationFilter, Prisma.MileageRateWhereInput> | null
+}, "id" | "organizationId_id">
 
 export type ExpenseLineItemOrderByWithAggregationInput = {
   id?: Prisma.SortOrder
   organizationId?: Prisma.SortOrder
+  expenseId?: Prisma.SortOrder
+  kind?: Prisma.SortOrder
+  payload?: Prisma.SortOrderInput | Prisma.SortOrder
   categoryId?: Prisma.SortOrder
+  glAccountId?: Prisma.SortOrderInput | Prisma.SortOrder
+  amountMinor?: Prisma.SortOrder
+  notes?: Prisma.SortOrderInput | Prisma.SortOrder
+  mileageDistance?: Prisma.SortOrderInput | Prisma.SortOrder
+  mileageUnit?: Prisma.SortOrderInput | Prisma.SortOrder
   mileageRateId?: Prisma.SortOrderInput | Prisma.SortOrder
+  mileageYtdBefore?: Prisma.SortOrderInput | Prisma.SortOrder
+  mileageBreakdown?: Prisma.SortOrderInput | Prisma.SortOrder
+  mileageRoute?: Prisma.SortOrderInput | Prisma.SortOrder
+  mileageDistanceOverride?: Prisma.SortOrderInput | Prisma.SortOrder
+  createdAt?: Prisma.SortOrder
+  updatedAt?: Prisma.SortOrder
   _count?: Prisma.ExpenseLineItemCountOrderByAggregateInput
+  _avg?: Prisma.ExpenseLineItemAvgOrderByAggregateInput
   _max?: Prisma.ExpenseLineItemMaxOrderByAggregateInput
   _min?: Prisma.ExpenseLineItemMinOrderByAggregateInput
+  _sum?: Prisma.ExpenseLineItemSumOrderByAggregateInput
 }
 
 export type ExpenseLineItemScalarWhereWithAggregatesInput = {
@@ -212,53 +412,162 @@ export type ExpenseLineItemScalarWhereWithAggregatesInput = {
   NOT?: Prisma.ExpenseLineItemScalarWhereWithAggregatesInput | Prisma.ExpenseLineItemScalarWhereWithAggregatesInput[]
   id?: Prisma.UuidWithAggregatesFilter<"ExpenseLineItem"> | string
   organizationId?: Prisma.UuidWithAggregatesFilter<"ExpenseLineItem"> | string
+  expenseId?: Prisma.UuidWithAggregatesFilter<"ExpenseLineItem"> | string
+  kind?: Prisma.StringWithAggregatesFilter<"ExpenseLineItem"> | string
+  payload?: Prisma.JsonNullableWithAggregatesFilter<"ExpenseLineItem">
   categoryId?: Prisma.UuidWithAggregatesFilter<"ExpenseLineItem"> | string
+  glAccountId?: Prisma.UuidNullableWithAggregatesFilter<"ExpenseLineItem"> | string | null
+  amountMinor?: Prisma.BigIntWithAggregatesFilter<"ExpenseLineItem"> | bigint | number
+  notes?: Prisma.StringNullableWithAggregatesFilter<"ExpenseLineItem"> | string | null
+  mileageDistance?: Prisma.DecimalNullableWithAggregatesFilter<"ExpenseLineItem"> | runtime.Decimal | runtime.DecimalJsLike | number | string | null
+  mileageUnit?: Prisma.StringNullableWithAggregatesFilter<"ExpenseLineItem"> | string | null
   mileageRateId?: Prisma.UuidNullableWithAggregatesFilter<"ExpenseLineItem"> | string | null
+  mileageYtdBefore?: Prisma.DecimalNullableWithAggregatesFilter<"ExpenseLineItem"> | runtime.Decimal | runtime.DecimalJsLike | number | string | null
+  mileageBreakdown?: Prisma.JsonNullableWithAggregatesFilter<"ExpenseLineItem">
+  mileageRoute?: Prisma.JsonNullableWithAggregatesFilter<"ExpenseLineItem">
+  mileageDistanceOverride?: Prisma.DecimalNullableWithAggregatesFilter<"ExpenseLineItem"> | runtime.Decimal | runtime.DecimalJsLike | number | string | null
+  createdAt?: Prisma.DateTimeWithAggregatesFilter<"ExpenseLineItem"> | Date | string
+  updatedAt?: Prisma.DateTimeWithAggregatesFilter<"ExpenseLineItem"> | Date | string
 }
 
 export type ExpenseLineItemCreateInput = {
   id?: string
-  mileageRateId?: string | null
+  kind?: string
+  payload?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  amountMinor: bigint | number
+  notes?: string | null
+  mileageDistance?: runtime.Decimal | runtime.DecimalJsLike | number | string | null
+  mileageUnit?: string | null
+  mileageYtdBefore?: runtime.Decimal | runtime.DecimalJsLike | number | string | null
+  mileageBreakdown?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  mileageRoute?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  mileageDistanceOverride?: runtime.Decimal | runtime.DecimalJsLike | number | string | null
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  expense: Prisma.ExpenseCreateNestedOneWithoutLineItemsInput
   category: Prisma.ExpenseCategoryCreateNestedOneWithoutLineItemsInput
+  glAccount?: Prisma.GlAccountCreateNestedOneWithoutExpenseLinesInput
+  mileageRate?: Prisma.MileageRateCreateNestedOneWithoutLineItemsInput
 }
 
 export type ExpenseLineItemUncheckedCreateInput = {
   id?: string
   organizationId?: string
+  expenseId: string
+  kind?: string
+  payload?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
   categoryId: string
+  glAccountId?: string | null
+  amountMinor: bigint | number
+  notes?: string | null
+  mileageDistance?: runtime.Decimal | runtime.DecimalJsLike | number | string | null
+  mileageUnit?: string | null
   mileageRateId?: string | null
+  mileageYtdBefore?: runtime.Decimal | runtime.DecimalJsLike | number | string | null
+  mileageBreakdown?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  mileageRoute?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  mileageDistanceOverride?: runtime.Decimal | runtime.DecimalJsLike | number | string | null
+  createdAt?: Date | string
+  updatedAt?: Date | string
 }
 
 export type ExpenseLineItemUpdateInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
-  mileageRateId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  kind?: Prisma.StringFieldUpdateOperationsInput | string
+  payload?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  amountMinor?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
+  notes?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  mileageDistance?: Prisma.NullableDecimalFieldUpdateOperationsInput | runtime.Decimal | runtime.DecimalJsLike | number | string | null
+  mileageUnit?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  mileageYtdBefore?: Prisma.NullableDecimalFieldUpdateOperationsInput | runtime.Decimal | runtime.DecimalJsLike | number | string | null
+  mileageBreakdown?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  mileageRoute?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  mileageDistanceOverride?: Prisma.NullableDecimalFieldUpdateOperationsInput | runtime.Decimal | runtime.DecimalJsLike | number | string | null
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  expense?: Prisma.ExpenseUpdateOneRequiredWithoutLineItemsNestedInput
   category?: Prisma.ExpenseCategoryUpdateOneRequiredWithoutLineItemsNestedInput
+  glAccount?: Prisma.GlAccountUpdateOneWithoutExpenseLinesNestedInput
+  mileageRate?: Prisma.MileageRateUpdateOneWithoutLineItemsNestedInput
 }
 
 export type ExpenseLineItemUncheckedUpdateInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
   organizationId?: Prisma.StringFieldUpdateOperationsInput | string
+  expenseId?: Prisma.StringFieldUpdateOperationsInput | string
+  kind?: Prisma.StringFieldUpdateOperationsInput | string
+  payload?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
   categoryId?: Prisma.StringFieldUpdateOperationsInput | string
+  glAccountId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  amountMinor?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
+  notes?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  mileageDistance?: Prisma.NullableDecimalFieldUpdateOperationsInput | runtime.Decimal | runtime.DecimalJsLike | number | string | null
+  mileageUnit?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   mileageRateId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  mileageYtdBefore?: Prisma.NullableDecimalFieldUpdateOperationsInput | runtime.Decimal | runtime.DecimalJsLike | number | string | null
+  mileageBreakdown?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  mileageRoute?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  mileageDistanceOverride?: Prisma.NullableDecimalFieldUpdateOperationsInput | runtime.Decimal | runtime.DecimalJsLike | number | string | null
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
 }
 
 export type ExpenseLineItemCreateManyInput = {
   id?: string
   organizationId?: string
+  expenseId: string
+  kind?: string
+  payload?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
   categoryId: string
+  glAccountId?: string | null
+  amountMinor: bigint | number
+  notes?: string | null
+  mileageDistance?: runtime.Decimal | runtime.DecimalJsLike | number | string | null
+  mileageUnit?: string | null
   mileageRateId?: string | null
+  mileageYtdBefore?: runtime.Decimal | runtime.DecimalJsLike | number | string | null
+  mileageBreakdown?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  mileageRoute?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  mileageDistanceOverride?: runtime.Decimal | runtime.DecimalJsLike | number | string | null
+  createdAt?: Date | string
+  updatedAt?: Date | string
 }
 
 export type ExpenseLineItemUpdateManyMutationInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
-  mileageRateId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  kind?: Prisma.StringFieldUpdateOperationsInput | string
+  payload?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  amountMinor?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
+  notes?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  mileageDistance?: Prisma.NullableDecimalFieldUpdateOperationsInput | runtime.Decimal | runtime.DecimalJsLike | number | string | null
+  mileageUnit?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  mileageYtdBefore?: Prisma.NullableDecimalFieldUpdateOperationsInput | runtime.Decimal | runtime.DecimalJsLike | number | string | null
+  mileageBreakdown?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  mileageRoute?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  mileageDistanceOverride?: Prisma.NullableDecimalFieldUpdateOperationsInput | runtime.Decimal | runtime.DecimalJsLike | number | string | null
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
 }
 
 export type ExpenseLineItemUncheckedUpdateManyInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
   organizationId?: Prisma.StringFieldUpdateOperationsInput | string
+  expenseId?: Prisma.StringFieldUpdateOperationsInput | string
+  kind?: Prisma.StringFieldUpdateOperationsInput | string
+  payload?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
   categoryId?: Prisma.StringFieldUpdateOperationsInput | string
+  glAccountId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  amountMinor?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
+  notes?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  mileageDistance?: Prisma.NullableDecimalFieldUpdateOperationsInput | runtime.Decimal | runtime.DecimalJsLike | number | string | null
+  mileageUnit?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   mileageRateId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  mileageYtdBefore?: Prisma.NullableDecimalFieldUpdateOperationsInput | runtime.Decimal | runtime.DecimalJsLike | number | string | null
+  mileageBreakdown?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  mileageRoute?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  mileageDistanceOverride?: Prisma.NullableDecimalFieldUpdateOperationsInput | runtime.Decimal | runtime.DecimalJsLike | number | string | null
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
 }
 
 export type ExpenseLineItemListRelationFilter = {
@@ -271,25 +580,80 @@ export type ExpenseLineItemOrderByRelationAggregateInput = {
   _count?: Prisma.SortOrder
 }
 
+export type ExpenseLineItemOrganizationIdIdCompoundUniqueInput = {
+  organizationId: string
+  id: string
+}
+
 export type ExpenseLineItemCountOrderByAggregateInput = {
   id?: Prisma.SortOrder
   organizationId?: Prisma.SortOrder
+  expenseId?: Prisma.SortOrder
+  kind?: Prisma.SortOrder
+  payload?: Prisma.SortOrder
   categoryId?: Prisma.SortOrder
+  glAccountId?: Prisma.SortOrder
+  amountMinor?: Prisma.SortOrder
+  notes?: Prisma.SortOrder
+  mileageDistance?: Prisma.SortOrder
+  mileageUnit?: Prisma.SortOrder
   mileageRateId?: Prisma.SortOrder
+  mileageYtdBefore?: Prisma.SortOrder
+  mileageBreakdown?: Prisma.SortOrder
+  mileageRoute?: Prisma.SortOrder
+  mileageDistanceOverride?: Prisma.SortOrder
+  createdAt?: Prisma.SortOrder
+  updatedAt?: Prisma.SortOrder
+}
+
+export type ExpenseLineItemAvgOrderByAggregateInput = {
+  amountMinor?: Prisma.SortOrder
+  mileageDistance?: Prisma.SortOrder
+  mileageYtdBefore?: Prisma.SortOrder
+  mileageDistanceOverride?: Prisma.SortOrder
 }
 
 export type ExpenseLineItemMaxOrderByAggregateInput = {
   id?: Prisma.SortOrder
   organizationId?: Prisma.SortOrder
+  expenseId?: Prisma.SortOrder
+  kind?: Prisma.SortOrder
   categoryId?: Prisma.SortOrder
+  glAccountId?: Prisma.SortOrder
+  amountMinor?: Prisma.SortOrder
+  notes?: Prisma.SortOrder
+  mileageDistance?: Prisma.SortOrder
+  mileageUnit?: Prisma.SortOrder
   mileageRateId?: Prisma.SortOrder
+  mileageYtdBefore?: Prisma.SortOrder
+  mileageDistanceOverride?: Prisma.SortOrder
+  createdAt?: Prisma.SortOrder
+  updatedAt?: Prisma.SortOrder
 }
 
 export type ExpenseLineItemMinOrderByAggregateInput = {
   id?: Prisma.SortOrder
   organizationId?: Prisma.SortOrder
+  expenseId?: Prisma.SortOrder
+  kind?: Prisma.SortOrder
   categoryId?: Prisma.SortOrder
+  glAccountId?: Prisma.SortOrder
+  amountMinor?: Prisma.SortOrder
+  notes?: Prisma.SortOrder
+  mileageDistance?: Prisma.SortOrder
+  mileageUnit?: Prisma.SortOrder
   mileageRateId?: Prisma.SortOrder
+  mileageYtdBefore?: Prisma.SortOrder
+  mileageDistanceOverride?: Prisma.SortOrder
+  createdAt?: Prisma.SortOrder
+  updatedAt?: Prisma.SortOrder
+}
+
+export type ExpenseLineItemSumOrderByAggregateInput = {
+  amountMinor?: Prisma.SortOrder
+  mileageDistance?: Prisma.SortOrder
+  mileageYtdBefore?: Prisma.SortOrder
+  mileageDistanceOverride?: Prisma.SortOrder
 }
 
 export type ExpenseLineItemCreateNestedManyWithoutCategoryInput = {
@@ -334,14 +698,168 @@ export type ExpenseLineItemUncheckedUpdateManyWithoutCategoryNestedInput = {
   deleteMany?: Prisma.ExpenseLineItemScalarWhereInput | Prisma.ExpenseLineItemScalarWhereInput[]
 }
 
+export type ExpenseLineItemCreateNestedManyWithoutGlAccountInput = {
+  create?: Prisma.XOR<Prisma.ExpenseLineItemCreateWithoutGlAccountInput, Prisma.ExpenseLineItemUncheckedCreateWithoutGlAccountInput> | Prisma.ExpenseLineItemCreateWithoutGlAccountInput[] | Prisma.ExpenseLineItemUncheckedCreateWithoutGlAccountInput[]
+  connectOrCreate?: Prisma.ExpenseLineItemCreateOrConnectWithoutGlAccountInput | Prisma.ExpenseLineItemCreateOrConnectWithoutGlAccountInput[]
+  createMany?: Prisma.ExpenseLineItemCreateManyGlAccountInputEnvelope
+  connect?: Prisma.ExpenseLineItemWhereUniqueInput | Prisma.ExpenseLineItemWhereUniqueInput[]
+}
+
+export type ExpenseLineItemUncheckedCreateNestedManyWithoutGlAccountInput = {
+  create?: Prisma.XOR<Prisma.ExpenseLineItemCreateWithoutGlAccountInput, Prisma.ExpenseLineItemUncheckedCreateWithoutGlAccountInput> | Prisma.ExpenseLineItemCreateWithoutGlAccountInput[] | Prisma.ExpenseLineItemUncheckedCreateWithoutGlAccountInput[]
+  connectOrCreate?: Prisma.ExpenseLineItemCreateOrConnectWithoutGlAccountInput | Prisma.ExpenseLineItemCreateOrConnectWithoutGlAccountInput[]
+  createMany?: Prisma.ExpenseLineItemCreateManyGlAccountInputEnvelope
+  connect?: Prisma.ExpenseLineItemWhereUniqueInput | Prisma.ExpenseLineItemWhereUniqueInput[]
+}
+
+export type ExpenseLineItemUpdateManyWithoutGlAccountNestedInput = {
+  create?: Prisma.XOR<Prisma.ExpenseLineItemCreateWithoutGlAccountInput, Prisma.ExpenseLineItemUncheckedCreateWithoutGlAccountInput> | Prisma.ExpenseLineItemCreateWithoutGlAccountInput[] | Prisma.ExpenseLineItemUncheckedCreateWithoutGlAccountInput[]
+  connectOrCreate?: Prisma.ExpenseLineItemCreateOrConnectWithoutGlAccountInput | Prisma.ExpenseLineItemCreateOrConnectWithoutGlAccountInput[]
+  upsert?: Prisma.ExpenseLineItemUpsertWithWhereUniqueWithoutGlAccountInput | Prisma.ExpenseLineItemUpsertWithWhereUniqueWithoutGlAccountInput[]
+  createMany?: Prisma.ExpenseLineItemCreateManyGlAccountInputEnvelope
+  set?: Prisma.ExpenseLineItemWhereUniqueInput | Prisma.ExpenseLineItemWhereUniqueInput[]
+  disconnect?: Prisma.ExpenseLineItemWhereUniqueInput | Prisma.ExpenseLineItemWhereUniqueInput[]
+  delete?: Prisma.ExpenseLineItemWhereUniqueInput | Prisma.ExpenseLineItemWhereUniqueInput[]
+  connect?: Prisma.ExpenseLineItemWhereUniqueInput | Prisma.ExpenseLineItemWhereUniqueInput[]
+  update?: Prisma.ExpenseLineItemUpdateWithWhereUniqueWithoutGlAccountInput | Prisma.ExpenseLineItemUpdateWithWhereUniqueWithoutGlAccountInput[]
+  updateMany?: Prisma.ExpenseLineItemUpdateManyWithWhereWithoutGlAccountInput | Prisma.ExpenseLineItemUpdateManyWithWhereWithoutGlAccountInput[]
+  deleteMany?: Prisma.ExpenseLineItemScalarWhereInput | Prisma.ExpenseLineItemScalarWhereInput[]
+}
+
+export type ExpenseLineItemUncheckedUpdateManyWithoutGlAccountNestedInput = {
+  create?: Prisma.XOR<Prisma.ExpenseLineItemCreateWithoutGlAccountInput, Prisma.ExpenseLineItemUncheckedCreateWithoutGlAccountInput> | Prisma.ExpenseLineItemCreateWithoutGlAccountInput[] | Prisma.ExpenseLineItemUncheckedCreateWithoutGlAccountInput[]
+  connectOrCreate?: Prisma.ExpenseLineItemCreateOrConnectWithoutGlAccountInput | Prisma.ExpenseLineItemCreateOrConnectWithoutGlAccountInput[]
+  upsert?: Prisma.ExpenseLineItemUpsertWithWhereUniqueWithoutGlAccountInput | Prisma.ExpenseLineItemUpsertWithWhereUniqueWithoutGlAccountInput[]
+  createMany?: Prisma.ExpenseLineItemCreateManyGlAccountInputEnvelope
+  set?: Prisma.ExpenseLineItemWhereUniqueInput | Prisma.ExpenseLineItemWhereUniqueInput[]
+  disconnect?: Prisma.ExpenseLineItemWhereUniqueInput | Prisma.ExpenseLineItemWhereUniqueInput[]
+  delete?: Prisma.ExpenseLineItemWhereUniqueInput | Prisma.ExpenseLineItemWhereUniqueInput[]
+  connect?: Prisma.ExpenseLineItemWhereUniqueInput | Prisma.ExpenseLineItemWhereUniqueInput[]
+  update?: Prisma.ExpenseLineItemUpdateWithWhereUniqueWithoutGlAccountInput | Prisma.ExpenseLineItemUpdateWithWhereUniqueWithoutGlAccountInput[]
+  updateMany?: Prisma.ExpenseLineItemUpdateManyWithWhereWithoutGlAccountInput | Prisma.ExpenseLineItemUpdateManyWithWhereWithoutGlAccountInput[]
+  deleteMany?: Prisma.ExpenseLineItemScalarWhereInput | Prisma.ExpenseLineItemScalarWhereInput[]
+}
+
+export type ExpenseLineItemCreateNestedManyWithoutExpenseInput = {
+  create?: Prisma.XOR<Prisma.ExpenseLineItemCreateWithoutExpenseInput, Prisma.ExpenseLineItemUncheckedCreateWithoutExpenseInput> | Prisma.ExpenseLineItemCreateWithoutExpenseInput[] | Prisma.ExpenseLineItemUncheckedCreateWithoutExpenseInput[]
+  connectOrCreate?: Prisma.ExpenseLineItemCreateOrConnectWithoutExpenseInput | Prisma.ExpenseLineItemCreateOrConnectWithoutExpenseInput[]
+  createMany?: Prisma.ExpenseLineItemCreateManyExpenseInputEnvelope
+  connect?: Prisma.ExpenseLineItemWhereUniqueInput | Prisma.ExpenseLineItemWhereUniqueInput[]
+}
+
+export type ExpenseLineItemUncheckedCreateNestedManyWithoutExpenseInput = {
+  create?: Prisma.XOR<Prisma.ExpenseLineItemCreateWithoutExpenseInput, Prisma.ExpenseLineItemUncheckedCreateWithoutExpenseInput> | Prisma.ExpenseLineItemCreateWithoutExpenseInput[] | Prisma.ExpenseLineItemUncheckedCreateWithoutExpenseInput[]
+  connectOrCreate?: Prisma.ExpenseLineItemCreateOrConnectWithoutExpenseInput | Prisma.ExpenseLineItemCreateOrConnectWithoutExpenseInput[]
+  createMany?: Prisma.ExpenseLineItemCreateManyExpenseInputEnvelope
+  connect?: Prisma.ExpenseLineItemWhereUniqueInput | Prisma.ExpenseLineItemWhereUniqueInput[]
+}
+
+export type ExpenseLineItemUpdateManyWithoutExpenseNestedInput = {
+  create?: Prisma.XOR<Prisma.ExpenseLineItemCreateWithoutExpenseInput, Prisma.ExpenseLineItemUncheckedCreateWithoutExpenseInput> | Prisma.ExpenseLineItemCreateWithoutExpenseInput[] | Prisma.ExpenseLineItemUncheckedCreateWithoutExpenseInput[]
+  connectOrCreate?: Prisma.ExpenseLineItemCreateOrConnectWithoutExpenseInput | Prisma.ExpenseLineItemCreateOrConnectWithoutExpenseInput[]
+  upsert?: Prisma.ExpenseLineItemUpsertWithWhereUniqueWithoutExpenseInput | Prisma.ExpenseLineItemUpsertWithWhereUniqueWithoutExpenseInput[]
+  createMany?: Prisma.ExpenseLineItemCreateManyExpenseInputEnvelope
+  set?: Prisma.ExpenseLineItemWhereUniqueInput | Prisma.ExpenseLineItemWhereUniqueInput[]
+  disconnect?: Prisma.ExpenseLineItemWhereUniqueInput | Prisma.ExpenseLineItemWhereUniqueInput[]
+  delete?: Prisma.ExpenseLineItemWhereUniqueInput | Prisma.ExpenseLineItemWhereUniqueInput[]
+  connect?: Prisma.ExpenseLineItemWhereUniqueInput | Prisma.ExpenseLineItemWhereUniqueInput[]
+  update?: Prisma.ExpenseLineItemUpdateWithWhereUniqueWithoutExpenseInput | Prisma.ExpenseLineItemUpdateWithWhereUniqueWithoutExpenseInput[]
+  updateMany?: Prisma.ExpenseLineItemUpdateManyWithWhereWithoutExpenseInput | Prisma.ExpenseLineItemUpdateManyWithWhereWithoutExpenseInput[]
+  deleteMany?: Prisma.ExpenseLineItemScalarWhereInput | Prisma.ExpenseLineItemScalarWhereInput[]
+}
+
+export type ExpenseLineItemUncheckedUpdateManyWithoutExpenseNestedInput = {
+  create?: Prisma.XOR<Prisma.ExpenseLineItemCreateWithoutExpenseInput, Prisma.ExpenseLineItemUncheckedCreateWithoutExpenseInput> | Prisma.ExpenseLineItemCreateWithoutExpenseInput[] | Prisma.ExpenseLineItemUncheckedCreateWithoutExpenseInput[]
+  connectOrCreate?: Prisma.ExpenseLineItemCreateOrConnectWithoutExpenseInput | Prisma.ExpenseLineItemCreateOrConnectWithoutExpenseInput[]
+  upsert?: Prisma.ExpenseLineItemUpsertWithWhereUniqueWithoutExpenseInput | Prisma.ExpenseLineItemUpsertWithWhereUniqueWithoutExpenseInput[]
+  createMany?: Prisma.ExpenseLineItemCreateManyExpenseInputEnvelope
+  set?: Prisma.ExpenseLineItemWhereUniqueInput | Prisma.ExpenseLineItemWhereUniqueInput[]
+  disconnect?: Prisma.ExpenseLineItemWhereUniqueInput | Prisma.ExpenseLineItemWhereUniqueInput[]
+  delete?: Prisma.ExpenseLineItemWhereUniqueInput | Prisma.ExpenseLineItemWhereUniqueInput[]
+  connect?: Prisma.ExpenseLineItemWhereUniqueInput | Prisma.ExpenseLineItemWhereUniqueInput[]
+  update?: Prisma.ExpenseLineItemUpdateWithWhereUniqueWithoutExpenseInput | Prisma.ExpenseLineItemUpdateWithWhereUniqueWithoutExpenseInput[]
+  updateMany?: Prisma.ExpenseLineItemUpdateManyWithWhereWithoutExpenseInput | Prisma.ExpenseLineItemUpdateManyWithWhereWithoutExpenseInput[]
+  deleteMany?: Prisma.ExpenseLineItemScalarWhereInput | Prisma.ExpenseLineItemScalarWhereInput[]
+}
+
+export type ExpenseLineItemCreateNestedManyWithoutMileageRateInput = {
+  create?: Prisma.XOR<Prisma.ExpenseLineItemCreateWithoutMileageRateInput, Prisma.ExpenseLineItemUncheckedCreateWithoutMileageRateInput> | Prisma.ExpenseLineItemCreateWithoutMileageRateInput[] | Prisma.ExpenseLineItemUncheckedCreateWithoutMileageRateInput[]
+  connectOrCreate?: Prisma.ExpenseLineItemCreateOrConnectWithoutMileageRateInput | Prisma.ExpenseLineItemCreateOrConnectWithoutMileageRateInput[]
+  createMany?: Prisma.ExpenseLineItemCreateManyMileageRateInputEnvelope
+  connect?: Prisma.ExpenseLineItemWhereUniqueInput | Prisma.ExpenseLineItemWhereUniqueInput[]
+}
+
+export type ExpenseLineItemUncheckedCreateNestedManyWithoutMileageRateInput = {
+  create?: Prisma.XOR<Prisma.ExpenseLineItemCreateWithoutMileageRateInput, Prisma.ExpenseLineItemUncheckedCreateWithoutMileageRateInput> | Prisma.ExpenseLineItemCreateWithoutMileageRateInput[] | Prisma.ExpenseLineItemUncheckedCreateWithoutMileageRateInput[]
+  connectOrCreate?: Prisma.ExpenseLineItemCreateOrConnectWithoutMileageRateInput | Prisma.ExpenseLineItemCreateOrConnectWithoutMileageRateInput[]
+  createMany?: Prisma.ExpenseLineItemCreateManyMileageRateInputEnvelope
+  connect?: Prisma.ExpenseLineItemWhereUniqueInput | Prisma.ExpenseLineItemWhereUniqueInput[]
+}
+
+export type ExpenseLineItemUpdateManyWithoutMileageRateNestedInput = {
+  create?: Prisma.XOR<Prisma.ExpenseLineItemCreateWithoutMileageRateInput, Prisma.ExpenseLineItemUncheckedCreateWithoutMileageRateInput> | Prisma.ExpenseLineItemCreateWithoutMileageRateInput[] | Prisma.ExpenseLineItemUncheckedCreateWithoutMileageRateInput[]
+  connectOrCreate?: Prisma.ExpenseLineItemCreateOrConnectWithoutMileageRateInput | Prisma.ExpenseLineItemCreateOrConnectWithoutMileageRateInput[]
+  upsert?: Prisma.ExpenseLineItemUpsertWithWhereUniqueWithoutMileageRateInput | Prisma.ExpenseLineItemUpsertWithWhereUniqueWithoutMileageRateInput[]
+  createMany?: Prisma.ExpenseLineItemCreateManyMileageRateInputEnvelope
+  set?: Prisma.ExpenseLineItemWhereUniqueInput | Prisma.ExpenseLineItemWhereUniqueInput[]
+  disconnect?: Prisma.ExpenseLineItemWhereUniqueInput | Prisma.ExpenseLineItemWhereUniqueInput[]
+  delete?: Prisma.ExpenseLineItemWhereUniqueInput | Prisma.ExpenseLineItemWhereUniqueInput[]
+  connect?: Prisma.ExpenseLineItemWhereUniqueInput | Prisma.ExpenseLineItemWhereUniqueInput[]
+  update?: Prisma.ExpenseLineItemUpdateWithWhereUniqueWithoutMileageRateInput | Prisma.ExpenseLineItemUpdateWithWhereUniqueWithoutMileageRateInput[]
+  updateMany?: Prisma.ExpenseLineItemUpdateManyWithWhereWithoutMileageRateInput | Prisma.ExpenseLineItemUpdateManyWithWhereWithoutMileageRateInput[]
+  deleteMany?: Prisma.ExpenseLineItemScalarWhereInput | Prisma.ExpenseLineItemScalarWhereInput[]
+}
+
+export type ExpenseLineItemUncheckedUpdateManyWithoutMileageRateNestedInput = {
+  create?: Prisma.XOR<Prisma.ExpenseLineItemCreateWithoutMileageRateInput, Prisma.ExpenseLineItemUncheckedCreateWithoutMileageRateInput> | Prisma.ExpenseLineItemCreateWithoutMileageRateInput[] | Prisma.ExpenseLineItemUncheckedCreateWithoutMileageRateInput[]
+  connectOrCreate?: Prisma.ExpenseLineItemCreateOrConnectWithoutMileageRateInput | Prisma.ExpenseLineItemCreateOrConnectWithoutMileageRateInput[]
+  upsert?: Prisma.ExpenseLineItemUpsertWithWhereUniqueWithoutMileageRateInput | Prisma.ExpenseLineItemUpsertWithWhereUniqueWithoutMileageRateInput[]
+  createMany?: Prisma.ExpenseLineItemCreateManyMileageRateInputEnvelope
+  set?: Prisma.ExpenseLineItemWhereUniqueInput | Prisma.ExpenseLineItemWhereUniqueInput[]
+  disconnect?: Prisma.ExpenseLineItemWhereUniqueInput | Prisma.ExpenseLineItemWhereUniqueInput[]
+  delete?: Prisma.ExpenseLineItemWhereUniqueInput | Prisma.ExpenseLineItemWhereUniqueInput[]
+  connect?: Prisma.ExpenseLineItemWhereUniqueInput | Prisma.ExpenseLineItemWhereUniqueInput[]
+  update?: Prisma.ExpenseLineItemUpdateWithWhereUniqueWithoutMileageRateInput | Prisma.ExpenseLineItemUpdateWithWhereUniqueWithoutMileageRateInput[]
+  updateMany?: Prisma.ExpenseLineItemUpdateManyWithWhereWithoutMileageRateInput | Prisma.ExpenseLineItemUpdateManyWithWhereWithoutMileageRateInput[]
+  deleteMany?: Prisma.ExpenseLineItemScalarWhereInput | Prisma.ExpenseLineItemScalarWhereInput[]
+}
+
 export type ExpenseLineItemCreateWithoutCategoryInput = {
   id?: string
-  mileageRateId?: string | null
+  kind?: string
+  payload?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  amountMinor: bigint | number
+  notes?: string | null
+  mileageDistance?: runtime.Decimal | runtime.DecimalJsLike | number | string | null
+  mileageUnit?: string | null
+  mileageYtdBefore?: runtime.Decimal | runtime.DecimalJsLike | number | string | null
+  mileageBreakdown?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  mileageRoute?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  mileageDistanceOverride?: runtime.Decimal | runtime.DecimalJsLike | number | string | null
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  expense: Prisma.ExpenseCreateNestedOneWithoutLineItemsInput
+  glAccount?: Prisma.GlAccountCreateNestedOneWithoutExpenseLinesInput
+  mileageRate?: Prisma.MileageRateCreateNestedOneWithoutLineItemsInput
 }
 
 export type ExpenseLineItemUncheckedCreateWithoutCategoryInput = {
   id?: string
+  expenseId: string
+  kind?: string
+  payload?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  glAccountId?: string | null
+  amountMinor: bigint | number
+  notes?: string | null
+  mileageDistance?: runtime.Decimal | runtime.DecimalJsLike | number | string | null
+  mileageUnit?: string | null
   mileageRateId?: string | null
+  mileageYtdBefore?: runtime.Decimal | runtime.DecimalJsLike | number | string | null
+  mileageBreakdown?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  mileageRoute?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  mileageDistanceOverride?: runtime.Decimal | runtime.DecimalJsLike | number | string | null
+  createdAt?: Date | string
+  updatedAt?: Date | string
 }
 
 export type ExpenseLineItemCreateOrConnectWithoutCategoryInput = {
@@ -376,28 +894,530 @@ export type ExpenseLineItemScalarWhereInput = {
   NOT?: Prisma.ExpenseLineItemScalarWhereInput | Prisma.ExpenseLineItemScalarWhereInput[]
   id?: Prisma.UuidFilter<"ExpenseLineItem"> | string
   organizationId?: Prisma.UuidFilter<"ExpenseLineItem"> | string
+  expenseId?: Prisma.UuidFilter<"ExpenseLineItem"> | string
+  kind?: Prisma.StringFilter<"ExpenseLineItem"> | string
+  payload?: Prisma.JsonNullableFilter<"ExpenseLineItem">
   categoryId?: Prisma.UuidFilter<"ExpenseLineItem"> | string
+  glAccountId?: Prisma.UuidNullableFilter<"ExpenseLineItem"> | string | null
+  amountMinor?: Prisma.BigIntFilter<"ExpenseLineItem"> | bigint | number
+  notes?: Prisma.StringNullableFilter<"ExpenseLineItem"> | string | null
+  mileageDistance?: Prisma.DecimalNullableFilter<"ExpenseLineItem"> | runtime.Decimal | runtime.DecimalJsLike | number | string | null
+  mileageUnit?: Prisma.StringNullableFilter<"ExpenseLineItem"> | string | null
   mileageRateId?: Prisma.UuidNullableFilter<"ExpenseLineItem"> | string | null
+  mileageYtdBefore?: Prisma.DecimalNullableFilter<"ExpenseLineItem"> | runtime.Decimal | runtime.DecimalJsLike | number | string | null
+  mileageBreakdown?: Prisma.JsonNullableFilter<"ExpenseLineItem">
+  mileageRoute?: Prisma.JsonNullableFilter<"ExpenseLineItem">
+  mileageDistanceOverride?: Prisma.DecimalNullableFilter<"ExpenseLineItem"> | runtime.Decimal | runtime.DecimalJsLike | number | string | null
+  createdAt?: Prisma.DateTimeFilter<"ExpenseLineItem"> | Date | string
+  updatedAt?: Prisma.DateTimeFilter<"ExpenseLineItem"> | Date | string
+}
+
+export type ExpenseLineItemCreateWithoutGlAccountInput = {
+  id?: string
+  kind?: string
+  payload?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  amountMinor: bigint | number
+  notes?: string | null
+  mileageDistance?: runtime.Decimal | runtime.DecimalJsLike | number | string | null
+  mileageUnit?: string | null
+  mileageYtdBefore?: runtime.Decimal | runtime.DecimalJsLike | number | string | null
+  mileageBreakdown?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  mileageRoute?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  mileageDistanceOverride?: runtime.Decimal | runtime.DecimalJsLike | number | string | null
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  expense: Prisma.ExpenseCreateNestedOneWithoutLineItemsInput
+  category: Prisma.ExpenseCategoryCreateNestedOneWithoutLineItemsInput
+  mileageRate?: Prisma.MileageRateCreateNestedOneWithoutLineItemsInput
+}
+
+export type ExpenseLineItemUncheckedCreateWithoutGlAccountInput = {
+  id?: string
+  organizationId?: string
+  expenseId: string
+  kind?: string
+  payload?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  categoryId: string
+  amountMinor: bigint | number
+  notes?: string | null
+  mileageDistance?: runtime.Decimal | runtime.DecimalJsLike | number | string | null
+  mileageUnit?: string | null
+  mileageRateId?: string | null
+  mileageYtdBefore?: runtime.Decimal | runtime.DecimalJsLike | number | string | null
+  mileageBreakdown?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  mileageRoute?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  mileageDistanceOverride?: runtime.Decimal | runtime.DecimalJsLike | number | string | null
+  createdAt?: Date | string
+  updatedAt?: Date | string
+}
+
+export type ExpenseLineItemCreateOrConnectWithoutGlAccountInput = {
+  where: Prisma.ExpenseLineItemWhereUniqueInput
+  create: Prisma.XOR<Prisma.ExpenseLineItemCreateWithoutGlAccountInput, Prisma.ExpenseLineItemUncheckedCreateWithoutGlAccountInput>
+}
+
+export type ExpenseLineItemCreateManyGlAccountInputEnvelope = {
+  data: Prisma.ExpenseLineItemCreateManyGlAccountInput | Prisma.ExpenseLineItemCreateManyGlAccountInput[]
+  skipDuplicates?: boolean
+}
+
+export type ExpenseLineItemUpsertWithWhereUniqueWithoutGlAccountInput = {
+  where: Prisma.ExpenseLineItemWhereUniqueInput
+  update: Prisma.XOR<Prisma.ExpenseLineItemUpdateWithoutGlAccountInput, Prisma.ExpenseLineItemUncheckedUpdateWithoutGlAccountInput>
+  create: Prisma.XOR<Prisma.ExpenseLineItemCreateWithoutGlAccountInput, Prisma.ExpenseLineItemUncheckedCreateWithoutGlAccountInput>
+}
+
+export type ExpenseLineItemUpdateWithWhereUniqueWithoutGlAccountInput = {
+  where: Prisma.ExpenseLineItemWhereUniqueInput
+  data: Prisma.XOR<Prisma.ExpenseLineItemUpdateWithoutGlAccountInput, Prisma.ExpenseLineItemUncheckedUpdateWithoutGlAccountInput>
+}
+
+export type ExpenseLineItemUpdateManyWithWhereWithoutGlAccountInput = {
+  where: Prisma.ExpenseLineItemScalarWhereInput
+  data: Prisma.XOR<Prisma.ExpenseLineItemUpdateManyMutationInput, Prisma.ExpenseLineItemUncheckedUpdateManyWithoutGlAccountInput>
+}
+
+export type ExpenseLineItemCreateWithoutExpenseInput = {
+  id?: string
+  kind?: string
+  payload?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  amountMinor: bigint | number
+  notes?: string | null
+  mileageDistance?: runtime.Decimal | runtime.DecimalJsLike | number | string | null
+  mileageUnit?: string | null
+  mileageYtdBefore?: runtime.Decimal | runtime.DecimalJsLike | number | string | null
+  mileageBreakdown?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  mileageRoute?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  mileageDistanceOverride?: runtime.Decimal | runtime.DecimalJsLike | number | string | null
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  category: Prisma.ExpenseCategoryCreateNestedOneWithoutLineItemsInput
+  glAccount?: Prisma.GlAccountCreateNestedOneWithoutExpenseLinesInput
+  mileageRate?: Prisma.MileageRateCreateNestedOneWithoutLineItemsInput
+}
+
+export type ExpenseLineItemUncheckedCreateWithoutExpenseInput = {
+  id?: string
+  organizationId?: string
+  kind?: string
+  payload?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  categoryId: string
+  glAccountId?: string | null
+  amountMinor: bigint | number
+  notes?: string | null
+  mileageDistance?: runtime.Decimal | runtime.DecimalJsLike | number | string | null
+  mileageUnit?: string | null
+  mileageRateId?: string | null
+  mileageYtdBefore?: runtime.Decimal | runtime.DecimalJsLike | number | string | null
+  mileageBreakdown?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  mileageRoute?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  mileageDistanceOverride?: runtime.Decimal | runtime.DecimalJsLike | number | string | null
+  createdAt?: Date | string
+  updatedAt?: Date | string
+}
+
+export type ExpenseLineItemCreateOrConnectWithoutExpenseInput = {
+  where: Prisma.ExpenseLineItemWhereUniqueInput
+  create: Prisma.XOR<Prisma.ExpenseLineItemCreateWithoutExpenseInput, Prisma.ExpenseLineItemUncheckedCreateWithoutExpenseInput>
+}
+
+export type ExpenseLineItemCreateManyExpenseInputEnvelope = {
+  data: Prisma.ExpenseLineItemCreateManyExpenseInput | Prisma.ExpenseLineItemCreateManyExpenseInput[]
+  skipDuplicates?: boolean
+}
+
+export type ExpenseLineItemUpsertWithWhereUniqueWithoutExpenseInput = {
+  where: Prisma.ExpenseLineItemWhereUniqueInput
+  update: Prisma.XOR<Prisma.ExpenseLineItemUpdateWithoutExpenseInput, Prisma.ExpenseLineItemUncheckedUpdateWithoutExpenseInput>
+  create: Prisma.XOR<Prisma.ExpenseLineItemCreateWithoutExpenseInput, Prisma.ExpenseLineItemUncheckedCreateWithoutExpenseInput>
+}
+
+export type ExpenseLineItemUpdateWithWhereUniqueWithoutExpenseInput = {
+  where: Prisma.ExpenseLineItemWhereUniqueInput
+  data: Prisma.XOR<Prisma.ExpenseLineItemUpdateWithoutExpenseInput, Prisma.ExpenseLineItemUncheckedUpdateWithoutExpenseInput>
+}
+
+export type ExpenseLineItemUpdateManyWithWhereWithoutExpenseInput = {
+  where: Prisma.ExpenseLineItemScalarWhereInput
+  data: Prisma.XOR<Prisma.ExpenseLineItemUpdateManyMutationInput, Prisma.ExpenseLineItemUncheckedUpdateManyWithoutExpenseInput>
+}
+
+export type ExpenseLineItemCreateWithoutMileageRateInput = {
+  id?: string
+  kind?: string
+  payload?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  amountMinor: bigint | number
+  notes?: string | null
+  mileageDistance?: runtime.Decimal | runtime.DecimalJsLike | number | string | null
+  mileageUnit?: string | null
+  mileageYtdBefore?: runtime.Decimal | runtime.DecimalJsLike | number | string | null
+  mileageBreakdown?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  mileageRoute?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  mileageDistanceOverride?: runtime.Decimal | runtime.DecimalJsLike | number | string | null
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  expense: Prisma.ExpenseCreateNestedOneWithoutLineItemsInput
+  category: Prisma.ExpenseCategoryCreateNestedOneWithoutLineItemsInput
+  glAccount?: Prisma.GlAccountCreateNestedOneWithoutExpenseLinesInput
+}
+
+export type ExpenseLineItemUncheckedCreateWithoutMileageRateInput = {
+  id?: string
+  organizationId?: string
+  expenseId: string
+  kind?: string
+  payload?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  categoryId: string
+  glAccountId?: string | null
+  amountMinor: bigint | number
+  notes?: string | null
+  mileageDistance?: runtime.Decimal | runtime.DecimalJsLike | number | string | null
+  mileageUnit?: string | null
+  mileageYtdBefore?: runtime.Decimal | runtime.DecimalJsLike | number | string | null
+  mileageBreakdown?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  mileageRoute?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  mileageDistanceOverride?: runtime.Decimal | runtime.DecimalJsLike | number | string | null
+  createdAt?: Date | string
+  updatedAt?: Date | string
+}
+
+export type ExpenseLineItemCreateOrConnectWithoutMileageRateInput = {
+  where: Prisma.ExpenseLineItemWhereUniqueInput
+  create: Prisma.XOR<Prisma.ExpenseLineItemCreateWithoutMileageRateInput, Prisma.ExpenseLineItemUncheckedCreateWithoutMileageRateInput>
+}
+
+export type ExpenseLineItemCreateManyMileageRateInputEnvelope = {
+  data: Prisma.ExpenseLineItemCreateManyMileageRateInput | Prisma.ExpenseLineItemCreateManyMileageRateInput[]
+  skipDuplicates?: boolean
+}
+
+export type ExpenseLineItemUpsertWithWhereUniqueWithoutMileageRateInput = {
+  where: Prisma.ExpenseLineItemWhereUniqueInput
+  update: Prisma.XOR<Prisma.ExpenseLineItemUpdateWithoutMileageRateInput, Prisma.ExpenseLineItemUncheckedUpdateWithoutMileageRateInput>
+  create: Prisma.XOR<Prisma.ExpenseLineItemCreateWithoutMileageRateInput, Prisma.ExpenseLineItemUncheckedCreateWithoutMileageRateInput>
+}
+
+export type ExpenseLineItemUpdateWithWhereUniqueWithoutMileageRateInput = {
+  where: Prisma.ExpenseLineItemWhereUniqueInput
+  data: Prisma.XOR<Prisma.ExpenseLineItemUpdateWithoutMileageRateInput, Prisma.ExpenseLineItemUncheckedUpdateWithoutMileageRateInput>
+}
+
+export type ExpenseLineItemUpdateManyWithWhereWithoutMileageRateInput = {
+  where: Prisma.ExpenseLineItemScalarWhereInput
+  data: Prisma.XOR<Prisma.ExpenseLineItemUpdateManyMutationInput, Prisma.ExpenseLineItemUncheckedUpdateManyWithoutMileageRateInput>
 }
 
 export type ExpenseLineItemCreateManyCategoryInput = {
   id?: string
+  expenseId: string
+  kind?: string
+  payload?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  glAccountId?: string | null
+  amountMinor: bigint | number
+  notes?: string | null
+  mileageDistance?: runtime.Decimal | runtime.DecimalJsLike | number | string | null
+  mileageUnit?: string | null
   mileageRateId?: string | null
+  mileageYtdBefore?: runtime.Decimal | runtime.DecimalJsLike | number | string | null
+  mileageBreakdown?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  mileageRoute?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  mileageDistanceOverride?: runtime.Decimal | runtime.DecimalJsLike | number | string | null
+  createdAt?: Date | string
+  updatedAt?: Date | string
 }
 
 export type ExpenseLineItemUpdateWithoutCategoryInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
-  mileageRateId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  kind?: Prisma.StringFieldUpdateOperationsInput | string
+  payload?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  amountMinor?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
+  notes?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  mileageDistance?: Prisma.NullableDecimalFieldUpdateOperationsInput | runtime.Decimal | runtime.DecimalJsLike | number | string | null
+  mileageUnit?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  mileageYtdBefore?: Prisma.NullableDecimalFieldUpdateOperationsInput | runtime.Decimal | runtime.DecimalJsLike | number | string | null
+  mileageBreakdown?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  mileageRoute?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  mileageDistanceOverride?: Prisma.NullableDecimalFieldUpdateOperationsInput | runtime.Decimal | runtime.DecimalJsLike | number | string | null
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  expense?: Prisma.ExpenseUpdateOneRequiredWithoutLineItemsNestedInput
+  glAccount?: Prisma.GlAccountUpdateOneWithoutExpenseLinesNestedInput
+  mileageRate?: Prisma.MileageRateUpdateOneWithoutLineItemsNestedInput
 }
 
 export type ExpenseLineItemUncheckedUpdateWithoutCategoryInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
+  expenseId?: Prisma.StringFieldUpdateOperationsInput | string
+  kind?: Prisma.StringFieldUpdateOperationsInput | string
+  payload?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  glAccountId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  amountMinor?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
+  notes?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  mileageDistance?: Prisma.NullableDecimalFieldUpdateOperationsInput | runtime.Decimal | runtime.DecimalJsLike | number | string | null
+  mileageUnit?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   mileageRateId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  mileageYtdBefore?: Prisma.NullableDecimalFieldUpdateOperationsInput | runtime.Decimal | runtime.DecimalJsLike | number | string | null
+  mileageBreakdown?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  mileageRoute?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  mileageDistanceOverride?: Prisma.NullableDecimalFieldUpdateOperationsInput | runtime.Decimal | runtime.DecimalJsLike | number | string | null
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
 }
 
 export type ExpenseLineItemUncheckedUpdateManyWithoutCategoryInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
+  expenseId?: Prisma.StringFieldUpdateOperationsInput | string
+  kind?: Prisma.StringFieldUpdateOperationsInput | string
+  payload?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  glAccountId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  amountMinor?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
+  notes?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  mileageDistance?: Prisma.NullableDecimalFieldUpdateOperationsInput | runtime.Decimal | runtime.DecimalJsLike | number | string | null
+  mileageUnit?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   mileageRateId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  mileageYtdBefore?: Prisma.NullableDecimalFieldUpdateOperationsInput | runtime.Decimal | runtime.DecimalJsLike | number | string | null
+  mileageBreakdown?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  mileageRoute?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  mileageDistanceOverride?: Prisma.NullableDecimalFieldUpdateOperationsInput | runtime.Decimal | runtime.DecimalJsLike | number | string | null
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+}
+
+export type ExpenseLineItemCreateManyGlAccountInput = {
+  id?: string
+  organizationId?: string
+  expenseId: string
+  kind?: string
+  payload?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  categoryId: string
+  amountMinor: bigint | number
+  notes?: string | null
+  mileageDistance?: runtime.Decimal | runtime.DecimalJsLike | number | string | null
+  mileageUnit?: string | null
+  mileageRateId?: string | null
+  mileageYtdBefore?: runtime.Decimal | runtime.DecimalJsLike | number | string | null
+  mileageBreakdown?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  mileageRoute?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  mileageDistanceOverride?: runtime.Decimal | runtime.DecimalJsLike | number | string | null
+  createdAt?: Date | string
+  updatedAt?: Date | string
+}
+
+export type ExpenseLineItemUpdateWithoutGlAccountInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  kind?: Prisma.StringFieldUpdateOperationsInput | string
+  payload?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  amountMinor?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
+  notes?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  mileageDistance?: Prisma.NullableDecimalFieldUpdateOperationsInput | runtime.Decimal | runtime.DecimalJsLike | number | string | null
+  mileageUnit?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  mileageYtdBefore?: Prisma.NullableDecimalFieldUpdateOperationsInput | runtime.Decimal | runtime.DecimalJsLike | number | string | null
+  mileageBreakdown?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  mileageRoute?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  mileageDistanceOverride?: Prisma.NullableDecimalFieldUpdateOperationsInput | runtime.Decimal | runtime.DecimalJsLike | number | string | null
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  expense?: Prisma.ExpenseUpdateOneRequiredWithoutLineItemsNestedInput
+  category?: Prisma.ExpenseCategoryUpdateOneRequiredWithoutLineItemsNestedInput
+  mileageRate?: Prisma.MileageRateUpdateOneWithoutLineItemsNestedInput
+}
+
+export type ExpenseLineItemUncheckedUpdateWithoutGlAccountInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  organizationId?: Prisma.StringFieldUpdateOperationsInput | string
+  expenseId?: Prisma.StringFieldUpdateOperationsInput | string
+  kind?: Prisma.StringFieldUpdateOperationsInput | string
+  payload?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  categoryId?: Prisma.StringFieldUpdateOperationsInput | string
+  amountMinor?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
+  notes?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  mileageDistance?: Prisma.NullableDecimalFieldUpdateOperationsInput | runtime.Decimal | runtime.DecimalJsLike | number | string | null
+  mileageUnit?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  mileageRateId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  mileageYtdBefore?: Prisma.NullableDecimalFieldUpdateOperationsInput | runtime.Decimal | runtime.DecimalJsLike | number | string | null
+  mileageBreakdown?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  mileageRoute?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  mileageDistanceOverride?: Prisma.NullableDecimalFieldUpdateOperationsInput | runtime.Decimal | runtime.DecimalJsLike | number | string | null
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+}
+
+export type ExpenseLineItemUncheckedUpdateManyWithoutGlAccountInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  organizationId?: Prisma.StringFieldUpdateOperationsInput | string
+  expenseId?: Prisma.StringFieldUpdateOperationsInput | string
+  kind?: Prisma.StringFieldUpdateOperationsInput | string
+  payload?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  categoryId?: Prisma.StringFieldUpdateOperationsInput | string
+  amountMinor?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
+  notes?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  mileageDistance?: Prisma.NullableDecimalFieldUpdateOperationsInput | runtime.Decimal | runtime.DecimalJsLike | number | string | null
+  mileageUnit?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  mileageRateId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  mileageYtdBefore?: Prisma.NullableDecimalFieldUpdateOperationsInput | runtime.Decimal | runtime.DecimalJsLike | number | string | null
+  mileageBreakdown?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  mileageRoute?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  mileageDistanceOverride?: Prisma.NullableDecimalFieldUpdateOperationsInput | runtime.Decimal | runtime.DecimalJsLike | number | string | null
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+}
+
+export type ExpenseLineItemCreateManyExpenseInput = {
+  id?: string
+  organizationId?: string
+  kind?: string
+  payload?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  categoryId: string
+  glAccountId?: string | null
+  amountMinor: bigint | number
+  notes?: string | null
+  mileageDistance?: runtime.Decimal | runtime.DecimalJsLike | number | string | null
+  mileageUnit?: string | null
+  mileageRateId?: string | null
+  mileageYtdBefore?: runtime.Decimal | runtime.DecimalJsLike | number | string | null
+  mileageBreakdown?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  mileageRoute?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  mileageDistanceOverride?: runtime.Decimal | runtime.DecimalJsLike | number | string | null
+  createdAt?: Date | string
+  updatedAt?: Date | string
+}
+
+export type ExpenseLineItemUpdateWithoutExpenseInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  kind?: Prisma.StringFieldUpdateOperationsInput | string
+  payload?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  amountMinor?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
+  notes?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  mileageDistance?: Prisma.NullableDecimalFieldUpdateOperationsInput | runtime.Decimal | runtime.DecimalJsLike | number | string | null
+  mileageUnit?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  mileageYtdBefore?: Prisma.NullableDecimalFieldUpdateOperationsInput | runtime.Decimal | runtime.DecimalJsLike | number | string | null
+  mileageBreakdown?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  mileageRoute?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  mileageDistanceOverride?: Prisma.NullableDecimalFieldUpdateOperationsInput | runtime.Decimal | runtime.DecimalJsLike | number | string | null
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  category?: Prisma.ExpenseCategoryUpdateOneRequiredWithoutLineItemsNestedInput
+  glAccount?: Prisma.GlAccountUpdateOneWithoutExpenseLinesNestedInput
+  mileageRate?: Prisma.MileageRateUpdateOneWithoutLineItemsNestedInput
+}
+
+export type ExpenseLineItemUncheckedUpdateWithoutExpenseInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  organizationId?: Prisma.StringFieldUpdateOperationsInput | string
+  kind?: Prisma.StringFieldUpdateOperationsInput | string
+  payload?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  categoryId?: Prisma.StringFieldUpdateOperationsInput | string
+  glAccountId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  amountMinor?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
+  notes?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  mileageDistance?: Prisma.NullableDecimalFieldUpdateOperationsInput | runtime.Decimal | runtime.DecimalJsLike | number | string | null
+  mileageUnit?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  mileageRateId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  mileageYtdBefore?: Prisma.NullableDecimalFieldUpdateOperationsInput | runtime.Decimal | runtime.DecimalJsLike | number | string | null
+  mileageBreakdown?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  mileageRoute?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  mileageDistanceOverride?: Prisma.NullableDecimalFieldUpdateOperationsInput | runtime.Decimal | runtime.DecimalJsLike | number | string | null
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+}
+
+export type ExpenseLineItemUncheckedUpdateManyWithoutExpenseInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  organizationId?: Prisma.StringFieldUpdateOperationsInput | string
+  kind?: Prisma.StringFieldUpdateOperationsInput | string
+  payload?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  categoryId?: Prisma.StringFieldUpdateOperationsInput | string
+  glAccountId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  amountMinor?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
+  notes?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  mileageDistance?: Prisma.NullableDecimalFieldUpdateOperationsInput | runtime.Decimal | runtime.DecimalJsLike | number | string | null
+  mileageUnit?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  mileageRateId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  mileageYtdBefore?: Prisma.NullableDecimalFieldUpdateOperationsInput | runtime.Decimal | runtime.DecimalJsLike | number | string | null
+  mileageBreakdown?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  mileageRoute?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  mileageDistanceOverride?: Prisma.NullableDecimalFieldUpdateOperationsInput | runtime.Decimal | runtime.DecimalJsLike | number | string | null
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+}
+
+export type ExpenseLineItemCreateManyMileageRateInput = {
+  id?: string
+  organizationId?: string
+  expenseId: string
+  kind?: string
+  payload?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  categoryId: string
+  glAccountId?: string | null
+  amountMinor: bigint | number
+  notes?: string | null
+  mileageDistance?: runtime.Decimal | runtime.DecimalJsLike | number | string | null
+  mileageUnit?: string | null
+  mileageYtdBefore?: runtime.Decimal | runtime.DecimalJsLike | number | string | null
+  mileageBreakdown?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  mileageRoute?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  mileageDistanceOverride?: runtime.Decimal | runtime.DecimalJsLike | number | string | null
+  createdAt?: Date | string
+  updatedAt?: Date | string
+}
+
+export type ExpenseLineItemUpdateWithoutMileageRateInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  kind?: Prisma.StringFieldUpdateOperationsInput | string
+  payload?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  amountMinor?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
+  notes?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  mileageDistance?: Prisma.NullableDecimalFieldUpdateOperationsInput | runtime.Decimal | runtime.DecimalJsLike | number | string | null
+  mileageUnit?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  mileageYtdBefore?: Prisma.NullableDecimalFieldUpdateOperationsInput | runtime.Decimal | runtime.DecimalJsLike | number | string | null
+  mileageBreakdown?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  mileageRoute?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  mileageDistanceOverride?: Prisma.NullableDecimalFieldUpdateOperationsInput | runtime.Decimal | runtime.DecimalJsLike | number | string | null
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  expense?: Prisma.ExpenseUpdateOneRequiredWithoutLineItemsNestedInput
+  category?: Prisma.ExpenseCategoryUpdateOneRequiredWithoutLineItemsNestedInput
+  glAccount?: Prisma.GlAccountUpdateOneWithoutExpenseLinesNestedInput
+}
+
+export type ExpenseLineItemUncheckedUpdateWithoutMileageRateInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  organizationId?: Prisma.StringFieldUpdateOperationsInput | string
+  expenseId?: Prisma.StringFieldUpdateOperationsInput | string
+  kind?: Prisma.StringFieldUpdateOperationsInput | string
+  payload?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  categoryId?: Prisma.StringFieldUpdateOperationsInput | string
+  glAccountId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  amountMinor?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
+  notes?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  mileageDistance?: Prisma.NullableDecimalFieldUpdateOperationsInput | runtime.Decimal | runtime.DecimalJsLike | number | string | null
+  mileageUnit?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  mileageYtdBefore?: Prisma.NullableDecimalFieldUpdateOperationsInput | runtime.Decimal | runtime.DecimalJsLike | number | string | null
+  mileageBreakdown?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  mileageRoute?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  mileageDistanceOverride?: Prisma.NullableDecimalFieldUpdateOperationsInput | runtime.Decimal | runtime.DecimalJsLike | number | string | null
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+}
+
+export type ExpenseLineItemUncheckedUpdateManyWithoutMileageRateInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  organizationId?: Prisma.StringFieldUpdateOperationsInput | string
+  expenseId?: Prisma.StringFieldUpdateOperationsInput | string
+  kind?: Prisma.StringFieldUpdateOperationsInput | string
+  payload?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  categoryId?: Prisma.StringFieldUpdateOperationsInput | string
+  glAccountId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  amountMinor?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
+  notes?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  mileageDistance?: Prisma.NullableDecimalFieldUpdateOperationsInput | runtime.Decimal | runtime.DecimalJsLike | number | string | null
+  mileageUnit?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  mileageYtdBefore?: Prisma.NullableDecimalFieldUpdateOperationsInput | runtime.Decimal | runtime.DecimalJsLike | number | string | null
+  mileageBreakdown?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  mileageRoute?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  mileageDistanceOverride?: Prisma.NullableDecimalFieldUpdateOperationsInput | runtime.Decimal | runtime.DecimalJsLike | number | string | null
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
 }
 
 
@@ -405,59 +1425,159 @@ export type ExpenseLineItemUncheckedUpdateManyWithoutCategoryInput = {
 export type ExpenseLineItemSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetSelect<{
   id?: boolean
   organizationId?: boolean
+  expenseId?: boolean
+  kind?: boolean
+  payload?: boolean
   categoryId?: boolean
+  glAccountId?: boolean
+  amountMinor?: boolean
+  notes?: boolean
+  mileageDistance?: boolean
+  mileageUnit?: boolean
   mileageRateId?: boolean
+  mileageYtdBefore?: boolean
+  mileageBreakdown?: boolean
+  mileageRoute?: boolean
+  mileageDistanceOverride?: boolean
+  createdAt?: boolean
+  updatedAt?: boolean
+  expense?: boolean | Prisma.ExpenseDefaultArgs<ExtArgs>
   category?: boolean | Prisma.ExpenseCategoryDefaultArgs<ExtArgs>
+  glAccount?: boolean | Prisma.ExpenseLineItem$glAccountArgs<ExtArgs>
+  mileageRate?: boolean | Prisma.ExpenseLineItem$mileageRateArgs<ExtArgs>
 }, ExtArgs["result"]["expenseLineItem"]>
 
 export type ExpenseLineItemSelectCreateManyAndReturn<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetSelect<{
   id?: boolean
   organizationId?: boolean
+  expenseId?: boolean
+  kind?: boolean
+  payload?: boolean
   categoryId?: boolean
+  glAccountId?: boolean
+  amountMinor?: boolean
+  notes?: boolean
+  mileageDistance?: boolean
+  mileageUnit?: boolean
   mileageRateId?: boolean
+  mileageYtdBefore?: boolean
+  mileageBreakdown?: boolean
+  mileageRoute?: boolean
+  mileageDistanceOverride?: boolean
+  createdAt?: boolean
+  updatedAt?: boolean
+  expense?: boolean | Prisma.ExpenseDefaultArgs<ExtArgs>
   category?: boolean | Prisma.ExpenseCategoryDefaultArgs<ExtArgs>
+  glAccount?: boolean | Prisma.ExpenseLineItem$glAccountArgs<ExtArgs>
+  mileageRate?: boolean | Prisma.ExpenseLineItem$mileageRateArgs<ExtArgs>
 }, ExtArgs["result"]["expenseLineItem"]>
 
 export type ExpenseLineItemSelectUpdateManyAndReturn<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetSelect<{
   id?: boolean
   organizationId?: boolean
+  expenseId?: boolean
+  kind?: boolean
+  payload?: boolean
   categoryId?: boolean
+  glAccountId?: boolean
+  amountMinor?: boolean
+  notes?: boolean
+  mileageDistance?: boolean
+  mileageUnit?: boolean
   mileageRateId?: boolean
+  mileageYtdBefore?: boolean
+  mileageBreakdown?: boolean
+  mileageRoute?: boolean
+  mileageDistanceOverride?: boolean
+  createdAt?: boolean
+  updatedAt?: boolean
+  expense?: boolean | Prisma.ExpenseDefaultArgs<ExtArgs>
   category?: boolean | Prisma.ExpenseCategoryDefaultArgs<ExtArgs>
+  glAccount?: boolean | Prisma.ExpenseLineItem$glAccountArgs<ExtArgs>
+  mileageRate?: boolean | Prisma.ExpenseLineItem$mileageRateArgs<ExtArgs>
 }, ExtArgs["result"]["expenseLineItem"]>
 
 export type ExpenseLineItemSelectScalar = {
   id?: boolean
   organizationId?: boolean
+  expenseId?: boolean
+  kind?: boolean
+  payload?: boolean
   categoryId?: boolean
+  glAccountId?: boolean
+  amountMinor?: boolean
+  notes?: boolean
+  mileageDistance?: boolean
+  mileageUnit?: boolean
   mileageRateId?: boolean
+  mileageYtdBefore?: boolean
+  mileageBreakdown?: boolean
+  mileageRoute?: boolean
+  mileageDistanceOverride?: boolean
+  createdAt?: boolean
+  updatedAt?: boolean
 }
 
-export type ExpenseLineItemOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "organizationId" | "categoryId" | "mileageRateId", ExtArgs["result"]["expenseLineItem"]>
+export type ExpenseLineItemOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "organizationId" | "expenseId" | "kind" | "payload" | "categoryId" | "glAccountId" | "amountMinor" | "notes" | "mileageDistance" | "mileageUnit" | "mileageRateId" | "mileageYtdBefore" | "mileageBreakdown" | "mileageRoute" | "mileageDistanceOverride" | "createdAt" | "updatedAt", ExtArgs["result"]["expenseLineItem"]>
 export type ExpenseLineItemInclude<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  expense?: boolean | Prisma.ExpenseDefaultArgs<ExtArgs>
   category?: boolean | Prisma.ExpenseCategoryDefaultArgs<ExtArgs>
+  glAccount?: boolean | Prisma.ExpenseLineItem$glAccountArgs<ExtArgs>
+  mileageRate?: boolean | Prisma.ExpenseLineItem$mileageRateArgs<ExtArgs>
 }
 export type ExpenseLineItemIncludeCreateManyAndReturn<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  expense?: boolean | Prisma.ExpenseDefaultArgs<ExtArgs>
   category?: boolean | Prisma.ExpenseCategoryDefaultArgs<ExtArgs>
+  glAccount?: boolean | Prisma.ExpenseLineItem$glAccountArgs<ExtArgs>
+  mileageRate?: boolean | Prisma.ExpenseLineItem$mileageRateArgs<ExtArgs>
 }
 export type ExpenseLineItemIncludeUpdateManyAndReturn<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  expense?: boolean | Prisma.ExpenseDefaultArgs<ExtArgs>
   category?: boolean | Prisma.ExpenseCategoryDefaultArgs<ExtArgs>
+  glAccount?: boolean | Prisma.ExpenseLineItem$glAccountArgs<ExtArgs>
+  mileageRate?: boolean | Prisma.ExpenseLineItem$mileageRateArgs<ExtArgs>
 }
 
 export type $ExpenseLineItemPayload<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   name: "ExpenseLineItem"
   objects: {
+    expense: Prisma.$ExpensePayload<ExtArgs>
     category: Prisma.$ExpenseCategoryPayload<ExtArgs>
+    glAccount: Prisma.$GlAccountPayload<ExtArgs> | null
+    mileageRate: Prisma.$MileageRatePayload<ExtArgs> | null
   }
   scalars: runtime.Types.Extensions.GetPayloadResult<{
     id: string
     organizationId: string
+    expenseId: string
+    /**
+     * STANDARD | STANDARD_WITH_TIP | MILEAGE (a CHECK in the table).
+     */
+    kind: string
+    payload: runtime.JsonValue | null
     categoryId: string
     /**
-     * ExpenseOS's `mileageRateId` (migration 0052): the rule a mileage claim was priced
-     * under. Nothing prices one yet (Wave 2); the mileage router's delete guard reads it.
+     * VeloExpense: the tenant's `gl_account` (ExpenseOS: NetSuiteAccount), held
+     * postable by a trigger (0014).
      */
+    glAccountId: string | null
+    amountMinor: bigint
+    /**
+     * VeloExpense: the existing `description` column.
+     */
+    notes: string | null
+    mileageDistance: runtime.Decimal | null
+    /**
+     * KM | MI (a CHECK in the table).
+     */
+    mileageUnit: string | null
     mileageRateId: string | null
+    mileageYtdBefore: runtime.Decimal | null
+    mileageBreakdown: runtime.JsonValue | null
+    mileageRoute: runtime.JsonValue | null
+    mileageDistanceOverride: runtime.Decimal | null
+    createdAt: Date
+    updatedAt: Date
   }, ExtArgs["result"]["expenseLineItem"]>
   composites: {}
 }
@@ -852,7 +1972,10 @@ readonly fields: ExpenseLineItemFieldRefs;
  */
 export interface Prisma__ExpenseLineItemClient<T, Null = never, ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs, GlobalOmitOptions = {}> extends Prisma.PrismaPromise<T> {
   readonly [Symbol.toStringTag]: "PrismaPromise"
+  expense<T extends Prisma.ExpenseDefaultArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.ExpenseDefaultArgs<ExtArgs>>): Prisma.Prisma__ExpenseClient<runtime.Types.Result.GetResult<Prisma.$ExpensePayload<ExtArgs>, T, "findUniqueOrThrow", GlobalOmitOptions> | Null, Null, ExtArgs, GlobalOmitOptions>
   category<T extends Prisma.ExpenseCategoryDefaultArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.ExpenseCategoryDefaultArgs<ExtArgs>>): Prisma.Prisma__ExpenseCategoryClient<runtime.Types.Result.GetResult<Prisma.$ExpenseCategoryPayload<ExtArgs>, T, "findUniqueOrThrow", GlobalOmitOptions> | Null, Null, ExtArgs, GlobalOmitOptions>
+  glAccount<T extends Prisma.ExpenseLineItem$glAccountArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.ExpenseLineItem$glAccountArgs<ExtArgs>>): Prisma.Prisma__GlAccountClient<runtime.Types.Result.GetResult<Prisma.$GlAccountPayload<ExtArgs>, T, "findUniqueOrThrow", GlobalOmitOptions> | null, null, ExtArgs, GlobalOmitOptions>
+  mileageRate<T extends Prisma.ExpenseLineItem$mileageRateArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.ExpenseLineItem$mileageRateArgs<ExtArgs>>): Prisma.Prisma__MileageRateClient<runtime.Types.Result.GetResult<Prisma.$MileageRatePayload<ExtArgs>, T, "findUniqueOrThrow", GlobalOmitOptions> | null, null, ExtArgs, GlobalOmitOptions>
   /**
    * Attaches callbacks for the resolution and/or rejection of the Promise.
    * @param onfulfilled The callback to execute when the Promise is resolved.
@@ -884,8 +2007,22 @@ export interface Prisma__ExpenseLineItemClient<T, Null = never, ExtArgs extends 
 export interface ExpenseLineItemFieldRefs {
   readonly id: Prisma.FieldRef<"ExpenseLineItem", 'String'>
   readonly organizationId: Prisma.FieldRef<"ExpenseLineItem", 'String'>
+  readonly expenseId: Prisma.FieldRef<"ExpenseLineItem", 'String'>
+  readonly kind: Prisma.FieldRef<"ExpenseLineItem", 'String'>
+  readonly payload: Prisma.FieldRef<"ExpenseLineItem", 'Json'>
   readonly categoryId: Prisma.FieldRef<"ExpenseLineItem", 'String'>
+  readonly glAccountId: Prisma.FieldRef<"ExpenseLineItem", 'String'>
+  readonly amountMinor: Prisma.FieldRef<"ExpenseLineItem", 'BigInt'>
+  readonly notes: Prisma.FieldRef<"ExpenseLineItem", 'String'>
+  readonly mileageDistance: Prisma.FieldRef<"ExpenseLineItem", 'Decimal'>
+  readonly mileageUnit: Prisma.FieldRef<"ExpenseLineItem", 'String'>
   readonly mileageRateId: Prisma.FieldRef<"ExpenseLineItem", 'String'>
+  readonly mileageYtdBefore: Prisma.FieldRef<"ExpenseLineItem", 'Decimal'>
+  readonly mileageBreakdown: Prisma.FieldRef<"ExpenseLineItem", 'Json'>
+  readonly mileageRoute: Prisma.FieldRef<"ExpenseLineItem", 'Json'>
+  readonly mileageDistanceOverride: Prisma.FieldRef<"ExpenseLineItem", 'Decimal'>
+  readonly createdAt: Prisma.FieldRef<"ExpenseLineItem", 'DateTime'>
+  readonly updatedAt: Prisma.FieldRef<"ExpenseLineItem", 'DateTime'>
 }
     
 
@@ -1284,6 +2421,44 @@ export type ExpenseLineItemDeleteManyArgs<ExtArgs extends runtime.Types.Extensio
    * Limit how many ExpenseLineItems to delete.
    */
   limit?: number
+}
+
+/**
+ * ExpenseLineItem.glAccount
+ */
+export type ExpenseLineItem$glAccountArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  /**
+   * Select specific fields to fetch from the GlAccount
+   */
+  select?: Prisma.GlAccountSelect<ExtArgs> | null
+  /**
+   * Omit specific fields from the GlAccount
+   */
+  omit?: Prisma.GlAccountOmit<ExtArgs> | null
+  /**
+   * Choose, which related nodes to fetch as well
+   */
+  include?: Prisma.GlAccountInclude<ExtArgs> | null
+  where?: Prisma.GlAccountWhereInput
+}
+
+/**
+ * ExpenseLineItem.mileageRate
+ */
+export type ExpenseLineItem$mileageRateArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  /**
+   * Select specific fields to fetch from the MileageRate
+   */
+  select?: Prisma.MileageRateSelect<ExtArgs> | null
+  /**
+   * Omit specific fields from the MileageRate
+   */
+  omit?: Prisma.MileageRateOmit<ExtArgs> | null
+  /**
+   * Choose, which related nodes to fetch as well
+   */
+  include?: Prisma.MileageRateInclude<ExtArgs> | null
+  where?: Prisma.MileageRateWhereInput
 }
 
 /**
