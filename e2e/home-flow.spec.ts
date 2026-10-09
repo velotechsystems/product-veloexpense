@@ -25,6 +25,18 @@ const HEADING: Record<SetupItem, string> = {
   BRANDING: 'Make it look like yours',
 };
 
+/** Each item's way to act on it: the button's words and the screen it opens. Two of these
+ *  used to open the wrong screen (categories → spend rules, structure → employees); this
+ *  map is what the checklist promises, and the test below holds the page to it. */
+const ACTION: Record<SetupItem, { cta: string; href: string }> = {
+  APPROVER: { cta: 'Invite someone', href: '/admin/employees/invite' },
+  CATEGORIES: { cta: 'Review categories', href: '/admin/expense-categories' },
+  APPROVAL_LADDER: { cta: 'Set up approvals', href: '/admin/approval-ladder' },
+  SPEND_POLICY: { cta: 'Add a rule', href: '/admin/expense-policies' },
+  STRUCTURE: { cta: 'Add structure', href: '/admin/legal-entities' },
+  BRANDING: { cta: 'Add branding', href: '/admin/branding' },
+};
+
 async function demoOrgId(): Promise<string> {
   const pool = new Pool({
     connectionString: process.env.ADMIN_DATABASE_URL ?? process.env.DATABASE_URL,
@@ -117,6 +129,24 @@ test.describe('the home page', () => {
         page.getByRole('heading', { name: HEADING[firstOutstanding] }),
       ).toBeVisible();
     });
+    test('every step it lists opens the screen that does it, and that screen opens', async ({
+      page,
+      request,
+    }) => {
+      // The links are checked for every outstanding item rather than one: a wrong
+      // destination is a page that loads fine, so only naming the destination catches it.
+      const status = await withOrg(await demoOrgId(), (tx) => setupStatus(tx));
+      test.skip(status.complete, 'nothing outstanding in the demo tenant: no checklist to follow');
+      await page.goto('/');
+      for (const item of SETUP_ITEMS) {
+        if (status.items.find((i) => i.item === item)!.done) continue;
+        const link = page.getByRole('link', { name: ACTION[item].cta }).first();
+        await expect(link, `${item}'s link`).toHaveAttribute('href', ACTION[item].href);
+        const response = await request.get(ACTION[item].href);
+        expect(response.status(), `${ACTION[item].href} for ${item}`).toBe(200);
+      }
+    });
+
     test('the checklist can be put away to one line and brought back, never dismissed', async ({
       page,
     }) => {
