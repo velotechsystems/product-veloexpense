@@ -14,8 +14,9 @@
  * into the product once it does not. The checklist is admin-only: an employee
  * sees the links and nothing they cannot act on.
  *
- * The sentences live HERE and not in `lib/onboarding/setup.ts`, which returns
- * keys and counts. `SETUP_COPY` is typed `Record<SetupItem, …>`, so adding an
+ * The sentences live beside this page (`./setupCopy.ts`, so a test can read them — a
+ * page file may export only what Next allows) and not in `lib/onboarding/setup.ts`,
+ * which returns keys and counts. `SETUP_COPY` is typed `Record<SetupItem, …>`, so adding an
  * item to that list without a sentence is a compile error rather than a blank
  * row — the `EnumCopy` pattern from VX4-7, and IL-7's rule that a list which
  * restates another list stops matching it.
@@ -26,7 +27,8 @@ import { Button } from '@/components/ui/button';
 import { Card, CardAction, CardContent, CardDescription, CardHeader } from '@/components/ui/card';
 import { ErrorBanner } from '@/app/expenses/ui';
 import { PageHeader, Screen } from '@/components/screen';
-import { SETUP_ITEMS, type SetupItem } from '@/lib/onboarding/setup';
+import { SETUP_ITEMS } from '@/lib/onboarding/setup';
+import { SETUP_COPY } from './setupCopy';
 import { getHomeContext, getSetupStatus, setSetupCollapsedFromForm } from './actions';
 
 import { pageTitle } from '@/lib/i18n/page-title';
@@ -39,47 +41,6 @@ export function generateMetadata() {
 
 export const dynamic = 'force-dynamic';
 
-const SETUP_COPY: Record<SetupItem, { title: string; why: string; href: string; cta: string }> = {
-  APPROVER: {
-    title: 'Invite somebody who can approve',
-    // The wall a solo founder hits, said before they hit it. Nothing can be
-    // submitted in a tenant of one: the submitter would be the only eligible
-    // approver, and self-approval is off by default and stays off.
-    why: 'Nothing can be submitted while you are the only person here — an expense report cannot be approved by the person who filed it.',
-    href: '/admin/employees/invite',
-    cta: 'Invite someone',
-  },
-  CATEGORIES: {
-    title: 'Check your expense categories',
-    why: 'Six were created with your organization so you can record an expense straight away. They are yours — rename them, add to them, switch off the ones you do not use.',
-    href: '/admin/expense-policies',
-    cta: 'Review categories',
-  },
-  APPROVAL_LADDER: {
-    title: 'Decide who approves what',
-    why: 'Without a ladder, everything routes up the reporting line. A ladder is how a large amount reaches somebody more senior than a small one.',
-    href: '/admin/approval-ladder',
-    cta: 'Set up approvals',
-  },
-  SPEND_POLICY: {
-    title: 'Set your spend rules',
-    why: 'Limits and receipt requirements are checked when a report is submitted. With no rules, nothing is ever flagged.',
-    href: '/admin/expense-policies',
-    cta: 'Add a rule',
-  },
-  STRUCTURE: {
-    title: 'Describe your organization',
-    why: 'Legal entities, business units and departments are how spending is grouped, reported on and consolidated.',
-    href: '/admin/employees',
-    cta: 'Add structure',
-  },
-  BRANDING: {
-    title: 'Make it look like yours',
-    why: 'Your name and colour appear on the screens your people use and on the emails they receive.',
-    href: '/admin/branding',
-    cta: 'Add branding',
-  },
-};
 
 const LINKS = [
   { href: '/expenses', label: 'Expense reports', hint: 'File a report, or pick up a draft.', Icon: Receipt },
