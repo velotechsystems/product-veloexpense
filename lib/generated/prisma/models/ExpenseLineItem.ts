@@ -28,18 +28,21 @@ export type ExpenseLineItemMinAggregateOutputType = {
   id: string | null
   organizationId: string | null
   categoryId: string | null
+  mileageRateId: string | null
 }
 
 export type ExpenseLineItemMaxAggregateOutputType = {
   id: string | null
   organizationId: string | null
   categoryId: string | null
+  mileageRateId: string | null
 }
 
 export type ExpenseLineItemCountAggregateOutputType = {
   id: number
   organizationId: number
   categoryId: number
+  mileageRateId: number
   _all: number
 }
 
@@ -48,18 +51,21 @@ export type ExpenseLineItemMinAggregateInputType = {
   id?: true
   organizationId?: true
   categoryId?: true
+  mileageRateId?: true
 }
 
 export type ExpenseLineItemMaxAggregateInputType = {
   id?: true
   organizationId?: true
   categoryId?: true
+  mileageRateId?: true
 }
 
 export type ExpenseLineItemCountAggregateInputType = {
   id?: true
   organizationId?: true
   categoryId?: true
+  mileageRateId?: true
   _all?: true
 }
 
@@ -139,6 +145,7 @@ export type ExpenseLineItemGroupByOutputType = {
   id: string
   organizationId: string
   categoryId: string
+  mileageRateId: string | null
   _count: ExpenseLineItemCountAggregateOutputType | null
   _min: ExpenseLineItemMinAggregateOutputType | null
   _max: ExpenseLineItemMaxAggregateOutputType | null
@@ -166,6 +173,7 @@ export type ExpenseLineItemWhereInput = {
   id?: Prisma.UuidFilter<"ExpenseLineItem"> | string
   organizationId?: Prisma.UuidFilter<"ExpenseLineItem"> | string
   categoryId?: Prisma.UuidFilter<"ExpenseLineItem"> | string
+  mileageRateId?: Prisma.UuidNullableFilter<"ExpenseLineItem"> | string | null
   category?: Prisma.XOR<Prisma.ExpenseCategoryScalarRelationFilter, Prisma.ExpenseCategoryWhereInput>
 }
 
@@ -173,6 +181,7 @@ export type ExpenseLineItemOrderByWithRelationInput = {
   id?: Prisma.SortOrder
   organizationId?: Prisma.SortOrder
   categoryId?: Prisma.SortOrder
+  mileageRateId?: Prisma.SortOrderInput | Prisma.SortOrder
   category?: Prisma.ExpenseCategoryOrderByWithRelationInput
 }
 
@@ -183,6 +192,7 @@ export type ExpenseLineItemWhereUniqueInput = Prisma.AtLeast<{
   NOT?: Prisma.ExpenseLineItemWhereInput | Prisma.ExpenseLineItemWhereInput[]
   organizationId?: Prisma.UuidFilter<"ExpenseLineItem"> | string
   categoryId?: Prisma.UuidFilter<"ExpenseLineItem"> | string
+  mileageRateId?: Prisma.UuidNullableFilter<"ExpenseLineItem"> | string | null
   category?: Prisma.XOR<Prisma.ExpenseCategoryScalarRelationFilter, Prisma.ExpenseCategoryWhereInput>
 }, "id">
 
@@ -190,6 +200,7 @@ export type ExpenseLineItemOrderByWithAggregationInput = {
   id?: Prisma.SortOrder
   organizationId?: Prisma.SortOrder
   categoryId?: Prisma.SortOrder
+  mileageRateId?: Prisma.SortOrderInput | Prisma.SortOrder
   _count?: Prisma.ExpenseLineItemCountOrderByAggregateInput
   _max?: Prisma.ExpenseLineItemMaxOrderByAggregateInput
   _min?: Prisma.ExpenseLineItemMinOrderByAggregateInput
@@ -202,10 +213,12 @@ export type ExpenseLineItemScalarWhereWithAggregatesInput = {
   id?: Prisma.UuidWithAggregatesFilter<"ExpenseLineItem"> | string
   organizationId?: Prisma.UuidWithAggregatesFilter<"ExpenseLineItem"> | string
   categoryId?: Prisma.UuidWithAggregatesFilter<"ExpenseLineItem"> | string
+  mileageRateId?: Prisma.UuidNullableWithAggregatesFilter<"ExpenseLineItem"> | string | null
 }
 
 export type ExpenseLineItemCreateInput = {
   id?: string
+  mileageRateId?: string | null
   category: Prisma.ExpenseCategoryCreateNestedOneWithoutLineItemsInput
 }
 
@@ -213,10 +226,12 @@ export type ExpenseLineItemUncheckedCreateInput = {
   id?: string
   organizationId?: string
   categoryId: string
+  mileageRateId?: string | null
 }
 
 export type ExpenseLineItemUpdateInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
+  mileageRateId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   category?: Prisma.ExpenseCategoryUpdateOneRequiredWithoutLineItemsNestedInput
 }
 
@@ -224,22 +239,26 @@ export type ExpenseLineItemUncheckedUpdateInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
   organizationId?: Prisma.StringFieldUpdateOperationsInput | string
   categoryId?: Prisma.StringFieldUpdateOperationsInput | string
+  mileageRateId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
 }
 
 export type ExpenseLineItemCreateManyInput = {
   id?: string
   organizationId?: string
   categoryId: string
+  mileageRateId?: string | null
 }
 
 export type ExpenseLineItemUpdateManyMutationInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
+  mileageRateId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
 }
 
 export type ExpenseLineItemUncheckedUpdateManyInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
   organizationId?: Prisma.StringFieldUpdateOperationsInput | string
   categoryId?: Prisma.StringFieldUpdateOperationsInput | string
+  mileageRateId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
 }
 
 export type ExpenseLineItemListRelationFilter = {
@@ -256,18 +275,21 @@ export type ExpenseLineItemCountOrderByAggregateInput = {
   id?: Prisma.SortOrder
   organizationId?: Prisma.SortOrder
   categoryId?: Prisma.SortOrder
+  mileageRateId?: Prisma.SortOrder
 }
 
 export type ExpenseLineItemMaxOrderByAggregateInput = {
   id?: Prisma.SortOrder
   organizationId?: Prisma.SortOrder
   categoryId?: Prisma.SortOrder
+  mileageRateId?: Prisma.SortOrder
 }
 
 export type ExpenseLineItemMinOrderByAggregateInput = {
   id?: Prisma.SortOrder
   organizationId?: Prisma.SortOrder
   categoryId?: Prisma.SortOrder
+  mileageRateId?: Prisma.SortOrder
 }
 
 export type ExpenseLineItemCreateNestedManyWithoutCategoryInput = {
@@ -314,10 +336,12 @@ export type ExpenseLineItemUncheckedUpdateManyWithoutCategoryNestedInput = {
 
 export type ExpenseLineItemCreateWithoutCategoryInput = {
   id?: string
+  mileageRateId?: string | null
 }
 
 export type ExpenseLineItemUncheckedCreateWithoutCategoryInput = {
   id?: string
+  mileageRateId?: string | null
 }
 
 export type ExpenseLineItemCreateOrConnectWithoutCategoryInput = {
@@ -353,22 +377,27 @@ export type ExpenseLineItemScalarWhereInput = {
   id?: Prisma.UuidFilter<"ExpenseLineItem"> | string
   organizationId?: Prisma.UuidFilter<"ExpenseLineItem"> | string
   categoryId?: Prisma.UuidFilter<"ExpenseLineItem"> | string
+  mileageRateId?: Prisma.UuidNullableFilter<"ExpenseLineItem"> | string | null
 }
 
 export type ExpenseLineItemCreateManyCategoryInput = {
   id?: string
+  mileageRateId?: string | null
 }
 
 export type ExpenseLineItemUpdateWithoutCategoryInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
+  mileageRateId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
 }
 
 export type ExpenseLineItemUncheckedUpdateWithoutCategoryInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
+  mileageRateId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
 }
 
 export type ExpenseLineItemUncheckedUpdateManyWithoutCategoryInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
+  mileageRateId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
 }
 
 
@@ -377,6 +406,7 @@ export type ExpenseLineItemSelect<ExtArgs extends runtime.Types.Extensions.Inter
   id?: boolean
   organizationId?: boolean
   categoryId?: boolean
+  mileageRateId?: boolean
   category?: boolean | Prisma.ExpenseCategoryDefaultArgs<ExtArgs>
 }, ExtArgs["result"]["expenseLineItem"]>
 
@@ -384,6 +414,7 @@ export type ExpenseLineItemSelectCreateManyAndReturn<ExtArgs extends runtime.Typ
   id?: boolean
   organizationId?: boolean
   categoryId?: boolean
+  mileageRateId?: boolean
   category?: boolean | Prisma.ExpenseCategoryDefaultArgs<ExtArgs>
 }, ExtArgs["result"]["expenseLineItem"]>
 
@@ -391,6 +422,7 @@ export type ExpenseLineItemSelectUpdateManyAndReturn<ExtArgs extends runtime.Typ
   id?: boolean
   organizationId?: boolean
   categoryId?: boolean
+  mileageRateId?: boolean
   category?: boolean | Prisma.ExpenseCategoryDefaultArgs<ExtArgs>
 }, ExtArgs["result"]["expenseLineItem"]>
 
@@ -398,9 +430,10 @@ export type ExpenseLineItemSelectScalar = {
   id?: boolean
   organizationId?: boolean
   categoryId?: boolean
+  mileageRateId?: boolean
 }
 
-export type ExpenseLineItemOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "organizationId" | "categoryId", ExtArgs["result"]["expenseLineItem"]>
+export type ExpenseLineItemOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "organizationId" | "categoryId" | "mileageRateId", ExtArgs["result"]["expenseLineItem"]>
 export type ExpenseLineItemInclude<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   category?: boolean | Prisma.ExpenseCategoryDefaultArgs<ExtArgs>
 }
@@ -420,6 +453,11 @@ export type $ExpenseLineItemPayload<ExtArgs extends runtime.Types.Extensions.Int
     id: string
     organizationId: string
     categoryId: string
+    /**
+     * ExpenseOS's `mileageRateId` (migration 0052): the rule a mileage claim was priced
+     * under. Nothing prices one yet (Wave 2); the mileage router's delete guard reads it.
+     */
+    mileageRateId: string | null
   }, ExtArgs["result"]["expenseLineItem"]>
   composites: {}
 }
@@ -847,6 +885,7 @@ export interface ExpenseLineItemFieldRefs {
   readonly id: Prisma.FieldRef<"ExpenseLineItem", 'String'>
   readonly organizationId: Prisma.FieldRef<"ExpenseLineItem", 'String'>
   readonly categoryId: Prisma.FieldRef<"ExpenseLineItem", 'String'>
+  readonly mileageRateId: Prisma.FieldRef<"ExpenseLineItem", 'String'>
 }
     
 

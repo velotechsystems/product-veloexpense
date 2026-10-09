@@ -2253,6 +2253,96 @@ describe('RLS tenant isolation', () => {
     await admin.query('DELETE FROM fx_rate');
   });
 
+  /* ── Mileage rates (the Wave 1 port, migration 0052) ───────────────────────
+   *
+   * Three new tenant tables and a new tenant FK on `expense_line_item`. The ordinary
+   * claim for each, then what the composite FKs add: a band cannot hang off another
+   * tenant's rule, a rule cannot cover another tenant's person or post to another
+   * tenant's account, and a rule cannot be superseded by another tenant's.
+   */
+  it("mileage rates, their bands and subjects are tenant-isolated, and cannot name another tenant's rows", async () => {
+    await admin.query('DELETE FROM mileage_rate');
+    const seed = async (org: string, country: string) =>
+      withOrg(org, async (tx) => {
+        const rate = (
+          await tx.query(
+            `INSERT INTO mileage_rate (organization_id, country, unit, effective_from)
+             VALUES ($1, $2, 'KM', '2026-01-01') RETURNING id`,
+            [org, country],
+          )
+        ).rows[0].id as string;
+        await tx.query(
+          `INSERT INTO mileage_rate_tier (organization_id, rate_id, from_distance, rate_minor) VALUES ($1, $2, 0, 72)`,
+          [org, rate],
+        );
+        const user = (await tx.query('SELECT id FROM app_user LIMIT 1')).rows[0].id as string;
+        await tx.query(`INSERT INTO mileage_rate_subject (organization_id, rate_id, user_id) VALUES ($1, $2, $3)`, [
+          org,
+          rate,
+          user,
+        ]);
+        return { rate, user };
+      });
+    const a = await seed(orgA, 'CA');
+    const b = await seed(orgB, 'US');
+
+    for (const [org, country] of [
+      [orgA, 'CA'],
+      [orgB, 'US'],
+    ] as const) {
+      const seen = await withOrg(org, async (tx) => ({
+        rates: (await tx.query('SELECT country FROM mileage_rate')).rows.map((r) => r.country),
+        tiers: (await tx.query('SELECT count(*)::int AS n FROM mileage_rate_tier')).rows[0].n,
+        subjects: (await tx.query('SELECT count(*)::int AS n FROM mileage_rate_subject')).rows[0].n,
+      }));
+      expect(seen).toEqual({ rates: [country], tiers: 1, subjects: 1 });
+    }
+
+    await expect(
+      withOrg(orgB, (tx) =>
+        tx.query(
+          `INSERT INTO mileage_rate (organization_id, country, unit, effective_from) VALUES ($1, 'FR', 'KM', now())`,
+          [orgA],
+        ),
+      ),
+    ).rejects.toThrow(/row-level security|violates/i);
+    await expect(
+      withOrg(orgB, (tx) =>
+        tx.query(`INSERT INTO mileage_rate_tier (organization_id, rate_id, from_distance, rate_minor) VALUES ($1, $2, 10, 1)`, [
+          orgB,
+          a.rate,
+        ]),
+      ),
+    ).rejects.toThrow(/foreign key/i);
+    await expect(
+      withOrg(orgB, (tx) =>
+        tx.query(`INSERT INTO mileage_rate_subject (organization_id, rate_id, user_id) VALUES ($1, $2, $3)`, [
+          orgB,
+          b.rate,
+          a.user,
+        ]),
+      ),
+    ).rejects.toThrow(/foreign key/i);
+    await expect(
+      withOrg(orgB, (tx) => tx.query('UPDATE mileage_rate SET superseded_by_id = $1 WHERE id = $2', [a.rate, b.rate])),
+    ).rejects.toThrow(/foreign key/i);
+    const alphaAccount = (await withOrg(orgA, (tx) => tx.query('SELECT id FROM gl_account LIMIT 1'))).rows[0]?.id;
+    if (alphaAccount) {
+      await expect(
+        withOrg(orgB, (tx) => tx.query('UPDATE mileage_rate SET gl_account_id = $1 WHERE id = $2', [alphaAccount, b.rate])),
+      ).rejects.toThrow(/foreign key|gl_account/i); // the postable trigger (0014) cannot see it, so refuses first
+    }
+
+    for (const table of ['mileage_rate', 'mileage_rate_tier', 'mileage_rate_subject']) {
+      const viaPlatform = await withPlatformRead((tx) => tx.query(`SELECT count(*)::int AS n FROM ${table}`));
+      expect(viaPlatform.rows[0].n, table).toBe(0);
+      const blind = await withoutOrg((tx) => tx.query(`SELECT count(*)::int AS n FROM ${table}`));
+      expect(blind.rows[0].n, table).toBe(0);
+    }
+
+    await admin.query('DELETE FROM mileage_rate');
+  });
+
   /* ── export requests (VX5-12, migration 0041) ─────────────────────────────
    *
    * The ordinary tenant claim, and then the two things specific to this table,

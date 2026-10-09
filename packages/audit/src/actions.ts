@@ -45,6 +45,7 @@ const adminAndOthers = {
  */
 const CONFIG_ACTIONS = {
   fxRate: 'FX_RATE_ADDED',
+  mileageRate: 'MILEAGE_RATE_CHANGED',
 } as const satisfies Record<string, AuditAction>;
 
 export const auditActions = {

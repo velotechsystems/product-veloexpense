@@ -93,6 +93,9 @@ model ExpenseLineItem {
   id             String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   organizationId String @default(dbgenerated("(NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid")) @map("organization_id") @db.Uuid
   categoryId     String @map("category_id") @db.Uuid
+  /// ExpenseOS's `mileageRateId` (migration 0052): the rule a mileage claim was priced
+  /// under. Nothing prices one yet (Wave 2); the mileage router's delete guard reads it.
+  mileageRateId  String? @map("mileage_rate_id") @db.Uuid
 
   category ExpenseCategory @relation(fields: [organizationId, categoryId], references: [organizationId, id])
 
@@ -122,6 +125,8 @@ model User {
   deletedAt      DateTime? @map("deleted_at") @db.Timestamptz(6)
   createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt      DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  mileageRates MileageRateSubject[] @relation("MileageRateSubject")
 
   @@map("app_user")
 }
@@ -259,6 +264,60 @@ model FxRate {
   @@index([organizationId, base, quote, fetchedAt(sort: Desc)], map: "fx_rate_pair_idx")
   @@index([organizationId, fetchedAt], map: "fx_rate_fetched_at_idx")
   @@map("fx_rate")
+}
+
+// ExpenseOS's `MileageRate`, `MileageRateTier` and `MileageRateSubject` (Wave 1),
+// migration 0052. VeloExpense differences:
+//   · per tenant; the database's foreign keys are composite through organization_id
+//     (0019). The relations below name only the id, which is all Prisma needs to join
+//     and to nest the creates ExpenseOS's router makes;
+//   · `unit` is text with a CHECK ('KM' | 'MI'), not a Prisma enum;
+//   · `glAccountId` is the tenant's `gl_account` (ExpenseOS: NetSuiteAccount). Only the
+//     scalar is described, as is `supersededById`: the router reads and writes them and
+//     never their relations.
+model MileageRate {
+  id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String    @default(dbgenerated("(NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid")) @map("organization_id") @db.Uuid
+  country        String
+  /// KM | MI (a CHECK in the table).
+  unit           String
+  effectiveFrom  DateTime  @map("effective_from") @db.Timestamptz(6)
+  effectiveTo    DateTime? @map("effective_to") @db.Timestamptz(6)
+  supersededById String?   @unique @map("superseded_by_id") @db.Uuid
+  glAccountId    String?   @map("gl_account_id") @db.Uuid
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  createdBy      String?   @map("created_by") @db.Uuid
+
+  tiers    MileageRateTier[]
+  subjects MileageRateSubject[]
+
+  @@unique([organizationId, id])
+  @@map("mileage_rate")
+}
+
+model MileageRateTier {
+  id             String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String      @default(dbgenerated("(NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid")) @map("organization_id") @db.Uuid
+  rateId         String      @map("rate_id") @db.Uuid
+  rate           MileageRate @relation(fields: [rateId], references: [id], onDelete: Cascade)
+  /// Inclusive lower bound of the band, in the rule's unit.
+  fromDistance   Decimal     @map("from_distance") @db.Decimal(12, 2)
+  rateMinor      BigInt      @map("rate_minor")
+
+  @@unique([rateId, fromDistance])
+  @@map("mileage_rate_tier")
+}
+
+model MileageRateSubject {
+  organizationId String      @default(dbgenerated("(NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid")) @map("organization_id") @db.Uuid
+  rateId         String      @map("rate_id") @db.Uuid
+  rate           MileageRate @relation(fields: [rateId], references: [id], onDelete: Cascade)
+  userId         String      @map("user_id") @db.Uuid
+  user           User        @relation("MileageRateSubject", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([rateId, userId])
+  @@map("mileage_rate_subject")
 }
 
 model Currency {
