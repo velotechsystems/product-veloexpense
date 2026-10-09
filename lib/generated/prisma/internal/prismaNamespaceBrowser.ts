@@ -60,7 +60,9 @@ export const ModelName = {
   BusinessUnitExternalId: 'BusinessUnitExternalId',
   LegalEntity: 'LegalEntity',
   LegalEntityExternalId: 'LegalEntityExternalId',
-  Currency: 'Currency'
+  Currency: 'Currency',
+  Department: 'Department',
+  DepartmentExternalId: 'DepartmentExternalId'
 } as const
 
 export type ModelName = (typeof ModelName)[keyof typeof ModelName]
@@ -219,6 +221,33 @@ export const CurrencyScalarFieldEnum = {
 } as const
 
 export type CurrencyScalarFieldEnum = (typeof CurrencyScalarFieldEnum)[keyof typeof CurrencyScalarFieldEnum]
+
+
+export const DepartmentScalarFieldEnum = {
+  id: 'id',
+  organizationId: 'organizationId',
+  label: 'label',
+  description: 'description',
+  parentId: 'parentId',
+  active: 'active',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+} as const
+
+export type DepartmentScalarFieldEnum = (typeof DepartmentScalarFieldEnum)[keyof typeof DepartmentScalarFieldEnum]
+
+
+export const DepartmentExternalIdScalarFieldEnum = {
+  id: 'id',
+  organizationId: 'organizationId',
+  sourceId: 'sourceId',
+  sourceValue: 'sourceValue',
+  departmentId: 'departmentId',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+} as const
+
+export type DepartmentExternalIdScalarFieldEnum = (typeof DepartmentExternalIdScalarFieldEnum)[keyof typeof DepartmentExternalIdScalarFieldEnum]
 
 
 export const SortOrder = {

@@ -100,7 +100,7 @@ export interface BudgetView {
 const SELECT_BUDGET = `
   SELECT b.id, b.name, b.gl_account_id, g.number AS gl_account_number, g.name AS gl_account_name,
          b.business_unit_id, bu.label ->> 'en' AS business_unit_name,
-         b.department_id, d.name AS department_name,
+         b.department_id, d.label ->> 'en' AS department_name,
          b.currency_code, c.minor_unit, b.fiscal_year, b.owner_id,
          COALESCE(o.display_name, o.email) AS owner_name, b.notes
     FROM budget b

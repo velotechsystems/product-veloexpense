@@ -103,12 +103,12 @@ beforeAll(async () => {
       // hierarchy walk is the shape most likely to escape a tenant if the
       // policy were ever dropped.
       const parent = await tx.query(
-        'INSERT INTO department (organization_id, name) VALUES ($1, $2) RETURNING id',
+        "INSERT INTO department (organization_id, label) VALUES ($1, jsonb_build_object('en', $2::text)) RETURNING id",
         [org, `Division ${label}`],
       );
       await tx.query(
-        `INSERT INTO department (organization_id, name, parent_department_id)
-         VALUES ($1, $2, $3)`,
+        `INSERT INTO department (organization_id, label, parent_department_id)
+         VALUES ($1, jsonb_build_object('en', $2::text), $3)`,
         [org, `Team ${label}`, parent.rows[0].id],
       );
       // VX3-1: a rollup and a leaf, so `gl_account.parent_id` — the second
@@ -519,7 +519,7 @@ describe('RLS tenant isolation', () => {
         (r) => r.name,
       ),
       units: (await tx.query("SELECT label ->> 'en' AS name FROM business_unit")).rows.map((r) => r.name),
-      departments: (await tx.query('SELECT name FROM department ORDER BY name')).rows.map(
+      departments: (await tx.query("SELECT label ->> 'en' AS name FROM department ORDER BY 1")).rows.map(
         (r) => r.name,
       ),
     }));
@@ -544,7 +544,7 @@ describe('RLS tenant isolation', () => {
     // parent and nothing of org B's identically-shaped pair.
     const rows = await withOrg(orgA, (tx) =>
       tx.query(
-        `SELECT child.name AS child, parent.name AS parent
+        `SELECT child.label ->> 'en' AS child, parent.label ->> 'en' AS parent
            FROM department child
            JOIN department parent ON parent.id = child.parent_department_id`,
       ),
@@ -1823,6 +1823,7 @@ describe('RLS tenant isolation', () => {
    * business unit.
    */
   it("external-id sources and business-unit aliases are tenant-isolated, and cannot name another tenant's rows", async () => {
+    await admin.query('DELETE FROM department_external_id');
     await admin.query('DELETE FROM legal_entity_external_id');
     await admin.query('DELETE FROM business_unit_external_id');
     await admin.query('DELETE FROM external_id_source');
@@ -1910,6 +1911,7 @@ describe('RLS tenant isolation', () => {
    * tenant's source or entity.
    */
   it("legal-entity aliases are tenant-isolated, and cannot name another tenant's rows", async () => {
+    await admin.query('DELETE FROM department_external_id');
     await admin.query('DELETE FROM legal_entity_external_id');
     await admin.query('DELETE FROM business_unit_external_id');
     await admin.query('DELETE FROM external_id_source');
@@ -1977,6 +1979,82 @@ describe('RLS tenant isolation', () => {
     expect(blind.rows[0].n).toBe(0);
 
     await admin.query('DELETE FROM legal_entity_external_id');
+    await admin.query('DELETE FROM external_id_source');
+  });
+
+  /* ── Department External IDs (the Wave 1 department port, migration 0049) ──
+   *
+   * The same claim as the business-unit and legal-entity aliases above.
+   */
+  it("department aliases are tenant-isolated, and cannot name another tenant's rows", async () => {
+    await admin.query('DELETE FROM department_external_id');
+    await admin.query('DELETE FROM legal_entity_external_id');
+    await admin.query('DELETE FROM business_unit_external_id');
+    await admin.query('DELETE FROM external_id_source');
+    const seed = async (org: string, value: string) =>
+      withOrg(org, async (tx) => {
+        const dept = (await tx.query('SELECT id FROM department LIMIT 1')).rows[0].id as string;
+        const src = (
+          await tx.query(
+            `INSERT INTO external_id_source (organization_id, code, label)
+             VALUES ($1, 'ledger', '{"en":"Ledger"}') RETURNING id`,
+            [org],
+          )
+        ).rows[0].id as string;
+        await tx.query(
+          `INSERT INTO department_external_id (organization_id, source_id, source_value, department_id)
+           VALUES ($1, $2, $3, $4)`,
+          [org, src, value, dept],
+        );
+        return { dept, src };
+      });
+    const a = await seed(orgA, 'D-A');
+    const b = await seed(orgB, 'D-B');
+
+    for (const [org, expected] of [
+      [orgA, 'D-A'],
+      [orgB, 'D-B'],
+    ] as const) {
+      const seen = await withOrg(org, (tx) => tx.query('SELECT source_value FROM department_external_id'));
+      expect(seen.rows.map((r) => r.source_value)).toEqual([expected]);
+    }
+
+    await expect(
+      withOrg(orgB, (tx) =>
+        tx.query(
+          `INSERT INTO department_external_id (organization_id, source_id, source_value, department_id)
+           VALUES ($1, $2, 'X', $3)`,
+          [orgA, a.src, a.dept],
+        ),
+      ),
+    ).rejects.toThrow(/row-level security|violates/i);
+    await expect(
+      withOrg(orgB, (tx) =>
+        tx.query(
+          `INSERT INTO department_external_id (organization_id, source_id, source_value, department_id)
+           VALUES ($1, $2, 'D-B2', $3)`,
+          [orgB, a.src, b.dept],
+        ),
+      ),
+    ).rejects.toThrow(/foreign key/i);
+    await expect(
+      withOrg(orgB, (tx) =>
+        tx.query(
+          `INSERT INTO department_external_id (organization_id, source_id, source_value, department_id)
+           VALUES ($1, $2, 'D-B3', $3)`,
+          [orgB, b.src, a.dept],
+        ),
+      ),
+    ).rejects.toThrow(/foreign key/i);
+
+    const viaPlatform = await withPlatformRead((tx) =>
+      tx.query('SELECT count(*)::int AS n FROM department_external_id'),
+    );
+    expect(viaPlatform.rows[0].n).toBe(0);
+    const blind = await withoutOrg((tx) => tx.query('SELECT count(*)::int AS n FROM department_external_id'));
+    expect(blind.rows[0].n).toBe(0);
+
+    await admin.query('DELETE FROM department_external_id');
     await admin.query('DELETE FROM external_id_source');
   });
 

@@ -196,6 +196,7 @@ export type ExternalIdSourceWhereInput = {
   updatedAt?: Prisma.DateTimeFilter<"ExternalIdSource"> | Date | string
   businessUnitAliases?: Prisma.BusinessUnitExternalIdListRelationFilter
   legalEntityAliases?: Prisma.LegalEntityExternalIdListRelationFilter
+  departmentAliases?: Prisma.DepartmentExternalIdListRelationFilter
 }
 
 export type ExternalIdSourceOrderByWithRelationInput = {
@@ -208,6 +209,7 @@ export type ExternalIdSourceOrderByWithRelationInput = {
   updatedAt?: Prisma.SortOrder
   businessUnitAliases?: Prisma.BusinessUnitExternalIdOrderByRelationAggregateInput
   legalEntityAliases?: Prisma.LegalEntityExternalIdOrderByRelationAggregateInput
+  departmentAliases?: Prisma.DepartmentExternalIdOrderByRelationAggregateInput
 }
 
 export type ExternalIdSourceWhereUniqueInput = Prisma.AtLeast<{
@@ -225,6 +227,7 @@ export type ExternalIdSourceWhereUniqueInput = Prisma.AtLeast<{
   updatedAt?: Prisma.DateTimeFilter<"ExternalIdSource"> | Date | string
   businessUnitAliases?: Prisma.BusinessUnitExternalIdListRelationFilter
   legalEntityAliases?: Prisma.LegalEntityExternalIdListRelationFilter
+  departmentAliases?: Prisma.DepartmentExternalIdListRelationFilter
 }, "id" | "organizationId_code" | "organizationId_id">
 
 export type ExternalIdSourceOrderByWithAggregationInput = {
@@ -263,6 +266,7 @@ export type ExternalIdSourceCreateInput = {
   updatedAt?: Date | string
   businessUnitAliases?: Prisma.BusinessUnitExternalIdCreateNestedManyWithoutSourceInput
   legalEntityAliases?: Prisma.LegalEntityExternalIdCreateNestedManyWithoutSourceInput
+  departmentAliases?: Prisma.DepartmentExternalIdCreateNestedManyWithoutSourceInput
 }
 
 export type ExternalIdSourceUncheckedCreateInput = {
@@ -275,6 +279,7 @@ export type ExternalIdSourceUncheckedCreateInput = {
   updatedAt?: Date | string
   businessUnitAliases?: Prisma.BusinessUnitExternalIdUncheckedCreateNestedManyWithoutSourceInput
   legalEntityAliases?: Prisma.LegalEntityExternalIdUncheckedCreateNestedManyWithoutSourceInput
+  departmentAliases?: Prisma.DepartmentExternalIdUncheckedCreateNestedManyWithoutSourceInput
 }
 
 export type ExternalIdSourceUpdateInput = {
@@ -287,6 +292,7 @@ export type ExternalIdSourceUpdateInput = {
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   businessUnitAliases?: Prisma.BusinessUnitExternalIdUpdateManyWithoutSourceNestedInput
   legalEntityAliases?: Prisma.LegalEntityExternalIdUpdateManyWithoutSourceNestedInput
+  departmentAliases?: Prisma.DepartmentExternalIdUpdateManyWithoutSourceNestedInput
 }
 
 export type ExternalIdSourceUncheckedUpdateInput = {
@@ -299,6 +305,7 @@ export type ExternalIdSourceUncheckedUpdateInput = {
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   businessUnitAliases?: Prisma.BusinessUnitExternalIdUncheckedUpdateManyWithoutSourceNestedInput
   legalEntityAliases?: Prisma.LegalEntityExternalIdUncheckedUpdateManyWithoutSourceNestedInput
+  departmentAliases?: Prisma.DepartmentExternalIdUncheckedUpdateManyWithoutSourceNestedInput
 }
 
 export type ExternalIdSourceCreateManyInput = {
@@ -402,6 +409,20 @@ export type ExternalIdSourceUpdateOneRequiredWithoutLegalEntityAliasesNestedInpu
   update?: Prisma.XOR<Prisma.XOR<Prisma.ExternalIdSourceUpdateToOneWithWhereWithoutLegalEntityAliasesInput, Prisma.ExternalIdSourceUpdateWithoutLegalEntityAliasesInput>, Prisma.ExternalIdSourceUncheckedUpdateWithoutLegalEntityAliasesInput>
 }
 
+export type ExternalIdSourceCreateNestedOneWithoutDepartmentAliasesInput = {
+  create?: Prisma.XOR<Prisma.ExternalIdSourceCreateWithoutDepartmentAliasesInput, Prisma.ExternalIdSourceUncheckedCreateWithoutDepartmentAliasesInput>
+  connectOrCreate?: Prisma.ExternalIdSourceCreateOrConnectWithoutDepartmentAliasesInput
+  connect?: Prisma.ExternalIdSourceWhereUniqueInput
+}
+
+export type ExternalIdSourceUpdateOneRequiredWithoutDepartmentAliasesNestedInput = {
+  create?: Prisma.XOR<Prisma.ExternalIdSourceCreateWithoutDepartmentAliasesInput, Prisma.ExternalIdSourceUncheckedCreateWithoutDepartmentAliasesInput>
+  connectOrCreate?: Prisma.ExternalIdSourceCreateOrConnectWithoutDepartmentAliasesInput
+  upsert?: Prisma.ExternalIdSourceUpsertWithoutDepartmentAliasesInput
+  connect?: Prisma.ExternalIdSourceWhereUniqueInput
+  update?: Prisma.XOR<Prisma.XOR<Prisma.ExternalIdSourceUpdateToOneWithWhereWithoutDepartmentAliasesInput, Prisma.ExternalIdSourceUpdateWithoutDepartmentAliasesInput>, Prisma.ExternalIdSourceUncheckedUpdateWithoutDepartmentAliasesInput>
+}
+
 export type ExternalIdSourceCreateWithoutBusinessUnitAliasesInput = {
   id?: string
   organizationId?: string
@@ -411,6 +432,7 @@ export type ExternalIdSourceCreateWithoutBusinessUnitAliasesInput = {
   createdAt?: Date | string
   updatedAt?: Date | string
   legalEntityAliases?: Prisma.LegalEntityExternalIdCreateNestedManyWithoutSourceInput
+  departmentAliases?: Prisma.DepartmentExternalIdCreateNestedManyWithoutSourceInput
 }
 
 export type ExternalIdSourceUncheckedCreateWithoutBusinessUnitAliasesInput = {
@@ -422,6 +444,7 @@ export type ExternalIdSourceUncheckedCreateWithoutBusinessUnitAliasesInput = {
   createdAt?: Date | string
   updatedAt?: Date | string
   legalEntityAliases?: Prisma.LegalEntityExternalIdUncheckedCreateNestedManyWithoutSourceInput
+  departmentAliases?: Prisma.DepartmentExternalIdUncheckedCreateNestedManyWithoutSourceInput
 }
 
 export type ExternalIdSourceCreateOrConnectWithoutBusinessUnitAliasesInput = {
@@ -449,6 +472,7 @@ export type ExternalIdSourceUpdateWithoutBusinessUnitAliasesInput = {
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   legalEntityAliases?: Prisma.LegalEntityExternalIdUpdateManyWithoutSourceNestedInput
+  departmentAliases?: Prisma.DepartmentExternalIdUpdateManyWithoutSourceNestedInput
 }
 
 export type ExternalIdSourceUncheckedUpdateWithoutBusinessUnitAliasesInput = {
@@ -460,6 +484,7 @@ export type ExternalIdSourceUncheckedUpdateWithoutBusinessUnitAliasesInput = {
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   legalEntityAliases?: Prisma.LegalEntityExternalIdUncheckedUpdateManyWithoutSourceNestedInput
+  departmentAliases?: Prisma.DepartmentExternalIdUncheckedUpdateManyWithoutSourceNestedInput
 }
 
 export type ExternalIdSourceCreateWithoutLegalEntityAliasesInput = {
@@ -471,6 +496,7 @@ export type ExternalIdSourceCreateWithoutLegalEntityAliasesInput = {
   createdAt?: Date | string
   updatedAt?: Date | string
   businessUnitAliases?: Prisma.BusinessUnitExternalIdCreateNestedManyWithoutSourceInput
+  departmentAliases?: Prisma.DepartmentExternalIdCreateNestedManyWithoutSourceInput
 }
 
 export type ExternalIdSourceUncheckedCreateWithoutLegalEntityAliasesInput = {
@@ -482,6 +508,7 @@ export type ExternalIdSourceUncheckedCreateWithoutLegalEntityAliasesInput = {
   createdAt?: Date | string
   updatedAt?: Date | string
   businessUnitAliases?: Prisma.BusinessUnitExternalIdUncheckedCreateNestedManyWithoutSourceInput
+  departmentAliases?: Prisma.DepartmentExternalIdUncheckedCreateNestedManyWithoutSourceInput
 }
 
 export type ExternalIdSourceCreateOrConnectWithoutLegalEntityAliasesInput = {
@@ -509,6 +536,7 @@ export type ExternalIdSourceUpdateWithoutLegalEntityAliasesInput = {
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   businessUnitAliases?: Prisma.BusinessUnitExternalIdUpdateManyWithoutSourceNestedInput
+  departmentAliases?: Prisma.DepartmentExternalIdUpdateManyWithoutSourceNestedInput
 }
 
 export type ExternalIdSourceUncheckedUpdateWithoutLegalEntityAliasesInput = {
@@ -520,6 +548,71 @@ export type ExternalIdSourceUncheckedUpdateWithoutLegalEntityAliasesInput = {
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   businessUnitAliases?: Prisma.BusinessUnitExternalIdUncheckedUpdateManyWithoutSourceNestedInput
+  departmentAliases?: Prisma.DepartmentExternalIdUncheckedUpdateManyWithoutSourceNestedInput
+}
+
+export type ExternalIdSourceCreateWithoutDepartmentAliasesInput = {
+  id?: string
+  organizationId?: string
+  code: string
+  label: Prisma.JsonNullValueInput | runtime.InputJsonValue
+  active?: boolean
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  businessUnitAliases?: Prisma.BusinessUnitExternalIdCreateNestedManyWithoutSourceInput
+  legalEntityAliases?: Prisma.LegalEntityExternalIdCreateNestedManyWithoutSourceInput
+}
+
+export type ExternalIdSourceUncheckedCreateWithoutDepartmentAliasesInput = {
+  id?: string
+  organizationId?: string
+  code: string
+  label: Prisma.JsonNullValueInput | runtime.InputJsonValue
+  active?: boolean
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  businessUnitAliases?: Prisma.BusinessUnitExternalIdUncheckedCreateNestedManyWithoutSourceInput
+  legalEntityAliases?: Prisma.LegalEntityExternalIdUncheckedCreateNestedManyWithoutSourceInput
+}
+
+export type ExternalIdSourceCreateOrConnectWithoutDepartmentAliasesInput = {
+  where: Prisma.ExternalIdSourceWhereUniqueInput
+  create: Prisma.XOR<Prisma.ExternalIdSourceCreateWithoutDepartmentAliasesInput, Prisma.ExternalIdSourceUncheckedCreateWithoutDepartmentAliasesInput>
+}
+
+export type ExternalIdSourceUpsertWithoutDepartmentAliasesInput = {
+  update: Prisma.XOR<Prisma.ExternalIdSourceUpdateWithoutDepartmentAliasesInput, Prisma.ExternalIdSourceUncheckedUpdateWithoutDepartmentAliasesInput>
+  create: Prisma.XOR<Prisma.ExternalIdSourceCreateWithoutDepartmentAliasesInput, Prisma.ExternalIdSourceUncheckedCreateWithoutDepartmentAliasesInput>
+  where?: Prisma.ExternalIdSourceWhereInput
+}
+
+export type ExternalIdSourceUpdateToOneWithWhereWithoutDepartmentAliasesInput = {
+  where?: Prisma.ExternalIdSourceWhereInput
+  data: Prisma.XOR<Prisma.ExternalIdSourceUpdateWithoutDepartmentAliasesInput, Prisma.ExternalIdSourceUncheckedUpdateWithoutDepartmentAliasesInput>
+}
+
+export type ExternalIdSourceUpdateWithoutDepartmentAliasesInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  organizationId?: Prisma.StringFieldUpdateOperationsInput | string
+  code?: Prisma.StringFieldUpdateOperationsInput | string
+  label?: Prisma.JsonNullValueInput | runtime.InputJsonValue
+  active?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  businessUnitAliases?: Prisma.BusinessUnitExternalIdUpdateManyWithoutSourceNestedInput
+  legalEntityAliases?: Prisma.LegalEntityExternalIdUpdateManyWithoutSourceNestedInput
+}
+
+export type ExternalIdSourceUncheckedUpdateWithoutDepartmentAliasesInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  organizationId?: Prisma.StringFieldUpdateOperationsInput | string
+  code?: Prisma.StringFieldUpdateOperationsInput | string
+  label?: Prisma.JsonNullValueInput | runtime.InputJsonValue
+  active?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  businessUnitAliases?: Prisma.BusinessUnitExternalIdUncheckedUpdateManyWithoutSourceNestedInput
+  legalEntityAliases?: Prisma.LegalEntityExternalIdUncheckedUpdateManyWithoutSourceNestedInput
 }
 
 
@@ -530,11 +623,13 @@ export type ExternalIdSourceUncheckedUpdateWithoutLegalEntityAliasesInput = {
 export type ExternalIdSourceCountOutputType = {
   businessUnitAliases: number
   legalEntityAliases: number
+  departmentAliases: number
 }
 
 export type ExternalIdSourceCountOutputTypeSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   businessUnitAliases?: boolean | ExternalIdSourceCountOutputTypeCountBusinessUnitAliasesArgs
   legalEntityAliases?: boolean | ExternalIdSourceCountOutputTypeCountLegalEntityAliasesArgs
+  departmentAliases?: boolean | ExternalIdSourceCountOutputTypeCountDepartmentAliasesArgs
 }
 
 /**
@@ -561,6 +656,13 @@ export type ExternalIdSourceCountOutputTypeCountLegalEntityAliasesArgs<ExtArgs e
   where?: Prisma.LegalEntityExternalIdWhereInput
 }
 
+/**
+ * ExternalIdSourceCountOutputType without action
+ */
+export type ExternalIdSourceCountOutputTypeCountDepartmentAliasesArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  where?: Prisma.DepartmentExternalIdWhereInput
+}
+
 
 export type ExternalIdSourceSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetSelect<{
   id?: boolean
@@ -572,6 +674,7 @@ export type ExternalIdSourceSelect<ExtArgs extends runtime.Types.Extensions.Inte
   updatedAt?: boolean
   businessUnitAliases?: boolean | Prisma.ExternalIdSource$businessUnitAliasesArgs<ExtArgs>
   legalEntityAliases?: boolean | Prisma.ExternalIdSource$legalEntityAliasesArgs<ExtArgs>
+  departmentAliases?: boolean | Prisma.ExternalIdSource$departmentAliasesArgs<ExtArgs>
   _count?: boolean | Prisma.ExternalIdSourceCountOutputTypeDefaultArgs<ExtArgs>
 }, ExtArgs["result"]["externalIdSource"]>
 
@@ -609,6 +712,7 @@ export type ExternalIdSourceOmit<ExtArgs extends runtime.Types.Extensions.Intern
 export type ExternalIdSourceInclude<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   businessUnitAliases?: boolean | Prisma.ExternalIdSource$businessUnitAliasesArgs<ExtArgs>
   legalEntityAliases?: boolean | Prisma.ExternalIdSource$legalEntityAliasesArgs<ExtArgs>
+  departmentAliases?: boolean | Prisma.ExternalIdSource$departmentAliasesArgs<ExtArgs>
   _count?: boolean | Prisma.ExternalIdSourceCountOutputTypeDefaultArgs<ExtArgs>
 }
 export type ExternalIdSourceIncludeCreateManyAndReturn<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {}
@@ -619,6 +723,7 @@ export type $ExternalIdSourcePayload<ExtArgs extends runtime.Types.Extensions.In
   objects: {
     businessUnitAliases: Prisma.$BusinessUnitExternalIdPayload<ExtArgs>[]
     legalEntityAliases: Prisma.$LegalEntityExternalIdPayload<ExtArgs>[]
+    departmentAliases: Prisma.$DepartmentExternalIdPayload<ExtArgs>[]
   }
   scalars: runtime.Types.Extensions.GetPayloadResult<{
     id: string
@@ -1024,6 +1129,7 @@ export interface Prisma__ExternalIdSourceClient<T, Null = never, ExtArgs extends
   readonly [Symbol.toStringTag]: "PrismaPromise"
   businessUnitAliases<T extends Prisma.ExternalIdSource$businessUnitAliasesArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.ExternalIdSource$businessUnitAliasesArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$BusinessUnitExternalIdPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
   legalEntityAliases<T extends Prisma.ExternalIdSource$legalEntityAliasesArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.ExternalIdSource$legalEntityAliasesArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$LegalEntityExternalIdPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
+  departmentAliases<T extends Prisma.ExternalIdSource$departmentAliasesArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.ExternalIdSource$departmentAliasesArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$DepartmentExternalIdPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
   /**
    * Attaches callbacks for the resolution and/or rejection of the Promise.
    * @param onfulfilled The callback to execute when the Promise is resolved.
@@ -1498,6 +1604,30 @@ export type ExternalIdSource$legalEntityAliasesArgs<ExtArgs extends runtime.Type
   take?: number
   skip?: number
   distinct?: Prisma.LegalEntityExternalIdScalarFieldEnum | Prisma.LegalEntityExternalIdScalarFieldEnum[]
+}
+
+/**
+ * ExternalIdSource.departmentAliases
+ */
+export type ExternalIdSource$departmentAliasesArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  /**
+   * Select specific fields to fetch from the DepartmentExternalId
+   */
+  select?: Prisma.DepartmentExternalIdSelect<ExtArgs> | null
+  /**
+   * Omit specific fields from the DepartmentExternalId
+   */
+  omit?: Prisma.DepartmentExternalIdOmit<ExtArgs> | null
+  /**
+   * Choose, which related nodes to fetch as well
+   */
+  include?: Prisma.DepartmentExternalIdInclude<ExtArgs> | null
+  where?: Prisma.DepartmentExternalIdWhereInput
+  orderBy?: Prisma.DepartmentExternalIdOrderByWithRelationInput | Prisma.DepartmentExternalIdOrderByWithRelationInput[]
+  cursor?: Prisma.DepartmentExternalIdWhereUniqueInput
+  take?: number
+  skip?: number
+  distinct?: Prisma.DepartmentExternalIdScalarFieldEnum | Prisma.DepartmentExternalIdScalarFieldEnum[]
 }
 
 /**

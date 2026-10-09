@@ -31,7 +31,7 @@ beforeAll(async () => {
 
   await withOrg(orgA, async (tx) => {
     const d = await tx.query(
-      "INSERT INTO department (organization_id, name) VALUES ($1,'Finance') RETURNING id",
+      "INSERT INTO department (organization_id, label) VALUES ($1,'{\"en\":\"Finance\"}') RETURNING id",
       [orgA],
     );
     deptId = d.rows[0].id;

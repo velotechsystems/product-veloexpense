@@ -41,7 +41,8 @@ export async function getBudgetsPage() {
     // offering an empty picker with no explanation.
     accountingEnabled: await isModuleEnabled(tx, 'accounting'),
     accounts: await listPostableAccounts(tx),
-    departments: await listDepartments(tx),
+    // New budgets scope to an ACTIVE department only (the Wave 1 soft delete).
+    departments: activeChoices(await listDepartments(tx)),
     // A new budget may be scoped to an ACTIVE business unit only; deactivated ones are
     // retired (the Wave 1 port's soft delete). Existing budgets keep theirs, by name.
     businessUnits: activeChoices(await listBusinessUnits(tx)),

@@ -105,7 +105,7 @@ export class EmployeeError extends DomainError {
 const EMPLOYEE_COLUMNS = `
   u.id, u.email, u.display_name, u.title, u.role, u.employee_status,
   u.manager_id, m.display_name AS manager_name, m.email AS manager_email,
-  u.department_id, d.name AS department_name,
+  u.department_id, d.label ->> 'en' AS department_name,
   u.business_unit_id, bu.label ->> 'en' AS business_unit_name,
   u.legal_entity_id, le.label ->> 'en' AS legal_entity_name,
   u.deleted_at, u.created_at, u.updated_at`;
@@ -435,9 +435,20 @@ export async function deactivateEmployee(
 
 /* ── org reference lookups (for the directory's pickers) ───────────────────── */
 
+/** Every department with whether it is active — callers offer `activeChoices` (see
+ *  `listBusinessUnits`). The name is the English one (`label`, migration 0049). */
 export async function listDepartments(tx: QueryRunner) {
-  const r = await tx.query('SELECT id, name, parent_department_id FROM department ORDER BY name');
-  return r.rows as Array<{ id: string; name: string; parent_department_id: string | null }>;
+  const r = await tx.query(
+    `SELECT id, label ->> 'en' AS name, parent_department_id, active
+       FROM department
+      ORDER BY lower(label ->> 'en')`,
+  );
+  return r.rows as Array<{
+    id: string;
+    name: string;
+    parent_department_id: string | null;
+    active: boolean;
+  }>;
 }
 
 /**

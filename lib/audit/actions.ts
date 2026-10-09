@@ -137,6 +137,10 @@ export const AUDIT_ACTIONS = [
   'LEGAL_ENTITY_CREATED',
   'LEGAL_ENTITY_UPDATED',
   'LEGAL_ENTITY_DEACTIVATED',
+  /* Departments — the Wave 1 port (admin.department.*), the same shape. */
+  'DEPARTMENT_CREATED',
+  'DEPARTMENT_UPDATED',
+  'DEPARTMENT_DEACTIVATED',
   'MODULE_ENABLED',
   'MODULE_DISABLED',
   'USER_LOCALE_CHANGED',
