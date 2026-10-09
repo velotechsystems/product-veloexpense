@@ -81,6 +81,7 @@ const PAGES = [
   '/admin/departments',
   '/admin/job-levels',
   '/admin/fiscal-years',
+  '/admin/fx-rates',
 ] as const;
 
 /**

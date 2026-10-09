@@ -150,6 +150,9 @@ export const AUDIT_ACTIONS = [
   'FISCAL_YEAR_UPDATED',
   'FISCAL_YEAR_SET_CURRENT',
   'FISCAL_YEAR_DELETED',
+  /* FX rates — the Wave 1 port (ExpenseOS's `config.fxRate.update`). A rate is only
+     ever added: the table is append-only and the newest per pair wins. */
+  'FX_RATE_ADDED',
   'MODULE_ENABLED',
   'MODULE_DISABLED',
   'USER_LOCALE_CHANGED',

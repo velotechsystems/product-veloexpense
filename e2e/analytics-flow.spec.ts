@@ -72,7 +72,7 @@ test.beforeAll(async () => {
 
 test.afterAll(async ({ request }) => {
   // Leave nothing for the eight specs that run after this one: the reports it
-  // created, and the global fx_rate row it deliberately did NOT create.
+  // created, and the fx_rate rows it deliberately did NOT restore.
   await wipeDemoSpend();
   await drainNotifications(request);
   await admin.end();

@@ -173,8 +173,10 @@ async function spend(input: {
 
 async function rate(base: string, quote: string, value: string, asOf: string) {
   await admin.query(
-    `INSERT INTO fx_rate (base, quote, rate, as_of, source) VALUES ($1,$2,$3,$4::date,'MANUAL')`,
-    [base, quote, value, asOf],
+    // Per tenant since 0051; `as_of` is derived from `fetched_at` (its UTC day).
+    `INSERT INTO fx_rate (organization_id, base, quote, rate, fetched_at, source)
+     VALUES ($5,$1,$2,$3,($4::date)::timestamp AT TIME ZONE 'UTC','MANUAL')`,
+    [base, quote, value, asOf, orgId],
   );
 }
 

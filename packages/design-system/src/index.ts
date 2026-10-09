@@ -92,6 +92,7 @@ export { SidebarSection, type SidebarSectionProps } from '@/components/navigatio
 
 // ── ui ───────────────────────────────────────────────────────────────
 export { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+export { Textarea } from '@/components/ui/textarea';
 export { Badge, badgeVariants } from '@/components/ui/badge';
 export { Button, buttonVariants } from '@/components/ui/button';
 export { Checkbox } from '@/components/ui/checkbox';

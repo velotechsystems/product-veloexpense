@@ -161,8 +161,8 @@ beforeAll(async () => {
   // `currency` ships CAD and USD, and the seed ships a USD->CAD rate — so with
   // only those two, "no rate for this pair" is unreachable and the first version
   // of the FX group asserted one finding and got none. Deleting the seeded rate
-  // was the other option and is worse: `fx_rate` is not tenant-scoped, so a suite
-  // that removes a row removes it for every suite sharing this database.
+  // was the other option, and was worse while `fx_rate` was global (until 0051): a
+  // suite that removed a row removed it for every suite sharing this database.
   await admin.query(
     `INSERT INTO currency (code, name, minor_unit) VALUES ('CHF','Swiss Franc',2)
      ON CONFLICT (code) DO NOTHING`,
@@ -352,8 +352,9 @@ describe('cross-currency with no rate', () => {
   it('a rate quoted CHF→CAD clears it', async () => {
     await usdOnCadReport('F-2');
     await admin.query(
-      `INSERT INTO fx_rate (base, quote, rate, as_of, source)
-       VALUES ('CHF', 'CAD', 1.55, current_date, 'MANUAL')`,
+      `INSERT INTO fx_rate (organization_id, base, quote, rate, source)
+       VALUES ($1, 'CHF', 'CAD', 1.55, 'MANUAL')`,
+      [orgId],
     );
     expect(await withOrg(orgId, (tx) => checkFxRateMissing(tx, period))).toHaveLength(0);
   });
@@ -365,8 +366,9 @@ describe('cross-currency with no rate', () => {
     // reciprocal fill in lib/policy/rules.ts makes the same trap live here.
     await usdOnCadReport('F-3');
     await admin.query(
-      `INSERT INTO fx_rate (base, quote, rate, as_of, source)
-       VALUES ('CAD', 'CHF', 0.65, current_date, 'MANUAL')`,
+      `INSERT INTO fx_rate (organization_id, base, quote, rate, source)
+       VALUES ($1, 'CAD', 'CHF', 0.65, 'MANUAL')`,
+      [orgId],
     );
     expect(await withOrg(orgId, (tx) => checkFxRateMissing(tx, period))).toHaveLength(0);
   });

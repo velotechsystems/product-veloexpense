@@ -393,6 +393,7 @@ export const ModelName = {
   BusinessUnitExternalId: 'BusinessUnitExternalId',
   LegalEntity: 'LegalEntity',
   LegalEntityExternalId: 'LegalEntityExternalId',
+  FxRate: 'FxRate',
   Currency: 'Currency',
   Department: 'Department',
   DepartmentExternalId: 'DepartmentExternalId',
@@ -415,7 +416,7 @@ export type TypeMap<ExtArgs extends runtime.Types.Extensions.InternalArgs = runt
     omit: GlobalOmitOptions
   }
   meta: {
-    modelProps: "expenseCategory" | "glAccount" | "expenseLineItem" | "user" | "businessUnit" | "externalIdSource" | "businessUnitExternalId" | "legalEntity" | "legalEntityExternalId" | "currency" | "department" | "departmentExternalId" | "jobLevel" | "jobLevelExternalId" | "fiscalYear" | "fiscalYearExternalId"
+    modelProps: "expenseCategory" | "glAccount" | "expenseLineItem" | "user" | "businessUnit" | "externalIdSource" | "businessUnitExternalId" | "legalEntity" | "legalEntityExternalId" | "fxRate" | "currency" | "department" | "departmentExternalId" | "jobLevel" | "jobLevelExternalId" | "fiscalYear" | "fiscalYearExternalId"
     txIsolationLevel: TransactionIsolationLevel
   }
   model: {
@@ -1082,6 +1083,80 @@ export type TypeMap<ExtArgs extends runtime.Types.Extensions.InternalArgs = runt
         count: {
           args: Prisma.LegalEntityExternalIdCountArgs<ExtArgs>
           result: runtime.Types.Utils.Optional<Prisma.LegalEntityExternalIdCountAggregateOutputType> | number
+        }
+      }
+    }
+    FxRate: {
+      payload: Prisma.$FxRatePayload<ExtArgs>
+      fields: Prisma.FxRateFieldRefs
+      operations: {
+        findUnique: {
+          args: Prisma.FxRateFindUniqueArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$FxRatePayload> | null
+        }
+        findUniqueOrThrow: {
+          args: Prisma.FxRateFindUniqueOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$FxRatePayload>
+        }
+        findFirst: {
+          args: Prisma.FxRateFindFirstArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$FxRatePayload> | null
+        }
+        findFirstOrThrow: {
+          args: Prisma.FxRateFindFirstOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$FxRatePayload>
+        }
+        findMany: {
+          args: Prisma.FxRateFindManyArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$FxRatePayload>[]
+        }
+        create: {
+          args: Prisma.FxRateCreateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$FxRatePayload>
+        }
+        createMany: {
+          args: Prisma.FxRateCreateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        createManyAndReturn: {
+          args: Prisma.FxRateCreateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$FxRatePayload>[]
+        }
+        delete: {
+          args: Prisma.FxRateDeleteArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$FxRatePayload>
+        }
+        update: {
+          args: Prisma.FxRateUpdateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$FxRatePayload>
+        }
+        deleteMany: {
+          args: Prisma.FxRateDeleteManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateMany: {
+          args: Prisma.FxRateUpdateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateManyAndReturn: {
+          args: Prisma.FxRateUpdateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$FxRatePayload>[]
+        }
+        upsert: {
+          args: Prisma.FxRateUpsertArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$FxRatePayload>
+        }
+        aggregate: {
+          args: Prisma.FxRateAggregateArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.AggregateFxRate>
+        }
+        groupBy: {
+          args: Prisma.FxRateGroupByArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.FxRateGroupByOutputType>[]
+        }
+        count: {
+          args: Prisma.FxRateCountArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.FxRateCountAggregateOutputType> | number
         }
       }
     }
@@ -1776,6 +1851,19 @@ export const LegalEntityExternalIdScalarFieldEnum = {
 export type LegalEntityExternalIdScalarFieldEnum = (typeof LegalEntityExternalIdScalarFieldEnum)[keyof typeof LegalEntityExternalIdScalarFieldEnum]
 
 
+export const FxRateScalarFieldEnum = {
+  organizationId: 'organizationId',
+  base: 'base',
+  quote: 'quote',
+  rate: 'rate',
+  fetchedAt: 'fetchedAt',
+  source: 'source',
+  createdAt: 'createdAt'
+} as const
+
+export type FxRateScalarFieldEnum = (typeof FxRateScalarFieldEnum)[keyof typeof FxRateScalarFieldEnum]
+
+
 export const CurrencyScalarFieldEnum = {
   code: 'code',
   name: 'name',
@@ -1986,6 +2074,20 @@ export type ListDateTimeFieldRefInput<$PrismaModel> = FieldRefInputType<$PrismaM
 
 
 /**
+ * Reference to a field of type 'Decimal'
+ */
+export type DecimalFieldRefInput<$PrismaModel> = FieldRefInputType<$PrismaModel, 'Decimal'>
+    
+
+
+/**
+ * Reference to a field of type 'Decimal[]'
+ */
+export type ListDecimalFieldRefInput<$PrismaModel> = FieldRefInputType<$PrismaModel, 'Decimal[]'>
+    
+
+
+/**
  * Reference to a field of type 'Float'
  */
 export type FloatFieldRefInput<$PrismaModel> = FieldRefInputType<$PrismaModel, 'Float'>
@@ -2117,6 +2219,7 @@ export type GlobalOmitConfig = {
   businessUnitExternalId?: Prisma.BusinessUnitExternalIdOmit
   legalEntity?: Prisma.LegalEntityOmit
   legalEntityExternalId?: Prisma.LegalEntityExternalIdOmit
+  fxRate?: Prisma.FxRateOmit
   currency?: Prisma.CurrencyOmit
   department?: Prisma.DepartmentOmit
   departmentExternalId?: Prisma.DepartmentExternalIdOmit

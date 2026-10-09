@@ -2211,6 +2211,48 @@ describe('RLS tenant isolation', () => {
     await admin.query('DELETE FROM external_id_source');
   });
 
+  /* ── FX rates (the Wave 1 FX port, migration 0051) ────────────────────────
+   *
+   * Global until 0051, per tenant since (d18): a rate one tenant records must not be
+   * the rate another converts at. The ordinary claim — each tenant reads its own,
+   * WITH CHECK refuses naming another, the platform hatch and a missing tenant see
+   * nothing — and the two tenants may record the same pair at the same instant.
+   */
+  it("fx rates are tenant-isolated, and cannot be written for another tenant", async () => {
+    await admin.query('DELETE FROM fx_rate');
+    const at = '2026-02-02T12:00:00Z';
+    for (const [org, rate] of [
+      [orgA, '1.30'],
+      [orgB, '1.40'],
+    ] as const) {
+      await withOrg(org, (tx) =>
+        tx.query(
+          `INSERT INTO fx_rate (organization_id, base, quote, rate, fetched_at) VALUES ($1, 'USD', 'CAD', $2, $3)`,
+          [org, rate, at],
+        ),
+      );
+    }
+    for (const [org, expected] of [
+      [orgA, '1.30000000'],
+      [orgB, '1.40000000'],
+    ] as const) {
+      const seen = await withOrg(org, (tx) => tx.query('SELECT rate FROM fx_rate'));
+      expect(seen.rows.map((r) => r.rate)).toEqual([expected]);
+    }
+    await expect(
+      withOrg(orgB, (tx) =>
+        tx.query(`INSERT INTO fx_rate (organization_id, base, quote, rate) VALUES ($1, 'USD', 'CAD', 9)`, [orgA]),
+      ),
+    ).rejects.toThrow(/row-level security|violates/i);
+
+    const viaPlatform = await withPlatformRead((tx) => tx.query('SELECT count(*)::int AS n FROM fx_rate'));
+    expect(viaPlatform.rows[0].n).toBe(0);
+    const blind = await withoutOrg((tx) => tx.query('SELECT count(*)::int AS n FROM fx_rate'));
+    expect(blind.rows[0].n).toBe(0);
+
+    await admin.query('DELETE FROM fx_rate');
+  });
+
   /* ── export requests (VX5-12, migration 0041) ─────────────────────────────
    *
    * The ordinary tenant claim, and then the two things specific to this table,

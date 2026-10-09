@@ -379,7 +379,7 @@ export async function getPolicyCurrency(tx: QueryRunner): Promise<PolicyCurrency
   );
   const reportCurrencies = used.rows.map((r) => r.currency_code as string);
 
-  const rates = await tx.query('SELECT base, quote, rate, as_of FROM fx_rate ORDER BY as_of DESC');
+  const rates = await tx.query('SELECT base, quote, rate, as_of FROM fx_rate ORDER BY as_of DESC, fetched_at DESC');
   const lookup = buildRateLookup(rates.rows as RateRow[]);
   const unconvertible = reportCurrencies.filter((from) => lookup.find(from, code) === null);
   return { code, reportCurrencies, convertible: lookup.pairs(), unconvertible };
@@ -611,9 +611,11 @@ async function currencyContext(
   const asOf = bound.rows[0]?.as_of ?? null;
 
   // ORDER BY as_of DESC so the lookup's "strictly newer wins" tie-break is
-  // deterministic rather than dependent on Map insertion order.
+  // deterministic rather than dependent on Map insertion order. Then fetched_at DESC:
+  // since 0051 a pair can hold several rates in one day, and the newest is the one in
+  // force (ExpenseOS's rule), which this makes the one the lookup keeps.
   const rates = await tx.query(
-    'SELECT base, quote, rate, as_of FROM fx_rate ORDER BY as_of DESC',
+    'SELECT base, quote, rate, as_of FROM fx_rate ORDER BY as_of DESC, fetched_at DESC',
   );
   return {
     policyCurrency,

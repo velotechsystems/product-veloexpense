@@ -60,6 +60,7 @@ export const ModelName = {
   BusinessUnitExternalId: 'BusinessUnitExternalId',
   LegalEntity: 'LegalEntity',
   LegalEntityExternalId: 'LegalEntityExternalId',
+  FxRate: 'FxRate',
   Currency: 'Currency',
   Department: 'Department',
   DepartmentExternalId: 'DepartmentExternalId',
@@ -217,6 +218,19 @@ export const LegalEntityExternalIdScalarFieldEnum = {
 } as const
 
 export type LegalEntityExternalIdScalarFieldEnum = (typeof LegalEntityExternalIdScalarFieldEnum)[keyof typeof LegalEntityExternalIdScalarFieldEnum]
+
+
+export const FxRateScalarFieldEnum = {
+  organizationId: 'organizationId',
+  base: 'base',
+  quote: 'quote',
+  rate: 'rate',
+  fetchedAt: 'fetchedAt',
+  source: 'source',
+  createdAt: 'createdAt'
+} as const
+
+export type FxRateScalarFieldEnum = (typeof FxRateScalarFieldEnum)[keyof typeof FxRateScalarFieldEnum]
 
 
 export const CurrencyScalarFieldEnum = {

@@ -6,6 +6,7 @@ import { expenseApprovalsRouter } from './expenseApprovals';
 import { expenseCategoriesRouter } from './expenseCategories';
 import { legalEntitiesRouter } from './legalEntities';
 import { pickersRouter } from './pickers';
+import { policiesRouter } from './policies';
 
 /**
  * Root tRPC router — composes per-domain sub-routers. Add a new module's
@@ -24,6 +25,7 @@ export const appRouter = router({
   expenseApprovals: expenseApprovalsRouter,
   legalEntities: legalEntitiesRouter,
   pickers: pickersRouter,
+  policies: policiesRouter,
 });
 
 /** Exported type used by the client to derive typed hooks. */
