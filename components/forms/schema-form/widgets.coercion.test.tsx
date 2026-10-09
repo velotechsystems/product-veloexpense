@@ -56,23 +56,23 @@ describe('SelectWidget', () => {
   it('renders the option labels', () => {
     render(<SelectWidget {...props({ options: numericOptions, value: 1 })} />);
     // The Combobox is string-keyed, so a numeric value must still resolve its label.
-    expect(screen.getByDisplayValue('One')).toBeInTheDocument();
+    expect(screen.getByRole('combobox')).toHaveTextContent('One');
   });
 
   it('shows a placeholder when nothing is selected', () => {
     render(<SelectWidget {...props({ options: numericOptions, placeholder: 'Pick one' })} />);
-    expect(screen.getByPlaceholderText('Pick one')).toBeInTheDocument();
+    expect(screen.getByRole('combobox')).toHaveTextContent('Pick one');
   });
 
   it('falls back to a default placeholder', () => {
     render(<SelectWidget {...props({ options: numericOptions })} />);
-    expect(screen.getByPlaceholderText('Select…')).toBeInTheDocument();
+    expect(screen.getByRole('combobox')).toHaveTextContent('Select…');
   });
 
   it('renders with no options at all', () => {
     // A facet-backed enum can arrive empty before its query resolves.
     render(<SelectWidget {...props({ options: {} })} />);
-    expect(screen.getByPlaceholderText('Select…')).toBeInTheDocument();
+    expect(screen.getByRole('combobox')).toHaveTextContent('Select…');
   });
 
   it('is disabled when the field is read-only', () => {
