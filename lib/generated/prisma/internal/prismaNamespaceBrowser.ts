@@ -64,6 +64,7 @@ export const ModelName = {
   MileageRate: 'MileageRate',
   MileageRateTier: 'MileageRateTier',
   MileageRateSubject: 'MileageRateSubject',
+  PerDiemRate: 'PerDiemRate',
   Currency: 'Currency',
   Department: 'Department',
   DepartmentExternalId: 'DepartmentExternalId',
@@ -272,6 +273,27 @@ export const MileageRateSubjectScalarFieldEnum = {
 } as const
 
 export type MileageRateSubjectScalarFieldEnum = (typeof MileageRateSubjectScalarFieldEnum)[keyof typeof MileageRateSubjectScalarFieldEnum]
+
+
+export const PerDiemRateScalarFieldEnum = {
+  id: 'id',
+  organizationId: 'organizationId',
+  country: 'country',
+  city: 'city',
+  categoryId: 'categoryId',
+  amountMinor: 'amountMinor',
+  firstLastDay: 'firstLastDay',
+  effectiveFrom: 'effectiveFrom',
+  effectiveTo: 'effectiveTo',
+  jobLevelId: 'jobLevelId',
+  legalEntityId: 'legalEntityId',
+  businessUnitId: 'businessUnitId',
+  currencyId: 'currencyId',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+} as const
+
+export type PerDiemRateScalarFieldEnum = (typeof PerDiemRateScalarFieldEnum)[keyof typeof PerDiemRateScalarFieldEnum]
 
 
 export const CurrencyScalarFieldEnum = {

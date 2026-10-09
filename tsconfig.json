@@ -31,7 +31,8 @@
       "@expenseos/i18n/load": ["./packages/i18n/src/load.ts"],
       "@expenseos/i18n/catalogs/*": ["./packages/i18n/src/catalogs/*.json"],
       "@expenseos/design-system": ["./packages/design-system/src/index.ts"],
-      "@expenseos/audit": ["./packages/audit/src/index.ts"]
+      "@expenseos/audit": ["./packages/audit/src/index.ts"],
+      "@expenseos/money": ["./packages/money/src/index.ts"]
     }
   },
   "include": [

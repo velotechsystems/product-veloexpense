@@ -397,6 +397,7 @@ export const ModelName = {
   MileageRate: 'MileageRate',
   MileageRateTier: 'MileageRateTier',
   MileageRateSubject: 'MileageRateSubject',
+  PerDiemRate: 'PerDiemRate',
   Currency: 'Currency',
   Department: 'Department',
   DepartmentExternalId: 'DepartmentExternalId',
@@ -419,7 +420,7 @@ export type TypeMap<ExtArgs extends runtime.Types.Extensions.InternalArgs = runt
     omit: GlobalOmitOptions
   }
   meta: {
-    modelProps: "expenseCategory" | "glAccount" | "expenseLineItem" | "user" | "businessUnit" | "externalIdSource" | "businessUnitExternalId" | "legalEntity" | "legalEntityExternalId" | "fxRate" | "mileageRate" | "mileageRateTier" | "mileageRateSubject" | "currency" | "department" | "departmentExternalId" | "jobLevel" | "jobLevelExternalId" | "fiscalYear" | "fiscalYearExternalId"
+    modelProps: "expenseCategory" | "glAccount" | "expenseLineItem" | "user" | "businessUnit" | "externalIdSource" | "businessUnitExternalId" | "legalEntity" | "legalEntityExternalId" | "fxRate" | "mileageRate" | "mileageRateTier" | "mileageRateSubject" | "perDiemRate" | "currency" | "department" | "departmentExternalId" | "jobLevel" | "jobLevelExternalId" | "fiscalYear" | "fiscalYearExternalId"
     txIsolationLevel: TransactionIsolationLevel
   }
   model: {
@@ -1385,6 +1386,80 @@ export type TypeMap<ExtArgs extends runtime.Types.Extensions.InternalArgs = runt
         }
       }
     }
+    PerDiemRate: {
+      payload: Prisma.$PerDiemRatePayload<ExtArgs>
+      fields: Prisma.PerDiemRateFieldRefs
+      operations: {
+        findUnique: {
+          args: Prisma.PerDiemRateFindUniqueArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$PerDiemRatePayload> | null
+        }
+        findUniqueOrThrow: {
+          args: Prisma.PerDiemRateFindUniqueOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$PerDiemRatePayload>
+        }
+        findFirst: {
+          args: Prisma.PerDiemRateFindFirstArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$PerDiemRatePayload> | null
+        }
+        findFirstOrThrow: {
+          args: Prisma.PerDiemRateFindFirstOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$PerDiemRatePayload>
+        }
+        findMany: {
+          args: Prisma.PerDiemRateFindManyArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$PerDiemRatePayload>[]
+        }
+        create: {
+          args: Prisma.PerDiemRateCreateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$PerDiemRatePayload>
+        }
+        createMany: {
+          args: Prisma.PerDiemRateCreateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        createManyAndReturn: {
+          args: Prisma.PerDiemRateCreateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$PerDiemRatePayload>[]
+        }
+        delete: {
+          args: Prisma.PerDiemRateDeleteArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$PerDiemRatePayload>
+        }
+        update: {
+          args: Prisma.PerDiemRateUpdateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$PerDiemRatePayload>
+        }
+        deleteMany: {
+          args: Prisma.PerDiemRateDeleteManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateMany: {
+          args: Prisma.PerDiemRateUpdateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateManyAndReturn: {
+          args: Prisma.PerDiemRateUpdateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$PerDiemRatePayload>[]
+        }
+        upsert: {
+          args: Prisma.PerDiemRateUpsertArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$PerDiemRatePayload>
+        }
+        aggregate: {
+          args: Prisma.PerDiemRateAggregateArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.AggregatePerDiemRate>
+        }
+        groupBy: {
+          args: Prisma.PerDiemRateGroupByArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.PerDiemRateGroupByOutputType>[]
+        }
+        count: {
+          args: Prisma.PerDiemRateCountArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.PerDiemRateCountAggregateOutputType> | number
+        }
+      }
+    }
     Currency: {
       payload: Prisma.$CurrencyPayload<ExtArgs>
       fields: Prisma.CurrencyFieldRefs
@@ -2127,6 +2202,27 @@ export const MileageRateSubjectScalarFieldEnum = {
 export type MileageRateSubjectScalarFieldEnum = (typeof MileageRateSubjectScalarFieldEnum)[keyof typeof MileageRateSubjectScalarFieldEnum]
 
 
+export const PerDiemRateScalarFieldEnum = {
+  id: 'id',
+  organizationId: 'organizationId',
+  country: 'country',
+  city: 'city',
+  categoryId: 'categoryId',
+  amountMinor: 'amountMinor',
+  firstLastDay: 'firstLastDay',
+  effectiveFrom: 'effectiveFrom',
+  effectiveTo: 'effectiveTo',
+  jobLevelId: 'jobLevelId',
+  legalEntityId: 'legalEntityId',
+  businessUnitId: 'businessUnitId',
+  currencyId: 'currencyId',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+} as const
+
+export type PerDiemRateScalarFieldEnum = (typeof PerDiemRateScalarFieldEnum)[keyof typeof PerDiemRateScalarFieldEnum]
+
+
 export const CurrencyScalarFieldEnum = {
   code: 'code',
   name: 'name',
@@ -2500,6 +2596,7 @@ export type GlobalOmitConfig = {
   mileageRate?: Prisma.MileageRateOmit
   mileageRateTier?: Prisma.MileageRateTierOmit
   mileageRateSubject?: Prisma.MileageRateSubjectOmit
+  perDiemRate?: Prisma.PerDiemRateOmit
   currency?: Prisma.CurrencyOmit
   department?: Prisma.DepartmentOmit
   departmentExternalId?: Prisma.DepartmentExternalIdOmit

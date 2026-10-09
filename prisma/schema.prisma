@@ -320,6 +320,32 @@ model MileageRateSubject {
   @@map("mileage_rate_subject")
 }
 
+// ExpenseOS's `PerDiemRate` (Wave 1), migration 0053. VeloExpense differences: per
+// tenant (composite tenant FKs in the database; only the scalars are described, which
+// is all the router reads and writes), and `currencyId` is the ISO code in
+// `currency_code` — VeloExpense keys a currency by its code (as `homeCurrencyId`, 0048).
+model PerDiemRate {
+  id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String    @default(dbgenerated("(NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid")) @map("organization_id") @db.Uuid
+  country        String
+  city           String
+  categoryId     String    @map("category_id") @db.Uuid
+  amountMinor    BigInt    @map("amount_minor")
+  firstLastDay   Boolean   @default(false) @map("first_last_day")
+  effectiveFrom  DateTime  @map("effective_from") @db.Timestamptz(6)
+  effectiveTo    DateTime? @map("effective_to") @db.Timestamptz(6)
+  jobLevelId     String?   @map("job_level_id") @db.Uuid
+  legalEntityId  String?   @map("legal_entity_id") @db.Uuid
+  businessUnitId String?   @map("business_unit_id") @db.Uuid
+  /// VeloExpense: the ISO code (`currency_code`), not a uuid.
+  currencyId     String?   @map("currency_code")
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@unique([organizationId, id])
+  @@map("per_diem_rate")
+}
+
 model Currency {
   code      String @id
   name      String
