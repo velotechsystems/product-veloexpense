@@ -61,6 +61,9 @@ export const ModelName = {
   LegalEntity: 'LegalEntity',
   LegalEntityExternalId: 'LegalEntityExternalId',
   FxRate: 'FxRate',
+  MileageRate: 'MileageRate',
+  MileageRateTier: 'MileageRateTier',
+  MileageRateSubject: 'MileageRateSubject',
   Currency: 'Currency',
   Department: 'Department',
   DepartmentExternalId: 'DepartmentExternalId',
@@ -127,7 +130,8 @@ export type GlAccountScalarFieldEnum = (typeof GlAccountScalarFieldEnum)[keyof t
 export const ExpenseLineItemScalarFieldEnum = {
   id: 'id',
   organizationId: 'organizationId',
-  categoryId: 'categoryId'
+  categoryId: 'categoryId',
+  mileageRateId: 'mileageRateId'
 } as const
 
 export type ExpenseLineItemScalarFieldEnum = (typeof ExpenseLineItemScalarFieldEnum)[keyof typeof ExpenseLineItemScalarFieldEnum]
@@ -231,6 +235,43 @@ export const FxRateScalarFieldEnum = {
 } as const
 
 export type FxRateScalarFieldEnum = (typeof FxRateScalarFieldEnum)[keyof typeof FxRateScalarFieldEnum]
+
+
+export const MileageRateScalarFieldEnum = {
+  id: 'id',
+  organizationId: 'organizationId',
+  country: 'country',
+  unit: 'unit',
+  effectiveFrom: 'effectiveFrom',
+  effectiveTo: 'effectiveTo',
+  supersededById: 'supersededById',
+  glAccountId: 'glAccountId',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt',
+  createdBy: 'createdBy'
+} as const
+
+export type MileageRateScalarFieldEnum = (typeof MileageRateScalarFieldEnum)[keyof typeof MileageRateScalarFieldEnum]
+
+
+export const MileageRateTierScalarFieldEnum = {
+  id: 'id',
+  organizationId: 'organizationId',
+  rateId: 'rateId',
+  fromDistance: 'fromDistance',
+  rateMinor: 'rateMinor'
+} as const
+
+export type MileageRateTierScalarFieldEnum = (typeof MileageRateTierScalarFieldEnum)[keyof typeof MileageRateTierScalarFieldEnum]
+
+
+export const MileageRateSubjectScalarFieldEnum = {
+  organizationId: 'organizationId',
+  rateId: 'rateId',
+  userId: 'userId'
+} as const
+
+export type MileageRateSubjectScalarFieldEnum = (typeof MileageRateSubjectScalarFieldEnum)[keyof typeof MileageRateSubjectScalarFieldEnum]
 
 
 export const CurrencyScalarFieldEnum = {

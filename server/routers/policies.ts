@@ -18,20 +18,25 @@
  * `config.policy.read`; writes on the per-resource update permission.
  *
  * Ported from ExpenseOS `apps/web/src/server/routers/policies.ts` (550b2945), one
- * sub-router at a time as its screen is ported: `fxRate` with /admin/fx-rates (w1-07).
+ * sub-router at a time as its screen is ported: `fxRate` with /admin/fx-rates (w1-07),
+ * `mileageRate` with /admin/mileage-rates (w1-08).
  * The others arrive with their screens (mileage and per-diem rates later in Wave 1; the
  * expense policy and custom fields with theirs). VeloExpense differences, marked below:
  * `fx_rate` is per tenant (0051, d18), so every read and write is the tenant's own; a
  * currency the system has no row for, or a pair quoted against itself, is answered
  * BAD_REQUEST rather than as a 500 from the table's foreign key or check; and the audit
- * row names the pair in its details rather than as the entity id.
+ * row names the pair in its details rather than as the entity id. For mileage: a person
+ * is one display name (VeloExpense's `app_user`), returned in ExpenseOS's first/last
+ * shape; another tenant's person, a GL account that is not the tenant's own postable
+ * one, or a negative rate is BAD_REQUEST rather than a 500 from the table; a rule that
+ * is not the tenant's is NOT_FOUND on delete; and the delete is audited.
  */
 
 import { auditActions, withAudit } from '@expenseos/audit';
 import { permissions as P } from '@expenseos/rbac';
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
-import { Prisma } from '@/lib/db/prisma';
+import { Prisma, type TenantDb } from '@/lib/db/prisma';
 import { REFUSAL_KEYS, refusal } from '@/server/refusal';
 import { router, withPermission } from '@/server/trpc';
 
@@ -119,6 +124,119 @@ async function assertPairKnown(
       code: 'BAD_REQUEST',
       message: `${base}→${quote}: both currencies must be ones the system knows.`,
     });
+  }
+}
+
+/** ExpenseOS's money-input coercion: a minor-unit amount as a string, number or bigint. */
+const requiredMinorInput = z.union([z.string(), z.number(), z.bigint()]).transform((v) => {
+  if (typeof v === 'bigint') return v;
+  return BigInt(typeof v === 'string' ? v : Math.round(v));
+});
+
+// ── MileageRate ──────────────────────────────────────────────────────
+
+/** VeloExpense: ExpenseOS's Prisma enum `MileageUnit`; text with a CHECK here (0052). */
+const MileageUnit = { KM: 'KM', MI: 'MI' } as const;
+
+const mileageRuleInput = z.object({
+  country: z
+    .string()
+    .length(2)
+    .regex(/^[A-Z]{2}$/, 'ISO-3166-1 alpha-2 (uppercase)'),
+  unit: z.enum(MileageUnit),
+  effectiveFrom: z.coerce.date(),
+  /** Where this rule's mileage posts; null falls back to the category's account. */
+  glAccountId: z.string().uuid().nullable().optional(),
+  /** Empty = the country default. Non-empty = a car allowance for those people. */
+  subjectUserIds: z.array(z.string().uuid()).max(500).default([]),
+  /** Bands, lowest bound first. Must start at 0; validated below. */
+  tiers: z
+    .array(
+      z.object({
+        fromDistance: z.number().nonnegative(),
+        // VeloExpense: never negative (0052's CHECK). A negative rate would make a
+        // mileage claim pay the company; ExpenseOS's screen refuses one, its router did not.
+        rateMinor: requiredMinorInput.refine((v) => v >= 0n, 'A rate cannot be negative.'),
+      }),
+    )
+    .min(1)
+    .max(20),
+});
+
+/**
+ * The rule in force for the same SCOPE as `input`, if any.
+ *
+ * Scope is "the country default" (no subjects) or "a car allowance covering
+ * person X". A country default and a car-allowance rule coexist by design — the
+ * specific one wins at pricing time — so only a same-scope collision counts.
+ *
+ * Returns every colliding rule, because a new car-allowance rule naming five
+ * people can collide with up to five existing ones.
+ */
+async function findScopeCollisions(
+  db: TenantDb,
+  input: { country: string; effectiveFrom: Date; subjectUserIds: string[] },
+): Promise<{ id: string; effectiveFrom: Date }[]> {
+  const stillInForce = {
+    country: input.country,
+    OR: [{ effectiveTo: null }, { effectiveTo: { gte: input.effectiveFrom } }],
+  };
+  return db.mileageRate.findMany({
+    where: {
+      ...stillInForce,
+      ...(input.subjectUserIds.length > 0
+        ? { subjects: { some: { userId: { in: input.subjectUserIds } } } }
+        : { subjects: { none: {} } }),
+    },
+    select: { id: true, effectiveFrom: true },
+  });
+}
+
+/** Tiers must start at 0 and have no duplicate bounds — the model can't express
+ *  a gap, but it can express a first band that doesn't start at zero, which
+ *  would leave the opening kilometres unpriced. */
+function assertTiersWellFormed(tiers: { fromDistance: number }[]): void {
+  const sorted = [...tiers].sort((a, b) => a.fromDistance - b.fromDistance);
+  if (sorted[0]?.fromDistance !== 0) {
+    throw new TRPCError({
+      code: 'BAD_REQUEST',
+      message: 'The first band must start at 0 — otherwise the opening distance has no rate.',
+    });
+  }
+  for (let i = 1; i < sorted.length; i += 1) {
+    if (sorted[i].fromDistance === sorted[i - 1].fromDistance) {
+      throw new TRPCError({
+        code: 'BAD_REQUEST',
+        message: `Two bands both start at ${sorted[i].fromDistance}.`,
+      });
+    }
+  }
+}
+
+/**
+ * VeloExpense: the people and the GL account a rule names must be the tenant's own, and
+ * the account postable. RLS hides another tenant's rows, so the composite foreign keys
+ * (0052) would refuse them — as a 500. This answers BAD_REQUEST first, saying which.
+ */
+async function assertMileageReferencesKnown(
+  db: TenantDb,
+  input: { subjectUserIds: string[]; glAccountId?: string | null },
+): Promise<void> {
+  const people = [...new Set(input.subjectUserIds)];
+  if (people.length > 0) {
+    const known = await db.user.count({ where: { id: { in: people } } });
+    if (known !== people.length) {
+      throw new TRPCError({ code: 'BAD_REQUEST', message: 'Someone on this rule is not a person in this organization.' });
+    }
+  }
+  if (input.glAccountId) {
+    const account = await db.glAccount.findUnique({
+      where: { id: input.glAccountId },
+      select: { isPostable: true, isActive: true },
+    });
+    if (!account || !account.isPostable || !account.isActive) {
+      throw new TRPCError({ code: 'BAD_REQUEST', message: 'That GL account cannot take postings.' });
+    }
   }
 }
 
@@ -258,6 +376,208 @@ export const policiesRouter = router({
             }),
         );
         return { ...row, rate: row.rate.toString() };
+      }),
+  }),
+  // ── MileageRate ────────────────────────────────────────────────
+  //
+  // Rules are always enforced: there is no draft or disabled state. Creating a
+  // rule SUPERSEDES whatever held the same scope, closing it in the same
+  // transaction. The only other way to end a rule is `retire`, for a country you
+  // have stopped operating in.
+  mileageRate: router({
+    list: withPermission(P.config.policyRead).query(async ({ ctx }) => {
+      const rows = await ctx.db.mileageRate.findMany({
+        orderBy: [{ country: 'asc' }, { effectiveFrom: 'desc' }],
+        include: {
+          tiers: { orderBy: { fromDistance: 'asc' } },
+          subjects: {
+            select: {
+              userId: true,
+              // VeloExpense: one display name, not firstName/lastName.
+              user: { select: { name: true, email: true } },
+            },
+          },
+        },
+      });
+      return rows.map((r) => ({
+        ...r,
+        tiers: r.tiers.map((t) => ({
+          id: t.id,
+          fromDistance: t.fromDistance.toString(),
+          rateMinor: t.rateMinor.toString(),
+        })),
+        // VeloExpense: ExpenseOS's subject shape, the display name as `firstName`, so the
+        // screen's `personName` reads it unchanged.
+        subjects: r.subjects.map((sub) => ({
+          userId: sub.userId,
+          user: { firstName: sub.user.name, lastName: null, email: sub.user.email },
+        })),
+      }));
+    }),
+
+    /**
+     * Create a rule, superseding whatever held the same scope.
+     *
+     * All of it in one transaction: the incumbent's `effectiveTo` is closed at
+     * the new rule's start and its succession pointer set, so there is never a
+     * moment with two rules in force for one scope, and never a gap either.
+     */
+    create: withPermission(P.config.mileageUpdate)
+      .input(mileageRuleInput)
+      .mutation(async ({ ctx, input }) => {
+        assertTiersWellFormed(input.tiers);
+        await assertMileageReferencesKnown(ctx.db, input); // VeloExpense: see the helper.
+        const collisions = await findScopeCollisions(ctx.db, input);
+        // A rule that starts before one it would supersede can't be slotted in —
+        // that's a rewrite of history, not a rate change.
+        const earlier = collisions.find((c) => c.effectiveFrom >= input.effectiveFrom);
+        if (earlier) {
+          throw new TRPCError({
+            code: 'BAD_REQUEST',
+            message:
+              'A rule for this scope already starts on or after that date. Supersede it with a later start instead.',
+          });
+        }
+
+        return withAudit(
+          ctx.db,
+          {
+            action: auditActions.config('mileageRate'),
+            entityType: 'MileageRate',
+            actor: {
+              kind: 'user',
+              id: ctx.rbac.id,
+              name: ctx.session.user.name ?? ctx.session.user.email,
+              roleLabel: ctx.rbac.roleLabel,
+            },
+            details: {
+              country: input.country,
+              subjects: input.subjectUserIds.length,
+              supersedes: collisions.map((c) => c.id),
+            },
+          },
+          async (tx) => {
+            const created = await tx.mileageRate.create({
+              data: {
+                country: input.country,
+                unit: input.unit,
+                effectiveFrom: input.effectiveFrom,
+                glAccountId: input.glAccountId ?? null,
+                createdBy: ctx.rbac.id,
+                tiers: {
+                  create: input.tiers.map((t) => ({
+                    fromDistance: t.fromDistance,
+                    rateMinor: BigInt(t.rateMinor),
+                  })),
+                },
+                subjects: { create: input.subjectUserIds.map((userId) => ({ userId })) },
+              },
+              select: { id: true },
+            });
+            for (const c of collisions) {
+              await tx.mileageRate.update({
+                where: { id: c.id },
+                data: { effectiveTo: input.effectiveFrom, supersededById: created.id },
+              });
+            }
+            return created;
+          },
+          (created) => created.id,
+        );
+      }),
+
+    /**
+     * Retire a rule with no successor — the country is no longer operated in.
+     * A claim there past the end date is then refused, which is the honest
+     * answer, rather than priced at zero.
+     */
+    retire: withPermission(P.config.mileageUpdate)
+      .input(z.object({ id: z.string().uuid(), effectiveTo: z.coerce.date() }))
+      .mutation(async ({ ctx, input }) => {
+        const rule = await ctx.db.mileageRate.findUnique({
+          where: { id: input.id },
+          select: { effectiveFrom: true, supersededById: true },
+        });
+        if (!rule) throw new TRPCError({ code: 'NOT_FOUND' });
+        if (rule.supersededById) {
+          throw new TRPCError({
+            code: 'BAD_REQUEST',
+            message: 'This rule was already superseded; retire its successor instead.',
+          });
+        }
+        if (input.effectiveTo < rule.effectiveFrom) {
+          throw new TRPCError({
+            code: 'BAD_REQUEST',
+            message: 'A rule cannot end before it starts.',
+          });
+        }
+        return withAudit(
+          ctx.db,
+          {
+            action: auditActions.config('mileageRate'),
+            entityType: 'MileageRate',
+            entityId: input.id,
+            actor: {
+              kind: 'user',
+              id: ctx.rbac.id,
+              name: ctx.session.user.name ?? ctx.session.user.email,
+              roleLabel: ctx.rbac.roleLabel,
+            },
+            details: { retiredAt: input.effectiveTo.toISOString() },
+          },
+          (tx) =>
+            tx.mileageRate.update({
+              where: { id: input.id },
+              data: { effectiveTo: input.effectiveTo },
+              select: { id: true },
+            }),
+        );
+      }),
+
+    /**
+     * Delete a rule outright. Only a rule nothing has been priced under — once a
+     * claim references it, the succession chain is the audit trail and deleting
+     * it would strand that claim's `mileageRateId`.
+     */
+    delete: withPermission(P.config.mileageUpdate)
+      .input(z.object({ id: z.string().uuid() }))
+      .mutation(async ({ ctx, input }) => {
+        const used = await ctx.db.expenseLineItem.count({ where: { mileageRateId: input.id } });
+        if (used > 0) {
+          throw new TRPCError({
+            code: 'BAD_REQUEST',
+            message: `${used} expense line(s) were priced with this rule. Supersede or retire it instead.`,
+          });
+        }
+        // VeloExpense: a rule that is not the tenant's (or no longer exists) is NOT_FOUND
+        // rather than Prisma's 500, and the delete is audited — ExpenseOS deletes without
+        // a row, so nobody could say who removed a rate.
+        const rule = await ctx.db.mileageRate.findUnique({
+          where: { id: input.id },
+          select: { country: true, effectiveFrom: true, effectiveTo: true },
+        });
+        if (!rule) throw new TRPCError({ code: 'NOT_FOUND' });
+        await withAudit(
+          ctx.db,
+          {
+            action: 'MILEAGE_RATE_DELETED',
+            entityType: 'MileageRate',
+            entityId: input.id,
+            actor: {
+              kind: 'user',
+              id: ctx.rbac.id,
+              name: ctx.session.user.name ?? ctx.session.user.email,
+              roleLabel: ctx.rbac.roleLabel,
+            },
+            details: {
+              country: rule.country,
+              effectiveFrom: rule.effectiveFrom.toISOString(),
+              effectiveTo: rule.effectiveTo?.toISOString() ?? null,
+            },
+          },
+          (tx) => tx.mileageRate.delete({ where: { id: input.id }, select: { id: true } }),
+        );
+        return { ok: true };
       }),
   }),
 });

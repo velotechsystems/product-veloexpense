@@ -99,6 +99,10 @@ export const EXPORTED: Readonly<Record<string, ExportedTable>> = {
   // Exchange rates (the Wave 1 FX port, 0051): per tenant since then, so the rates the
   // tenant converted at leave with the tenant.
   fx_rate: { file: 'fx-rates.csv' },
+  // Mileage rates (the Wave 1 port, 0052): the rules, their bands, and who each covers.
+  mileage_rate: { file: 'mileage-rates.csv' },
+  mileage_rate_tier: { file: 'mileage-rate-tiers.csv' },
+  mileage_rate_subject: { file: 'mileage-rate-subjects.csv' },
   legal_entity: { file: 'legal-entities.csv' },
   invite: {
     file: 'invites.csv',

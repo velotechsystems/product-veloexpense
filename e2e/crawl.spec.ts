@@ -82,6 +82,7 @@ const PAGES = [
   '/admin/job-levels',
   '/admin/fiscal-years',
   '/admin/fx-rates',
+  '/admin/mileage-rates',
 ] as const;
 
 /**

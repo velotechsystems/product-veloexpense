@@ -111,6 +111,7 @@ describe("an admin's menu", () => {
         '/admin/job-levels',
         '/admin/fiscal-years',
         '/admin/fx-rates',
+        '/admin/mileage-rates',
       ].sort(),
     );
   });
@@ -178,6 +179,7 @@ describe('isPortedScreen', () => {
       '/admin/job-levels',
       '/admin/fiscal-years',
       '/admin/fx-rates',
+      '/admin/mileage-rates',
     ]);
   });
 });

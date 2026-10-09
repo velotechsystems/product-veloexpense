@@ -92,6 +92,21 @@ export type LegalEntityExternalId = Prisma.LegalEntityExternalIdModel
  */
 export type FxRate = Prisma.FxRateModel
 /**
+ * Model MileageRate
+ * 
+ */
+export type MileageRate = Prisma.MileageRateModel
+/**
+ * Model MileageRateTier
+ * 
+ */
+export type MileageRateTier = Prisma.MileageRateTierModel
+/**
+ * Model MileageRateSubject
+ * 
+ */
+export type MileageRateSubject = Prisma.MileageRateSubjectModel
+/**
  * Model Currency
  * 
  */

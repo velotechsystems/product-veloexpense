@@ -153,6 +153,11 @@ export const AUDIT_ACTIONS = [
   /* FX rates — the Wave 1 port (ExpenseOS's `config.fxRate.update`). A rate is only
      ever added: the table is append-only and the newest per pair wins. */
   'FX_RATE_ADDED',
+  /* Mileage rates — the Wave 1 port (ExpenseOS's `config.mileageRate.update`, one action
+     for a new rule superseding the old and for a retirement). ExpenseOS does not audit a
+     delete; VeloExpense does (MILEAGE_RATE_DELETED). */
+  'MILEAGE_RATE_CHANGED',
+  'MILEAGE_RATE_DELETED',
   'MODULE_ENABLED',
   'MODULE_DISABLED',
   'USER_LOCALE_CHANGED',

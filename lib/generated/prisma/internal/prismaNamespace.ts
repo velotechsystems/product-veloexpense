@@ -394,6 +394,9 @@ export const ModelName = {
   LegalEntity: 'LegalEntity',
   LegalEntityExternalId: 'LegalEntityExternalId',
   FxRate: 'FxRate',
+  MileageRate: 'MileageRate',
+  MileageRateTier: 'MileageRateTier',
+  MileageRateSubject: 'MileageRateSubject',
   Currency: 'Currency',
   Department: 'Department',
   DepartmentExternalId: 'DepartmentExternalId',
@@ -416,7 +419,7 @@ export type TypeMap<ExtArgs extends runtime.Types.Extensions.InternalArgs = runt
     omit: GlobalOmitOptions
   }
   meta: {
-    modelProps: "expenseCategory" | "glAccount" | "expenseLineItem" | "user" | "businessUnit" | "externalIdSource" | "businessUnitExternalId" | "legalEntity" | "legalEntityExternalId" | "fxRate" | "currency" | "department" | "departmentExternalId" | "jobLevel" | "jobLevelExternalId" | "fiscalYear" | "fiscalYearExternalId"
+    modelProps: "expenseCategory" | "glAccount" | "expenseLineItem" | "user" | "businessUnit" | "externalIdSource" | "businessUnitExternalId" | "legalEntity" | "legalEntityExternalId" | "fxRate" | "mileageRate" | "mileageRateTier" | "mileageRateSubject" | "currency" | "department" | "departmentExternalId" | "jobLevel" | "jobLevelExternalId" | "fiscalYear" | "fiscalYearExternalId"
     txIsolationLevel: TransactionIsolationLevel
   }
   model: {
@@ -1160,6 +1163,228 @@ export type TypeMap<ExtArgs extends runtime.Types.Extensions.InternalArgs = runt
         }
       }
     }
+    MileageRate: {
+      payload: Prisma.$MileageRatePayload<ExtArgs>
+      fields: Prisma.MileageRateFieldRefs
+      operations: {
+        findUnique: {
+          args: Prisma.MileageRateFindUniqueArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$MileageRatePayload> | null
+        }
+        findUniqueOrThrow: {
+          args: Prisma.MileageRateFindUniqueOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$MileageRatePayload>
+        }
+        findFirst: {
+          args: Prisma.MileageRateFindFirstArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$MileageRatePayload> | null
+        }
+        findFirstOrThrow: {
+          args: Prisma.MileageRateFindFirstOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$MileageRatePayload>
+        }
+        findMany: {
+          args: Prisma.MileageRateFindManyArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$MileageRatePayload>[]
+        }
+        create: {
+          args: Prisma.MileageRateCreateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$MileageRatePayload>
+        }
+        createMany: {
+          args: Prisma.MileageRateCreateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        createManyAndReturn: {
+          args: Prisma.MileageRateCreateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$MileageRatePayload>[]
+        }
+        delete: {
+          args: Prisma.MileageRateDeleteArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$MileageRatePayload>
+        }
+        update: {
+          args: Prisma.MileageRateUpdateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$MileageRatePayload>
+        }
+        deleteMany: {
+          args: Prisma.MileageRateDeleteManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateMany: {
+          args: Prisma.MileageRateUpdateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateManyAndReturn: {
+          args: Prisma.MileageRateUpdateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$MileageRatePayload>[]
+        }
+        upsert: {
+          args: Prisma.MileageRateUpsertArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$MileageRatePayload>
+        }
+        aggregate: {
+          args: Prisma.MileageRateAggregateArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.AggregateMileageRate>
+        }
+        groupBy: {
+          args: Prisma.MileageRateGroupByArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.MileageRateGroupByOutputType>[]
+        }
+        count: {
+          args: Prisma.MileageRateCountArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.MileageRateCountAggregateOutputType> | number
+        }
+      }
+    }
+    MileageRateTier: {
+      payload: Prisma.$MileageRateTierPayload<ExtArgs>
+      fields: Prisma.MileageRateTierFieldRefs
+      operations: {
+        findUnique: {
+          args: Prisma.MileageRateTierFindUniqueArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$MileageRateTierPayload> | null
+        }
+        findUniqueOrThrow: {
+          args: Prisma.MileageRateTierFindUniqueOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$MileageRateTierPayload>
+        }
+        findFirst: {
+          args: Prisma.MileageRateTierFindFirstArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$MileageRateTierPayload> | null
+        }
+        findFirstOrThrow: {
+          args: Prisma.MileageRateTierFindFirstOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$MileageRateTierPayload>
+        }
+        findMany: {
+          args: Prisma.MileageRateTierFindManyArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$MileageRateTierPayload>[]
+        }
+        create: {
+          args: Prisma.MileageRateTierCreateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$MileageRateTierPayload>
+        }
+        createMany: {
+          args: Prisma.MileageRateTierCreateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        createManyAndReturn: {
+          args: Prisma.MileageRateTierCreateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$MileageRateTierPayload>[]
+        }
+        delete: {
+          args: Prisma.MileageRateTierDeleteArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$MileageRateTierPayload>
+        }
+        update: {
+          args: Prisma.MileageRateTierUpdateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$MileageRateTierPayload>
+        }
+        deleteMany: {
+          args: Prisma.MileageRateTierDeleteManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateMany: {
+          args: Prisma.MileageRateTierUpdateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateManyAndReturn: {
+          args: Prisma.MileageRateTierUpdateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$MileageRateTierPayload>[]
+        }
+        upsert: {
+          args: Prisma.MileageRateTierUpsertArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$MileageRateTierPayload>
+        }
+        aggregate: {
+          args: Prisma.MileageRateTierAggregateArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.AggregateMileageRateTier>
+        }
+        groupBy: {
+          args: Prisma.MileageRateTierGroupByArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.MileageRateTierGroupByOutputType>[]
+        }
+        count: {
+          args: Prisma.MileageRateTierCountArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.MileageRateTierCountAggregateOutputType> | number
+        }
+      }
+    }
+    MileageRateSubject: {
+      payload: Prisma.$MileageRateSubjectPayload<ExtArgs>
+      fields: Prisma.MileageRateSubjectFieldRefs
+      operations: {
+        findUnique: {
+          args: Prisma.MileageRateSubjectFindUniqueArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$MileageRateSubjectPayload> | null
+        }
+        findUniqueOrThrow: {
+          args: Prisma.MileageRateSubjectFindUniqueOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$MileageRateSubjectPayload>
+        }
+        findFirst: {
+          args: Prisma.MileageRateSubjectFindFirstArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$MileageRateSubjectPayload> | null
+        }
+        findFirstOrThrow: {
+          args: Prisma.MileageRateSubjectFindFirstOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$MileageRateSubjectPayload>
+        }
+        findMany: {
+          args: Prisma.MileageRateSubjectFindManyArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$MileageRateSubjectPayload>[]
+        }
+        create: {
+          args: Prisma.MileageRateSubjectCreateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$MileageRateSubjectPayload>
+        }
+        createMany: {
+          args: Prisma.MileageRateSubjectCreateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        createManyAndReturn: {
+          args: Prisma.MileageRateSubjectCreateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$MileageRateSubjectPayload>[]
+        }
+        delete: {
+          args: Prisma.MileageRateSubjectDeleteArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$MileageRateSubjectPayload>
+        }
+        update: {
+          args: Prisma.MileageRateSubjectUpdateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$MileageRateSubjectPayload>
+        }
+        deleteMany: {
+          args: Prisma.MileageRateSubjectDeleteManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateMany: {
+          args: Prisma.MileageRateSubjectUpdateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateManyAndReturn: {
+          args: Prisma.MileageRateSubjectUpdateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$MileageRateSubjectPayload>[]
+        }
+        upsert: {
+          args: Prisma.MileageRateSubjectUpsertArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$MileageRateSubjectPayload>
+        }
+        aggregate: {
+          args: Prisma.MileageRateSubjectAggregateArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.AggregateMileageRateSubject>
+        }
+        groupBy: {
+          args: Prisma.MileageRateSubjectGroupByArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.MileageRateSubjectGroupByOutputType>[]
+        }
+        count: {
+          args: Prisma.MileageRateSubjectCountArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.MileageRateSubjectCountAggregateOutputType> | number
+        }
+      }
+    }
     Currency: {
       payload: Prisma.$CurrencyPayload<ExtArgs>
       fields: Prisma.CurrencyFieldRefs
@@ -1758,7 +1983,8 @@ export type GlAccountScalarFieldEnum = (typeof GlAccountScalarFieldEnum)[keyof t
 export const ExpenseLineItemScalarFieldEnum = {
   id: 'id',
   organizationId: 'organizationId',
-  categoryId: 'categoryId'
+  categoryId: 'categoryId',
+  mileageRateId: 'mileageRateId'
 } as const
 
 export type ExpenseLineItemScalarFieldEnum = (typeof ExpenseLineItemScalarFieldEnum)[keyof typeof ExpenseLineItemScalarFieldEnum]
@@ -1862,6 +2088,43 @@ export const FxRateScalarFieldEnum = {
 } as const
 
 export type FxRateScalarFieldEnum = (typeof FxRateScalarFieldEnum)[keyof typeof FxRateScalarFieldEnum]
+
+
+export const MileageRateScalarFieldEnum = {
+  id: 'id',
+  organizationId: 'organizationId',
+  country: 'country',
+  unit: 'unit',
+  effectiveFrom: 'effectiveFrom',
+  effectiveTo: 'effectiveTo',
+  supersededById: 'supersededById',
+  glAccountId: 'glAccountId',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt',
+  createdBy: 'createdBy'
+} as const
+
+export type MileageRateScalarFieldEnum = (typeof MileageRateScalarFieldEnum)[keyof typeof MileageRateScalarFieldEnum]
+
+
+export const MileageRateTierScalarFieldEnum = {
+  id: 'id',
+  organizationId: 'organizationId',
+  rateId: 'rateId',
+  fromDistance: 'fromDistance',
+  rateMinor: 'rateMinor'
+} as const
+
+export type MileageRateTierScalarFieldEnum = (typeof MileageRateTierScalarFieldEnum)[keyof typeof MileageRateTierScalarFieldEnum]
+
+
+export const MileageRateSubjectScalarFieldEnum = {
+  organizationId: 'organizationId',
+  rateId: 'rateId',
+  userId: 'userId'
+} as const
+
+export type MileageRateSubjectScalarFieldEnum = (typeof MileageRateSubjectScalarFieldEnum)[keyof typeof MileageRateSubjectScalarFieldEnum]
 
 
 export const CurrencyScalarFieldEnum = {
@@ -2088,6 +2351,20 @@ export type ListDecimalFieldRefInput<$PrismaModel> = FieldRefInputType<$PrismaMo
 
 
 /**
+ * Reference to a field of type 'BigInt'
+ */
+export type BigIntFieldRefInput<$PrismaModel> = FieldRefInputType<$PrismaModel, 'BigInt'>
+    
+
+
+/**
+ * Reference to a field of type 'BigInt[]'
+ */
+export type ListBigIntFieldRefInput<$PrismaModel> = FieldRefInputType<$PrismaModel, 'BigInt[]'>
+    
+
+
+/**
  * Reference to a field of type 'Float'
  */
 export type FloatFieldRefInput<$PrismaModel> = FieldRefInputType<$PrismaModel, 'Float'>
@@ -2220,6 +2497,9 @@ export type GlobalOmitConfig = {
   legalEntity?: Prisma.LegalEntityOmit
   legalEntityExternalId?: Prisma.LegalEntityExternalIdOmit
   fxRate?: Prisma.FxRateOmit
+  mileageRate?: Prisma.MileageRateOmit
+  mileageRateTier?: Prisma.MileageRateTierOmit
+  mileageRateSubject?: Prisma.MileageRateSubjectOmit
   currency?: Prisma.CurrencyOmit
   department?: Prisma.DepartmentOmit
   departmentExternalId?: Prisma.DepartmentExternalIdOmit
