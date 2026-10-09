@@ -18,13 +18,20 @@
 # the app never runs (perl, util-linux, gcc-12 runtime libs, zlib). Alpine carries none
 # of perl or util-linux, and every stage is Alpine so npm installs the musl builds of
 # native packages (sharp) that the runner can load.
+#
+# PULLED FROM ECR PUBLIC, not Docker Hub (f15). `public.ecr.aws/docker/library/*` is
+# AWS's mirror of Docker's official images, the same images by the same tags. Docker
+# Hub's anonymous pull limit is per IP and GitHub's runners share IPs, so CI's image
+# build failed with 429 Too Many Requests on busy days (#174). The mirror's anonymous
+# limit is far higher and needs no credential, and the deploy build pulls from the
+# same place, so CI and dev build from one source.
 
-FROM node:24-alpine AS deps
+FROM public.ecr.aws/docker/library/node:24-alpine AS deps
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci --no-audit --no-fund
 
-FROM node:24-alpine AS builder
+FROM public.ecr.aws/docker/library/node:24-alpine AS builder
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
@@ -32,7 +39,7 @@ ENV NEXT_TELEMETRY_DISABLED=1
 ENV NODE_ENV=production
 RUN npm run build
 
-FROM node:24-alpine AS runner
+FROM public.ecr.aws/docker/library/node:24-alpine AS runner
 WORKDIR /app
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
