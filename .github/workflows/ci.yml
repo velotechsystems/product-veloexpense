@@ -46,7 +46,10 @@ jobs:
 
     services:
       postgres:
-        image: postgres:16
+        # ECR Public's mirror of the official image, not Docker Hub: the anonymous pull
+        # limit there is per IP, GitHub's runners share IPs, and this pull failed with 429
+        # on busy days (f15). Same image, same tag. See the note in the Dockerfile.
+        image: public.ecr.aws/docker/library/postgres:16
         env:
           POSTGRES_PASSWORD: velo
           POSTGRES_DB: veloexpense
