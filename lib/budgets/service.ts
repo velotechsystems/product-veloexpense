@@ -126,7 +126,7 @@ async function minorUnits(tx: QueryRunner): Promise<Record<string, number>> {
 }
 
 async function rateRows(tx: QueryRunner): Promise<RateRow[]> {
-  const r = await tx.query('SELECT base, quote, rate, as_of FROM fx_rate ORDER BY as_of DESC');
+  const r = await tx.query('SELECT base, quote, rate, as_of FROM fx_rate ORDER BY as_of DESC, fetched_at DESC');
   return r.rows as RateRow[];
 }
 

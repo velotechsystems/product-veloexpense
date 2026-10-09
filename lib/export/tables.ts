@@ -96,6 +96,9 @@ export const EXPORTED: Readonly<Record<string, ExportedTable>> = {
   job_level_external_id: { file: 'job-level-external-ids.csv' },
   fiscal_year: { file: 'fiscal-years.csv' },
   fiscal_year_external_id: { file: 'fiscal-year-external-ids.csv' },
+  // Exchange rates (the Wave 1 FX port, 0051): per tenant since then, so the rates the
+  // tenant converted at leave with the tenant.
+  fx_rate: { file: 'fx-rates.csv' },
   legal_entity: { file: 'legal-entities.csv' },
   invite: {
     file: 'invites.csv',

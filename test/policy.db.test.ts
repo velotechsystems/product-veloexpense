@@ -75,16 +75,18 @@ async function draftIn(currencyCode: string, amountMinor: number) {
 
 async function setRate(base: string, quote: string, rate: string, asOf = '2020-01-01') {
   await admin.query(
-    `INSERT INTO fx_rate (base, quote, rate, as_of, source) VALUES ($1,$2,$3,$4,'MANUAL')
-       ON CONFLICT (base, quote, as_of) DO UPDATE SET rate = EXCLUDED.rate`,
-    [base, quote, rate, asOf],
+    // Per tenant since 0051; `as_of` is derived from `fetched_at` (its UTC day).
+    `INSERT INTO fx_rate (organization_id, base, quote, rate, fetched_at, source)
+     VALUES ($5,$1,$2,$3,($4::date)::timestamp AT TIME ZONE 'UTC','MANUAL')
+       ON CONFLICT (organization_id, base, quote, fetched_at) DO UPDATE SET rate = EXCLUDED.rate`,
+    [base, quote, rate, asOf, orgId],
   );
 }
 
 beforeAll(async () => {
   await admin.query('TRUNCATE app_user, organization CASCADE');
-  // fx_rate is GLOBAL, so it survives the tenant truncate above and has to be
-  // cleared explicitly or one test's rate leaks into another's.
+  // fx_rate is per tenant since 0051, so the truncate above clears it; the explicit
+  // delete is kept from when it was global and survived that truncate.
   await admin.query('DELETE FROM fx_rate');
   const o = await admin.query(
     "INSERT INTO organization (slug, name) VALUES ('policy-co','Policy Co') RETURNING id",

@@ -151,8 +151,8 @@ beforeEach(async () => {
   // leaves behind is the next run's input" trap from §4's Playwright list, which
   // is not actually about Playwright.
   await admin.query('TRUNCATE expense_report CASCADE');
-  // `fx_rate` is GLOBAL — not tenant-scoped, so the truncate above leaves it —
-  // and the unconvertible-spend tests below assert on the ABSENCE of a rate.
+  // The unconvertible-spend tests below assert on the ABSENCE of a rate. (`fx_rate`
+  // was global until 0051, so the truncate above left it; it is per tenant now.)
   // `test/policy.db.test.ts` clears it the same way for the same reason.
   await admin.query('DELETE FROM fx_rate');
   // Amounts stay under the starter receipt threshold so submit is not blocked;

@@ -77,7 +77,8 @@ export function buildRateLookup(rows: RateRow[], onOrBefore?: string | Date): Ra
     const held = latest.get(key);
     // Strictly newer wins. Equal dates keep the first, which makes the result
     // depend on the query's ORDER BY rather than on Map iteration order — so
-    // `service.ts` orders by as_of DESC and this stays deterministic either way.
+    // `service.ts` orders by as_of DESC, fetched_at DESC, and the first of a day is
+    // that day's newest rate (0051: a pair can hold several in one day).
     if (!held || asOf > held.asOf) latest.set(key, { rate: row.rate, asOf });
   }
 

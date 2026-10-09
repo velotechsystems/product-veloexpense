@@ -359,9 +359,9 @@ const COA_TEMPLATE = 'na-expense-claims';
 /**
  * ONE fixed demo exchange rate (VX3-2).
  *
- * `fx_rate` is GLOBAL reference data and migration 0015 deliberately seeds none:
- * a plausible-looking rate in a global table is worse than an absent one, because
- * it is stale from the moment it is written and nothing says so. This is the
+ * Migration 0015 deliberately seeds no rate: a plausible-looking rate is worse than
+ * an absent one, because it is stale from the moment it is written and nothing says
+ * so. (Since 0051 `fx_rate` is per tenant, so this goes into each seeded tenant.) This is the
  * DEMO seed, so a fixed, obviously-round rate on a fixed date is the right thing —
  * it makes cross-currency policy checks work in the demo tenant and in the e2e,
  * and it is recognisable as a fixture rather than mistakable for market data.
@@ -438,14 +438,13 @@ async function seedReferenceData(orgId, entityName = 'Demo Co Inc.') {
          VALUES ($1, jsonb_build_object('en', 'General & Admin'))
          ON CONFLICT (organization_id, lower(btrim(label ->> 'en'))) DO NOTHING`, [orgId]);
     // ── One demo FX rate, and the tenant's policy currency ───────────────────
-    // Global table, so ON CONFLICT DO NOTHING rather than an update: two tenants
-    // seeded in one run must not fight over it, and a real rate loaded later must
-    // not be overwritten by this fixture.
+    // The tenant's own table since 0051 (`as_of` is derived from `fetched_at`, here
+    // 00:00 UTC on the fixture's date). ON CONFLICT DO NOTHING so a re-seed leaves it.
     await client.query(
-      `INSERT INTO fx_rate (base, quote, rate, as_of, source)
-         VALUES ($1, $2, $3, $4, 'SEED')
-         ON CONFLICT (base, quote, as_of) DO NOTHING`,
-      [DEMO_FX.base, DEMO_FX.quote, DEMO_FX.rate, DEMO_FX.asOf]);
+      `INSERT INTO fx_rate (organization_id, base, quote, rate, fetched_at, source)
+         VALUES ($1, $2, $3, $4, ($5::date)::timestamp AT TIME ZONE 'UTC', 'SEED')
+         ON CONFLICT (organization_id, base, quote, fetched_at) DO NOTHING`,
+      [orgId, DEMO_FX.base, DEMO_FX.quote, DEMO_FX.rate, DEMO_FX.asOf]);
     // CAD explicitly rather than by relying on the column default, so the seed
     // states the demo tenant's intent instead of inheriting it.
     await client.query(

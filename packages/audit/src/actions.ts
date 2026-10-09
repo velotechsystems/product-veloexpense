@@ -11,7 +11,7 @@
  */
 import type { AuditAction } from '@/lib/audit/actions';
 
-export const auditActions = {
+const adminAndOthers = {
   admin: {
     expenseCategoryCreate: 'EXPENSE_CATEGORY_CREATED',
     expenseCategoryUpdate: 'EXPENSE_CATEGORY_UPDATED',
@@ -37,3 +37,17 @@ export const auditActions = {
     fiscalYearDelete: 'FISCAL_YEAR_DELETED',
   },
 } as const satisfies Record<string, Record<string, AuditAction>>;
+
+/**
+ * ExpenseOS's `auditActions.config(configKey)` builds `config.<key>.update`. VeloExpense:
+ * the same call, answered from this map, so a key with no registry name is a compile
+ * error rather than a refused write.
+ */
+const CONFIG_ACTIONS = {
+  fxRate: 'FX_RATE_ADDED',
+} as const satisfies Record<string, AuditAction>;
+
+export const auditActions = {
+  ...adminAndOthers,
+  config: <K extends keyof typeof CONFIG_ACTIONS>(configKey: K) => CONFIG_ACTIONS[configKey],
+};

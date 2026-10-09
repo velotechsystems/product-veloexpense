@@ -239,6 +239,28 @@ model LegalEntityExternalId {
 // ExpenseOS's `Currency` has a uuid id, a localized label, a symbol and an active flag;
 // VeloExpense's row is the ISO code, an English name and the minor units. Only what the
 // ported code reads is described here.
+// ExpenseOS's `FxRate` (Wave 1), migration 0051. VeloExpense differences:
+//   · per tenant (`organization_id`, RLS, d18), so the key leads with the tenant;
+//   · `source` (MANUAL / SYNC / SEED, from 0015) and `created_at` are VeloExpense's;
+//   · `as_of`, the UTC day of `fetchedAt`, is a generated column VeloExpense's own SQL
+//     readers use. It is not described here: Prisma cannot write it, and ported code
+//     never reads it.
+model FxRate {
+  organizationId String   @default(dbgenerated("(NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid")) @map("organization_id") @db.Uuid
+  base           String
+  quote          String
+  /// Rate is `quote per 1 base` (e.g. base=USD, quote=CAD → "CAD per 1 USD").
+  rate           Decimal  @db.Decimal(18, 8)
+  fetchedAt      DateTime @default(now()) @map("fetched_at") @db.Timestamptz(6)
+  source         String   @default("MANUAL")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@id([organizationId, base, quote, fetchedAt])
+  @@index([organizationId, base, quote, fetchedAt(sort: Desc)], map: "fx_rate_pair_idx")
+  @@index([organizationId, fetchedAt], map: "fx_rate_fetched_at_idx")
+  @@map("fx_rate")
+}
+
 model Currency {
   code      String @id
   name      String

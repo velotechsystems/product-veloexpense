@@ -87,6 +87,11 @@ export type LegalEntity = Prisma.LegalEntityModel
  */
 export type LegalEntityExternalId = Prisma.LegalEntityExternalIdModel
 /**
+ * Model FxRate
+ * 
+ */
+export type FxRate = Prisma.FxRateModel
+/**
  * Model Currency
  * 
  */

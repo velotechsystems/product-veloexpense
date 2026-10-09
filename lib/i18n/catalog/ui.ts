@@ -211,6 +211,7 @@ export const UI_COPY = {
   'title.admin.departments': { 'en-CA': 'Departments' },
   'title.admin.job.levels': { 'en-CA': 'Job levels' },
   'title.admin.fiscal.years': { 'en-CA': 'Fiscal years' },
+  'title.admin.fx.rates': { 'en-CA': 'FX rates' },
   'title.admin.employees': { 'en-CA': 'Employees' },
   'title.admin.employees.invite': { 'en-CA': 'Invite someone' },
   // Fallback for the employee detail page, which titles itself by the person's

@@ -283,7 +283,7 @@ export async function spendSummary(tx: QueryRunner, range: SpendRange): Promise<
   const units: Record<string, number> = {};
   for (const row of unitRows.rows) units[row.code as string] = Number(row.minor_unit);
   const lookupFor = rateLookups(
-    (await tx.query('SELECT base, quote, rate, as_of FROM fx_rate ORDER BY as_of DESC'))
+    (await tx.query('SELECT base, quote, rate, as_of FROM fx_rate ORDER BY as_of DESC, fetched_at DESC'))
       .rows as RateRow[],
   );
 
