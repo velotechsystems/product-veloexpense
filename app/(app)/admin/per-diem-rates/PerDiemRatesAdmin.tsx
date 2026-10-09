@@ -514,7 +514,9 @@ function RateDrawer({
 
           {/* biome-ignore lint/a11y/noLabelWithoutControl: the control (Checkbox) is nested as children */}
           <label className="flex items-center gap-2 text-foreground text-sm">
+            {/* VeloExpense: named by aria-label — Base UI's checkbox is a span its <label> does not name (f10). */}
             <Checkbox
+              aria-label={t('field.firstLastDay')}
               checked={form.firstLastDay}
               onCheckedChange={(c) => set('firstLastDay', c === true)}
             />

@@ -594,8 +594,10 @@ describe('saving', () => {
     await openCreate(user);
     await user.type(screen.getByLabelText(/admin\.common\.labelEn/), 'FY2030');
     await user.type(screen.getByLabelText(/admin\.common\.labelFr/), 'AF2030');
-    await user.click(screen.getByLabelText(/admin\.fiscalYears\.currentFY/));
-    await user.click(screen.getByLabelText(/admin\.fiscalYears\.closed/));
+    // VeloExpense: by role — the checkbox now carries its own name (f10), so the label
+    // text matches both it and the hidden input the <label for> points at.
+    await user.click(screen.getByRole('checkbox', { name: /admin\.fiscalYears\.currentFY/ }));
+    await user.click(screen.getByRole('checkbox', { name: /admin\.fiscalYears\.closed/ }));
     await user.click(screen.getByRole('button', { name: 'admin.common.create' }));
     expect(onCall.mock.calls[0][0]).toMatchObject({ isCurrent: true, closed: true });
   });

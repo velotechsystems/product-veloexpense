@@ -83,6 +83,7 @@ import {
   lookupFields,
   rjsfToAdmin,
 } from './AdminLookupForm';
+import { useRefusalText } from '@/lib/trpc/refusal';
 import { ExternalIdsBlock, ExternalIdsCell } from './ExternalIds';
 import { type ExternalIdEntry, entriesFromMap, mapFromEntries } from './ExternalIdsEditor';
 
@@ -297,6 +298,7 @@ export function AdminLookupPage<Row extends BaseLookupRow, ColumnId extends stri
   const chromeLabels = useFilterChromeLabels();
   const tTable = useTranslations('table');
   const tc = useTranslations('admin.common');
+  const refusalText = useRefusalText(); // VeloExpense: see the two catch blocks below.
   const locale = useLocale() as Locale;
   const tableLabels = useTableLabels();
 
@@ -366,10 +368,13 @@ export function AdminLookupPage<Row extends BaseLookupRow, ColumnId extends stri
         // Reported where somebody will see it — above the table, since there is no drawer
         // open. Silently swallowing this left the row unchanged and the reader with no way
         // to tell a refusal from a mis-click.
-        setRowActionError(err instanceof Error ? err.message : String(err));
+        // VeloExpense: through `useRefusalText` (lib/trpc/refusal.ts) — a catalogued refusal
+        // in the reader's language, else the error's own sentence, else the generic one —
+        // never `String(err)` of whatever was thrown (check:i18n, flag f11).
+        setRowActionError(refusalText(err, tc('unknownError')));
       }
     },
-    [tc, locale, config.setActiveMutation, config.query],
+    [tc, locale, config.setActiveMutation, config.query, refusalText],
   );
 
   // Per-row metadata produced by the tree sorter: id → { depth,
@@ -713,9 +718,8 @@ export function AdminLookupPage<Row extends BaseLookupRow, ColumnId extends stri
       config.query.refetch();
       closeDrawer();
     } catch (err) {
-      setSaveError(
-        err instanceof Error ? err.message : tc('errorSave', { message: 'unknown error' }),
-      );
+      // VeloExpense: through `useRefusalText`, as the row action above (flag f11).
+      setSaveError(refusalText(err, tc('errorSave', { message: tc('unknownError') })));
     }
   };
 

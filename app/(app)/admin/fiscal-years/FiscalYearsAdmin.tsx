@@ -713,8 +713,11 @@ export function FiscalYearsAdmin({ canEdit }: { canEdit: boolean }) {
                   controlPosition="inline-leading"
                   description={tf('currentFYHelp')}
                 >
+                  {/* VeloExpense: named by aria-label — Base UI's checkbox is a span the
+                      field's <label for> does not name (f10). */}
                   <Checkbox
                     id="fy-isCurrent"
+                    aria-label={tf('currentFY')}
                     checked={form.isCurrent}
                     onCheckedChange={(v) => setForm({ ...form, isCurrent: v === true })}
                   />
@@ -725,8 +728,10 @@ export function FiscalYearsAdmin({ canEdit }: { canEdit: boolean }) {
                   controlPosition="inline-leading"
                   description={tf('closedHelp')}
                 >
+                  {/* VeloExpense: named by aria-label, as above (f10). */}
                   <Checkbox
                     id="fy-closed"
+                    aria-label={tf('closed')}
                     checked={form.closed}
                     onCheckedChange={(v) => setForm({ ...form, closed: v === true })}
                   />

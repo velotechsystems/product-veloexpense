@@ -770,7 +770,9 @@ export function ExpenseCategoriesAdmin({ canWrite }: { canWrite: boolean }) {
             </div>
             {/* biome-ignore lint/a11y/noLabelWithoutControl: Checkbox is the control (child) */}
             <label className="flex items-center gap-2 text-sm">
+              {/* VeloExpense: named by aria-label — Base UI's checkbox is a span its <label> does not name (f10). */}
               <Checkbox
+                aria-label={t('pstRecoverable')}
                 checked={form.pstRecoverable}
                 onCheckedChange={(v) => set('pstRecoverable', v === true)}
               />
@@ -778,7 +780,9 @@ export function ExpenseCategoriesAdmin({ canWrite }: { canWrite: boolean }) {
             </label>
             {/* biome-ignore lint/a11y/noLabelWithoutControl: Checkbox is the control (child) */}
             <label className="flex items-center gap-2 text-sm">
+              {/* VeloExpense: named by aria-label, as above (f10). */}
               <Checkbox
+                aria-label={t('requiresAttendees')}
                 checked={form.requiresAttendees}
                 onCheckedChange={(v) => set('requiresAttendees', v === true)}
               />
@@ -835,7 +839,12 @@ export function ExpenseCategoriesAdmin({ canWrite }: { canWrite: boolean }) {
             </div>
             {/* biome-ignore lint/a11y/noLabelWithoutControl: Checkbox is the control (child) */}
             <label className="flex items-center gap-2 text-sm">
-              <Checkbox checked={form.active} onCheckedChange={(v) => set('active', v === true)} />
+              {/* VeloExpense: named by aria-label, as above (f10). */}
+              <Checkbox
+                aria-label={tc('active')}
+                checked={form.active}
+                onCheckedChange={(v) => set('active', v === true)}
+              />
               {tc('active')}
             </label>
           </DrawerBody>
