@@ -395,7 +395,11 @@ export const ModelName = {
   LegalEntityExternalId: 'LegalEntityExternalId',
   Currency: 'Currency',
   Department: 'Department',
-  DepartmentExternalId: 'DepartmentExternalId'
+  DepartmentExternalId: 'DepartmentExternalId',
+  JobLevel: 'JobLevel',
+  JobLevelExternalId: 'JobLevelExternalId',
+  FiscalYear: 'FiscalYear',
+  FiscalYearExternalId: 'FiscalYearExternalId'
 } as const
 
 export type ModelName = (typeof ModelName)[keyof typeof ModelName]
@@ -411,7 +415,7 @@ export type TypeMap<ExtArgs extends runtime.Types.Extensions.InternalArgs = runt
     omit: GlobalOmitOptions
   }
   meta: {
-    modelProps: "expenseCategory" | "glAccount" | "expenseLineItem" | "user" | "businessUnit" | "externalIdSource" | "businessUnitExternalId" | "legalEntity" | "legalEntityExternalId" | "currency" | "department" | "departmentExternalId"
+    modelProps: "expenseCategory" | "glAccount" | "expenseLineItem" | "user" | "businessUnit" | "externalIdSource" | "businessUnitExternalId" | "legalEntity" | "legalEntityExternalId" | "currency" | "department" | "departmentExternalId" | "jobLevel" | "jobLevelExternalId" | "fiscalYear" | "fiscalYearExternalId"
     txIsolationLevel: TransactionIsolationLevel
   }
   model: {
@@ -1303,6 +1307,302 @@ export type TypeMap<ExtArgs extends runtime.Types.Extensions.InternalArgs = runt
         }
       }
     }
+    JobLevel: {
+      payload: Prisma.$JobLevelPayload<ExtArgs>
+      fields: Prisma.JobLevelFieldRefs
+      operations: {
+        findUnique: {
+          args: Prisma.JobLevelFindUniqueArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$JobLevelPayload> | null
+        }
+        findUniqueOrThrow: {
+          args: Prisma.JobLevelFindUniqueOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$JobLevelPayload>
+        }
+        findFirst: {
+          args: Prisma.JobLevelFindFirstArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$JobLevelPayload> | null
+        }
+        findFirstOrThrow: {
+          args: Prisma.JobLevelFindFirstOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$JobLevelPayload>
+        }
+        findMany: {
+          args: Prisma.JobLevelFindManyArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$JobLevelPayload>[]
+        }
+        create: {
+          args: Prisma.JobLevelCreateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$JobLevelPayload>
+        }
+        createMany: {
+          args: Prisma.JobLevelCreateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        createManyAndReturn: {
+          args: Prisma.JobLevelCreateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$JobLevelPayload>[]
+        }
+        delete: {
+          args: Prisma.JobLevelDeleteArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$JobLevelPayload>
+        }
+        update: {
+          args: Prisma.JobLevelUpdateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$JobLevelPayload>
+        }
+        deleteMany: {
+          args: Prisma.JobLevelDeleteManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateMany: {
+          args: Prisma.JobLevelUpdateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateManyAndReturn: {
+          args: Prisma.JobLevelUpdateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$JobLevelPayload>[]
+        }
+        upsert: {
+          args: Prisma.JobLevelUpsertArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$JobLevelPayload>
+        }
+        aggregate: {
+          args: Prisma.JobLevelAggregateArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.AggregateJobLevel>
+        }
+        groupBy: {
+          args: Prisma.JobLevelGroupByArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.JobLevelGroupByOutputType>[]
+        }
+        count: {
+          args: Prisma.JobLevelCountArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.JobLevelCountAggregateOutputType> | number
+        }
+      }
+    }
+    JobLevelExternalId: {
+      payload: Prisma.$JobLevelExternalIdPayload<ExtArgs>
+      fields: Prisma.JobLevelExternalIdFieldRefs
+      operations: {
+        findUnique: {
+          args: Prisma.JobLevelExternalIdFindUniqueArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$JobLevelExternalIdPayload> | null
+        }
+        findUniqueOrThrow: {
+          args: Prisma.JobLevelExternalIdFindUniqueOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$JobLevelExternalIdPayload>
+        }
+        findFirst: {
+          args: Prisma.JobLevelExternalIdFindFirstArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$JobLevelExternalIdPayload> | null
+        }
+        findFirstOrThrow: {
+          args: Prisma.JobLevelExternalIdFindFirstOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$JobLevelExternalIdPayload>
+        }
+        findMany: {
+          args: Prisma.JobLevelExternalIdFindManyArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$JobLevelExternalIdPayload>[]
+        }
+        create: {
+          args: Prisma.JobLevelExternalIdCreateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$JobLevelExternalIdPayload>
+        }
+        createMany: {
+          args: Prisma.JobLevelExternalIdCreateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        createManyAndReturn: {
+          args: Prisma.JobLevelExternalIdCreateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$JobLevelExternalIdPayload>[]
+        }
+        delete: {
+          args: Prisma.JobLevelExternalIdDeleteArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$JobLevelExternalIdPayload>
+        }
+        update: {
+          args: Prisma.JobLevelExternalIdUpdateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$JobLevelExternalIdPayload>
+        }
+        deleteMany: {
+          args: Prisma.JobLevelExternalIdDeleteManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateMany: {
+          args: Prisma.JobLevelExternalIdUpdateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateManyAndReturn: {
+          args: Prisma.JobLevelExternalIdUpdateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$JobLevelExternalIdPayload>[]
+        }
+        upsert: {
+          args: Prisma.JobLevelExternalIdUpsertArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$JobLevelExternalIdPayload>
+        }
+        aggregate: {
+          args: Prisma.JobLevelExternalIdAggregateArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.AggregateJobLevelExternalId>
+        }
+        groupBy: {
+          args: Prisma.JobLevelExternalIdGroupByArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.JobLevelExternalIdGroupByOutputType>[]
+        }
+        count: {
+          args: Prisma.JobLevelExternalIdCountArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.JobLevelExternalIdCountAggregateOutputType> | number
+        }
+      }
+    }
+    FiscalYear: {
+      payload: Prisma.$FiscalYearPayload<ExtArgs>
+      fields: Prisma.FiscalYearFieldRefs
+      operations: {
+        findUnique: {
+          args: Prisma.FiscalYearFindUniqueArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$FiscalYearPayload> | null
+        }
+        findUniqueOrThrow: {
+          args: Prisma.FiscalYearFindUniqueOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$FiscalYearPayload>
+        }
+        findFirst: {
+          args: Prisma.FiscalYearFindFirstArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$FiscalYearPayload> | null
+        }
+        findFirstOrThrow: {
+          args: Prisma.FiscalYearFindFirstOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$FiscalYearPayload>
+        }
+        findMany: {
+          args: Prisma.FiscalYearFindManyArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$FiscalYearPayload>[]
+        }
+        create: {
+          args: Prisma.FiscalYearCreateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$FiscalYearPayload>
+        }
+        createMany: {
+          args: Prisma.FiscalYearCreateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        createManyAndReturn: {
+          args: Prisma.FiscalYearCreateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$FiscalYearPayload>[]
+        }
+        delete: {
+          args: Prisma.FiscalYearDeleteArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$FiscalYearPayload>
+        }
+        update: {
+          args: Prisma.FiscalYearUpdateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$FiscalYearPayload>
+        }
+        deleteMany: {
+          args: Prisma.FiscalYearDeleteManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateMany: {
+          args: Prisma.FiscalYearUpdateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateManyAndReturn: {
+          args: Prisma.FiscalYearUpdateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$FiscalYearPayload>[]
+        }
+        upsert: {
+          args: Prisma.FiscalYearUpsertArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$FiscalYearPayload>
+        }
+        aggregate: {
+          args: Prisma.FiscalYearAggregateArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.AggregateFiscalYear>
+        }
+        groupBy: {
+          args: Prisma.FiscalYearGroupByArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.FiscalYearGroupByOutputType>[]
+        }
+        count: {
+          args: Prisma.FiscalYearCountArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.FiscalYearCountAggregateOutputType> | number
+        }
+      }
+    }
+    FiscalYearExternalId: {
+      payload: Prisma.$FiscalYearExternalIdPayload<ExtArgs>
+      fields: Prisma.FiscalYearExternalIdFieldRefs
+      operations: {
+        findUnique: {
+          args: Prisma.FiscalYearExternalIdFindUniqueArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$FiscalYearExternalIdPayload> | null
+        }
+        findUniqueOrThrow: {
+          args: Prisma.FiscalYearExternalIdFindUniqueOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$FiscalYearExternalIdPayload>
+        }
+        findFirst: {
+          args: Prisma.FiscalYearExternalIdFindFirstArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$FiscalYearExternalIdPayload> | null
+        }
+        findFirstOrThrow: {
+          args: Prisma.FiscalYearExternalIdFindFirstOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$FiscalYearExternalIdPayload>
+        }
+        findMany: {
+          args: Prisma.FiscalYearExternalIdFindManyArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$FiscalYearExternalIdPayload>[]
+        }
+        create: {
+          args: Prisma.FiscalYearExternalIdCreateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$FiscalYearExternalIdPayload>
+        }
+        createMany: {
+          args: Prisma.FiscalYearExternalIdCreateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        createManyAndReturn: {
+          args: Prisma.FiscalYearExternalIdCreateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$FiscalYearExternalIdPayload>[]
+        }
+        delete: {
+          args: Prisma.FiscalYearExternalIdDeleteArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$FiscalYearExternalIdPayload>
+        }
+        update: {
+          args: Prisma.FiscalYearExternalIdUpdateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$FiscalYearExternalIdPayload>
+        }
+        deleteMany: {
+          args: Prisma.FiscalYearExternalIdDeleteManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateMany: {
+          args: Prisma.FiscalYearExternalIdUpdateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateManyAndReturn: {
+          args: Prisma.FiscalYearExternalIdUpdateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$FiscalYearExternalIdPayload>[]
+        }
+        upsert: {
+          args: Prisma.FiscalYearExternalIdUpsertArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$FiscalYearExternalIdPayload>
+        }
+        aggregate: {
+          args: Prisma.FiscalYearExternalIdAggregateArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.AggregateFiscalYearExternalId>
+        }
+        groupBy: {
+          args: Prisma.FiscalYearExternalIdGroupByArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.FiscalYearExternalIdGroupByOutputType>[]
+        }
+        count: {
+          args: Prisma.FiscalYearExternalIdCountArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.FiscalYearExternalIdCountAggregateOutputType> | number
+        }
+      }
+    }
   }
 } & {
   other: {
@@ -1399,6 +1699,7 @@ export const UserScalarFieldEnum = {
   departmentId: 'departmentId',
   businessUnitId: 'businessUnitId',
   legalEntityId: 'legalEntityId',
+  jobLevelId: 'jobLevelId',
   deletedAt: 'deletedAt',
   createdAt: 'createdAt',
   updatedAt: 'updatedAt'
@@ -1509,6 +1810,62 @@ export const DepartmentExternalIdScalarFieldEnum = {
 } as const
 
 export type DepartmentExternalIdScalarFieldEnum = (typeof DepartmentExternalIdScalarFieldEnum)[keyof typeof DepartmentExternalIdScalarFieldEnum]
+
+
+export const JobLevelScalarFieldEnum = {
+  id: 'id',
+  organizationId: 'organizationId',
+  code: 'code',
+  track: 'track',
+  label: 'label',
+  sortOrder: 'sortOrder',
+  active: 'active',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+} as const
+
+export type JobLevelScalarFieldEnum = (typeof JobLevelScalarFieldEnum)[keyof typeof JobLevelScalarFieldEnum]
+
+
+export const JobLevelExternalIdScalarFieldEnum = {
+  id: 'id',
+  organizationId: 'organizationId',
+  sourceId: 'sourceId',
+  sourceValue: 'sourceValue',
+  jobLevelId: 'jobLevelId',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+} as const
+
+export type JobLevelExternalIdScalarFieldEnum = (typeof JobLevelExternalIdScalarFieldEnum)[keyof typeof JobLevelExternalIdScalarFieldEnum]
+
+
+export const FiscalYearScalarFieldEnum = {
+  id: 'id',
+  organizationId: 'organizationId',
+  label: 'label',
+  startDate: 'startDate',
+  endDate: 'endDate',
+  isCurrent: 'isCurrent',
+  closed: 'closed',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+} as const
+
+export type FiscalYearScalarFieldEnum = (typeof FiscalYearScalarFieldEnum)[keyof typeof FiscalYearScalarFieldEnum]
+
+
+export const FiscalYearExternalIdScalarFieldEnum = {
+  id: 'id',
+  organizationId: 'organizationId',
+  sourceId: 'sourceId',
+  sourceValue: 'sourceValue',
+  fiscalYearId: 'fiscalYearId',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+} as const
+
+export type FiscalYearExternalIdScalarFieldEnum = (typeof FiscalYearExternalIdScalarFieldEnum)[keyof typeof FiscalYearExternalIdScalarFieldEnum]
 
 
 export const SortOrder = {
@@ -1763,6 +2120,10 @@ export type GlobalOmitConfig = {
   currency?: Prisma.CurrencyOmit
   department?: Prisma.DepartmentOmit
   departmentExternalId?: Prisma.DepartmentExternalIdOmit
+  jobLevel?: Prisma.JobLevelOmit
+  jobLevelExternalId?: Prisma.JobLevelExternalIdOmit
+  fiscalYear?: Prisma.FiscalYearOmit
+  fiscalYearExternalId?: Prisma.FiscalYearExternalIdOmit
 }
 
 /* Types for Logging */

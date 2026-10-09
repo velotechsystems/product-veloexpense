@@ -117,6 +117,8 @@ model User {
   departmentId   String?   @map("department_id") @db.Uuid
   businessUnitId String?   @map("business_unit_id") @db.Uuid
   legalEntityId  String?   @map("legal_entity_id") @db.Uuid
+  /// ExpenseOS's `jobLevelId` (migration 0050). Nothing assigns it yet.
+  jobLevelId     String?   @map("job_level_id") @db.Uuid
   deletedAt      DateTime? @map("deleted_at") @db.Timestamptz(6)
   createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt      DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
@@ -160,6 +162,8 @@ model ExternalIdSource {
   businessUnitAliases BusinessUnitExternalId[]
   legalEntityAliases  LegalEntityExternalId[]
   departmentAliases   DepartmentExternalId[]
+  jobLevelAliases     JobLevelExternalId[]
+  fiscalYearAliases   FiscalYearExternalId[]
 
   @@unique([organizationId, code])
   @@unique([organizationId, id])
@@ -285,4 +289,79 @@ model DepartmentExternalId {
   @@unique([sourceId, sourceValue])
   @@index([departmentId])
   @@map("department_external_id")
+}
+
+// ExpenseOS's `JobLevel` (Wave 1, migration 0050): the approval-tier ladder. VeloExpense
+// differences: `track` is text with a CHECK (ExpenseOS's `JobLevelTrack` enum values),
+// and `code` is unique per tenant, not globally.
+model JobLevel {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String   @default(dbgenerated("(NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid")) @map("organization_id") @db.Uuid
+  code           String
+  /// INDIVIDUAL_CONTRIBUTOR | MANAGER | EXECUTIVE | BOARD (a CHECK in the table).
+  track          String
+  label          Json
+  sortOrder      Int      @map("sort_order")
+  active         Boolean  @default(true)
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  externalIds JobLevelExternalId[]
+
+  @@unique([organizationId, code])
+  @@unique([organizationId, id])
+  @@map("job_level")
+}
+
+model JobLevelExternalId {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String   @default(dbgenerated("(NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid")) @map("organization_id") @db.Uuid
+  sourceId       String   @map("source_id") @db.Uuid
+  sourceValue    String   @map("source_value")
+  jobLevelId     String   @map("job_level_id") @db.Uuid
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  source   ExternalIdSource @relation(fields: [organizationId, sourceId], references: [organizationId, id], onDelete: Cascade)
+  jobLevel JobLevel         @relation(fields: [organizationId, jobLevelId], references: [organizationId, id], onDelete: Cascade)
+
+  @@unique([sourceId, sourceValue])
+  @@index([jobLevelId])
+  @@map("job_level_external_id")
+}
+
+// ExpenseOS's `FiscalYear` (Wave 1, migration 0050). VeloExpense: the dates are
+// `date` columns; at most one year per tenant is current (a partial unique index).
+model FiscalYear {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String   @default(dbgenerated("(NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid")) @map("organization_id") @db.Uuid
+  label          Json
+  startDate      DateTime @map("start_date") @db.Date
+  endDate        DateTime @map("end_date") @db.Date
+  isCurrent      Boolean  @default(false) @map("is_current")
+  closed         Boolean  @default(false)
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  externalIds FiscalYearExternalId[]
+
+  @@unique([organizationId, id])
+  @@map("fiscal_year")
+}
+
+model FiscalYearExternalId {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String   @default(dbgenerated("(NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid")) @map("organization_id") @db.Uuid
+  sourceId       String   @map("source_id") @db.Uuid
+  sourceValue    String   @map("source_value")
+  fiscalYearId   String   @map("fiscal_year_id") @db.Uuid
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  source     ExternalIdSource @relation(fields: [organizationId, sourceId], references: [organizationId, id], onDelete: Cascade)
+  fiscalYear FiscalYear       @relation(fields: [organizationId, fiscalYearId], references: [organizationId, id], onDelete: Cascade)
+
+  @@unique([sourceId, sourceValue])
+  @@index([fiscalYearId])
+  @@map("fiscal_year_external_id")
 }

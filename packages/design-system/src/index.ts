@@ -120,6 +120,7 @@ export {
 export { EmojiPicker, type EmojiPickerProps } from '@/components/ui/emoji-picker';
 export { Input } from '@/components/ui/input';
 export { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+export { Radio, RadioGroup } from '@/components/ui/radio';
 export {
   Select,
   SelectContent,

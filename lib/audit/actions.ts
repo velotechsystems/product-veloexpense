@@ -141,6 +141,15 @@ export const AUDIT_ACTIONS = [
   'DEPARTMENT_CREATED',
   'DEPARTMENT_UPDATED',
   'DEPARTMENT_DEACTIVATED',
+  /* Job levels and fiscal years — the Wave 1 port (ExpenseOS's admin.jobLevel.* and
+     admin.fiscalYear.*). Both are deleted outright, as in ExpenseOS. */
+  'JOB_LEVEL_CREATED',
+  'JOB_LEVEL_UPDATED',
+  'JOB_LEVEL_DELETED',
+  'FISCAL_YEAR_CREATED',
+  'FISCAL_YEAR_UPDATED',
+  'FISCAL_YEAR_SET_CURRENT',
+  'FISCAL_YEAR_DELETED',
   'MODULE_ENABLED',
   'MODULE_DISABLED',
   'USER_LOCALE_CHANGED',

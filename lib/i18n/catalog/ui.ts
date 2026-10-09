@@ -209,6 +209,8 @@ export const UI_COPY = {
   'title.admin.chart.of.accounts': { 'en-CA': 'Chart of accounts' },
   'title.admin.compliance': { 'en-CA': 'Compliance' },
   'title.admin.departments': { 'en-CA': 'Departments' },
+  'title.admin.job.levels': { 'en-CA': 'Job levels' },
+  'title.admin.fiscal.years': { 'en-CA': 'Fiscal years' },
   'title.admin.employees': { 'en-CA': 'Employees' },
   'title.admin.employees.invite': { 'en-CA': 'Invite someone' },
   // Fallback for the employee detail page, which titles itself by the person's

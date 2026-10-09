@@ -101,3 +101,23 @@ export type Department = Prisma.DepartmentModel
  * 
  */
 export type DepartmentExternalId = Prisma.DepartmentExternalIdModel
+/**
+ * Model JobLevel
+ * 
+ */
+export type JobLevel = Prisma.JobLevelModel
+/**
+ * Model JobLevelExternalId
+ * 
+ */
+export type JobLevelExternalId = Prisma.JobLevelExternalIdModel
+/**
+ * Model FiscalYear
+ * 
+ */
+export type FiscalYear = Prisma.FiscalYearModel
+/**
+ * Model FiscalYearExternalId
+ * 
+ */
+export type FiscalYearExternalId = Prisma.FiscalYearExternalIdModel

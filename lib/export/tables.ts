@@ -91,6 +91,11 @@ export const EXPORTED: Readonly<Record<string, ExportedTable>> = {
   business_unit_external_id: { file: 'business-unit-external-ids.csv' },
   legal_entity_external_id: { file: 'legal-entity-external-ids.csv' },
   department_external_id: { file: 'department-external-ids.csv' },
+  // Job levels and fiscal years (the Wave 1 port), with their External IDs.
+  job_level: { file: 'job-levels.csv' },
+  job_level_external_id: { file: 'job-level-external-ids.csv' },
+  fiscal_year: { file: 'fiscal-years.csv' },
+  fiscal_year_external_id: { file: 'fiscal-year-external-ids.csv' },
   legal_entity: { file: 'legal-entities.csv' },
   invite: {
     file: 'invites.csv',

@@ -8,6 +8,7 @@
     "addRow": "Ajouter une ligne",
     "audit": "Audit",
     "bothLabelsRequired": "Les libellés en anglais et en français sont obligatoires.",
+    "labelEnRequired": "Un libellé en anglais est obligatoire.",
     "cancel": "Annuler",
     "code": "Code",
     "confirmDeactivate": "Désactiver « {name} » ? Il sera masqué des sélecteurs, mais les références historiques resteront.",

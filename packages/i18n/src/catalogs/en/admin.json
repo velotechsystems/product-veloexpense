@@ -8,6 +8,7 @@
     "addRow": "Add row",
     "audit": "Audit",
     "bothLabelsRequired": "Both English and French labels are required.",
+    "labelEnRequired": "An English label is required.",
     "cancel": "Cancel",
     "code": "Code",
     "confirmDeactivate": "Deactivate \"{name}\"? It will be hidden from pickers but historical references remain.",

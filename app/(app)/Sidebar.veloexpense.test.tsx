@@ -108,6 +108,8 @@ describe("an admin's menu", () => {
         '/admin/business-units',
         '/admin/legal-entities',
         '/admin/departments',
+        '/admin/job-levels',
+        '/admin/fiscal-years',
       ].sort(),
     );
   });
@@ -172,6 +174,8 @@ describe('isPortedScreen', () => {
       '/admin/business-units',
       '/admin/legal-entities',
       '/admin/departments',
+      '/admin/job-levels',
+      '/admin/fiscal-years',
     ]);
   });
 });
