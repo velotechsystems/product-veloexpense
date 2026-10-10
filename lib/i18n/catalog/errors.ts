@@ -62,6 +62,9 @@ export const USER_MESSAGE_CODES = [
   /* VX4-11: an expense with no transaction date. */
   'SUBMIT_UNDATED_ONE',
   'SUBMIT_UNDATED_MANY',
+  /* w2-11 (d34): a policy warning nobody has justified. */
+  'SUBMIT_UNJUSTIFIED_WARNING_ONE',
+  'SUBMIT_UNJUSTIFIED_WARNING_MANY',
 
   /* VX5-1: creating an organization. VX5-2: getting there. */
   'SIGNUP_EMAIL',
@@ -464,6 +467,19 @@ export const ERROR_COPY: Record<UserMessageCode, Copy> = {
       'was sent to, or ask for a new invitation.',
   },
 
+  // w2-11 (d34). ExpenseOS's rule, in the same one-code-per-branch shape as
+  // BLOCKED_BY_POLICY below, and with no count for the same reason: the policy panel lists
+  // every warning that still needs a note.
+  SUBMIT_UNJUSTIFIED_WARNING_ONE: {
+    'en-CA':
+      'One policy warning needs a justification before this report can be submitted. Add a ' +
+      'note explaining the exception, or an explanation on the expense.',
+  },
+  SUBMIT_UNJUSTIFIED_WARNING_MANY: {
+    'en-CA':
+      'Policy warnings need a justification before this report can be submitted. Add a note ' +
+      'explaining each exception, or an explanation on the expense.',
+  },
   BLOCKED_BY_POLICY_ONE: {
     'en-CA': 'One blocking policy violation has to be fixed before this report can be submitted.',
   },
@@ -503,7 +519,8 @@ export const ERROR_COPY: Record<UserMessageCode, Copy> = {
       'change the plan from the billing settings.',
   },
   REPORT_NOT_SUBMITTABLE: {
-    'en-CA': 'Only a draft can be submitted, and this report is not one any more.',
+    // w2-11: a RETURNED report is submittable too (d26, ExpenseOS's rule).
+    'en-CA': 'Only a draft or a returned report can be submitted, and this report is neither.',
   },
   REPORT_NOT_RECALLABLE: {
     'en-CA': 'Only a submitted or returned report can be recalled.',

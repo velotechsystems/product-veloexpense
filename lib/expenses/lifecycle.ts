@@ -44,6 +44,8 @@ export type LifecycleErrorCode =
   | 'UNDATED'
   | 'UNCODED'
   | 'BLOCKED_BY_POLICY'
+  /** w2-11 (d34): a WARNING nobody has justified — ExpenseOS's `unjustifiedWarning` gate. */
+  | 'UNJUSTIFIED_WARNING'
   | 'FORBIDDEN';
 
 export class LifecycleError extends DomainError {
@@ -82,6 +84,15 @@ export interface ReportEvent {
 
 /** Which statuses a recall may return to DRAFT from. */
 const RECALLABLE: ReportStatus[] = ['SUBMITTED', 'RETURNED'];
+
+/**
+ * Which statuses may be submitted. w2-11: RETURNED as well as DRAFT — ExpenseOS's
+ * `EDITABLE_REPORT_STATUSES`, and the rule d26 already applied to editing. A report an
+ * approver sent back is edited where it stands and resubmitted, as in ExpenseOS; before
+ * w2-11 it had to be recalled to DRAFT first. The returned run has already ended
+ * (`decide` closes it), so `openRun` below opens a fresh one, as it does after a recall.
+ */
+const SUBMITTABLE: ReportStatus[] = ['DRAFT', 'RETURNED'];
 
 /**
  * The report's head. `lock: true` for a TRANSITION (submit, recall): the row is
@@ -154,9 +165,9 @@ export async function submitReport(
   await assertTenantMayWrite(tx, 'submit a report');
 
   const report = await requireReport(tx, reportId, true);
-  if (report.status !== 'DRAFT') {
+  if (!SUBMITTABLE.includes(report.status)) {
     throw new LifecycleError(
-      `report ${report.number ?? reportId} is ${report.status}; only a DRAFT can be submitted`,
+      `report ${report.number ?? reportId} is ${report.status}; only a DRAFT or RETURNED report can be submitted`,
       'WRONG_STATUS',
       [],
       'REPORT_NOT_SUBMITTABLE',
@@ -269,6 +280,25 @@ export async function submitReport(
     );
   }
 
+  // w2-11 (d34): ExpenseOS's other half of the policy gate. A WARNING propagates to the
+  // approver only once the submitter has said why — "a warning is submittable only once
+  // the submitter attaches a comment over the exception". Until w2-11 VeloExpense let it
+  // through unexplained. After the BLOCK check, so a report with both is told about the
+  // one that cannot be talked past first.
+  if (validation.unjustifiedWarning > 0) {
+    const unjustified = validation.violations.filter(
+      (v) => v.severity === 'WARNING' && v.resolved_at === null,
+    );
+    throw new LifecycleError(
+      unjustified.length === 1
+        ? 'One policy warning needs a justification before this report can be submitted.'
+        : `${unjustified.length} policy warnings need a justification before this report can be submitted.`,
+      'UNJUSTIFIED_WARNING',
+      unjustified,
+      unjustified.length === 1 ? 'SUBMIT_UNJUSTIFIED_WARNING_ONE' : 'SUBMIT_UNJUSTIFIED_WARNING_MANY',
+    );
+  }
+
   // VX4-5: STAMP the submitter's department onto the report, in the same statement
   // that submits it. `department_id` lives on `app_user`, so a budget rollup could
   // join through the submitter instead — and then a transfer would rewrite a closed
@@ -295,7 +325,7 @@ export async function submitReport(
             department_id =
               (SELECT department_id FROM app_user WHERE id = expense_report.submitter_id),
             updated_at = now()
-      WHERE id = $1 AND status = 'DRAFT'
+      WHERE id = $1 AND status IN ('DRAFT', 'RETURNED')
       RETURNING id, number, status, submitted_at, department_id`,
     [reportId],
   );
@@ -303,7 +333,7 @@ export async function submitReport(
   // refuses on its own even for a caller that reached it without the lock.
   if (updated.rowCount !== 1) {
     throw new LifecycleError(
-      `report ${report.number ?? reportId} is no longer a DRAFT; it was not submitted`,
+      `report ${report.number ?? reportId} is no longer a DRAFT or RETURNED; it was not submitted`,
       'WRONG_STATUS',
       [],
       'REPORT_NOT_SUBMITTABLE',
@@ -325,7 +355,8 @@ export async function submitReport(
   await recordEvent(tx, {
     reportId,
     action: 'SUBMIT',
-    fromStatus: 'DRAFT',
+    // w2-11: a resubmitted RETURNED report records where it really came from.
+    fromStatus: report.status,
     toStatus: 'SUBMITTED',
     actorId,
     context: {
@@ -740,9 +771,11 @@ export async function getSubmitReadiness(tx: QueryRunner, reportId: string) {
   );
   const validation = await policy.getValidation(tx, reportId);
   const reasons: string[] = [];
-  if (report.status !== 'DRAFT') reasons.push(`the report is ${report.status}`);
+  if (!SUBMITTABLE.includes(report.status)) reasons.push(`the report is ${report.status}`);
   if (lines.rows[0].count === 0) reasons.push('it has no line items');
   if (validation.blocking) reasons.push('it has blocking policy violations');
+  // w2-11 (d34).
+  if (validation.unjustifiedWarning > 0) reasons.push('it has policy warnings with no justification');
   return {
     canSubmit: reasons.length === 0,
     canRecall: RECALLABLE.includes(report.status),

@@ -234,6 +234,17 @@ test('an over-budget report warns without blocking, and the alert reaches the ow
     0,
   );
 
+  // w2-11 (d34): a WARNING goes to the approver once the submitter has said why —
+  // ExpenseOS's rule. So the overage is justified here, as a submitter would, before the
+  // submit; "warns without blocking" still holds, because a justification gets it through
+  // where a BLOCK never can.
+  await warning
+    .filter({ hasText: BUDGET })
+    .getByRole('textbox')
+    .fill('Team lunch, agreed with the budget owner');
+  await warning.filter({ hasText: BUDGET }).getByRole('button', { name: 'Acknowledge' }).click();
+  await expect(warning.filter({ hasText: BUDGET })).toHaveCount(0);
+
   await page.getByRole('button', { name: 'Submit for approval' }).click();
   await expect(page.getByTestId('report-status')).toHaveText(status('SUBMITTED'));
 

@@ -16,11 +16,11 @@ import { createTenantHarness, type TenantHarness } from '../__test-helpers__/ten
  * is VeloExpense's (`createTenantHarness`: the suite's own tenant, people, categories and
  * mileage category, every call under RLS). One adaptation runs through it: a person
  * carries business unit and department; VeloExpense has no class.
- * Not ported here, and where they go: "re-validating a report" (`validate`, with the
- * policy port), the NETSUITE defaults (VeloExpense has no NetSuite position),
- * `mileagePreview` (w2-10, where a traveller gets a country), the two submit cases
- * (`submit`, w2-11), and "a receipt still being read holds the submit" (extraction, Wave 3,
- * with `submit`).
+ * w2-11 brings "re-validating a report" (`validate`, on VeloExpense's policy pass) and
+ * "blocks submit when a line was lowered under tax entered earlier" (`submit`).
+ * Not ported here, and where they go: the NETSUITE defaults (VeloExpense has no NetSuite
+ * position), `mileagePreview` (w2-10, where a traveller gets a country), and "a receipt
+ * still being read holds the submit" (extraction, Wave 3).
  */
 
 vi.mock('@/auth', () => ({ auth: vi.fn(async () => null) }));
@@ -386,6 +386,46 @@ describe.skipIf(!process.env.DATABASE_URL)('expenses report-editor (integration)
     });
   });
 
+  it('re-validating a report does not accumulate violation rows', async () => {
+    /**
+     * The GA readiness report recorded "genuine duplicates" in the Policy Violations
+     * table — `PER_TXN_LIMIT ×4` on one report — and read them as the engine appending on
+     * every re-evaluation (F11).
+     *
+     * It does not. `validateReport` deletes every violation for the report and re-inserts
+     * inside one transaction, so the write is idempotent however many times it runs. What
+     * the table actually shows is ONE ROW PER LINE ITEM under the same rule, rendered
+     * without a column that distinguishes them and under a raw enum name — which is
+     * indistinguishable from duplication when you are looking at it.
+     *
+     * Pinned here so nobody "fixes" a duplication bug that would need a
+     * `NULLS NOT DISTINCT` unique across five nullable anchors to express, and would not
+     * be a fix.
+     *
+     * VeloExpense: VeloExpense's pass reconciles rather than deleting and re-inserting, and
+     * `policy_violation_identity_idx` makes a duplicate impossible; the claim is the same.
+     * The rows are counted with SQL (no Prisma model).
+     */
+    const count = async () =>
+      Number(
+        (
+          await h.admin.query(
+            'SELECT count(*)::int AS n FROM policy_violation WHERE report_id = $1',
+            [reportId],
+          )
+        ).rows[0].n,
+      );
+    const caller = makeCaller(RW, ownerId);
+    await caller.validate({ reportId });
+    const after1 = await count();
+    await caller.validate({ reportId });
+    const after2 = await count();
+    expect(after2).toBe(after1);
+    // A third pass, in case the first re-run happened to be a no-op.
+    await caller.validate({ reportId });
+    expect(await count()).toBe(after1);
+  });
+
   it('a stranger cannot read or edit the report', async () => {
     const stranger = makeCaller(RW, strangerId);
     await expect(stranger.report({ reportId })).rejects.toThrow();
@@ -596,6 +636,42 @@ describe.skipIf(!process.env.DATABASE_URL)('expenses report-editor (integration)
         select: { taxGstHstMinor: true, taxSource: true },
       });
       expect(row).toEqual({ taxGstHstMinor: 500n, taxSource: 'MANUAL' });
+
+      await db.expenseReport.delete({ where: { id: report.id } }).catch(() => {});
+    });
+
+    it('blocks submit when a line was lowered under tax entered earlier', async () => {
+      // The other order: tax first, then the amount edited down. Entry-time bounds
+      // cannot see it; the submitted figure is the one that posts.
+      const caller = makeCaller(RW, ownerId);
+      const report = await caller.create({ title: 'Tax bound at submit', currency: 'CAD' });
+      const { id: eid } = await caller.createExpense({ reportId: report.id });
+      const line = await caller.lineItemCreate({
+        expenseId: eid,
+        categoryId,
+        amountMinor: '11398',
+      });
+      await caller.expenseTaxUpdate({
+        expenseId: eid,
+        taxSource: 'MANUAL',
+        taxGstHstMinor: '5000',
+      });
+      await caller.lineItemUpdate({ id: line.id, amountMinor: '1000' });
+
+      const refused = await caller.submit({ reportId: report.id }).catch((e: unknown) => e);
+      expect(refused).toMatchObject({
+        message: expect.stringMatching(/Tax of 50.00 CAD exceeds the expense amount of 10.00 CAD/),
+      });
+      // At report level the sentence names the expense; a fresh one has no merchant yet.
+      expect(refusalData(refused)).toEqual({
+        key: REFUSAL_KEYS.taxExceedsAmount,
+        params: { tax: '50.00 CAD', amount: '10.00 CAD' },
+      });
+      const after = await db.expenseReport.findUniqueOrThrow({
+        where: { id: report.id },
+        select: { status: true },
+      });
+      expect(after.status).toBe('DRAFT');
 
       await db.expenseReport.delete({ where: { id: report.id } }).catch(() => {});
     });

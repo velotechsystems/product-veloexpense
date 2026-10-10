@@ -13,11 +13,12 @@
  *   · w2-04 — the attendee picker's search, `attendeeDirectory` (the roster itself is
  *     written by `updateExpense`, w2-08b);
  *   · w2-09 — receipts: `startFromReceipts`, `addReceiptExpenses`, `receiptUploadUrl`,
- *     `receiptCreate`, `receiptList`, `receiptMove`, `receiptRemove`.
+ *     `receiptCreate`, `receiptList`, `receiptMove`, `receiptRemove`;
+ *   · w2-11 — the report's lifecycle: `validate`, `justifyViolation`, `submit`, `recall`.
  *
- * The rest of ExpenseOS's router (`startExtraction`, the grouping and statement procedures —
- * extraction, Wave 3 — `explainPerDiem`, `submit`, `recall`) arrives with the slices after,
- * in ExpenseOS's order and words.
+ * The rest of ExpenseOS's router (`startExtraction`, `markExtractionReviewed`, the grouping
+ * and statement procedures — extraction, Wave 3 — and `explainPerDiem`) arrives with the
+ * slices after, in ExpenseOS's order and words.
  *
  * VeloExpense adaptations are marked `VeloExpense:` where they are made. The shared ones:
  *   · a currency is keyed by its ISO code (`currencyId` holds the code, as `homeCurrencyId`
@@ -39,6 +40,9 @@
  *   · a RETURNED report is editable, as in ExpenseOS (d26);
  *   · a new expense counts against the plan's yearly expense cap, checked on the same
  *     transaction (`assertExpenseAllowance` through `queryRunnerOf`);
+ *   · submit and recall keep ExpenseOS's checks and hand the transition to VeloExpense's
+ *     lifecycle (d23, `server/lib/reportLifecycle.ts`), and the policy pass is VeloExpense's
+ *     (`runPolicy`) with ExpenseOS's justification rule (d34);
  *   · corrections are not yet recorded against a determination (`noteOverrides` is a
  *     no-op until extraction, Wave 3), and a mileage line cannot be priced until a
  *     traveller has a country (w2-10).
@@ -61,6 +65,7 @@ import {
   glAccountIdForCategory,
   Prisma,
   recomputeReportTotal,
+  reportRollupFor,
   resolveExpenseFx,
   resolveIntakeCurrencyId,
 } from '@expenseos/db';
@@ -75,6 +80,12 @@ import { queryRunnerOf } from '@/lib/db/prisma-pg-bridge';
 import { getStorage } from '@/lib/storage';
 import { receiptKey, receiptPrefix } from '@/lib/storage/keys';
 import { RECEIPT_CAP_BYTES } from '@/lib/storage/limits';
+import {
+  acknowledgeViolation,
+  clearAcknowledgement,
+  type ValidationSummary,
+  validateReport as validateReportPolicy,
+} from '@/lib/policy/service';
 import { currencySymbol } from '@/server/lib/currencySymbol';
 import { explainExpenseTax, resolveExpenseTax } from '@/server/lib/expenseTax';
 import { summarizeExtractionProgress } from '@/server/lib/extractionInFlight';
@@ -94,6 +105,7 @@ import {
 } from '@/server/lib/readerCurrency';
 import { callerCanDecideReport } from '@/server/lib/reportApproval';
 import { reportUrl } from '@/server/lib/reportLinks';
+import { recallThroughLifecycle, submitThroughLifecycle } from '@/server/lib/reportLifecycle';
 import { REFUSAL_KEYS, type RefusalKey, refusal } from '@/server/refusal';
 import { protectedProcedure, router, withPermission } from '@/server/trpc';
 
@@ -932,6 +944,36 @@ async function reportViolations(db: TenantDb, reportId: string) {
 }
 
 /**
+ * VeloExpense: ExpenseOS's `validateReport` result — `{ violations, counts }`, with its
+ * `unjustifiedWarning` — from VeloExpense's policy pass (`lib/policy/service.ts`), which
+ * stays VeloExpense's until the policy engine is ported. Each finding in ExpenseOS's
+ * `Violation` shape.
+ */
+function validationResultOf(summary: ValidationSummary) {
+  return {
+    violations: summary.violations.map((v) => ({
+      ruleCode: v.rule_code as string,
+      severity: v.severity,
+      message: v.message,
+      lineItemId: v.line_item_id,
+      data: v.data,
+    })),
+    counts: {
+      info: summary.counts.INFO,
+      warning: summary.counts.WARNING,
+      block: summary.counts.BLOCK,
+      unjustifiedWarning: summary.unjustifiedWarning,
+    },
+  };
+}
+
+/** VeloExpense: ExpenseOS's `validateReport({ db, reportId, … })`, on VeloExpense's policy
+ *  pass in the procedure's own transaction. */
+async function runPolicy(db: TenantDb, reportId: string) {
+  return validationResultOf(await validateReportPolicy(queryRunnerOf(db), reportId));
+}
+
+/**
  * VeloExpense: the report's ledger-posting state — what ExpenseOS's `netsuiteState`
  * answers off its NetSuite sync row, read off VeloExpense's vendor-neutral
  * `integration_post`, in the vocabulary of `POSTED_SYNC_STATUSES` (a claimed PENDING row
@@ -1499,6 +1541,259 @@ export const expensesRouter = router({
       const storage = getStorage();
       await Promise.all(receipts.map((r) => storage.delete(r.s3Key).catch(() => undefined)));
       return { ok: true as const };
+    }),
+
+  /** Run the policy engine for the given report. Idempotent —
+   *  rewrites the `PolicyViolation` rows for the report wholesale
+   *  on each call. Front-end calls this on debounced edits to
+   *  power the inline warnings panel.
+   *
+   *  VeloExpense: VeloExpense's policy pass (`runPolicy`), which reconciles the stored
+   *  findings rather than rewriting them, until the policy engine is ported. */
+  validate: withPermission(P.expense.report.readOwn)
+    .input(z.object({ reportId: z.string().uuid() }))
+    .mutation(async ({ ctx, input }) => {
+      // Guard: only the submitter (or an approver, but Phase 2 has
+      // no approver-side editor yet) can validate their report.
+      const report = await ctx.db.expenseReport.findUnique({
+        where: { id: input.reportId },
+        select: { submitterId: true },
+      });
+      if (!report || report.submitterId !== ctx.session.user.id) {
+        throw new TRPCError({ code: 'NOT_FOUND' });
+      }
+      return runPolicy(ctx.db, input.reportId);
+    }),
+
+  /** Attach a justification comment to a WARNING/INFO policy violation on the
+   *  submitter's own report — the "exception comment" that unblocks submit. A
+   *  BLOCK is never justifiable (it must be fixed); a blank note clears the
+   *  justification. Owner-gated (the submitter, mirroring `validate`).
+   *
+   *  VeloExpense: written through VeloExpense's acknowledgement (`acknowledgeViolation` /
+   *  `clearAcknowledgement`), which records who and when as ExpenseOS's update does; the
+   *  row comes back in the shape `report` lists violations in. */
+  justifyViolation: withPermission(P.expense.report.updateOwn)
+    .input(
+      z.object({ violationId: z.string().uuid(), note: z.string().trim().max(2000).nullish() }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      // VeloExpense: no Prisma model for `policy_violation`; read with SQL.
+      const rows = await ctx.db.$queryRaw<
+        Array<{ id: string; severity: string; reportId: string | null; submitterId: string | null }>
+      >`
+        SELECT v.id, v.severity::text AS severity, v.report_id AS "reportId",
+               r.submitter_id AS "submitterId"
+          FROM policy_violation v
+          LEFT JOIN expense_report r ON r.id = v.report_id
+         WHERE v.id = ${input.violationId}::uuid`;
+      const v = rows[0];
+      // `report` is null on a TRAVEL violation — those go through
+      // `travelRequests.justifyViolation`, which gates on the travel submitter. Reading
+      // it as not-found rather than crashing is what keeps the two subjects from
+      // reaching into each other's justification flow.
+      if (!v?.reportId || v.submitterId !== ctx.session.user.id) {
+        throw new TRPCError({ code: 'NOT_FOUND' });
+      }
+      if (v.severity === 'BLOCK') {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'A blocking violation must be fixed, not justified.',
+        });
+      }
+      const note = input.note?.trim() ? input.note.trim() : null;
+      const tx = queryRunnerOf(ctx.db);
+      if (note) await acknowledgeViolation(tx, input.violationId, ctx.session.user.id, note);
+      else await clearAcknowledgement(tx, input.violationId);
+      const after = await reportViolations(ctx.db, v.reportId);
+      return after.find((row) => row.id === input.violationId) ?? null;
+    }),
+
+  // VeloExpense: ExpenseOS's `markExtractionReviewed` signs off a receipt's reading, which
+  // arrives with extraction (Wave 3).
+
+  /** Submit a draft report. Always re-runs validation server-side
+   *  and refuses on any BLOCK violation. The submit-gate decision
+   *  is intentionally server-only — FE checks are advisory.
+   *
+   *  VeloExpense: ExpenseOS's checks, in its order and words, then the TRANSITION through
+   *  VeloExpense's lifecycle (d23, `submitThroughLifecycle`) in place of `startInstance` and
+   *  the hooks after it — the lifecycle re-runs the policy pass under a lock, routes the
+   *  report on VeloExpense's approval engine, notifies the approvers and writes the audit
+   *  chain. Its own gates stand behind these: a lapsed subscription, and an expense with no
+   *  date (VX4-11). */
+  submit: withPermission(P.expense.report.createOwn)
+    .input(z.object({ reportId: z.string().uuid() }))
+    .mutation(async ({ ctx, input }) => {
+      const report = await ctx.db.expenseReport.findUnique({
+        where: { id: input.reportId },
+        select: { submitterId: true, status: true, totalMinor: true },
+      });
+      if (!report || report.submitterId !== ctx.session.user.id) {
+        throw new TRPCError({ code: 'NOT_FOUND' });
+      }
+      if (!EDITABLE_REPORT_STATUSES.includes(report.status)) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'Only DRAFT or returned reports can be submitted.',
+        });
+      }
+      // A report can't be submitted with no expenses on it — there's nothing
+      // to approve or reimburse. The FE also disables submit, but enforce it
+      // here so a crafted call can't bypass it.
+      const expenseCount = await ctx.db.expense.count({
+        where: { reportId: input.reportId },
+      });
+      if (expenseCount === 0) {
+        throw new TRPCError({
+          code: 'PRECONDITION_FAILED',
+          message: 'Add at least one expense before submitting.',
+        });
+      }
+      // VeloExpense: ExpenseOS waits here for every receipt still being read
+      // (`reportExtractionProgress`). Nothing is read until extraction arrives (Wave 3), which
+      // brings the wait with it.
+      /**
+       * Refuse a report carrying a line that cannot be valued in the report currency.
+       *
+       * `buildReportRollup` deliberately EXCLUDES an unconvertible currency rather than
+       * adding it in the wrong units, which is the right arithmetic and was the wrong
+       * outcome: nothing stopped the report being submitted, so an approver saw a total
+       * that silently omitted the excluded lines. On EXP-000009 that was CAD 911.66 of
+       * a USD 2,871.46 claim — roughly 23% — disclosed only in a hover tooltip.
+       *
+       * Derived reciprocals (`fxRateMapFrom`) mean this now fires only when a pair is
+       * quoted in NEITHER direction, which is a genuine data gap an admin must fill.
+       * The check sits before the policy pass so the blocking reason is the honest one.
+       *
+       * FIRST, and ahead of the zero-total check below, because it explains a total that
+       * only LOOKS like zero: a report whose every line is unconvertible rolls up to a
+       * home total of 0, and "this report totals zero" would be a true sentence about a
+       * misleading number. The missing rate is the reason, so it is what gets said.
+       */
+      const rollup = await reportRollupFor(ctx.db, input.reportId);
+      if (rollup && rollup.missingRates.length > 0) {
+        throw new TRPCError({
+          code: 'PRECONDITION_FAILED',
+          message:
+            `No exchange rate to ${rollup.homeCurrency} for ` +
+            `${rollup.missingRates.join(', ')}. Those amounts would be left out of the ` +
+            `report total, so it cannot be submitted until a rate exists.`,
+        });
+      }
+      /**
+       * No expense may carry more paid tax than its gross. `expenseTaxUpdate` refuses
+       * the entry itself; this catches the other order — tax entered first, the line
+       * lowered afterwards — because a submitted figure is the one that posts, and a
+       * negative net line is not something an approver can see in the total.
+       */
+      const overTaxed = await ctx.db.expense.findMany({
+        where: { reportId: input.reportId, taxSource: { not: ExpenseTaxSource.CALCULATED } },
+        select: {
+          merchant: true,
+          amountMinor: true,
+          taxGstHstMinor: true,
+          taxQstMinor: true,
+          taxPstMinor: true,
+          currency: { select: { code: true } },
+        },
+      });
+      for (const e of overTaxed) {
+        const paid = (e.taxGstHstMinor ?? 0n) + (e.taxQstMinor ?? 0n) + (e.taxPstMinor ?? 0n);
+        if (paid > e.amountMinor) {
+          throw taxExceedsAmountRefusal(
+            'PRECONDITION_FAILED',
+            paid,
+            e.amountMinor,
+            e.currency.code,
+            e.merchant,
+          );
+        }
+      }
+      /**
+       * …and it can't be submitted for nothing either.
+       *
+       * The count check above passes on a report holding ONE blank expense, which is all
+       * it takes: adding an expense and typing nothing enabled Submit at $0.00, and the
+       * report went the whole way. EXP-000006 "test 2" sits on DEV at $0.00 with status
+       * Approved — a workflow ran and somebody signed off a claim for nothing (GA
+       * readiness report F08 / blocker B10).
+       *
+       * `totalMinor` is maintained by `recomputeReportTotal` after every line-item write,
+       * so it is current here without recomputing. Reading it costs one extra column on a
+       * query that was already being made.
+       */
+      if (report.totalMinor <= 0n) {
+        throw new TRPCError({
+          code: 'PRECONDITION_FAILED',
+          message: 'This report totals zero. Add an amount to an expense before submitting.',
+        });
+      }
+      // VeloExpense: ExpenseOS refuses here a report NetSuite could never accept
+      // (`reportMissingCoding`, only when NetSuite is installed). VeloExpense's equivalent is
+      // the lifecycle's own coding gate (UD-2): only when a ledger is connected, it refuses a
+      // category with no GL account, before its policy pass.
+      const result = await runPolicy(ctx.db, input.reportId);
+      if (result.counts.block > 0 || result.counts.unjustifiedWarning > 0) {
+        // Blocked by either a hard BLOCK or a WARNING the submitter hasn't
+        // justified yet. Surface the violation list + counts so the FE can
+        // render the specific blockers / warnings-needing-a-comment — the
+        // TRPCError carries it via `cause`.
+        throw new TRPCError({
+          code: 'PRECONDITION_FAILED',
+          message: 'Report has unresolved policy violations.',
+          cause: result,
+        });
+      }
+      // VeloExpense: the transition, on VeloExpense's lifecycle (d23) — see the doc comment.
+      await submitThroughLifecycle(ctx.db, input.reportId, ctx.rbac.id);
+      const row = await ctx.db.expenseReport.findUniqueOrThrow({ where: { id: input.reportId } });
+      return {
+        report: { ...row, totalMinor: row.totalMinor.toString() },
+        violations: result.violations,
+        counts: result.counts,
+      };
+    }),
+
+  /**
+   * Recall (withdraw) a submitted report before any decision. Submitter-only;
+   * cancels the in-flight approval instance + its pending tasks and puts the report
+   * back to DRAFT.
+   *
+   * DRAFT, not RETURNED — which is what this did, and it made the button lie. The
+   * control is labelled "Recall to draft" and the report came back saying
+   * "Returned", a word that in this product means an APPROVER sent it back for
+   * fixes. A submitter who withdrew their own report was told somebody had
+   * rejected it, and the two cases need different words because they call for
+   * different reactions.
+   *
+   * Nothing is lost by the change: `EDITABLE_STATUSES` treats DRAFT and RETURNED
+   * identically, so the report is editable and resubmittable either way, and the
+   * distinct `RECALLED` activity type already records who did it.
+   *
+   * VeloExpense: the cancel goes through VeloExpense's lifecycle (d23,
+   * `recallThroughLifecycle`), which cancels the running approval and its pending tasks,
+   * notifies those approvers (RECALLED), recomputes the budgets and writes the audit chain.
+   */
+  recall: withPermission(P.expense.report.createOwn)
+    .input(z.object({ reportId: z.string().uuid() }))
+    .mutation(async ({ ctx, input }) => {
+      const report = await ctx.db.expenseReport.findUnique({
+        where: { id: input.reportId },
+        select: { id: true, submitterId: true, status: true },
+      });
+      if (!report || report.submitterId !== ctx.session.user.id) {
+        throw new TRPCError({ code: 'NOT_FOUND' });
+      }
+      if (report.status !== ExpenseReportStatus.SUBMITTED) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'Only a submitted report can be recalled.',
+        });
+      }
+      // VeloExpense: the transition, on VeloExpense's lifecycle (d23) — see the doc comment.
+      const updated = await recallThroughLifecycle(ctx.db, report.id, ctx.rbac.id);
+      return { id: updated.id as string, status: updated.status as ExpenseReportStatus };
     }),
 
   categories: withPermission(P.expense.report.readOwn).query(async ({ ctx }) => {

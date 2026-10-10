@@ -28,10 +28,11 @@ import { makeContext } from '../__test-helpers__/trpcCaller';
  * expense, line and tax procedures — the ownership, editability, manual-tax and input
  * blocks; w2-08c: `report` — the read-access block, with the approvals mock; w2-03:
  * `dimensionOptions` in the permission gates; w2-09: the receipt procedures — the receipt
- * upload and removal blocks, with VeloExpense's storage mocked). Each later
- * slice brings the blocks for the procedures it ports — the submit, justification and
- * recall blocks — and the mocks they need (jobs, policy). The harness below is ExpenseOS's, less those mocks;
- * `@/auth` is VeloExpense's session module.
+ * upload and removal blocks, with VeloExpense's storage mocked; w2-11: `submit`,
+ * `justifyViolation` and `recall` — the submit cases in the report-level block, and the
+ * justification and recall blocks, with VeloExpense's policy pass and lifecycle adapter
+ * mocked). The harness below is ExpenseOS's, less the mocks for what is not ported (jobs,
+ * the approval engine, NetSuite); `@/auth` is VeloExpense's session module.
  */
 
 const withAuditCalls: Array<Record<string, unknown>> = [];
@@ -52,6 +53,44 @@ vi.mock('@/lib/tenant/request', () => ({ hostTenantSlug: async () => null }));
 
 const callerCanDecideReport = stubFn(async () => false);
 vi.mock('@/server/lib/reportApproval', () => ({ callerCanDecideReport }));
+
+/**
+ * The step `submit` takes before the policy pass. Stubbed as ExpenseOS stubs it: the rollup
+ * is arithmetic with its own tests.
+ */
+vi.mock('@expenseos/db', async (importOriginal) => {
+  const actual = (await importOriginal()) as Record<string, unknown>;
+  return {
+    ...actual,
+    reportRollupFor: vi.fn(async () => ({ homeCurrency: 'CAD', missingRates: [] })),
+  };
+});
+
+/**
+ * VeloExpense: w2-11. VeloExpense's policy pass in place of ExpenseOS's
+ * `@/server/policy/validate`, and the lifecycle adapter (d23) in place of its approval
+ * engine and the notify / post / effects hooks. Both have their own database-backed suites;
+ * here they are the boundary the guards stop at.
+ */
+const policyPass = vi.fn(async () => ({
+  violations: [] as unknown[],
+  counts: { INFO: 0, WARNING: 0, BLOCK: 0 },
+  blocking: false,
+  unjustifiedWarning: 0,
+}));
+const acknowledgeViolation = stubFn(async () => ({}));
+const clearAcknowledgement = stubFn(async () => {});
+vi.mock('@/lib/policy/service', () => ({
+  validateReport: policyPass,
+  acknowledgeViolation,
+  clearAcknowledgement,
+}));
+const submitThroughLifecycle = stubFn(async () => ({}));
+const recallThroughLifecycle = stubFn(async () => ({ id: REPORT, status: 'DRAFT' }));
+vi.mock('@/server/lib/reportLifecycle', () => ({
+  submitThroughLifecycle,
+  recallThroughLifecycle,
+}));
 
 /**
  * VeloExpense: VeloExpense's storage (`getStorage`) in place of ExpenseOS's
@@ -344,6 +383,83 @@ describe('report editability', () => {
 });
 
 describe('report-level guards', () => {
+  it('refuses to submit somebody else’s report', async () => {
+    const db = makeDb();
+    db.expenseReport.findUnique.mockResolvedValue({
+      id: REPORT,
+      submitterId: U('3'),
+      status: 'DRAFT',
+      expenses: [],
+    });
+    const c = await callerFor(db, [P.expense.report.createOwn]);
+    await expect(c.submit({ reportId: REPORT })).rejects.toMatchObject({ code: 'NOT_FOUND' });
+  });
+
+  it('refuses to submit a report that is not editable', async () => {
+    const db = makeDb();
+    db.expenseReport.findUnique.mockResolvedValue({
+      id: REPORT,
+      submitterId: ME,
+      status: 'SUBMITTED',
+      expenses: [],
+    });
+    const c = await callerFor(db, [P.expense.report.createOwn]);
+    await expect(c.submit({ reportId: REPORT })).rejects.toThrow();
+  });
+
+  // VeloExpense: ExpenseOS's six NetSuite coding cases ("refuses to submit a report NetSuite
+  // could never accept", the expense/expenses wording, the three unresolved-category cases
+  // and "does not invent a coding rule when NetSuite is not installed") pin a guard VeloExpense
+  // does not have: its coding gate is the lifecycle's (UD-2, only with a connected ledger),
+  // covered in `test/lifecycle.db.test.ts`. "waits for a receipt still being read" comes with
+  // extraction (Wave 3).
+
+  it('VeloExpense: refuses an unjustified warning before the transition (d34)', async () => {
+    // ExpenseOS's gate, on VeloExpense's policy pass: the refusal carries the result, and
+    // the lifecycle is never asked.
+    const db = makeDb();
+    db.expenseReport.findUnique.mockResolvedValue({
+      id: REPORT,
+      submitterId: ME,
+      status: 'DRAFT',
+      totalMinor: 10_000n,
+    });
+    db.expense.count.mockResolvedValue(1);
+    policyPass.mockResolvedValueOnce({
+      violations: [],
+      counts: { INFO: 0, WARNING: 1, BLOCK: 0 },
+      blocking: false,
+      unjustifiedWarning: 1,
+    });
+    const c = await callerFor(db, [P.expense.report.createOwn]);
+    await expect(c.submit({ reportId: REPORT })).rejects.toMatchObject({
+      code: 'PRECONDITION_FAILED',
+      message: 'Report has unresolved policy violations.',
+    });
+    expect(submitThroughLifecycle).not.toHaveBeenCalled();
+  });
+
+  it('VeloExpense: hands a clean, RETURNED report to the lifecycle as the caller', async () => {
+    const db = makeDb();
+    db.expenseReport.findUnique.mockResolvedValue({
+      id: REPORT,
+      submitterId: ME,
+      status: 'RETURNED',
+      totalMinor: 10_000n,
+    });
+    db.expense.count.mockResolvedValue(1);
+    (db.expenseReport as Record<string, unknown>).findUniqueOrThrow = stubFn(async () => ({
+      id: REPORT,
+      status: 'SUBMITTED',
+      totalMinor: 10_000n,
+    }));
+    const c = await callerFor(db, [P.expense.report.createOwn]);
+    const res = await c.submit({ reportId: REPORT });
+    expect(submitThroughLifecycle).toHaveBeenCalledWith(db, REPORT, ME);
+    expect(res.report).toMatchObject({ status: 'SUBMITTED', totalMinor: '10000' });
+    expect(res.counts).toEqual({ info: 0, warning: 0, block: 0, unjustifiedWarning: 0 });
+  });
+
   it('refuses to delete a report that is not a draft', async () => {
     // Deleting a submitted report would erase what an approver is looking at.
     const db = makeDb();
@@ -866,4 +982,140 @@ describe('input validation', () => {
       c.updateExpense({ expenseId: EXPENSE, amountMinor: 'lots' } as never),
     ).rejects.toThrow();
   });
+});
+
+describe('justifyViolation', () => {
+  const caller = (db: unknown) => callerFor(db, UPDATE);
+  /** VeloExpense: the violation lookup is SQL (`$queryRaw`), with the report's submitter. */
+  const violation = (over: Record<string, unknown> = {}) => [
+    { id: U('4'), severity: 'WARNING', reportId: REPORT, submitterId: ME, ...over },
+  ];
+
+  it('404s a violation on somebody else’s report', async () => {
+    // Same non-enumeration rule: a 403 would confirm the violation exists.
+    const db = makeDb();
+    db.$queryRaw.mockResolvedValue(violation({ submitterId: U('3') }));
+    await expect(
+      (await caller(db)).justifyViolation({ violationId: U('4'), note: 'Client dinner' }),
+    ).rejects.toMatchObject({ code: 'NOT_FOUND' });
+  });
+
+  it('404s a violation that does not exist', async () => {
+    const db = makeDb();
+    db.$queryRaw.mockResolvedValue([]);
+    await expect(
+      (await caller(db)).justifyViolation({ violationId: U('4'), note: 'x' }),
+    ).rejects.toMatchObject({ code: 'NOT_FOUND' });
+  });
+
+  it('refuses to justify a BLOCK', async () => {
+    /**
+     * A BLOCK is the thing actually preventing the submission. Letting the submitter
+     * write a note past it would be a self-service override with no approval behind it —
+     * only WARNING and INFO are acknowledgeable.
+     */
+    const db = makeDb();
+    db.$queryRaw.mockResolvedValue(violation({ severity: 'BLOCK' }));
+    await expect(
+      (await caller(db)).justifyViolation({ violationId: U('4'), note: 'Please allow it' }),
+    ).rejects.toThrow();
+    expect(acknowledgeViolation).not.toHaveBeenCalled();
+  });
+
+  it('stores a trimmed justification', async () => {
+    // VeloExpense: through `acknowledgeViolation`, which stamps who and when.
+    const db = makeDb();
+    db.$queryRaw.mockResolvedValue(violation());
+    await (await caller(db)).justifyViolation({ violationId: U('4'), note: '  Client dinner  ' });
+    expect(acknowledgeViolation).toHaveBeenCalledWith(
+      expect.anything(),
+      U('4'),
+      ME,
+      'Client dinner',
+    );
+  });
+
+  it('clears the justification on a blank note', async () => {
+    // Mirrors the admin register: a blank note un-acknowledges rather than storing an
+    // empty justification that reads as signed off.
+    const db = makeDb();
+    db.$queryRaw.mockResolvedValue(violation());
+    const c = await caller(db);
+    for (const note of [undefined, null, '', '   ']) {
+      clearAcknowledgement.mockClear();
+      await c.justifyViolation({ violationId: U('4'), note } as never);
+      expect(clearAcknowledgement, JSON.stringify(note)).toHaveBeenCalledWith(
+        expect.anything(),
+        U('4'),
+      );
+    }
+    expect(acknowledgeViolation).not.toHaveBeenCalled();
+  });
+
+  it('bounds the note', async () => {
+    const c = await caller(makeDb());
+    await expect(
+      c.justifyViolation({ violationId: U('4'), note: 'x'.repeat(2001) }),
+    ).rejects.toThrow();
+  });
+});
+
+describe('recall', () => {
+  const caller = (db: unknown) => callerFor(db, [P.expense.report.createOwn]);
+
+  it('404s somebody else’s report', async () => {
+    const db = makeDb();
+    db.expenseReport.findUnique.mockResolvedValue({
+      id: REPORT,
+      submitterId: U('3'),
+      status: 'SUBMITTED',
+    });
+    await expect((await caller(db)).recall({ reportId: REPORT })).rejects.toMatchObject({
+      code: 'NOT_FOUND',
+    });
+  });
+
+  it('only recalls a SUBMITTED report', async () => {
+    /**
+     * Recalling an approved report would pull back something already acted on
+     * downstream — posted to NetSuite, or paid.
+     *
+     * VeloExpense: RETURNED included, as in ExpenseOS — although VeloExpense's lifecycle
+     * would take a RETURNED report back to DRAFT, the ported procedure refuses first.
+     */
+    for (const status of ['DRAFT', 'APPROVED', 'RETURNED', 'REIMBURSED', 'REJECTED']) {
+      const db = makeDb();
+      db.expenseReport.findUnique.mockResolvedValue({ id: REPORT, submitterId: ME, status });
+      await expect((await caller(db)).recall({ reportId: REPORT }), status).rejects.toThrow();
+    }
+    expect(recallThroughLifecycle).not.toHaveBeenCalled();
+  });
+
+  it('skips the pending tasks, cancels the instance and returns the report', async () => {
+    /**
+     * All three. Leaving the tasks pending keeps the report in every approver's inbox
+     * after the submitter pulled it back, and they would decide on something the
+     * submitter is already editing.
+     *
+     * VeloExpense: the cancel is the lifecycle's (d23) — `cancelRunForReport` cancels the
+     * run and its pending tasks, pinned in VeloExpense's approval suites. Here: the
+     * procedure hands the report to it as the caller, and returns it as DRAFT.
+     */
+    const db = makeDb();
+    db.expenseReport.findUnique.mockResolvedValue({
+      id: REPORT,
+      submitterId: ME,
+      status: 'SUBMITTED',
+    });
+    const res = await (await caller(db)).recall({ reportId: REPORT });
+    expect(recallThroughLifecycle).toHaveBeenCalledWith(db, REPORT, ME);
+    // DRAFT, and this assertion is why the mismatch survived: it was written FROM the
+    // implementation, so it asserted RETURNED — the very thing that made the "Recall to
+    // draft" button lie — and would have gone red the moment anybody fixed it.
+    expect(res).toMatchObject({ status: 'DRAFT' });
+  });
+
+  // VeloExpense: ExpenseOS's "recalls a report that had no approval instance" covers an
+  // auto-approved report's missing instance. VeloExpense's engine opens a run for every
+  // submit, and `cancelRunForReport` already answers null for a report with none.
 });
