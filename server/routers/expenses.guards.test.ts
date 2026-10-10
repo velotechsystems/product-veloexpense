@@ -25,7 +25,8 @@ import { makeContext } from '../__test-helpers__/trpcCaller';
  * VeloExpense: ExpenseOS's `expenses.guards.test.ts`, for the procedures ported so far
  * (w2-07: `list`, `categories`, `currencies`, `deleteReport`, `updateReport`; w2-08b: the
  * expense, line and tax procedures — the ownership, editability, manual-tax and input
- * blocks; w2-08c: `report` — the read-access block, with the approvals mock). Each later
+ * blocks; w2-08c: `report` — the read-access block, with the approvals mock; w2-03:
+ * `dimensionOptions` in the permission gates). Each later
  * slice brings the blocks for the procedures it ports — the receipt, submit,
  * justification and recall blocks — and the mocks they need (jobs, policy, storage). The harness below is ExpenseOS's, less those mocks;
  * `@/auth` is VeloExpense's session module.
@@ -192,8 +193,8 @@ describe('permission gates', () => {
       c.list({}),
       c.categories(),
       c.currencies(),
-      // VeloExpense: `dimensionOptions` (w2-03) and `receiptList` (w2-09) join this list
-      // when they are ported.
+      c.dimensionOptions(),
+      // VeloExpense: `receiptList` joins this list with the receipts port (w2-09).
     ]) {
       await expect(attempt).rejects.toMatchObject({ code: 'FORBIDDEN' });
     }

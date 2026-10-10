@@ -18,11 +18,10 @@ import { makeContext } from '../__test-helpers__/trpcCaller';
  *
  * VeloExpense: ExpenseOS's `expenses.reports.db.test.ts`, the blocks for the procedures
  * ported in w2-07 (`list`, `create`, `deleteReport`) and the three `report`-view cases
- * inside "listing my reports" (`viewInReaderCurrency`, w2-08c). The rest of the file
- * arrives with the procedures it tests:
- *   · "allocating an expense across dimensions" with `allocationSet` (w2-03);
- *   · the NETSUITE blocks are not ported: VeloExpense has no NetSuite and always runs in
- *     ExpenseOS's `EXPENSEOS` business unit position, which the blocks above cover.
+ * inside "listing my reports" (`viewInReaderCurrency`, w2-08c), and "allocating an
+ * expense across dimensions" (`allocationSet`, w2-03 — less the class case: VeloExpense has
+ * no class). The NETSUITE blocks are not ported: VeloExpense has no NetSuite and always
+ * runs in ExpenseOS's `EXPENSEOS` business unit position, which the blocks above cover.
  * The harness differs, the cases do not:
  *   · ExpenseOS runs against its seeded database; this creates its own tenant, two people
  *     and a currency pair, and runs every call inside that tenant (`withTenantDb`);
@@ -55,6 +54,9 @@ describe.skipIf(!process.env.DATABASE_URL)('expense reports (integration)', () =
 
   /** VeloExpense: every call runs in the test tenant, as the request middleware would. */
   const inOrg = (fn: () => Promise<any>): Promise<any> => withTenantDb(orgId, fn);
+  /** VeloExpense: the suite's bare client and caller, for blocks that scope them (below). */
+  const suiteDb = (): any => db;
+  const suiteCaller = (perms: readonly string[], userId: string): any => makeCaller(perms, userId);
 
   beforeAll(async () => {
     const { Pool } = await import('pg');
@@ -594,6 +596,182 @@ describe.skipIf(!process.env.DATABASE_URL)('expense reports (integration)', () =
   });
 
   // ── deleteReport ────────────────────────────────────────────────────────────
+
+  describe('allocating an expense across dimensions', () => {
+    /**
+     * VeloExpense: inside this block `db` and `makeCaller` run every call in the test
+     * tenant (the suite's own are bare and go through `inOrg`), so the ported bodies stay
+     * ExpenseOS's.
+     */
+    const db: any = new Proxy(
+      {},
+      {
+        get: (_t, model) =>
+          new Proxy(
+            {},
+            {
+              get:
+                (_m, method) =>
+                (...args: unknown[]) =>
+                  inOrg(() => suiteDb()[model][method](...args)),
+            },
+          ),
+      },
+    );
+    const makeCaller = (perms: readonly string[], userId: string): any =>
+      new Proxy(
+        {},
+        {
+          get:
+            (_t, procedure) =>
+            (...args: unknown[]) =>
+              inOrg(() => suiteCaller(perms, userId)[procedure](...args)),
+        },
+      );
+
+    const allocation = (over: Record<string, unknown> = {}) => ({
+      percentBp: 10_000,
+      businessUnitId: null as string | null,
+      departmentId: null as string | null,
+      // VeloExpense: no class.
+      ...over,
+    });
+
+    let buId: string;
+    let deptId: string;
+
+    beforeAll(async () => {
+      // VeloExpense: this block's own business unit and department (ExpenseOS reads seeded
+      // ones).
+      buId = (await db.businessUnit.create({ data: { label: { en: 'Alloc BU' } }, select: { id: true } })).id;
+      deptId = (await db.department.create({ data: { label: { en: 'Alloc dept' } }, select: { id: true } })).id;
+    });
+
+    const expenseOn = async () => {
+      const report = await makeReport({}, 1);
+      const e = await db.expense.findFirstOrThrow({
+        where: { reportId: report.id },
+        select: { id: true },
+      });
+      return e.id;
+    };
+
+    it('stores a split that totals 100%', async () => {
+      const expenseId = await expenseOn();
+      await makeCaller(RW, ownerId).allocationSet({
+        expenseId,
+        allocations: [
+          allocation({ percentBp: 6000, businessUnitId: buId, departmentId: deptId }),
+          allocation({ percentBp: 4000, businessUnitId: buId, departmentId: deptId }),
+        ],
+      });
+      const rows = await db.expenseAllocation.findMany({ where: { expenseId } });
+      expect(rows).toHaveLength(2);
+      expect(rows.reduce((a: number, r: { percentBp: number }) => a + r.percentBp, 0)).toBe(10_000);
+    });
+
+    it('refuses a split that does not total 100%', async () => {
+      /**
+       * The allocation set IS the cost split. 90% allocated means 10% of the charge is
+       * booked nowhere, which reconciles against nothing.
+       */
+      const expenseId = await expenseOn();
+      await expect(
+        makeCaller(RW, ownerId).allocationSet({
+          expenseId,
+          allocations: [
+            allocation({ percentBp: 9000, businessUnitId: buId, departmentId: deptId }),
+          ],
+        }),
+      ).rejects.toThrow(/total 100%/);
+    });
+
+    it('refuses a row with no business unit', async () => {
+      // The two dimensions every downstream report groups by.
+      const expenseId = await expenseOn();
+      await expect(
+        makeCaller(RW, ownerId).allocationSet({
+          expenseId,
+          allocations: [allocation({ departmentId: deptId })],
+        }),
+      ).rejects.toThrow(/Business Unit and Department/);
+    });
+
+    it('refuses a row with no department', async () => {
+      const expenseId = await expenseOn();
+      await expect(
+        makeCaller(RW, ownerId).allocationSet({
+          expenseId,
+          allocations: [allocation({ businessUnitId: buId })],
+        }),
+      ).rejects.toThrow(/Business Unit and Department/);
+    });
+
+    // VeloExpense: "accepts an explicit 'no class'" is not ported — VeloExpense has no class.
+
+    it('replaces the whole set rather than adding to it', async () => {
+      // The editor sends the whole split on save; merging would double it.
+      const expenseId = await expenseOn();
+      const caller = makeCaller(RW, ownerId);
+      await caller.allocationSet({
+        expenseId,
+        allocations: [
+          allocation({ percentBp: 5000, businessUnitId: buId, departmentId: deptId }),
+          allocation({ percentBp: 5000, businessUnitId: buId, departmentId: deptId }),
+        ],
+      });
+      await caller.allocationSet({
+        expenseId,
+        allocations: [allocation({ businessUnitId: buId, departmentId: deptId })],
+      });
+      const rows = await db.expenseAllocation.findMany({ where: { expenseId } });
+      expect(rows).toHaveLength(1);
+      expect(rows[0].percentBp).toBe(10_000);
+    });
+
+    it('clears the split when handed an empty list', async () => {
+      /**
+       * "No explicit split" is a legitimate state — the expense then inherits the
+       * report's own coding — so an empty array must not be read as a 0% error.
+       */
+      const expenseId = await expenseOn();
+      const caller = makeCaller(RW, ownerId);
+      await caller.allocationSet({
+        expenseId,
+        allocations: [allocation({ businessUnitId: buId, departmentId: deptId })],
+      });
+      await caller.allocationSet({ expenseId, allocations: [] });
+      expect(await db.expenseAllocation.count({ where: { expenseId } })).toBe(0);
+    });
+
+    it('leaves an audit row behind', async () => {
+      // Cost allocation is a financial statement about where money landed.
+      const expenseId = await expenseOn();
+      await makeCaller(RW, ownerId).allocationSet({
+        expenseId,
+        allocations: [allocation({ businessUnitId: buId, departmentId: deptId })],
+      });
+      expect(await lastAudit('Expense', expenseId)).not.toBeNull();
+    });
+
+    it('refuses to touch a submitted report’s expense', async () => {
+      /**
+       * A submitted report is evidence in somebody else's queue; re-coding it under an
+       * approver would change what they are looking at.
+       */
+      const report = await makeReport({ status: 'SUBMITTED' }, 1);
+      const e = await db.expense.findFirstOrThrow({
+        where: { reportId: report.id },
+        select: { id: true },
+      });
+      await expect(
+        makeCaller(RW, ownerId).allocationSet({
+          expenseId: e.id,
+          allocations: [allocation({ businessUnitId: buId, departmentId: deptId })],
+        }),
+      ).rejects.toThrow();
+    });
+  });
 
   describe('deleting a draft report', () => {
     it('deletes it, and everything hanging off it', async () => {
