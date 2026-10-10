@@ -82,8 +82,12 @@ const AUDIT_CHAIN_LOCK_CLASS = 0x41554454;
  * little contention and breaks nothing.
  */
 export async function acquireChainLock(tx: QueryRunner): Promise<void> {
+  // The lock function returns `void`, and is called FROM rather than selected so the row
+  // carries an int instead (w2-11). Prisma's driver adapter cannot decode a `void` column,
+  // which is what `queryRunnerOf` hands this statement to when a ported procedure drives
+  // the lifecycle on its own transaction; `pg` reads either form.
   await tx.query(
-    `SELECT pg_advisory_xact_lock($1, hashtext(current_setting('app.current_org', true)))`,
+    `SELECT 1 AS locked FROM pg_advisory_xact_lock($1, hashtext(current_setting('app.current_org', true)))`,
     [AUDIT_CHAIN_LOCK_CLASS],
   );
 }

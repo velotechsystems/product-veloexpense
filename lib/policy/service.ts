@@ -112,6 +112,14 @@ export interface ValidationSummary {
   counts: Record<Severity, number>;
   /** True when an unresolved BLOCK finding exists. VX1-8's submit gate reads this. */
   blocking: boolean;
+  /**
+   * w2-11 (d34): WARNING findings with no justification yet — ExpenseOS's
+   * `counts.unjustifiedWarning`. The submit gate refuses while it is above zero: "a warning
+   * is submittable only once the submitter attaches a comment over the exception". An
+   * acknowledgement (`acknowledgeViolation`) is that comment, and so is the expense's own
+   * explanation (see `validateReport`).
+   */
+  unjustifiedWarning: number;
 }
 
 export interface NewPolicy {
@@ -576,6 +584,8 @@ function summarize(violations: ViolationRow[]): ValidationSummary {
     violations,
     counts,
     blocking: violations.some((v) => v.severity === 'BLOCK' && v.resolved_at === null),
+    unjustifiedWarning: violations.filter((v) => v.severity === 'WARNING' && v.resolved_at === null)
+      .length,
   };
 }
 
@@ -798,6 +808,30 @@ export async function validateReport(
       ],
     );
   }
+
+  /**
+   * w2-11 (d34): the expense's EXPLANATION stands in as the justification of a WARNING on
+   * one of its lines — ExpenseOS's `explanationJustifies` (`server/policy/validate.ts`): "A
+   * prior explicit exception comment wins; otherwise the parent expense's explanation
+   * stands in as the justification." Recorded as the submitter's, as ExpenseOS records it.
+   *
+   * Only an UNRESOLVED warning takes it, so an acknowledgement somebody typed is never
+   * overwritten — the "prior explicit comment wins" half. A BLOCK never does: it is fixed,
+   * not justified. And a report-wide finding has no expense to explain it.
+   */
+  await tx.query(
+    `UPDATE policy_violation v
+        SET resolved_at = now(), resolved_by_id = r.submitter_id, resolve_note = btrim(e.explanation)
+       FROM expense_line_item li
+       JOIN expense e ON e.id = li.expense_id
+       JOIN expense_report r ON r.id = e.report_id
+      WHERE v.report_id = $1
+        AND v.line_item_id = li.id
+        AND v.severity = 'WARNING'
+        AND v.resolved_at IS NULL
+        AND btrim(coalesce(e.explanation, '')) <> ''`,
+    [reportId],
+  );
 
   return summarize(await listViolations(tx, reportId));
 }

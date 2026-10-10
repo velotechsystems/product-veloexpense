@@ -5,9 +5,11 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { createTenantHarness, type TenantHarness } from '../__test-helpers__/tenantHarness';
 
 /**
- * VeloExpense: ExpenseOS's `expenseApprovals.db.test.ts`, the block for the procedures ported so
- * far — "expenses + chaseReceipts" (w2-06). The rest of ExpenseOS's suite (the inbox, the
- * approver's report, decide / return / reimburse) arrives with the engine in Wave 4.
+ * VeloExpense: ExpenseOS's `expenseApprovals.db.test.ts`, the cases for the procedures ported so
+ * far — "expenses + chaseReceipts" (w2-06), and the submitter's `expenses.submit` /
+ * `expenses.recall` cases (w2-11), which ExpenseOS keeps here because they drive its approval
+ * engine. The rest of ExpenseOS's suite (the inbox, the approver's report, decide / return /
+ * reimburse) arrives with the engine in Wave 4.
  *
  * The cases are ExpenseOS's; the harness is VeloExpense's (`createTenantHarness`: the suite's own
  * tenant and people, every call under RLS). Adaptations, each marked:
@@ -23,6 +25,12 @@ vi.mock('@/auth', () => ({ auth: vi.fn(async () => null) }));
 vi.mock('@/lib/tenant/request', () => ({ hostTenantSlug: async () => null }));
 
 const REIMBURSER_PERMS = [P.expense.report.reimburse] as const;
+/** The submitter's grants, as ExpenseOS's `OWNER_PERMS`. */
+const OWNER_PERMS = [
+  P.expense.report.readOwn,
+  P.expense.report.createOwn,
+  P.expense.report.updateOwn,
+] as const;
 
 describe.skipIf(!process.env.DATABASE_URL)('expense approvals (integration)', () => {
   let h: TenantHarness;
@@ -63,6 +71,178 @@ describe.skipIf(!process.env.DATABASE_URL)('expense approvals (integration)', ()
   afterAll(async () => {
     // VeloExpense: the next suite truncates the tenants; only the pool is ours to close.
     await h?.end();
+  });
+
+
+  // ── submit / recall, on VeloExpense's lifecycle (w2-11, d23) ──────────
+  describe('submit and recall', () => {
+    /**
+     * VeloExpense: the submitter is the suite's EMPLOYEE, so the report routes to the
+     * tenant's administrator (the founder) on VeloExpense's engine. ExpenseOS's "submit
+     * auto-approves when no EXPENSE_REPORT workflow matches" has no counterpart: VeloExpense's
+     * engine routes every submit (VX2-3), and refuses one it cannot route rather than
+     * approving it unseen.
+     */
+    let categoryId: string;
+    const owner = () => h.makeCaller(OWNER_PERMS, strangerId);
+    const seedReport = async (status = 'DRAFT') =>
+      (
+        await db.expenseReport.create({
+          data: { title: 'Lifecycle fixture', submitterId: strangerId, currencyId: 'CAD', status },
+          select: { id: true },
+        })
+      ).id as string;
+    /** VeloExpense: a dated expense with one valued line — VeloExpense refuses an undated
+     *  expense at submit (VX4-11), where ExpenseOS's `addValuedExpense` needs no date. */
+    const addValuedExpense = async (reportId: string, amountMinor = '2500') => {
+      const { id } = await owner().createExpense({ reportId });
+      await owner().updateExpense({ expenseId: id, date: new Date(), merchant: 'Cafe' });
+      await owner().lineItemCreate({ expenseId: id, categoryId, amountMinor });
+      return id as string;
+    };
+    const runOf = async (reportId: string) =>
+      (
+        await h.admin.query(
+          `SELECT r.status, count(t.id) FILTER (WHERE t.status = 'PENDING')::int AS pending
+             FROM approval_request r LEFT JOIN approval_task t ON t.request_id = r.id
+            WHERE r.report_id = $1 GROUP BY r.id, r.status, r.opened_at
+            ORDER BY r.opened_at DESC LIMIT 1`,
+          [reportId],
+        )
+      ).rows[0] as { status: string; pending: number } | undefined;
+
+    beforeAll(async () => {
+      categoryId = (
+        await db.expenseCategory.create({
+          data: { label: { en: 'Lifecycle meals' } },
+          select: { id: true },
+        })
+      ).id;
+    });
+
+    it('submit refuses a report that totals zero', async () => {
+      /**
+       * The gap the count check left. `expenseCount === 0` passes the moment ONE blank
+       * expense exists, which is all it took: adding an expense and typing nothing enabled
+       * Submit at $0.00, and the report went the whole way — EXP-000006 "test 2" sits on
+       * DEV at $0.00 with status Approved, so a workflow ran and somebody signed off a
+       * claim for nothing (GA readiness report F08 / blocker B10).
+       */
+      const reportId = await seedReport('DRAFT');
+      const { id } = await owner().createExpense({ reportId }); // an expense, but no value
+      await expect(owner().submit({ reportId })).rejects.toThrow(/totals zero/i);
+
+      // Give it a value and the same call goes through.
+      // VeloExpense: a dated line rather than a hand-set total — VeloExpense's lifecycle
+      // refuses a report with no line items, which the hand-set total would leave it.
+      await owner().updateExpense({ expenseId: id, date: new Date() });
+      await owner().lineItemCreate({ expenseId: id, categoryId, amountMinor: '2500' });
+      const res = await owner().submit({ reportId });
+      expect(res.report.status).toBe('SUBMITTED');
+    });
+
+    it('submit routes to the approval ladder', async () => {
+      // VeloExpense: ExpenseOS's "submit routes to the seeded amount-tiered workflow", on
+      // VeloExpense's engine — a RUNNING request parked on a pending task.
+      const reportId = await seedReport('DRAFT');
+      await addValuedExpense(reportId);
+      const res = await owner().submit({ reportId });
+      expect(res.report.status).toBe('SUBMITTED');
+      const run = await runOf(reportId);
+      expect(run?.status).toBe('RUNNING');
+      expect(run?.pending, 'the run must park on an approval task').toBeGreaterThan(0);
+    });
+
+    it('a RETURNED report is editable + resubmittable', async () => {
+      // VeloExpense: ExpenseOS's "returnForEdit (admin): SUBMITTED → RETURNED, then editable
+      // + resubmittable", from the RETURNED half — the approver's `returnForEdit` arrives with
+      // the engine (Wave 4), so the report is returned as a fixture.
+      const reportId = await seedReport('SUBMITTED');
+
+      // A SUBMITTED report is not editable by its submitter.
+      await expect(owner().createExpense({ reportId })).rejects.toThrow(/not editable/i);
+
+      await h.admin.query(`UPDATE expense_report SET status = 'RETURNED' WHERE id = $1`, [
+        reportId,
+      ]);
+
+      // Now the submitter can add an expense again (proves RETURNED is editable)…
+      const id = await addValuedExpense(reportId);
+      expect(id).toBeTruthy();
+
+      // …and resubmit — no longer blocked by the editable-status guard.
+      const res = await owner().submit({ reportId });
+      expect(res.report.status).toBe('SUBMITTED');
+    });
+
+    it('submit is blocked until the report has at least one expense', async () => {
+      // A bare report with no expenses can't be submitted.
+      const reportId = await seedReport('DRAFT');
+      await expect(owner().submit({ reportId })).rejects.toThrow(/expense/i);
+      // Add one WITH AN AMOUNT → submit proceeds and routes for approval.
+      const id = await addValuedExpense(reportId);
+      expect(id).toBeTruthy();
+      const res = await owner().submit({ reportId });
+      expect(res.report.status).toBe('SUBMITTED');
+    });
+
+    it('VeloExpense: refuses an unjustified warning, and lets it through once justified (d34)', async () => {
+      const reportId = await seedReport('DRAFT');
+      await addValuedExpense(reportId, '9000');
+      await h.admin.query(
+        `INSERT INTO expense_policy (organization_id, kind, severity, params)
+         VALUES ($1, 'PER_TRANSACTION_LIMIT', 'WARNING', '{"thresholdMinor": 5000}')`,
+        [h.orgId],
+      );
+      try {
+        const refused = await owner()
+          .submit({ reportId })
+          .catch((e: unknown) => e);
+        expect(refused).toMatchObject({
+          code: 'PRECONDITION_FAILED',
+          message: 'Report has unresolved policy violations.',
+        });
+        expect((refused as { cause?: unknown }).cause).toMatchObject({
+          counts: { warning: 1, unjustifiedWarning: 1 },
+        });
+
+        // A refused submit rolls its own transaction back, findings included — every call
+        // here is one tenant transaction — so the finding the submitter justifies is the one
+        // the workbench's own `validate` stored, as it does after every edit.
+        await owner().validate({ reportId });
+        const [warning] = (
+          await h.admin.query(`SELECT id FROM policy_violation WHERE report_id = $1`, [reportId])
+        ).rows;
+        const justified = await owner().justifyViolation({
+          violationId: warning.id,
+          note: '  Client dinner  ',
+        });
+        expect(justified).toMatchObject({ resolveNote: 'Client dinner', resolvedBy: strangerId });
+
+        const res = await owner().submit({ reportId });
+        expect(res.report.status).toBe('SUBMITTED');
+        expect(res.counts).toMatchObject({ warning: 1, unjustifiedWarning: 0 });
+      } finally {
+        await h.admin.query(
+          `DELETE FROM expense_policy WHERE organization_id = $1 AND kind = 'PER_TRANSACTION_LIMIT'`,
+          [h.orgId],
+        );
+      }
+    });
+
+    it('recall puts a SUBMITTED report back to DRAFT and cancels its run', async () => {
+      const reportId = await seedReport('DRAFT');
+      await addValuedExpense(reportId);
+      await owner().submit({ reportId });
+      const res = await owner().recall({ reportId });
+      // DRAFT, not RETURNED — see the procedure.
+      expect(res).toEqual({ id: reportId, status: 'DRAFT' });
+      const run = await runOf(reportId);
+      expect(run?.status).toBe('CANCELLED');
+      expect(run?.pending).toBe(0);
+      // Recalling twice is refused: only a SUBMITTED report can be.
+      await expect(owner().recall({ reportId })).rejects.toThrow(/submitted/i);
+    });
   });
 
   // ── AP cross-report view + on-demand receipt chase ──────────────────

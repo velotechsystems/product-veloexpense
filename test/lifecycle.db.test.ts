@@ -214,19 +214,80 @@ describe('submit', () => {
     });
   });
 
-  it('allows submit over a WARNING, acknowledged or not', async () => {
+  /**
+   * w2-11 (d34): ExpenseOS's rule replaced VeloExpense's. This case used to read "allows
+   * submit over a WARNING, acknowledged or not" — Module 9's "warnings propagate to the
+   * approver". ExpenseOS lets a warning through only once the submitter has said why: "a
+   * warning is submittable only once the submitter attaches a comment over the exception".
+   * The three cases below are that rule's three answers.
+   */
+  const warnAbove50 = (tx: Parameters<Parameters<typeof withOrg>[1]>[0]) =>
+    policy.createPolicy(tx, {
+      kind: 'PER_TRANSACTION_LIMIT',
+      severity: 'WARNING',
+      params: { thresholdMinor: 50_00 },
+    });
+
+  it('REFUSES a submit over a WARNING nobody has justified', async () => {
+    const { reportId } = await draft(75_00);
+    const err = await withOrg(orgId, async (tx) => {
+      await tx.query('DELETE FROM expense_policy');
+      await warnAbove50(tx);
+      return lifecycle.submitReport(tx, reportId, userId).catch((e: unknown) => e);
+    });
+    expect(err).toBeInstanceOf(lifecycle.LifecycleError);
+    expect((err as lifecycle.LifecycleError).code).toBe('UNJUSTIFIED_WARNING');
+    expect((err as lifecycle.LifecycleError).violations).toHaveLength(1);
+    expect(userMessageOf(err)?.code).toBe('SUBMIT_UNJUSTIFIED_WARNING_ONE');
+    const status = await admin.query('SELECT status FROM expense_report WHERE id = $1', [reportId]);
+    expect(status.rows[0].status).toBe('DRAFT');
+  });
+
+  it('allows submit over a WARNING once it is acknowledged with a note', async () => {
     const { reportId } = await draft(75_00);
     const result = await withOrg(orgId, async (tx) => {
       await tx.query('DELETE FROM expense_policy');
-      await policy.createPolicy(tx, {
-        kind: 'PER_TRANSACTION_LIMIT',
-        severity: 'WARNING',
-        params: { thresholdMinor: 50_00 },
-      });
+      await warnAbove50(tx);
+      const v = await policy.validateReport(tx, reportId);
+      await policy.acknowledgeViolation(tx, v.violations[0].id, userId, 'Client dinner, approved');
       return lifecycle.submitReport(tx, reportId, userId);
     });
     expect(result.report.status).toBe('SUBMITTED');
     expect(result.validation.counts.WARNING).toBe(1);
+    expect(result.validation.unjustifiedWarning).toBe(0);
+  });
+
+  it("takes the expense's explanation as the justification, and records it", async () => {
+    // ExpenseOS's `explanationJustifies`: the explanation on the expense stands in for the
+    // note, recorded as the submitter's.
+    const { reportId, expenseId } = await draft(75_00);
+    const result = await withOrg(orgId, async (tx) => {
+      await tx.query('DELETE FROM expense_policy');
+      await warnAbove50(tx);
+      await tx.query(`UPDATE expense SET explanation = '  Team offsite  ' WHERE id = $1`, [
+        expenseId,
+      ]);
+      return lifecycle.submitReport(tx, reportId, userId);
+    });
+    expect(result.report.status).toBe('SUBMITTED');
+    const v = result.validation.violations[0];
+    expect(v.resolve_note).toBe('Team offsite');
+    expect(v.resolved_by_id).toBe(userId);
+  });
+
+  it('resubmits a RETURNED report where it stands (d26)', async () => {
+    // ExpenseOS's rule: an approver sending a report back is an invitation to edit and
+    // resubmit, not to recall it first.
+    const { reportId } = await draft();
+    await withOrg(orgId, (tx) => tx.query('DELETE FROM expense_policy'));
+    await admin.query(`UPDATE expense_report SET status = 'RETURNED' WHERE id = $1`, [reportId]);
+    const result = await withOrg(orgId, (tx) => lifecycle.submitReport(tx, reportId, userId));
+    expect(result.report.status).toBe('SUBMITTED');
+    const events = await admin.query(
+      `SELECT from_status FROM expense_report_event WHERE report_id = $1 AND action = 'SUBMIT'`,
+      [reportId],
+    );
+    expect(events.rows.map((r) => r.from_status)).toEqual(['RETURNED']);
   });
 
   it('re-runs the rules at submit rather than trusting the last save', async () => {
