@@ -37,6 +37,8 @@ const PORTED_FROM_EXPENSEOS = [
   // Wave 2: ExpenseOS's expenses router (in slices) and the reader-currency helpers.
   "server/routers/expenses*.ts",
   "server/lib/readerCurrency*.ts",
+  "server/lib/expenseTax*.ts",
+  "packages/db/**",
   // Wave 2: ExpenseOS's tax engine and expense-line kinds, verbatim.
   "packages/tax/**",
   "packages/expense-lines/**",
