@@ -31,7 +31,7 @@
 import { test, expect, type Page } from '@playwright/test';
 import { Pool } from 'pg';
 import { DEFAULT_LOCALE } from '@/lib/i18n/locales';
-import { createDraftReport } from './helpers';
+import { addExpenseLine, createDraftReport } from './helpers';
 
 const ADMIN = 'admin@demo.test';
 
@@ -156,22 +156,11 @@ async function makeDatedReport(): Promise<string> {
  */
 async function makeViolatingReport(page: Page): Promise<string> {
   await createDraftReport(page, 'Locale violation check');
-  await expect(page).toHaveURL(/\/expenses\/[0-9a-f-]{36}$/);
-
-  await page.getByLabel('Merchant').first().fill('Le Bistro');
-  // VX4-11: the date is REQUIRED on the form now, and `submitReport` refuses a
-  // report holding an undated expense. Every helper that builds one has to say
-  // when it happened — which is the point of the ticket, arriving here first.
-  await page.locator('#new-txnDate').fill(new Date().toISOString().slice(0, 10));
-  await page.getByRole('button', { name: 'Add expense' }).click();
-  await expect(page.getByRole('heading', { name: 'Le Bistro' })).toBeVisible();
-
-  await page.locator('select[id^="categoryId-"]').selectOption({ label: 'Meals & Entertainment' });
-  await page.locator('input[id^="description-"]').fill('Client dinner');
-  // $600 clears the starter $500 per-transaction limit, which is the WARNING
-  // that renders MONEY — the whole point of the assertion below.
-  await page.locator('input[id^="amount-"]').fill('600.00');
-  await page.getByRole('button', { name: 'Add line item' }).click();
+  // w2-02b: on ExpenseOS's workbench (helpers.ts `addExpenseLine`), which dates a new
+  // expense today (VX4-11). $600 clears the starter $500 per-transaction limit, which is the
+  // WARNING that renders MONEY — the whole point of the assertion below.
+  await addExpenseLine(page, { vendor: 'Le Bistro', category: 'Meals & Entertainment', amount: '600.00' });
+  await expect(page.getByRole('main').getByText(/per-transaction limit/).first()).toBeVisible();
 
   const url = new URL(page.url());
   return url.pathname.split('/').pop() as string;
@@ -348,17 +337,17 @@ test.describe('the locale chain, end to end', () => {
     reportId = reportId ?? (await makeDatedReport());
 
     // w2-05: the ported reports list prints money with its ISO CODE (ExpenseOS's F54 — CAD
-    // and USD share the `$` glyph), which reads the same to an en-CA and an en-US reader. The
-    // report's own page still formats with the reader's symbol until the workbench replaces
-    // it (w2-02), so the claim is made there: the CAD total reads `$` to a Canadian and `CA$`
-    // to an American.
+    // and USD share the `$` glyph), which reads the same to an en-CA and an en-US reader.
+    // w2-02b: so does the report's own page now — ExpenseOS's workbench formats in its
+    // catalogue locale on every screen (i18n/request.ts) and names the currency beside the
+    // amount. The reader's own money is claimed where VeloExpense still renders it: a policy
+    // finding's sentence, in the describe block below.
     const money = async () => {
       await page.goto(`/expenses/${reportId}`);
-      return page.locator('body').textContent();
+      await expect(page.getByRole('banner')).toContainText('CAD');
+      return page.getByRole('banner').textContent();
     };
     const canadian = await money();
-    expect(canadian ?? '').toMatch(/\$/);
-    expect(canadian ?? '').not.toContain('CA$');
 
     await page.goto('/preferences');
     await page.getByTestId('my-locale').selectOption('en-US');
@@ -366,7 +355,8 @@ test.describe('the locale chain, end to end', () => {
     await expect(page.getByText('Saved.')).toBeVisible();
 
     const american = await money();
-    expect(american ?? '').toContain('CA$');
+    // The same total, with its code, to both readers — no `CA$` / `$` split to tell apart.
+    expect(american).toBe(canadian);
     await clearMine();
   });
 
@@ -387,7 +377,8 @@ test.describe('the locale chain, end to end', () => {
     await expect(page.getByText('Saved.')).toBeVisible();
 
     await page.goto(`/expenses/${reportId}`);
-    const dateField = page.locator('input[type="date"][name="txnDate"]').first();
+    // w2-02b: the workbench's editor, open on the report's one expense.
+    const dateField = page.getByLabel('Date', { exact: true });
     await expect(dateField).toBeVisible();
     // The VALUE, not the rendered text — a date input shows the user their own
     // locale's rendering and holds ISO underneath. It is the underneath that
@@ -413,7 +404,7 @@ test.describe('the locale chain, end to end', () => {
     await expect(page.getByText('Saved.')).toBeVisible();
 
     await page.goto(`/expenses/${reportId}`);
-    await expect(page.locator('input[type="date"][name="txnDate"]').first()).toHaveValue(DATED);
+    await expect(page.getByLabel('Date', { exact: true })).toHaveValue(DATED);
     const sydney = await page.locator('body').textContent();
     expect(sydney ?? '').toMatch(/Mar(ch)? 4|4 Mar|2026-03-04/);
     expect(sydney ?? '').not.toMatch(/Mar(ch)? 3\b/);
@@ -472,12 +463,15 @@ test.describe('a violation is written for the reader, not for whoever saved it',
   test('the same stored finding reads in en-CA and in en-US money', async ({ page }) => {
     violationReportId = await makeViolatingReport(page);
 
-    const warning = page.locator('[data-testid="policy-violation"][data-severity="WARNING"]');
+    // w2-02b: the workbench lists an expense's findings under "Policy warnings".
+    const warning = page.getByRole('listitem').filter({ hasText: /per-transaction limit/ });
     await expect(warning).toHaveCount(1);
 
     // en-CA: a Canadian reader looking at Canadian dollars gets a bare symbol.
+    // w2-02b: the workbench's line has no description, so the sentence names the line by its
+    // category where the old form's "Client dinner" was.
     await expect(warning.first()).toContainText(
-      'Client dinner is $600.00, over the $500.00 per-transaction limit.',
+      'Meals & Entertainment is $600.00, over the $500.00 per-transaction limit.',
     );
 
     // Now the SAME ROW, to a different reader. Nothing about the report changes
@@ -490,7 +484,7 @@ test.describe('a violation is written for the reader, not for whoever saved it',
 
     await page.goto(`/expenses/${violationReportId}`);
     await expect(warning.first()).toContainText(
-      'Client dinner is CA$600.00, over the CA$500.00 per-transaction limit.',
+      'Meals & Entertainment is CA$600.00, over the CA$500.00 per-transaction limit.',
     );
     // And explicitly NOT the other one, because `toContainText` on a sentence
     // that is a prefix of the other would pass either way round.
@@ -506,22 +500,8 @@ test.describe('a violation is written for the reader, not for whoever saved it',
     await expect(warning.first()).toContainText('over the $500.00 per-transaction limit.');
   });
 
-  test('the acknowledge field describes what the reader can see', async ({ page }) => {
-    // The aria-label and the paragraph must be the same sentence. They were
-    // separately interpolated before part 2b, so a render change could have
-    // moved one and not the other — a screen reader hearing a different sentence
-    // than the page shows.
-    await page.goto('/preferences');
-    await page.getByTestId('my-locale').selectOption('en-US');
-    await page.getByRole('button', { name: 'Save' }).click();
-    await expect(page.getByText('Saved.')).toBeVisible();
-
-    await page.goto(`/expenses/${violationReportId}`);
-    const warning = page.locator('[data-testid="policy-violation"][data-severity="WARNING"]').first();
-    const shown = (await warning.locator('p').first().textContent())?.trim();
-    await expect(warning.getByPlaceholder('Why is this exception acceptable?')).toHaveAttribute(
-      'aria-label',
-      `Justification for: ${shown}`,
-    );
-  });
+  // w2-02b: "the acknowledge field describes what the reader can see" is retired with the
+  // report page that had it. On ExpenseOS's workbench an expense's warning is answered by the
+  // expense's own "Explain this charge", not by a field per finding, so there is no per-finding
+  // label left to keep in step with the sentence.
 });

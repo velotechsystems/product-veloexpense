@@ -10,12 +10,19 @@ import { glAccountIdForCategory, glAccountIdsForCategories } from './glAccount';
  */
 
 function stubDb(rows: { id: string; glAccountId: string | null }[]) {
+  // VeloExpense: the helper reads the account THROUGH its row (`glAccount`), which is what
+  // the database hides when the accounting module is off — so the stub answers in that shape.
+  const shaped = (r: { id: string; glAccountId: string | null }) => ({
+    id: r.id,
+    glAccount: r.glAccountId ? { id: r.glAccountId } : null,
+  });
   const findMany = vi.fn(async (args: { where: { id: { in: string[] } } }) =>
-    rows.filter((r) => args.where.id.in.includes(r.id)),
+    rows.filter((r) => args.where.id.in.includes(r.id)).map(shaped),
   );
-  const findUnique = vi.fn(
-    async (args: { where: { id: string } }) => rows.find((r) => r.id === args.where.id) ?? null,
-  );
+  const findUnique = vi.fn(async (args: { where: { id: string } }) => {
+    const r = rows.find((x) => x.id === args.where.id);
+    return r ? shaped(r) : null;
+  });
   return { db: { expenseCategory: { findMany, findUnique } } as never, findMany, findUnique };
 }
 

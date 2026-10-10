@@ -20,6 +20,15 @@ const buttonVariants = cva(
           "hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:hover:bg-muted/50",
         destructive:
           "bg-destructive/10 text-destructive hover:bg-destructive/20 focus-visible:border-destructive/40 focus-visible:ring-destructive/20 dark:bg-destructive/20 dark:hover:bg-destructive/30 dark:focus-visible:ring-destructive/40",
+        // Ported from ExpenseOS (VeloExpense Wave 2): the outline siblings of `destructive` and
+        // of a positive action. Red (or green) border and ink on a transparent fill, hover to a
+        // faint tint of the same tone. For a destructive or affirmative action that should not
+        // dominate the row — Reject and Approve on the expense-report workbench. Same ink as
+        // `destructive` above and as the Badge's success tone (KITAA-1 tuned).
+        "destructive-outline":
+          "border-destructive bg-transparent text-destructive hover:bg-destructive/10 dark:hover:bg-destructive/20",
+        "success-outline":
+          "border-success bg-transparent text-success hover:bg-success/10 dark:hover:bg-success/20",
         // text-brand-link, not text-primary: VeloJobs' primary is an amber fill too
         // light for text on white (2026 guidelines); every other product's link = primary.
         link: "text-brand-link underline-offset-4 hover:underline",

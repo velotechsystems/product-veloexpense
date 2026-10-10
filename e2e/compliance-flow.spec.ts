@@ -18,6 +18,7 @@ import { test, expect } from '@playwright/test';
 import {
   ADMIN_STATE,
   WORKER_SECRET,
+  addExpenseLine,
   createDraftReport,
   drainNotifications,
   openFirstReport,
@@ -64,57 +65,22 @@ test.describe('compliance', () => {
     const title = `E2E duplicate ${RUN}`;
     await createDraftReport(page, title);
     for (let i = 0; i < 2; i += 1) {
-      // `#new-merchant`, NOT `getByLabel('Merchant').first()`.
+      // w2-02b: two expenses on ExpenseOS's workbench (helpers.ts `addExpenseLine`). Each
+      // "Add expense" opens a NEW expense in the editor, so the second pass fills the second
+      // entry and not the first — the trap the old form's `#new-merchant` was avoiding.
       //
-      // The first version of this loop used the label, copying
-      // `submitAndApprove` — which only ever adds ONE expense, so `.first()` is
-      // unambiguous there. On the second pass it is not: the entry created by the
-      // first pass has a Merchant field of its own and comes earlier in the DOM,
-      // so the loop typed 'Beck Taxi' into the existing row and submitted the
-      // new-entry form empty. The merchant is null, the duplicate rule ignores
-      // nameless entries by design, and the queue was legitimately empty — a spec
-      // failing for a reason the product is right about.
-      await page.locator('#new-merchant').fill(MERCHANT);
-      // THE DATE IS REQUIRED FOR THIS RULE AND OPTIONAL ON THE FORM, which is a
-      // real gap this spec found and is not the place to fix.
-      //
-      // `detectDuplicates` and `detectAmountOutliers` both bound on
-      // `expense.txn_date`, and an entry with none is invisible to them. The
-      // add-expense form does collect a date — it just does not insist — so a
-      // tenant whose people skip it gets no duplicate detection at all, with
-      // nothing on any screen saying so. The first version of this spec did not
-      // fill it, every entry landed with `txn_date` NULL, and the queue was
-      // correctly empty. Boarded as VX4-11; see HANDOFF.
-      await page.locator('#new-txnDate').fill(new Date().toISOString().slice(0, 10));
-      await page.getByRole('button', { name: 'Add expense' }).click();
-      // WAIT FOR THE NEW ENTRY TO EXIST BEFORE ADDING ITS LINE — this is the
-      // actual bug behind two earlier attempts, and neither `.first()` nor
-      // `.last()` could have fixed it.
-      //
-      // `click()` returns when the click has been dispatched, not when the server
-      // action's revalidation has re-rendered the page. So on the second pass the
-      // line-item locator resolved against the DOM as it stood BEFORE entry B
-      // appeared — one form, whichever end you asked for — and both lines landed
-      // on entry A. Entry A held $36.50, entry B held nothing, two entries with
-      // different totals are not duplicates of each other, and the rule correctly
-      // found nothing. Counting the forms is what makes the wait real.
-      await expect(page.locator('select[id^="categoryId-"]')).toHaveCount(i + 1);
-      await page
-        .locator('select[id^="categoryId-"]')
-        .last()
-        .selectOption({ label: 'Ground Transportation' });
-      await page.locator('input[id^="description-"]').last().fill('Airport taxi');
-      await page.locator('input[id^="amount-"]').last().fill('18.25');
-      await page.getByRole('button', { name: 'Add line item' }).last().click();
-      // WAIT ON THE REPORT TOTAL, which is the one number that means what this
-      // rule needs. Counting occurrences of '$18.25' was tried and is wrong:
-      // after one line the string appears three times — the line, the entry
-      // subtotal and the report total — so the count says nothing about how many
-      // lines exist. The total is unambiguous and it is also the quantity the
-      // duplicate rule compares.
-      await expect(page.getByTestId('report-total')).toContainText(
-        `$${(18.25 * (i + 1)).toFixed(2)}`,
-      );
+      // THE DATE IS REQUIRED FOR THIS RULE: `detectDuplicates` and `detectAmountOutliers`
+      // both bound on `expense.txn_date`, and an entry with none is invisible to them
+      // (VX4-11). The workbench dates a new expense today, so both entries carry one.
+      await addExpenseLine(page, {
+        vendor: MERCHANT,
+        category: 'Ground Transportation',
+        amount: '18.25',
+      });
+      // WAIT ON THE REPORT TOTAL, which is the one number that means what this rule needs:
+      // the line, the expense and the report all show '$18.25' after one line, so a count of
+      // that string says nothing; the total is unambiguous and it is what the rule compares.
+      await expect(page.getByRole('banner')).toContainText(`$${(18.25 * (i + 1)).toFixed(2)}`);
     }
 
     await page.goto('/admin/compliance');

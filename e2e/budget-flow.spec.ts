@@ -34,9 +34,7 @@
  */
 import { test, expect } from '@playwright/test';
 import { Pool } from 'pg';
-import { createDraftReport, drainNotifications } from './helpers';
-import { DEFAULT_LOCALE } from '@/lib/i18n/locales';
-import { enumLabel, REPORT_STATUS_COPY } from '@/lib/i18n/catalog/enums';
+import { addExpenseLine, addLine, createDraftReport, drainNotifications, submitOpenReport } from './helpers';
 /**
  * VX4-7 part 2a: a report's status is asserted through the CATALOGUE, not as the
  * enum's own spelling.
@@ -54,7 +52,8 @@ import { enumLabel, REPORT_STATUS_COPY } from '@/lib/i18n/catalog/enums';
  * `test/i18n-enum-catalog.test.ts` refuses a blank default for any member, so
  * the pairing covers both halves and neither test repeats the other.
  */
-const status = (member: string) => enumLabel(REPORT_STATUS_COPY, member, DEFAULT_LOCALE);
+// w2-02b: the report's status is read through `expectReportStatus` (helpers.ts), which
+// asserts the same catalogued label on the workbench's top bar.
 
 
 const RUN = Date.now().toString(36);
@@ -196,57 +195,42 @@ test('an over-budget report warns without blocking, and the alert reaches the ow
   // too, so the starter receipt rule cannot interfere whether or not it exists
   // yet (see the header).
   await createDraftReport(page, `E2E budget trip ${RUN}`);
-  await expect(page).toHaveURL(/\/expenses\/[0-9a-f-]{36}$/);
 
-  await page.getByLabel('Merchant').first().fill('Budget Cafe');
-  // VX4-11: the date is REQUIRED on the form now, and `submitReport` refuses a
-  // report holding an undated expense. Every helper that builds one has to say
-  // when it happened — which is the point of the ticket, arriving here first.
-  //
-  // TODAY, not a fixed date. A hardcoded 2026-08-15 was the first attempt and it
-  // broke `budget-flow`: the date decides which FISCAL PERIOD the spend lands in,
-  // so a past date moved the expense outside the budget under test and the
-  // overage warning correctly did not fire. That is the ticket's own subject
-  // demonstrating itself, and `compliance-flow` already had it right.
-  await page.locator('#new-txnDate').fill(new Date().toISOString().slice(0, 10));
-  await page.getByRole('button', { name: 'Add expense' }).click();
-  await expect(page.getByRole('heading', { name: 'Budget Cafe' })).toBeVisible();
-
-  await page.locator('select[id^="categoryId-"]').selectOption({ label: 'Meals & Entertainment' });
-  await page.locator('input[id^="description-"]').fill('Team lunch');
-  await page.locator('input[id^="amount-"]').fill('18.00');
-  await page.getByRole('button', { name: 'Add line item' }).click();
+  // w2-02b: on ExpenseOS's workbench (helpers.ts `addExpenseLine`), which dates a new
+  // expense TODAY. TODAY, not a fixed date: the date decides which FISCAL PERIOD the spend
+  // lands in, so a past date would move the expense outside the budget under test and the
+  // overage warning would correctly not fire (VX4-11; `compliance-flow` had it right first).
+  await addExpenseLine(page, {
+    vendor: 'Budget Cafe',
+    category: 'Meals & Entertainment',
+    amount: '18.00',
+  });
 
   // 90% is not over budget, so no finding yet — the rule answers "does this take
   // the period PAST its budget", and the 90% threshold is the ALERT's concern.
-  await expect(page.getByTestId('report-total')).toHaveText('$18.00');
+  await expect(page.getByRole('banner')).toContainText('$18.00');
+  const findings = page.getByTestId('report-findings');
+  await expect(findings).toHaveCount(0);
 
   // Now take it over: a second $18 line is $36 against a $20 budget.
-  await page.locator('input[id^="description-"]').last().fill('Second lunch');
-  await page.locator('input[id^="amount-"]').last().fill('18.00');
-  await page.getByRole('button', { name: 'Add line item' }).click();
+  await addLine(page, 'Meals & Entertainment', '18.00');
+  await expect(page.getByRole('banner')).toContainText('$36.00');
 
-  const warning = page.locator('[data-testid="policy-violation"][data-severity="WARNING"]');
-  await expect(warning.filter({ hasText: BUDGET })).toHaveCount(1);
-  await expect(warning.filter({ hasText: BUDGET })).toContainText('over by');
-  // A BUDGET NEVER BLOCKS, and this is the assertion that says so end to end.
-  await expect(page.locator('[data-testid="policy-violation"][data-severity="BLOCK"]')).toHaveCount(
-    0,
-  );
+  // The overage is a finding about the REPORT, so it is answered in the report-wide
+  // banner (d39) rather than on an expense — and it is a WARNING: nothing blocks.
+  const overage = findings.getByRole('listitem').filter({ hasText: BUDGET });
+  await expect(overage).toHaveCount(1);
+  await expect(overage).toContainText('over by');
 
   // w2-11 (d34): a WARNING goes to the approver once the submitter has said why —
   // ExpenseOS's rule. So the overage is justified here, as a submitter would, before the
   // submit; "warns without blocking" still holds, because a justification gets it through
   // where a BLOCK never can.
-  await warning
-    .filter({ hasText: BUDGET })
-    .getByRole('textbox')
-    .fill('Team lunch, agreed with the budget owner');
-  await warning.filter({ hasText: BUDGET }).getByRole('button', { name: 'Acknowledge' }).click();
-  await expect(warning.filter({ hasText: BUDGET })).toHaveCount(0);
+  await overage.getByRole('textbox').fill('Team lunch, agreed with the budget owner');
+  await overage.getByRole('button', { name: 'Acknowledge' }).click();
+  await expect(findings).toHaveCount(0);
 
-  await page.getByRole('button', { name: 'Submit for approval' }).click();
-  await expect(page.getByTestId('report-status')).toHaveText(status('SUBMITTED'));
+  await submitOpenReport(page);
 
   // The rollup moved on the transition, and the screen can now say a real number
   // instead of "not yet calculated".

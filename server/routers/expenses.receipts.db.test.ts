@@ -24,8 +24,8 @@ import { createTenantHarness, type TenantHarness } from '../__test-helpers__/ten
  *     memory driver's;
  *   · a report changes status through `setStatus`, which stamps a REIMBURSED one as
  *     VeloExpense's CHECK requires;
- *   · `startExtraction` is not ported until extraction (Wave 3), so the last case's
- *     re-read refusal waits for it.
+ *   · `startExtraction` arrived with the workbench (w2-02b), so the last case's re-read
+ *     refusal is ExpenseOS's again.
  */
 
 vi.mock('@/auth', () => ({ auth: vi.fn(async () => null) }));
@@ -301,7 +301,9 @@ describe.skipIf(!process.env.DATABASE_URL)('expenses receipt endpoints (integrat
             ...file,
           }),
         ).rejects.toThrow(/decided/);
-        // VeloExpense: `startExtraction`'s refusal arrives with it (extraction, Wave 3).
+        await expect(owner.startExtraction({ receiptIds: [created.id] })).rejects.toThrow(
+          /decided/,
+        );
       }
       expect(await db.receipt.count({ where: { expenseId } })).toBe(1);
     } finally {

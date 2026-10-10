@@ -36,9 +36,10 @@ export async function glAccountIdsForCategories(
   if (unique.length === 0) return new Map();
   const rows = await db.expenseCategory.findMany({
     where: { id: { in: unique } },
-    select: { id: true, glAccountId: true },
+    // VeloExpense: through the account row, not the category's column — see below.
+    select: { id: true, glAccount: { select: { id: true } } },
   });
-  return new Map(rows.map((r) => [r.id, r.glAccountId]));
+  return new Map(rows.map((r) => [r.id, r.glAccount?.id ?? null]));
 }
 
 /**
@@ -48,11 +49,20 @@ export async function glAccountIdsForCategories(
  * worth failing a write over. An employee filing an expense cannot fix a GL mapping,
  * and refusing their line because an admin has not finished configuring the chart
  * would block work on a problem they do not own.
+ *
+ * VeloExpense (w2-02b): read THROUGH the account row (`glAccount`) rather than off the
+ * category's `gl_account_id`. VeloExpense's chart is gated on the accounting module in
+ * the database (0022): with the module off its rows are invisible, and VeloExpense's own
+ * `accountForCategory` (lib/accounts/service.ts) stamps null — "a tenant without
+ * accounting files expenses with no GL coding, which is the truth". Read off the column,
+ * the id of an account the tenant cannot see went into the line and the insert failed on
+ * its foreign key: every line a tenant without accounting tried to add on the workbench
+ * was refused (modules-flow, w2-02b).
  */
 export async function glAccountIdForCategory(db: Db, categoryId: string): Promise<string | null> {
   const row = await db.expenseCategory.findUnique({
     where: { id: categoryId },
-    select: { glAccountId: true },
+    select: { glAccount: { select: { id: true } } },
   });
-  return row?.glAccountId ?? null;
+  return row?.glAccount?.id ?? null;
 }

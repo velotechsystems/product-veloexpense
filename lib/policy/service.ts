@@ -818,7 +818,25 @@ export async function validateReport(
    * Only an UNRESOLVED warning takes it, so an acknowledgement somebody typed is never
    * overwritten — the "prior explicit comment wins" half. A BLOCK never does: it is fixed,
    * not justified. And a report-wide finding has no expense to explain it.
+   *
+   * w2-02b: a finding about one EXPENSE rather than one of its lines (it names the expense in
+   * "data.expenseId") is that expense's to explain too — the workbench shows it on the
+   * expense, beside the explanation field — so it takes the explanation the same way.
    */
+  await tx.query(
+    `UPDATE policy_violation v
+        SET resolved_at = now(), resolved_by_id = r.submitter_id, resolve_note = btrim(e.explanation)
+       FROM expense e
+       JOIN expense_report r ON r.id = e.report_id
+      WHERE v.report_id = $1
+        AND v.line_item_id IS NULL
+        AND e.report_id = v.report_id
+        AND e.id::text = v.data->>'expenseId'
+        AND v.severity = 'WARNING'
+        AND v.resolved_at IS NULL
+        AND btrim(coalesce(e.explanation, '')) <> ''`,
+    [reportId],
+  );
   await tx.query(
     `UPDATE policy_violation v
         SET resolved_at = now(), resolved_by_id = r.submitter_id, resolve_note = btrim(e.explanation)

@@ -21,7 +21,9 @@ import { createTenantHarness, type TenantHarness } from '../__test-helpers__/ten
  *     receipts that already share one expense — that suggestion IS the current state.
  *
  * VeloExpense: ExpenseOS's `expenses.expenses.db.test.ts`, the header-edit and delete
- * blocks (w2-08b). The statement and grouping blocks arrive with those queries (w2-09).
+ * blocks (w2-08b), and the grouping block's cases that read no extraction (w2-02b). The
+ * statement block, and the grouping cases that compare extractions, arrive with extraction
+ * (Wave 3).
  * The cases are ExpenseOS's; the harness is VeloExpense's (`createTenantHarness`: the
  * suite's own tenant, every call inside it under RLS, storage in memory, and
  * `lastAudit` reading `audit_entry`). Currencies are keyed by their ISO code.
@@ -467,6 +469,52 @@ describe.skipIf(!process.env.DATABASE_URL)('expenses on a report (integration)',
         });
         expect(report.totalMinor.toString()).toBe('0');
       }
+    });
+  });
+  // ── receiptGroupingSuggestions ──────────────────────────────────────────────
+
+  describe('suggesting which documents are the same charge', () => {
+    // VeloExpense: ExpenseOS's "suggests merging two documents that describe one charge",
+    // "says nothing about two documents already sharing an expense", "says nothing about
+    // unrelated charges" and "names each document, so the suggestion can be judged" give
+    // each receipt an extraction to compare; they arrive with extraction (Wave 3).
+
+    it('ignores a document nothing has read yet', async () => {
+      // Without an extraction there is no evidence to compare.
+      const { reportId, expenseIds } = await scenario(2);
+      await addReceipt(expenseIds[0]);
+      await addReceipt(expenseIds[1]);
+      const result = await makeCaller(RW, ownerId).receiptGroupingSuggestions({ reportId });
+      expect(result.items).toHaveLength(0);
+    });
+
+    it('refuses a report that does not exist', async () => {
+      await expect(
+        makeCaller(RW, ownerId).receiptGroupingSuggestions({
+          reportId: '00000000-0000-7000-8000-0000000000fc',
+        }),
+      ).rejects.toThrow();
+    });
+
+    it('refuses somebody else’s report', async () => {
+      if (strangerId === ownerId) return;
+      const { reportId } = await scenario();
+      await expect(
+        makeCaller(RW, strangerId).receiptGroupingSuggestions({ reportId }),
+      ).rejects.toThrow(/FORBIDDEN|Forbidden/i);
+    });
+
+    it('admits an admin to anybody’s report', async () => {
+      /**
+       * AP chases receipts across reports they did not file, and the grouping question
+       * is exactly one they need to answer.
+       */
+      if (strangerId === ownerId) return;
+      const { reportId } = await scenario();
+      const admin = makeCaller([...RW, P.expense.report.readAll], strangerId);
+      await expect(admin.receiptGroupingSuggestions({ reportId })).resolves.toMatchObject({
+        items: expect.any(Array),
+      });
     });
   });
 });

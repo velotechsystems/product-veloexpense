@@ -107,13 +107,58 @@ import { callerCanDecideReport } from '@/server/lib/reportApproval';
 import { reportUrl } from '@/server/lib/reportLinks';
 import { recallThroughLifecycle, submitThroughLifecycle } from '@/server/lib/reportLifecycle';
 import { REFUSAL_KEYS, type RefusalKey, refusal } from '@/server/refusal';
+import { renderViolation } from '@/lib/i18n/catalog/policy-messages';
+import { loadReaderPrefs } from '@/lib/i18n/service';
 import { protectedProcedure, router, withPermission } from '@/server/trpc';
 
 /** 10 MiB cap per receipt/invoice — the shared cap the worker also reads against. */
 const MAX_RECEIPT_BYTES = RECEIPT_CAP_BYTES;
 
-// VeloExpense: `BATCH_THRESHOLD_FILES` (sync vs batch extraction) arrives with extraction
-// (Wave 3), with `startExtraction`.
+/** Bulk uploads larger than this go through the Batch API (async, ~50% cheaper);
+ *  at or below it, each receipt extracts synchronously. Mirrors the worker. */
+const BATCH_THRESHOLD_FILES = 5;
+
+/**
+ * VeloExpense: one `receiptGroupingSuggestions` item, in the shape ExpenseOS's procedure
+ * returns — written out because ExpenseOS's is inferred from `groupDocuments`, which
+ * arrives with extraction (Wave 3).
+ */
+/**
+ * VeloExpense: a receipt's extraction as ExpenseOS's `report` maps it for the client — its
+ * `DocumentExtraction` row's statuses (`DocScanStatus`, `DocExtractStatus`), confidence,
+ * data, error, model and review stamp. Written out because the table arrives with extraction
+ * (Wave 3); until then every receipt's is null.
+ */
+interface ReceiptReading {
+  scanStatus: 'PENDING' | 'SCANNING' | 'CLEAN' | 'INFECTED' | 'FAILED';
+  status: 'PENDING' | 'EXTRACTING' | 'EXTRACTED' | 'FAILED';
+  confidence: number | null;
+  data: Prisma.JsonValue | null;
+  error: string | null;
+  model: string | null;
+  reviewedAt: Date | null;
+}
+
+interface GroupingSuggestion {
+  reason: string;
+  /** True when the evidence positively agrees; the UI recommends merging. */
+  confident: boolean;
+  suggestedExpenseId: string;
+  documents: Array<{
+    receiptId: string;
+    expenseId: string;
+    filename: string;
+    vendor: string | null;
+    date: string | null;
+    time: string | null;
+    transactionId: string | null;
+    total: number | null;
+    currencyCode: string | null;
+    kind: string;
+    expenseMerchant: string | null;
+    expenseDate: Date | null;
+  }>;
+}
 
 /** Content types accepted for expense receipts/invoices. Enforced server-side
  *  (the storage layer itself does not filter). */
@@ -858,7 +903,8 @@ async function serializeExpense(e: ExpenseWithDetail) {
       payload: li.payload,
       amountMinor: li.amountMinor.toString(),
       mileageDistance: li.mileageDistance?.toString() ?? null,
-      mileageUnit: li.mileageUnit,
+      // VeloExpense: `mileage_unit` is text under a CHECK (KM, MI); ExpenseOS's is an enum.
+      mileageUnit: li.mileageUnit as 'KM' | 'MI' | null,
       mileageYtdBefore: li.mileageYtdBefore?.toString() ?? null,
       mileageBreakdown: li.mileageBreakdown,
       mileageRoute: li.mileageRoute,
@@ -880,7 +926,8 @@ async function serializeExpense(e: ExpenseWithDetail) {
       department: a.department,
       // VeloExpense: no class.
       classId: null,
-      class: null,
+      // VeloExpense: typed as ExpenseOS's class (`{ id, name }`), which the lines read.
+      class: null as { id: string; name: string } | null,
     })),
     receipts: await Promise.all(
       e.receipts.map(async (r) => ({
@@ -897,8 +944,9 @@ async function serializeExpense(e: ExpenseWithDetail) {
         // expired mid-session and broke the viewer on revisit.
         // VeloExpense: VeloExpense's storage, inline (no filename), at ExpenseOS's TTL (d30).
         url: await getStorage().presignDownload(r.s3Key, undefined, { expiresInSeconds: 3600 }),
-        // VeloExpense: no reading until extraction is ported (Wave 3).
-        extraction: null,
+        // VeloExpense: no reading until extraction is ported (Wave 3). Typed as ExpenseOS's
+        // mapped reading (`ReceiptReading`), which is what the workbench reads it as.
+        extraction: null as ReceiptReading | null,
       })),
     ),
   };
@@ -913,8 +961,8 @@ async function serializeExpense(e: ExpenseWithDetail) {
  * line's expense (null for a report-level finding) — what the workbench groups by.
  * `resolvedBy` is VeloExpense's `resolved_by_id`. Parameterised; under the caller's RLS.
  */
-async function reportViolations(db: TenantDb, reportId: string) {
-  return db.$queryRaw<
+async function reportViolations(db: TenantDb, reportId: string, userId?: string) {
+  const rows = await db.$queryRaw<
     Array<{
       id: string;
       reportId: string;
@@ -923,6 +971,7 @@ async function reportViolations(db: TenantDb, reportId: string) {
       ruleCode: string;
       severity: 'INFO' | 'WARNING' | 'BLOCK';
       message: string;
+      messageCode: string | null;
       data: unknown;
       resolvedAt: Date | null;
       resolvedBy: string | null;
@@ -930,15 +979,35 @@ async function reportViolations(db: TenantDb, reportId: string) {
       createdAt: Date;
     }>
   >`
-    SELECT v.id, v.report_id AS "reportId", li.expense_id AS "expenseId",
+    SELECT v.id, v.report_id AS "reportId", COALESCE(li.expense_id, ex.id) AS "expenseId",
            v.line_item_id AS "lineItemId", v.rule_code AS "ruleCode",
-           v.severity::text AS severity, v.message, v.data,
+           v.severity::text AS severity, v.message, v.message_code AS "messageCode", v.data,
            v.resolved_at AS "resolvedAt", v.resolved_by_id AS "resolvedBy",
            v.resolve_note AS "resolveNote", v.created_at AS "createdAt"
       FROM policy_violation v
       LEFT JOIN expense_line_item li ON li.id = v.line_item_id
+      -- w2-02b: a finding about one EXPENSE (a missing receipt) has no line; the engine names
+      -- its expense in "data.expenseId" (and "finding_key"). Without this it read as a
+      -- finding about the whole report, and the workbench showed it on no expense.
+      LEFT JOIN expense ex
+             ON v.line_item_id IS NULL AND ex.report_id = v.report_id
+            AND ex.id::text = v.data->>'expenseId'
      WHERE v.report_id = ${reportId}::uuid
      ORDER BY v.created_at, v.id`;
+  // w2-02b: the sentence is the READER's (VX4-7 part 2b), as the report page before the
+  // workbench rendered it — from the finding's code and numbers, in the reader's locale, and
+  // the frozen English only for a row without a code. The workbench shows `message` as the
+  // label when ExpenseOS's catalogue has none for it, which is every VeloExpense finding.
+  const locale = userId ? (await loadReaderPrefs(queryRunnerOf(db), userId)).locale : null;
+  return rows.map(({ messageCode, ...v }) => ({
+    ...v,
+    message: locale
+      ? renderViolation(
+          { message_code: messageCode, message: v.message, data: (v.data ?? {}) as never },
+          locale,
+        )
+      : v.message,
+  }));
 }
 
 /**
@@ -1609,6 +1678,34 @@ export const expensesRouter = router({
 
   // VeloExpense: ExpenseOS's `markExtractionReviewed` signs off a receipt's reading, which
   // arrives with extraction (Wave 3).
+
+  /** Sign off on a low-confidence receipt extraction — the reviewer confirms the
+   *  extracted details on the expense, clearing the verification nudge. Toggles:
+   *  a second call un-reviews. Owner-gated (the report's submitter).
+   *
+   *  VeloExpense (w2-02b): the ownership check is ExpenseOS's; the write to the receipt's
+   *  `documentExtraction` row arrives with that table (extraction, Wave 3). Until then no
+   *  receipt has a reading, so the workbench never offers the sign-off this answers. */
+  markExtractionReviewed: withPermission(P.expense.report.updateOwn)
+    .input(z.object({ receiptId: z.string().uuid(), reviewed: z.boolean().default(true) }))
+    .mutation(async ({ ctx, input }) => {
+      const receipt = await ctx.db.receipt.findUnique({
+        where: { id: input.receiptId },
+        select: {
+          id: true,
+          expense: { select: { ownerId: true, report: { select: { submitterId: true } } } },
+        },
+      });
+      const uid = ctx.session.user.id;
+      if (
+        !receipt ||
+        (receipt.expense?.ownerId !== uid && receipt.expense?.report?.submitterId !== uid)
+      ) {
+        throw new TRPCError({ code: 'NOT_FOUND' });
+      }
+      // VeloExpense: `documentExtraction.updateMany({ reviewedAt, reviewedBy })` — Wave 3.
+      return { ok: true as const };
+    }),
 
   /** Submit a draft report. Always re-runs validation server-side
    *  and refuses on any BLOCK violation. The submit-gate decision
@@ -2326,7 +2423,67 @@ export const expensesRouter = router({
       return created;
     }),
 
-  // VeloExpense: `startExtraction` arrives with extraction (Wave 3).
+  /** Start extraction for one or more just-uploaded receipts. A selection of up
+   *  to `BATCH_THRESHOLD_FILES` extracts synchronously — one message per receipt,
+   *  near-instant; a larger bulk upload goes through the Anthropic Batch API
+   *  (~50% cheaper, minutes async). Owner-gated: every receipt must belong to an
+   *  expense on a report the caller submitted.
+   *
+   *  VeloExpense (w2-02b): ported whole for the workbench's uploads, which call it after
+   *  every file. The jobs go to `enqueue`, which queues nothing until extraction (Wave 3),
+   *  so a receipt stays as uploaded and the figures are typed in — ExpenseOS's own
+   *  extraction-off contract (`_workbench/extractionOff.test.ts`). */
+  startExtraction: withPermission(P.expense.report.updateOwn)
+    .input(z.object({ receiptIds: z.array(z.string().uuid()).min(1).max(50) }))
+    .mutation(async ({ ctx, input }) => {
+      const receipts = await ctx.db.receipt.findMany({
+        where: { id: { in: input.receiptIds } },
+        select: {
+          id: true,
+          expense: {
+            select: { ownerId: true, report: { select: { submitterId: true, status: true } } },
+          },
+        },
+      });
+      const uid = ctx.session.user.id;
+      if (
+        receipts.length !== input.receiptIds.length ||
+        receipts.some((r) => r.expense?.ownerId !== uid && r.expense?.report?.submitterId !== uid)
+      ) {
+        throw new TRPCError({ code: 'NOT_FOUND' });
+      }
+      // Same window as attaching: the worker will not rewrite a decided report anyway,
+      // but a re-extraction on one is a model call for nothing.
+      if (
+        receipts.some(
+          (r) => r.expense?.report && !ATTACHABLE_REPORT_STATUSES.includes(r.expense.report.status),
+        )
+      ) {
+        throw refusal(
+          'BAD_REQUEST',
+          REFUSAL_KEYS.documentsRereadClosed,
+          'Documents cannot be re-read once the report has been decided.',
+        );
+      }
+      const ids = receipts.map((r) => r.id);
+      try {
+        if (ids.length > BATCH_THRESHOLD_FILES) {
+          await enqueue('expense.extractReceipt.batch', { receiptIds: ids });
+        } else {
+          // One synchronous job per receipt (≤ threshold).
+          await Promise.all(ids.map((id) => enqueue('expense.extractReceipt', { receiptId: id })));
+        }
+      } catch (err) {
+        // Best-effort (same contract as receiptCreate): a queue hiccup must not
+        // fail the upload — the files stand and can be re-extracted.
+        console.warn(
+          `[expenses.startExtraction] enqueue failed for ${ids.length} receipt(s): ${
+            err instanceof Error ? err.message : String(err)
+          }`,
+        );
+      }
+      return { ok: true as const, count: ids.length };
+    }),
 
   /** List an expense's receipts, each with a short-lived presigned view URL. */
   receiptList: withPermission(P.expense.report.readOwn)
@@ -2356,8 +2513,42 @@ export const expensesRouter = router({
       return { items };
     }),
 
-  // VeloExpense: `receiptGroupingSuggestions`, `statementTargets` and `statementApply` read
-  // extractions, and arrive with extraction (Wave 3).
+  /**
+   * Pairs of documents on DIFFERENT expenses that look like one charge.
+   *
+   * Derived, never stored. `groupDocuments` is pure and reads extractions that are
+   * already in the database — no model call — so recomputing on demand costs a query
+   * and can never go stale. There is nothing to persist and nothing to invalidate:
+   * merge the pair and it stops being a cross-expense group by itself.
+   *
+   * This exists because the automatic pass deliberately declines to merge when the
+   * evidence is not conclusive, and an unresolved pair is an OVER-claim — the same
+   * charge sitting on two expenses. It also catches what the pass never sees:
+   * receipts uploaded one at a time skip the batch entirely.
+   *
+   * VeloExpense (w2-02b): the access check is ExpenseOS's. The grouping reads each
+   * receipt's extraction through `groupDocuments` (`@expenseos/receipt-extraction`), and
+   * both arrive with extraction (Wave 3). With no reading there is no candidate — ExpenseOS
+   * skips a receipt without one — so the answer is the empty list ExpenseOS gives a report
+   * none of whose documents has been read, in ExpenseOS's item shape.
+   */
+  receiptGroupingSuggestions: withPermission(P.expense.report.readOwn)
+    .input(z.object({ reportId: z.string().uuid() }))
+    .query(async ({ ctx, input }) => {
+      const report = await ctx.db.expenseReport.findUnique({
+        where: { id: input.reportId },
+        select: { submitterId: true },
+      });
+      if (!report) throw new TRPCError({ code: 'NOT_FOUND' });
+      const isAdmin = ctx.rbac.permissions.includes(P.expense.report.readAll);
+      if (report.submitterId !== ctx.session.user.id && !isAdmin) {
+        throw new TRPCError({ code: 'FORBIDDEN' });
+      }
+      return { items: [] as GroupingSuggestion[] };
+    }),
+
+  // VeloExpense: `statementTargets` and `statementApply` match a statement's EXTRACTED
+  // lines to expenses, and arrive with extraction (Wave 3).
 
   /**
    * Move a receipt to a different expense on the same report.
@@ -2614,7 +2805,7 @@ export const expensesRouter = router({
         ctx.db.fxRate.findMany({ orderBy: { fetchedAt: 'desc' } }),
         // Folded into the same Promise.all so reading it costs no extra round trip.
         readerCurrencyCode(ctx.db, ctx.session.user.id),
-        reportViolations(ctx.db, report.id),
+        reportViolations(ctx.db, report.id, ctx.session.user.id),
         postingStateOf(ctx.db, report.id),
       ]);
       const extractionReviewThreshold = 0.7;

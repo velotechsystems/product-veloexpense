@@ -1,0 +1,3109 @@
+'use client';
+
+/**
+ * Three-pane expense-report workbench (replaces the old review drawer). Opened
+ * at /expenses/[reportId]:
+ *   - LEFT  — the report's expenses as a selectable list + Upload receipt / Add
+ *             expense. Keyboard nav (↑/↓ / j/k).
+ *   - CENTER— the selected expense's editor.
+ *   - RIGHT — the selected expense's single receipt.
+ *
+ * All report-level chrome (editable title, policy-violation indicator, total /
+ * status / submit / recall / delete / approver decide flow) is projected into
+ * the app-shell TopBar via `useTopBarSlots`. Reusable pane pieces live in
+ * `../_workbench/parts`.
+ *
+ * BELOW `lg` THAT IS NO LONGER THE WHOLE STORY, and the exception is the point.
+ * ADR-0002 rations the TopBar's right slot below `lg` to one icon-only control
+ * or nothing, and it measured this row at 532.813px (EN) / 677.156px (fr-CA)
+ * min-content against a shared 238px budget at 360 — so on a phone the chrome
+ * cannot live there, and a page with no header bar of its own is a page with no
+ * Submit button. Below `lg` the page grows one: `ReportSummary` and
+ * `PhoneActionBar`, as the first child of the body. See the block above
+ * `ExpenseReportWorkbench` for how one action set reaches two destinations.
+ */
+import {
+  Button,
+  buttonVariants,
+  Checkbox,
+  Combobox,
+  type ComboboxItem,
+  cn,
+  DataTableToolbar,
+  Input,
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+  ResizablePanels,
+  StatusBadge,
+  Textarea,
+} from '@expenseos/design-system';
+import {
+  IconAlertTriangle,
+  IconCamera,
+  IconCheck,
+  IconChevronDown,
+  IconFileOff,
+  IconInfoCircle,
+  IconPaperclip,
+  IconPencil,
+  IconPlus,
+  IconPrinter,
+  IconTrash,
+  IconX,
+} from '@tabler/icons-react';
+import { useSearchParams } from 'next/navigation';
+import { useLocale, useTranslations } from 'next-intl';
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useTopBarSlots } from '../../TopBar';
+import { ReceiptFileInput } from '@/components/attachments/ReceiptFileInput';
+import { CommentThread } from '@/components/comments/CommentThread';
+import { useToolbarLabels } from '@/components/data-view';
+import { UserCombobox } from '@/components/pickers/EntityPickers';
+// `useRouter` MUST come from here and not from `next/navigation`. next-intl's router
+// re-applies the active locale to a relative path; the bare one does not, so a
+// `router.push('/expenses')` from a fr-CA reader lands on the unprefixed path and the
+// middleware resolves it to the default locale — dropping them into English. The same
+// bug was fixed in `ExpenseReportsList.tsx` (P05) and left live here; this is that fix.
+// `useSearchParams` above stays on `next/navigation`: it reads the query string, which
+// carries no locale segment, and next-intl publishes no wrapper for it.
+import { Link, useRouter } from '@/i18n/navigation';
+import { formatMinor } from '@/lib/format';
+import { trpc } from '@/lib/trpc/client';
+import { useRefusalText } from '@/lib/trpc/refusal';
+import { useCoarsePointer } from '@/lib/useCoarsePointer';
+import { useDeepLink } from '@/lib/useDeepLink';
+import { useIsBelowLg } from '@/lib/useIsBelowLg';
+import {
+  localeLabel,
+  nextSelectedExpenseId,
+  shouldPromptUpload,
+  statusBadgeProps,
+} from '../_shared';
+import { GroupingResolver, suggestionKey } from '../_workbench/GroupingResolver';
+import {
+  ExpenseEditor,
+  ExpenseListRow,
+  hasPendingExtractionIn,
+  ReceiptPane,
+  type ReportDetail,
+  receiptLockState,
+  violationValues,
+} from '../_workbench/parts';
+import { LedgerPost, type LedgerPostState } from './LedgerPost';
+
+/** Inline editable report title for the top bar: hover reveals a pencil,
+ *  double-click (or the pencil) opens an input with save (✓) / cancel (✗);
+ *  Enter saves, Escape cancels. Read-only reports show plain text. */
+function EditableTitle({
+  title,
+  editable,
+  onSave,
+}: {
+  title: string;
+  editable: boolean;
+  onSave: (next: string) => void;
+}) {
+  const t = useTranslations('expenses');
+  const [editing, setEditing] = useState(false);
+  const [value, setValue] = useState(title);
+
+  if (!editable) {
+    return <span className="truncate font-semibold text-base text-foreground">{title}</span>;
+  }
+  if (editing) {
+    const commit = () => {
+      const v = value.trim();
+      if (v && v !== title) onSave(v);
+      setEditing(false);
+    };
+    return (
+      <div className="flex min-w-0 items-center gap-1">
+        <Input
+          autoFocus
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          onFocus={(e) => e.currentTarget.select()}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') commit();
+            if (e.key === 'Escape') setEditing(false);
+          }}
+          className="h-7 max-w-[16rem] font-medium"
+        />
+        <button
+          type="button"
+          aria-label={t('workbench.saveTitle')}
+          className="shrink-0 text-muted-foreground hover:text-foreground"
+          onClick={commit}
+        >
+          <IconCheck size={15} />
+        </button>
+        <button
+          type="button"
+          aria-label={t('addLine.cancel')}
+          className="shrink-0 text-muted-foreground hover:text-foreground"
+          onClick={() => setEditing(false)}
+        >
+          <IconX size={15} />
+        </button>
+      </div>
+    );
+  }
+  const open = () => {
+    setValue(title);
+    setEditing(true);
+  };
+  return (
+    <div className="group flex min-w-0 items-center gap-1">
+      <button
+        type="button"
+        onDoubleClick={open}
+        className="truncate text-left font-semibold text-base text-foreground"
+      >
+        {title}
+      </button>
+      <button
+        type="button"
+        aria-label={t('workbench.editTitle')}
+        onClick={open}
+        className="shrink-0 text-muted-foreground opacity-0 transition-opacity hover:text-foreground group-hover:opacity-100"
+      >
+        <IconPencil size={14} />
+      </button>
+    </div>
+  );
+}
+
+/**
+ * The two receipt-upload controls on this page, and the classes that make them
+ * tappable. Sites 2 and 3 of P04's four; the other two are the reports list and
+ * the receipt pane.
+ *
+ * ON A COARSE POINTER BOTH PAIRS ARE ICON-ONLY, as sites 1 and 4 already were.
+ * That came from the operator's on-device review of this branch — beside "Add
+ * expense" the labelled pair ran the drawer header past a phone's width — and
+ * it overrides the earlier ruling that these two rows keep their words. All
+ * four upload entry points now read the same way; the split, and the reasons
+ * given for it, are gone. See
+ * `docs/adr/0003-coarse-pointer-affordances-are-js-gated-css-sized.md`.
+ *
+ * The words move into an `sr-only` span at the call site, so every accessible
+ * name — and voice control's "tap Take photo" — is exactly what it was.
+ *
+ * SIZE IS CSS at both treatments rather than a branch on the pointer hook; the
+ * rule is stated in full at the top of `@/lib/useCoarsePointer`. There are two
+ * targets now, because there are two treatments per site:
+ *
+ *   · The icon-only pair a coarse pointer actually gets is a real 44px SQUARE
+ *     (`RECEIPT_TOUCH_SQUARE`). Its only laid-out child is an 18px icon —
+ *     Tailwind's `sr-only` span is absolutely positioned at 1px square and
+ *     contributes nothing to a flex box — so an unsized label there paints
+ *     18x18, and `ReceiptFileInput`'s 6px ring would reach 30x30, 14px short of
+ *     44. That is the arithmetic site 4 was corrected on; it applies here for
+ *     the same reason.
+ *   · The LABELLED treatment keeps `RECEIPT_TOUCH`, and it is not dead weight
+ *     now that no coarse pointer settles on it: the icon-only pair is chosen in
+ *     JS, so on a phone's FIRST paint — where `useCoarsePointer()` still answers
+ *     `false` — the labelled library control is the only control on screen, and
+ *     this is what makes it 44px in that frame instead of ~30px.
+ *
+ * Both sites still decline the hit-slop. Neither row is height-constrained, so a
+ * genuine 44px box is available, and a 6px ring on top of one is a 56px tap area
+ * poking outside a visible chip — which would also put the primitive's
+ * neighbour-clearance condition on two rows that each sit beside a real button:
+ * the hand-off's ghost dismiss and the drawer header's "Add expense".
+ */
+const RECEIPT_TOUCH = 'pointer-coarse:min-h-11 pointer-coarse:px-3';
+
+/**
+ * The 44px square the icon-only pair takes — the same call site 4 makes, by the
+ * same arithmetic. `min-w-11` rather than `w-11`/`size-11` because a fixed width
+ * still shrinks under flex and a minimum does not; `justify-center` lives in the
+ * treatments below, which is where an icon with no padding round it needs it.
+ */
+const RECEIPT_TOUCH_SQUARE = 'pointer-coarse:min-h-11 pointer-coarse:min-w-11';
+
+/**
+ * Both labels of a pair, while an upload runs. Coarse pointer only — see
+ * `captureBusy` below for why the condition lives at the call site.
+ *
+ * `disabled` on the inputs stops being enough once there are two controls: a
+ * person who taps the one they did not start the upload with gets silence.
+ * `pointer-events-none` is what actually swallows that tap, `opacity-50` is
+ * what explains it, and `aria-disabled` on the label says the same thing to a
+ * screen reader. No spinner: this codebase has no `animate-spin` and no
+ * `prefers-reduced-motion` handling anywhere, so motion here would open a
+ * reduced-motion obligation that P04 has no business paying.
+ */
+const RECEIPT_BUSY = 'pointer-events-none opacity-50';
+
+/**
+ * The hand-off banner's filled chip — today's treatment, character for
+ * character, plus the first-paint touch target.
+ *
+ * The whole treatment a desktop ever sees, and what a phone paints in the one
+ * frame before the icon-only pair below replaces it.
+ */
+const RECEIPT_CHIP_FILLED = `inline-flex cursor-pointer items-center gap-1 rounded-md bg-primary px-2.5 py-1.5 font-medium text-primary-foreground text-sm hover:bg-primary/90 ${RECEIPT_TOUCH}`;
+
+/** The drawer header's outline chip — the same thing one tier down: today's
+ *  desktop treatment, character for character, plus the first-paint target. */
+const RECEIPT_CHIP_OUTLINE = `inline-flex cursor-pointer items-center gap-1 rounded-md border border-input px-2.5 py-1.5 font-medium text-sm hover:bg-muted ${RECEIPT_TOUCH}`;
+
+/**
+ * The icon-only chip a coarse pointer gets — the drawer header's pair, and the
+ * hand-off banner's picker.
+ *
+ * `gap-1`, `px-2.5 py-1.5`, `font-medium` and `text-sm` all come off, for the
+ * reasons site 1's square lists: `sr-only` is absolutely positioned and so
+ * contributes nothing to a flex gap, the square replaces the padding, and there
+ * is no visible text left to weight or to size. `justify-center` goes on
+ * because an 18px icon in a 44px box has to be told to centre.
+ *
+ * The drawer header's pair is TWO OF THESE, camera first. Its camera used to
+ * carry `font-semibold` as its only hierarchy cue; with no visible text there is
+ * nothing left for that to weight, so order is the cue — which is exactly the
+ * shape site 1 has.
+ */
+const RECEIPT_CHIP_ICON = `inline-flex cursor-pointer items-center justify-center rounded-md border border-input hover:bg-muted ${RECEIPT_TOUCH_SQUARE}`;
+
+/**
+ * The same square, filled — the hand-off banner's camera only.
+ *
+ * The banner's emphasis survives the label going: it is a call to action, a
+ * filled square still reads as one with no text in it, and the picker beside it
+ * stays outline, so the banner still has exactly one primary. Losing the words
+ * was the operator's instruction; losing the hierarchy was not.
+ */
+const RECEIPT_CHIP_ICON_FILLED = `inline-flex cursor-pointer items-center justify-center rounded-md bg-primary text-primary-foreground hover:bg-primary/90 ${RECEIPT_TOUCH_SQUARE}`;
+
+/** One control's full class list: its treatment (which carries its own touch
+ *  target) plus the busy dimming. */
+const receiptChip = (treatment: string, busy: boolean) =>
+  busy ? `${treatment} ${RECEIPT_BUSY}` : treatment;
+
+// ──────────────────────────────────────────────────────────────────────────────
+// The report's action set, and its two destinations
+//
+// Below `lg` the report chrome cannot live in the app-shell TopBar. ADR-0002's
+// "Below `lg`" section rations that slot to one icon-only control or nothing,
+// and it measured THIS row at 532.813px (EN) / 677.156px (fr-CA) min-content
+// against a shared 238px budget at 360. So the row has a second destination —
+// and the moment it has two, the interesting question is how it stays ONE
+// thing.
+//
+// It stays one thing by ceasing to be markup. A JSX row cannot be mounted in
+// two places with two different layouts, so the action set is DATA: one ordered
+// array of descriptors built from the state the page already owns, and two thin
+// renderers that lay it out. Adding an action is one edit to the array and
+// neither destination can be forgotten. The state machine is not forked either
+// — `decideMode`, `decideNote`, `reassignTo`, `reassignItem` and `confirmDecide`
+// all live in the page component, and the decide panel's markup has exactly one
+// definition (`decidePanel`) that each container mounts in its own box. Same
+// state, same mutation, two containers.
+//
+// WHICH TREE MOUNTS IS DECIDED IN JS, and that is the ruled mechanism for a
+// RELOCATION (see the header of `@/lib/useIsBelowLg`). Two subtrees would mean
+// the report's action set is defined twice, which is a second source of truth
+// for "what can you do to this report". Suppression is the other half of that
+// rule and goes the other way — both subtrees in the DOM, CSS selecting — and
+// it is not what this file does.
+// ──────────────────────────────────────────────────────────────────────────────
+
+/**
+ * The decide panel an approver action opens instead of firing immediately.
+ *
+ * Two of the three collect a note and one collects an approver, and the
+ * renderers do not care which: what they branch on is "does pressing this open
+ * a panel", so one field carries it rather than two.
+ */
+// VeloExpense: `approve` is a panel only when the step requires the receipt-view
+// acknowledgement (see `receiptAck`); otherwise Approve stays the one-press action it is
+// in ExpenseOS.
+type DecidePanel = 'return' | 'reject' | 'reassign' | 'approve';
+
+/** Every action this report offers, to whoever is looking at it. */
+type WorkbenchActionId = DecidePanel | 'approve' | 'recall' | 'submit' | 'delete';
+
+/**
+ * The `Button` variants the action set uses, named rather than widened to the
+ * whole variant union — a descriptor asking for `link` would be a design
+ * question, not a typo, and it should have to be answered here first.
+ */
+type ActionVariant = 'default' | 'ghost' | 'destructive-outline' | 'success-outline';
+
+/**
+ * One thing this report can have done to it.
+ *
+ * Every field is here because BOTH destinations need it and neither may derive
+ * it for itself — a renderer that recomputed `disabled` would be the second
+ * source of truth this shape exists to prevent.
+ */
+type WorkbenchAction = {
+  /** Stable identity. The glyph lookup and the tests both key on it. */
+  id: WorkbenchActionId;
+  /** Already translated. A renderer never reaches for a catalog key. */
+  label: string;
+  /**
+   * What a press does. An action carrying `needsNote` is opened by its
+   * container instead and commits from the panel's own confirm button, so this
+   * opens that panel rather than firing anything.
+   */
+  onPress: () => void;
+  variant: ActionVariant;
+  /**
+   * Whether the CONTROL is degraded. Never whether the CALL is: every one of
+   * these mutations re-derives the actor and re-reads the row server-side, and
+   * nothing here is a client-side authorisation decision.
+   */
+  disabled: boolean;
+  /**
+   * Why `disabled` is true, as a sentence a person can act on — set only for a
+   * predictable block, not for "a request is in flight".
+   *
+   * The desktop row renders it as `title=`, which is a HOVER tooltip: on a
+   * phone that is a greyed button and no sentence, which reads as a broken app.
+   * The phone bar renders it as text under the button. One derivation, two
+   * renderings — see `submitReason` in the page component.
+   */
+  disabledReason?: string;
+  /**
+   * At most one `primary` in the set. The phone bar gives it its own full-width
+   * row and puts everything else on a separated row below, which is how
+   * Approve ends up physically apart from Reject: two destructive-adjacent
+   * controls flanking the affirmative one at 44px each in a 360px bar is how a
+   * mis-tap approves a claim. It costs one row of height.
+   */
+  emphasis: 'primary' | 'secondary';
+  /** Pressing this opens a decide panel instead of firing. */
+  needsNote?: DecidePanel;
+  /** Destroys or refuses something; rendered in the destructive colour. */
+  destructive?: boolean;
+  /**
+   * `window.confirm` copy. The renderer asks before calling `onPress`, so the
+   * guard cannot be present in one destination and absent in the other —
+   * which is the exact asymmetry that let report deletion fire straight from
+   * the button while deleting SELECTED EXPENSES two panels away already asked.
+   */
+  confirm?: string;
+};
+
+/**
+ * Glyphs, keyed by action id.
+ *
+ * Presentation, deliberately kept out of the descriptor: an icon is a thing a
+ * container may or may not have room for, and the action SET is what the array
+ * is a single source of truth for. Both renderers read this one table, so the
+ * glyph cannot differ between them either.
+ */
+const ACTION_ICON: Partial<Record<WorkbenchActionId, ReactNode>> = {
+  delete: <IconTrash size={14} className="mr-1" />,
+};
+
+/** Ask, if the descriptor says to ask, then fire. Shared by both renderers. */
+function pressAction(action: WorkbenchAction) {
+  if (action.confirm && !window.confirm(action.confirm)) return;
+  action.onPress();
+}
+
+type ActionRendererProps = {
+  /** The one ordered array. Both renderers consume it; neither filters it. */
+  actions: WorkbenchAction[];
+  /** Which decide panel is open — the page's own `decideMode`, unforked. */
+  openPanel: DecidePanel | 'idle';
+  onOpenPanel: (panel: DecidePanel, open: boolean) => void;
+  /** The panel body, defined once in the page and mounted by whichever container asked. */
+  renderPanel: (panel: DecidePanel) => ReactNode;
+};
+
+/**
+ * The action row as the app-shell TopBar has always painted it — same order,
+ * same variants, same popovers, same DOM.
+ *
+ * It is the DESKTOP destination and it mounts only at `lg` and up. The chrome
+ * around it (total, status, external ids, the NetSuite state, print) stays in
+ * the slot at every width and is CSS-cloaked below `lg` instead, because none
+ * of it is relocated — nothing below `lg` renders a second copy of it, so
+ * there is no second source of truth to keep honest and no reason to unmount.
+ */
+function TopBarActions({ actions, openPanel, onOpenPanel, renderPanel }: ActionRendererProps) {
+  return (
+    <>
+      {actions.map((action) =>
+        action.needsNote ? (
+          <Popover
+            key={action.id}
+            open={openPanel === action.needsNote}
+            onOpenChange={(o) => action.needsNote && onOpenPanel(action.needsNote, o)}
+          >
+            {/* VeloExpense: the kit's Popover is Radix (`asChild`) where ExpenseOS's is
+                Base UI (`render`) — as data-display's BulkActionsMenu adapts it. */}
+            <PopoverTrigger asChild>
+              <Button size="sm" variant={action.variant} disabled={action.disabled}>
+                {action.label}
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent align="end" className="w-72">
+              {renderPanel(action.needsNote)}
+            </PopoverContent>
+          </Popover>
+        ) : (
+          <Button
+            key={action.id}
+            size="sm"
+            variant={action.variant}
+            className={action.destructive ? 'text-destructive' : undefined}
+            disabled={action.disabled}
+            title={action.disabledReason}
+            onClick={() => pressAction(action)}
+          >
+            {ACTION_ICON[action.id]}
+            {action.label}
+          </Button>
+        ),
+      )}
+    </>
+  );
+}
+
+/** One action in the phone bar: the control, and the sentence under it. */
+function PhoneActionButton({
+  action,
+  openPanel,
+  onOpenPanel,
+  full,
+}: Omit<ActionRendererProps, 'actions' | 'renderPanel'> & {
+  action: WorkbenchAction;
+  /** The single `primary`, which takes a row of its own at full width. */
+  full?: boolean;
+}) {
+  const panel = action.needsNote;
+  return (
+    <div className={full ? 'w-full' : undefined}>
+      <Button
+        size="sm"
+        variant={action.variant}
+        className={cn(full && 'w-full', action.destructive && 'text-destructive')}
+        disabled={action.disabled}
+        title={action.disabledReason}
+        aria-expanded={panel ? openPanel === panel : undefined}
+        onClick={() => (panel ? onOpenPanel(panel, openPanel !== panel) : pressAction(action))}
+      >
+        {ACTION_ICON[action.id]}
+        {action.label}
+      </Button>
+      {action.disabledReason && (
+        <p
+          data-testid={`action-reason-${action.id}`}
+          className="mt-1.5 text-muted-foreground text-sm"
+        >
+          {action.disabledReason}
+        </p>
+      )}
+    </div>
+  );
+}
+
+/**
+ * The body-level action bar this route has never had — the phone destination
+ * for the same array the TopBar row renders.
+ *
+ * Its layout is the one rule that is not tradeable: ONE primary, on its own
+ * full-width row, with everything else on a separated row beneath it. In
+ * approver mode the primary is Approve, which is what puts a row gap and a
+ * rule between Approve and Reject rather than standing them side by side.
+ *
+ * The decide panel opens INLINE beneath the bar rather than in a popover. The
+ * markup inside it is the same `renderPanel` the popover mounts; what differs
+ * is the box, because a popover anchored to a full-width button at 360px is
+ * positioning work with nothing to show for it.
+ */
+/**
+ * The expense list's DOM id, so the pane header's disclosure button below `lg`
+ * can point `aria-controls` at what it opens. A constant rather than a literal
+ * at both sites, because the two have to agree and nothing else would say so.
+ */
+const EXPENSE_LIST_ID = 'workbench-expense-list';
+
+function PhoneActionBar({ actions, openPanel, onOpenPanel, renderPanel }: ActionRendererProps) {
+  const t = useTranslations('expenses');
+  if (actions.length === 0) return null;
+  const primary = actions.find((a) => a.emphasis === 'primary');
+  const secondary = actions.filter((a) => a !== primary);
+  return (
+    <section
+      aria-label={t('workbench.actionsLabel')}
+      data-testid="phone-action-bar"
+      className="rounded-md border border-border bg-card px-3 py-3"
+    >
+      {primary && (
+        <PhoneActionButton action={primary} openPanel={openPanel} onOpenPanel={onOpenPanel} full />
+      )}
+      {secondary.length > 0 && (
+        <div className={cn('flex flex-wrap gap-2', primary && 'mt-3 border-border border-t pt-3')}>
+          {secondary.map((action) => (
+            <PhoneActionButton
+              key={action.id}
+              action={action}
+              openPanel={openPanel}
+              onOpenPanel={onOpenPanel}
+            />
+          ))}
+        </div>
+      )}
+      {openPanel !== 'idle' && (
+        <div className="mt-3 rounded-md border border-border bg-background p-3">
+          {renderPanel(openPanel)}
+        </div>
+      )}
+    </section>
+  );
+}
+
+/**
+ * The report's totals, in the body, below `lg`.
+ *
+ * A RE-PRESENTATION of data already on the client — the same
+ * `trpc.expenses.report.useQuery` result the rest of the page reads. No new
+ * procedure, no changed procedure, nothing promoted.
+ *
+ * THE BY-CURRENCY COMPOSITION IS RENDERED, NOT DISCLOSED, and that is the whole
+ * point of the block. In the TopBar the composition sits inline beside the
+ * total and the reconciliation sits in a `group-hover` panel — and `hover` does
+ * not exist on a touch device, so on a phone the two numbers an approver most
+ * needs were unreachable rather than merely inconvenient. This lists them.
+ *
+ * What it deliberately does NOT carry: a `<Field>`, an `<input>`, or an
+ * `aria-label` matching any of the field names the E2E suite addresses
+ * unscoped — `getByLabel` has no visibility filter, so a second labelled
+ * "Vendor" anywhere on this page breaks every spec that adds an expense, at a
+ * width where none of the phone work is supposed to be visible.
+ */
+function ReportSummary({ report }: { report: ReportDetail }) {
+  const t = useTranslations('expenses');
+  const locale = useLocale();
+  const rollup = report.rollup;
+  return (
+    <section
+      aria-label={t('workbench.summaryLabel')}
+      data-testid="report-summary"
+      className="rounded-md border border-border bg-card px-3 py-2.5"
+    >
+      <div className="flex items-center justify-between gap-2">
+        <span className="font-medium text-muted-foreground text-xs uppercase tracking-wide">
+          {t('workbench.fxReportTotal')}
+        </span>
+        <StatusBadge
+          {...statusBadgeProps(report.status, t)}
+          appearance={report.status === 'DRAFT' ? 'outline' : 'solid'}
+        />
+      </div>
+      <p className="mt-1 font-semibold text-foreground text-xl tabular-nums">
+        <span className="mr-1 font-normal text-muted-foreground text-sm">
+          {report.currency.code}
+        </span>
+        {formatMinor(Number(rollup.homeTotalMinor), report.currency, locale)}
+      </p>
+      {rollup.multiCurrency && (
+        <div className="mt-2 border-border border-t pt-2">
+          <p className="font-medium text-[10px] text-muted-foreground uppercase tracking-wide">
+            {t('workbench.fxByCurrency')}
+          </p>
+          <ul className="mt-1 flex flex-col gap-0.5">
+            {rollup.byCurrency.map((c) => (
+              <li
+                key={c.code}
+                className="flex items-baseline justify-between gap-2 text-sm tabular-nums"
+              >
+                {/* A currency with no rate is flagged rather than dropped: a total
+                    that is not the whole total has to say so where it is read. */}
+                <span className={c.convertedMinor === null ? 'text-warning' : 'text-foreground'}>
+                  {c.code} {formatMinor(Number(c.grossMinor), { code: c.code, symbol: '' }, locale)}
+                </span>
+                <span className="shrink-0 text-muted-foreground text-xs">
+                  {c.rate ? t('workbench.fxRate', { rate: c.rate }) : t('workbench.fxNoRate')}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </section>
+  );
+}
+
+export function ExpenseReportWorkbench({
+  reportId,
+  canEdit,
+  canDelete,
+  canSubmit,
+  canApprove,
+  canFxOverride,
+  canOpenLedgerQueue,
+  taskId,
+  receiptAck,
+}: {
+  reportId: string;
+  canEdit: boolean;
+  canDelete: boolean;
+  canSubmit: boolean;
+  /** The caller is an eligible approver of this report (has a decidable task). */
+  canApprove: boolean;
+  /** `expense.report.fxOverride` — gates the per-report FX override (A4). Held by the
+   *  finance admins, not by AP: the role that pays and posts a report must not also
+   *  restate its amounts. Cosmetic; the mutation re-checks. */
+  canFxOverride: boolean;
+  /** VeloExpense (d38): `ledger.sync.retry` — may open /admin/ledger-queue, where a post is
+   *  retried, released or cancelled. Cosmetic — the queue page re-checks. ExpenseOS's
+   *  `canPushNetsuite` (`netsuite.sync.push`) gated a push from here. */
+  canOpenLedgerQueue: boolean;
+  /** The caller's PENDING task on this report, when they can decide it. */
+  taskId?: string;
+  /** VeloExpense: set when the caller's step requires them to confirm they reviewed the
+   *  receipts before approving (`requireReceiptViewAck`, on by default) — VeloExpense's
+   *  engine refuses the approval without it. Not in ExpenseOS. */
+  receiptAck?: { required: true; receiptCount: number };
+}) {
+  const toolbarLabels = useToolbarLabels();
+  const t = useTranslations('expenses');
+  const tc = useTranslations('common');
+  const locale = useLocale();
+  const router = useRouter();
+  const utils = trpc.useUtils();
+
+  const query = trpc.expenses.report.useQuery(
+    { reportId },
+    {
+      // Keep polling while anything is being read — by the client's own reading of the
+      // rows, or the server's (`extraction.inFlight`, the figure that holds Submit). The
+      // second keeps the button from staying disabled after the reading has landed.
+      refetchInterval: (q) =>
+        hasPendingExtractionIn(q.state.data?.expenses) ||
+        (q.state.data?.extraction.inFlight ?? 0) > 0
+          ? 4000
+          : false,
+    },
+  );
+  const report = query.data;
+  const catsQuery = trpc.expenses.categories.useQuery();
+  const categoryItems = useMemo(
+    () =>
+      (catsQuery.data ?? []).map((c) => ({
+        value: c.id,
+        label: localeLabel(c.label, locale),
+        // The category's own glyph, so a picked category looks like the one that
+        // was picked rather than a plainer text-only entry.
+        icon: c.icon ?? undefined,
+        isMileage: c.isMileage,
+        // Drives which line-kind STRATEGY a row uses (see _workbench/lineKinds.tsx).
+        acceptsTip: c.acceptsTip,
+      })),
+    [catsQuery.data, locale],
+  );
+
+  const invalidate = useCallback(() => {
+    utils.expenses.report.invalidate({ reportId });
+    utils.expenses.list.invalidate();
+    // VeloExpense (d37): the discussion carries the report's events and the reasons given
+    // for them, so a submit, recall or decision made here shows in it without a reload.
+    utils.comments.thread.invalidate({ subjectType: 'EXPENSE_REPORT', subjectId: reportId });
+  }, [utils, reportId]);
+
+  /**
+   * Re-ask `expenses.report` — SEC-4's half of the receipt sheet.
+   *
+   * `refetch` rather than `invalidate` so it fires whatever `staleTime` says: the
+   * 30s window and `refetchOnWindowFocus: false` were calibrated for a desktop tab,
+   * and the case this exists for is an installed app returning from the background
+   * after an hour with a sheet open over a presigned URL that has since expired.
+   *
+   * Stable, because `ReceiptPane` subscribes to `visibilitychange` on it — an identity
+   * that changed every render would tear the listener down and set it up again on
+   * every poll.
+   */
+  const refetchReport = useCallback(() => {
+    void utils.expenses.report.refetch({ reportId });
+  }, [utils, reportId]);
+
+  const isDraft = report?.status === 'DRAFT';
+  const isSubmitted = report?.status === 'SUBMITTED';
+  const canEditStatus = isDraft || report?.status === 'RETURNED';
+  const editable = canEdit && canEditStatus;
+
+  const updateReport = trpc.expenses.updateReport.useMutation({ onSuccess: invalidate });
+  const createExpense = trpc.expenses.createExpense.useMutation({
+    onSuccess: (created) => {
+      if (created && typeof created === 'object' && 'id' in created) {
+        setSelectedId((created as { id: string }).id);
+      }
+      invalidate();
+    },
+  });
+  const validate = trpc.expenses.validate.useMutation({ onSuccess: invalidate });
+  // On-the-fly policy check: an edit recomputes violations server-side then
+  // refetches. Falls back to a plain refetch once the report is not editable.
+  const refusalText = useRefusalText();
+  const receiptMove = trpc.expenses.receiptMove.useMutation();
+  /**
+   * Cross-expense document pairs that look like one charge. Derived server-side from
+   * extractions already stored — no model call, so refetching is cheap and the answer
+   * can never be stale.
+   */
+  const grouping = trpc.expenses.receiptGroupingSuggestions.useQuery(
+    { reportId },
+    { enabled: canEdit },
+  );
+  /**
+   * Pairs answered "separate charges" during THIS submit attempt.
+   *
+   * Nothing is written, because nothing needs writing: the documents already sit on
+   * separate expenses, which is exactly what the answer means. Held here so the
+   * question stops blocking the submit in front of the user, and asked again after a
+   * reload — a pre-flight check rather than a nag.
+   */
+  const [keptApart, setKeptApart] = useState<Set<string>>(new Set());
+  const revalidate = useCallback(() => {
+    if (canEdit && (report?.status === 'DRAFT' || report?.status === 'RETURNED')) {
+      validate.mutate({ reportId });
+    } else {
+      invalidate();
+    }
+  }, [reportId, invalidate, validate, canEdit, report?.status]);
+  /**
+   * Move a receipt to another expense on this report — the one path behind both the
+   * drag-and-drop and the per-row select.
+   *
+   * The selection follows the receipt. Moving the LAST document off an expense
+   * deletes it server-side, so leaving `selectedId` pointing at it would blank the
+   * editor; and even when it survives, the file the user just moved is now in the
+   * other expense's pane, so following it is what they meant.
+   */
+  const moveReceipt = useCallback(
+    (receiptId: string, toExpenseId: string) => {
+      receiptMove.mutate(
+        { id: receiptId, toExpenseId },
+        {
+          onSuccess: () => {
+            setSelectedId(toExpenseId);
+            revalidate();
+          },
+          onError: (e) => setSubmitError(refusalText(e, e.message)),
+        },
+      );
+    },
+    [receiptMove, revalidate, refusalText],
+  );
+
+  const submit = trpc.expenses.submit.useMutation();
+  const recall = trpc.expenses.recall.useMutation({ onSuccess: invalidate });
+  const decide = trpc.expenseApprovals.decide.useMutation({
+    onSuccess: invalidate,
+    onError: (e) => setSubmitError(refusalText(e, e.message)),
+  });
+  const returnForEdit = trpc.expenseApprovals.returnForEdit.useMutation({
+    onSuccess: invalidate,
+    onError: (e) => setSubmitError(refusalText(e, e.message)),
+  });
+  const reassign = trpc.expenseApprovals.reassign.useMutation({
+    onSuccess: () => {
+      setDecideMode('idle');
+      setReassignTo(null);
+      setReassignItem(null);
+      // VeloExpense (d37): and the reason that went with it.
+      setDecideNote('');
+      invalidate();
+    },
+    onError: (e) => setSubmitError(refusalText(e, e.message)),
+  });
+  const remove = trpc.expenses.deleteReport.useMutation({
+    onSuccess: () => {
+      utils.expenses.list.invalidate();
+      router.push('/expenses');
+    },
+  });
+  const deleteExpenses = trpc.expenses.deleteExpenses.useMutation({
+    onSuccess: () => {
+      setChecked(new Set());
+      revalidate();
+    },
+  });
+
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  /**
+   * The REASON a submission was refused, as a string.
+   *
+   * Named `submitRefusal` because `submitBlocked` is already taken, by a boolean that
+   * disables the button when the report is not submittable YET. The two are genuinely
+   * different: that one is "you cannot press this", this one is "you pressed it and here
+   * is what came back".
+   *
+   * Separate from `submitError` too, which is shared with the approver's own actions and
+   * belongs in the top bar.
+   *
+   * Kept apart because the two need different treatment: an approver's "task already
+   * decided" is a one-line correction, while a submitter needs the reason AND the list of
+   * things to fix, and needs it where they cannot scroll past it.
+   */
+  const [submitRefusal, setSubmitRefusal] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  /** `?expense=<id>` — which line the caller wants open. See the effect below. */
+  const requestedExpenseId = useSearchParams().get('expense');
+  // Multi-select for the expense-list group action (bulk delete).
+  const [checked, setChecked] = useState<Set<string>>(new Set());
+  // Approver decide flow: 'idle', or a reject/return/reassign popover is open.
+  const [decideMode, setDecideMode] = useState<'idle' | DecidePanel>('idle');
+  /** VeloExpense: the receipt-view acknowledgement, ticked in the approve panel. */
+  const [receiptsReviewed, setReceiptsReviewed] = useState(false);
+  const [decideNote, setDecideNote] = useState('');
+  /**
+   * Which currency the header total is READ in. Null = the report's own.
+   *
+   * Presentation only, and deliberately not persisted: a report is filed and posted in its
+   * own currency, and a reader's viewing preference is not a property of the claim.
+   */
+  const [viewCurrency, setViewCurrency] = useState<string | null>(null);
+  // Reassign flow: the picked target user (id + label item for the combobox).
+  const [reassignTo, setReassignTo] = useState<string | null>(null);
+  const [reassignItem, setReassignItem] = useState<ComboboxItem | null>(null);
+
+  // VeloExpense: memoised, so the `[]` fallback is one array rather than a new one per render —
+  // which every hook below that depends on `expenses` would otherwise see as a change
+  // (react-hooks/exhaustive-deps; ExpenseOS's Biome does not check this).
+  const expenses = useMemo(() => report?.expenses ?? [], [report?.expenses]);
+  useEffect(() => {
+    if (expenses.length === 0) {
+      setSelectedId(null);
+      return;
+    }
+    setSelectedId((cur) =>
+      nextSelectedExpenseId({
+        current: cur,
+        expenseIds: expenses.map((e) => e.id),
+        requested: requestedExpenseId,
+      }),
+    );
+  }, [expenses, requestedExpenseId]);
+  // Drop checked ids that vanished (deleted/refetched) or clear when the report
+  // is no longer editable (selection only makes sense while editing).
+  useEffect(() => {
+    setChecked((prev) => {
+      if (!editable) return prev.size ? new Set() : prev;
+      const next = new Set([...prev].filter((id) => expenses.some((e) => e.id === id)));
+      return next.size === prev.size ? prev : next;
+    });
+  }, [expenses, editable]);
+  const toggleChecked = (id: string) =>
+    setChecked((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  const bulkDelete = () => {
+    if (checked.size === 0) return;
+    if (!window.confirm(t('drawer.confirmDeleteExpenses', { count: checked.size }))) return;
+    deleteExpenses.mutate({ ids: [...checked] });
+  };
+  const bulkActions =
+    checked.size > 0
+      ? [
+          {
+            id: 'delete',
+            label: t('drawer.deleteSelected', { count: checked.size }),
+            onSelect: bulkDelete,
+            icon: <IconTrash size={14} className="text-destructive/80" />,
+            destructive: true,
+          },
+        ]
+      : [];
+  const selected = expenses.find((e) => e.id === selectedId) ?? null;
+  /**
+   * Where a receipt on the selected expense could go: every OTHER expense on the
+   * report, labelled the way the left pane labels them so the two agree.
+   *
+   * Merchant first because that is what someone is matching against; the date
+   * disambiguates two visits to the same place, which is exactly the case where
+   * moving a receipt by hand is needed.
+   */
+  const moveTargets = useMemo(
+    () =>
+      expenses
+        .filter((e) => e.id !== selected?.id)
+        .map((e) => ({
+          id: e.id,
+          // VeloExpense: an expense may have no date yet — a dash, as /expenses/all shows it.
+          label: `${e.merchant?.trim() || t('drawer.untitledExpense')} · ${
+            e.date
+              ? new Date(e.date).toLocaleDateString(locale, {
+                  month: 'short',
+                  day: 'numeric',
+                  timeZone: 'UTC',
+                })
+              : '—'
+          }`,
+        })),
+    [expenses, selected?.id, locale, t],
+  );
+  const { editorLocked, viewerLocked } = receiptLockState(selected, false);
+
+  // Receipt-first capture directly on the report: new expense per file →
+  // upload → attach → extract.
+  const uploadUrl = trpc.expenses.receiptUploadUrl.useMutation();
+  const receiptCreate = trpc.expenses.receiptCreate.useMutation();
+  const startExtraction = trpc.expenses.startExtraction.useMutation();
+  const [uploadBusy, setUploadBusy] = useState(false);
+
+  /**
+   * Is the primary pointer a finger? Read to decide what to RENDER — the second
+   * control, and the wording that only makes sense once it exists.
+   *
+   * Both entry points on this page read the same hook, which is one shared
+   * `MediaQueryList` and one `change` listener rather than one per call site;
+   * that is what `@/lib/useCoarsePointer` is a module-level store for.
+   */
+  const coarsePointer = useCoarsePointer();
+  /**
+   * Below Tailwind's `lg` the report chrome relocates out of the rationed
+   * TopBar slot and into the body. `false` on the server and on the hydration
+   * render, which is today's DOM exactly as it stands.
+   */
+  const isBelowLg = useIsBelowLg();
+  /**
+   * Is the receipt sheet open? Below `lg` the receipt pane is a bottom sheet
+   * (see `ReceiptPane`), opened from the paperclip on an expense row.
+   *
+   * The state lives here rather than in either component because the trigger and
+   * the sheet are in two different panes, and because the keyboard handler below
+   * has to know: ↓ / j with the sheet open would swap the sheet's contents out
+   * from under whoever is reading it.
+   */
+  const [receiptSheetOpen, setReceiptSheetOpen] = useState(false);
+  /**
+   * Is the expense LIST expanded? Below `lg` only; above it the list is always
+   * open and this value is never read.
+   *
+   * COLLAPSED BY DEFAULT, and that is the point of it. Below `lg` the three
+   * panes stack, so the expense list sits between the reader and the editor of
+   * the expense they just picked: choosing a row scrolled the thing they chose
+   * off the bottom of a 664px screen, under a list they were done with. Closing
+   * the list on selection makes the editor what the reader sees, and opening
+   * the report shows the summary, the action bar and the blockers first —
+   * which is the review order — with the list one tap away.
+   *
+   * WHY THE STATE IS HERE AND THE SUPPRESSION IS CSS. The header TOGGLE is a
+   * relocation — below `lg` the pane's title becomes a disclosure control, and
+   * both faces in the DOM would put "Expenses" in the accessibility tree twice
+   * — so it is selected in JS, like the rest of the relocated chrome. The LIST
+   * ITSELF is only suppressed, so it stays mounted and takes a `hidden` class:
+   * unmounting it would drop the rows' checkboxes out of the tree on a desktop
+   * resize across 1024px, and a reader who did nothing but widen a window would
+   * find the pane's multi-select gone. `checked` lives in this component for
+   * the same reason, so the two agree.
+   */
+  const [expensesListOpen, setExpensesListOpen] = useState(false);
+  /**
+   * Select an expense, and get out of the way.
+   *
+   * Every list-row tap goes through here rather than through `setSelectedId`
+   * directly, so the collapse cannot be forgotten at one of the two row
+   * affordances. Unconditional: above `lg` `expensesListOpen` is not read at
+   * all, and a phone reader arriving from a desktop resize finds the list in
+   * its default state rather than in a stale one.
+   */
+  const selectFromList = useCallback((id: string) => {
+    setSelectedId(id);
+    setExpensesListOpen(false);
+  }, []);
+
+  /**
+   * An upload is running AND there are two controls to silence.
+   *
+   * Gated on the pointer, not on `uploadBusy` alone, and that is the whole
+   * point: at a fine pointer the busy state stays exactly what it has always
+   * been — `disabled` on the one input, the label untouched. The relabel and
+   * the dimming exist to answer "why did nothing happen when I tapped the
+   * other one", and on a desktop there is no other one.
+   */
+  const captureBusy = coarsePointer && uploadBusy;
+
+  /**
+   * What a picker control's label SAYS right now — visibly on a desktop, and
+   * from an `sr-only` span on a phone, where the words are still the accessible
+   * name but no longer on screen. Three states, and the middle one is the easy
+   * one to miss.
+   *
+   * Alone (a desktop), it keeps the wording it has always had — a lone control
+   * is not a choice between sources, and "Choose file" would be answering a
+   * question nobody asked. Beside the camera it becomes `capture.chooseFile`,
+   * so the pair reads as two SOURCES rather than one source and one outcome,
+   * which is the iOS/Android convention and the only wording that makes the
+   * camera's missing library choice legible. Busy, both controls read the
+   * drawer's existing "Uploading…" rather than a third translation of it.
+   *
+   * `alone` arrives RESOLVED, never as a catalog key. `packages/i18n/scripts/
+   * check-used-keys.mjs` reads string-literal translation calls only, so taking
+   * a key here and resolving it from a variable would quietly drop
+   * `handoff.action` and `inbox.uploadReceipt` out of the CI coverage gate. The
+   * gate is literal enough that this paragraph cannot spell the pattern out in
+   * real call syntax either — it did at first, and the scanner dutifully went
+   * looking for a catalog key named `literal`.
+   */
+  function pickerLabel(alone: string): string {
+    if (captureBusy) return t('drawer.uploading');
+    if (coarsePointer) return t('capture.chooseFile');
+    return alone;
+  }
+
+  /**
+   * A picker control's children: its icon and its label.
+   *
+   * On a coarse pointer the label is still the label — it just stops being
+   * visible. It moves into an `sr-only` span, which is where the control's
+   * accessible name comes from and the only place it comes from: one string,
+   * one translation, and voice control ("tap Choose file") matches what a
+   * sighted user is told the icon means. NOT `aria-label` — on a `<label>`
+   * element it does nothing useful, and on the input it would shadow the
+   * visible text a desktop still has.
+   *
+   * `alone` arrives RESOLVED, as `pickerLabel` above requires and for the same
+   * reason: a catalog key passed through a variable drops out of the CI
+   * coverage gate.
+   */
+  const pickerChildren = (alone: string) =>
+    coarsePointer ? (
+      <>
+        <IconPaperclip size={18} aria-hidden="true" />
+        <span className="sr-only">{pickerLabel(alone)}</span>
+      </>
+    ) : (
+      <>
+        <IconPaperclip size={14} />
+        {pickerLabel(alone)}
+      </>
+    );
+
+  /**
+   * The camera control, identical at both of this page's entry points bar its
+   * treatment — and icon-only, because it only ever exists on a coarse pointer
+   * and every coarse-pointer upload control on this page is now icon-only.
+   */
+  const cameraControl = (className: string) => ({
+    className,
+    'aria-disabled': captureBusy || undefined,
+    children: (
+      <>
+        <IconCamera size={18} aria-hidden="true" />
+        <span className="sr-only">
+          {captureBusy ? t('drawer.uploading') : t('capture.takePhoto')}
+        </span>
+      </>
+    ),
+  });
+
+  /**
+   * Arrived from `?upload=1` — an MCP client created this report and could not upload the
+   * files itself, so the person was handed a link instead.
+   *
+   * The banner exists because the page alone explains nothing: a report of blank expenses
+   * looks like a bug rather than an invitation. It is dismissed by uploading, or by hand.
+   *
+   * **The file picker is deliberately NOT opened automatically.** `input.click()` from an
+   * effect has no transient user activation, so Chrome and Safari block or warn — it would
+   * work in dev and silently fail for somebody. The banner's own button IS the activation.
+   */
+  const uploadLink = useDeepLink('upload');
+  const [showUploadPrompt, setShowUploadPrompt] = useState(false);
+  useEffect(() => {
+    if (!uploadLink.id || !uploadLink.key || uploadLink.wasSeen(uploadLink.key)) return;
+    uploadLink.markSeen(uploadLink.key);
+    setShowUploadPrompt(true);
+    // Tidy the address bar, so a reload or a copied link is not a second prompt.
+    uploadLink.clear();
+  }, [uploadLink]);
+
+  async function uploadReceipts(files: FileList) {
+    setSubmitError(null);
+    setUploadBusy(true);
+    let lastId: string | null = null;
+    try {
+      for (const file of Array.from(files)) {
+        const created = await createExpense.mutateAsync({ reportId });
+        if (!created || !('id' in created)) continue;
+        const expenseId = created.id;
+        lastId = expenseId;
+        const contentType = file.type || 'application/octet-stream';
+        const { url, headers, key } = await uploadUrl.mutateAsync({
+          expenseId,
+          filename: file.name,
+          contentType,
+          // The link is bound to this exact length, so it must be the body PUT below.
+          sizeBytes: file.size,
+        });
+        const put = await fetch(url, { method: 'PUT', headers, body: file });
+        if (!put.ok) throw new Error(t('drawer.uploadFailed'));
+        const { id } = await receiptCreate.mutateAsync({
+          expenseId,
+          key,
+          filename: file.name,
+          contentType,
+          sizeBytes: file.size,
+          deferExtraction: true,
+        });
+        await startExtraction.mutateAsync({ receiptIds: [id] });
+      }
+      invalidate();
+      if (lastId) setSelectedId(lastId);
+      // Answered: the receipts are filed, so the prompt has served its purpose.
+      setShowUploadPrompt(false);
+    } catch (err) {
+      setSubmitError(refusalText(err, t('drawer.uploadFailed')));
+      invalidate();
+    } finally {
+      setUploadBusy(false);
+    }
+  }
+
+  /**
+   * Keyboard nav over the expense list (↑/↓ or j/k), unless typing in a field.
+   *
+   * SUSPENDED WHILE THE RECEIPT SHEET IS OPEN, AND ONLY BELOW `lg`. The exemption
+   * list below is about text entry — it asks "is this keystroke meant for a
+   * field" — and it has no answer for "is this keystroke meant for the thing on
+   * top". With the sheet open, its own body holds the focus and nothing in it is
+   * an INPUT, so ↓ reached this handler, moved the selection, and changed the
+   * receipt the reader was looking at without touching the sheet they thought
+   * they were in. The sheet is modal; while it is up, the list underneath does
+   * not take arrow keys. Esc still closes it, which is the primitive's own
+   * behaviour.
+   *
+   * `isBelowLg &&` is load-bearing and its absence was a dead-keyboard bug. The
+   * sheet only EXISTS below `lg`: at `lg` and up `ReceiptPane` renders the third
+   * pane and the sheet is never mounted, so its Close never fires and nothing
+   * else clears the flag. A reader who opened the sheet on a phone-width window
+   * and then widened it past 1024px got a page with no sheet, no way to close
+   * one, and ↑/↓/j/k dead for the rest of the session. Two halves fix it: this
+   * condition, so a desktop never suspends on a flag it cannot clear, and the
+   * effect below, so the flag does not survive the widening either. Either half
+   * alone leaves a live wrong state behind.
+   */
+  useEffect(() => {
+    if (expenses.length === 0) return;
+    if (isBelowLg && receiptSheetOpen) return;
+    function onKey(ev: KeyboardEvent) {
+      const el = ev.target as HTMLElement | null;
+      if (el && ['INPUT', 'TEXTAREA', 'SELECT'].includes(el.tagName)) return;
+      const down = ev.key === 'ArrowDown' || ev.key === 'j';
+      const up = ev.key === 'ArrowUp' || ev.key === 'k';
+      if (!down && !up) return;
+      ev.preventDefault();
+      setSelectedId((cur) => {
+        const idx = Math.max(
+          0,
+          expenses.findIndex((e) => e.id === cur),
+        );
+        const next = down ? Math.min(expenses.length - 1, idx + 1) : Math.max(0, idx - 1);
+        return expenses[next].id;
+      });
+    }
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [expenses, receiptSheetOpen, isBelowLg]);
+
+  /**
+   * A sheet that stopped existing is not a sheet that is open.
+   *
+   * `ReceiptPane` renders the bottom sheet below `lg` and the third pane above
+   * it, so widening past 1024px unmounts the sheet without its `onOpenChange`
+   * ever firing — leaving `receiptSheetOpen` true with nothing on screen to
+   * close. The flag is read by the keyboard handler above and handed back to
+   * `ReceiptPane` as `sheetOpen`, so a stale `true` would also re-open the sheet
+   * the moment the window narrowed again, on an expense the reader may have
+   * moved on from.
+   */
+  useEffect(() => {
+    if (!isBelowLg) setReceiptSheetOpen(false);
+  }, [isBelowLg]);
+
+  // When a receipt's extraction settles (it just populated an expense's lines),
+  // the report's violations are stale until the next manual edit — recompute
+  // once automatically as extraction transitions pending → done.
+  const prevPending = useRef(false);
+  useEffect(() => {
+    const pending = hasPendingExtractionIn(report?.expenses);
+    if (
+      prevPending.current &&
+      !pending &&
+      canEdit &&
+      (report?.status === 'DRAFT' || report?.status === 'RETURNED')
+    ) {
+      validate.mutate({ reportId });
+    }
+    prevPending.current = pending;
+  }, [report?.expenses, report?.status, canEdit, reportId, validate]);
+
+  async function onSubmit() {
+    setSubmitError(null);
+    setSubmitRefusal(null);
+    try {
+      await submit.mutateAsync({ reportId });
+      invalidate();
+    } catch (err) {
+      invalidate();
+      const reason = refusalText(err, t('drawer.submitFailed'));
+      setSubmitError(reason);
+      setSubmitRefusal(reason);
+    }
+  }
+
+  /**
+   * Unresolved violations, DEDUPED by (expenseId, message): two line items in one expense
+   * over the same limit read as one issue, not as a duplicate.
+   *
+   * EVERY count on this screen is derived from this one list, and that is the fix. There
+   * used to be two rules for the same idea — the banner and the submit gate counted RAW
+   * violations while the row badge and the hover list counted deduped ones — so the same
+   * report said "×3" in one place and "2" in two others, on screen, at once (GA readiness
+   * report F11). The engine is not producing duplicate rows: `validate` deletes every
+   * violation for the report and re-inserts inside one transaction, locking the report
+   * row first so two overlapping validates from this screen (one per edit, one when
+   * extraction settles) cannot both insert. What differed was the arithmetic on top of it.
+   */
+  const unresolved = useMemo(() => {
+    const seen = new Set<string>();
+    const out: ReportDetail['violations'] = [];
+    for (const v of report?.violations ?? []) {
+      if (v.severity !== 'BLOCK' && !(v.severity === 'WARNING' && !v.resolvedAt)) continue;
+      const key = `${v.expenseId ?? ''}|${v.message}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push(v);
+    }
+    return out;
+  }, [report?.violations]);
+
+  const blocking = unresolved.filter((v) => v.severity === 'BLOCK').length;
+  const unjustifiedWarnings = unresolved.filter(
+    (v) => v.severity === 'WARNING' && !v.resolvedAt,
+  ).length;
+  /** VeloExpense (d39): the unanswered warnings about the whole report (no expense). */
+  const reportWarnings = unresolved.filter(
+    (v) => v.severity === 'WARNING' && !v.resolvedAt && !v.expenseId,
+  );
+  // A report needs at least one expense to be submitted (server-enforced too).
+  const hasNoExpenses = (report?.expenses ?? []).length === 0;
+  // Unanswered pairs block submission. An unresolved pair is the same charge on two
+  // expenses, each carrying the full total — an over-claim, and the one error the
+  // approver has no way to spot: both entries look perfectly well-formed.
+  const openSuggestions = (grouping.data?.items ?? []).filter(
+    (s) => !keptApart.has(suggestionKey(s)),
+  );
+  /**
+   * One blank expense is not a report. Having AN expense was the only quantity check, so
+   * adding one and typing nothing enabled Submit at $0.00 — and it went the whole way:
+   * EXP-000006 sits on DEV at $0.00 with status Approved (F08). Server-enforced too.
+   */
+  // Gated on the ROLL-UP total, which is the figure rendered in the top bar — so the
+  // button agrees with the number the person is looking at. The server checks the stored
+  // `totalMinor`, which `recomputeReportTotal` derives from the same roll-up.
+  const hasNoValue = !hasNoExpenses && BigInt(report?.rollup?.homeTotalMinor ?? '0') <= 0n;
+  /**
+   * Expenses NetSuite would refuse for missing coding.
+   *
+   * The server has refused an uncoded report at submit since #390 — but only after the
+   * press, and its sentence names the missing DIMENSIONS, not which expense to open. A
+   * submitter with eleven lines was told "department, class" and left to find them.
+   *
+   * `report.coding` comes from `codingGaps`, the same function the refusal and the poster
+   * use, so this cannot disagree with what happens on the press. It is empty when NetSuite
+   * is not installed — the requirement is NetSuite's, and blocking a submission without it
+   * would invent a rule out of an absent integration.
+   */
+  const uncodedIds = new Set(report?.coding?.uncodedExpenseIds ?? []);
+  const uncodedExpenses = expenses.filter((e) => uncodedIds.has(e.id));
+  /**
+   * Categories NetSuite cannot resolve (`categoryGaps`, the rule `submit` refuses on).
+   *
+   * A separate list from `uncodedExpenses` on purpose: that one drives the dimensions
+   * banner, whose fixer is the submitter. A category is fixed by an administrator, so it
+   * gets its own banner and its own Submit reason, and a report with only a category
+   * problem never tells the submitter to allocate. Absent-safe: an older payload without
+   * the field blocks nothing.
+   */
+  const categoryProblems = report?.coding?.categoryProblems ?? [];
+  const categoryAffectedCount = report?.coding?.categoryAffectedExpenseIds?.length ?? 0;
+  /**
+   * The name each problem category is shown under, in the READER's language.
+   *
+   * `categoryLabel` from the server is always English, and on purpose: the same value
+   * feeds the English posting and submit refusals. Every problem category sits on one of
+   * this report's line items, and those carry the bilingual label object, so the banner
+   * reads it from there. `categoryLabel` stays the fallback for a category not found on
+   * any line item.
+   */
+  const categoryLabelById = new Map<string, unknown>();
+  for (const e of expenses) {
+    for (const li of e.lineItems) {
+      if (li.category) categoryLabelById.set(li.category.id, li.category.label);
+    }
+  }
+  const problemCategoryName = (p: (typeof categoryProblems)[number]) =>
+    localeLabel(categoryLabelById.get(p.categoryId), locale) || p.categoryLabel;
+  const expenseById = new Map(expenses.map((e) => [e.id, e]));
+  /**
+   * Receipts still being read. A late reading rewrites the amounts, and it used to do so
+   * on a report the approver had already seen; the submit now waits for it. The count is
+   * the server's (`summarizeExtractionProgress`, the rule `submit` refuses on), so the
+   * button and the refusal cannot disagree — the page polls every 4 s while it is non-zero,
+   * so the button re-enables on its own. `stale` is the reading the worker abandoned: it no
+   * longer holds the report, and the panel below says its amounts were never read.
+   */
+  const extractionInFlight = report?.extraction.inFlight ?? 0;
+  const extractionStale = report?.extraction.stale ?? 0;
+  const submitBlocked =
+    blocking > 0 ||
+    unjustifiedWarnings > 0 ||
+    hasNoExpenses ||
+    hasNoValue ||
+    uncodedExpenses.length > 0 ||
+    categoryAffectedCount > 0 ||
+    openSuggestions.length > 0 ||
+    extractionInFlight > 0;
+
+  /**
+   * Why Submit is disabled, as a sentence — ONE derivation, two renderings.
+   *
+   * It used to be a three-arm ternary inlined into the button's `title=`, which
+   * is a hover tooltip: on a phone that is a greyed button and no sentence, and
+   * a disabled control whose explanation exists only on hover reads as a broken
+   * app. The desktop row still renders it as `title=`; the phone bar renders it
+   * as text beneath the button.
+   *
+   * EVERY arm of `submitBlocked` has a sentence now — three of them did not,
+   * so a report blocked only by violations, only by unjustified warnings, or
+   * only by an unanswered duplicate pair produced no explanation at all, at any
+   * width. The first three arms keep the order and the exact strings they had,
+   * so the desktop tooltip answers today's cases with today's words.
+   *
+   * The extraction arm is `submitBlocked`'s seventh and it keeps the position and
+   * the exact string the desktop tooltip gave it (#509): a receipt still being
+   * read blocks Submit before coding does, so it answers before the coding arm.
+   *
+   * The violations arm NAMES the block rather than listing it. The list is a
+   * fifth banner in the body's existing stack and it is a separate piece of
+   * work; a sentence saying violations are what stands in the way is what this
+   * change owes.
+   */
+  const submitReason = !submitBlocked
+    ? undefined
+    : hasNoExpenses
+      ? t('drawer.expenseRequired')
+      : hasNoValue
+        ? t('drawer.amountRequired')
+        : extractionInFlight > 0
+          ? t('workbench.extractionPendingTitle', { count: extractionInFlight })
+          : uncodedExpenses.length > 0
+            ? t('workbench.codingRequiredTitle')
+            : categoryAffectedCount > 0
+              ? t('workbench.categoryProblemTitle')
+              : blocking > 0
+                ? t('workbench.submitBlockedViolations', { count: blocking })
+                : unjustifiedWarnings > 0
+                  ? t('workbench.submitBlockedWarnings', { count: unjustifiedWarnings })
+                  : openSuggestions.length > 0
+                    ? t('workbench.submitBlockedDuplicates', { count: openSuggestions.length })
+                    : undefined;
+
+  const approverMode = isSubmitted && canApprove && Boolean(taskId);
+  const decidePending = decide.isPending || returnForEdit.isPending;
+
+  // Deduped unresolved-violation count per expense — drives the list-row badge.
+  const violationCountByExpense = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const v of unresolved) if (v.expenseId) m.set(v.expenseId, (m.get(v.expenseId) ?? 0) + 1);
+    return m;
+  }, [unresolved]);
+  /**
+   * Unresolved violations, grouped by expense — ONE derivation, two renderings.
+   *
+   * The desktop hover list has always read this; the phone banner below reads the
+   * same array rather than re-deriving it, because two groupings of one list is how
+   * the counts on this page disagreed with each other in the first place.
+   *
+   * `expenseId` is carried on the group now. It is not a new derivation — it is the
+   * key the map was already built on, kept instead of discarded — and it is what lets
+   * the banner's rows be `<button>`s that open the expense they name, which is the
+   * whole point of the banner. `null` means a REPORT-level violation, which belongs to
+   * no expense and therefore gets prose rather than a link.
+   */
+  /** VeloExpense (d39): one finding's catalogued label, as `violationGroups` builds it. */
+  const violationLabel = (v: (typeof unresolved)[number]): string => {
+    const lk = `policy.labels.${v.message}`;
+    try {
+      return t.has(lk as never) ? t(lk as never, violationValues(v, locale) as never) : v.message;
+    } catch {
+      return v.message;
+    }
+  };
+  const violationGroups = useMemo(() => {
+    const groups = new Map<
+      string,
+      { expenseId: string | null; merchant: string; labels: string[] }
+    >();
+    for (const v of unresolved) {
+      const key = v.expenseId ?? 'report';
+      const exp = expenses.find((e) => e.id === v.expenseId);
+      const merchant = exp?.merchant?.trim() || t('line.noMerchant');
+      const lk = `policy.labels.${v.message}`;
+      /**
+       * The VALUES matter, and their absence used to take the whole page down.
+       *
+       * Six of these labels carry an ICU placeholder — "Receipt expected over
+       * {threshold}" and friends. Calling `t()` without them makes next-intl throw
+       * FORMATTING_ERROR, and this runs inside a `useMemo` during render, so the throw
+       * escaped as a render error and the report became unopenable. Not a bad label: a
+       * blank screen, on the one page the person was trying to fix the violation from.
+       *
+       * `ViolationLine` in `_workbench/parts.tsx` had it right all along and this copy
+       * of the same three lines did not, which is the whole argument for sharing the
+       * helper rather than the pattern.
+       *
+       * The try/catch stays regardless. A label whose payload is missing should render
+       * its own key — visibly wrong, and fixable — rather than deny access to the report.
+       */
+      let label: string;
+      try {
+        label = t.has(lk as never)
+          ? t(lk as never, violationValues(v, locale) as never)
+          : v.message;
+      } catch {
+        label = v.message;
+      }
+      const g = groups.get(key) ?? { expenseId: v.expenseId ?? null, merchant, labels: [] };
+      g.labels.push(label);
+      groups.set(key, g);
+    }
+    return [...groups.values()];
+  }, [expenses, t, unresolved, locale]);
+
+  const confirmDecide = () => {
+    setSubmitError(null);
+    if (decideMode === 'reject') {
+      if (taskId) decide.mutate({ taskId, approve: false, note: decideNote.trim() });
+    } else if (decideMode === 'return') {
+      returnForEdit.mutate({ reportId, note: decideNote.trim() || undefined });
+    }
+    setDecideMode('idle');
+    setDecideNote('');
+  };
+
+  /**
+   * Open or close one of the approver's decide panels — the same clearing the
+   * three popovers each did for themselves, in one place so both destinations
+   * cannot drift apart on it.
+   */
+  const openDecidePanel = (panel: DecidePanel, open: boolean) => {
+    if (panel === 'reassign') {
+      setReassignTo(null);
+      setReassignItem(null);
+    }
+    // VeloExpense (d37): a reassignment carries a reason too, so the note clears for every
+    // panel. ExpenseOS cleared it only for reject and return.
+    setDecideNote('');
+    setReceiptsReviewed(false);
+    setDecideMode(open ? panel : 'idle');
+  };
+
+  /**
+   * The decide panel's body — the note or the picker, and the confirm button
+   * that actually commits.
+   *
+   * Defined once and mounted by whichever container asked for it: the TopBar
+   * row puts it in a `PopoverContent`, the phone bar puts it inline beneath the
+   * buttons. It closes over the page's own decide state, which is why the state
+   * machine stays unforked across the two destinations.
+   */
+  const decidePanel = (panel: DecidePanel) =>
+    panel === 'approve' ? (
+      // VeloExpense: the acknowledgement VeloExpense's engine requires on this step.
+      // Returning or rejecting does not ask for it: neither claims the evidence was
+      // reviewed. The server enforces it, not this markup.
+      <>
+        <label className="flex items-start gap-2 text-sm">
+          <Checkbox
+            className="mt-0.5"
+            // The kit Checkbox is a Base UI span, which a wrapping <label> does not name.
+            aria-label={t('approvals.receiptAck', { count: receiptAck?.receiptCount ?? 0 })}
+            checked={receiptsReviewed}
+            onCheckedChange={(v) => setReceiptsReviewed(v === true)}
+          />
+          <span>
+            {t('approvals.receiptAck', { count: receiptAck?.receiptCount ?? 0 })}
+            {receiptAck?.receiptCount === 0 && (
+              <strong className="ml-1 text-destructive">{t('approvals.receiptAckNone')}</strong>
+            )}
+          </span>
+        </label>
+        <div className="mt-2 flex justify-end">
+          <Button
+            size="sm"
+            variant="success-outline"
+            disabled={decidePending || !receiptsReviewed}
+            onClick={() => {
+              setSubmitError(null);
+              if (taskId) decide.mutate({ taskId, approve: true, receiptViewAcknowledged: true });
+              setDecideMode('idle');
+            }}
+          >
+            {t('approvals.confirmApprove')}
+          </Button>
+        </div>
+      </>
+    ) : panel === 'reassign' ? (
+      <>
+        <UserCombobox
+          value={reassignTo}
+          initialItem={reassignItem}
+          onValueChange={(v, item) => {
+            setReassignTo(v);
+            setReassignItem(item);
+          }}
+          placeholder={t('approvals.reassignPlaceholder')}
+        />
+        {/* VeloExpense (d37): the reason is required — the submitter and the new approver
+            both see it on the report's discussion — so the panel asks for it under the
+            picker, as reject asks for its note. ExpenseOS's reassign takes no note. */}
+        <Textarea
+          className="mt-2"
+          rows={3}
+          value={decideNote}
+          onChange={(e) => setDecideNote(e.target.value)}
+          placeholder={t('approvals.reassignNotePlaceholder')}
+          aria-label={t('approvals.reassignNotePlaceholder')}
+        />
+        <div className="mt-2 flex justify-end">
+          <Button
+            size="sm"
+            disabled={reassign.isPending || !reassignTo || !decideNote.trim()}
+            onClick={() => {
+              setSubmitError(null);
+              if (taskId && reassignTo && decideNote.trim())
+                reassign.mutate({ taskId, toUserId: reassignTo, note: decideNote.trim() });
+            }}
+          >
+            {t('approvals.confirmReassign')}
+          </Button>
+        </div>
+      </>
+    ) : (
+      <>
+        <Textarea
+          autoFocus
+          rows={3}
+          value={decideNote}
+          onChange={(e) => setDecideNote(e.target.value)}
+          placeholder={
+            panel === 'reject'
+              ? t('approvals.rejectNotePlaceholder')
+              : t('approvals.returnNotePlaceholder')
+          }
+        />
+        <div className="mt-2 flex justify-end">
+          {/* A rejection needs a note; a return does not. Rejecting somebody's
+              expenses without saying why is the one decision that generates a
+              second conversation. */}
+          <Button
+            size="sm"
+            variant={panel === 'reject' ? 'destructive-outline' : undefined}
+            disabled={decidePending || (panel === 'reject' && !decideNote.trim())}
+            onClick={confirmDecide}
+          >
+            {panel === 'reject' ? t('approvals.confirmReject') : t('approvals.confirmReturn')}
+          </Button>
+        </div>
+      </>
+    );
+
+  /**
+   * WHAT CAN BE DONE TO THIS REPORT — the single ordered list, built from state
+   * this component already owns and consumed by both destinations.
+   *
+   * The guards are the ones that have always been here (`approverMode`,
+   * `canSubmit`, `canEditStatus`, `canDelete`, `isDraft`, `isSubmitted`, the
+   * mutations' own pending flags) and they are unchanged. They gate the
+   * CONTROL; every one of these procedures re-derives the actor from the
+   * session and re-reads the row before it writes, so nothing here is an
+   * authorisation decision and a suppressed control suppresses no check.
+   *
+   * Order is the order the TopBar row has always painted, so a reader comparing
+   * the two destinations sees one list in one sequence.
+   */
+  const actions: WorkbenchAction[] = [];
+  if (report) {
+    if (approverMode) {
+      actions.push(
+        {
+          id: 'return',
+          label: t('approvals.return'),
+          onPress: () => openDecidePanel('return', true),
+          variant: 'ghost',
+          disabled: decidePending,
+          emphasis: 'secondary',
+          needsNote: 'return',
+        },
+        {
+          id: 'reject',
+          label: t('approvals.reject'),
+          onPress: () => openDecidePanel('reject', true),
+          variant: 'destructive-outline',
+          disabled: decidePending,
+          emphasis: 'secondary',
+          needsNote: 'reject',
+          destructive: true,
+        },
+        {
+          id: 'reassign',
+          label: t('approvals.reassign'),
+          onPress: () => openDecidePanel('reassign', true),
+          variant: 'ghost',
+          disabled: decidePending,
+          emphasis: 'secondary',
+          needsNote: 'reassign',
+        },
+        {
+          id: 'approve',
+          label: t('approvals.approve'),
+          // VeloExpense: through the acknowledgement panel when the step requires it.
+          onPress: receiptAck?.required
+            ? () => openDecidePanel('approve', true)
+            : () => {
+                setSubmitError(null);
+                if (taskId) decide.mutate({ taskId, approve: true });
+              },
+          variant: 'success-outline',
+          disabled: decidePending,
+          emphasis: 'primary',
+          ...(receiptAck?.required ? { needsNote: 'approve' as const } : {}),
+        },
+      );
+    } else {
+      if (canSubmit && isSubmitted) {
+        actions.push({
+          id: 'recall',
+          label: t('drawer.recall'),
+          onPress: () => recall.mutate({ reportId }),
+          variant: 'ghost',
+          disabled: recall.isPending,
+          emphasis: 'secondary',
+        });
+      }
+      if (canSubmit && canEditStatus) {
+        actions.push({
+          id: 'submit',
+          label: t('drawer.submit'),
+          onPress: () => void onSubmit(),
+          variant: 'default',
+          disabled: submit.isPending || submitBlocked,
+          disabledReason: submitReason,
+          emphasis: 'primary',
+        });
+      }
+      if (canDelete && isDraft) {
+        actions.push({
+          id: 'delete',
+          label: t('drawer.deleteReport'),
+          onPress: () => remove.mutate({ reportId }),
+          variant: 'ghost',
+          disabled: remove.isPending,
+          emphasis: 'secondary',
+          destructive: true,
+          /**
+           * Confirmed, like every other destructive action here, and now
+           * confirmed by the DESCRIPTOR rather than by one button's `onClick` —
+           * so the guard cannot exist in one destination and be forgotten in
+           * the other.
+           *
+           * It used to fire straight from the button: one stray click and the
+           * report, its expenses and its receipts were gone, with no undo. The
+           * asymmetry was the tell — deleting SELECTED EXPENSES two panels away
+           * already asked. `window.confirm` rather than a bespoke dialog
+           * because that is the house pattern for this.
+           */
+          confirm: t('drawer.confirmDeleteReport'),
+        });
+      }
+    }
+  }
+
+  // ── Project report chrome into the app-shell top bar ────────────
+  useTopBarSlots(() => {
+    if (!report) return {};
+    const rollup = report.rollup;
+    const homeCurrency = report.currency;
+    const recoverableMinor = BigInt(rollup.recoverableTotalMinor);
+    // Only surface the FX/VAT breakdown when there's something to explain:
+    // a multi-currency report, recoverable VAT/ITC, or an unconvertible line.
+    const hasFxDetail =
+      rollup.multiCurrency || recoverableMinor !== 0n || rollup.missingRates.length > 0;
+    /**
+     * Read this report in the reader's own currency (GA readiness report F52).
+     *
+     * The audit looked for a display-currency toggle and found only the FX override, which
+     * converts foreign LINES into the report's currency — the opposite direction. So a
+     * historical USD report could not be read in CAD at all.
+     *
+     * Presentation only: the report's own currency remains what it is filed and posted in,
+     * and the toggle never changes a stored figure. `viewInReaderCurrency` is null when the
+     * reader's currency IS the report's, or when no rate connects them — in which case
+     * nothing is offered rather than something being offered and wrong.
+     */
+    // `?? null` and a NULLISH check: a response from before this field existed (a cached page
+    // across a deploy) arrives as `undefined`, which `!== null` would let through.
+    const alt = report.viewInReaderCurrency ?? null;
+    const shownInAlt = alt != null && viewCurrency === alt.currency;
+    const totalAmount = (
+      <>
+        <span className="mr-1 font-normal text-muted-foreground text-xs">
+          {shownInAlt ? alt.currency : report.currency.code}
+        </span>
+        {shownInAlt
+          ? formatMinor(Number(alt.totalMinor), { code: alt.currency }, locale)
+          : formatMinor(Number(rollup.homeTotalMinor), homeCurrency, locale)}
+      </>
+    );
+    /**
+     * HOW the total adds up, stated beside it: `CAD $5,449.71 (CAD 1,573.22 + USD 2,796.69
+     * @ 1.3861)`.
+     *
+     * This replaces the standalone "By currency" panel that used to sit under the header.
+     * That panel existed for a real reason — the arithmetic was only in a hover tooltip,
+     * which is invisible on a touch device and easy to miss on a desktop, so a reader
+     * looking at one total above a list of CAD and USD lines had nothing tying the two
+     * together (UAT A7). Putting the composition ON the total answers that without
+     * spending a second bar on it: it is always visible, it is where the number is read,
+     * and the tooltip still holds the full reconciliation for anyone who wants the
+     * converted column and the recoverable tax.
+     *
+     * The rate is grey because it is provenance rather than money — the eye should land on
+     * the two amounts that add up. A currency with no rate is flagged in the warning colour
+     * and keeps its own panel above, which makes a different claim: not "here is how this
+     * adds up" but "this total is not the whole total".
+     *
+     * Hidden while the reader has toggled into their own currency. The `@ rate` figures
+     * convert to the REPORT's currency, so the parenthetical reconciles to the report total
+     * and not to the one on screen; showing it there would be an equation that does not
+     * balance.
+     */
+    const inlineBreakdown = rollup.multiCurrency && !shownInAlt && (
+      <span className="text-xs tabular-nums">
+        <span className="text-muted-foreground">(</span>
+        {rollup.byCurrency.map((c, i) => (
+          <span key={c.code}>
+            {i > 0 && <span className="mx-1 text-muted-foreground">+</span>}
+            <span className={c.convertedMinor === null ? 'text-warning' : 'text-foreground/80'}>
+              {c.code} {formatMinor(Number(c.grossMinor), { code: c.code, symbol: '' }, locale)}
+            </span>
+            {c.rate && (
+              <span className="ml-1 text-muted-foreground">
+                {t('workbench.fxRate', { rate: c.rate })}
+              </span>
+            )}
+          </span>
+        ))}
+        <span className="text-muted-foreground">)</span>
+      </span>
+    );
+    const currencyToggle = alt && (
+      <button
+        type="button"
+        onClick={() => setViewCurrency(shownInAlt ? null : alt.currency)}
+        /* `.einc-tap-slop-both`: ~26 x 18, short on BOTH axes, and it is how a reader
+           reaches the alternate-currency total at all — there is no other control for
+           it. `-both` rather than a real box because the 44px ring's only neighbour is
+           a static amount span, not another target, so there is no tap to steal; and
+           because growing the chip itself would change the top bar's measured
+           min-content width, which ADR-0002 budgets to the pixel. */
+        className="einc-tap-slop-both shrink-0 rounded border border-border px-1.5 py-0.5 text-[10px] text-muted-foreground uppercase tracking-wide hover:bg-muted/50"
+        title={
+          shownInAlt
+            ? t('workbench.viewInReportCurrency', { currency: report.currency.code })
+            : t('workbench.viewInMyCurrency', { currency: alt.currency, rate: alt.rate ?? '—' })
+        }
+      >
+        {shownInAlt ? report.currency.code : alt.currency}
+      </button>
+    );
+    const total = hasFxDetail ? (
+      <div className="group relative flex shrink-0 items-center gap-1.5">
+        <span className="inline-flex cursor-default items-center gap-1.5 text-foreground text-sm tabular-nums">
+          <span>{totalAmount}</span>
+          {inlineBreakdown}
+          <IconInfoCircle size={13} className="shrink-0 text-muted-foreground" />
+        </span>
+        {currencyToggle}
+        <div className="absolute top-full right-0 z-50 mt-1 hidden w-72 group-hover:block">
+          <div className="rounded-md border border-border bg-popover text-left shadow-md">
+            <div className="flex items-center justify-between border-border border-b px-3 py-2">
+              <span className="font-medium text-muted-foreground text-xs uppercase tracking-wide">
+                {t('workbench.fxReportTotal')}
+              </span>
+              <span className="font-semibold text-foreground text-sm tabular-nums">
+                {formatMinor(Number(rollup.homeTotalMinor), homeCurrency, locale)}{' '}
+                {rollup.homeCurrency}
+              </span>
+            </div>
+            {recoverableMinor !== 0n && (
+              <div className="flex items-center justify-between px-3 py-2 text-xs">
+                <span className="text-muted-foreground">{t('workbench.fxRecoverable')}</span>
+                <span className="text-foreground tabular-nums">
+                  {formatMinor(Number(rollup.recoverableTotalMinor), homeCurrency, locale)}{' '}
+                  {rollup.homeCurrency}
+                </span>
+              </div>
+            )}
+            {rollup.multiCurrency && (
+              <div className="border-border border-t">
+                <div className="px-3 pt-2 pb-1 font-medium text-[10px] text-muted-foreground uppercase tracking-wide">
+                  {t('workbench.fxByCurrency')}
+                </div>
+                <ul className="flex flex-col gap-1 px-3 pb-2">
+                  {rollup.byCurrency.map((c) => (
+                    <li
+                      key={c.code}
+                      className="flex items-center justify-between gap-2 text-xs tabular-nums"
+                    >
+                      <span className="text-foreground">
+                        {c.code}{' '}
+                        {formatMinor(Number(c.grossMinor), { code: c.code, symbol: '' }, locale)}
+                        {c.rate && (
+                          <span className="ml-1 text-muted-foreground">
+                            {t('workbench.fxRate', { rate: c.rate })}
+                          </span>
+                        )}
+                      </span>
+                      <span
+                        className={
+                          c.convertedMinor === null
+                            ? 'shrink-0 text-warning'
+                            : 'shrink-0 text-muted-foreground'
+                        }
+                      >
+                        {c.convertedMinor === null
+                          ? '—'
+                          : formatMinor(Number(c.convertedMinor), homeCurrency, locale)}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {rollup.missingRates.length > 0 && (
+              <div className="flex items-start gap-1.5 border-border border-t px-3 py-2 text-warning text-xs">
+                <IconAlertTriangle size={12} className="mt-0.5 shrink-0" />
+                <span>{t('workbench.fxMissingRate', { count: rollup.missingRates.length })}</span>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    ) : (
+      <span className="flex shrink-0 items-center gap-1.5 text-foreground text-sm tabular-nums">
+        {totalAmount}
+        {currencyToggle}
+      </span>
+    );
+    const status = (
+      <StatusBadge
+        {...statusBadgeProps(report.status, t)}
+        appearance={isDraft ? 'outline' : 'solid'}
+      />
+    );
+    const externalIds =
+      report.externalIds.length > 0 ? (
+        <span className="shrink-0 text-muted-foreground text-xs tabular-nums">
+          {report.externalIds.map((x) => `${x.source} · ${x.value}`).join('  ')}
+        </span>
+      ) : null;
+    // Opens the shell-free print view in a new tab (Print → Save as PDF).
+    // Posting state + push, beside the report it is about rather than only on an
+    // admin page. APPROVED/REIMBURSED only: anything earlier is not a liability.
+    // VeloExpense (d38): VeloExpense's `report.posting` and a link to the posting queue
+    // (`LedgerPost`, ported from `NetSuitePush`).
+    // VeloExpense: `posting`, ExpenseOS's `netsuite` (check-vendor-neutral).
+    const posting = (
+      <LedgerPost
+        state={report.posting as LedgerPostState | null}
+        canOpenQueue={canOpenLedgerQueue}
+        postable={report.status === 'APPROVED' || report.status === 'REIMBURSED'}
+      />
+    );
+
+    const printButton = (
+      <button
+        type="button"
+        aria-label={t('workbench.printExport')}
+        title={t('workbench.printExport')}
+        onClick={() => window.open(`/${locale}/print/expenses/${reportId}`, '_blank')}
+        className="shrink-0 rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+      >
+        <IconPrinter size={16} />
+      </button>
+    );
+
+    return {
+      left: (
+        <div className="flex min-w-0 items-center gap-1.5">
+          <button
+            type="button"
+            onClick={() => router.push('/expenses')}
+            /* `.einc-tap-slop` for the ~24px height, and `truncate` for the width.
+               `shrink-0` is right at a desktop width and wrong at 360: an untruncated
+               breadcrumb that refuses to shrink pushes the report title out of the row
+               entirely. Below `lg` it yields; at `lg` and up `shrink-0` still wins and
+               `truncate` is inert on an element sized to its own content, so the
+               desktop row is byte-for-byte what it was. */
+            className="einc-tap-slop shrink-0 truncate font-semibold text-base text-muted-foreground hover:text-foreground hover:underline max-lg:min-w-0 max-lg:shrink"
+          >
+            {t('workbench.reportsCrumb')}
+          </button>
+          <span className="shrink-0 text-muted-foreground text-sm">›</span>
+          <EditableTitle
+            title={report.title}
+            editable={editable}
+            onSave={(title) => updateReport.mutate({ reportId, title })}
+          />
+        </div>
+      ),
+      center: submitError ? (
+        // Unchanged, and deliberately so: `submitError` is shared with the APPROVER
+        // actions (decide, return, reassign), whose messages belong here and nowhere
+        // else. The submit refusal gets its own explanation in the body — see
+        // `submitRefusal` — rather than this slot being repurposed and taking those
+        // with it.
+        <span className="truncate text-destructive text-xs">{submitError}</span>
+      ) : unresolved.length > 0 ? (
+        <div className="group relative">
+          <span className="inline-flex cursor-default items-center gap-1 rounded-md bg-warning/15 px-2 py-1 font-medium text-warning text-xs">
+            <IconAlertTriangle size={14} />
+            {t('workbench.violationsDetected', { count: unresolved.length })}
+          </span>
+          <div className="absolute top-full left-1/2 z-50 mt-1 hidden w-96 -translate-x-1/2 group-hover:block">
+            <div className="rounded-md border border-border bg-popover text-left shadow-md">
+              <div className="border-border border-b px-3 py-2 font-medium text-foreground text-xs uppercase tracking-wide">
+                {t('drawer.policyWarnings')}
+              </div>
+              <ul className="max-h-80 divide-y divide-border overflow-y-auto">
+                {violationGroups.map((g) => (
+                  <li key={g.expenseId ?? 'report'} className="flex flex-col gap-1 px-3 py-2">
+                    <span className="truncate font-medium text-foreground text-sm">
+                      {g.merchant}
+                    </span>
+                    <ul className="flex flex-col gap-0.5">
+                      {g.labels.map((label) => (
+                        <li
+                          key={label}
+                          className="flex items-start gap-1.5 text-muted-foreground text-xs"
+                        >
+                          <IconAlertTriangle size={12} className="mt-0.5 shrink-0 text-warning" />
+                          <span>{label}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </div>
+        </div>
+      ) : null,
+      right: (
+        /*
+         * `min-w-0`, and it is the difference between this row yielding and this row
+         * overflowing.
+         *
+         * `TopBar.tsx` mounts this in a `min-w-0` box and bounds the right grid track, so
+         * the shell can hand this row less width than it wants — that is the shell holding
+         * the line for its own controls. What the shell cannot do is make this row narrower
+         * than its own content: without `min-w-0` here the row's automatic minimum size is
+         * its content-based minimum, so it refuses the width it was given and is painted
+         * outside the zone instead, across the left zone's breadcrumb. Measured at 1024px
+         * with the sidebar pinned: 44px of this row outside the zone in EN, 189px in fr-CA,
+         * over a `<button>`.
+         *
+         * With it, the row shrinks and the yielding happens inside `NetSuitePush` (see the
+         * note at its `<span>`), which is the only child here with anything that can give.
+         * Everything else in this row is `shrink-0` on purpose — see `e2e/topbar-overlap.spec.ts`.
+         *
+         * What is still unprotected, so the next reader does not have to rediscover it:
+         *
+         *  · **This row has one yielder and it runs out.** All the give is the error span's
+         *    `truncate` inside `NetSuitePush`. Once that span is at zero the row is still
+         *    `shrink-0` boxes, so further squeezing pushes them over each other. Measured at
+         *    1024px with the sidebar pinned in fr-CA: the row is 13px short in the no-error
+         *    state and 19px short once the error span exists, and `NetSuitePush`'s span is
+         *    painted 11.2px over `printButton`. EN has slack at that width and is clean.
+         *    That is a 2.5.8 target overlap and it is smaller, not gone: before `min-w-0` it
+         *    was 189px of this row over the left zone's breadcrumb `<button>`.
+         *  · **No `flex-wrap`**, deliberately — this row lives in an `h-8` band, so wrapping
+         *    would paint a second line over the page body rather than making room.
+         *  · **`printButton` and `actions` are unbounded.** Their labels are translated and
+         *    `shrink-0`; a longer fr-CA label lengthens this row's max-content and moves the
+         *    band where it stops fitting further out, without any of it being visible to a
+         *    test that only measures EN.
+         */
+        <div className={cn('flex min-w-0 items-center gap-2', isBelowLg && 'max-lg:hidden')}>
+          {total}
+          {status}
+          {externalIds}
+          {posting}
+          {printButton}
+          {/*
+           * THE RELOCATION, and the half of it that is decided in JS.
+           *
+           * Below `lg` the action row is not here at all — it is mounted once,
+           * in the body, by `PhoneActionBar`. One tree, selected by the hook,
+           * because two trees would define the report's action set twice.
+           *
+           * The rest of this row is NOT relocated and stays published at every
+           * width; the `max-lg:hidden` cloak above is what keeps it inside
+           * ADR-0002's below-`lg` ration of one icon-only control or nothing.
+           * The cloak is on the hook's branch rather than unconditional: CSS
+           * decides what is VISIBLE (so a window dragged across 1024px is
+           * correct in the frame before React commits), JS decides what is
+           * MOUNTED.
+           */}
+          {isBelowLg ? null : (
+            <TopBarActions
+              actions={actions}
+              openPanel={decideMode}
+              onOpenPanel={openDecidePanel}
+              renderPanel={decidePanel}
+            />
+          )}
+        </div>
+      ),
+    };
+  }, [
+    report,
+    canOpenLedgerQueue,
+    revalidate,
+    editable,
+    approverMode,
+    decideMode,
+    decideNote,
+    submitError,
+    submitBlocked,
+    submitReason,
+    hasNoExpenses,
+    /**
+     * `useTopBarSlots` runs its builder inside a `useEffect` keyed on THIS
+     * array, so without this entry the published row would keep whatever shape
+     * it had when some other dep last changed and would not notice the viewport
+     * crossing `lg` at all.
+     *
+     * `actions`, `decidePanel` and `openDecidePanel` are deliberately NOT here.
+     * Each is rebuilt every render, so listing them would re-run the effect on
+     * every render for no gain — and each is a pure function of entries already
+     * in this list, so the builder reads a current one whenever anything that
+     * can change the row has changed.
+     */
+    isBelowLg,
+    isDraft,
+    isSubmitted,
+    canEditStatus,
+    canSubmit,
+    canDelete,
+    taskId,
+    submit.isPending,
+    recall.isPending,
+    remove.isPending,
+    decidePending,
+    reassign.isPending,
+    reassignTo,
+    reassignItem,
+    unresolved.length,
+    violationGroups,
+    t,
+    locale,
+    reportId,
+  ]);
+
+  if (query.isLoading) {
+    return <div className="p-6 text-muted-foreground text-sm">{t('list.loading')}</div>;
+  }
+  if (!report) {
+    /**
+     * A report id that resolves to nothing gets a real not-found state.
+     *
+     * This used to render `t('drawer.fallback')` — the string "Expense report", a TITLE
+     * reused as an empty state. Opening a well-formed but nonexistent id therefore
+     * produced the breadcrumb "Expense report" above an otherwise empty pane: no message,
+     * no error, and no way forward, which reads as a broken page rather than a missing
+     * record (GA readiness report F46).
+     */
+    return (
+      <div className="flex flex-1 flex-col items-center justify-center gap-4 p-10 text-center">
+        <IconFileOff size={40} className="text-muted-foreground" aria-hidden />
+        <div className="space-y-1">
+          <h1 className="font-semibold text-foreground text-lg">{tc('notFound.recordTitle')}</h1>
+          <p className="max-w-md text-muted-foreground text-sm">{tc('notFound.recordBody')}</p>
+        </div>
+        <Link href="/expenses" className={cn(buttonVariants({ variant: 'secondary', size: 'sm' }))}>
+          {tc('notFound.backToExpenses')}
+        </Link>
+      </div>
+    );
+  }
+  const currencySymbol = report.currency.symbol;
+
+  return (
+    /**
+     * `max-lg:h-auto max-lg:shrink-0` — the pane wrapper. The first half is not enough
+     * on its own, and the operator round is what proved it.
+     *
+     * `h-full` caps this column at the height of the area the shell gives it. Above
+     * `xl` that is right: three panes side by side, each scrolling its own content.
+     * Below `xl` `ResizablePanels` returns a single stacked column instead, and the
+     * same cap now has to be shared out between the expense list, the editor, the
+     * discussion and (until this phase) the receipt — every one of them a `min-h-0`
+     * flex child, which means every one of them has a floor of zero. At 390 x 664 the
+     * arithmetic that follows from that is four panes of roughly nothing.
+     *
+     * `h-auto` below `lg` was supposed to let the column be as tall as its content.
+     * It is necessary and it is NOT sufficient, because this element is also a flex
+     * ITEM of `main` (`flex flex-1 flex-col overflow-y-auto`), and a flex item's
+     * default `flex-shrink: 1` plus this element's own `min-h-0` means it can be
+     * squeezed below its content with no floor at all. Measured on the stage at
+     * 390 x 664: this div asked for 1 418px of content and was given 573px, and
+     * because `min-h-0` removed the floor, nothing overflowed the SCROLLER — the box
+     * simply got smaller and its children painted outside it. `ResizablePanels`'
+     * stacked branch then repeated the squeeze one level down, handing each panel
+     * wrapper (`resizable-panels.tsx:229`, a `min-h-0` div with the same default
+     * shrink) a fraction of what its pane needed: 109px for a 393px expenses-and-
+     * discussion column, 217px for a 778px editor. Overflow on a `static` box is
+     * VISIBLE and paints, so the editor — later in DOM order — was drawn over the
+     * expense list, and the expense list over the discussion. That is the reported
+     * "the Expenses box is under the first expense" and "the discussion box is
+     * covered by the expenses box", and it is also why no expense could be tapped:
+     * `document.elementFromPoint` at the centre of the first row returned the
+     * EDITOR's title span, so every tap aimed at a row landed on the pane on top.
+     *
+     * `shrink-0` below `lg` is the floor the `min-h-0` took away. The div then takes
+     * its content height, `main`'s own `overflow-y-auto` scrolls the page — which is
+     * the behaviour a phone reader expects from a stack of cards — and each panel
+     * wrapper measures exactly its pane (393/393, 778/778 on the same stage), so
+     * nothing paints outside anything.
+     *
+     * `max-lg:` and not `max-xl:`, even though the panes stack from `xl` down: the
+     * 1 024–1 280px band is desktop, keeps `h-full`, and is exactly as it was before
+     * this task touched the file. Widening the fix into it is a different change.
+     *
+     * jsdom does no layout, so nothing in this repo's unit suite can show this is
+     * right or wrong — the same is true of the `CommentThread` wrapper below. The
+     * numbers above were taken in a real browser at 390 x 664, before and after.
+     */
+    <div className="flex h-full min-h-0 flex-col max-lg:h-auto max-lg:shrink-0">
+      {/*
+       * THE BODY-LEVEL HEADER THIS ROUTE HAS NEVER HAD.
+       *
+       * Below `lg` the TopBar's right slot is cloaked to nothing, so without
+       * this block a phone has no total, no status, and — the part that makes
+       * it a bug rather than a trim — no Submit button.
+       *
+       * `lg:hidden` is the other half of the cloak pair. It is on the hook's
+       * branch, never unconditional: the block only exists when JS has selected
+       * the phone tree, and the class is what hides it in the frame between a
+       * window widening past 1024px and React unmounting it.
+       *
+       * The title and the breadcrumb stay in the TopBar `left` slot and are NOT
+       * repeated here — a second copy would put the report title in the
+       * accessibility tree twice.
+       */}
+      {isBelowLg && (
+        <div className="flex shrink-0 flex-col gap-3 pb-3 lg:hidden">
+          <ReportSummary report={report} />
+          <PhoneActionBar
+            actions={actions}
+            openPanel={decideMode}
+            onOpenPanel={openDecidePanel}
+            renderPanel={decidePanel}
+          />
+        </div>
+      )}
+      {/* Above the panes, because it blocks submission and is about the report as a
+          whole rather than any one expense. `shrink-0` so it never gets squeezed to
+          nothing by the panes below it. */}
+      {/**
+       * Why a submission was refused, where it cannot be missed.
+       *
+       * The report NEVER leaves this page on a failed submit — `onSubmit` sets an error
+       * and stays put — but the only thing it rendered was a truncated `text-xs` span in
+       * the top bar, sharing a slot with the violations badge. A server message like
+       * "Report has unresolved policy violations." was cut off mid-sentence, and somebody
+       * who pressed Submit and looked away saw nothing at all. It reads as the button
+       * being broken, or worse, as the report having gone somewhere.
+       *
+       * NOT accompanied by a violation list, and that is a finding rather than an
+       * omission. `submit` attaches the blockers to its TRPCError as `cause` "so the FE
+       * can render the specific blockers" — but `submitBlocked` already disables the
+       * button when `blocking > 0 || unjustifiedWarnings > 0`, so a refusal that HAS
+       * local violations to list cannot be triggered from this screen. Rendering them
+       * here was dead code; it was written, checked against the disabled state, and
+       * removed. What reaches this panel is a refusal the client could not predict, and
+       * for those the server's sentence is the whole of the available information.
+       */}
+      {submitRefusal && (
+        <div className="shrink-0 pb-3">
+          <div className="rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2.5">
+            <p className="font-medium text-destructive text-sm">
+              {t('workbench.submitBlockedTitle')}
+            </p>
+            <p className="text-muted-foreground text-sm">{submitRefusal}</p>
+            <p className="mt-2 text-muted-foreground text-xs">{t('workbench.submitBlockedFix')}</p>
+          </div>
+        </div>
+      )}
+      {/*
+       * An unconvertible line is stated on the REPORT, not only in the total's hover
+       * tooltip. The roll-up excludes such a line rather than adding it in the wrong
+       * units, which is the right arithmetic — but on EXP-000009 it meant an approver
+       * read USD 2,871.46 while CAD 911.66, about 23% of the claim, was silently absent,
+       * and the only disclosure was a tooltip nobody hovers before approving. A total
+       * that is not the whole total has to say so where the number is read.
+       */}
+      {/*
+       * Why this report cannot be submitted, before anybody presses Submit.
+       *
+       * Uncoded expenses were only discoverable by pressing a disabled-looking button and
+       * reading a refusal that named two dimensions and no expenses. Worse, before the
+       * submit guard existed they sailed through to APPROVED and failed weeks later at the
+       * posting gate — dev still holds three such reports, stuck on retry, which is where
+       * this was reported from. Retry cannot fix them: the coding was never captured.
+       *
+       * Each row opens the expense it names, because "which of eleven" is the question a
+       * submitter actually has.
+       */}
+      {/*
+       * Receipts still being read, said where the button is disabled for them.
+       *
+       * A reading that lands after the press rewrites the amounts under the approver;
+       * the submit waits for it now (`expenses.submit`), and a disabled button with no
+       * sentence reads as broken. The page polls while the count is non-zero, so this
+       * clears on its own — usually inside a minute. The stale note is the other half:
+       * a reading the worker abandoned (fifteen minutes silent) no longer holds the
+       * report, but its amounts were never read, and that is worth a look before submit.
+       */}
+      {extractionInFlight > 0 && editable && (
+        <div className="shrink-0 pb-3" data-testid="extraction-pending">
+          <div className="flex items-start gap-2 rounded-md border border-primary/40 bg-primary/5 px-3 py-2.5">
+            <IconInfoCircle size={16} className="mt-0.5 shrink-0 text-primary" />
+            <div className="min-w-0">
+              <p className="font-medium text-sm">
+                {t('workbench.extractionPendingTitle', { count: extractionInFlight })}
+              </p>
+              <p className="text-muted-foreground text-sm">
+                {t('workbench.extractionPendingBody', { count: extractionInFlight })}
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+      {extractionStale > 0 && editable && (
+        <div className="shrink-0 pb-3" data-testid="extraction-stale">
+          <div className="flex items-start gap-2 rounded-md border border-warning/40 bg-warning/5 px-3 py-2.5">
+            <IconAlertTriangle size={16} className="mt-0.5 shrink-0 text-warning" />
+            <div className="min-w-0">
+              <p className="font-medium text-sm">
+                {t('workbench.extractionStaleTitle', { count: extractionStale })}
+              </p>
+              <p className="text-muted-foreground text-sm">
+                {t('workbench.extractionStaleBody', { count: extractionStale, minutes: 15 })}
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+      {uncodedExpenses.length > 0 && editable && (
+        <div className="shrink-0 pb-3">
+          <div className="flex items-start gap-2 rounded-md border border-warning/40 bg-warning/5 px-3 py-2.5">
+            <IconAlertTriangle size={16} className="mt-0.5 shrink-0 text-warning" />
+            <div className="min-w-0">
+              <p className="font-medium text-sm">{t('workbench.codingRequiredTitle')}</p>
+              <p className="text-muted-foreground text-sm">
+                {t('workbench.codingRequiredBody', {
+                  count: uncodedExpenses.length,
+                  dimensions: (report.coding?.missing ?? []).join(', '),
+                })}
+              </p>
+              <ul className="mt-1 flex flex-col items-start gap-0.5">
+                {uncodedExpenses.map((e) => (
+                  <li key={e.id}>
+                    <button
+                      type="button"
+                      /* `.einc-tap-slop`, vertical only: the row is already as wide as
+                         its text and horizontal slop on a stacked list would have each
+                         row reaching into the one above it. This is the tap that carries
+                         a submitter from "this report is blocked" to the expense that
+                         blocks it, and at ~20px it was the shortest control on the
+                         primary path. Coarse-pointer-only, so the desktop banner is
+                         untouched. */
+                      className="einc-tap-slop text-left text-sm text-warning underline underline-offset-2 hover:opacity-80"
+                      onClick={() => setSelectedId(e.id)}
+                    >
+                      {e.merchant?.trim() || t('workbench.codingRequiredUnnamed')}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </div>
+        </div>
+      )}
+      {/**
+       * Categories only an administrator can fix — its own banner, not the coding one.
+       *
+       * Same shell as the dimensions banner, different fixer. The expense buttons open the
+       * expense so the submitter can SEE the category (and tell someone which), not fix
+       * it; the admin page is named in plain text rather than linked, because the
+       * submitter usually cannot open it (RBAC-gated, and desktop-only on a phone).
+       */}
+      {/*
+       * VeloExpense (d39): warnings about the WHOLE report — a budget overage is one —
+       * with a reason box each. Not in ExpenseOS, whose findings all sit on an expense and
+       * are justified by that expense's "Explain this charge"; VeloExpense's policy engine
+       * also raises report-level findings, and the submit gate (d34) waits for a reason on
+       * every warning, so without this a report-level one could never be answered and the
+       * report never submitted. Same shell as the banners around it; the reason goes
+       * through ExpenseOS's own `justifyViolation`.
+       */}
+      {reportWarnings.length > 0 && editable && (
+        <div className="shrink-0 pb-3" data-testid="report-findings">
+          <div className="flex items-start gap-2 rounded-md border border-warning/40 bg-warning/5 px-3 py-2.5">
+            <IconAlertTriangle size={16} className="mt-0.5 shrink-0 text-warning" />
+            <div className="min-w-0 flex-1">
+              <p className="font-medium text-sm">{t('workbench.reportFindingsTitle')}</p>
+              <p className="text-muted-foreground text-sm">{t('workbench.reportFindingsBody')}</p>
+              <ul className="mt-2 flex flex-col gap-2">
+                {reportWarnings.map((v) => (
+                  <ReportFindingRow
+                    key={v.id}
+                    violation={v}
+                    label={violationLabel(v)}
+                    onDone={revalidate}
+                  />
+                ))}
+              </ul>
+            </div>
+          </div>
+        </div>
+      )}
+      {categoryProblems.length > 0 && editable && (
+        <div className="shrink-0 pb-3">
+          <div className="flex items-start gap-2 rounded-md border border-warning/40 bg-warning/5 px-3 py-2.5">
+            <IconAlertTriangle size={16} className="mt-0.5 shrink-0 text-warning" />
+            <div className="min-w-0">
+              <p className="font-medium text-sm">{t('workbench.categoryProblemTitle')}</p>
+              <ul className="mt-1 flex flex-col gap-1.5">
+                {categoryProblems.map((p) => (
+                  <li key={p.categoryId}>
+                    <p className="text-sm">
+                      {p.kind === 'ambiguous'
+                        ? t('workbench.categoryProblemAmbiguous', {
+                            category: problemCategoryName(p),
+                            count: p.count ?? 0,
+                          })
+                        : p.kind === 'inactive'
+                          ? t('workbench.categoryProblemInactive', {
+                              category: problemCategoryName(p),
+                            })
+                          : t('workbench.categoryProblemNoMatch', {
+                              category: problemCategoryName(p),
+                            })}
+                    </p>
+                    <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                      <span className="text-muted-foreground text-sm">
+                        {t('workbench.categoryProblemAffected')}
+                      </span>
+                      {p.expenseIds.map((id) => (
+                        <button
+                          key={id}
+                          type="button"
+                          /* The same vertical-only tap slop as the dimensions banner. */
+                          className="einc-tap-slop text-left text-sm text-warning underline underline-offset-2 hover:opacity-80"
+                          onClick={() => setSelectedId(id)}
+                        >
+                          {expenseById.get(id)?.merchant?.trim() ||
+                            t('workbench.codingRequiredUnnamed')}
+                        </button>
+                      ))}
+                    </div>
+                  </li>
+                ))}
+              </ul>
+              <p className="mt-1.5 text-muted-foreground text-sm">
+                {t('workbench.categoryProblemBody', { count: categoryProblems.length })}
+              </p>
+              <p className="text-muted-foreground text-sm">
+                {t('workbench.categoryProblemSubmitOff')}
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+      {/**
+       * The fifth banner: WHICH policy violations, on a phone.
+       *
+       * Above `lg` this list is a `group-hover` panel hanging off the top bar's
+       * violations pill. `group-hover` does not exist on a touch device, so on a phone
+       * the submitter got a count and a greyed Submit and no way to learn what to fix.
+       * A claim that a person can review and submit a report here cannot rest on an
+       * affordance only a pointer can reach.
+       *
+       * Not new interaction design: it is the uncoded-expense blocker directly above,
+       * in the same shape — a warning banner holding one row per blocker, each row a
+       * `<button>` that calls `setSelectedId`. Twelve lines apart, deliberately, so the
+       * two read as one stack rather than as two ideas.
+       *
+       * BELOW `lg` ONLY, and selected in JS rather than cloaked in CSS. Both faces in
+       * the DOM would put every violation label in the accessibility tree twice — the
+       * hover panel and this banner carry the same strings — and a duplicated
+       * accessible name is exactly the test the mechanism rule turns on.
+       *
+       * A REPORT-level violation (no `expenseId`) is prose, not a button: there is no
+       * expense to open, and a link that selects nothing is worse than a sentence.
+       */}
+      {isBelowLg && violationGroups.length > 0 && (
+        <div className="shrink-0 pb-3" data-testid="violations-banner">
+          <div className="flex items-start gap-2 rounded-md border border-warning/40 bg-warning/5 px-3 py-2.5">
+            <IconAlertTriangle size={16} className="mt-0.5 shrink-0 text-warning" />
+            <div className="min-w-0">
+              <p className="font-medium text-sm">
+                {t('workbench.violationsDetected', { count: unresolved.length })}
+              </p>
+              <p className="text-muted-foreground text-sm">{t('workbench.violationsListBody')}</p>
+              <ul className="mt-1 flex flex-col gap-1.5">
+                {violationGroups.map((g) => (
+                  <li key={g.expenseId ?? 'report'} className="flex flex-col gap-0.5">
+                    {g.expenseId ? (
+                      <button
+                        type="button"
+                        className="einc-tap-slop text-left font-medium text-sm text-warning underline underline-offset-2 hover:opacity-80"
+                        onClick={() => setSelectedId(g.expenseId as string)}
+                      >
+                        {g.merchant}
+                      </button>
+                    ) : (
+                      <span className="font-medium text-foreground text-sm">
+                        {t('workbench.violationsReportLevel')}
+                      </span>
+                    )}
+                    <ul className="flex flex-col gap-0.5">
+                      {g.labels.map((label) => (
+                        <li key={label} className="text-muted-foreground text-sm">
+                          {label}
+                        </li>
+                      ))}
+                    </ul>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </div>
+        </div>
+      )}
+      {report.rollup.missingRates.length > 0 && (
+        <div className="shrink-0 pb-3">
+          <div className="flex items-start gap-2 rounded-md border border-warning/40 bg-warning/5 px-3 py-2.5">
+            <IconAlertTriangle size={16} className="mt-0.5 shrink-0 text-warning" />
+            <div className="min-w-0">
+              <p className="font-medium text-sm">{t('workbench.fxExcludedTitle')}</p>
+              <p className="text-muted-foreground text-sm">
+                {t('workbench.fxExcludedBody', {
+                  count: report.rollup.missingRates.length,
+                  currencies: report.rollup.missingRates.join(', '),
+                  homeCurrency: report.rollup.homeCurrency,
+                })}
+              </p>
+              <ul className="mt-1 flex flex-col gap-0.5">
+                {report.rollup.byCurrency
+                  .filter((c) => c.convertedMinor === null)
+                  .map((c) => (
+                    <li key={c.code} className="text-sm text-warning tabular-nums">
+                      {c.code}{' '}
+                      {formatMinor(Number(c.grossMinor), { code: c.code, symbol: '' }, locale)}
+                    </li>
+                  ))}
+              </ul>
+            </div>
+          </div>
+        </div>
+      )}
+      {shouldPromptUpload({ linkArrived: showUploadPrompt, editable }) && (
+        <div className="shrink-0 pb-3">
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-primary/40 bg-primary/5 px-3 py-2.5">
+            <div className="min-w-0">
+              <p className="font-medium text-sm">{t('handoff.title')}</p>
+              <p className="text-muted-foreground text-sm">{t('handoff.body')}</p>
+            </div>
+            {/* `gap-3` once the pair exists: `ReceiptFileInput`'s file comment
+              spells out why 6px and 8px gaps let the later sibling steal taps
+              aimed at the earlier one. The pair only exists on a coarse
+              pointer, so the wider gap is asked for there and the desktop
+              row's spacing is left exactly as it was. */}
+            <div className="flex shrink-0 items-center gap-2 pointer-coarse:gap-3">
+              <ReceiptFileInput
+                multiple
+                disabled={uploadBusy}
+                // Real 44px by resize, so no invisible ring beside the dismiss button.
+                hitSlop={false}
+                className={receiptChip(
+                  // Icon-only beside the camera on a phone, which also takes the
+                  // fill there; alone on a desktop, the labelled chip keeps it.
+                  coarsePointer ? RECEIPT_CHIP_ICON : RECEIPT_CHIP_FILLED,
+                  captureBusy,
+                )}
+                aria-disabled={captureBusy || undefined}
+                camera={cameraControl(receiptChip(RECEIPT_CHIP_ICON_FILLED, captureBusy))}
+                /* `uploadReceipts` copies the list with `Array.from` before its
+                   first `await`, which it has to: the primitive resets the
+                   input's value straight after this returns and that empties
+                   the very `FileList` handed over here. */
+                onFiles={(files) => void uploadReceipts(files)}
+              >
+                {pickerChildren(t('handoff.action'))}
+              </ReceiptFileInput>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setShowUploadPrompt(false)}
+                aria-label={t('handoff.dismiss')}
+              >
+                <IconX size={14} />
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+      {openSuggestions.length > 0 && (
+        <div className="shrink-0 pb-3">
+          <GroupingResolver
+            suggestions={openSuggestions}
+            busy={receiptMove.isPending}
+            onMerge={(receiptIds, toExpenseId) => {
+              // Sequentially: each move re-derives both ends server-side, and firing
+              // them together would race two rebuilds of the same expense.
+              void (async () => {
+                for (const id of receiptIds) {
+                  await receiptMove.mutateAsync({ id, toExpenseId }).catch((e) => {
+                    setSubmitError(refusalText(e, String(e)));
+                  });
+                }
+                setSelectedId(toExpenseId);
+                revalidate();
+                grouping.refetch();
+              })();
+            }}
+            onKeepApart={(key) => setKeptApart((prev) => new Set(prev).add(key))}
+          />
+        </div>
+      )}
+      <ResizablePanels
+        minWidths={[340, 420, 340]}
+        panelKeys={['expenses', 'editor', 'receipt']}
+        flexIndex={1}
+        defaultWidths={[480, undefined, 480]}
+        defaultFractions={[1 / 3, 1 / 3, 1 / 3]}
+        storageKey="eos.expenseWorkbench.paneSizes.v6"
+        separatorLabel={t('workbench.resizePanels')}
+        // Scroll horizontally rather than clip when the three mins can't fit the
+        // content area (e.g. ~1280–1500px with the sidebar open) — `main` is
+        // overflow-x-hidden, so without this the receipt pane's edge is cut off.
+        className="overflow-x-auto"
+      >
+        {/* LEFT — expenses, then the discussion, as two separate cards */}
+        <div className="flex min-h-0 flex-col gap-3">
+          <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-md border border-border bg-card">
+            <div className="flex h-12 shrink-0 items-center justify-between border-border border-b px-3">
+              {/**
+               * The pane's title, and below `lg` also the way in and out of the list.
+               *
+               * Still an `<h3>` at every width — the disclosure button goes INSIDE the
+               * heading rather than replacing it, so the pane keeps its place in the
+               * document outline and a screen reader's heading list is unchanged. One
+               * face at a time, selected in JS: two would put "Expenses" in the
+               * accessibility tree twice, which is the test the mechanism rule turns on.
+               *
+               * The count is in the label because a collapsed pane has to say how much
+               * it is hiding; `aria-expanded` says which way the tap goes, and the
+               * chevron says it again for everyone who is not listening. The row is
+               * `h-12` (48px) and the button stretches to it, so the target clears 44px
+               * without any hit slop — `-mx-3 px-3` puts the card's own gutter inside
+               * the target rather than beside it.
+               */}
+              <h3
+                className={cn(
+                  'font-semibold text-base text-foreground',
+                  isBelowLg && 'min-w-0 flex-1',
+                )}
+              >
+                {isBelowLg ? (
+                  <button
+                    type="button"
+                    aria-expanded={expensesListOpen}
+                    aria-controls={EXPENSE_LIST_ID}
+                    onClick={() => setExpensesListOpen((open) => !open)}
+                    className="-mx-3 flex h-12 w-full items-center gap-1.5 px-3 text-left"
+                  >
+                    <span className="min-w-0 truncate">
+                      {t('workbench.expensesToggle', { count: expenses.length })}
+                    </span>
+                    <IconChevronDown
+                      size={16}
+                      aria-hidden="true"
+                      className={cn(
+                        'shrink-0 transition-transform',
+                        expensesListOpen && 'rotate-180',
+                      )}
+                    />
+                  </button>
+                ) : (
+                  t('drawer.expenses')
+                )}
+              </h3>
+              {/* Only while a decision is pending — the server refuses it otherwise,
+                  because the override restates the total the approver signs. */}
+              {canFxOverride && report.status === 'SUBMITTED' && report.rollup.multiCurrency && (
+                /* Half of PLACEMENT 5 — the FX override. Cloaked rather than branched, for
+                   the same state reason as the editors: the popover holds a typed rate.
+                   `contents` rather than `block` because this header is a flex row with
+                   `justify-between`, and a wrapper box would become the flex item and take
+                   the trigger's own `shrink-0` out of the row's arithmetic. Hidden, it is
+                   not a flex item at all — identical to the absent case. */
+                <div className="hidden lg:contents">
+                  <FxOverridePopover
+                    reportId={reportId}
+                    homeCurrency={report.currency.code}
+                    foreignCodes={report.rollup.byCurrency
+                      .map((c) => c.code)
+                      .filter((c) => c !== report.currency.code)}
+                    current={
+                      report.fxOverride
+                        ? {
+                            rate: report.fxOverride.rate,
+                            fromCurrency: report.fxOverride.fromCurrency,
+                          }
+                        : null
+                    }
+                  />
+                </div>
+              )}
+              {editable && (
+                /* `gap-3` for the same tap-stealing reason as the hand-off banner
+                   above, and only where the pair exists.
+
+                   NO `flex-wrap`, and that is arithmetic rather than taste: on a
+                   phone this row is three 44px squares and two 12px gaps, ~156px,
+                   which fits the narrowest phone this app targets. It used to be
+                   ~365px of labelled chips and had to wrap — into a fixed `h-12`
+                   row inside an `overflow-hidden` card, where the second line had
+                   nowhere to go. Icon-only removed the overflow, so the wrap goes
+                   too and a desktop's row is character for character what it was
+                   before the camera existed. */
+                <div className="flex items-center gap-2 pointer-coarse:gap-3">
+                  <ReceiptFileInput
+                    multiple
+                    disabled={uploadBusy}
+                    // Real 44px by resize, so no invisible ring beside "Add expense".
+                    hitSlop={false}
+                    className={receiptChip(
+                      coarsePointer ? RECEIPT_CHIP_ICON : RECEIPT_CHIP_OUTLINE,
+                      captureBusy,
+                    )}
+                    aria-disabled={captureBusy || undefined}
+                    /* The same square as the picker, camera first — see
+                       `RECEIPT_CHIP_ICON`. With no visible text there is nothing
+                       for a weight to distinguish, so order is the cue. */
+                    camera={cameraControl(receiptChip(RECEIPT_CHIP_ICON, captureBusy))}
+                    onFiles={(files) => void uploadReceipts(files)}
+                  >
+                    {pickerChildren(t('inbox.uploadReceipt'))}
+                  </ReceiptFileInput>
+                  {/*
+                   * "Add expense", suppressed below `lg` — the only add-expense entry
+                   * point on this route, and the last editing control in this header.
+                   *
+                   * What it creates is an EMPTY expense: `createExpense` writes a row with
+                   * no vendor, no date, no amount and no document, and the page then
+                   * selects it. Every field that would make it a real expense is cloaked
+                   * on a phone, so the "+" put a reader one tap from a blank row they
+                   * could not fill in and — at the top of an expense list — could not
+                   * easily tell from the one they meant to open. The receipt controls
+                   * beside it are NOT this: they create an expense from a document and
+                   * the extraction fills it, which is the phone capture path P04 built and
+                   * the reason both stay at every width.
+                   *
+                   * `hidden lg:contents`, so the desktop row is byte-identical: the wrapper
+                   * generates no box, the Button stays the flex item it is today, and the
+                   * two receipt controls' spacing does not move at either width.
+                   */}
+                  <div className="hidden lg:contents">
+                    <Button
+                      size="sm"
+                      /* Icon-only on a phone, AT THIS CALL SITE ONLY — the label
+                         goes into an `sr-only` span, so the accessible name (and
+                         the E2E locators that read it) is untouched.
+
+                         CSS rather than a `coarsePointer` branch: the button then
+                         needs no pointer read, it does not reflow a beat after the
+                         first paint, and nothing in `packages/design-system`
+                         changes for the other pages using `Button`.
+
+                         The square is the arithmetic: `size="sm"` is `h-9` (36px),
+                         which loses to `min-h-11` because a min-height beats a
+                         height, and `px-3` around a glyph is 12 + 18 + 12 = 42px
+                         wide, so `min-w-11` is what makes the last 2px. `mr-1`
+                         comes off because an `sr-only` span is out of flow and the
+                         margin would push the glyph 4px off centre. */
+                      className="pointer-coarse:min-h-11 pointer-coarse:min-w-11"
+                      disabled={createExpense.isPending || uploadBusy}
+                      onClick={() => createExpense.mutate({ reportId })}
+                    >
+                      <IconPlus
+                        size={13}
+                        aria-hidden="true"
+                        className="mr-1 pointer-coarse:mr-0 pointer-coarse:size-[18px]"
+                      />
+                      <span className="pointer-coarse:sr-only">{t('drawer.addExpense')}</span>
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </div>
+            {/*
+             * NO NOTICE HERE ANY MORE, and that is the whole of the change.
+             *
+             * This card used to carry the fifth of five `SectionNotice` placements, naming
+             * the bulk-actions + FX-override pair cloaked below it. The five together read
+             * as five copies of one sentence down a single 664px scroll — the register the
+             * component's own header already called "the outer edge of what it tolerates".
+             * The notice is now shown exactly once, at the top of the selected expense's
+             * editor, where it speaks for every region this route suppresses on a phone.
+             *
+             * The cloaks themselves are untouched. What each width RENDERS is exactly what
+             * it rendered before; only the number of times the reader is told about it
+             * changed.
+             *
+             * What does NOT move: the two RECEIPT controls beside "Add expense" stay in the
+             * header at every width. Attaching a document is the phone capture path, and the
+             * camera control P04 put there is the reason the ordinals in
+             * `e2e/support/workbench.ts` are written the way they are.
+             *
+             * "Add expense" itself no longer does — see its own comment above. It creates an
+             * empty row, and every field that would make that row an expense is cloaked on a
+             * phone, so the operator round took the control down to the capability it can
+             * actually deliver there. `docs/design/pwa.md` § "What P06 assessed" names it in
+             * the `limited` row with the rest.
+             */}
+            {/* Group actions — the design-system toolbar pattern (BulkActionsMenu
+              + SelectionCounter), same as the admin lists. Editable reports only. */}
+            {editable && (
+              <div className="hidden lg:contents">
+                <DataTableToolbar
+                  {...toolbarLabels}
+                  selectedCount={checked.size}
+                  resultCount={checked.size > 0 ? undefined : expenses.length}
+                  loading={checked.size === 0 && query.isLoading}
+                  selectAllSlot={
+                    <Checkbox
+                      aria-label={t('drawer.selectAll')}
+                      checked={
+                        expenses.length > 0 && checked.size === expenses.length
+                          ? true
+                          : checked.size > 0
+                            ? 'indeterminate'
+                            : false
+                      }
+                      onCheckedChange={(v) =>
+                        setChecked(v === true ? new Set(expenses.map((e) => e.id)) : new Set())
+                      }
+                    />
+                  }
+                  bulkActions={bulkActions}
+                  bulkActionsDisabled={deleteExpenses.isPending}
+                />
+              </div>
+            )}
+            {/* `hidden` rather than unmounted, and only on the hook's branch — see
+                `expensesListOpen`. Above `lg` no class is added at all, so the desktop
+                pane is byte-identical and a window dragged past 1024px reveals the same
+                DOM it always had. */}
+            <div
+              id={EXPENSE_LIST_ID}
+              className={cn(
+                'min-h-0 flex-1 overflow-y-auto',
+                isBelowLg && !expensesListOpen && 'hidden',
+              )}
+            >
+              {expenses.length === 0 ? (
+                <p className="p-3 text-muted-foreground text-sm">{t('drawer.noExpenses')}</p>
+              ) : (
+                <ul>
+                  {expenses.map((e) => (
+                    <ExpenseListRow
+                      key={e.id}
+                      expense={e}
+                      locale={locale}
+                      active={e.id === selectedId}
+                      violationCount={violationCountByExpense.get(e.id) ?? 0}
+                      onSelect={() => selectFromList(e.id)}
+                      /* One tap selects the expense AND opens its receipts. Below
+                         `lg` only — `ExpenseListRow` renders no trigger above it, so
+                         this is never reachable on a desktop. */
+                      onOpenReceipts={() => {
+                        selectFromList(e.id);
+                        setReceiptSheetOpen(true);
+                      }}
+                      selectable={editable}
+                      selected={checked.has(e.id)}
+                      onToggleSelected={() => toggleChecked(e.id)}
+                      onReceiptDrop={editable ? (p) => moveReceipt(p.receiptId, e.id) : undefined}
+                    />
+                  ))}
+                </ul>
+              )}
+            </div>
+          </div>
+          {/**
+           * The report-level discussion, under the expenses it is about.
+           *
+           * Report-level rather than per-expense: the questions people ask are about the
+           * claim ("why is this over budget?"), and a thread per line would scatter one
+           * conversation across a dozen places. It sits in this pane because an approver
+           * reads a report top-down — the discussion belongs beside the list and the
+           * submit/recall actions, not behind a click in another panel.
+           *
+           * Its OWN card rather than a section at the foot of the expenses card. It used
+           * to be the latter, which cost it the two things a transcript needs: the title
+           * scrolled away with the messages (one `overflow-y-auto` wrapped the heading,
+           * the stream and the composer together), and the composer went with it — so on
+           * a long thread the box you type into was somewhere off-screen.
+           *
+           * `h-1/2 shrink-0`: half the column, and the expenses list above takes the
+           * slack. Enclosed mode makes the thread own its scroller, which is what lets it
+           * pin its header and stick to the newest message.
+           */}
+          {/* `max-lg:h-auto`, the second half of the stacked-pane change above.
+              `h-1/2` is half of a parent that below `lg` no longer has a definite
+              height, and a percentage height against an indefinite parent is the
+              case browsers resolve to `auto` — silently, and not identically
+              everywhere. Saying `auto` outright is the same outcome stated rather
+              than relied upon. Unverified for the same reason as the wrapper:
+              Phase 8 measures it. */}
+          <div className="h-1/2 shrink-0 max-lg:h-auto">
+            <CommentThread subjectType="EXPENSE_REPORT" subjectId={report.id} enclosed />
+          </div>
+        </div>
+
+        {/* CENTER — selected expense editor */}
+        <div className="flex min-h-0 flex-col overflow-hidden rounded-md border border-border bg-card">
+          {selected ? (
+            <ExpenseEditor
+              key={selected.id}
+              expense={selected}
+              violations={report.violations.filter(
+                (v) => v.expenseId === selected.id && !v.resolvedAt,
+              )}
+              currencySymbol={currencySymbol}
+              editable={editable}
+              categoryItems={categoryItems}
+              locale={locale}
+              onChange={revalidate}
+              entityRecovers={report.entity.itcRecoverable}
+              locked={editorLocked}
+            />
+          ) : (
+            <div className="flex flex-1 items-center justify-center p-6 text-center text-muted-foreground text-sm">
+              {t('workbench.selectPrompt')}
+            </div>
+          )}
+        </div>
+
+        {/* RIGHT — receipts for the selected expense */}
+        <ReceiptPane
+          expense={selected}
+          editable={editable}
+          reviewThreshold={report.extractionReviewThreshold}
+          onChange={revalidate}
+          locked={viewerLocked}
+          moveTargets={moveTargets}
+          onMoveReceipt={moveReceipt}
+          /* Below `lg` this renders as a bottom sheet instead of the third pane;
+             above it, these three are inert. `refetchReport` is SEC-4 — the same
+             `expenses.report` query asked again when the sheet becomes readable, so
+             a presigned URL that expired while the phone was in a pocket is replaced
+             rather than rendered as an S3 error body. No new procedure. */
+          sheetOpen={receiptSheetOpen}
+          onSheetOpenChange={setReceiptSheetOpen}
+          onRefetchReport={refetchReport}
+        />
+      </ResizablePanels>
+    </div>
+  );
+}
+
+/** AP-only per-report FX override (A4). Lets AP pin the rate used to convert a
+ *  foreign currency on the report into the report currency, matching the card
+ *  statement. One rate per report; Save writes it, Clear reverts to the daily
+ *  FX rate. Shown only to `expense.report.fxOverride` holders (canFxOverride) on a
+ *  multi-currency report. */
+function FxOverridePopover({
+  reportId,
+  homeCurrency,
+  foreignCodes,
+  current,
+}: {
+  reportId: string;
+  homeCurrency: string;
+  foreignCodes: string[];
+  current: { rate: string; fromCurrency: string | null } | null;
+}) {
+  const t = useTranslations('expenses');
+  const refusalText = useRefusalText();
+  const utils = trpc.useUtils();
+  const [open, setOpen] = useState(false);
+  const [from, setFrom] = useState<string | null>(current?.fromCurrency ?? foreignCodes[0] ?? null);
+  const [rate, setRate] = useState(current?.rate ?? '');
+  /** The server's reason for refusing the rate — out of band, or on a decided report. */
+  const [error, setError] = useState<string | null>(null);
+
+  const setOverride = trpc.expenseApprovals.setFxOverride.useMutation({
+    onSuccess: () => {
+      setError(null);
+      void utils.expenses.report.invalidate({ reportId });
+      setOpen(false);
+    },
+    onError: (e) => setError(refusalText(e, e.message)),
+  });
+
+  const items: ComboboxItem[] = foreignCodes.map((c) => ({ value: c, label: c }));
+  const rateValid = /^\d+(\.\d+)?$/.test(rate) && Number(rate) > 0;
+
+  return (
+    <Popover
+      open={open}
+      onOpenChange={(o) => {
+        setOpen(o);
+        if (o) {
+          setFrom(current?.fromCurrency ?? foreignCodes[0] ?? null);
+          setRate(current?.rate ?? '');
+          setError(null);
+        }
+      }}
+    >
+      {/* VeloExpense: Radix `asChild` for Base UI's `render`, as above. */}
+      <PopoverTrigger asChild>
+        <Button size="sm" variant={current ? 'default' : 'ghost'}>
+          {current ? t('workbench.fxOverrideActive') : t('workbench.fxOverride')}
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent align="end" className="w-72">
+        <p className="mb-2 text-muted-foreground text-xs">{t('workbench.fxOverrideHelp')}</p>
+        <div className="flex flex-col gap-2">
+          <label className="text-muted-foreground text-xs" htmlFor="fxOverrideFrom">
+            {t('workbench.fxOverrideFrom')}
+          </label>
+          <Combobox
+            id="fxOverrideFrom"
+            items={items}
+            value={from}
+            onValueChange={setFrom}
+            disabled={foreignCodes.length <= 1}
+          />
+          <label className="text-muted-foreground text-xs" htmlFor="fxOverrideRate">
+            {t('workbench.fxOverrideRate', { from: from ?? '', home: homeCurrency })}
+          </label>
+          <Input
+            id="fxOverrideRate"
+            inputMode="decimal"
+            value={rate}
+            onChange={(e) => setRate(e.target.value)}
+            placeholder="1.37"
+          />
+        </div>
+        {error && (
+          <p role="alert" className="mt-2 text-destructive text-xs">
+            {error}
+          </p>
+        )}
+        <div className="mt-3 flex justify-between">
+          <Button
+            size="sm"
+            variant="ghost"
+            disabled={setOverride.isPending || !current}
+            onClick={() => setOverride.mutate({ reportId, rate: null })}
+          >
+            {t('workbench.fxOverrideClear')}
+          </Button>
+          <Button
+            size="sm"
+            disabled={setOverride.isPending || !rateValid || !from}
+            onClick={() => from && setOverride.mutate({ reportId, rate, fromCurrency: from })}
+          >
+            {t('workbench.fxOverrideSave')}
+          </Button>
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+/**
+ * VeloExpense (d39): one report-level warning and its reason box — see the banner that
+ * mounts it. Acknowledging writes the reason through `justifyViolation` (ExpenseOS's
+ * procedure, VeloExpense's `acknowledgeViolation`) and re-runs the policy pass, so the
+ * submit gate and the top-bar count move with it.
+ */
+function ReportFindingRow({
+  violation,
+  label,
+  onDone,
+}: {
+  violation: { id: string };
+  label: string;
+  onDone: () => void;
+}) {
+  const t = useTranslations('expenses');
+  const refusalText = useRefusalText();
+  const [note, setNote] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const justify = trpc.expenses.justifyViolation.useMutation({
+    onSuccess: () => {
+      setError(null);
+      onDone();
+    },
+    onError: (e) => setError(refusalText(e, e.message)),
+  });
+  return (
+    <li className="flex flex-col gap-1.5">
+      <span className="text-sm">{label}</span>
+      <div className="flex items-start gap-2">
+        <Textarea
+          rows={2}
+          value={note}
+          onChange={(e) => setNote(e.target.value)}
+          placeholder={t('workbench.reportFindingsPlaceholder')}
+          aria-label={label}
+          className="min-w-0 flex-1"
+        />
+        <Button
+          size="sm"
+          variant="secondary"
+          disabled={justify.isPending || !note.trim()}
+          onClick={() => justify.mutate({ violationId: violation.id, note: note.trim() })}
+        >
+          {t('approvals.acknowledge')}
+        </Button>
+      </div>
+      {error && <p className="text-destructive text-xs">{error}</p>}
+    </li>
+  );
+}

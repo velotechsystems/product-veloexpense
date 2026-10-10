@@ -29,8 +29,8 @@
 import { test, expect, type APIRequestContext, type Page } from '@playwright/test';
 import { Pool } from 'pg';
 import { DEFAULT_LOCALE } from '@/lib/i18n/locales';
-import { enumLabel, EVENT_TYPE_COPY, REPORT_STATUS_COPY } from '@/lib/i18n/catalog/enums';
-import { createDraftReport } from './helpers';
+import { enumLabel, EVENT_TYPE_COPY } from '@/lib/i18n/catalog/enums';
+import { addExpenseLine, createDraftReport, expectReportStatus, submitOpenReport } from './helpers';
 /**
  * VX4-7 part 2a: a report's status is asserted through the CATALOGUE, not as the
  * enum's own spelling.
@@ -48,7 +48,8 @@ import { createDraftReport } from './helpers';
  * `test/i18n-enum-catalog.test.ts` refuses a blank default for any member, so
  * the pairing covers both halves and neither test repeats the other.
  */
-const status = (member: string) => enumLabel(REPORT_STATUS_COPY, member, DEFAULT_LOCALE);
+// w2-02b: the report's status is read through `expectReportStatus` (helpers.ts), which
+// asserts the same catalogued label on the workbench's top bar.
 
 /**
  * The same idea for a notification's event type.
@@ -190,24 +191,20 @@ async function createAndSubmit(page: Page) {
   await expect(page).toHaveURL(/\/expenses\/[0-9a-f-]{36}$/);
   const reportUrl = page.url();
 
-  await page.getByLabel('Merchant').first().fill('Taxi');
-  // VX4-11: the date is REQUIRED on the form now, and `submitReport` refuses a
-  // report holding an undated expense. Every helper that builds one has to say
-  // when it happened — which is the point of the ticket, arriving here first.
-  await page.locator('#new-txnDate').fill(new Date().toISOString().slice(0, 10));
-  await page.getByRole('button', { name: 'Add expense' }).click();
-  await expect(page.getByRole('heading', { name: 'Taxi' })).toBeVisible();
-
-  await page.locator('select[id^="categoryId-"]').selectOption({ label: 'Meals & Entertainment' });
-  await page.locator('input[id^="description-"]').fill('Airport transfer');
+  // w2-02b: on ExpenseOS's workbench (helpers.ts `addExpenseLine`). The workbench dates a new
+  // expense today, which `submitReport` requires (VX4-11).
+  //
   // Under the $25 receipt threshold, so no BLOCK finding and no receipt needed.
   // This spec is about approvals; expense-flow.spec.ts owns the policy gate.
-  await page.locator('input[id^="amount-"]').fill('18.50');
-  await page.getByRole('button', { name: 'Add line item' }).click();
-  await expect(page.getByTestId('report-total')).toHaveText('$18.50');
+  //
+  // Ground Transportation, not Meals: a Meals line here lands in the same fiscal period as
+  // `budget-flow.spec.ts`'s Meals budget, and on the w2-02b run it had already taken that
+  // budget over before budget-flow added anything. This spec is about approvals, so it keeps
+  // out of that GL account.
+  await addExpenseLine(page, { vendor: 'Taxi', category: 'Ground Transportation', amount: '18.50' });
+  await expect(page.getByRole('banner')).toContainText('$18.50');
 
-  await page.getByRole('button', { name: 'Submit for approval' }).click();
-  await expect(page.getByTestId('report-status')).toHaveText(status('SUBMITTED'));
+  await submitOpenReport(page);
   return reportUrl;
 }
 
@@ -281,8 +278,9 @@ test('an approver decides from an emailed link, without ever signing in', async 
 
   // And the submitter's own view agrees.
   await page.goto(reportUrl);
-  await expect(page.getByTestId('report-status')).toHaveText(status('APPROVED'));
-  await expect(page.getByText('SUBMITTED → APPROVED')).toBeVisible();
+  await expectReportStatus(page, 'APPROVED');
+  // w2-02b: the report's history is its discussion now — the approval is an event in it.
+  await expect(page.getByText('approved this')).toBeVisible();
 });
 
 test('the submitter is notified in-app, and by mail', async ({ page, request }) => {

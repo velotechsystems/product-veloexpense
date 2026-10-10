@@ -297,6 +297,59 @@ describe('the line writes audit under VeloExpense’s names', () => {
   });
 });
 
+describe('a line\'s GL account, with the accounting module off and on (w2-02b)', () => {
+  /**
+   * VeloExpense's chart is invisible with the accounting module off (0022), and a line filed
+   * then carries no GL account — VeloExpense's own `accountForCategory` rule. The ported
+   * stamp read the category's column instead, wrote the id of an account the tenant cannot
+   * see, and the insert failed on its foreign key: no line could be added on the workbench.
+   */
+  it('stamps nothing while the module is off, and the account once it is on', async () => {
+    const account = (
+      await h.admin.query(
+        `INSERT INTO gl_account (organization_id, number, name, type)
+         VALUES ($1, '68150', 'Velo taxis', 'expense') RETURNING id`,
+        [h.orgId],
+      )
+    ).rows[0].id as string;
+    const mapped = (
+      await h.admin.query(
+        `INSERT INTO expense_category (organization_id, label, gl_account_id)
+         VALUES ($1, '{"en":"Velo taxis"}'::jsonb, $2) RETURNING id`,
+        [h.orgId, account],
+      )
+    ).rows[0].id as string;
+    const caller = h.makeCaller(RW, ownerId);
+    const reportId = (await caller.create({ title: 'GL stamp', currency: 'CAD' })).id;
+    const { id: expenseId } = await caller.createExpense({ reportId });
+    const glOf = async (lineId: string) =>
+      (await h.admin.query('SELECT gl_account_id FROM expense_line_item WHERE id = $1', [lineId]))
+        .rows[0].gl_account_id as string | null;
+
+    await h.admin.query(
+      `DELETE FROM module_entitlement WHERE organization_id = $1 AND module_code = 'accounting'`,
+      [h.orgId],
+    );
+    const off = await caller.lineItemCreate({ expenseId, categoryId: mapped, amountMinor: '1000' });
+    expect(await glOf(off.id)).toBeNull();
+
+    await h.admin.query(
+      `INSERT INTO module_entitlement (organization_id, module_code, enabled)
+       VALUES ($1, 'accounting', true)`,
+      [h.orgId],
+    );
+    try {
+      const on = await caller.lineItemCreate({ expenseId, categoryId: mapped, amountMinor: '1000' });
+      expect(await glOf(on.id)).toBe(account);
+    } finally {
+      await h.admin.query(
+        `DELETE FROM module_entitlement WHERE organization_id = $1 AND module_code = 'accounting'`,
+        [h.orgId],
+      );
+    }
+  });
+});
+
 describe('report — VeloExpense\'s tables, in ExpenseOS\'s shape', () => {
   let reportId: string;
   let expenseId: string;
@@ -334,6 +387,22 @@ describe('report — VeloExpense\'s tables, in ExpenseOS\'s shape', () => {
       resolvedAt: null,
     });
     expect(byRule.receiptMissing).toMatchObject({ expenseId: null, severity: 'BLOCK' });
+  });
+
+  it('carries a finding about one expense — no line, its expense in the data — under that expense (w2-02b)', async () => {
+    // The engine's missing-receipt finding has no line and names its expense in
+    // `data.expenseId`; read as report-level, the workbench showed it on no expense.
+    await h.admin.query(
+      `INSERT INTO policy_violation (organization_id, report_id, line_item_id, rule_code, severity, message, finding_key, data)
+       VALUES ($1, $2, NULL, 'expenseScoped', 'BLOCK', 'No receipt', $3, jsonb_build_object('expenseId', $3::text)),
+              ($1, $2, NULL, 'strayExpense', 'WARNING', 'Not here', 'c', jsonb_build_object('expenseId', gen_random_uuid()::text))`,
+      [h.orgId, reportId, expenseId],
+    );
+    const out = await h.makeCaller(RW, ownerId).report({ reportId });
+    const byRule = Object.fromEntries(out.violations.map((v: { ruleCode: string }) => [v.ruleCode, v]));
+    expect(byRule.expenseScoped).toMatchObject({ expenseId, lineItemId: null });
+    // An id that is not an expense on this report is not trusted — it stays report-level.
+    expect(byRule.strayExpense).toMatchObject({ expenseId: null });
   });
 
   it('reports no posting until one is queued, then its state — a claimed PENDING as PROCESSING', async () => {

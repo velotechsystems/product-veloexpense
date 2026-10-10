@@ -275,6 +275,25 @@ describe('submit', () => {
     expect(v.resolved_by_id).toBe(userId);
   });
 
+  it("takes the explanation for a warning about the expense itself, not one line (w2-02b)", async () => {
+    // A missing receipt is a finding about the EXPENSE: it has no line, and names the expense
+    // in its data. The workbench shows it on that expense, beside the explanation field — so
+    // the explanation answers it as it answers a line's.
+    const { reportId, expenseId } = await draft(75_00);
+    const result = await withOrg(orgId, async (tx) => {
+      await tx.query('DELETE FROM expense_policy');
+      await policy.createPolicy(tx, { kind: 'RECEIPT_REQUIRED', severity: 'WARNING', params: {} });
+      await tx.query(`UPDATE expense SET explanation = 'Taxi, no receipt offered' WHERE id = $1`, [
+        expenseId,
+      ]);
+      return lifecycle.submitReport(tx, reportId, userId);
+    });
+    expect(result.report.status).toBe('SUBMITTED');
+    const v = result.validation.violations.find((x) => x.rule_code === 'RECEIPT_REQUIRED');
+    expect(v?.line_item_id).toBeNull();
+    expect(v?.resolve_note).toBe('Taxi, no receipt offered');
+  });
+
   it('resubmits a RETURNED report where it stands (d26)', async () => {
     // ExpenseOS's rule: an approver sending a report back is an invitation to edit and
     // resubmit, not to recall it first.

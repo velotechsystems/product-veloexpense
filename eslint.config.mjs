@@ -42,6 +42,11 @@ const PORTED_FROM_EXPENSEOS = [
   // Wave 2: ExpenseOS's tax engine and expense-line kinds, verbatim.
   "packages/tax/**",
   "packages/expense-lines/**",
+  // Wave 2 (w2-02b): the workbench's pieces outside `app/(app)` — ExpenseOS's attachment
+  // viewer and policy-violation helpers, and its design system's resizable panels (in the kit).
+  "components/attachments/AttachmentViewer*.tsx",
+  "components/policy/**",
+  "components/ui/resizable-panels*.tsx",
 ];
 
 const eslintConfig = defineConfig([
@@ -61,12 +66,18 @@ const eslintConfig = defineConfig([
       "react-hooks/globals": "off",
       "react-hooks/immutability": "off",
       "react-hooks/set-state-in-effect": "off",
+      // The compiler's report that it skipped a component whose hand-written `useMemo` /
+      // `useCallback` it could not keep — a note about what it would optimise, like the four
+      // above (first met in the expense-report workbench, w2-02b).
+      "react-hooks/preserve-manual-memoization": "off",
     },
   },
   {
     // ExpenseOS's Avatar renders a remote profile photo (Google) with a plain <img>, and the
     // kit's components must not depend on Next; see the note in the component.
-    files: ["components/data-display/Avatar.tsx"],
+    // The same holds for ExpenseOS's attachment viewer, which shows a receipt image from a
+    // signed storage URL that Next's image optimiser cannot fetch (w2-02b).
+    files: ["components/data-display/Avatar.tsx", "components/attachments/AttachmentViewer.tsx"],
     rules: { "@next/next/no-img-element": "off" },
   },
   // Override default ignores of eslint-config-next.
