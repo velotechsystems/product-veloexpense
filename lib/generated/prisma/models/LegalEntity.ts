@@ -216,6 +216,7 @@ export type LegalEntityWhereInput = {
   updatedAt?: Prisma.DateTimeFilter<"LegalEntity"> | Date | string
   homeCurrency?: Prisma.XOR<Prisma.CurrencyNullableScalarRelationFilter, Prisma.CurrencyWhereInput> | null
   externalIds?: Prisma.LegalEntityExternalIdListRelationFilter
+  users?: Prisma.UserListRelationFilter
 }
 
 export type LegalEntityOrderByWithRelationInput = {
@@ -231,6 +232,7 @@ export type LegalEntityOrderByWithRelationInput = {
   updatedAt?: Prisma.SortOrder
   homeCurrency?: Prisma.CurrencyOrderByWithRelationInput
   externalIds?: Prisma.LegalEntityExternalIdOrderByRelationAggregateInput
+  users?: Prisma.UserOrderByRelationAggregateInput
 }
 
 export type LegalEntityWhereUniqueInput = Prisma.AtLeast<{
@@ -250,6 +252,7 @@ export type LegalEntityWhereUniqueInput = Prisma.AtLeast<{
   updatedAt?: Prisma.DateTimeFilter<"LegalEntity"> | Date | string
   homeCurrency?: Prisma.XOR<Prisma.CurrencyNullableScalarRelationFilter, Prisma.CurrencyWhereInput> | null
   externalIds?: Prisma.LegalEntityExternalIdListRelationFilter
+  users?: Prisma.UserListRelationFilter
 }, "id" | "organizationId_id">
 
 export type LegalEntityOrderByWithAggregationInput = {
@@ -296,6 +299,7 @@ export type LegalEntityCreateInput = {
   updatedAt?: Date | string
   homeCurrency?: Prisma.CurrencyCreateNestedOneWithoutLegalEntitiesInput
   externalIds?: Prisma.LegalEntityExternalIdCreateNestedManyWithoutLegalEntityInput
+  users?: Prisma.UserCreateNestedManyWithoutEntityInput
 }
 
 export type LegalEntityUncheckedCreateInput = {
@@ -310,6 +314,7 @@ export type LegalEntityUncheckedCreateInput = {
   createdAt?: Date | string
   updatedAt?: Date | string
   externalIds?: Prisma.LegalEntityExternalIdUncheckedCreateNestedManyWithoutLegalEntityInput
+  users?: Prisma.UserUncheckedCreateNestedManyWithoutEntityInput
 }
 
 export type LegalEntityUpdateInput = {
@@ -324,6 +329,7 @@ export type LegalEntityUpdateInput = {
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   homeCurrency?: Prisma.CurrencyUpdateOneWithoutLegalEntitiesNestedInput
   externalIds?: Prisma.LegalEntityExternalIdUpdateManyWithoutLegalEntityNestedInput
+  users?: Prisma.UserUpdateManyWithoutEntityNestedInput
 }
 
 export type LegalEntityUncheckedUpdateInput = {
@@ -338,6 +344,7 @@ export type LegalEntityUncheckedUpdateInput = {
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   externalIds?: Prisma.LegalEntityExternalIdUncheckedUpdateManyWithoutLegalEntityNestedInput
+  users?: Prisma.UserUncheckedUpdateManyWithoutEntityNestedInput
 }
 
 export type LegalEntityCreateManyInput = {
@@ -376,6 +383,11 @@ export type LegalEntityUncheckedUpdateManyInput = {
   itcRecoverable?: Prisma.BoolFieldUpdateOperationsInput | boolean
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+}
+
+export type LegalEntityNullableScalarRelationFilter = {
+  is?: Prisma.LegalEntityWhereInput | null
+  isNot?: Prisma.LegalEntityWhereInput | null
 }
 
 export type LegalEntityOrganizationIdIdCompoundUniqueInput = {
@@ -431,6 +443,22 @@ export type LegalEntityListRelationFilter = {
 
 export type LegalEntityOrderByRelationAggregateInput = {
   _count?: Prisma.SortOrder
+}
+
+export type LegalEntityCreateNestedOneWithoutUsersInput = {
+  create?: Prisma.XOR<Prisma.LegalEntityCreateWithoutUsersInput, Prisma.LegalEntityUncheckedCreateWithoutUsersInput>
+  connectOrCreate?: Prisma.LegalEntityCreateOrConnectWithoutUsersInput
+  connect?: Prisma.LegalEntityWhereUniqueInput
+}
+
+export type LegalEntityUpdateOneWithoutUsersNestedInput = {
+  create?: Prisma.XOR<Prisma.LegalEntityCreateWithoutUsersInput, Prisma.LegalEntityUncheckedCreateWithoutUsersInput>
+  connectOrCreate?: Prisma.LegalEntityCreateOrConnectWithoutUsersInput
+  upsert?: Prisma.LegalEntityUpsertWithoutUsersInput
+  disconnect?: Prisma.LegalEntityWhereInput | boolean
+  delete?: Prisma.LegalEntityWhereInput | boolean
+  connect?: Prisma.LegalEntityWhereUniqueInput
+  update?: Prisma.XOR<Prisma.XOR<Prisma.LegalEntityUpdateToOneWithWhereWithoutUsersInput, Prisma.LegalEntityUpdateWithoutUsersInput>, Prisma.LegalEntityUncheckedUpdateWithoutUsersInput>
 }
 
 export type LegalEntityCreateNestedOneWithoutExternalIdsInput = {
@@ -489,6 +517,78 @@ export type LegalEntityUncheckedUpdateManyWithoutHomeCurrencyNestedInput = {
   deleteMany?: Prisma.LegalEntityScalarWhereInput | Prisma.LegalEntityScalarWhereInput[]
 }
 
+export type LegalEntityCreateWithoutUsersInput = {
+  id?: string
+  organizationId?: string
+  label: Prisma.JsonNullValueInput | runtime.InputJsonValue
+  description?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  country?: string | null
+  active?: boolean
+  itcRecoverable?: boolean
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  homeCurrency?: Prisma.CurrencyCreateNestedOneWithoutLegalEntitiesInput
+  externalIds?: Prisma.LegalEntityExternalIdCreateNestedManyWithoutLegalEntityInput
+}
+
+export type LegalEntityUncheckedCreateWithoutUsersInput = {
+  id?: string
+  organizationId?: string
+  label: Prisma.JsonNullValueInput | runtime.InputJsonValue
+  description?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  country?: string | null
+  homeCurrencyId?: string | null
+  active?: boolean
+  itcRecoverable?: boolean
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  externalIds?: Prisma.LegalEntityExternalIdUncheckedCreateNestedManyWithoutLegalEntityInput
+}
+
+export type LegalEntityCreateOrConnectWithoutUsersInput = {
+  where: Prisma.LegalEntityWhereUniqueInput
+  create: Prisma.XOR<Prisma.LegalEntityCreateWithoutUsersInput, Prisma.LegalEntityUncheckedCreateWithoutUsersInput>
+}
+
+export type LegalEntityUpsertWithoutUsersInput = {
+  update: Prisma.XOR<Prisma.LegalEntityUpdateWithoutUsersInput, Prisma.LegalEntityUncheckedUpdateWithoutUsersInput>
+  create: Prisma.XOR<Prisma.LegalEntityCreateWithoutUsersInput, Prisma.LegalEntityUncheckedCreateWithoutUsersInput>
+  where?: Prisma.LegalEntityWhereInput
+}
+
+export type LegalEntityUpdateToOneWithWhereWithoutUsersInput = {
+  where?: Prisma.LegalEntityWhereInput
+  data: Prisma.XOR<Prisma.LegalEntityUpdateWithoutUsersInput, Prisma.LegalEntityUncheckedUpdateWithoutUsersInput>
+}
+
+export type LegalEntityUpdateWithoutUsersInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  organizationId?: Prisma.StringFieldUpdateOperationsInput | string
+  label?: Prisma.JsonNullValueInput | runtime.InputJsonValue
+  description?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  country?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  active?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  itcRecoverable?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  homeCurrency?: Prisma.CurrencyUpdateOneWithoutLegalEntitiesNestedInput
+  externalIds?: Prisma.LegalEntityExternalIdUpdateManyWithoutLegalEntityNestedInput
+}
+
+export type LegalEntityUncheckedUpdateWithoutUsersInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  organizationId?: Prisma.StringFieldUpdateOperationsInput | string
+  label?: Prisma.JsonNullValueInput | runtime.InputJsonValue
+  description?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  country?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  homeCurrencyId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  active?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  itcRecoverable?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  externalIds?: Prisma.LegalEntityExternalIdUncheckedUpdateManyWithoutLegalEntityNestedInput
+}
+
 export type LegalEntityCreateWithoutExternalIdsInput = {
   id?: string
   organizationId?: string
@@ -500,6 +600,7 @@ export type LegalEntityCreateWithoutExternalIdsInput = {
   createdAt?: Date | string
   updatedAt?: Date | string
   homeCurrency?: Prisma.CurrencyCreateNestedOneWithoutLegalEntitiesInput
+  users?: Prisma.UserCreateNestedManyWithoutEntityInput
 }
 
 export type LegalEntityUncheckedCreateWithoutExternalIdsInput = {
@@ -513,6 +614,7 @@ export type LegalEntityUncheckedCreateWithoutExternalIdsInput = {
   itcRecoverable?: boolean
   createdAt?: Date | string
   updatedAt?: Date | string
+  users?: Prisma.UserUncheckedCreateNestedManyWithoutEntityInput
 }
 
 export type LegalEntityCreateOrConnectWithoutExternalIdsInput = {
@@ -542,6 +644,7 @@ export type LegalEntityUpdateWithoutExternalIdsInput = {
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   homeCurrency?: Prisma.CurrencyUpdateOneWithoutLegalEntitiesNestedInput
+  users?: Prisma.UserUpdateManyWithoutEntityNestedInput
 }
 
 export type LegalEntityUncheckedUpdateWithoutExternalIdsInput = {
@@ -555,6 +658,7 @@ export type LegalEntityUncheckedUpdateWithoutExternalIdsInput = {
   itcRecoverable?: Prisma.BoolFieldUpdateOperationsInput | boolean
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  users?: Prisma.UserUncheckedUpdateManyWithoutEntityNestedInput
 }
 
 export type LegalEntityCreateWithoutHomeCurrencyInput = {
@@ -568,6 +672,7 @@ export type LegalEntityCreateWithoutHomeCurrencyInput = {
   createdAt?: Date | string
   updatedAt?: Date | string
   externalIds?: Prisma.LegalEntityExternalIdCreateNestedManyWithoutLegalEntityInput
+  users?: Prisma.UserCreateNestedManyWithoutEntityInput
 }
 
 export type LegalEntityUncheckedCreateWithoutHomeCurrencyInput = {
@@ -581,6 +686,7 @@ export type LegalEntityUncheckedCreateWithoutHomeCurrencyInput = {
   createdAt?: Date | string
   updatedAt?: Date | string
   externalIds?: Prisma.LegalEntityExternalIdUncheckedCreateNestedManyWithoutLegalEntityInput
+  users?: Prisma.UserUncheckedCreateNestedManyWithoutEntityInput
 }
 
 export type LegalEntityCreateOrConnectWithoutHomeCurrencyInput = {
@@ -648,6 +754,7 @@ export type LegalEntityUpdateWithoutHomeCurrencyInput = {
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   externalIds?: Prisma.LegalEntityExternalIdUpdateManyWithoutLegalEntityNestedInput
+  users?: Prisma.UserUpdateManyWithoutEntityNestedInput
 }
 
 export type LegalEntityUncheckedUpdateWithoutHomeCurrencyInput = {
@@ -661,6 +768,7 @@ export type LegalEntityUncheckedUpdateWithoutHomeCurrencyInput = {
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   externalIds?: Prisma.LegalEntityExternalIdUncheckedUpdateManyWithoutLegalEntityNestedInput
+  users?: Prisma.UserUncheckedUpdateManyWithoutEntityNestedInput
 }
 
 export type LegalEntityUncheckedUpdateManyWithoutHomeCurrencyInput = {
@@ -682,10 +790,12 @@ export type LegalEntityUncheckedUpdateManyWithoutHomeCurrencyInput = {
 
 export type LegalEntityCountOutputType = {
   externalIds: number
+  users: number
 }
 
 export type LegalEntityCountOutputTypeSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   externalIds?: boolean | LegalEntityCountOutputTypeCountExternalIdsArgs
+  users?: boolean | LegalEntityCountOutputTypeCountUsersArgs
 }
 
 /**
@@ -705,6 +815,13 @@ export type LegalEntityCountOutputTypeCountExternalIdsArgs<ExtArgs extends runti
   where?: Prisma.LegalEntityExternalIdWhereInput
 }
 
+/**
+ * LegalEntityCountOutputType without action
+ */
+export type LegalEntityCountOutputTypeCountUsersArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  where?: Prisma.UserWhereInput
+}
+
 
 export type LegalEntitySelect<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetSelect<{
   id?: boolean
@@ -719,6 +836,7 @@ export type LegalEntitySelect<ExtArgs extends runtime.Types.Extensions.InternalA
   updatedAt?: boolean
   homeCurrency?: boolean | Prisma.LegalEntity$homeCurrencyArgs<ExtArgs>
   externalIds?: boolean | Prisma.LegalEntity$externalIdsArgs<ExtArgs>
+  users?: boolean | Prisma.LegalEntity$usersArgs<ExtArgs>
   _count?: boolean | Prisma.LegalEntityCountOutputTypeDefaultArgs<ExtArgs>
 }, ExtArgs["result"]["legalEntity"]>
 
@@ -767,6 +885,7 @@ export type LegalEntityOmit<ExtArgs extends runtime.Types.Extensions.InternalArg
 export type LegalEntityInclude<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   homeCurrency?: boolean | Prisma.LegalEntity$homeCurrencyArgs<ExtArgs>
   externalIds?: boolean | Prisma.LegalEntity$externalIdsArgs<ExtArgs>
+  users?: boolean | Prisma.LegalEntity$usersArgs<ExtArgs>
   _count?: boolean | Prisma.LegalEntityCountOutputTypeDefaultArgs<ExtArgs>
 }
 export type LegalEntityIncludeCreateManyAndReturn<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
@@ -781,6 +900,7 @@ export type $LegalEntityPayload<ExtArgs extends runtime.Types.Extensions.Interna
   objects: {
     homeCurrency: Prisma.$CurrencyPayload<ExtArgs> | null
     externalIds: Prisma.$LegalEntityExternalIdPayload<ExtArgs>[]
+    users: Prisma.$UserPayload<ExtArgs>[]
   }
   scalars: runtime.Types.Extensions.GetPayloadResult<{
     id: string
@@ -1195,6 +1315,7 @@ export interface Prisma__LegalEntityClient<T, Null = never, ExtArgs extends runt
   readonly [Symbol.toStringTag]: "PrismaPromise"
   homeCurrency<T extends Prisma.LegalEntity$homeCurrencyArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.LegalEntity$homeCurrencyArgs<ExtArgs>>): Prisma.Prisma__CurrencyClient<runtime.Types.Result.GetResult<Prisma.$CurrencyPayload<ExtArgs>, T, "findUniqueOrThrow", GlobalOmitOptions> | null, null, ExtArgs, GlobalOmitOptions>
   externalIds<T extends Prisma.LegalEntity$externalIdsArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.LegalEntity$externalIdsArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$LegalEntityExternalIdPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
+  users<T extends Prisma.LegalEntity$usersArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.LegalEntity$usersArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$UserPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
   /**
    * Attaches callbacks for the resolution and/or rejection of the Promise.
    * @param onfulfilled The callback to execute when the Promise is resolved.
@@ -1675,6 +1796,30 @@ export type LegalEntity$externalIdsArgs<ExtArgs extends runtime.Types.Extensions
   take?: number
   skip?: number
   distinct?: Prisma.LegalEntityExternalIdScalarFieldEnum | Prisma.LegalEntityExternalIdScalarFieldEnum[]
+}
+
+/**
+ * LegalEntity.users
+ */
+export type LegalEntity$usersArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  /**
+   * Select specific fields to fetch from the User
+   */
+  select?: Prisma.UserSelect<ExtArgs> | null
+  /**
+   * Omit specific fields from the User
+   */
+  omit?: Prisma.UserOmit<ExtArgs> | null
+  /**
+   * Choose, which related nodes to fetch as well
+   */
+  include?: Prisma.UserInclude<ExtArgs> | null
+  where?: Prisma.UserWhereInput
+  orderBy?: Prisma.UserOrderByWithRelationInput | Prisma.UserOrderByWithRelationInput[]
+  cursor?: Prisma.UserWhereUniqueInput
+  take?: number
+  skip?: number
+  distinct?: Prisma.UserScalarFieldEnum | Prisma.UserScalarFieldEnum[]
 }
 
 /**

@@ -325,6 +325,9 @@ model User {
   departmentId   String?   @map("department_id") @db.Uuid
   businessUnitId String?   @map("business_unit_id") @db.Uuid
   legalEntityId  String?   @map("legal_entity_id") @db.Uuid
+  /// ExpenseOS's `entity` (the person's legal entity): the reader's and the payee's home
+  /// currency come through it (Wave 2). The database's FK is composite (0019).
+  entity         LegalEntity? @relation("UserEntity", fields: [legalEntityId], references: [id])
   /// ExpenseOS's `jobLevelId` (migration 0050). Nothing assigns it yet.
   jobLevelId     String?   @map("job_level_id") @db.Uuid
   deletedAt      DateTime? @map("deleted_at") @db.Timestamptz(6)
@@ -426,6 +429,7 @@ model LegalEntity {
   updatedAt      DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   externalIds LegalEntityExternalId[]
+  users       User[]                  @relation("UserEntity")
 
   @@unique([organizationId, id])
   @@map("legal_entity")

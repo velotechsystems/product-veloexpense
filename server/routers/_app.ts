@@ -4,6 +4,7 @@ import { businessUnitsRouter } from './businessUnits';
 import { departmentsRouter } from './departments';
 import { expenseApprovalsRouter } from './expenseApprovals';
 import { expenseCategoriesRouter } from './expenseCategories';
+import { expensesRouter } from './expenses';
 import { legalEntitiesRouter } from './legalEntities';
 import { pickersRouter } from './pickers';
 import { policiesRouter } from './policies';
@@ -21,6 +22,8 @@ export const appRouter = router({
   businessUnits: businessUnitsRouter,
   departments: departmentsRouter,
   expenseCategories: expenseCategoriesRouter,
+  // Wave 2: ExpenseOS's expenses router, in slices (w2-07 onwards).
+  expenses: expensesRouter,
   // VeloExpense stand-in until Wave 4: `myTasks` only, for the sidebar's Approvals count.
   expenseApprovals: expenseApprovalsRouter,
   legalEntities: legalEntitiesRouter,

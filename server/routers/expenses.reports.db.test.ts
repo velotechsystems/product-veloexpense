@@ -1,0 +1,594 @@
+// @vitest-environment node
+/* eslint-disable @typescript-eslint/no-explicit-any -- VeloExpense: ExpenseOS's suite reads its rows untyped (`db: any`); Biome allows it there. */
+import { permissions as P } from '@expenseos/rbac';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { makeContext } from '../__test-helpers__/trpcCaller';
+
+/**
+ * The report-level procedures, against a real database.
+ *
+ * These are the ones whose mistakes are structural rather than cosmetic — a report
+ * deleted that should not have been, an allocation set that no longer totals 100%, a
+ * currency written as a code into a foreign key. Everything runs through real Prisma and
+ * the real hash-chained `withAudit`, because the audit write is part of the contract
+ * rather than a decoration: a delete that left no audit row is a delete nobody can
+ * account for.
+ *
+ * Storage is mocked (no MinIO), and gated on DATABASE_URL like every `*.db.test.ts`.
+ *
+ * VeloExpense: ExpenseOS's `expenses.reports.db.test.ts`, the blocks for the procedures
+ * ported in w2-07 (`list`, `create`, `deleteReport`). The rest of the file arrives with
+ * the procedures it tests:
+ *   · the three `report`-view cases inside "listing my reports" (`viewInReaderCurrency`)
+ *     with `report` (w2-08);
+ *   · "allocating an expense across dimensions" with `allocationSet` (w2-03);
+ *   · the NETSUITE blocks are not ported: VeloExpense has no NetSuite and always runs in
+ *     ExpenseOS's `EXPENSEOS` business unit position, which the blocks above cover.
+ * The harness differs, the cases do not:
+ *   · ExpenseOS runs against its seeded database; this creates its own tenant, two people
+ *     and a currency pair, and runs every call inside that tenant (`withTenantDb`);
+ *   · `makeInstance` writes VeloExpense's approval tables (a RUNNING `approval_request`
+ *     and its tasks), which is what `list` reads until Wave 4 (`pendingApproverByReport`);
+ *   · storage is VeloExpense's (`setStorage`), with its `delete` spied on.
+ */
+
+vi.mock('@/auth', () => ({ auth: vi.fn(async () => null) }));
+vi.mock('@/lib/tenant/request', () => ({ hostTenantSlug: async () => null }));
+
+const RW = [
+  P.expense.report.readOwn,
+  P.expense.report.createOwn,
+  P.expense.report.updateOwn,
+  P.expense.report.deleteDraft,
+] as const;
+
+describe.skipIf(!process.env.DATABASE_URL)('expense reports (integration)', () => {
+  let db: any;
+  let withTenantDb: <T>(org: string, fn: () => Promise<T>) => Promise<T>;
+  let admin: import('pg').Pool;
+  let makeCaller: (perms: readonly string[], userId: string) => any;
+  let storage: { delete: ReturnType<typeof vi.fn> };
+  let orgId: string;
+  let ownerId: string;
+  let strangerId: string;
+  let currencyId: string;
+  let currencyCode: string;
+
+  /** VeloExpense: every call runs in the test tenant, as the request middleware would. */
+  const inOrg = (fn: () => Promise<any>): Promise<any> => withTenantDb(orgId, fn);
+
+  beforeAll(async () => {
+    const { Pool } = await import('pg');
+    admin = new Pool({ connectionString: process.env.ADMIN_DATABASE_URL ?? process.env.DATABASE_URL });
+    ({ db, withTenantDb } = await import('@/lib/db/prisma'));
+    const { createOrganization } = await import('@/lib/onboarding/provision');
+    const { MemoryStorage, setStorage } = await import('@/lib/storage');
+
+    // VeloExpense: as every db suite here does, start from an empty set of tenants.
+    await admin.query('TRUNCATE invite, audit_entry, app_user, organization CASCADE');
+    orgId = (
+      await createOrganization({
+        name: 'Expenses Reports',
+        slug: 'expenses-reports',
+        adminEmail: 'owner@reports.test',
+        adminName: 'Owner',
+      })
+    ).organizationId;
+    const users = await admin.query(
+      `SELECT id FROM app_user WHERE organization_id = $1 AND email = 'owner@reports.test'`,
+      [orgId],
+    );
+    ownerId = users.rows[0].id;
+    strangerId = (
+      await admin.query(
+        `INSERT INTO app_user (organization_id, email, display_name, role) VALUES ($1, 'stranger@reports.test', 'Stranger', 'EMPLOYEE') RETURNING id`,
+        [orgId],
+      )
+    ).rows[0].id;
+
+    const memory = new MemoryStorage();
+    const remove = memory.delete.bind(memory);
+    storage = { delete: vi.fn((key: string) => remove(key)) };
+    setStorage(Object.assign(memory, { delete: storage.delete }) as never);
+
+    const { createCallerFactory } = await import('@/server/trpc');
+    const { expensesRouter } = await import('@/server/routers/expenses');
+    const factory = createCallerFactory(expensesRouter);
+    makeCaller = (perms, userId) =>
+      factory(makeContext({ db, userId, permissions: perms, email: userId === ownerId ? 'owner@reports.test' : 'stranger@reports.test' }));
+
+    // VeloExpense: currencies are keyed by their code, so the "id" is the code.
+    currencyId = 'CAD';
+    currencyCode = 'CAD';
+  });
+
+  /** A report owned by `ownerId`, with `expenses` blank expenses on it. */
+  const makeReport = async (
+    over: Record<string, unknown> = {},
+    expenses = 0,
+  ): Promise<{ id: string }> =>
+    inOrg(() =>
+      db.expenseReport.create({
+        data: {
+          title: 'report under test',
+          currencyId,
+          submitterId: ownerId,
+          ...over,
+          ...(expenses > 0
+            ? {
+                expenses: {
+                  create: Array.from({ length: expenses }, (_, i) => ({
+                    ownerId,
+                    currencyId,
+                    date: new Date('2026-07-01T12:00:00Z'),
+                    amountMinor: BigInt(1000 * (i + 1)),
+                    merchant: `Merchant ${i + 1}`,
+                  })),
+                },
+              }
+            : {}),
+        },
+        select: { id: true },
+      }),
+    );
+
+  /**
+   * A real approval instance, since `ApprovalInstance.workflowVersionId` is a
+   * Restrict FK and `cursor` is required — there is no shortcut to a plausible one.
+   *
+   * VeloExpense: VeloExpense's approval tables — a request for the report, RUNNING while
+   * any task is pending, and one task per entry in step order.
+   */
+  const makeInstance = async (
+    reportId: string,
+    tasks: Array<{ assigneeUserId?: string; status?: string }>,
+  ): Promise<string> => {
+    const running = tasks.some((t) => (t.status ?? 'PENDING') === 'PENDING');
+    const request = await admin.query(
+      `INSERT INTO approval_request (organization_id, report_id, policy_snapshot, status, total_steps,
+                                     subject_total_minor, subject_currency_code, opened_by_id, closed_at)
+       VALUES ($1, $2, '{}'::jsonb, $3::approval_request_status, $4, 0, 'CAD', $5, $6)
+       RETURNING id`,
+      [orgId, reportId, running ? 'RUNNING' : 'APPROVED', Math.max(tasks.length, 1), ownerId, running ? null : new Date()],
+    );
+    for (const [i, t] of tasks.entries()) {
+      const status = t.status ?? 'PENDING';
+      const decided = status !== 'PENDING';
+      await admin.query(
+        `INSERT INTO approval_task (organization_id, request_id, step, assignee_id, status, decided_by_id, decided_at,
+                                    resolved_via, claim_role)
+         VALUES ($1, $2, $3, $4, $5::approval_task_status, $6, $7, CASE WHEN $8::text IS NULL THEN 'MANAGER_CHAIN' ELSE 'ROLE' END, $8)`,
+        [
+          orgId,
+          request.rows[0].id,
+          i + 1,
+          t.assigneeUserId ?? null,
+          status,
+          decided ? (t.assigneeUserId ?? ownerId) : null,
+          decided ? new Date() : null,
+          t.assigneeUserId ? null : 'APPROVER',
+        ],
+      );
+    }
+    return request.rows[0].id;
+  };
+
+  /** The newest audit row for an entity. `occurredAt` is the column, not createdAt. */
+  const lastAudit = async (entityType: string, entityId: string) =>
+    (
+      await admin.query(
+        `SELECT action FROM audit_entry WHERE entity_type = $1 AND entity_id = $2 ORDER BY occurred_at DESC LIMIT 1`,
+        [entityType, entityId],
+      )
+    ).rows[0] ?? null;
+
+  beforeEach(() => {
+    storage.delete.mockClear();
+  });
+
+  /**
+   * Take the rows back out.
+   *
+   * The test database is shared by every `*.db.test.ts` and is not reset between runs,
+   * so a suite that leaves its fixtures behind grows it forever — and a neighbour that
+   * scans a whole table (the fraud sweep) eventually times out on volume nobody
+   * intended. Deleting the reports cascades their expenses, receipts and allocations.
+   */
+  afterAll(async () => {
+    // VeloExpense: the next suite truncates the tenants; only the pool is ours to close.
+    await admin.end();
+  });
+
+  // ── list ────────────────────────────────────────────────────────────────────
+
+  describe('listing my reports', () => {
+    it('returns only the caller’s own', async () => {
+      /**
+       * The list is scoped by submitter, not by permission: read-own means own, and a
+       * leak here would show one employee another's spending.
+       */
+      const mine = await makeReport();
+      const theirs = await makeReport({ submitterId: strangerId });
+      const rows = await inOrg(() => makeCaller(RW, ownerId).list({ limit: 100 }));
+      const ids = rows.map((r: { id: string }) => r.id);
+      expect(ids).toContain(mine.id);
+      if (strangerId !== ownerId) expect(ids).not.toContain(theirs.id);
+    });
+
+    it('narrows to a status', async () => {
+      const draft = await makeReport();
+      const submitted = await makeReport({ status: 'SUBMITTED' });
+      const rows = await inOrg(() => makeCaller(RW, ownerId).list({ status: 'SUBMITTED', limit: 100 }));
+      const ids = rows.map((r: { id: string }) => r.id);
+      expect(ids).toContain(submitted.id);
+      expect(ids).not.toContain(draft.id);
+    });
+
+    it('honours the limit', async () => {
+      await makeReport();
+      await makeReport();
+      const rows = await inOrg(() => makeCaller(RW, ownerId).list({ limit: 1 }));
+      expect(rows).toHaveLength(1);
+    });
+
+    it('works with no input at all', async () => {
+      // The client calls it bare on first paint.
+      await makeReport();
+      await expect(inOrg(() => makeCaller(RW, ownerId).list())).resolves.toBeInstanceOf(Array);
+    });
+
+    it('converts each total into the reader’s own currency', async () => {
+      /**
+       * "Open balance" used to sum `totalMinor` raw across every submitted and approved
+       * report — USD cents added to CAD cents — and print one generic `$` in front of the
+       * result. Because CAD and USD share that glyph, nothing on screen disclosed it (GA
+       * readiness report F54).
+       *
+       * The row now carries the total converted into the reader's currency, so the client
+       * can sum ONE currency, and `null` where no rate connects the pair so it can leave
+       * that report out and say so instead of folding it in at the wrong scale.
+       */
+      // VeloExpense: the reader's currency is their entity's, else CAD (`readerCurrencyCode`).
+      const { readerCurrencyCode } = await import('@/server/lib/readerCurrency');
+      const expectedHome = await inOrg(() => readerCurrencyCode(db, ownerId));
+
+      const mine = await makeReport({ currencyId: expectedHome, totalMinor: 10_000n });
+      const rows = await inOrg(() => makeCaller(RW, ownerId).list({ limit: 100 }));
+      const row = rows.find((r: { id: string }) => r.id === mine.id);
+
+      expect(row.homeCurrency).toBe(expectedHome);
+      // Same currency as the reader: exactly the stored total, with no rate lookup and no
+      // rounding in between.
+      expect(row.homeTotalMinor).toBe('10000');
+
+      // And every row answers the question one way or the other — a string, or an explicit
+      // null. `undefined` would let the client treat it as zero without knowing.
+      for (const r of rows) {
+        expect(r.homeCurrency).toBe(expectedHome);
+        expect(r.homeTotalMinor === null || typeof r.homeTotalMinor === 'string').toBe(true);
+      }
+    });
+
+    it('values a foreign report through the rate table, or excludes it', async () => {
+      /**
+       * The rule `buildReportRollup` already follows for a report, applied to the list: an
+       * amount with no path to the reader's currency is EXCLUDED and disclosed, never added
+       * in at the wrong units. Zero would be a lie the client could not detect.
+       */
+      const { readerCurrencyCode } = await import('@/server/lib/readerCurrency');
+      const expectedHome = await inOrg(() => readerCurrencyCode(db, ownerId));
+      const foreign = await inOrg(() =>
+        db.currency.findFirstOrThrow({
+          where: { code: { not: expectedHome } },
+          select: { code: true },
+        }),
+      );
+
+      const r = await makeReport({ currencyId: foreign.code, totalMinor: 5_000n }, 1);
+      const rows = await inOrg(() => makeCaller(RW, ownerId).list({ limit: 100 }));
+      const row = rows.find((x: { id: string }) => x.id === r.id);
+
+      // Whichever way it goes, it must not be the raw minor amount dressed up as the
+      // reader's currency — that is precisely the bug.
+      if (row.homeTotalMinor === null) {
+        expect(row.homeTotalMinor).toBeNull(); // no rate in either direction: excluded
+      } else {
+        expect(row.homeTotalMinor).not.toBe('5000');
+      }
+    });
+
+    it('sends the total as a string, because it is a BigInt', async () => {
+      /**
+       * `JSON.stringify` throws on a BigInt, so a raw column here would fail the whole
+       * response rather than one field.
+       */
+      const r = await makeReport({ totalMinor: 4200n });
+      const row = (await inOrg(() => makeCaller(RW, ownerId).list({ limit: 100 }))).find(
+        (x: { id: string }) => x.id === r.id,
+      );
+      expect(row.totalMinor).toBe('4200');
+    });
+
+    it('counts the expenses on each report', async () => {
+      const r = await makeReport({}, 3);
+      const row = (await inOrg(() => makeCaller(RW, ownerId).list({ limit: 100 }))).find(
+        (x: { id: string }) => x.id === r.id,
+      );
+      expect(row.expenseCount).toBe(3);
+    });
+
+    it('says nobody is holding a draft', async () => {
+      const r = await makeReport();
+      const row = (await inOrg(() => makeCaller(RW, ownerId).list({ limit: 100 }))).find(
+        (x: { id: string }) => x.id === r.id,
+      );
+      expect(row.pendingWith).toBeNull();
+    });
+
+    it('names who a submitted report is sitting with', async () => {
+      /**
+       * The reason the query exists: "Submitted" alone tells the submitter nothing about
+       * whether their report is stuck, or with whom.
+       */
+      const r = await makeReport({ status: 'SUBMITTED' });
+      await makeInstance(r.id, [{ assigneeUserId: strangerId }]);
+      const row = (await inOrg(() => makeCaller(RW, ownerId).list({ limit: 100 }))).find(
+        (x: { id: string }) => x.id === r.id,
+      );
+      expect(row.pendingWith).not.toBeNull();
+      expect(row.pendingWith.email).toBeTruthy();
+    });
+
+    it('reports a parallel gate by its first approver, not by a list', async () => {
+      /**
+       * The row has space for one name. Naming the earliest task is a choice, and a
+       * stable one; inventing a list the column cannot show is not.
+       */
+      const r = await makeReport({ status: 'SUBMITTED' });
+      await makeInstance(r.id, [{ assigneeUserId: ownerId }, { assigneeUserId: strangerId }]);
+      const row = (await inOrg(() => makeCaller(RW, ownerId).list({ limit: 100 }))).find(
+        (x: { id: string }) => x.id === r.id,
+      );
+      expect(row.pendingWith).not.toBeNull();
+      // VeloExpense: and it is the first one, by step.
+      expect(row.pendingWith.email).toBe('owner@reports.test');
+    });
+
+    it('says nobody for an unclaimed pool task', async () => {
+      // A filter-pool task has no assignee yet; "with nobody" is the honest answer.
+      const r = await makeReport({ status: 'SUBMITTED' });
+      await makeInstance(r.id, [{}]);
+      const row = (await inOrg(() => makeCaller(RW, ownerId).list({ limit: 100 }))).find(
+        (x: { id: string }) => x.id === r.id,
+      );
+      expect(row.pendingWith).toBeNull();
+    });
+
+    it('says nobody once every task is decided', async () => {
+      const r = await makeReport({ status: 'APPROVED', approvedAt: new Date() });
+      await makeInstance(r.id, [{ assigneeUserId: strangerId, status: 'APPROVED' }]);
+      const row = (await inOrg(() => makeCaller(RW, ownerId).list({ limit: 100 }))).find(
+        (x: { id: string }) => x.id === r.id,
+      );
+      expect(row.pendingWith).toBeNull();
+    });
+  });
+
+  // VeloExpense: the cases above inject the caller's context; this one goes through the
+  // request path — the tenant middleware resolves the session from the database and the
+  // role's permissions — so the router is proven reachable the way the app reaches it.
+  describe('through the request path (VeloExpense)', () => {
+    it("lists the caller's own reports, and creates one, as the signed-in member", async () => {
+      const { createCallerFactory } = await import('@/server/trpc');
+      const { appRouter } = await import('@/server/routers/_app');
+      const asOwner = createCallerFactory(appRouter)({
+        session: null,
+        db,
+        rbac: null,
+        caller: { email: 'owner@reports.test', organizationId: orgId },
+      } as never);
+      const created = await asOwner.expenses.create({ title: 'via the app', currency: 'CAD' });
+      const rows = await asOwner.expenses.list({ limit: 100 });
+      expect(rows.map((r: { id: string }) => r.id)).toContain(created.id);
+      // Somebody who is not a member of the tenant is refused outright.
+      const other = await createCallerFactory(appRouter)({
+        session: null,
+        db,
+        rbac: null,
+        caller: { email: 'nobody@elsewhere.test', organizationId: orgId },
+      } as never);
+      await expect(other.expenses.list({ limit: 100 })).rejects.toMatchObject({ code: 'FORBIDDEN' });
+    });
+  });
+
+  // ── create ──────────────────────────────────────────────────────────────────
+
+  describe('creating a report', () => {
+    it('accepts a currency CODE and stores the foreign key', async () => {
+      /**
+       * The client still sends "USD" in places. Writing a code into `currencyId` would
+       * be a dangling reference the money helpers cannot resolve.
+       */
+      const row = await inOrg(() =>
+        makeCaller(RW, ownerId).create({
+          title: 'by code',
+          currency: currencyCode,
+        }),
+      );
+      const stored = await inOrg(() =>
+        db.expenseReport.findUniqueOrThrow({
+          where: { id: row.id },
+          select: { currencyId: true },
+        }),
+      );
+      expect(stored.currencyId).toBe(currencyId);
+    });
+
+    // VeloExpense: ExpenseOS's 'accepts a currency id' is not ported. A VeloExpense
+    // currency's id IS its code, which the case above covers; there is no uuid to accept.
+
+    it('accepts a lowercase code', async () => {
+      // Typed by hand, or carried from an import.
+      const row = await inOrg(() =>
+        makeCaller(RW, ownerId).create({
+          title: 'lowercase',
+          currency: currencyCode.toLowerCase(),
+        }),
+      );
+      expect(row.id).toBeTruthy();
+    });
+
+    it('refuses a currency nothing recognises', async () => {
+      /**
+       * A report in a currency with no `Currency` row cannot be converted, totalled or
+       * formatted — better to refuse than to create something unusable.
+       */
+      await expect(
+        inOrg(() => makeCaller(RW, ownerId).create({ title: 'bad', currency: 'XXZ' })),
+      ).rejects.toThrow(/Unknown currency/);
+    });
+
+    it('refuses a currency id that does not exist', async () => {
+      await expect(
+        inOrg(() =>
+          makeCaller(RW, ownerId).create({
+            title: 'bad',
+            currency: '00000000-0000-7000-8000-0000000000ff',
+          }),
+        ),
+      ).rejects.toThrow(/Unknown currency/);
+    });
+
+    it('files the report under the caller', async () => {
+      const row = await inOrg(() => makeCaller(RW, ownerId).create({ title: 'mine', currency: currencyCode }));
+      const stored = await inOrg(() =>
+        db.expenseReport.findUniqueOrThrow({
+          where: { id: row.id },
+          select: { submitterId: true, status: true },
+        }),
+      );
+      expect(stored.submitterId).toBe(ownerId);
+      expect(stored.status).toBe('DRAFT');
+    });
+
+    // VeloExpense: the number VeloExpense's writer has always minted, per tenant.
+    it('numbers the report from the tenant’s own sequence', async () => {
+      const a = await inOrg(() => makeCaller(RW, ownerId).create({ title: 'numbered', currency: currencyCode }));
+      const b = await inOrg(() => makeCaller(RW, ownerId).create({ title: 'numbered', currency: currencyCode }));
+      expect(a.number).toMatch(/^EXP-\d{6}$/);
+      expect(Number(b.number.slice(4))).toBe(Number(a.number.slice(4)) + 1);
+    });
+  });
+
+  // ── deleteReport ────────────────────────────────────────────────────────────
+
+  describe('deleting a draft report', () => {
+    it('deletes it, and everything hanging off it', async () => {
+      const report = await makeReport({}, 2);
+      await inOrg(() => makeCaller(RW, ownerId).deleteReport({ reportId: report.id }));
+      expect(await inOrg(() => db.expenseReport.findUnique({ where: { id: report.id } }))).toBeNull();
+      expect(await inOrg(() => db.expense.count({ where: { reportId: report.id } }))).toBe(0);
+    });
+
+    it('refuses somebody else’s report, as not found', async () => {
+      /**
+       * NOT_FOUND rather than FORBIDDEN: whether a report exists is itself information
+       * a stranger should not get.
+       */
+      if (strangerId === ownerId) return;
+      const report = await makeReport({ submitterId: strangerId });
+      await expect(
+        inOrg(() => makeCaller(RW, ownerId).deleteReport({ reportId: report.id })),
+      ).rejects.toThrow();
+      expect(await inOrg(() => db.expenseReport.findUnique({ where: { id: report.id } }))).not.toBeNull();
+    });
+
+    it('refuses a report that has been submitted', async () => {
+      /**
+       * Once it is out for approval it is somebody else's queue item, and deleting it
+       * would silently empty their inbox.
+       */
+      const report = await makeReport({ status: 'SUBMITTED' });
+      await expect(
+        inOrg(() => makeCaller(RW, ownerId).deleteReport({ reportId: report.id })),
+      ).rejects.toThrow(/Only DRAFT/);
+    });
+
+    it('refuses a report that no longer exists', async () => {
+      await expect(
+        inOrg(() =>
+          makeCaller(RW, ownerId).deleteReport({
+            reportId: '00000000-0000-7000-8000-0000000000fe',
+          }),
+        ),
+      ).rejects.toThrow();
+    });
+
+    it('removes the receipts’ files, collected before the cascade', async () => {
+      /**
+       * The keys have to be read while the Receipt rows still exist — after the cascade
+       * there is nothing left to enumerate, and the objects would be orphaned in S3
+       * forever.
+       */
+      const report = await makeReport({}, 1);
+      const expense = await inOrg(() =>
+        db.expense.findFirstOrThrow({
+          where: { reportId: report.id },
+          select: { id: true },
+        }),
+      );
+      await inOrg(() =>
+        db.receipt.create({
+          data: {
+            expenseId: expense.id,
+            filename: 'receipt.pdf',
+            contentType: 'application/pdf',
+            sizeBytes: 100,
+            s3Key: `${report.id}/to-be-deleted.pdf`,
+            uploadedById: ownerId,
+          },
+        }),
+      );
+      await inOrg(() => makeCaller(RW, ownerId).deleteReport({ reportId: report.id }));
+      expect(storage.delete).toHaveBeenCalledWith(`${report.id}/to-be-deleted.pdf`);
+    });
+
+    it('still deletes when the storage removal fails', async () => {
+      /**
+       * Best-effort on purpose: an orphaned object costs pennies, where a report that
+       * cannot be deleted because S3 is down is a person stuck.
+       */
+      const report = await makeReport({}, 1);
+      const expense = await inOrg(() =>
+        db.expense.findFirstOrThrow({
+          where: { reportId: report.id },
+          select: { id: true },
+        }),
+      );
+      await inOrg(() =>
+        db.receipt.create({
+          data: {
+            expenseId: expense.id,
+            filename: 'receipt.pdf',
+            contentType: 'application/pdf',
+            sizeBytes: 100,
+            s3Key: `${report.id}/unreachable.pdf`,
+            uploadedById: ownerId,
+          },
+        }),
+      );
+      storage.delete.mockRejectedValueOnce(new Error('S3 unreachable'));
+      await expect(
+        inOrg(() => makeCaller(RW, ownerId).deleteReport({ reportId: report.id })),
+      ).resolves.toMatchObject({ ok: true });
+      expect(await inOrg(() => db.expenseReport.findUnique({ where: { id: report.id } }))).toBeNull();
+    });
+
+    it('leaves an audit row naming the report', async () => {
+      const report = await makeReport();
+      await inOrg(() => makeCaller(RW, ownerId).deleteReport({ reportId: report.id }));
+      // VeloExpense: under VeloExpense's name for ExpenseOS's `report.delete`.
+      expect(await lastAudit('ExpenseReport', report.id)).toEqual({ action: 'REPORT_DELETED' });
+    });
+  });
+});
