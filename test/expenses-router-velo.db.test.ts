@@ -14,7 +14,10 @@
  *   · the line writes audit under VeloExpense's names;
  *   · `report` reads VeloExpense's own tables in ExpenseOS's shape — the violations
  *     (anchored to a line, so `expenseId` is the line's expense), the posting state off
- *     `integration_post`, the currency's symbol — and admits a pending approver.
+ *     `integration_post`, the currency's symbol — and admits a pending approver;
+ *   · `allocationSet` refuses a business unit or department that is unknown or
+ *     deactivated, unless the expense already carries it (f09), and stores no NetSuite
+ *     business unit or class.
  */
 import { permissions as P } from '@expenseos/rbac';
 import { TRPCError } from '@trpc/server';
@@ -313,5 +316,90 @@ describe('report — VeloExpense\'s tables, in ExpenseOS\'s shape', () => {
     );
     expect(await codeOf(h.makeCaller([], approverId).report({ reportId }))).toBe('OK');
     expect(await codeOf(h.makeCaller(RW, strangerId).report({ reportId }))).toBe('NOT_FOUND');
+  });
+});
+
+describe('allocationSet — what an expense may be coded to (f09)', () => {
+  let buId: string;
+  let deptId: string;
+  let retiredBuId: string;
+  let retiredDeptId: string;
+
+  const draftExpense = async () => {
+    const caller = h.makeCaller(RW, ownerId);
+    const report = await caller.create({ title: 'Coding', currency: 'CAD' });
+    return (await caller.createExpense({ reportId: report.id })).id as string;
+  };
+  const row = (businessUnitId: string, departmentId: string) => ({
+    percentBp: 10_000,
+    businessUnitId,
+    departmentId,
+  });
+
+  beforeAll(async () => {
+    const label = (en: string) => ({ label: { en } });
+    buId = (await h.db.businessUnit.create({ data: label('Coding BU'), select: { id: true } })).id;
+    deptId = (await h.db.department.create({ data: label('Coding dept'), select: { id: true } })).id;
+    retiredBuId = (await h.db.businessUnit.create({ data: label('Retired BU'), select: { id: true } })).id;
+    retiredDeptId = (await h.db.department.create({ data: label('Retired dept'), select: { id: true } })).id;
+  });
+
+  it('refuses a deactivated business unit or department, and writes nothing', async () => {
+    const expenseId = await draftExpense();
+    await h.db.businessUnit.update({ where: { id: retiredBuId }, data: { active: false } });
+    await h.db.department.update({ where: { id: retiredDeptId }, data: { active: false } });
+    const caller = h.makeCaller(RW, ownerId);
+    for (const allocations of [[row(retiredBuId, deptId)], [row(buId, retiredDeptId)]]) {
+      const err = await caller.allocationSet({ expenseId, allocations }).catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(TRPCError);
+      expect((err as TRPCError).code).toBe('BAD_REQUEST');
+      expect((err as TRPCError).message).toMatch(/no longer available/);
+    }
+    expect(await h.db.expenseAllocation.count({ where: { expenseId } })).toBe(0);
+  });
+
+  it('refuses an id that is not one of this tenant’s, as a refusal rather than a server error', async () => {
+    const expenseId = await draftExpense();
+    const err = await h
+      .makeCaller(RW, ownerId)
+      .allocationSet({ expenseId, allocations: [row('00000000-0000-7000-8000-0000000000ab', deptId)] })
+      .catch((e: unknown) => e);
+    expect((err as TRPCError).code).toBe('BAD_REQUEST');
+  });
+
+  it('keeps a deactivated one the expense already carries, so its other rows stay editable', async () => {
+    const expenseId = await draftExpense();
+    const caller = h.makeCaller(RW, ownerId);
+    // Coded while both were active…
+    await h.db.businessUnit.update({ where: { id: retiredBuId }, data: { active: true } });
+    await caller.allocationSet({ expenseId, allocations: [row(retiredBuId, deptId)] });
+    // …then the business unit is retired, and the owner splits the expense.
+    await h.db.businessUnit.update({ where: { id: retiredBuId }, data: { active: false } });
+    await caller.allocationSet({
+      expenseId,
+      allocations: [
+        { ...row(retiredBuId, deptId), percentBp: 5_000 },
+        { ...row(buId, deptId), percentBp: 5_000 },
+      ],
+    });
+    const rows = await h.db.expenseAllocation.findMany({ where: { expenseId }, select: { businessUnitId: true } });
+    expect(rows.map((r: { businessUnitId: string }) => r.businessUnitId).sort()).toEqual([buId, retiredBuId].sort());
+  });
+
+  it('stores no NetSuite business unit or class, whatever the client sends', async () => {
+    const expenseId = await draftExpense();
+    await h.makeCaller(RW, ownerId).allocationSet({
+      expenseId,
+      allocations: [
+        { ...row(buId, deptId), nsBusinessUnitId: '00000000-0000-7000-8000-0000000000cd', classId: buId },
+      ],
+    });
+    const stored = await h.admin.query(`SELECT to_jsonb(a) AS r FROM expense_allocation a WHERE expense_id = $1`, [
+      expenseId,
+    ]);
+    expect(stored.rows).toHaveLength(1);
+    expect(Object.keys(stored.rows[0].r)).not.toContain('ns_business_unit_id');
+    expect(Object.keys(stored.rows[0].r)).not.toContain('class_id');
+    expect(stored.rows[0].r).toMatchObject({ business_unit_id: buId, department_id: deptId });
   });
 });

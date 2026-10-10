@@ -8,9 +8,10 @@
  *     `deleteExpense`, `deleteExpenses`, `totalsPreview`, `mileagePreview`,
  *     `lineItemCreate`, `lineItemUpdate`, `lineItemRemove`, `expenseTaxUpdate` and
  *     `explainTax`;
- *   · w2-08c — the `report` query, with `serializeExpense` and `EXPENSE_DETAIL_INCLUDE`.
+ *   · w2-08c — the `report` query, with `serializeExpense` and `EXPENSE_DETAIL_INCLUDE`;
+ *   · w2-03 — cost allocation: `dimensionOptions` and `allocationSet`.
  *
- * The rest of ExpenseOS's router (allocation, receipt and statement
+ * The rest of ExpenseOS's router (receipt and statement
  * procedures, `explainPerDiem`, `submit`, `recall`) arrives with the slices after, in
  * ExpenseOS's order and words.
  *
@@ -25,6 +26,8 @@
  *   · `report` reads VeloExpense's own policy violations and ledger posting
  *     (`reportViolations`, `postingStateOf`); there is no NetSuite position, so no coding
  *     gaps, classes or NetSuite business units, and no receipt has a reading until Wave 3;
+ *   · an allocation may not be coded to an unknown or deactivated business unit or
+ *     department, unless the expense already carries it (f09, `assertAllocationDimensionsUsable`);
  *   · a RETURNED report is editable, as in ExpenseOS (d26);
  *   · a new expense counts against the plan's yearly expense cap, checked on the same
  *     transaction (`assertExpenseAllowance` through `queryRunnerOf`);
@@ -809,6 +812,58 @@ async function postingStateOf(db: TenantDb, reportId: string) {
 }
 
 /**
+ * VeloExpense (f09): refuse a business unit or department an allocation may not be coded
+ * to — one that does not exist in this tenant, or that an administrator has DEACTIVATED —
+ * before anything is written. ExpenseOS checks neither on this path: a missing id fails at
+ * the foreign key as a server error, and a deactivated one saves.
+ *
+ * A deactivated one the expense ALREADY carries is kept. `allocationSet` replaces the whole
+ * set on every save, so refusing it would stop the owner editing any other row of an
+ * expense coded before the deactivation — the same reason ExpenseOS keeps a row coded
+ * under its other business unit source as sent.
+ */
+async function assertAllocationDimensionsUsable(
+  db: TenantDb,
+  expenseId: string,
+  rows: ReadonlyArray<{ businessUnitId?: string | null; departmentId?: string | null }>,
+): Promise<void> {
+  const ids = (key: 'businessUnitId' | 'departmentId') => [
+    ...new Set(rows.flatMap((r) => (r[key] ? [r[key] as string] : []))),
+  ];
+  const businessUnitIds = ids('businessUnitId');
+  const departmentIds = ids('departmentId');
+  if (businessUnitIds.length === 0 && departmentIds.length === 0) return;
+  const [current, businessUnits, departments] = await Promise.all([
+    db.expenseAllocation.findMany({
+      where: { expenseId },
+      select: { businessUnitId: true, departmentId: true },
+    }),
+    db.businessUnit.findMany({
+      where: { id: { in: businessUnitIds } },
+      select: { id: true, active: true },
+    }),
+    db.department.findMany({ where: { id: { in: departmentIds } }, select: { id: true, active: true } }),
+  ]);
+  const usable = (
+    wanted: string[],
+    found: Array<{ id: string; active: boolean }>,
+    kept: Set<string | null>,
+  ) => {
+    const byId = new Map(found.map((f) => [f.id, f.active]));
+    return wanted.every((id) => byId.has(id) && (byId.get(id) || kept.has(id)));
+  };
+  if (
+    !usable(businessUnitIds, businessUnits, new Set(current.map((a) => a.businessUnitId))) ||
+    !usable(departmentIds, departments, new Set(current.map((a) => a.departmentId)))
+  ) {
+    throw new TRPCError({
+      code: 'BAD_REQUEST',
+      message: 'A Business Unit or Department on this allocation is no longer available.',
+    });
+  }
+}
+
+/**
  * The filer's default coding for expenses about to be created, and the business unit
  * source it was resolved for — the pair `allocationCreateFor` and the receipt-intake
  * functions take. The source is read off the stored NetSuite config (no config →
@@ -1111,6 +1166,101 @@ export const expensesRouter = router({
         },
       });
       return { ...row, totalMinor: row.totalMinor.toString() };
+    }),
+
+  /** Active BU / Department / Class options for the allocation pickers. Any
+   *  expense editor may read them (not the admin-gated lookup lists).
+   *
+   *  The business unit list depends on the business unit source, read from the stored
+   *  NetSuite config on EVERY call and returned beside the list — this is the only way the
+   *  client learns the switch position (NFR-16). `EXPENSEOS`: the admin business units,
+   *  exactly as before. `NETSUITE`: the active NetSuite business unit mirror rows. Their
+   *  `parentId` is a NetSuite internal id, so `netsuiteId` travels too for the client to
+   *  resolve it against.
+   *
+   *  VeloExpense: always ExpenseOS's EXPENSEOS answer — there is no NetSuite position — and
+   *  no classes (VeloExpense has none), sent as an empty list so the client's shape holds. */
+  dimensionOptions: withPermission(P.expense.report.readOwn).query(async ({ ctx }) => {
+    const businessUnitSource: BusinessUnitSource = 'EXPENSEOS';
+    const departments = await ctx.db.department.findMany({
+      where: { active: true },
+      select: { id: true, label: true },
+    });
+    const classes: Array<{ id: string; name: string }> = [];
+    const businessUnits = await ctx.db.businessUnit.findMany({
+      where: { active: true },
+      select: { id: true, label: true },
+    });
+    return { businessUnitSource, businessUnits, departments, classes };
+  }),
+
+  /** Replace an expense's cost-allocation rows. 0 rows = unallocated; otherwise
+   *  the rows' percentBp must total exactly 10000 (100%). Draft/unfiled + owner
+   *  gated; audited.
+   *
+   *  VeloExpense: no NetSuite business unit and no class — a row is a business unit and a
+   *  department (`nsBusinessUnitId` and `classId` are not accepted). And a business unit or
+   *  department must exist and be ACTIVE, unless the expense already carries it (f09):
+   *  ExpenseOS checks neither here. */
+  allocationSet: withPermission(P.expense.report.updateOwn)
+    .input(
+      z.object({
+        expenseId: z.string().uuid(),
+        allocations: z
+          .array(
+            z.object({
+              percentBp: z.number().int().min(1).max(10000),
+              businessUnitId: z.string().uuid().nullish(),
+              departmentId: z.string().uuid().nullish(),
+            }),
+          )
+          .max(50),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      await assertExpenseDraft(ctx, input.expenseId);
+      const sum = input.allocations.reduce((a, r) => a + r.percentBp, 0);
+      if (input.allocations.length > 0 && sum !== 10000) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'Allocation percentages must total 100%.',
+        });
+      }
+      // Business Unit + Department are required per row.
+      // VeloExpense: "has a business unit" is the admin column — ExpenseOS's rule under its
+      // EXPENSEOS source; there is no class to leave nullable.
+      if (input.allocations.some((r) => !r.businessUnitId || !r.departmentId)) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'Each allocation needs a Business Unit and Department.',
+        });
+      }
+      await assertAllocationDimensionsUsable(ctx.db, input.expenseId, input.allocations);
+      const businessUnitSource: BusinessUnitSource = 'EXPENSEOS';
+      await withAudit(
+        ctx.db,
+        {
+          action: auditActions.report.update,
+          entityType: 'Expense',
+          entityId: input.expenseId,
+          actor: actorOf(ctx),
+          details: { allocations: input.allocations.length, businessUnitSource },
+        },
+        async (tx) => {
+          await tx.expenseAllocation.deleteMany({ where: { expenseId: input.expenseId } });
+          if (input.allocations.length > 0) {
+            await tx.expenseAllocation.createMany({
+              data: input.allocations.map((r) => ({
+                expenseId: input.expenseId,
+                percentBp: r.percentBp,
+                businessUnitId: r.businessUnitId ?? null,
+                departmentId: r.departmentId ?? null,
+              })),
+            });
+          }
+        },
+      );
+      return { ok: true as const };
     }),
 
   /** Delete a DRAFT report (cascades expenses → line items → receipts).
