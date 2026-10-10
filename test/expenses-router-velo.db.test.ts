@@ -11,7 +11,10 @@
  *   · a mileage line stops at ExpenseOS's own "no country" refusal until w2-10;
  *   · `explainTax` admits the submitter and an approver with a pending task (VeloExpense's
  *     approval tables, through `callerCanDecideReport`), and nobody else;
- *   · the line writes audit under VeloExpense's names.
+ *   · the line writes audit under VeloExpense's names;
+ *   · `report` reads VeloExpense's own tables in ExpenseOS's shape — the violations
+ *     (anchored to a line, so `expenseId` is the line's expense), the posting state off
+ *     `integration_post`, the currency's symbol — and admits a pending approver.
  */
 import { permissions as P } from '@expenseos/rbac';
 import { TRPCError } from '@trpc/server';
@@ -233,5 +236,82 @@ describe('the line writes audit under VeloExpense’s names', () => {
     expect((await h.lastAudit('ExpenseLineItem', id))?.action).toBe('LINE_ITEM_EDITED');
     await caller.lineItemRemove({ id });
     expect((await h.lastAudit('ExpenseLineItem', id))?.action).toBe('LINE_ITEM_REMOVED');
+  });
+});
+
+describe('report — VeloExpense\'s tables, in ExpenseOS\'s shape', () => {
+  let reportId: string;
+  let expenseId: string;
+  let lineId: string;
+
+  beforeAll(async () => {
+    const caller = h.makeCaller(RW, ownerId);
+    reportId = (await caller.create({ title: 'Read back', currency: 'CAD' })).id;
+    expenseId = (await caller.createExpense({ reportId })).id;
+    lineId = (await caller.lineItemCreate({ expenseId, categoryId, amountMinor: '2500' })).id;
+  });
+
+  it('names the currency by code, with its symbol, as ExpenseOS does', async () => {
+    const out = await h.makeCaller(RW, ownerId).report({ reportId });
+    expect(out.currency).toEqual({ code: 'CAD', symbol: expect.any(String) });
+    expect(out.currency.symbol).not.toBe('');
+    expect(out.expenses[0].currency).toMatchObject({ id: 'CAD', code: 'CAD' });
+  });
+
+  it("carries a line's violation under its expense, and a report-level one under none", async () => {
+    await h.admin.query(
+      `INSERT INTO policy_violation (organization_id, report_id, line_item_id, rule_code, severity, message, finding_key)
+       VALUES ($1, $2, $3, 'perTransactionLimit', 'WARNING', 'Over the limit', 'a'),
+              ($1, $2, NULL, 'receiptMissing', 'BLOCK', 'No receipt', 'b')`,
+      [h.orgId, reportId, lineId],
+    );
+    const out = await h.makeCaller(RW, ownerId).report({ reportId });
+    const byRule = Object.fromEntries(out.violations.map((v: { ruleCode: string }) => [v.ruleCode, v]));
+    expect(byRule.perTransactionLimit).toMatchObject({
+      reportId,
+      expenseId,
+      lineItemId: lineId,
+      severity: 'WARNING',
+      message: 'Over the limit',
+      resolvedAt: null,
+    });
+    expect(byRule.receiptMissing).toMatchObject({ expenseId: null, severity: 'BLOCK' });
+  });
+
+  it('reports no posting until one is queued, then its state — a claimed PENDING as PROCESSING', async () => {
+    const caller = h.makeCaller(RW, ownerId);
+    expect((await caller.report({ reportId })).posting).toBeNull();
+    await h.admin.query(
+      `INSERT INTO integration_post (organization_id, report_id, status, attempts, idempotency_key, claimed_at)
+       VALUES ($1, $2, 'PENDING', 1, $3, now())`,
+      [h.orgId, reportId, `velo-${reportId}`],
+    );
+    expect((await caller.report({ reportId })).posting).toMatchObject({
+      status: 'PROCESSING',
+      attempts: 1,
+      lastError: null,
+      externalId: null,
+      postedAt: null,
+    });
+  });
+
+  it('admits an approver with a pending task, and nobody else', async () => {
+    await h.admin.query(`UPDATE expense_report SET status = 'SUBMITTED', submitted_at = now() WHERE id = $1`, [
+      reportId,
+    ]);
+    const request = (
+      await h.admin.query(
+        `INSERT INTO approval_request (organization_id, report_id, policy_snapshot, status, total_steps,
+                                       subject_total_minor, subject_currency_code, opened_by_id)
+         VALUES ($1, $2, '{}'::jsonb, 'RUNNING', 1, 2500, 'CAD', $3) RETURNING id`,
+        [h.orgId, reportId, ownerId],
+      )
+    ).rows[0].id;
+    await h.admin.query(
+      `INSERT INTO approval_task (organization_id, request_id, step, assignee_id) VALUES ($1, $2, 1, $3)`,
+      [h.orgId, request, approverId],
+    );
+    expect(await codeOf(h.makeCaller([], approverId).report({ reportId }))).toBe('OK');
+    expect(await codeOf(h.makeCaller(RW, strangerId).report({ reportId }))).toBe('NOT_FOUND');
   });
 });
