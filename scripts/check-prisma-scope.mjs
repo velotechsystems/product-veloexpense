@@ -23,6 +23,12 @@ import { join } from 'node:path';
 const ROOTS = ['app', 'lib', 'components', 'scripts'];
 const HOME = 'lib/db/prisma.ts';
 const SELF = 'scripts/check-prisma-scope.mjs';
+/**
+ * The one file allowed Prisma's `$queryRawUnsafe` / `$executeRawUnsafe` (Wave 2): it hands
+ * VeloExpense's `pg` services the tenant transaction as a QueryRunner, passing THEIR
+ * parameterised SQL through unchanged — it builds no SQL from values. See the file.
+ */
+const PG_BRIDGE = 'lib/db/prisma-pg-bridge.ts';
 
 function walk(dir, out = []) {
   for (const name of readdirSync(dir)) {
@@ -49,7 +55,7 @@ for (const root of ROOTS) {
       if (/new\s+PrismaClient\s*\(/.test(line) && file !== HOME) {
         problems.push(`${file}:${i + 1}  constructs a PrismaClient — use \`db\` / \`withTenantDb\` from ${HOME}`);
       }
-      if (/\$(query|execute)RawUnsafe\b/.test(line)) {
+      if (/\$(query|execute)RawUnsafe\b/.test(line) && file !== PG_BRIDGE) {
         problems.push(`${file}:${i + 1}  uses an Unsafe raw query — use the tagged \`$queryRaw\` / \`$executeRaw\``);
       }
     });
@@ -61,4 +67,4 @@ if (problems.length) {
   for (const p of problems) console.error(`  · ${p}`);
   process.exit(1);
 }
-console.log(`check-prisma-scope OK — ${scanned} files; one PrismaClient (${HOME}), no unsafe raw SQL.`);
+console.log(`check-prisma-scope OK — ${scanned} files; one PrismaClient (${HOME}); unsafe raw SQL only in ${PG_BRIDGE}.`);

@@ -56,6 +56,9 @@ export const REFUSAL_KEYS = {
   /** The same override naming a row NetSuite has made inactive. Stays `BAD_REQUEST`,
    *  which zod validation also returns. Takes no ICU arguments. */
   expenseCategoryNsInactive: 'refusals.expenseCategories.nsCategoryInactive',
+  /** VeloExpense: a new expense past the plan's yearly expense cap (lib/billing/caps.ts),
+   *  refused by a ported procedure. `{ limit }`. */
+  expenseLimitReached: 'refusals.billing.expenseLimitReached',
 } as const;
 
 export type RefusalKey = (typeof REFUSAL_KEYS)[keyof typeof REFUSAL_KEYS];

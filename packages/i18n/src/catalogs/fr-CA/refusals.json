@@ -24,5 +24,8 @@
   "expenseCategories": {
     "nsCategoryMissing": "Cette catégorie de dépense NetSuite ne figure plus dans la liste synchronisée. Lancez une synchronisation des données de référence, ou choisissez-en une autre.",
     "nsCategoryInactive": "Cette catégorie de dépense NetSuite est inactive dans NetSuite. Choisissez-en une active, ou retirez la substitution pour revenir à la correspondance par nom."
+  },
+  "billing": {
+    "expenseLimitReached": "Le forfait de cette organisation permet {limit, number} dépenses par année, et ce nombre a été atteint au cours des douze derniers mois. Vos brouillons sont enregistrés — un administrateur peut changer de forfait dans les paramètres de facturation."
   }
 }
