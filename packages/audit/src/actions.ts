@@ -44,6 +44,9 @@ const adminAndOthers = {
   report: {
     update: 'REPORT_EDITED',
     delete: 'REPORT_DELETED',
+    lineItemAdd: 'LINE_ITEM_ADDED',
+    lineItemUpdate: 'LINE_ITEM_EDITED',
+    lineItemDelete: 'LINE_ITEM_REMOVED',
   },
 } as const satisfies Record<string, Record<string, AuditAction>>;
 

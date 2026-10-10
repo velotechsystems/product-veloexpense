@@ -23,11 +23,12 @@ import { makeContext } from '../__test-helpers__/trpcCaller';
  *     expense created before it was filed.
  *
  * VeloExpense: ExpenseOS's `expenses.guards.test.ts`, for the procedures ported so far
- * (w2-07: `list`, `categories`, `currencies`, `deleteReport`, `updateReport`). Each later
- * slice brings the blocks for the procedures it ports — the expense, receipt, tax,
- * read-access, validation, justification and recall blocks — and the mocks they need
- * (approvals, jobs, NetSuite, policy, tax). The harness below is ExpenseOS's, less those
- * mocks; `@/auth` is VeloExpense's session module.
+ * (w2-07: `list`, `categories`, `currencies`, `deleteReport`, `updateReport`; w2-08b: the
+ * expense, line and tax procedures — the ownership, editability, manual-tax and input
+ * blocks). Each later slice brings the blocks for the procedures it ports — the receipt,
+ * submit, read-access, justification and recall blocks — and the mocks they need
+ * (approvals, jobs, policy, storage). The harness below is ExpenseOS's, less those mocks;
+ * `@/auth` is VeloExpense's session module.
  */
 
 const withAuditCalls: Array<Record<string, unknown>> = [];
@@ -152,7 +153,23 @@ async function callerFor(db: unknown, permissions: readonly string[] = [], userI
   );
 }
 
-// VeloExpense: ExpenseOS's `passesGuard` arrives with the ownership blocks that use it (w2-08).
+/**
+ * Assert the GUARD let the call through — not that the whole procedure succeeded.
+ *
+ * Past the ownership/editability check these procedures go on to serialise a full
+ * report, which needs far more of the schema than a guard test should have to stub.
+ * The database-backed suites cover that. What matters here is the negative: the call
+ * did not stop at NOT_FOUND ("not yours") or at "Report is not editable".
+ */
+async function passesGuard(p: Promise<unknown>): Promise<void> {
+  try {
+    await p;
+  } catch (e) {
+    const err = e as { code?: string; message?: string };
+    expect(err.code, `guard rejected: ${err.message}`).not.toBe('NOT_FOUND');
+    expect(err.message ?? '').not.toMatch(/not editable/);
+  }
+}
 
 const UPDATE = [P.expense.report.updateOwn] as const;
 const READ = [P.expense.report.readOwn] as const;
@@ -180,9 +197,11 @@ describe('permission gates', () => {
     const db = makeDb();
     const c = await callerFor(db, READ);
     for (const attempt of [
-      // VeloExpense: `updateExpense`, `deleteExpense`, `lineItemRemove` (w2-08) and
-      // `receiptRemove` (w2-09) join this list when they are ported; `updateReport` is the
-      // write ported so far, behind the same permission.
+      c.updateExpense({ expenseId: EXPENSE } as never),
+      c.deleteExpense({ expenseId: EXPENSE }),
+      c.lineItemRemove({ id: U('3') }),
+      // VeloExpense: `receiptRemove` joins this list with the receipt procedures (w2-09).
+      // `updateReport`, behind the same permission, stands in until then.
       c.updateReport({ reportId: REPORT, title: 'New' } as never),
     ]) {
       await expect(attempt).rejects.toMatchObject({ code: 'FORBIDDEN' });
@@ -194,6 +213,107 @@ describe('permission gates', () => {
     const db = makeDb();
     const c = await callerFor(db, UPDATE);
     await expect(c.deleteReport({ reportId: REPORT })).rejects.toMatchObject({ code: 'FORBIDDEN' });
+  });
+});
+
+describe('expense ownership', () => {
+  /**
+   * NOT_FOUND rather than FORBIDDEN throughout. A 403 confirms the id exists, which
+   * turns any of these endpoints into an existence oracle over other people's spending.
+   */
+  const strangersExpense = () => ({
+    reportId: REPORT,
+    ownerId: U('3'),
+    report: { submitterId: U('3'), status: 'DRAFT' },
+  });
+
+  it('hides a stranger’s expense behind NOT_FOUND', async () => {
+    const db = makeDb();
+    db.expense.findUnique.mockResolvedValue(strangersExpense());
+    const c = await callerFor(db, [...UPDATE, ...READ]);
+    for (const attempt of [
+      c.updateExpense({ expenseId: EXPENSE } as never),
+      c.deleteExpense({ expenseId: EXPENSE }),
+      // VeloExpense: `receiptList` joins this list with the receipt procedures (w2-09).
+    ]) {
+      await expect(attempt).rejects.toMatchObject({ code: 'NOT_FOUND' });
+    }
+  });
+
+  it('hides an expense that does not exist the same way', async () => {
+    // Indistinguishable from a stranger's, which is the point.
+    const db = makeDb();
+    db.expense.findUnique.mockResolvedValue(null);
+    const c = await callerFor(db, UPDATE);
+    await expect(c.deleteExpense({ expenseId: EXPENSE })).rejects.toMatchObject({
+      code: 'NOT_FOUND',
+    });
+  });
+
+  it('lets the report SUBMITTER edit an expense they do not own', async () => {
+    /**
+     * A report can carry expenses created by somebody else (a receipt filed on their
+     * behalf), so ownership is "owner OR report submitter" — restricting it to the
+     * owner alone would lock the submitter out of their own report.
+     */
+    const db = makeDb();
+    db.expense.findUnique.mockResolvedValue({
+      reportId: REPORT,
+      ownerId: U('3'),
+      report: { submitterId: ME, status: 'DRAFT' },
+    });
+    const c = await callerFor(db, UPDATE);
+    await passesGuard(c.deleteExpense({ expenseId: EXPENSE }));
+  });
+
+  it('lets the OWNER edit an expense on somebody else’s report', async () => {
+    const db = makeDb();
+    db.expense.findUnique.mockResolvedValue({
+      reportId: REPORT,
+      ownerId: ME,
+      report: { submitterId: U('3'), status: 'DRAFT' },
+    });
+    const c = await callerFor(db, UPDATE);
+    await passesGuard(c.deleteExpense({ expenseId: EXPENSE }));
+  });
+});
+
+describe('report editability', () => {
+  it('refuses edits once the report has been submitted', async () => {
+    /**
+     * A submitted report is read-only to its submitter. Without this, somebody could
+     * change the amounts under an approver who is mid-review, and the decision would
+     * describe something that no longer exists.
+     */
+    for (const status of ['SUBMITTED', 'APPROVED', 'REJECTED', 'REIMBURSED']) {
+      const db = makeDb();
+      db.expense.findUnique.mockResolvedValue(owned({ report: { submitterId: ME, status } }));
+      const c = await callerFor(db, UPDATE);
+      await expect(c.updateExpense({ expenseId: EXPENSE } as never), status).rejects.toThrow(
+        /not editable/,
+      );
+    }
+  });
+
+  it('allows edits on a RETURNED report', async () => {
+    // An approver returning a report is precisely an invitation to edit it.
+    const db = makeDb();
+    db.expense.findUnique.mockResolvedValue(
+      owned({ report: { submitterId: ME, status: 'RETURNED' } }),
+    );
+    const c = await callerFor(db, UPDATE);
+    await passesGuard(c.updateExpense({ expenseId: EXPENSE } as never));
+  });
+
+  it('always allows edits to an unfiled expense', async () => {
+    /**
+     * An unfiled expense has no report to take a status from. Treating the missing
+     * report as "not editable" would strand every expense created before filing.
+     */
+    const db = makeDb();
+    db.expense.findUnique.mockResolvedValue({ reportId: null, ownerId: ME, report: null });
+    const c = await callerFor(db, UPDATE);
+    await passesGuard(c.updateExpense({ expenseId: EXPENSE } as never));
   });
 });
 
@@ -230,5 +350,121 @@ describe('report-level guards', () => {
     });
     const c = await callerFor(db, UPDATE);
     await expect(c.updateReport({ reportId: REPORT, title: 'New' } as never)).rejects.toThrow();
+  });
+});
+
+describe('manual tax bound', () => {
+  it('refuses paid tax that exceeds the expense amount', async () => {
+    /**
+     * MANUAL figures are trusted verbatim from here to the ledger: the engine takes
+     * them as the split, the allocator multiplies them by the category ITC%, and the
+     * poster carves the recoverable out with `net = gross − recoverable`. $5,000.00 of
+     * GST on a $113.98 lunch therefore posted a $2,500 ITC receivable and a NEGATIVE
+     * meals line, while the report total the approver saw stayed $113.98.
+     */
+    const db = makeDb();
+    const c = await callerFor(db, UPDATE);
+    await expect(
+      c.expenseTaxUpdate({
+        expenseId: EXPENSE,
+        taxSource: 'MANUAL',
+        taxGstHstMinor: 500000n,
+      } as never),
+    ).rejects.toMatchObject({
+      code: 'BAD_REQUEST',
+      message:
+        'Tax of 5000.00 CAD exceeds the expense amount of 113.98 CAD. Tax cannot be more than what was paid.',
+    });
+    expect(db.expense.update).not.toHaveBeenCalled();
+  });
+
+  it('sums the components, keeping any that are left unchanged', async () => {
+    // GST 60 + QST 60 is fine on its own; with 100 of PST already stored it is not.
+    const db = makeDb();
+    db.expense.findUniqueOrThrow.mockResolvedValue({
+      amountMinor: 200n,
+      taxGstHstMinor: null,
+      taxQstMinor: null,
+      taxPstMinor: 100n,
+      currency: { code: 'CAD' },
+    });
+    const c = await callerFor(db, UPDATE);
+    await expect(
+      c.expenseTaxUpdate({
+        expenseId: EXPENSE,
+        taxSource: 'MANUAL',
+        taxGstHstMinor: '60',
+        taxQstMinor: '60',
+      } as never),
+    ).rejects.toMatchObject({ code: 'BAD_REQUEST', message: expect.stringMatching(/2.20 CAD/) });
+    // Clearing the PST explicitly brings the sum back under.
+    await passesGuard(
+      c.expenseTaxUpdate({
+        expenseId: EXPENSE,
+        taxSource: 'MANUAL',
+        taxGstHstMinor: '60',
+        taxQstMinor: '60',
+        taxPstMinor: null,
+      } as never),
+    );
+    expect(db.expense.update).toHaveBeenCalled();
+  });
+
+  it('accepts tax within the amount, and does not bound CALCULATED at all', async () => {
+    const db = makeDb();
+    const c = await callerFor(db, UPDATE);
+    await passesGuard(
+      c.expenseTaxUpdate({
+        expenseId: EXPENSE,
+        taxSource: 'MANUAL',
+        taxGstHstMinor: 500n,
+      } as never),
+    );
+    // CALCULATED hands the figure back to the engine; the typed amounts are ignored.
+    await passesGuard(
+      c.expenseTaxUpdate({
+        expenseId: EXPENSE,
+        taxSource: 'CALCULATED',
+        taxGstHstMinor: 500000n,
+      } as never),
+    );
+    expect(db.expense.findUniqueOrThrow).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('input validation', () => {
+  it('rejects a non-uuid id everywhere', async () => {
+    const db = makeDb();
+    const c = await callerFor(db, [...UPDATE, ...READ]);
+    for (const attempt of [
+      c.deleteExpense({ expenseId: 'nope' } as never),
+      // VeloExpense: `receiptList` (w2-09) and `report` (w2-08c) join this list when ported.
+    ]) {
+      await expect(attempt).rejects.toThrow();
+    }
+  });
+
+  it('requires at least one id for a bulk delete', async () => {
+    // An empty bulk delete would audit a no-op.
+    const db = makeDb();
+    const c = await callerFor(db, UPDATE);
+    await expect(c.deleteExpenses({ ids: [] } as never)).rejects.toThrow();
+  });
+
+  it('accepts money as a bigint or a digit string', async () => {
+    /**
+     * superjson may send either, so both have to parse — and a non-numeric string must
+     * not silently become NaN in a money column.
+     */
+    const db = makeDb();
+    const c = await callerFor(db, UPDATE);
+    await passesGuard(c.updateExpense({ expenseId: EXPENSE, amountMinor: '12345' } as never));
+    await passesGuard(c.updateExpense({ expenseId: EXPENSE, amountMinor: 12345n } as never));
+    await expect(
+      c.updateExpense({ expenseId: EXPENSE, amountMinor: '12.34' } as never),
+    ).rejects.toThrow();
+    await expect(
+      c.updateExpense({ expenseId: EXPENSE, amountMinor: 'lots' } as never),
+    ).rejects.toThrow();
   });
 });

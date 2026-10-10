@@ -24,5 +24,8 @@
   "expenseCategories": {
     "nsCategoryMissing": "That NetSuite expense category is no longer in the synced list. Run a reference sync, or choose another one.",
     "nsCategoryInactive": "That NetSuite expense category is inactive in NetSuite. Choose an active one, or clear the override to match by name."
+  },
+  "billing": {
+    "expenseLimitReached": "This organization’s plan allows {limit, number} expenses a year, and that many have been added in the last twelve months. Your drafts are saved — an administrator can change the plan from the billing settings."
   }
 }

@@ -17,6 +17,20 @@ export {
   MileageUnit,
   ReceiptKind,
 } from './enums';
+// Which business unit column wins, and what a new expense is coded to — VeloExpense has
+// only ExpenseOS's EXPENSEOS position (see the module).
+export {
+  type BusinessUnitSource,
+  type CodingDefaultsFor,
+  type CodingDefaultsUser,
+  codingDefaultsFor,
+} from './businessUnitSource';
+export {
+  allocationCreateFor,
+  type CodingDefaults,
+  type DefaultAllocation,
+  defaultAllocationFrom,
+} from './expenseCodingDefaults';
 // Currency conversion at the expense level (rule 3) — the web writes it on every
 // line change, the worker on extraction, so it lives beside the rest of the
 // shared Prisma domain helpers.
