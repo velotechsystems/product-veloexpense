@@ -101,6 +101,16 @@ export const EVENT_TYPES = [
    * one that deliberately does NOT exclude the actor: see `notifyRecipients`.
    */
   'BUDGET_THRESHOLD',
+  /**
+   * Somebody asked the submitter for receipts their expenses are missing (w2-06). Addressed
+   * to the submitter, attributed to whoever asked — ExpenseOS's on-demand chase from the
+   * cross-report expense view (`expenseApprovals.chaseReceipts`), "so the submitter should
+   * see who is waiting on them".
+   *
+   * VeloExpense: only the on-demand chase emits it. ExpenseOS's daily `expense.receiptChase`
+   * job, which sends the same event with no actor, arrives with the worker jobs.
+   */
+  'RECEIPT_REMINDER',
 ] as const;
 export type EventType = (typeof EVENT_TYPES)[number];
 
@@ -347,6 +357,18 @@ export const TEMPLATE_KEYS: readonly TemplateKeyDef[] = [
         '{budget} has crossed {thresholdPercent}% of its {period} budget — ' +
         '{used} of {amount}.',
     },
+  },
+  {
+    // ExpenseOS's key, name and description (`packages/notifications/src/templateKeys.ts`).
+    key: 'expense_management.report_receipt_reminder',
+    name: 'Missing receipt reminder',
+    description: 'A draft expense still has no receipt attached.',
+    events: [['RECEIPT_REMINDER', 'EXPENSE_REPORT']],
+    // VeloExpense: ExpenseOS's shipped line is the event label alone ("A draft expense is
+    // still missing its receipt"). The on-demand chase is attributed and counted, and its
+    // report is not always a draft, so the sentence says who asked, how many, and on which
+    // report — `{missing}` from the chase's payload, `{report}` from `reportPayload`.
+    shipped: { 'en-CA': '{actor} asked for {missing} missing receipt(s) on {report}.' },
   },
 ];
 

@@ -376,6 +376,7 @@ export const EVENT_TYPE_COPY: EnumCopy<EventType> = {
   RECALLED: { 'en-CA': 'A report was withdrawn' },
   REIMBURSED: { 'en-CA': 'You were reimbursed' },
   BUDGET_THRESHOLD: { 'en-CA': 'A budget crossed a threshold' },
+  RECEIPT_REMINDER: { 'en-CA': 'Someone asked for your missing receipts' },
 };
 
 /* ── receipts ─────────────────────────────────────────────────────────────── */

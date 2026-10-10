@@ -189,6 +189,8 @@ export const UI_COPY = {
   // The fallback when a report cannot be named — see `dataTitle`. A report's own
   // title is the CUSTOMER's words and is never catalogued.
   'title.expenses.report': { 'en-CA': 'Expense report' },
+  // w2-06: ExpenseOS's cross-report view, named as ExpenseOS's menu names it.
+  'title.expenses.all': { 'en-CA': 'All expenses' },
   'title.approvals': { 'en-CA': 'Approvals' },
   'title.approvals.delegations': { 'en-CA': 'Delegations' },
   'title.approve': { 'en-CA': 'Approve a report' },
