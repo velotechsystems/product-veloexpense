@@ -17,7 +17,9 @@
  *     `integration_post`, the currency's symbol — and admits a pending approver;
  *   · `allocationSet` refuses a business unit or department that is unknown or
  *     deactivated, unless the expense already carries it (f09), and stores no NetSuite
- *     business unit or class.
+ *     business unit or class;
+ *   · `attendeeDirectory` searches VeloExpense's one display name and the email, in this
+ *     tenant only, leaving deleted people out (ExpenseOS has no server test for it).
  */
 import { permissions as P } from '@expenseos/rbac';
 import { TRPCError } from '@trpc/server';
@@ -401,5 +403,65 @@ describe('allocationSet — what an expense may be coded to (f09)', () => {
     expect(Object.keys(stored.rows[0].r)).not.toContain('ns_business_unit_id');
     expect(Object.keys(stored.rows[0].r)).not.toContain('class_id');
     expect(stored.rows[0].r).toMatchObject({ business_unit_id: buId, department_id: deptId });
+  });
+});
+
+describe('attendeeDirectory — the attendee picker\'s search', () => {
+  const search = (query: string, perms: readonly string[] = RW) =>
+    h.makeCaller(perms, ownerId).attendeeDirectory({ query });
+
+  beforeAll(async () => {
+    const add = (email: string, name: string | null, deleted = false) =>
+      h.admin.query(
+        `INSERT INTO app_user (organization_id, email, display_name, role, deleted_at)
+         VALUES ($1, $2, $3, 'EMPLOYEE', $4)`,
+        [h.orgId, email, name, deleted ? new Date() : null],
+      );
+    await add('ada.lovelace@expenses-velo.test', 'Ada Lovelace');
+    await add('nameless@expenses-velo.test', null);
+    await add('ada.gone@expenses-velo.test', 'Ada Gone', true);
+    // Another tenant's Ada, who must never appear.
+    const other = (
+      await h.admin.query(`INSERT INTO organization (slug, name) VALUES ('attendee-other', 'Other') RETURNING id`)
+    ).rows[0].id;
+    await h.admin.query(
+      `INSERT INTO app_user (organization_id, email, display_name, role) VALUES ($1, 'ada@attendee-other.test', 'Ada Elsewhere', 'EMPLOYEE')`,
+      [other],
+    );
+  });
+
+  it('finds a person by display name or email, case-insensitively, with id, name and email only', async () => {
+    const byName = await search('LOVELACE');
+    expect(byName).toEqual([
+      { id: expect.any(String), name: 'Ada Lovelace', email: 'ada.lovelace@expenses-velo.test' },
+    ]);
+    expect((await search('ada.lovelace@')).map((u: { name: string }) => u.name)).toEqual(['Ada Lovelace']);
+  });
+
+  it('names a person with no display name by their email', async () => {
+    expect(await search('nameless')).toEqual([
+      { id: expect.any(String), name: 'nameless@expenses-velo.test', email: 'nameless@expenses-velo.test' },
+    ]);
+  });
+
+  it('leaves out deleted people and other tenants', async () => {
+    const names = (await search('ada')).map((u: { name: string }) => u.name);
+    expect(names).toContain('Ada Lovelace');
+    expect(names).not.toContain('Ada Gone');
+    expect(names).not.toContain('Ada Elsewhere');
+  });
+
+  it('returns at most ten', async () => {
+    for (let i = 0; i < 12; i++) {
+      await h.admin.query(
+        `INSERT INTO app_user (organization_id, email, display_name, role) VALUES ($1, $2, $3, 'EMPLOYEE')`,
+        [h.orgId, `bulk${i}@expenses-velo.test`, `Bulk ${i}`],
+      );
+    }
+    expect(await search('bulk')).toHaveLength(10);
+  });
+
+  it('is refused without the permission to edit a report', async () => {
+    expect(await codeOf(search('ada', [P.expense.report.readOwn]))).toBe('FORBIDDEN');
   });
 });

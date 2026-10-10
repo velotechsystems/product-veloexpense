@@ -9,7 +9,9 @@
  *     `lineItemCreate`, `lineItemUpdate`, `lineItemRemove`, `expenseTaxUpdate` and
  *     `explainTax`;
  *   · w2-08c — the `report` query, with `serializeExpense` and `EXPENSE_DETAIL_INCLUDE`;
- *   · w2-03 — cost allocation: `dimensionOptions` and `allocationSet`.
+ *   · w2-03 — cost allocation: `dimensionOptions` and `allocationSet`;
+ *   · w2-04 — the attendee picker's search, `attendeeDirectory` (the roster itself is
+ *     written by `updateExpense`, w2-08b).
  *
  * The rest of ExpenseOS's router (receipt and statement
  * procedures, `explainPerDiem`, `submit`, `recall`) arrives with the slices after, in
@@ -1316,6 +1318,35 @@ export const expensesRouter = router({
       },
     });
   }),
+
+  /** Employee search for the attendee picker — any report editor may call it.
+   *  Returns a small matching set with id + display name + email only (no
+   *  sensitive fields); external attendees are entered free-text client-side.
+   *
+   *  VeloExpense: a person has one display name (`name`), not a first and last name, so the
+   *  search and the ordering read it where ExpenseOS reads the two. */
+  attendeeDirectory: withPermission(P.expense.report.updateOwn)
+    .input(z.object({ query: z.string().trim().min(1).max(100) }))
+    .query(async ({ ctx, input }) => {
+      const q = input.query;
+      const users = await ctx.db.user.findMany({
+        where: {
+          deletedAt: null,
+          OR: [
+            { name: { contains: q, mode: 'insensitive' } },
+            { email: { contains: q, mode: 'insensitive' } },
+          ],
+        },
+        orderBy: [{ name: 'asc' }, { email: 'asc' }],
+        take: 10,
+        select: { id: true, name: true, email: true },
+      });
+      return users.map((u) => ({
+        id: u.id,
+        name: u.name || u.email,
+        email: u.email,
+      }));
+    }),
 
   /** Active currencies for the report-create picker. */
   currencies: withPermission(P.expense.report.readOwn).query(async ({ ctx }) => {
