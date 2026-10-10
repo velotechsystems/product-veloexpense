@@ -44,8 +44,8 @@
  *     lifecycle (d23, `server/lib/reportLifecycle.ts`), and the policy pass is VeloExpense's
  *     (`runPolicy`) with ExpenseOS's justification rule (d34);
  *   · corrections are not yet recorded against a determination (`noteOverrides` is a
- *     no-op until extraction, Wave 3), and a mileage line cannot be priced until a
- *     traveller has a country (w2-10).
+ *     no-op until extraction, Wave 3); a traveller's country is `app_user.country` (0055,
+ *     w2-10), backfilled from their legal entity.
  */
 import { auditActions, auditDiff, withAudit } from '@expenseos/audit';
 import {
@@ -656,13 +656,11 @@ async function computeLineFinancials(
   }
   const expense = await db.expense.findUnique({
     where: { id: params.expenseId },
-    select: { date: true, ownerId: true },
+    select: { date: true, ownerId: true, owner: { select: { country: true } } },
   });
-  // VeloExpense: a person has no country yet. ExpenseOS reads `owner.country`; where a
-  // VeloExpense traveller's country comes from (their legal entity, or a column of their
-  // own) is decided with the mileage slice (w2-10). Until then every mileage line stops at
-  // ExpenseOS's own refusal for a traveller with no country, below.
-  const country: string | null = null;
+  // VeloExpense: `app_user.country` since 0055 (w2-10), backfilled from the person's legal
+  // entity and theirs to change on the employee screen.
+  const country = expense?.owner.country;
   if (!expense || !country) {
     throw new TRPCError({
       code: 'PRECONDITION_FAILED',

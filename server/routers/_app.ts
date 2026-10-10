@@ -6,6 +6,7 @@ import { expenseApprovalsRouter } from './expenseApprovals';
 import { expenseCategoriesRouter } from './expenseCategories';
 import { expensesRouter } from './expenses';
 import { legalEntitiesRouter } from './legalEntities';
+import { mileageRouteRouter } from './mileageRoute';
 import { pickersRouter } from './pickers';
 import { policiesRouter } from './policies';
 
@@ -27,6 +28,8 @@ export const appRouter = router({
   // VeloExpense stand-in until Wave 4: `myTasks` only, for the sidebar's Approvals count.
   expenseApprovals: expenseApprovalsRouter,
   legalEntities: legalEntitiesRouter,
+  // w2-10: address search and route distance for a mileage line.
+  mileageRoute: mileageRouteRouter,
   pickers: pickersRouter,
   policies: policiesRouter,
 });

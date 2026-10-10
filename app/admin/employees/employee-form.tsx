@@ -19,6 +19,7 @@ import {
 } from '@/lib/employees/service';
 import { NativeSelect } from '@/components/ui/native-select';
 import { activeChoices } from '@/lib/employees/active-choices';
+import { countryItems } from '@/lib/countries';
 
 type Options = {
   departments: Array<{ id: string; name: string; active: boolean }>;
@@ -190,6 +191,24 @@ export function EmployeeForm({
             ))}
           </NativeSelect>
         </div>
+
+        {/* w2-10: the country mileage is priced in. Edit only: an invited person takes
+            their legal entity's, as everybody did when the column arrived (0055). */}
+        {employee ? (
+          <div className={fieldClass}>
+            <label className={labelClass} htmlFor="country">
+              Country
+            </label>
+            <NativeSelect id="country" name="country" defaultValue={employee.country ?? ''}>
+              <option value="">— none —</option>
+              {countryItems(locale).map((c) => (
+                <option key={c.value} value={c.value}>
+                  {c.label}
+                </option>
+              ))}
+            </NativeSelect>
+          </div>
+        ) : null}
       </div>
 
       <div>

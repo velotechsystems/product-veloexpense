@@ -30,6 +30,7 @@ export type UserMinAggregateOutputType = {
   email: string | null
   name: string | null
   employeeStatus: string | null
+  country: string | null
   managerId: string | null
   departmentId: string | null
   businessUnitId: string | null
@@ -46,6 +47,7 @@ export type UserMaxAggregateOutputType = {
   email: string | null
   name: string | null
   employeeStatus: string | null
+  country: string | null
   managerId: string | null
   departmentId: string | null
   businessUnitId: string | null
@@ -62,6 +64,7 @@ export type UserCountAggregateOutputType = {
   email: number
   name: number
   employeeStatus: number
+  country: number
   managerId: number
   departmentId: number
   businessUnitId: number
@@ -80,6 +83,7 @@ export type UserMinAggregateInputType = {
   email?: true
   name?: true
   employeeStatus?: true
+  country?: true
   managerId?: true
   departmentId?: true
   businessUnitId?: true
@@ -96,6 +100,7 @@ export type UserMaxAggregateInputType = {
   email?: true
   name?: true
   employeeStatus?: true
+  country?: true
   managerId?: true
   departmentId?: true
   businessUnitId?: true
@@ -112,6 +117,7 @@ export type UserCountAggregateInputType = {
   email?: true
   name?: true
   employeeStatus?: true
+  country?: true
   managerId?: true
   departmentId?: true
   businessUnitId?: true
@@ -201,6 +207,7 @@ export type UserGroupByOutputType = {
   email: string
   name: string | null
   employeeStatus: string
+  country: string | null
   managerId: string | null
   departmentId: string | null
   businessUnitId: string | null
@@ -238,6 +245,7 @@ export type UserWhereInput = {
   email?: Prisma.StringFilter<"User"> | string
   name?: Prisma.StringNullableFilter<"User"> | string | null
   employeeStatus?: Prisma.StringFilter<"User"> | string
+  country?: Prisma.StringNullableFilter<"User"> | string | null
   managerId?: Prisma.UuidNullableFilter<"User"> | string | null
   departmentId?: Prisma.UuidNullableFilter<"User"> | string | null
   businessUnitId?: Prisma.UuidNullableFilter<"User"> | string | null
@@ -259,6 +267,7 @@ export type UserOrderByWithRelationInput = {
   email?: Prisma.SortOrder
   name?: Prisma.SortOrderInput | Prisma.SortOrder
   employeeStatus?: Prisma.SortOrder
+  country?: Prisma.SortOrderInput | Prisma.SortOrder
   managerId?: Prisma.SortOrderInput | Prisma.SortOrder
   departmentId?: Prisma.SortOrderInput | Prisma.SortOrder
   businessUnitId?: Prisma.SortOrderInput | Prisma.SortOrder
@@ -283,6 +292,7 @@ export type UserWhereUniqueInput = Prisma.AtLeast<{
   email?: Prisma.StringFilter<"User"> | string
   name?: Prisma.StringNullableFilter<"User"> | string | null
   employeeStatus?: Prisma.StringFilter<"User"> | string
+  country?: Prisma.StringNullableFilter<"User"> | string | null
   managerId?: Prisma.UuidNullableFilter<"User"> | string | null
   departmentId?: Prisma.UuidNullableFilter<"User"> | string | null
   businessUnitId?: Prisma.UuidNullableFilter<"User"> | string | null
@@ -304,6 +314,7 @@ export type UserOrderByWithAggregationInput = {
   email?: Prisma.SortOrder
   name?: Prisma.SortOrderInput | Prisma.SortOrder
   employeeStatus?: Prisma.SortOrder
+  country?: Prisma.SortOrderInput | Prisma.SortOrder
   managerId?: Prisma.SortOrderInput | Prisma.SortOrder
   departmentId?: Prisma.SortOrderInput | Prisma.SortOrder
   businessUnitId?: Prisma.SortOrderInput | Prisma.SortOrder
@@ -326,6 +337,7 @@ export type UserScalarWhereWithAggregatesInput = {
   email?: Prisma.StringWithAggregatesFilter<"User"> | string
   name?: Prisma.StringNullableWithAggregatesFilter<"User"> | string | null
   employeeStatus?: Prisma.StringWithAggregatesFilter<"User"> | string
+  country?: Prisma.StringNullableWithAggregatesFilter<"User"> | string | null
   managerId?: Prisma.UuidNullableWithAggregatesFilter<"User"> | string | null
   departmentId?: Prisma.UuidNullableWithAggregatesFilter<"User"> | string | null
   businessUnitId?: Prisma.UuidNullableWithAggregatesFilter<"User"> | string | null
@@ -342,6 +354,7 @@ export type UserCreateInput = {
   email: string
   name?: string | null
   employeeStatus?: string
+  country?: string | null
   managerId?: string | null
   departmentId?: string | null
   businessUnitId?: string | null
@@ -362,6 +375,7 @@ export type UserUncheckedCreateInput = {
   email: string
   name?: string | null
   employeeStatus?: string
+  country?: string | null
   managerId?: string | null
   departmentId?: string | null
   businessUnitId?: string | null
@@ -382,6 +396,7 @@ export type UserUpdateInput = {
   email?: Prisma.StringFieldUpdateOperationsInput | string
   name?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   employeeStatus?: Prisma.StringFieldUpdateOperationsInput | string
+  country?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   managerId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   departmentId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   businessUnitId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -402,6 +417,7 @@ export type UserUncheckedUpdateInput = {
   email?: Prisma.StringFieldUpdateOperationsInput | string
   name?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   employeeStatus?: Prisma.StringFieldUpdateOperationsInput | string
+  country?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   managerId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   departmentId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   businessUnitId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -422,6 +438,7 @@ export type UserCreateManyInput = {
   email: string
   name?: string | null
   employeeStatus?: string
+  country?: string | null
   managerId?: string | null
   departmentId?: string | null
   businessUnitId?: string | null
@@ -438,6 +455,7 @@ export type UserUpdateManyMutationInput = {
   email?: Prisma.StringFieldUpdateOperationsInput | string
   name?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   employeeStatus?: Prisma.StringFieldUpdateOperationsInput | string
+  country?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   managerId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   departmentId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   businessUnitId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -453,6 +471,7 @@ export type UserUncheckedUpdateManyInput = {
   email?: Prisma.StringFieldUpdateOperationsInput | string
   name?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   employeeStatus?: Prisma.StringFieldUpdateOperationsInput | string
+  country?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   managerId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   departmentId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   businessUnitId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -474,6 +493,7 @@ export type UserCountOrderByAggregateInput = {
   email?: Prisma.SortOrder
   name?: Prisma.SortOrder
   employeeStatus?: Prisma.SortOrder
+  country?: Prisma.SortOrder
   managerId?: Prisma.SortOrder
   departmentId?: Prisma.SortOrder
   businessUnitId?: Prisma.SortOrder
@@ -490,6 +510,7 @@ export type UserMaxOrderByAggregateInput = {
   email?: Prisma.SortOrder
   name?: Prisma.SortOrder
   employeeStatus?: Prisma.SortOrder
+  country?: Prisma.SortOrder
   managerId?: Prisma.SortOrder
   departmentId?: Prisma.SortOrder
   businessUnitId?: Prisma.SortOrder
@@ -506,6 +527,7 @@ export type UserMinOrderByAggregateInput = {
   email?: Prisma.SortOrder
   name?: Prisma.SortOrder
   employeeStatus?: Prisma.SortOrder
+  country?: Prisma.SortOrder
   managerId?: Prisma.SortOrder
   departmentId?: Prisma.SortOrder
   businessUnitId?: Prisma.SortOrder
@@ -630,6 +652,7 @@ export type UserCreateWithoutReportsInput = {
   email: string
   name?: string | null
   employeeStatus?: string
+  country?: string | null
   managerId?: string | null
   departmentId?: string | null
   businessUnitId?: string | null
@@ -649,6 +672,7 @@ export type UserUncheckedCreateWithoutReportsInput = {
   email: string
   name?: string | null
   employeeStatus?: string
+  country?: string | null
   managerId?: string | null
   departmentId?: string | null
   businessUnitId?: string | null
@@ -684,6 +708,7 @@ export type UserUpdateWithoutReportsInput = {
   email?: Prisma.StringFieldUpdateOperationsInput | string
   name?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   employeeStatus?: Prisma.StringFieldUpdateOperationsInput | string
+  country?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   managerId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   departmentId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   businessUnitId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -703,6 +728,7 @@ export type UserUncheckedUpdateWithoutReportsInput = {
   email?: Prisma.StringFieldUpdateOperationsInput | string
   name?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   employeeStatus?: Prisma.StringFieldUpdateOperationsInput | string
+  country?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   managerId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   departmentId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   businessUnitId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -722,6 +748,7 @@ export type UserCreateWithoutExpensesInput = {
   email: string
   name?: string | null
   employeeStatus?: string
+  country?: string | null
   managerId?: string | null
   departmentId?: string | null
   businessUnitId?: string | null
@@ -741,6 +768,7 @@ export type UserUncheckedCreateWithoutExpensesInput = {
   email: string
   name?: string | null
   employeeStatus?: string
+  country?: string | null
   managerId?: string | null
   departmentId?: string | null
   businessUnitId?: string | null
@@ -776,6 +804,7 @@ export type UserUpdateWithoutExpensesInput = {
   email?: Prisma.StringFieldUpdateOperationsInput | string
   name?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   employeeStatus?: Prisma.StringFieldUpdateOperationsInput | string
+  country?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   managerId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   departmentId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   businessUnitId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -795,6 +824,7 @@ export type UserUncheckedUpdateWithoutExpensesInput = {
   email?: Prisma.StringFieldUpdateOperationsInput | string
   name?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   employeeStatus?: Prisma.StringFieldUpdateOperationsInput | string
+  country?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   managerId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   departmentId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   businessUnitId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -814,6 +844,7 @@ export type UserCreateWithoutReceiptsInput = {
   email: string
   name?: string | null
   employeeStatus?: string
+  country?: string | null
   managerId?: string | null
   departmentId?: string | null
   businessUnitId?: string | null
@@ -833,6 +864,7 @@ export type UserUncheckedCreateWithoutReceiptsInput = {
   email: string
   name?: string | null
   employeeStatus?: string
+  country?: string | null
   managerId?: string | null
   departmentId?: string | null
   businessUnitId?: string | null
@@ -868,6 +900,7 @@ export type UserUpdateWithoutReceiptsInput = {
   email?: Prisma.StringFieldUpdateOperationsInput | string
   name?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   employeeStatus?: Prisma.StringFieldUpdateOperationsInput | string
+  country?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   managerId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   departmentId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   businessUnitId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -887,6 +920,7 @@ export type UserUncheckedUpdateWithoutReceiptsInput = {
   email?: Prisma.StringFieldUpdateOperationsInput | string
   name?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   employeeStatus?: Prisma.StringFieldUpdateOperationsInput | string
+  country?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   managerId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   departmentId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   businessUnitId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -906,6 +940,7 @@ export type UserCreateWithoutEntityInput = {
   email: string
   name?: string | null
   employeeStatus?: string
+  country?: string | null
   managerId?: string | null
   departmentId?: string | null
   businessUnitId?: string | null
@@ -925,6 +960,7 @@ export type UserUncheckedCreateWithoutEntityInput = {
   email: string
   name?: string | null
   employeeStatus?: string
+  country?: string | null
   managerId?: string | null
   departmentId?: string | null
   businessUnitId?: string | null
@@ -973,6 +1009,7 @@ export type UserScalarWhereInput = {
   email?: Prisma.StringFilter<"User"> | string
   name?: Prisma.StringNullableFilter<"User"> | string | null
   employeeStatus?: Prisma.StringFilter<"User"> | string
+  country?: Prisma.StringNullableFilter<"User"> | string | null
   managerId?: Prisma.UuidNullableFilter<"User"> | string | null
   departmentId?: Prisma.UuidNullableFilter<"User"> | string | null
   businessUnitId?: Prisma.UuidNullableFilter<"User"> | string | null
@@ -989,6 +1026,7 @@ export type UserCreateWithoutMileageRatesInput = {
   email: string
   name?: string | null
   employeeStatus?: string
+  country?: string | null
   managerId?: string | null
   departmentId?: string | null
   businessUnitId?: string | null
@@ -1008,6 +1046,7 @@ export type UserUncheckedCreateWithoutMileageRatesInput = {
   email: string
   name?: string | null
   employeeStatus?: string
+  country?: string | null
   managerId?: string | null
   departmentId?: string | null
   businessUnitId?: string | null
@@ -1043,6 +1082,7 @@ export type UserUpdateWithoutMileageRatesInput = {
   email?: Prisma.StringFieldUpdateOperationsInput | string
   name?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   employeeStatus?: Prisma.StringFieldUpdateOperationsInput | string
+  country?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   managerId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   departmentId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   businessUnitId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -1062,6 +1102,7 @@ export type UserUncheckedUpdateWithoutMileageRatesInput = {
   email?: Prisma.StringFieldUpdateOperationsInput | string
   name?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   employeeStatus?: Prisma.StringFieldUpdateOperationsInput | string
+  country?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   managerId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   departmentId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   businessUnitId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -1081,6 +1122,7 @@ export type UserCreateManyEntityInput = {
   email: string
   name?: string | null
   employeeStatus?: string
+  country?: string | null
   managerId?: string | null
   departmentId?: string | null
   businessUnitId?: string | null
@@ -1096,6 +1138,7 @@ export type UserUpdateWithoutEntityInput = {
   email?: Prisma.StringFieldUpdateOperationsInput | string
   name?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   employeeStatus?: Prisma.StringFieldUpdateOperationsInput | string
+  country?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   managerId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   departmentId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   businessUnitId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -1115,6 +1158,7 @@ export type UserUncheckedUpdateWithoutEntityInput = {
   email?: Prisma.StringFieldUpdateOperationsInput | string
   name?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   employeeStatus?: Prisma.StringFieldUpdateOperationsInput | string
+  country?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   managerId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   departmentId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   businessUnitId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -1134,6 +1178,7 @@ export type UserUncheckedUpdateManyWithoutEntityInput = {
   email?: Prisma.StringFieldUpdateOperationsInput | string
   name?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   employeeStatus?: Prisma.StringFieldUpdateOperationsInput | string
+  country?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   managerId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   departmentId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   businessUnitId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -1207,6 +1252,7 @@ export type UserSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs = r
   email?: boolean
   name?: boolean
   employeeStatus?: boolean
+  country?: boolean
   managerId?: boolean
   departmentId?: boolean
   businessUnitId?: boolean
@@ -1229,6 +1275,7 @@ export type UserSelectCreateManyAndReturn<ExtArgs extends runtime.Types.Extensio
   email?: boolean
   name?: boolean
   employeeStatus?: boolean
+  country?: boolean
   managerId?: boolean
   departmentId?: boolean
   businessUnitId?: boolean
@@ -1246,6 +1293,7 @@ export type UserSelectUpdateManyAndReturn<ExtArgs extends runtime.Types.Extensio
   email?: boolean
   name?: boolean
   employeeStatus?: boolean
+  country?: boolean
   managerId?: boolean
   departmentId?: boolean
   businessUnitId?: boolean
@@ -1263,6 +1311,7 @@ export type UserSelectScalar = {
   email?: boolean
   name?: boolean
   employeeStatus?: boolean
+  country?: boolean
   managerId?: boolean
   departmentId?: boolean
   businessUnitId?: boolean
@@ -1273,7 +1322,7 @@ export type UserSelectScalar = {
   updatedAt?: boolean
 }
 
-export type UserOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "organizationId" | "email" | "name" | "employeeStatus" | "managerId" | "departmentId" | "businessUnitId" | "legalEntityId" | "jobLevelId" | "deletedAt" | "createdAt" | "updatedAt", ExtArgs["result"]["user"]>
+export type UserOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "organizationId" | "email" | "name" | "employeeStatus" | "country" | "managerId" | "departmentId" | "businessUnitId" | "legalEntityId" | "jobLevelId" | "deletedAt" | "createdAt" | "updatedAt", ExtArgs["result"]["user"]>
 export type UserInclude<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   entity?: boolean | Prisma.User$entityArgs<ExtArgs>
   reports?: boolean | Prisma.User$reportsArgs<ExtArgs>
@@ -1314,6 +1363,11 @@ export type $UserPayload<ExtArgs extends runtime.Types.Extensions.InternalArgs =
      * ExpenseOS's EmployeeStatus enum; text with a CHECK here (ACTIVE, ON_LEAVE, DEACTIVATED).
      */
     employeeStatus: string
+    /**
+     * ISO-3166-1 alpha-2 country code — ExpenseOS's `User.country`, which mileage pricing
+     * reads (w2-10). Backfilled from the person's legal entity (0055).
+     */
+    country: string | null
     managerId: string | null
     departmentId: string | null
     businessUnitId: string | null
@@ -1758,6 +1812,7 @@ export interface UserFieldRefs {
   readonly email: Prisma.FieldRef<"User", 'String'>
   readonly name: Prisma.FieldRef<"User", 'String'>
   readonly employeeStatus: Prisma.FieldRef<"User", 'String'>
+  readonly country: Prisma.FieldRef<"User", 'String'>
   readonly managerId: Prisma.FieldRef<"User", 'String'>
   readonly departmentId: Prisma.FieldRef<"User", 'String'>
   readonly businessUnitId: Prisma.FieldRef<"User", 'String'>

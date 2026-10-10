@@ -8,7 +8,9 @@
  *     rollback takes both sides with it;
  *   · a new expense counts against the plan's yearly expense cap, refused as a
  *     translatable refusal — and reusing a blank expense creates nothing, so counts nothing;
- *   · a mileage line stops at ExpenseOS's own "no country" refusal until w2-10;
+ *   · a mileage line is priced by the traveller's own country (`app_user.country`, 0055,
+ *     w2-10), and stops at ExpenseOS's own "no country" refusal for somebody with none;
+ *     the address lookup answers unavailable with no key configured;
  *   · `explainTax` admits the submitter and an approver with a pending task (VeloExpense's
  *     approval tables, through `callerCanDecideReport`), and nobody else;
  *   · the line writes audit under VeloExpense's names;
@@ -182,8 +184,9 @@ describe('the yearly expense cap', () => {
   });
 });
 
-describe('mileage, until a traveller has a country (w2-10)', () => {
+describe("mileage and the traveller's country (w2-10)", () => {
   it("stops at ExpenseOS's own refusal for a traveller with no country", async () => {
+    // The founder has no legal entity, so 0055 gave them no country.
     const caller = h.makeCaller(RW, ownerId);
     const report = await caller.create({ title: 'Miles', currency: 'CAD' });
     const { id } = await caller.createExpense({ reportId: report.id });
@@ -194,6 +197,50 @@ describe('mileage, until a traveller has a country (w2-10)', () => {
     expect((err as TRPCError).code).toBe('PRECONDITION_FAILED');
     expect((err as TRPCError).message).toMatch(/No country on the traveller/);
     expect(await h.db.expenseLineItem.count({ where: { expenseId: id } })).toBe(0);
+  });
+
+  it('prices the line once the traveller has a country and a rule is in force there', async () => {
+    await h.admin.query(`UPDATE app_user SET country = 'CA' WHERE id = $1`, [ownerId]);
+    try {
+      await h.db.mileageRate.create({
+        data: {
+          country: 'CA',
+          unit: 'KM',
+          effectiveFrom: new Date('2000-01-01'),
+          tiers: { create: [{ fromDistance: '0.00', rateMinor: 70n }] },
+        },
+      });
+      const caller = h.makeCaller(RW, ownerId);
+      const report = await caller.create({ title: 'Miles, priced', currency: 'CAD' });
+      const { id } = await caller.createExpense({ reportId: report.id });
+      // The rate is resolved by the expense's date.
+      await caller.updateExpense({ expenseId: id, date: new Date() });
+      const { id: lineId } = await caller.lineItemCreate({
+        expenseId: id,
+        categoryId: mileageCategoryId,
+        mileageDistance: '42.00',
+        mileageUnit: 'KM',
+      });
+      const line = await h.db.expenseLineItem.findUniqueOrThrow({ where: { id: lineId } });
+      expect(line.amountMinor).toBe(2940n); // 42 km × 70¢
+    } finally {
+      await h.admin.query(`UPDATE app_user SET country = NULL WHERE id = $1`, [ownerId]);
+    }
+  });
+
+  it('answers the address lookup as unavailable with no key, rather than failing', async () => {
+    const { mileageRouteRouter } = await import('@/server/routers/mileageRoute');
+    const route = h.makeCaller(RW, ownerId, mileageRouteRouter);
+    const before = process.env.GOOGLE_PLACES_API_KEY;
+    delete process.env.GOOGLE_PLACES_API_KEY;
+    try {
+      expect(await route.status()).toEqual({ available: false });
+      expect(
+        await route.searchPlaces({ query: '100 King St', sessionToken: '00000000-0000-4000-8000-000000000001' }),
+      ).toEqual({ available: false, items: [], error: null });
+    } finally {
+      if (before !== undefined) process.env.GOOGLE_PLACES_API_KEY = before;
+    }
   });
 });
 

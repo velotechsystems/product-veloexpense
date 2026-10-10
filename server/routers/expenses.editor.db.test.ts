@@ -17,10 +17,10 @@ import { createTenantHarness, type TenantHarness } from '../__test-helpers__/ten
  * mileage category, every call under RLS). One adaptation runs through it: a person
  * carries business unit and department; VeloExpense has no class.
  * w2-11 brings "re-validating a report" (`validate`, on VeloExpense's policy pass) and
- * "blocks submit when a line was lowered under tax entered earlier" (`submit`).
+ * "blocks submit when a line was lowered under tax entered earlier" (`submit`); w2-10 the
+ * `mileagePreview` block, once a traveller has a country.
  * Not ported here, and where they go: the NETSUITE defaults (VeloExpense has no NetSuite
- * position), `mileagePreview` (w2-10, where a traveller gets a country), and "a receipt
- * still being read holds the submit" (extraction, Wave 3).
+ * position), and "a receipt still being read holds the submit" (extraction, Wave 3).
  */
 
 vi.mock('@/auth', () => ({ auth: vi.fn(async () => null) }));
@@ -553,6 +553,246 @@ describe.skipIf(!process.env.DATABASE_URL)('expenses report-editor (integration)
       const withTip = await categories.update({ id: c.id, kind: 'standard-with-tip' });
       expect(withTip).toMatchObject({ isMileage: false, acceptsTip: true });
       await caller.lineItemRemove({ id: lineId });
+    });
+  });
+
+  /**
+   * `mileagePreview` — the live "$ x.xx" beside the distance.
+   *
+   * The property worth defending is that the preview and the WRITE agree. They share
+   * `computeLineFinancials` precisely so they cannot drift, and a preview that
+   * disagrees with what gets saved is worse than none: it is a quoted price the
+   * system then declines to honour.
+   *
+   * Owns every fixture it touches — its own traveller, its own report, and a rule for a
+   * country code nothing else uses — rather than leaning on whichever mileage rates
+   * happen to be seeded.
+   *
+   * That isolation is not fastidiousness. The first version set `country` on the
+   * FIRST user in the table and priced against country 'ZZ'; both are shared, and the
+   * whole DB suite runs concurrently against one database. mileageRule.db.test.ts
+   * opens with `deleteMany({ where: { country: 'ZZ' } })`, so it deleted this block's
+   * rate mid-run and the two files failed each other intermittently depending on
+   * interleaving. A dedicated user and a private country code cost three inserts and
+   * remove the whole class of flake.
+   *
+   * VeloExpense: ported with w2-10, when a traveller got a country (`app_user.country`,
+   * 0055). The traveller is inserted as the superuser (VeloExpense has no first/last name
+   * or role id to copy), the expense is given a date (VeloExpense's blank expense has none,
+   * and a rate is resolved by it), and nothing is cleaned up — the harness's next suite
+   * truncates the tenant.
+   */
+  describe('mileagePreview', () => {
+    /** Distinct from mileageRule.db.test.ts's 'ZZ', which it wholesale deletes. */
+    const COUNTRY = 'QZ';
+    let previewExpenseId: string;
+    let previewReportId: string;
+    let travellerId: string;
+    let mileageCategoryId: string;
+
+    beforeAll(async () => {
+      mileageCategoryId = (
+        await db.expenseCategory.findFirstOrThrow({
+          where: { isMileage: true },
+          select: { id: true },
+        })
+      ).id;
+
+      // A traveller of this block's own, so nothing else's expectations depend on the
+      // country being changed underneath them.
+      travellerId = (
+        await h.admin.query(
+          `INSERT INTO app_user (organization_id, email, display_name, country)
+           VALUES ($1, $2, 'Mileage Preview', $3) RETURNING id`,
+          [h.orgId, `mileage-preview-${Date.now()}@example.invalid`, COUNTRY],
+        )
+      ).rows[0].id;
+
+      // 68¢ per unit, flat — one band, so the arithmetic is checkable by hand while
+      // still going through the real banded pricer.
+      // VeloExpense: its id was kept for ExpenseOS's cleanup, which the harness makes moot.
+      await db.mileageRate.create({
+        data: {
+          country: COUNTRY,
+          unit: 'KM',
+          effectiveFrom: new Date('2000-01-01'),
+          tiers: { create: [{ fromDistance: '0.00', rateMinor: 68n }] },
+        },
+        select: { id: true },
+      });
+
+      const caller = makeCaller(RW, travellerId);
+      previewReportId = (await caller.create({ title: 'Mileage preview', currency: 'CAD' })).id;
+      previewExpenseId = (await caller.createExpense({ reportId: previewReportId })).id;
+      // VeloExpense: the date the rate is resolved by.
+      await caller.updateExpense({ expenseId: previewExpenseId, date: new Date() });
+    });
+
+    it('quotes exactly what the write then stores', async () => {
+      const caller = makeCaller(RW, travellerId);
+      const quote = await caller.mileagePreview({
+        expenseId: previewExpenseId,
+        categoryId: mileageCategoryId,
+        mileageDistance: '25.66',
+        mileageUnit: 'KM',
+      });
+      expect(quote.ok).toBe(true);
+      // 25.66 × 0.68 = 17.4488 → 1745 minor, rounded not truncated.
+      if (!quote.ok) throw new Error('expected a quote');
+      expect(quote.amountMinor).toBe('1745');
+
+      const { id: lineId } = await caller.lineItemCreate({
+        expenseId: previewExpenseId,
+        categoryId: mileageCategoryId,
+        mileageDistance: '25.66',
+        mileageUnit: 'KM',
+      });
+      const written = await db.expenseLineItem.findUniqueOrThrow({ where: { id: lineId } });
+      expect(written.amountMinor.toString()).toBe(quote.amountMinor);
+
+      await caller.lineItemRemove({ id: lineId });
+    });
+
+    it('converts a distance entered in the other unit, exactly as the write does', async () => {
+      const caller = makeCaller(RW, travellerId);
+      const quote = await caller.mileagePreview({
+        expenseId: previewExpenseId,
+        categoryId: mileageCategoryId,
+        mileageDistance: '10',
+        mileageUnit: 'MI',
+      });
+      if (!quote.ok) throw new Error('expected a quote');
+      // 10 mi = 16.09 km at the rule's unit; priced there, not at 10.
+      expect(quote.distance).toBe('16.09');
+      expect(quote.unit).toBe('KM');
+
+      const { id: lineId } = await caller.lineItemCreate({
+        expenseId: previewExpenseId,
+        categoryId: mileageCategoryId,
+        mileageDistance: '10',
+        mileageUnit: 'MI',
+      });
+      const written = await db.expenseLineItem.findUniqueOrThrow({ where: { id: lineId } });
+      expect(written.amountMinor.toString()).toBe(quote.amountMinor);
+      await caller.lineItemRemove({ id: lineId });
+    });
+
+    it('leaves the repriced line out of its own YTD basis', async () => {
+      const caller = makeCaller(RW, travellerId);
+      const { id: lineId } = await caller.lineItemCreate({
+        expenseId: previewExpenseId,
+        categoryId: mileageCategoryId,
+        mileageDistance: '100',
+        mileageUnit: 'KM',
+      });
+
+      // Without the exclusion this line's own 100 km would be in the basis, so the
+      // quote would describe a traveller who had driven 200.
+      const excluded = await caller.mileagePreview({
+        expenseId: previewExpenseId,
+        categoryId: mileageCategoryId,
+        mileageDistance: '100',
+        mileageUnit: 'KM',
+        lineItemId: lineId,
+      });
+      const counted = await caller.mileagePreview({
+        expenseId: previewExpenseId,
+        categoryId: mileageCategoryId,
+        mileageDistance: '100',
+        mileageUnit: 'KM',
+      });
+      if (!excluded.ok || !counted.ok) throw new Error('expected quotes');
+      expect(excluded.ytdBefore).toBe('0.00');
+      expect(counted.ytdBefore).toBe('100.00');
+
+      await caller.lineItemRemove({ id: lineId });
+    });
+
+    it('reports an unpriceable claim as a reason, not an exception', async () => {
+      const caller = makeCaller(RW, travellerId);
+      // The reported bug's precondition: a traveller with no country at all.
+      await h.admin.query('UPDATE app_user SET country = NULL WHERE id = $1', [travellerId]);
+      try {
+        const quote = await caller.mileagePreview({
+          expenseId: previewExpenseId,
+          categoryId: mileageCategoryId,
+          mileageDistance: '25.66',
+          mileageUnit: 'KM',
+        });
+        expect(quote.ok).toBe(false);
+        if (quote.ok) throw new Error('expected a refusal');
+        expect(quote.reason).toMatch(/country/i);
+
+        // The WRITE still throws. Only the preview softens it — a save that quietly
+        // returned "ok: false" would drop the claim on the floor.
+        await expect(
+          caller.lineItemCreate({
+            expenseId: previewExpenseId,
+            categoryId: mileageCategoryId,
+            mileageDistance: '25.66',
+            mileageUnit: 'KM',
+          }),
+        ).rejects.toThrow(/country/i);
+      } finally {
+        await h.admin.query('UPDATE app_user SET country = $2 WHERE id = $1', [
+          travellerId,
+          COUNTRY,
+        ]);
+      }
+    });
+
+    /**
+     * The From/To stops survive editing.
+     *
+     * `computeLineFinancials` writes the whole mileage column set on every write, so a
+     * route it wasn't handed became JsonNull — and the edit row never sent one. Stops
+     * were saved on create and then wiped by the very next distance edit, which is
+     * indistinguishable from never having been stored.
+     */
+    it('keeps the route when an edit never mentions it', async () => {
+      const caller = makeCaller(RW, travellerId);
+      const route = {
+        stops: [
+          { description: '100 King St W, Toronto', placeId: 'place-a' },
+          { description: '1 Yonge St, Toronto', placeId: 'place-b' },
+        ],
+        legs: [{ distance: '4.20' }],
+      };
+      const { id: lineId } = await caller.lineItemCreate({
+        expenseId: previewExpenseId,
+        categoryId: mileageCategoryId,
+        mileageDistance: '4.20',
+        mileageUnit: 'KM',
+        mileageRoute: route,
+      });
+      const created = await db.expenseLineItem.findUniqueOrThrow({ where: { id: lineId } });
+      expect(created.mileageRoute).toEqual(route);
+
+      // The edit the UI actually sends on a distance change: no route mentioned.
+      await caller.lineItemUpdate({ id: lineId, mileageDistance: '9.90', mileageUnit: 'KM' });
+      const after = await db.expenseLineItem.findUniqueOrThrow({ where: { id: lineId } });
+      expect(after.mileageDistance?.toString()).toBe('9.9');
+      expect(after.mileageRoute).toEqual(route);
+
+      // An explicit null is still how the stops get cleared — "absent" and "cleared"
+      // have to stay different, or the last stop could never be removed.
+      await caller.lineItemUpdate({ id: lineId, mileageDistance: '9.90', mileageRoute: null });
+      const cleared = await db.expenseLineItem.findUniqueOrThrow({ where: { id: lineId } });
+      expect(cleared.mileageRoute).toBeNull();
+
+      await caller.lineItemRemove({ id: lineId });
+    });
+
+    it('a stranger gets nothing', async () => {
+      const stranger = makeCaller(RW, strangerId);
+      await expect(
+        stranger.mileagePreview({
+          expenseId: previewExpenseId,
+          categoryId: mileageCategoryId,
+          mileageDistance: '25.66',
+          mileageUnit: 'KM',
+        }),
+      ).rejects.toThrow();
     });
   });
 
