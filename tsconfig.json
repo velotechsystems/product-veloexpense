@@ -34,7 +34,8 @@
       "@expenseos/audit": ["./packages/audit/src/index.ts"],
       "@expenseos/money": ["./packages/money/src/index.ts"],
       "@expenseos/tax": ["./packages/tax/src/index.ts"],
-      "@expenseos/expense-lines": ["./packages/expense-lines/src/index.ts"]
+      "@expenseos/expense-lines": ["./packages/expense-lines/src/index.ts"],
+      "@expenseos/db": ["./packages/db/src/index.ts"]
     }
   },
   "include": [
