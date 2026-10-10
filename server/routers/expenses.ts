@@ -7,9 +7,10 @@
  *   · w2-08b — the expense, line and tax procedures: `createExpense`, `updateExpense`,
  *     `deleteExpense`, `deleteExpenses`, `totalsPreview`, `mileagePreview`,
  *     `lineItemCreate`, `lineItemUpdate`, `lineItemRemove`, `expenseTaxUpdate` and
- *     `explainTax`.
+ *     `explainTax`;
+ *   · w2-08c — the `report` query, with `serializeExpense` and `EXPENSE_DETAIL_INCLUDE`.
  *
- * The rest of ExpenseOS's router (the `report` query, allocation, receipt and statement
+ * The rest of ExpenseOS's router (allocation, receipt and statement
  * procedures, `explainPerDiem`, `submit`, `recall`) arrives with the slices after, in
  * ExpenseOS's order and words.
  *
@@ -20,7 +21,10 @@
  *     tables until Wave 4 ports ExpenseOS's engine (`pendingApproverByReport`);
  *   · a report's number is minted from the organization's sequence, as VeloExpense's own
  *     writer has always done (`mintReportNumber`);
- *   · receipt objects are deleted through VeloExpense's storage (`getStorage`).
+ *   · receipt objects are deleted and signed through VeloExpense's storage (`getStorage`);
+ *   · `report` reads VeloExpense's own policy violations and ledger posting
+ *     (`reportViolations`, `postingStateOf`); there is no NetSuite position, so no coding
+ *     gaps, classes or NetSuite business units, and no receipt has a reading until Wave 3;
  *   · a RETURNED report is editable, as in ExpenseOS (d26);
  *   · a new expense counts against the plan's yearly expense cap, checked on the same
  *     transaction (`assertExpenseAllowance` through `queryRunnerOf`);
@@ -39,6 +43,7 @@ import {
   ExpenseReportStatus,
   ExpenseTaxSource,
   fxColumns,
+  fxOverrideOf,
   fxParamsFrom,
   glAccountIdForCategory,
   Prisma,
@@ -46,7 +51,7 @@ import {
   resolveExpenseFx,
 } from '@expenseos/db';
 import { tipMinorOf, tipPayload, totalTipMinor } from '@expenseos/expense-lines';
-import { getCurrency } from '@expenseos/money';
+import { buildReportRollup, fxRateMapFrom, getCurrency, withFxOverride } from '@expenseos/money';
 import { permissions as P } from '@expenseos/rbac';
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
@@ -56,6 +61,7 @@ import { queryRunnerOf } from '@/lib/db/prisma-pg-bridge';
 import { getStorage } from '@/lib/storage';
 import { currencySymbol } from '@/server/lib/currencySymbol';
 import { explainExpenseTax, resolveExpenseTax } from '@/server/lib/expenseTax';
+import { summarizeExtractionProgress } from '@/server/lib/extractionInFlight';
 import {
   convertScaled,
   distanceToScaled,
@@ -590,6 +596,217 @@ interface MileagePricing {
 
 const scaledToDecimalString = (v: bigint): string =>
   `${v / 100n}.${String(v % 100n).padStart(2, '0')}`;
+
+/**
+ * VeloExpense: ExpenseOS's include, less what VeloExpense does not hold yet —
+ *   · `currency` is keyed by its ISO code and has no symbol column: `code` is read, and
+ *     `serializeExpense` puts back ExpenseOS's `{ id, code, symbol }` (id = the code, the
+ *     symbol from `currencySymbol`);
+ *   · an allocation has no class and no NetSuite business unit (no NetSuite position);
+ *   · a receipt has no `extraction` row until extraction is ported (Wave 3).
+ */
+const EXPENSE_DETAIL_INCLUDE = {
+  currency: { select: { code: true } },
+  lineItems: {
+    orderBy: { createdAt: 'asc' },
+    include: {
+      category: {
+        select: {
+          id: true,
+          label: true,
+          icon: true,
+          color: true,
+          requiresAttendees: true,
+          isMileage: true,
+          // Which line-kind strategy the row offers is decided from this, so the row that
+          // renders a saved line needs it as much as the category picker does.
+          acceptsTip: true,
+        },
+      },
+    },
+  },
+  attendees: {
+    orderBy: { createdAt: 'asc' },
+    select: { id: true, name: true, company: true, isExternal: true },
+  },
+  allocations: {
+    orderBy: { createdAt: 'asc' },
+    include: {
+      businessUnit: { select: { id: true, label: true } },
+      department: { select: { id: true, label: true } },
+    },
+  },
+  receipts: {
+    orderBy: { uploadedAt: 'desc' },
+  },
+} satisfies Prisma.ExpenseInclude;
+
+type ExpenseWithDetail = Prisma.ExpenseGetPayload<{ include: typeof EXPENSE_DETAIL_INCLUDE }>;
+
+/** Serialize an Expense (loaded with EXPENSE_DETAIL_INCLUDE) to the wire shape
+ *  the workbench + inbox panes consume — bigints stringified, receipts signed.
+ *  `pickerNsBusinessUnits` is `pickerNsBusinessUnitIds`' answer for the batch;
+ *  `businessUnitSource` is the switch position the caller already read for the request.
+ *
+ *  VeloExpense: there is no NetSuite position, so neither argument exists — the
+ *  NetSuite-only fields go out as ExpenseOS sends them under EXPENSEOS (null), as do the
+ *  class fields VeloExpense does not have, so the workbench reads the same shape. */
+async function serializeExpense(e: ExpenseWithDetail) {
+  return {
+    id: e.id,
+    merchant: e.merchant,
+    placeText: e.placeText,
+    date: e.date,
+    purpose: e.purpose,
+    explanation: e.explanation,
+    attendees: e.attendees,
+    paymentMethod: e.paymentMethod,
+    amountMinor: e.amountMinor.toString(),
+    subtotalMinor: e.subtotalMinor?.toString() ?? null,
+    // Tax is on the expense now (a receipt = one tax total); recoverable is
+    // engine-derived across the line categories.
+    taxGstHstMinor: e.taxGstHstMinor?.toString() ?? null,
+    taxQstMinor: e.taxQstMinor?.toString() ?? null,
+    taxPstMinor: e.taxPstMinor?.toString() ?? null,
+    recoverableGstHstMinor: e.recoverableGstHstMinor?.toString() ?? null,
+    recoverableQstMinor: e.recoverableQstMinor?.toString() ?? null,
+    taxSource: e.taxSource,
+    taxJurisdictionId: e.taxJurisdictionId,
+    currencyId: e.currencyId,
+    // VeloExpense: ExpenseOS's `{ id, code, symbol }` (see EXPENSE_DETAIL_INCLUDE).
+    currency: { id: e.currency.code, code: e.currency.code, symbol: currencySymbol(e.currency.code) },
+    // Conversion as applied (rule 3). The employee is paid `homeAmountMinor` in
+    // `homeCurrency`; a null rate on a foreign expense means no rate was found,
+    // which the UI has to say out loud rather than showing a converted figure.
+    fxRate: e.fxRate?.toString() ?? null,
+    fxRateSource: e.fxRateSource,
+    homeCurrency: e.homeCurrency,
+    homeAmountMinor: e.homeAmountMinor?.toString() ?? null,
+    // Tax lives on the expense, not the line. But the line's KIND and PAYLOAD have to travel:
+    // a tip is stored in the payload of a STANDARD_WITH_TIP line, and `tipMinorOf` reads both.
+    // Dropping them here is what left the tip field blank on a line the extractor had correctly
+    // filled in — the value was in the database and simply never reached the browser.
+    lineItems: e.lineItems.map((li) => ({
+      id: li.id,
+      categoryId: li.categoryId,
+      category: li.category,
+      kind: li.kind,
+      payload: li.payload,
+      amountMinor: li.amountMinor.toString(),
+      mileageDistance: li.mileageDistance?.toString() ?? null,
+      mileageUnit: li.mileageUnit,
+      mileageYtdBefore: li.mileageYtdBefore?.toString() ?? null,
+      mileageBreakdown: li.mileageBreakdown,
+      mileageRoute: li.mileageRoute,
+      notes: li.notes,
+    })),
+    // Cost allocation across BU/Department/Class (0 = unallocated, 1 = single,
+    // N = split). Labels resolved for display.
+    allocations: e.allocations.map((a) => ({
+      id: a.id,
+      percentBp: a.percentBp,
+      businessUnitId: a.businessUnitId,
+      businessUnit: a.businessUnit,
+      // VeloExpense: always null — ExpenseOS's answer under EXPENSEOS; the lines then name
+      // the admin `businessUnit`, localised on the client exactly as before.
+      nsBusinessUnitLabel: null,
+      // VeloExpense: always null, as under ExpenseOS's EXPENSEOS source.
+      pickerNsBusinessUnitId: null,
+      departmentId: a.departmentId,
+      department: a.department,
+      // VeloExpense: no class.
+      classId: null,
+      class: null,
+    })),
+    receipts: await Promise.all(
+      e.receipts.map(async (r) => ({
+        id: r.id,
+        filename: r.filename,
+        contentType: r.contentType,
+        sizeBytes: r.sizeBytes,
+        uploadedAt: r.uploadedAt,
+        // What the determination decided this document IS (rule 2) — the reason a
+        // reviewer can see why the tip came from one file and the tax from another.
+        kind: r.kind,
+        // VeloExpense: VeloExpense's storage signs an inline view URL at its own TTL
+        // (DOWNLOAD_URL_TTL_SECONDS). ExpenseOS signs for an hour so the workbench can keep
+        // one URL for the session; that choice is made with the receipts port (w2-09).
+        url: await getStorage().presignDownload(r.s3Key),
+        // VeloExpense: no reading until extraction is ported (Wave 3).
+        extraction: null,
+      })),
+    ),
+  };
+}
+
+/**
+ * VeloExpense: the report's policy violations, in ExpenseOS's `PolicyViolation` shape —
+ * what ExpenseOS loads with `include: { violations: true }`.
+ *
+ * VeloExpense's `policy_violation` is its own engine's table until the policy port: it
+ * anchors a finding to the report or to a line, not to an expense, so `expenseId` is the
+ * line's expense (null for a report-level finding) — what the workbench groups by.
+ * `resolvedBy` is VeloExpense's `resolved_by_id`. Parameterised; under the caller's RLS.
+ */
+async function reportViolations(db: TenantDb, reportId: string) {
+  return db.$queryRaw<
+    Array<{
+      id: string;
+      reportId: string;
+      expenseId: string | null;
+      lineItemId: string | null;
+      ruleCode: string;
+      severity: 'INFO' | 'WARNING' | 'BLOCK';
+      message: string;
+      data: unknown;
+      resolvedAt: Date | null;
+      resolvedBy: string | null;
+      resolveNote: string | null;
+      createdAt: Date;
+    }>
+  >`
+    SELECT v.id, v.report_id AS "reportId", li.expense_id AS "expenseId",
+           v.line_item_id AS "lineItemId", v.rule_code AS "ruleCode",
+           v.severity::text AS severity, v.message, v.data,
+           v.resolved_at AS "resolvedAt", v.resolved_by_id AS "resolvedBy",
+           v.resolve_note AS "resolveNote", v.created_at AS "createdAt"
+      FROM policy_violation v
+      LEFT JOIN expense_line_item li ON li.id = v.line_item_id
+     WHERE v.report_id = ${reportId}::uuid
+     ORDER BY v.created_at, v.id`;
+}
+
+/**
+ * VeloExpense: the report's ledger-posting state — what ExpenseOS's `netsuiteState`
+ * answers off its NetSuite sync row, read off VeloExpense's vendor-neutral
+ * `integration_post`, in the vocabulary of `POSTED_SYNC_STATUSES` (a claimed PENDING row
+ * is PROCESSING). Null when nothing was ever queued. ExpenseOS's `payStatus`, `warnings`
+ * and deep link are NetSuite's and have no VeloExpense source.
+ */
+async function postingStateOf(db: TenantDb, reportId: string) {
+  const rows = await db.$queryRaw<
+    Array<{
+      status: string;
+      claimed: boolean;
+      attempts: number;
+      lastError: string | null;
+      externalId: string | null;
+      postedAt: Date | null;
+    }>
+  >`
+    SELECT status, claimed_at IS NOT NULL AS claimed, attempts, last_error AS "lastError",
+           external_id AS "externalId", posted_at AS "postedAt"
+      FROM integration_post WHERE report_id = ${reportId}::uuid`;
+  const row = rows[0];
+  if (!row) return null;
+  return {
+    status: row.status === 'PENDING' && row.claimed ? 'PROCESSING' : row.status,
+    attempts: row.attempts,
+    lastError: row.lastError,
+    externalId: row.externalId,
+    postedAt: row.postedAt,
+  };
+}
 
 /**
  * The filer's default coding for expenses about to be created, and the business unit
@@ -1205,6 +1422,232 @@ export const expensesRouter = router({
           itcGstHstRate: l.category.itcGstHstRate,
           itcQstRate: l.category.itcQstRate,
         })),
+      };
+    }),
+
+  report: protectedProcedure
+    .input(z.object({ reportId: z.string().uuid() }))
+    .query(async ({ ctx, input }) => {
+      const report = await ctx.db.expenseReport.findUnique({
+        where: { id: input.reportId },
+        include: {
+          // VeloExpense: keyed by its ISO code; the symbol is `currencySymbol`'s (below).
+          currency: { select: { code: true } },
+          // VeloExpense: violations, external ids and the posting state are read below —
+          // VeloExpense's own tables, not relations of this model.
+          // The submitter's entity settles two questions the whole report is
+          // rendered against: what currency they are paid in, and whether an
+          // input tax credit arises at all (rules 3 and 6).
+          submitter: {
+            select: {
+              entity: {
+                // VeloExpense: the home currency's code is the column itself.
+                select: { homeCurrencyId: true, itcRecoverable: true },
+              },
+            },
+          },
+          expenses: { orderBy: { createdAt: 'asc' }, include: EXPENSE_DETAIL_INCLUDE },
+        },
+      });
+      // A non-owner without one of the four ways in sees NOT_FOUND.
+      if (!report || !(await callerCanReadReport(ctx, report))) {
+        throw new TRPCError({ code: 'NOT_FOUND' });
+      }
+
+      // Confidence threshold below which an extraction is flagged for human
+      // verification in the FE (Platform Settings; default 0.7).
+      // VeloExpense: no platform setting yet — ExpenseOS's default, until extraction (Wave 3).
+      const [fxRows, readerCurrency, violations, posting] = await Promise.all([
+        ctx.db.fxRate.findMany({ orderBy: { fetchedAt: 'desc' } }),
+        // Folded into the same Promise.all so reading it costs no extra round trip.
+        readerCurrencyCode(ctx.db, ctx.session.user.id),
+        reportViolations(ctx.db, report.id),
+        postingStateOf(ctx.db, report.id),
+      ]);
+      const extractionReviewThreshold = 0.7;
+
+      // Live FX/VAT preview: converts every expense into the report's currency
+      // (the stored totalMinor is this same home total), rolls up recoverable
+      // VAT/ITC, and surfaces the per-currency breakdown + any missing rates.
+      const rollup = buildReportRollup(
+        report.currency.code,
+        report.expenses.map((e) => ({
+          amountMinor: e.amountMinor,
+          currencyCode: e.currency.code,
+          recoverableGstHstMinor: e.recoverableGstHstMinor,
+          recoverableQstMinor: e.recoverableQstMinor,
+          fxRate: e.fxRate,
+          fxHomeCurrency: e.homeCurrency,
+        })),
+        withFxOverride(fxRateMapFrom(fxRows), report.currency.code, fxOverrideOf(report)),
+      );
+
+      /**
+       * The SAME report total, also expressed in the reader's own currency (GA readiness
+       * report F52): "read a historical USD report in CAD".
+       *
+       * A SECOND ROLL-UP at the reader's currency — not one rate over the answer.
+       *
+       * It was the other way round, and the reasoning was exactly inverted. The old
+       * comment argued a second roll-up "would discard every expense's SNAPSHOTTED
+       * fxRate". It is the single conversion that discards them: it takes a total already
+       * rolled into the REPORT's currency and re-values it at today's table. Rolling up at
+       * the reader's currency is what HONOURS a snapshot, because `buildReportRollup`
+       * prefers one whenever its home currency matches the currency being rolled into.
+       *
+       * The cost of getting it backwards, from the GA v2 audit (GA-3): one expense of
+       * USD 125.50 read as CAD 174.29 in the header and CAD 174.14 on the only line
+       * composing it. Two rates for one amount on one date — 15 cents here, and it scales
+       * with the amount.
+       *
+       * A filed claim is worth what it was worth when it was incurred. Re-valuing it daily
+       * means an approved report's total moves on its own, and an employee reconciling a
+       * reimbursement line by line never ties out.
+       *
+       * The old note's second worry stands and is answered rather than dismissed:
+       * `missingRates` IS computed against the target, so a report with a line this
+       * currency cannot reach would exclude a different set. That is why `excluded` is
+       * returned alongside — the toggle discloses what it left out instead of quietly
+       * showing a smaller number.
+       *
+       * `null` when nothing could be valued at all: the toggle is then not offered,
+       * rather than offered and wrong.
+       */
+      const viewInReaderCurrency =
+        readerCurrency === report.currency.code
+          ? null
+          : (() => {
+              try {
+                const readerRollup = buildReportRollup(
+                  readerCurrency,
+                  report.expenses.map((e) => ({
+                    amountMinor: e.amountMinor,
+                    currencyCode: e.currency.code,
+                    recoverableGstHstMinor: e.recoverableGstHstMinor,
+                    recoverableQstMinor: e.recoverableQstMinor,
+                    fxRate: e.fxRate,
+                    fxHomeCurrency: e.homeCurrency,
+                  })),
+                  withFxOverride(fxRateMapFrom(fxRows), readerCurrency, fxOverrideOf(report)),
+                );
+                // Nothing convertible at all — every line excluded — is not a total of
+                // zero, it is no answer. Offering "CAD 0.00" would be a lie with a
+                // currency symbol on it.
+                if (readerRollup.missingRates.length === report.expenses.length) return null;
+                return {
+                  currency: readerCurrency,
+                  totalMinor: readerRollup.homeTotalMinor,
+                  /**
+                   * No single rate is disclosed any more, and that is honest: the total is
+                   * the sum of per-expense conversions, each at the rate ITS claim was
+                   * filed at. One number here would name a rate that produced only part of
+                   * the figure. A single-currency report still has exactly one, so the
+                   * common case loses nothing.
+                   */
+                  rate:
+                    readerRollup.byCurrency.length === 1
+                      ? (readerRollup.byCurrency[0].rate ?? null)
+                      : null,
+                  /** Lines this currency cannot value, disclosed rather than dropped. */
+                  excluded: readerRollup.missingRates.length,
+                };
+              } catch {
+                // An unknown ISO code. Not offered rather than offered and wrong.
+                return null;
+              }
+            })();
+
+      // VeloExpense: no NetSuite position, so no business unit source to read and no picker
+      // pre-select to resolve (see `serializeExpense`).
+      const expenses = await Promise.all(report.expenses.map((e) => serializeExpense(e)));
+
+      /**
+       * Which expenses NetSuite would refuse, told to the screen BEFORE the press.
+       *
+       * VeloExpense: ExpenseOS's answer where NetSuite is not installed — nothing is
+       * required, so nothing is uncoded, and no category is checked (`codingGaps` and
+       * `categoryGaps` both switch off on an absent integration). VeloExpense posts through
+       * its own integrations, which have no required-dimension rule to surface here.
+       */
+      const coding = {
+        required: [] as string[],
+        missing: [] as string[],
+        uncodedExpenseIds: [] as string[],
+        categoryProblems: [] as Array<{
+          categoryId: string;
+          categoryLabel: string;
+          kind: string;
+          count?: number;
+          expenseIds: string[];
+        }>,
+        categoryAffectedExpenseIds: [] as string[],
+      };
+
+      /**
+       * Receipts still being read, told to the screen BEFORE the press — the same rule
+       * `submit` refuses on, read from the extraction rows this query already loaded. The
+       * workbench disables Submit on `inFlight` and discloses `stale`: a reading the worker
+       * abandoned no longer holds the report, but its amounts were never read.
+       */
+      // VeloExpense: no receipt has a reading until extraction is ported (Wave 3).
+      const extraction = summarizeExtractionProgress(
+        report.expenses.flatMap((e) => e.receipts.map(() => null)),
+      );
+
+      return {
+        id: report.id,
+        number: report.number,
+        title: report.title,
+        purpose: report.purpose,
+        status: report.status,
+        totalMinor: report.totalMinor.toString(),
+        // VeloExpense: ExpenseOS's `{ code, symbol }`.
+        currency: { code: report.currency.code, symbol: currencySymbol(report.currency.code) },
+        rollup,
+        /**
+         * Coding gaps NetSuite would reject. `required` is empty when it is not installed.
+         * `categoryProblems` / `categoryAffectedExpenseIds` are the category rule's; the
+         * affected ids are never in `uncodedExpenseIds`, which stays dimensions-only.
+         */
+        coding,
+        /** Receipts still being read (hold the submit) and readings the worker abandoned. */
+        extraction,
+        /** The same total in the reader's own currency, or null when no rate connects them. */
+        viewInReaderCurrency,
+        // The submitter's entity, as the UI needs it. `itcRecoverable: false`
+        // (a US entity, or any non-registrant) means every recoverable figure is
+        // $0.00 by definition, so the UI hides the whole notion rather than
+        // showing a column of zeros (rule 6).
+        entity: {
+          // VeloExpense: ExpenseOS's `{ code }`, from the code column.
+          homeCurrency: report.submitter.entity?.homeCurrencyId
+            ? { code: report.submitter.entity.homeCurrencyId }
+            : null,
+          itcRecoverable: report.submitter.entity?.itcRecoverable ?? true,
+        },
+        // VeloExpense: `posting` (VeloExpense's integration_post) where ExpenseOS has
+        // `netsuite` — see `postingStateOf`.
+        posting,
+        // AP FX override (A4) — surfaced so the workbench can show/edit it.
+        fxOverride: report.fxRateOverride
+          ? {
+              rate: report.fxRateOverride.toString(),
+              fromCurrency: report.fxRateOverrideCurrency,
+              at: report.fxRateOverrideAt,
+              byId: report.fxRateOverrideById,
+            }
+          : null,
+        submittedAt: report.submittedAt,
+        createdAt: report.createdAt,
+        updatedAt: report.updatedAt,
+        violations,
+        // External ids stamped by integrations (e.g. NetSuite) — shown by the
+        // header when present.
+        // VeloExpense: a report carries none — an integration's id for it is the posting
+        // row's `externalId` (`posting` above).
+        externalIds: [] as Array<{ source: string; sourceLabel: unknown; value: string }>,
+        extractionReviewThreshold,
+        expenses,
       };
     }),
 

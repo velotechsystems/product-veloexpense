@@ -12,17 +12,15 @@ import { createTenantHarness, type TenantHarness } from '../__test-helpers__/ten
  * Redis RBAC resolver are bypassed because we inject `ctx` directly.
  *
  * VeloExpense: ExpenseOS's `expenses.editor.db.test.ts`, for the procedures ported in
- * w2-08b. The cases are ExpenseOS's; the harness is VeloExpense's (`createTenantHarness`:
- * the suite's own tenant, people, category and mileage category, every call under RLS).
- * Two adaptations run through it:
- *   · the report detail is read with `readDetail` — the same fields `report` returns, off
- *     the rows — until `report` itself is ported (w2-08c), which puts `caller.report`
- *     back in every place `readDetail` stands;
- *   · a person carries business unit and department; VeloExpense has no class.
+ * w2-08b and the report detail (`report`, w2-08c). The cases are ExpenseOS's; the harness
+ * is VeloExpense's (`createTenantHarness`: the suite's own tenant, people, categories and
+ * mileage category, every call under RLS). One adaptation runs through it: a person
+ * carries business unit and department; VeloExpense has no class.
  * Not ported here, and where they go: "re-validating a report" (`validate`, with the
  * policy port), the NETSUITE defaults (VeloExpense has no NetSuite position),
- * `mileagePreview` (w2-10, where a traveller gets a country), "a tip survives the trip to
- * the browser" (`report`, w2-08c), and the two submit cases (`submit`, w2-11).
+ * `mileagePreview` (w2-10, where a traveller gets a country), the two submit cases
+ * (`submit`, w2-11), and "a receipt still being read holds the submit" (extraction, Wave 3,
+ * with `submit`).
  */
 
 vi.mock('@/auth', () => ({ auth: vi.fn(async () => null) }));
@@ -45,36 +43,6 @@ describe.skipIf(!process.env.DATABASE_URL)('expenses report-editor (integration)
   let reportId: string;
   let expenseId: string;
 
-  /**
-   * VeloExpense: what `report` returns for these assertions — status, total, and each
-   * expense's id, amount, merchant, payment method and lines — read off the rows, with
-   * ExpenseOS's wire shape (amounts as strings). Replaced by `caller.report` in w2-08c.
-   */
-  const readDetail = async (id: string) => {
-    const r = await db.expenseReport.findUniqueOrThrow({
-      where: { id },
-      select: {
-        status: true,
-        totalMinor: true,
-        expenses: {
-          orderBy: { createdAt: 'asc' },
-          select: {
-            id: true,
-            amountMinor: true,
-            merchant: true,
-            paymentMethod: true,
-            lineItems: { orderBy: { createdAt: 'asc' }, select: { id: true } },
-          },
-        },
-      },
-    });
-    return {
-      status: r.status,
-      totalMinor: r.totalMinor.toString(),
-      expenses: r.expenses.map((e: any) => ({ ...e, amountMinor: e.amountMinor.toString() })),
-    };
-  };
-
   beforeAll(async () => {
     h = await createTenantHarness({
       slug: 'expenses-editor',
@@ -92,6 +60,12 @@ describe.skipIf(!process.env.DATABASE_URL)('expenses report-editor (integration)
       data: { label: { en: 'Editor mileage' }, isMileage: true },
       select: { id: true },
     });
+    // VeloExpense: a tip-accepting category, so "a tip survives" runs rather than returning
+    // early as ExpenseOS's does where none is seeded.
+    await db.expenseCategory.create({
+      data: { label: { en: 'Editor tipped meals' }, acceptsTip: true },
+      select: { id: true },
+    });
   });
 
   afterAll(async () => {
@@ -104,7 +78,6 @@ describe.skipIf(!process.env.DATABASE_URL)('expenses report-editor (integration)
   // upload) and expenses are added to it. This file still called the old signature,
   // so every test in it failed — invisibly, because CI has no DATABASE_URL and skips
   // the whole block.
-  // VeloExpense: the report detail is read with `detail` until `report` is ported (w2-08c).
   it('createExpense adds an expense to a report; report detail returns the tree', async () => {
     const caller = makeCaller(RW, ownerId);
     const report = await caller.create({ title: 'Editor integration', currency: 'CAD' });
@@ -113,7 +86,7 @@ describe.skipIf(!process.env.DATABASE_URL)('expenses report-editor (integration)
     expenseId = id;
     expect(expenseId).toBeTruthy();
 
-    const detail = await readDetail(reportId);
+    const detail = await caller.report({ reportId });
     expect(detail.status).toBe('DRAFT');
     expect(detail.totalMinor).toBe('0');
     expect(detail.expenses).toHaveLength(1);
@@ -236,7 +209,7 @@ describe.skipIf(!process.env.DATABASE_URL)('expenses report-editor (integration)
     await caller.lineItemCreate({ expenseId, categoryId, amountMinor: '8040' });
     await caller.lineItemCreate({ expenseId, categoryId, amountMinor: '1960' });
 
-    const detail = await readDetail(reportId);
+    const detail = await caller.report({ reportId });
     const exp = detail.expenses[0];
     expect(exp.lineItems).toHaveLength(2);
     expect(exp.amountMinor).toBe('10000'); // 8040 + 1960
@@ -329,16 +302,16 @@ describe.skipIf(!process.env.DATABASE_URL)('expenses report-editor (integration)
 
   it('lineItemUpdate + lineItemRemove recompute the totals', async () => {
     const caller = makeCaller(RW, ownerId);
-    const detail = await readDetail(reportId);
+    const detail = await caller.report({ reportId });
     const [first, second] = detail.expenses[0].lineItems;
 
     await caller.lineItemUpdate({ id: first.id, amountMinor: '5000' });
-    let d = await readDetail(reportId);
+    let d = await caller.report({ reportId });
     expect(d.expenses[0].amountMinor).toBe('6960'); // 5000 + 1960
     expect(d.totalMinor).toBe('6960');
 
     await caller.lineItemRemove({ id: second.id });
-    d = await readDetail(reportId);
+    d = await caller.report({ reportId });
     expect(d.expenses[0].lineItems).toHaveLength(1);
     expect(d.expenses[0].amountMinor).toBe('5000');
     expect(d.totalMinor).toBe('5000');
@@ -351,7 +324,7 @@ describe.skipIf(!process.env.DATABASE_URL)('expenses report-editor (integration)
       merchant: 'Adobe',
       paymentMethod: 'OUT_OF_POCKET',
     });
-    const d = await readDetail(reportId);
+    const d = await caller.report({ reportId });
     expect(d.expenses[0].merchant).toBe('Adobe');
     expect(d.expenses[0].paymentMethod).toBe('OUT_OF_POCKET');
     expect(d.expenses[0].amountMinor).toBe('5000'); // unchanged by header edit
@@ -413,9 +386,9 @@ describe.skipIf(!process.env.DATABASE_URL)('expenses report-editor (integration)
     });
   });
 
-  // VeloExpense: the "read" half (`stranger.report`) arrives with `report` (w2-08c).
   it('a stranger cannot read or edit the report', async () => {
     const stranger = makeCaller(RW, strangerId);
+    await expect(stranger.report({ reportId })).rejects.toThrow();
     await expect(stranger.updateExpense({ expenseId, merchant: 'evil' })).rejects.toThrow();
     await expect(
       stranger.lineItemCreate({ expenseId, categoryId, amountMinor: '1' }),
@@ -425,7 +398,7 @@ describe.skipIf(!process.env.DATABASE_URL)('expenses report-editor (integration)
   it('deleteExpense removes the entry and recomputes the report total', async () => {
     const caller = makeCaller(RW, ownerId);
     await caller.deleteExpense({ expenseId });
-    const d = await readDetail(reportId);
+    const d = await caller.report({ reportId });
     expect(d.expenses).toHaveLength(0);
     expect(d.totalMinor).toBe('0');
   });
@@ -540,6 +513,46 @@ describe.skipIf(!process.env.DATABASE_URL)('expenses report-editor (integration)
       const withTip = await categories.update({ id: c.id, kind: 'standard-with-tip' });
       expect(withTip).toMatchObject({ isMileage: false, acceptsTip: true });
       await caller.lineItemRemove({ id: lineId });
+    });
+  });
+
+  describe('a tip survives the trip to the browser', () => {
+    it('carries kind, payload and acceptsTip in the report detail', async () => {
+      // The bug this pins: the worker wrote an extracted tip correctly into a
+      // STANDARD_WITH_TIP line's payload, and the report-detail mapping dropped both `kind` and
+      // `payload` — "line items are category + amount only". `tipMinorOf` reads exactly those
+      // two, so the tip field rendered blank on a line the extractor had filled in. The value
+      // was in the database the whole time and simply never reached the browser.
+      //
+      // A component test cannot catch this: it supplies its own line fixture, so it passes
+      // whatever the router does. This asserts the wire.
+      const caller = makeCaller(RW, ownerId);
+      const report = await caller.create({ title: 'Tip on the wire', currency: 'CAD' });
+      const { id: expenseIdLocal } = await caller.createExpense({ reportId: report.id });
+
+      const tipCategory = await db.expenseCategory.findFirst({
+        where: { acceptsTip: true, active: true },
+        select: { id: true },
+      });
+      if (!tipCategory) return; // no tip-accepting category seeded in this environment
+
+      await caller.lineItemCreate({
+        expenseId: expenseIdLocal,
+        categoryId: tipCategory.id,
+        amountMinor: '5000',
+        tipMinor: '750',
+      });
+
+      const detail = await caller.report({ reportId: report.id });
+      const line = detail.expenses.find((e: any) => e.id === expenseIdLocal)?.lineItems[0];
+      expect(line.kind).toBe('STANDARD_WITH_TIP');
+      // What tipMinorOf parses. Asserting the shape, not just presence: a payload that arrives
+      // without `tipMinor` reads as no tip at all, which is the same blank field.
+      expect(line.payload).toMatchObject({ tipMinor: '750' });
+      // The row decides which line-kind strategy to offer from this.
+      expect(line.category.acceptsTip).toBe(true);
+
+      await db.expenseReport.delete({ where: { id: report.id } }).catch(() => {});
     });
   });
 

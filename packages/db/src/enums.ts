@@ -49,3 +49,23 @@ export const ReceiptKind = {
   OTHER: 'OTHER',
 } as const;
 export type ReceiptKind = (typeof ReceiptKind)[keyof typeof ReceiptKind];
+
+// VeloExpense: ExpenseOS's receipt-reading lifecycle (its `DocumentExtraction` row). No
+// VeloExpense table carries these until extraction is ported (Wave 3); the values exist now
+// so the ported code that classifies a reading (`extractionInFlight`) types against them.
+export const DocScanStatus = {
+  PENDING: 'PENDING',
+  SCANNING: 'SCANNING',
+  CLEAN: 'CLEAN',
+  INFECTED: 'INFECTED',
+  FAILED: 'FAILED',
+} as const;
+export type DocScanStatus = (typeof DocScanStatus)[keyof typeof DocScanStatus];
+
+export const DocExtractStatus = {
+  PENDING: 'PENDING',
+  EXTRACTING: 'EXTRACTING',
+  EXTRACTED: 'EXTRACTED',
+  FAILED: 'FAILED',
+} as const;
+export type DocExtractStatus = (typeof DocExtractStatus)[keyof typeof DocExtractStatus];

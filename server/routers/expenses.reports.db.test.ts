@@ -17,10 +17,9 @@ import { makeContext } from '../__test-helpers__/trpcCaller';
  * Storage is mocked (no MinIO), and gated on DATABASE_URL like every `*.db.test.ts`.
  *
  * VeloExpense: ExpenseOS's `expenses.reports.db.test.ts`, the blocks for the procedures
- * ported in w2-07 (`list`, `create`, `deleteReport`). The rest of the file arrives with
- * the procedures it tests:
- *   · the three `report`-view cases inside "listing my reports" (`viewInReaderCurrency`)
- *     with `report` (w2-08);
+ * ported in w2-07 (`list`, `create`, `deleteReport`) and the three `report`-view cases
+ * inside "listing my reports" (`viewInReaderCurrency`, w2-08c). The rest of the file
+ * arrives with the procedures it tests:
  *   · "allocating an expense across dimensions" with `allocationSet` (w2-03);
  *   · the NETSUITE blocks are not ported: VeloExpense has no NetSuite and always runs in
  *     ExpenseOS's `EXPENSEOS` business unit position, which the blocks above cover.
@@ -235,6 +234,120 @@ describe.skipIf(!process.env.DATABASE_URL)('expense reports (integration)', () =
       // The client calls it bare on first paint.
       await makeReport();
       await expect(inOrg(() => makeCaller(RW, ownerId).list())).resolves.toBeInstanceOf(Array);
+    });
+
+    it('offers the report’s total in the READER’s currency, at a disclosed rate', async () => {
+      /**
+       * F52: the audit looked for a way to read a historical USD report in CAD and found
+       * only the FX override, which converts foreign LINES into the report's currency — the
+       * opposite direction.
+       *
+       * ONE RATE over the already-correct roll-up, not a second roll-up at the reader's
+       * currency: a second one would discard every expense's snapshotted `fxRate` and
+       * silently re-value a filed claim at today's rates, and it would recompute
+       * `missingRates` against the target so a DISPLAY toggle could change which lines count.
+       */
+      // VeloExpense: the reader's currency is their entity's, else CAD (`readerCurrencyCode`);
+      // a person carries no currency of their own, and a currency is keyed by its code.
+      const { readerCurrencyCode } = await import('@/server/lib/readerCurrency');
+      const readerCode = await inOrg(() => readerCurrencyCode(db, ownerId));
+      const foreign = await inOrg(() =>
+        db.currency.findFirstOrThrow({
+          where: { code: { not: readerCode } },
+          select: { code: true },
+        }),
+      );
+      const r = await makeReport({ currencyId: foreign.code }, 1);
+      const out = await inOrg(() => makeCaller(RW, ownerId).report({ reportId: r.id }));
+
+      // Either a converted view with the rate that produced it, or null — never a figure
+      // without the rate behind it, which would be a guess presented as an answer.
+      if (out.viewInReaderCurrency !== null) {
+        expect(out.viewInReaderCurrency.currency).toBe(readerCode);
+        expect(typeof out.viewInReaderCurrency.totalMinor).toBe('string');
+      }
+    });
+
+    it('values the report at the rate its expense was FILED at, not today’s', async () => {
+      /**
+       * GA audit v2, GA-3. One expense, one date, two answers:
+       *
+       *     Report header, toggled to CAD   CAD 174.29
+       *     The one line composing it       CAD 174.14
+       *
+       * Source USD 125.50 in both views. Not rounding — rounding one amount at one rate
+       * cannot produce two figures. The line showed the rate the expense was FILED at,
+       * snapshotted on the row; the header converted the rolled-up total at whatever the
+       * FX table says today.
+       *
+       * The snapshot is authoritative. A claim's value in another currency is what it was
+       * worth when incurred — otherwise an approved report's total moves daily and an
+       * employee reconciling a reimbursement line by line never ties out.
+       */
+      // VeloExpense: a currency is keyed by its code, so its "id" is the code; the reader's
+      // currency is their entity's, so the owner is given a CAD entity.
+      const usd = { id: 'USD' };
+      const cad = { id: 'CAD' };
+      await inOrg(async () => {
+        const entity = await db.legalEntity.create({
+          data: { label: { en: 'Reports CA' }, country: 'CA', homeCurrencyId: cad.id },
+          select: { id: true },
+        });
+        await db.user.update({ where: { id: ownerId }, data: { legalEntityId: entity.id } });
+      });
+
+      // Today's table says one thing…
+      await inOrg(() => db.fxRate.deleteMany({ where: { base: 'USD', quote: 'CAD' } }));
+      await inOrg(() =>
+        db.fxRate.create({
+          data: { base: 'USD', quote: 'CAD', rate: '1.38876', fetchedAt: new Date() },
+        }),
+      );
+
+      const r = await inOrg(() => db.expenseReport.create({
+        data: {
+          title: 'filed-rate report',
+          currencyId: usd.id,
+          submitterId: ownerId,
+          expenses: {
+            // …and the expense was filed at another.
+            create: [
+              {
+                ownerId,
+                currencyId: usd.id,
+                date: new Date('2026-08-27T12:00:00Z'),
+                amountMinor: 12_550n,
+                merchant: 'Core Flow',
+                fxRate: '1.38757',
+                homeCurrency: 'CAD',
+              },
+            ],
+          },
+        },
+        select: { id: true },
+      }));
+
+      const out = await inOrg(() => makeCaller(RW, ownerId).report({ reportId: r.id }));
+      expect(out.viewInReaderCurrency).not.toBeNull();
+      // 12550 × 1.38757 = 17414, which is what the LINE shows.
+      // Today's rate would give 17429 — the header's figure, and the defect.
+      expect(out.viewInReaderCurrency?.totalMinor).toBe('17414');
+    });
+
+    it('offers NOTHING when the reader’s currency IS the report’s', async () => {
+      // A toggle between a currency and itself is noise.
+      // VeloExpense: as above — `readerCurrencyCode`, and the code is the key.
+      const { readerCurrencyCode } = await import('@/server/lib/readerCurrency');
+      const readerCode = await inOrg(() => readerCurrencyCode(db, ownerId));
+      const same = await inOrg(() =>
+        db.currency.findFirstOrThrow({
+          where: { code: readerCode },
+          select: { code: true },
+        }),
+      );
+      const r = await makeReport({ currencyId: same.code }, 1);
+      const out = await inOrg(() => makeCaller(RW, ownerId).report({ reportId: r.id }));
+      expect(out.viewInReaderCurrency).toBeNull();
     });
 
     it('converts each total into the reader’s own currency', async () => {

@@ -9,6 +9,8 @@
  */
 export { Prisma, type PrismaClient } from '@/lib/generated/prisma/client';
 export {
+  DocExtractStatus,
+  DocScanStatus,
   ExpenseLineKind,
   ExpensePaymentMethod,
   ExpenseReportStatus,

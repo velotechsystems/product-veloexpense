@@ -25,9 +25,9 @@ import { makeContext } from '../__test-helpers__/trpcCaller';
  * VeloExpense: ExpenseOS's `expenses.guards.test.ts`, for the procedures ported so far
  * (w2-07: `list`, `categories`, `currencies`, `deleteReport`, `updateReport`; w2-08b: the
  * expense, line and tax procedures — the ownership, editability, manual-tax and input
- * blocks). Each later slice brings the blocks for the procedures it ports — the receipt,
- * submit, read-access, justification and recall blocks — and the mocks they need
- * (approvals, jobs, policy, storage). The harness below is ExpenseOS's, less those mocks;
+ * blocks; w2-08c: `report` — the read-access block, with the approvals mock). Each later
+ * slice brings the blocks for the procedures it ports — the receipt, submit,
+ * justification and recall blocks — and the mocks they need (jobs, policy, storage). The harness below is ExpenseOS's, less those mocks;
  * `@/auth` is VeloExpense's session module.
  */
 
@@ -46,6 +46,9 @@ vi.mock('@expenseos/audit', async () => {
 });
 vi.mock('@/auth', () => ({ auth: stubFn(async () => null) }));
 vi.mock('@/lib/tenant/request', () => ({ hostTenantSlug: async () => null }));
+
+const callerCanDecideReport = stubFn(async () => false);
+vi.mock('@/server/lib/reportApproval', () => ({ callerCanDecideReport }));
 
 const U = (n: string) => `00000000-0000-7000-8000-00000000000${n}`;
 const ME = U('9');
@@ -138,6 +141,8 @@ function makeDb(over: Record<string, unknown> = {}) {
     approvalInstance: { update: stubFn(async () => ({ id: 'inst-1' })) },
     integration: { findUnique: stubFn(async () => null as unknown) },
     virtualCardTransaction: { findMany: stubFn(async () => [] as unknown[]) },
+    // VeloExpense: `report` reads the violations and the posting row with tagged raw SQL.
+    $queryRaw: stubFn(async () => [] as unknown[]),
     $transaction: vi.fn(async (fn: unknown) =>
       typeof fn === 'function' ? (fn as (tx: unknown) => unknown)(over.self ?? undefined) : fn,
     ),
@@ -176,6 +181,7 @@ const READ = [P.expense.report.readOwn] as const;
 beforeEach(() => {
   vi.clearAllMocks();
   withAuditCalls.length = 0;
+  callerCanDecideReport.mockResolvedValue(false);
 });
 
 describe('permission gates', () => {
@@ -432,13 +438,80 @@ describe('manual tax bound', () => {
   });
 });
 
+describe('report read access', () => {
+  const reportRow = (submitterId: string) => ({
+    id: REPORT,
+    submitterId,
+    status: 'SUBMITTED',
+    expenses: [],
+    currency: { code: 'CAD' },
+  });
+
+  it('lets the submitter read their own', async () => {
+    const db = makeDb();
+    db.expenseReport.findUnique.mockResolvedValue(reportRow(ME));
+    const c = await callerFor(db, READ);
+    await passesGuard(c.report({ reportId: REPORT }));
+  });
+
+  it('lets a reader-of-all read anybody’s', async () => {
+    const db = makeDb();
+    db.expenseReport.findUnique.mockResolvedValue(reportRow(U('3')));
+    const c = await callerFor(db, [P.expense.report.readAll]);
+    await passesGuard(c.report({ reportId: REPORT }));
+  });
+
+  it('lets AP read anybody’s, because they have to pay it', async () => {
+    const db = makeDb();
+    db.expenseReport.findUnique.mockResolvedValue(reportRow(U('3')));
+    const c = await callerFor(db, [P.expense.report.reimburse]);
+    await passesGuard(c.report({ reportId: REPORT }));
+  });
+
+  it('lets an approver on the report read it', async () => {
+    // Eligibility is the approvals engine's question, including delegation.
+    callerCanDecideReport.mockResolvedValue(true);
+    const db = makeDb();
+    db.expenseReport.findUnique.mockResolvedValue(reportRow(U('3')));
+    const c = await callerFor(db, []);
+    await passesGuard(c.report({ reportId: REPORT }));
+  });
+
+  it('hides a stranger’s report behind NOT_FOUND, not FORBIDDEN', async () => {
+    /**
+     * The same non-enumeration choice the expense guards make: a 403 would confirm the
+     * report id exists, and report ids are sequential-ish numbers somebody could walk.
+     */
+    const db = makeDb();
+    db.expenseReport.findUnique.mockResolvedValue(reportRow(U('3')));
+    const c = await callerFor(db, READ);
+    await expect(c.report({ reportId: REPORT })).rejects.toMatchObject({ code: 'NOT_FOUND' });
+  });
+
+  it('refuses the submitter when they lack even readOwn', async () => {
+    // Being the submitter is not itself a permission.
+    const db = makeDb();
+    db.expenseReport.findUnique.mockResolvedValue(reportRow(ME));
+    const c = await callerFor(db, []);
+    await expect(c.report({ reportId: REPORT })).rejects.toMatchObject({ code: 'NOT_FOUND' });
+  });
+
+  it('404s a report that does not exist', async () => {
+    const db = makeDb();
+    db.expenseReport.findUnique.mockResolvedValue(null);
+    const c = await callerFor(db, [P.expense.report.readAll]);
+    await expect(c.report({ reportId: REPORT })).rejects.toMatchObject({ code: 'NOT_FOUND' });
+  });
+});
+
 describe('input validation', () => {
   it('rejects a non-uuid id everywhere', async () => {
     const db = makeDb();
     const c = await callerFor(db, [...UPDATE, ...READ]);
     for (const attempt of [
       c.deleteExpense({ expenseId: 'nope' } as never),
-      // VeloExpense: `receiptList` (w2-09) and `report` (w2-08c) join this list when ported.
+      // VeloExpense: `receiptList` joins this list with the receipts port (w2-09).
+      c.report({ reportId: 'nope' } as never),
     ]) {
       await expect(attempt).rejects.toThrow();
     }
