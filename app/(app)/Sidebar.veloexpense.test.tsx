@@ -113,13 +113,16 @@ describe("an admin's menu", () => {
         '/admin/fx-rates',
         '/admin/mileage-rates',
         '/admin/per-diem-rates',
+        // Ported in Wave 2 (w2-06).
+        '/expenses/all',
       ].sort(),
     );
   });
 
   it('offers no ExpenseOS screen that is not ported yet', () => {
     show('admin');
-    for (const unported of ['/admin/roles', '/users', '/expenses/all', '/travel']) {
+    // `/expenses/all` left this list with w2-06, which ported it.
+    for (const unported of ['/admin/roles', '/users', '/travel']) {
       expect(hrefs()).not.toContain(unported);
     }
   });

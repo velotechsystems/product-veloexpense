@@ -49,6 +49,8 @@ import { ADMIN_STATE, EMPLOYEE_STATE, MANAGER_STATE } from './helpers';
 const PAGES = [
   '/',
   '/expenses',
+  // w2-06: ExpenseOS's cross-report view, AP / admin only (see ADMIN_ONLY).
+  '/expenses/all',
   '/approvals',
   '/approvals/delegations',
   '/notifications',
@@ -109,7 +111,9 @@ const ROLES = [
   { name: 'EMPLOYEE', state: EMPLOYEE_STATE },
 ] as const;
 
-const ADMIN_ONLY = (path: string) => path.startsWith('/admin/');
+// w2-06: `/expenses/all` too. It crosses submitters, so it needs `expense.report.read.all`
+// or `expense.report.reimburse` — held by the admin role and by neither of the others.
+const ADMIN_ONLY = (path: string) => path.startsWith('/admin/') || path === '/expenses/all';
 
 /**
  * ── WHAT THIS SPEC FOUND ON ITS FIRST RUN, AND WHAT VX4-9 DID ABOUT IT ─────

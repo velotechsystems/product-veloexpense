@@ -49,7 +49,6 @@ export const VELOEXPENSE_ROUTES: Readonly<Record<string, string | null>> = {
 
   // Not ported yet. Each leaves with the wave that ports its screen (parity doc).
   '/users': null,
-  '/expenses/all': null,
   '/travel': null,
   '/admin/travel-categories': null,
   '/admin/policy-rules': null,

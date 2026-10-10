@@ -430,10 +430,10 @@ export async function installCrawlFixture(): Promise<CrawlFixture> {
  * one that is too low for a reason nobody wrote down.
  *
  *   · (w2-05) `/expenses?scope=all` and the `?error=` banner went with the old list
- *     page; the ported list has neither. The org-wide view returns as `/expenses/all`
- *     (w2-06, d32). The crawl visits bare paths; adding query strings would make
- *     `PAGES` a list of URLs rather than of screens, and the same argument applies to
- *     every filtered variant after it.
+ *     page; the ported list has neither. The org-wide view returned as `/expenses/all`
+ *     (w2-06, d32), which the crawl visits. The crawl visits bare paths; adding query
+ *     strings would make `PAGES` a list of URLs rather than of screens, and the same
+ *     argument applies to every filtered variant after it.
  *   · `/approvals` ROLE_POOL route — needs a task with `claim_role` set and no
  *     assignee. Its label comes from `INBOX_ROUTE_COPY`, which is catalogued and
  *     tested by `test/i18n-enums.test.ts`, so nothing here is uncovered — only

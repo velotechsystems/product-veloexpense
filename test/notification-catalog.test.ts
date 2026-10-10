@@ -80,6 +80,8 @@ describe('the taxonomy', () => {
       'RECALLED',
       'REIMBURSED',
       'BUDGET_THRESHOLD',
+      // w2-06: the on-demand receipt chase (`expenseApprovals.chaseReceipts`) emits it.
+      'RECEIPT_REMINDER',
     ]);
   });
 });
