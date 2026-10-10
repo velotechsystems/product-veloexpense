@@ -111,6 +111,23 @@ export const EVENT_TYPES = [
    * job, which sends the same event with no actor, arrives with the worker jobs.
    */
   'RECEIPT_REMINDER',
+  /**
+   * Somebody posted to a report's discussion thread (w2-02a, d37). ExpenseOS's `COMMENT`,
+   * addressed to everyone else on the thread — the submitter and anybody an approval task
+   * touched — never to everybody who could read the report.
+   *
+   * In-app only by default, ExpenseOS's one per-type exception ("no email noise / storms"):
+   * see `EVENT_CHANNEL_DEFAULTS`.
+   */
+  'COMMENT',
+  /**
+   * An approval task was handed to somebody else (w2-02a, d36/d37). VeloExpense's: ExpenseOS
+   * tells only the new assignee, as TASK_ASSIGNED, and its thread shows nothing. Here the
+   * reassignment carries the reason it was given, and is addressed to the SUBMITTER — "the
+   * submitter and reviewer need to know reasons why rejected or reassigned" — while the new
+   * assignee still gets TASK_ASSIGNED.
+   */
+  'REASSIGNED',
 ] as const;
 export type EventType = (typeof EVENT_TYPES)[number];
 
@@ -150,6 +167,14 @@ const CHANNEL_DEFAULTS: Record<Channel, boolean> = {
   SLACK: false,
 };
 
+/**
+ * Per-event exceptions to `CHANNEL_DEFAULTS`. w2-02a: ExpenseOS's `COMMENT`, which "defaults
+ * to in-app only (no email noise / storms)" — the home the note above promised it.
+ */
+const EVENT_CHANNEL_DEFAULTS: Partial<Record<string, Partial<Record<Channel, boolean>>>> = {
+  COMMENT: { EMAIL: false },
+};
+
 /** One user's overrides, as `${eventType}:${channel}` -> enabled. */
 export type PreferenceMap = ReadonlyMap<string, boolean>;
 
@@ -174,7 +199,7 @@ export function channelEnabled(
   overrides: PreferenceMap,
 ): boolean {
   const override = overrides.get(preferenceKey(eventType, channel));
-  return override ?? CHANNEL_DEFAULTS[channel];
+  return override ?? EVENT_CHANNEL_DEFAULTS[eventType]?.[channel] ?? CHANNEL_DEFAULTS[channel];
 }
 
 /** All three answers at once, for the fan-out. */
@@ -190,8 +215,10 @@ export function resolveChannels(
 }
 
 /** The default, for a UI that wants to show what "no opinion" means. */
-export function channelDefault(channel: Channel): boolean {
-  return CHANNEL_DEFAULTS[channel];
+export function channelDefault(channel: Channel, eventType?: string): boolean {
+  // w2-02a: per event where it has an exception (COMMENT's email), else the channel's.
+  const perEvent = eventType === undefined ? undefined : EVENT_CHANNEL_DEFAULTS[eventType]?.[channel];
+  return perEvent ?? CHANNEL_DEFAULTS[channel];
 }
 
 /* ── template keys ────────────────────────────────────────────────────────── */
@@ -357,6 +384,28 @@ export const TEMPLATE_KEYS: readonly TemplateKeyDef[] = [
         '{budget} has crossed {thresholdPercent}% of its {period} budget — ' +
         '{used} of {amount}.',
     },
+  },
+  {
+    // VeloExpense: ExpenseOS renders `(COMMENT, EXPENSE_REPORT)` from its catalog with no
+    // template key; every event here has one (see the test that maps them all).
+    key: 'expense_management.report_comment',
+    name: 'Comment on a report',
+    description:
+      "Somebody posted to a report's discussion. Sent to everyone else on it — the submitter " +
+      'and the approvers its tasks touched.',
+    events: [['COMMENT', 'EXPENSE_REPORT']],
+    // `{body}` is the posted text, from the comment's payload (ExpenseOS's field).
+    shipped: { 'en-CA': '{actor} commented on {report}: {body}' },
+  },
+  {
+    key: 'expense_management.report_reassigned',
+    name: 'Approval reassigned',
+    description:
+      "An approver handed a report's pending approval to somebody else, with a reason. Sent " +
+      'to the submitter.',
+    events: [['REASSIGNED', 'EXPENSE_REPORT']],
+    // `{assignee}` and `{note}` from the reassignment's payload.
+    shipped: { 'en-CA': '{actor} passed the approval of {report} to {assignee}: {note}' },
   },
   {
     // ExpenseOS's key, name and description (`packages/notifications/src/templateKeys.ts`).

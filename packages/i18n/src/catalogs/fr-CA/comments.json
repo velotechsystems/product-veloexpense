@@ -16,6 +16,7 @@
     "RETURNED": "a retourné ceci",
     "RECALLED": "a rappelé ceci",
     "REIMBURSED": "a marqué ceci comme remboursé",
-    "ADJUSTED": "a modifié ceci"
+    "ADJUSTED": "a modifié ceci",
+    "REASSIGNED": "a confié l’approbation à {assignee}"
   }
 }

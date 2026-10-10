@@ -8,8 +8,12 @@ import { createTenantHarness, type TenantHarness } from '../__test-helpers__/ten
  * VeloExpense: ExpenseOS's `expenseApprovals.db.test.ts`, the cases for the procedures ported so
  * far — "expenses + chaseReceipts" (w2-06), and the submitter's `expenses.submit` /
  * `expenses.recall` cases (w2-11), which ExpenseOS keeps here because they drive its approval
- * engine. The rest of ExpenseOS's suite (the inbox, the approver's report, decide / return /
- * reimburse) arrives with the engine in Wave 4.
+ * engine. And since w2-02a the approver's procedures — `decide`, `reassign`, `returnForEdit`,
+ * `setFxOverride` — against VeloExpense's real engine, which is where the cases of ExpenseOS's
+ * mocked `expenseApprovals.test.ts` about the engine's own work (the audit label, the ledger
+ * hand-off, the notification) are proven, with the thread showing each reason (d37). The
+ * rest of ExpenseOS's suite (the inbox, the approver's report, decideBulk, reimburse) arrives
+ * with the engine in Wave 4.
  *
  * The cases are ExpenseOS's; the harness is VeloExpense's (`createTenantHarness`: the suite's own
  * tenant and people, every call under RLS). Adaptations, each marked:
@@ -60,7 +64,12 @@ describe.skipIf(!process.env.DATABASE_URL)('expense approvals (integration)', ()
     h = await createTenantHarness({
       slug: 'expense-approvals',
       name: 'Expense Approvals',
-      people: [{ email: 'stranger@expense-approvals.test', name: 'Stranger' }],
+      people: [
+        { email: 'stranger@expense-approvals.test', name: 'Stranger' },
+        // w2-02a: somebody an approval can be handed to, and an AP clerk who holds no task.
+        { email: 'deputy@expense-approvals.test', name: 'Deputy' },
+        { email: 'clerk@expense-approvals.test', name: 'Clerk' },
+      ],
     });
     db = h.db;
     ownerId = h.people[0].id;
@@ -242,6 +251,274 @@ describe.skipIf(!process.env.DATABASE_URL)('expense approvals (integration)', ()
       expect(run?.pending).toBe(0);
       // Recalling twice is refused: only a SUBMITTED report can be.
       await expect(owner().recall({ reportId })).rejects.toThrow(/submitted/i);
+    });
+  });
+
+
+  // ── the approver's actions, on VeloExpense's engine (w2-02a, d36/d37) ──
+  describe("the approver's actions", () => {
+    /**
+     * The submitter is the suite's EMPLOYEE, so each report's approval routes to the
+     * tenant's administrator (the founder). The deputy can be handed it; the clerk holds
+     * ExpenseOS's AP clerk grants and no task.
+     */
+    const ADMIN_PERMS = [P.expense.report.decideAny] as const;
+    const AP_CLERK_PERMS = [P.expense.report.readAll, P.expense.report.reimburse] as const;
+    const FX_PERMS = [P.expense.report.fxOverride] as const;
+    let deputyId: string;
+    let clerkId: string;
+    let categoryId: string;
+    const owner = () => h.makeCaller(OWNER_PERMS, strangerId);
+    const comments = async (userId: string, reportId: string) => {
+      const { commentsRouter } = await import('@/server/routers/comments');
+      return h
+        .makeCaller(OWNER_PERMS, userId, commentsRouter)
+        .thread({ subjectType: 'EXPENSE_REPORT', subjectId: reportId });
+    };
+    /** A submitted report, out for approval with the founder. */
+    const submitted = async (title: string, amountMinor = '2500', currency = 'CAD') => {
+      const r = await owner().create({ title, currency: 'CAD' });
+      const { id } = await owner().createExpense({ reportId: r.id });
+      await owner().updateExpense({
+        expenseId: id,
+        date: new Date(),
+        merchant: 'Cafe',
+        ...(currency !== 'CAD' ? { currencyId: currency } : {}),
+      });
+      await owner().lineItemCreate({ expenseId: id, categoryId, amountMinor });
+      await owner().submit({ reportId: r.id });
+      return r.id as string;
+    };
+    const pendingTaskOn = async (reportId: string) =>
+      (
+        await h.admin.query(
+          `SELECT t.id, t.assignee_id FROM approval_task t
+             JOIN approval_request q ON q.id = t.request_id
+            WHERE q.report_id = $1 AND t.status = 'PENDING'`,
+          [reportId],
+        )
+      ).rows[0] as { id: string; assignee_id: string } | undefined;
+    const lastAudit = async (reportId: string, action: string) =>
+      (
+        await h.admin.query(
+          `SELECT actor_id, details FROM audit_entry
+            WHERE entity_id = $1 AND action = $2 ORDER BY sequence DESC LIMIT 1`,
+          [reportId, action],
+        )
+      ).rows[0] as { actor_id: string; details: Record<string, unknown> } | undefined;
+    const statusOf = async (reportId: string) =>
+      (await h.admin.query(`SELECT status FROM expense_report WHERE id = $1`, [reportId])).rows[0]
+        .status as string;
+    const bellFor = async (userId: string, eventType: string, reportId: string) =>
+      (
+        await h.admin.query(
+          `SELECT a.payload FROM notification n JOIN activity a ON a.id = n.activity_id
+            WHERE n.recipient_id = $1 AND a.event_type = $2 AND a.subject_id = $3`,
+          [userId, eventType, reportId],
+        )
+      ).rows as { payload: Record<string, unknown> }[];
+
+    beforeAll(async () => {
+      deputyId = h.people[2].id;
+      clerkId = h.people[3].id;
+      categoryId = (
+        await db.expenseCategory.create({
+          data: { label: { en: 'Approver meals' } },
+          select: { id: true },
+        })
+      ).id;
+    });
+
+    it('records the assigned approver’s decision as an ordinary one', async () => {
+      // The other half of the label: the approver the ladder named decides on the task's
+      // own terms, override or not, and the log must not call it an override.
+      const id = await submitted('Assignee decides');
+      const task = await pendingTaskOn(id);
+      expect(task?.assignee_id).toBe(ownerId);
+      await approvals(ADMIN_PERMS, ownerId).decide({
+        taskId: task?.id as string,
+        approve: true,
+        // VeloExpense: the default ladder asks the approver to confirm the receipts.
+        receiptViewAcknowledged: true,
+      });
+      expect(await statusOf(id)).toBe('APPROVED');
+      expect((await lastAudit(id, 'REPORT_APPROVED'))?.details).toMatchObject({ override: false });
+      // ExpenseOS's "pushes an approved report to NetSuite at once": VeloExpense's engine
+      // queues the ledger post on the approving transition.
+      const queued = await h.admin.query(`SELECT status FROM integration_post WHERE report_id = $1`, [
+        id,
+      ]);
+      expect(queued.rows).toHaveLength(1);
+      // ExpenseOS's "notifies on the decision".
+      expect(await bellFor(strangerId, 'APPROVED', id)).toHaveLength(1);
+    });
+
+    it('refuses an AP clerk a task routed to somebody else, and lets the override through — audited', async () => {
+      /**
+       * The segregation-of-duties hole, end to end against the real engine and the
+       * real audit chain. The outsider manages nobody and is on no workflow; what
+       * they hold is exactly what the seeded AP Clerk holds on this surface —
+       * `read.all` + `reimburse`. Before this fix `read.all` WAS the admin override,
+       * so this call approved the report; with `reimburse` the same person could then
+       * pay it, and the audit row read like any manager's approval.
+       *
+       * VeloExpense: the clerk's override is VeloExpense's ADMIN-role break-glass, which
+       * the router hands the engine only on `decide.any`.
+       */
+      const id = await submitted('Override matrix');
+      const task = await pendingTaskOn(id);
+      await expect(
+        approvals(AP_CLERK_PERMS, clerkId).decide({ taskId: task?.id as string, approve: true }),
+      ).rejects.toMatchObject({ code: 'FORBIDDEN' });
+      await expect(
+        approvals(AP_CLERK_PERMS, clerkId).reassign({
+          taskId: task?.id as string,
+          toUserId: clerkId,
+          note: 'Taking it',
+        }),
+      ).rejects.toMatchObject({ code: 'FORBIDDEN' });
+      await expect(
+        approvals(AP_CLERK_PERMS, clerkId).returnForEdit({ reportId: id }),
+      ).rejects.toMatchObject({ code: 'FORBIDDEN' });
+      expect((await pendingTaskOn(id))?.id, 'still pending, still the founder’s').toBe(task?.id);
+
+      // The same outsider WITH the override decides it — and the row says override.
+      await approvals(ADMIN_PERMS, clerkId).decide({
+        taskId: task?.id as string,
+        approve: true,
+        receiptViewAcknowledged: true,
+      });
+      const row = await lastAudit(id, 'REPORT_APPROVED');
+      expect(row?.actor_id).toBe(clerkId);
+      expect(row?.details).toMatchObject({ override: true });
+    });
+
+    it('VeloExpense: shows the reason a report was rejected on its discussion (d37)', async () => {
+      const id = await submitted('Rejected with a reason');
+      const task = await pendingTaskOn(id);
+      await approvals(ADMIN_PERMS, ownerId).decide({
+        taskId: task?.id as string,
+        approve: false,
+        note: 'Hotel is over the city cap.',
+      });
+      expect(await statusOf(id)).toBe('REJECTED');
+      const thread = await comments(strangerId, id);
+      expect(thread.items.find((i: { type: string }) => i.type === 'REJECTED')).toMatchObject({
+        note: 'Hotel is over the city cap.',
+      });
+      // …and the approver, who no longer holds a task, still reads it.
+      expect((await comments(ownerId, id)).items).toHaveLength(thread.items.length);
+    });
+
+    it('returnForEdit (approver): SUBMITTED → RETURNED with the reason, then resubmittable', async () => {
+      const id = await submitted('Returned');
+      await approvals([], ownerId).returnForEdit({ reportId: id, note: 'Attach the receipt.' });
+      expect(await statusOf(id)).toBe('RETURNED');
+      // The run is closed: nothing pending remains in anybody's queue.
+      expect(await pendingTaskOn(id)).toBeUndefined();
+      expect(await bellFor(strangerId, 'RETURNED', id)).toEqual([
+        expect.objectContaining({ payload: expect.objectContaining({ note: 'Attach the receipt.' }) }),
+      ]);
+      const thread = await comments(strangerId, id);
+      expect(thread.items.find((i: { type: string }) => i.type === 'RETURNED')?.note).toBe(
+        'Attach the receipt.',
+      );
+      const res = await owner().submit({ reportId: id });
+      expect(res.report.status).toBe('SUBMITTED');
+    });
+
+    it('returnForEdit rejects a non-SUBMITTED report', async () => {
+      const r = await owner().create({ title: 'Draft only', currency: 'CAD' });
+      await expect(approvals(ADMIN_PERMS, ownerId).returnForEdit({ reportId: r.id })).rejects.toThrow(
+        /submitted/i,
+      );
+    });
+
+    it('VeloExpense: reassigns with a reason, and both people hear why (d36, d37)', async () => {
+      const id = await submitted('Handed on');
+      const task = await pendingTaskOn(id);
+      await approvals([], ownerId).reassign({
+        taskId: task?.id as string,
+        toUserId: deputyId,
+        note: 'On leave until the 20th.',
+      });
+      const after = await pendingTaskOn(id);
+      expect(after).toMatchObject({ id: task?.id, assignee_id: deputyId });
+      // ExpenseOS's "notifies the new assignee"…
+      expect(await bellFor(deputyId, 'TASK_ASSIGNED', id)).toHaveLength(1);
+      // …and VeloExpense's: the submitter, with whom and why.
+      expect(await bellFor(strangerId, 'REASSIGNED', id)).toEqual([
+        expect.objectContaining({
+          payload: expect.objectContaining({ note: 'On leave until the 20th.', assignee: 'Deputy' }),
+        }),
+      ]);
+      const thread = await comments(deputyId, id);
+      expect(thread.items.find((i: { type: string }) => i.type === 'REASSIGNED')).toMatchObject({
+        note: 'On leave until the 20th.',
+        assignee: 'Deputy',
+      });
+      expect((await lastAudit(id, 'APPROVAL_TASK_REASSIGNED'))?.details).toMatchObject({
+        toUserId: deputyId,
+        note: 'On leave until the 20th.',
+        override: false,
+      });
+      // The deputy can now decide it; the founder no longer holds it.
+      await expect(
+        approvals([], ownerId).decide({ taskId: task?.id as string, approve: false, note: 'x' }),
+      ).rejects.toMatchObject({ code: 'FORBIDDEN' });
+      await approvals([], deputyId).decide({
+        taskId: task?.id as string,
+        approve: true,
+        receiptViewAcknowledged: true,
+      });
+      expect(await statusOf(id)).toBe('APPROVED');
+    });
+
+    it('VeloExpense: refuses a reassignment to the submitter, to nobody active, or to the holder', async () => {
+      const id = await submitted('Bad hand-offs');
+      const task = await pendingTaskOn(id);
+      const to = (toUserId: string) =>
+        approvals([], ownerId).reassign({ taskId: task?.id as string, toUserId, note: 'Because' });
+      await expect(to(strangerId)).rejects.toThrow(/submitted it/);
+      await expect(to(ownerId)).rejects.toThrow(/already holds/);
+      await h.admin.query(`UPDATE app_user SET employee_status = 'ON_LEAVE' WHERE id = $1`, [
+        clerkId,
+      ]);
+      try {
+        await expect(to(clerkId)).rejects.toThrow(/not an active member/);
+      } finally {
+        await h.admin.query(`UPDATE app_user SET employee_status = 'ACTIVE' WHERE id = $1`, [
+          clerkId,
+        ]);
+      }
+      expect((await pendingTaskOn(id))?.assignee_id).toBe(ownerId);
+    });
+
+    it('setFxOverride restates the foreign expenses and the total of a SUBMITTED report', async () => {
+      // VeloExpense: ExpenseOS's unit cases mock the restatement; this is the real one.
+      await h.admin.query(
+        `INSERT INTO fx_rate (organization_id, base, quote, rate, source)
+         VALUES ($1, 'USD', 'CAD', 1.37, 'MANUAL')`,
+        [h.orgId],
+      );
+      const id = await submitted('Statement rate', '10000', 'USD');
+      await approvals(FX_PERMS, ownerId).setFxOverride({
+        reportId: id,
+        rate: '1.40',
+        fromCurrency: 'USD',
+      });
+      const row = (
+        await h.admin.query(
+          `SELECT total_minor, fx_rate_override, fx_rate_override_by_id FROM expense_report WHERE id = $1`,
+          [id],
+        )
+      ).rows[0];
+      expect(String(row.total_minor)).toBe('14000');
+      expect(row.fx_rate_override_by_id).toBe(ownerId);
+      expect((await lastAudit(id, 'REPORT_FX_OVERRIDE_SET'))?.details).toMatchObject({
+        rate: '1.40',
+        fromCurrency: 'USD',
+      });
     });
   });
 

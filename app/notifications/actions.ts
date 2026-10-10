@@ -88,7 +88,7 @@ export async function getPreferencesPage() {
           channel,
           enabled: channelEnabled(eventType, channel, overrides),
           overridden: overrides.has(`${eventType}:${channel}`),
-          shipsOn: channelDefault(channel),
+          shipsOn: channelDefault(channel, eventType),
           // EMAIL and SLACK have no delivery until VX2-8. Offering a live
           // toggle for a channel that cannot deliver is exactly the dead
           // control GAP-AUDIT NT-2 found in ExpenseOS, so they are shown and
