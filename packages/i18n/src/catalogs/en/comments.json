@@ -16,6 +16,7 @@
     "RETURNED": "returned this",
     "RECALLED": "recalled this",
     "REIMBURSED": "marked this reimbursed",
-    "ADJUSTED": "adjusted this"
+    "ADJUSTED": "adjusted this",
+    "REASSIGNED": "reassigned the approval to {assignee}"
   }
 }

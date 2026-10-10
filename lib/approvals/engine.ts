@@ -58,7 +58,10 @@ export type ApprovalEngineErrorCode =
   | 'RUN_NOT_RUNNING'
   | 'RECEIPT_ACK_REQUIRED'
   | 'STEP_UNROUTABLE'
-  | 'EXTERNAL_DECISION_UNSUPPORTED';
+  | 'EXTERNAL_DECISION_UNSUPPORTED'
+  /** w2-02a: a reassignment to nobody usable — not an active member, the submitter, or the
+   *  person who already holds the task. */
+  | 'BAD_ASSIGNEE';
 
 export class ApprovalEngineError extends DomainError {
   constructor(
@@ -538,6 +541,182 @@ export async function decide(
   );
 
   return { decision, requestStatus, reportStatus, nextTaskId: null };
+}
+
+/* ── reassigning a task ────────────────────────────────────────────────────── */
+
+export interface ReassignResult {
+  reportId: string;
+  fromUserId: string | null;
+  toUserId: string;
+}
+
+/**
+ * Hand a PENDING task to somebody else (w2-02a, d36) — ExpenseOS's
+ * `expenseApprovals.reassign`, which VeloExpense's engine did not have.
+ *
+ * ExpenseOS's rules: whoever could DECIDE the task may instead hand it on (the assignee,
+ * an eligible claimant, a delegatee, or the override), and the target must be an active
+ * employee. It audits the hand-off and tells the new assignee.
+ *
+ * VeloExpense's, on top:
+ *   · A REASON IS REQUIRED and is kept (d37 — "the submitter and reviewer need to know
+ *     reasons why … reassigned"). It goes on the task, into the audit chain, and onto a
+ *     REASSIGNED activity on the report, which the report's discussion shows and which is
+ *     addressed to the submitter.
+ *   · The SUBMITTER is refused as a target: eligibility (`assertCanDecide`) would never let
+ *     them decide their own report outside the break-glass, so the task would park on
+ *     somebody who cannot act on it.
+ *   · A pool task (`claim_role`) becomes the named person's: the hand-off names one.
+ *
+ * The task keeps its step and its run; only who holds it changes (`resolved_via =
+ * 'REASSIGNED'`, which 0008 admitted ahead of time).
+ */
+export async function reassignTask(
+  tx: QueryRunner,
+  taskId: string,
+  actorId: string,
+  toUserId: string,
+  note: string,
+  ctx: { isAdmin?: boolean; onDate?: Date } = {},
+): Promise<ReassignResult> {
+  await assertTenantMayWrite(tx, 'decide an approval');
+  // Whoever could decide it may hand it on — the same guard, so no page can disagree.
+  await assertCanDecide(tx, taskId, actorId, ctx);
+  const override =
+    ctx.isAdmin === true && !(await canDecide(tx, taskId, actorId, { ...ctx, isAdmin: false }));
+
+  // The report row first, then the task — `decide`'s order, so a decision and a hand-off
+  // racing on one report queue behind each other instead of deadlocking.
+  await tx.query(
+    `SELECT rep.id
+       FROM approval_task t
+       JOIN approval_request q   ON q.id = t.request_id
+       JOIN expense_report   rep ON rep.id = q.report_id
+      WHERE t.id = $1
+        FOR UPDATE OF rep`,
+    [taskId],
+  );
+  const t = await tx.query(
+    `SELECT t.id, t.status, t.assignee_id, q.status AS request_status, q.report_id,
+            rep.number AS report_number, rep.title AS report_title, rep.submitter_id,
+            rep.total_minor, rep.currency_code
+       FROM approval_task    t
+       JOIN approval_request q   ON q.id = t.request_id
+       JOIN expense_report   rep ON rep.id = q.report_id
+      WHERE t.id = $1
+        FOR UPDATE OF t`,
+    [taskId],
+  );
+  if (t.rows.length === 0) {
+    throw new ApprovalEngineError(`approval task ${taskId} not found`, 'TASK_NOT_FOUND');
+  }
+  const task = t.rows[0];
+  if (task.status !== 'PENDING') {
+    throw new ApprovalEngineError(
+      `approval task ${taskId} is already decided`,
+      'ALREADY_DECIDED',
+      'TASK_ALREADY_DECIDED',
+    );
+  }
+  if (task.request_status !== 'RUNNING') {
+    throw new ApprovalEngineError(
+      `the approval run for report ${task.report_number} is ${task.request_status}`,
+      'RUN_NOT_RUNNING',
+      'RUN_NOT_RUNNING',
+    );
+  }
+
+  const target = await tx.query(
+    `SELECT id, email, COALESCE(display_name, email) AS name FROM app_user
+      WHERE id = $1 AND deleted_at IS NULL AND employee_status = 'ACTIVE'`,
+    [toUserId],
+  );
+  if (target.rows.length === 0) {
+    throw new ApprovalEngineError('unknown or inactive assignee', 'BAD_ASSIGNEE', 'REASSIGN_TARGET_UNKNOWN');
+  }
+  if (toUserId === task.submitter_id) {
+    throw new ApprovalEngineError(
+      'a report cannot be handed to its own submitter to approve',
+      'BAD_ASSIGNEE',
+      'REASSIGN_TARGET_SUBMITTER',
+    );
+  }
+  if (toUserId === task.assignee_id) {
+    throw new ApprovalEngineError('that person already holds this approval', 'BAD_ASSIGNEE', 'REASSIGN_TARGET_SAME');
+  }
+  const reason = note.trim();
+  if (!reason) {
+    throw new ApprovalEngineError('a reassignment needs a reason', 'BAD_ASSIGNEE', 'REASSIGN_REASON_REQUIRED');
+  }
+
+  // The reason is NOT written to `approval_task.note`: that column is the decision's note,
+  // and the new assignee's decision would overwrite it. It lives in the audit chain and on
+  // the REASSIGNED activity below.
+  await tx.query(
+    `UPDATE approval_task
+        SET assignee_id = $2, assignee_email = NULL, claim_role = NULL,
+            resolved_via = 'REASSIGNED', delegated_from_id = NULL
+      WHERE id = $1 AND status = 'PENDING'`,
+    [taskId, toUserId],
+  );
+
+  await auditAppend(tx, await actorOf(tx, actorId), {
+    action: 'APPROVAL_TASK_REASSIGNED',
+    entityType: 'expense_report',
+    entityId: task.report_id as string,
+    details: {
+      taskId,
+      fromUserId: (task.assignee_id as string | null) ?? null,
+      toUserId,
+      note: reason,
+      override,
+    },
+  });
+
+  const subject = {
+    reportId: task.report_id as string,
+    title: task.report_title as string,
+    number: task.report_number as string | null,
+    totalMinor: String(task.total_minor),
+    currencyCode: task.currency_code as string,
+  };
+  // ExpenseOS's half: the new assignee is told they own a pending task. Actor-attributed —
+  // the person who handed it on is who they will want to ask.
+  await notify(
+    tx,
+    {
+      subjectType: 'EXPENSE_REPORT',
+      subjectId: subject.reportId,
+      eventType: 'TASK_ASSIGNED',
+      actorId,
+      payload: reportPayload(subject),
+    },
+    [toUserId],
+  );
+  // VeloExpense's half (d37): the reason, on the report's discussion and to the submitter.
+  await notify(
+    tx,
+    {
+      subjectType: 'EXPENSE_REPORT',
+      subjectId: subject.reportId,
+      eventType: 'REASSIGNED',
+      actorId,
+      payload: {
+        ...reportPayload(subject),
+        note: reason,
+        assignee: target.rows[0].name as string,
+        assigneeId: toUserId,
+      },
+    },
+    [task.submitter_id as string],
+  );
+
+  return {
+    reportId: subject.reportId,
+    fromUserId: (task.assignee_id as string | null) ?? null,
+    toUserId,
+  };
 }
 
 /* ── cancelling a run ──────────────────────────────────────────────────────── */

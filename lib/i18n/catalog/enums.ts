@@ -377,6 +377,8 @@ export const EVENT_TYPE_COPY: EnumCopy<EventType> = {
   REIMBURSED: { 'en-CA': 'You were reimbursed' },
   BUDGET_THRESHOLD: { 'en-CA': 'A budget crossed a threshold' },
   RECEIPT_REMINDER: { 'en-CA': 'Someone asked for your missing receipts' },
+  COMMENT: { 'en-CA': 'Someone commented on a report' },
+  REASSIGNED: { 'en-CA': 'An approval was passed to someone else' },
 };
 
 /* ── receipts ─────────────────────────────────────────────────────────────── */

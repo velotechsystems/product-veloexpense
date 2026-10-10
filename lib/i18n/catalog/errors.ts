@@ -101,6 +101,11 @@ export const USER_MESSAGE_CODES = [
 
   /* deciding an approval ────────────────────────────────────────────────── */
   'TASK_ALREADY_DECIDED',
+  /* w2-02a: reassigning an approval. */
+  'REASSIGN_TARGET_UNKNOWN',
+  'REASSIGN_TARGET_SUBMITTER',
+  'REASSIGN_TARGET_SAME',
+  'REASSIGN_REASON_REQUIRED',
   'TASK_NOT_YOURS',
   'SELF_APPROVAL',
   'RUN_NOT_RUNNING',
@@ -557,6 +562,19 @@ export const ERROR_COPY: Record<UserMessageCode, Copy> = {
   },
 
   /* ── deciding an approval ──────────────────────────────────────────────── */
+  REASSIGN_TARGET_UNKNOWN: {
+    'en-CA': 'That person is not an active member of this organization, so the approval cannot go to them.',
+  },
+  REASSIGN_TARGET_SUBMITTER: {
+    'en-CA': 'A report cannot be handed to the person who submitted it to approve.',
+  },
+  REASSIGN_TARGET_SAME: {
+    'en-CA': 'That person already holds this approval.',
+  },
+  REASSIGN_REASON_REQUIRED: {
+    'en-CA':
+      'Say why the approval is being passed on — the submitter and the new approver both see it.',
+  },
   TASK_ALREADY_DECIDED: {
     // THE most common one on this list, and it is not an error in any useful
     // sense: two approvers open the same inbox, or somebody uses the back button.

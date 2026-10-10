@@ -82,6 +82,9 @@ describe('the taxonomy', () => {
       'BUDGET_THRESHOLD',
       // w2-06: the on-demand receipt chase (`expenseApprovals.chaseReceipts`) emits it.
       'RECEIPT_REMINDER',
+      // w2-02a: `comments.post` and `expenseApprovals.reassign` emit these.
+      'COMMENT',
+      'REASSIGNED',
     ]);
   });
 });
@@ -363,6 +366,18 @@ describe('channel defaults', () => {
       EMAIL: true,
       SLACK: false,
     });
+  });
+
+  it('w2-02a: keeps a comment in-app by default, as ExpenseOS does, until somebody asks', () => {
+    // ExpenseOS's one per-type exception: "(no email noise / storms)".
+    const none: ReadonlyMap<string, boolean> = new Map();
+    expect(resolveChannels('COMMENT', none)).toEqual({ IN_APP: true, EMAIL: false, SLACK: false });
+    expect(channelDefault('EMAIL', 'COMMENT')).toBe(false);
+    expect(channelDefault('EMAIL', 'APPROVED')).toBe(true);
+    // An explicit opt-in still wins.
+    expect(channelEnabled('COMMENT', 'EMAIL', new Map([[preferenceKey('COMMENT', 'EMAIL'), true]]))).toBe(
+      true,
+    );
   });
 
   it('an override wins, in both directions', () => {

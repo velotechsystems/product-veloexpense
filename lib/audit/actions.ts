@@ -107,6 +107,11 @@ export const AUDIT_ACTIONS = [
   'REPORT_APPROVED',
   'REPORT_REJECTED',
   'REPORT_RETURNED',
+  /* w2-02a: an approval handed to somebody else, with its reason (d36, d37). */
+  'APPROVAL_TASK_REASSIGNED',
+  /* w2-02a: ExpenseOS's `report.fxOverride` — a statement rate set or cleared on a
+     submitted report (d36). */
+  'REPORT_FX_OVERRIDE_SET',
 
   /* delegation — VX2-9 */
   'DELEGATION_CREATED',

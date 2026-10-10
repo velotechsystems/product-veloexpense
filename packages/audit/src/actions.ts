@@ -50,6 +50,8 @@ const adminAndOthers = {
     create: 'REPORT_CREATED',
     receiptAttach: 'RECEIPT_ATTACHED',
     receiptDetach: 'RECEIPT_REMOVED',
+    /** w2-02a: the FX override (`expenseApprovals.setFxOverride`). */
+    fxOverride: 'REPORT_FX_OVERRIDE_SET',
   },
 } as const satisfies Record<string, Record<string, AuditAction>>;
 

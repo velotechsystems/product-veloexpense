@@ -1,6 +1,7 @@
 import { router } from '@/server/trpc';
 import { appSettingsRouter } from './appSettings';
 import { businessUnitsRouter } from './businessUnits';
+import { commentsRouter } from './comments';
 import { departmentsRouter } from './departments';
 import { expenseApprovalsRouter } from './expenseApprovals';
 import { expenseCategoriesRouter } from './expenseCategories';
@@ -21,6 +22,8 @@ import { policiesRouter } from './policies';
 export const appRouter = router({
   appSettings: appSettingsRouter,
   businessUnits: businessUnitsRouter,
+  // w2-02a: the discussion on a report (d37).
+  comments: commentsRouter,
   departments: departmentsRouter,
   expenseCategories: expenseCategoriesRouter,
   // Wave 2: ExpenseOS's expenses router, in slices (w2-07 onwards).
