@@ -8,7 +8,11 @@ const badgeVariants = cva(
   {
     variants: {
       variant: {
-        default: "bg-primary/10 text-primary",
+        // KITAA-1: brand-700 ink, not primary. Primary on its own 10% tint is
+        // 4.65:1 on white but 4.27:1 on the page background and 4.15:1 on
+        // --muted (table headers) — under AA. brand-700 is 5.56:1 or better. Dark
+        // keeps primary (stop 400), which is light enough on dark surfaces.
+        default: "bg-primary/10 text-brand-700 dark:text-primary",
         secondary: "bg-secondary text-secondary-foreground",
         success: "bg-success/10 text-success",
         warning: "bg-warning/10 text-warning",

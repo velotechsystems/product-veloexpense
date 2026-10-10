@@ -220,10 +220,13 @@
   --radius: 0.5rem;
 
   /* ==== Status. The design system defines only destructive (above). success /
-   * warning are KIT additions for the Badge variants, not in the design system:
-   * the green / amber VeloLedger already used. ==== */
-  --vl-success: #0a7a33;
-  --vl-warn: #b45309;
+   * warning are KIT additions for the Badge variants, not in the design system.
+   * KITAA-1 (2026-10-10): darkened from VeloLedger's #0a7a33 / #b45309, which
+   * fail WCAG AA as badge text on their own 10% tint over the 2026 grey
+   * surfaces (4.48:1 / 4.12:1 over --muted). green-800 / amber-800 are
+   * 5.8:1 there and 6.5:1 over white. ==== */
+  --vl-success: #166534;
+  --vl-warn: #92400e;
   --success: var(--vl-success);
   --success-foreground: #ffffff;
   --warning: var(--vl-warn);
@@ -566,7 +569,10 @@
   --app8-wordmark: var(--app8-400);
   --app8-halo: oklch(0.450 0.100 185);
   --app8-link: var(--app8-primary);
-  --vl-success: #22c55e;
+  /* KITAA-1: on dark cards #22c55e was 4.38:1 over --muted and the light amber
+     2.6:1; green-400 / amber-400 are 5.0:1 / 5.2:1 or better. */
+  --vl-success: #4ade80;
+  --vl-warn: #fbbf24;
   --success-foreground: #211c2b;
   --warning-foreground: #211c2b;
 }
@@ -667,7 +673,10 @@
     --app8-wordmark: var(--app8-400);
     --app8-halo: oklch(0.450 0.100 185);
     --app8-link: var(--app8-primary);
-    --vl-success: #22c55e;
+    /* KITAA-1: on dark cards #22c55e was 4.38:1 over --muted and the light amber
+       2.6:1; green-400 / amber-400 are 5.0:1 / 5.2:1 or better. */
+    --vl-success: #4ade80;
+    --vl-warn: #fbbf24;
     --success-foreground: #211c2b;
     --warning-foreground: #211c2b;
   }
