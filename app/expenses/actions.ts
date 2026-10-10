@@ -128,20 +128,6 @@ async function onLineItem<T>(
 
 /* ── reads ─────────────────────────────────────────────────────────────────── */
 
-/** The workbench list. Defaults to the signed-in employee's own reports. */
-export async function listReports(filter: svc.ReportListFilter = {}) {
-  return asActor((tx, actor) =>
-    svc.listReports(tx, {
-      ...filter,
-      // Only an admin may drop the submitter scope (pass submitterEmail: null).
-      submitterEmail:
-        filter.submitterEmail === null && actor.role === 'ADMIN'
-          ? null
-          : (filter.submitterEmail ?? actor.email),
-    }),
-  );
-}
-
 export async function getReport(reportId: string) {
   return onReportRead(reportId, (tx) => svc.getReport(tx, reportId));
 }
@@ -196,10 +182,6 @@ export async function getWorkbenchOptions() {
 }
 
 /* ── writes (typed) ────────────────────────────────────────────────────────── */
-
-export async function createReport(input: svc.NewReport) {
-  return asActor((tx, actor) => svc.createReport(tx, actor.email, input));
-}
 
 export async function updateReport(reportId: string, patch: svc.ReportPatch) {
   return onReport(reportId, async (tx, actor) => {
@@ -293,22 +275,6 @@ async function guard(backTo: string, run: () => Promise<void>): Promise<string |
     const message = errorParam(err, 'expenses');
     return `${backTo}${backTo.includes('?') ? '&' : '?'}error=${encodeURIComponent(message)}`;
   }
-}
-
-export async function createReportFromForm(form: FormData) {
-  let reportId: string | null = null;
-  const failure = await guard('/expenses/new', async () => {
-    const created = await createReport({
-      title: required(form, 'title'),
-      purpose: text(form, 'purpose'),
-      currencyCode: required(form, 'currencyCode'),
-      businessUnitId: text(form, 'businessUnitId'),
-    });
-    reportId = created.id as string;
-  });
-  if (failure) redirect(failure);
-  revalidatePath('/expenses');
-  redirect(`/expenses/${reportId}`);
 }
 
 export async function updateReportFromForm(form: FormData) {

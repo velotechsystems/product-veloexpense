@@ -15,7 +15,14 @@
  *     catalogue holds rather than an exception's own text.
  */
 import { test, expect } from '@playwright/test';
-import { ADMIN_STATE, WORKER_SECRET, drainNotifications, submitAndApprove } from './helpers';
+import {
+  ADMIN_STATE,
+  WORKER_SECRET,
+  createDraftReport,
+  drainNotifications,
+  openFirstReport,
+  submitAndApprove,
+} from './helpers';
 
 const RUN = Date.now().toString(36);
 /**
@@ -55,9 +62,7 @@ test.describe('compliance', () => {
     // Two identical entries on one report, under $25 so the starter receipt rule
     // does not block the submit (budget-flow.spec.ts's header states that rule).
     const title = `E2E duplicate ${RUN}`;
-    await page.goto('/expenses/new');
-    await page.getByLabel('Title').fill(title);
-    await page.getByRole('button', { name: 'Create draft' }).click();
+    await createDraftReport(page, title);
     for (let i = 0; i < 2; i += 1) {
       // `#new-merchant`, NOT `getByLabel('Merchant').first()`.
       //
@@ -149,13 +154,9 @@ test.describe('compliance', () => {
     // A REAL REPORT ID, taken from the product rather than invented: a manual
     // flag has to name a subject (`fraud_flag_subject_chk`), and the raise form
     // says so. Read off /expenses, which is where a person would get it too.
-    await page.goto('/expenses');
-    const href = await page
-      .locator('a[href^="/expenses/"]')
-      .filter({ hasNotText: 'New report' })
-      .first()
-      .getAttribute('href');
-    const reportId = (href ?? '').split('/').pop() ?? '';
+    // w2-05: the ported list opens a report by its row, so the id is read off the report
+    // the row opens rather than off a link.
+    const reportId = (await openFirstReport(page)) ?? '';
     expect(reportId, 'no report to hang a manual flag on').toMatch(/^[0-9a-f-]{36}$/);
 
     await page.goto('/admin/compliance');

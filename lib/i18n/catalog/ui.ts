@@ -186,7 +186,6 @@ export const UI_COPY = {
   // these are the page's half only.
   'title.home': { 'en-CA': 'Home' },
   'title.expenses': { 'en-CA': 'Expense reports' },
-  'title.expenses.new': { 'en-CA': 'New expense report' },
   // The fallback when a report cannot be named — see `dataTitle`. A report's own
   // title is the CUSTOMER's words and is never catalogued.
   'title.expenses.report': { 'en-CA': 'Expense report' },

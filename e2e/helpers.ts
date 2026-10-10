@@ -297,15 +297,48 @@ export async function connectLedger(
  * seed does not have, and an approver who is somebody else. Guessing at markup and
  * data you cannot run is the one part of this job with no feedback loop.
  */
+/**
+ * Create a DRAFT report and land on it — the step every report-building spec starts with.
+ *
+ * Wave 2 (w2-05) replaced `/expenses/new` with ExpenseOS's reports list, whose "New report"
+ * control opens a dialog: a title, a currency (CAD by default) and "Create report", which
+ * opens the new report. One helper rather than six copies of the dialog's selectors, so the
+ * next change to that dialog is one edit.
+ */
+export async function createDraftReport(page: Page, title: string) {
+  await page.goto('/expenses');
+  await page.getByRole('button', { name: 'New report' }).click();
+  await page.getByRole('dialog').getByLabel('Title').fill(title);
+  await page.getByRole('button', { name: 'Create report' }).click();
+  await expect(page).toHaveURL(/\/expenses\/[0-9a-f-]{36}$/);
+}
+
+/**
+ * Open the first report the list shows and return its id, or null when the list is empty.
+ *
+ * The ported list (w2-05) opens a report by clicking its row — there is no link to read an
+ * href from — so this clicks the first row carrying a report number and reads the id off the
+ * URL it lands on.
+ */
+export async function openFirstReport(page: Page): Promise<string | null> {
+  await page.goto('/expenses');
+  const row = page.getByRole('row').filter({ hasText: /EXP-\d+/ }).first();
+  // The list loads its rows client-side: wait for a report row or the empty state before
+  // deciding there is nothing to open.
+  await expect(row.or(page.getByText('No expense reports', { exact: true }))).toBeVisible();
+  if ((await row.count()) === 0) return null;
+  await row.click();
+  await expect(page).toHaveURL(/\/expenses\/[0-9a-f-]{36}$/);
+  return new URL(page.url()).pathname.split('/').pop() ?? null;
+}
+
 export async function submitAndApprove(
   page: Page,
   browser: Browser,
   title: string,
   amount: string,
 ) {
-  await page.goto('/expenses/new');
-  await page.getByLabel('Title').fill(title);
-  await page.getByRole('button', { name: 'Create draft' }).click();
+  await createDraftReport(page, title);
 
   await page.getByLabel('Merchant').first().fill('Beck Taxi');
   // VX4-11: the date is REQUIRED on the form, and `submitReport` refuses a report

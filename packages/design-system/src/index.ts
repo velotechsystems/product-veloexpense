@@ -38,6 +38,19 @@ export {
 } from '@/components/data-display/ExternalIds';
 export { ScopeChip } from '@/components/data-display/ScopeChip';
 export { Scroll2D } from '@/components/data-display/Scroll2D';
+// Wave 2 (w2-05): the expense report list's tiles and status pill.
+export { StatCard } from '@/components/data-display/StatCard';
+export type {
+  StatCardProps,
+  StatCardTrend,
+  StatCardVariant,
+} from '@/components/data-display/StatCard.types';
+export { StatusBadge } from '@/components/data-display/StatusBadge';
+export type {
+  ExpenseStatus,
+  StatusBadgeProps,
+  WorkflowStatus,
+} from '@/components/data-display/StatusBadge.types';
 export {
   type ClauseGroup,
   clauseGroupKey,
@@ -96,6 +109,18 @@ export { Textarea } from '@/components/ui/textarea';
 export { Badge, badgeVariants } from '@/components/ui/badge';
 export { Button, buttonVariants } from '@/components/ui/button';
 export { Checkbox } from '@/components/ui/checkbox';
+// VeloExpense: the kit's Radix dialog, where ExpenseOS's is Base UI. The same parts and the
+// same corner close button; `onOpenChange` takes the next open state in both.
+export {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from '@/components/ui/dialog';
 export {
   AsyncCombobox,
   type AsyncComboboxProps,
