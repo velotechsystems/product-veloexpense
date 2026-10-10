@@ -42,6 +42,7 @@ import {
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { createReadStream } from 'node:fs';
 import { readFile, stat } from 'node:fs/promises';
+import { UPLOAD_CEILING_BYTES } from './limits';
 
 /** How long a presigned URL stays valid, in seconds. */
 export const UPLOAD_URL_TTL_SECONDS = 15 * 60;
@@ -54,14 +55,42 @@ export interface PresignedUpload {
   expiresInSeconds: number;
 }
 
+/**
+ * Options for an upload link (Wave 2, w2-09 — ExpenseOS's `getUploadUrl` input).
+ *
+ * `contentLength` is the EXACT byte length the client will PUT: the S3 driver signs it into
+ * the link, so storage refuses a body of any other size, and refuses to sign a length past
+ * {@link UPLOAD_CEILING_BYTES} at all. Omitted, the link binds no length — what the receipt
+ * drawer from before the port does, which checks the size after the upload instead.
+ */
+export interface UploadOptions {
+  contentLength?: number;
+  expiresInSeconds?: number;
+}
+
+/** Options for a download link. `expiresInSeconds` defaults to {@link DOWNLOAD_URL_TTL_SECONDS}. */
+export interface DownloadOptions {
+  expiresInSeconds?: number;
+}
+
+/** ExpenseOS's refusal: a length must be an integer from 1 byte to the ceiling. */
+function assertUploadLength(contentLength: number | undefined): void {
+  if (contentLength === undefined) return;
+  if (!Number.isSafeInteger(contentLength) || contentLength <= 0 || contentLength > UPLOAD_CEILING_BYTES) {
+    throw new RangeError(
+      `upload contentLength must be an integer from 1 to ${UPLOAD_CEILING_BYTES} bytes; got ${contentLength}`,
+    );
+  }
+}
+
 export interface StoredObjectHead {
   sizeBytes: number;
   contentType: string | null;
 }
 
 export interface Storage {
-  presignUpload(key: string, contentType: string): Promise<PresignedUpload>;
-  presignDownload(key: string, filename?: string): Promise<string>;
+  presignUpload(key: string, contentType: string, options?: UploadOptions): Promise<PresignedUpload>;
+  presignDownload(key: string, filename?: string, options?: DownloadOptions): Promise<string>;
   /** null when the object does not exist — how confirmUpload detects a no-show. */
   head(key: string): Promise<StoredObjectHead | null>;
   delete(key: string): Promise<void>;
@@ -124,16 +153,18 @@ export class MemoryStorage implements Storage {
     return this.objects.size;
   }
 
-  async presignUpload(key: string, contentType: string): Promise<PresignedUpload> {
+  async presignUpload(key: string, contentType: string, options: UploadOptions = {}): Promise<PresignedUpload> {
+    assertUploadLength(options.contentLength);
+    const length = options.contentLength === undefined ? '' : `?length=${options.contentLength}`;
     return {
-      url: `memory://upload/${encodeURIComponent(key)}`,
+      url: `memory://upload/${encodeURIComponent(key)}${length}`,
       headers: { 'Content-Type': contentType },
-      expiresInSeconds: UPLOAD_URL_TTL_SECONDS,
+      expiresInSeconds: options.expiresInSeconds ?? UPLOAD_URL_TTL_SECONDS,
     };
   }
 
-  async presignDownload(key: string): Promise<string> {
-    return `memory://download/${encodeURIComponent(key)}`;
+  async presignDownload(key: string, _filename?: string, options: DownloadOptions = {}): Promise<string> {
+    return `memory://download/${encodeURIComponent(key)}?ttl=${options.expiresInSeconds ?? DOWNLOAD_URL_TTL_SECONDS}`;
   }
 
   async head(key: string): Promise<StoredObjectHead | null> {
@@ -172,16 +203,25 @@ export class S3Storage implements Storage {
       });
   }
 
-  async presignUpload(key: string, contentType: string): Promise<PresignedUpload> {
+  async presignUpload(key: string, contentType: string, options: UploadOptions = {}): Promise<PresignedUpload> {
+    assertUploadLength(options.contentLength);
+    const expiresIn = options.expiresInSeconds ?? UPLOAD_URL_TTL_SECONDS;
     const url = await getSignedUrl(
       this.client,
-      new PutObjectCommand({ Bucket: this.bucket, Key: key, ContentType: contentType }),
-      { expiresIn: UPLOAD_URL_TTL_SECONDS },
+      new PutObjectCommand({
+        Bucket: this.bucket,
+        Key: key,
+        ContentType: contentType,
+        // Signed into the link: storage refuses a body of any other length. Never handed
+        // back as a header — a browser sets Content-Length from the body itself.
+        ...(options.contentLength !== undefined ? { ContentLength: options.contentLength } : {}),
+      }),
+      { expiresIn },
     );
-    return { url, headers: { 'Content-Type': contentType }, expiresInSeconds: UPLOAD_URL_TTL_SECONDS };
+    return { url, headers: { 'Content-Type': contentType }, expiresInSeconds: expiresIn };
   }
 
-  async presignDownload(key: string, filename?: string): Promise<string> {
+  async presignDownload(key: string, filename?: string, options: DownloadOptions = {}): Promise<string> {
     return getSignedUrl(
       this.client,
       new GetObjectCommand({
@@ -191,7 +231,7 @@ export class S3Storage implements Storage {
           ? { ResponseContentDisposition: `attachment; filename="${filename.replace(/["\\]/g, '')}"` }
           : {}),
       }),
-      { expiresIn: DOWNLOAD_URL_TTL_SECONDS },
+      { expiresIn: options.expiresInSeconds ?? DOWNLOAD_URL_TTL_SECONDS },
     );
   }
 

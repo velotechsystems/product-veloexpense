@@ -87,6 +87,11 @@ export const AUDIT_ACTIONS = [
   'LINE_ITEM_ADDED',
   'LINE_ITEM_EDITED',
   'LINE_ITEM_REMOVED',
+  /* Wave 2 (w2-09): ExpenseOS audits a report filed from receipts, and a receipt attached,
+   * moved or removed. VeloExpense's own receipt drawer audited none of the three. */
+  'REPORT_CREATED',
+  'RECEIPT_ATTACHED',
+  'RECEIPT_REMOVED',
 
   /* the report's own transitions. Missing until 4 Oct 2026: a submit and a recall
    * wrote only to `expense_report_event`, so the tamper-evident chain recorded who

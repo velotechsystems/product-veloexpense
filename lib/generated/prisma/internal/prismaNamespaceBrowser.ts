@@ -247,6 +247,7 @@ export const ReceiptScalarFieldEnum = {
   organizationId: 'organizationId',
   expenseId: 'expenseId',
   kind: 'kind',
+  status: 'status',
   s3Key: 's3Key',
   filename: 'filename',
   contentType: 'contentType',

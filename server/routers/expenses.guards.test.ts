@@ -1,6 +1,7 @@
 // @vitest-environment node
 import { permissions as P } from '@expenseos/rbac';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { REFUSAL_KEYS, refusalData } from '@/server/refusal';
 import { stubFn } from '@/test-utils/stubFn';
 import { makeContext } from '../__test-helpers__/trpcCaller';
 
@@ -26,9 +27,10 @@ import { makeContext } from '../__test-helpers__/trpcCaller';
  * (w2-07: `list`, `categories`, `currencies`, `deleteReport`, `updateReport`; w2-08b: the
  * expense, line and tax procedures — the ownership, editability, manual-tax and input
  * blocks; w2-08c: `report` — the read-access block, with the approvals mock; w2-03:
- * `dimensionOptions` in the permission gates). Each later
- * slice brings the blocks for the procedures it ports — the receipt, submit,
- * justification and recall blocks — and the mocks they need (jobs, policy, storage). The harness below is ExpenseOS's, less those mocks;
+ * `dimensionOptions` in the permission gates; w2-09: the receipt procedures — the receipt
+ * upload and removal blocks, with VeloExpense's storage mocked). Each later
+ * slice brings the blocks for the procedures it ports — the submit, justification and
+ * recall blocks — and the mocks they need (jobs, policy). The harness below is ExpenseOS's, less those mocks;
  * `@/auth` is VeloExpense's session module.
  */
 
@@ -51,10 +53,28 @@ vi.mock('@/lib/tenant/request', () => ({ hostTenantSlug: async () => null }));
 const callerCanDecideReport = stubFn(async () => false);
 vi.mock('@/server/lib/reportApproval', () => ({ callerCanDecideReport }));
 
+/**
+ * VeloExpense: VeloExpense's storage (`getStorage`) in place of ExpenseOS's
+ * `@expenseos/storage`. `getUploadUrl` keeps ExpenseOS's name for the spy on the upload
+ * signer, VeloExpense's `presignUpload`; `head` reports an object of 100 bytes, which is what
+ * `receiptCreate` reads back before recording one (d29).
+ */
+const getUploadUrl = stubFn(async () => ({ url: 'https://s3/put', headers: {}, expiresInSeconds: 300 }));
+vi.mock('@/lib/storage', () => ({
+  getStorage: () => ({
+    presignUpload: getUploadUrl,
+    presignDownload: stubFn(async () => 'https://s3/get'),
+    head: stubFn(async () => ({ sizeBytes: 100, contentType: 'application/pdf' })),
+    delete: stubFn(async () => {}),
+  }),
+}));
+
 const U = (n: string) => `00000000-0000-7000-8000-00000000000${n}`;
 const ME = U('9');
 const EXPENSE = U('1');
 const REPORT = U('2');
+/** VeloExpense: the tenant `app.current_org` names, for a receipt key's prefix. */
+const ORG = U('5');
 
 /** An expense owned by the caller, filed on a draft report. */
 const owned = (over: Record<string, unknown> = {}) => ({
@@ -142,8 +162,9 @@ function makeDb(over: Record<string, unknown> = {}) {
     approvalInstance: { update: stubFn(async () => ({ id: 'inst-1' })) },
     integration: { findUnique: stubFn(async () => null as unknown) },
     virtualCardTransaction: { findMany: stubFn(async () => [] as unknown[]) },
-    // VeloExpense: `report` reads the violations and the posting row with tagged raw SQL.
-    $queryRaw: stubFn(async () => [] as unknown[]),
+    // VeloExpense: tagged raw SQL — `report`'s violations and posting row, and the tenant's id
+    // and slug a receipt key and link are built from. One row that answers the last two.
+    $queryRaw: stubFn(async () => [{ id: ORG, slug: 'acme' }] as unknown[]),
     $transaction: vi.fn(async (fn: unknown) =>
       typeof fn === 'function' ? (fn as (tx: unknown) => unknown)(over.self ?? undefined) : fn,
     ),
@@ -194,7 +215,7 @@ describe('permission gates', () => {
       c.categories(),
       c.currencies(),
       c.dimensionOptions(),
-      // VeloExpense: `receiptList` joins this list with the receipts port (w2-09).
+      c.receiptList({ expenseId: EXPENSE }),
     ]) {
       await expect(attempt).rejects.toMatchObject({ code: 'FORBIDDEN' });
     }
@@ -207,9 +228,7 @@ describe('permission gates', () => {
       c.updateExpense({ expenseId: EXPENSE } as never),
       c.deleteExpense({ expenseId: EXPENSE }),
       c.lineItemRemove({ id: U('3') }),
-      // VeloExpense: `receiptRemove` joins this list with the receipt procedures (w2-09).
-      // `updateReport`, behind the same permission, stands in until then.
-      c.updateReport({ reportId: REPORT, title: 'New' } as never),
+      c.receiptRemove({ id: U('3') }),
     ]) {
       await expect(attempt).rejects.toMatchObject({ code: 'FORBIDDEN' });
     }
@@ -241,7 +260,7 @@ describe('expense ownership', () => {
     for (const attempt of [
       c.updateExpense({ expenseId: EXPENSE } as never),
       c.deleteExpense({ expenseId: EXPENSE }),
-      // VeloExpense: `receiptList` joins this list with the receipt procedures (w2-09).
+      c.receiptList({ expenseId: EXPENSE }),
     ]) {
       await expect(attempt).rejects.toMatchObject({ code: 'NOT_FOUND' });
     }
@@ -439,6 +458,312 @@ describe('manual tax bound', () => {
   });
 });
 
+describe('receipt uploads', () => {
+  const file = (contentType: string) => ({ filename: 'r.pdf', contentType, sizeBytes: 100 });
+
+  it('refuses a content type receipts cannot hold', async () => {
+    /**
+     * The allowlist is the gate. These objects are later fetched and handed to the
+     * extraction pipeline, so an arbitrary type is both an extraction failure and a
+     * stored-content risk — and the filename is echoed back so the user knows which
+     * file was rejected.
+     */
+    const db = makeDb();
+    const c = await callerFor(db, UPDATE);
+    await expect(
+      c.receiptUploadUrl({ expenseId: EXPENSE, ...file('application/x-msdownload') } as never),
+    ).rejects.toThrow(/Unsupported file type/);
+    expect(getUploadUrl).not.toHaveBeenCalled();
+  });
+
+  describe('the declared size', () => {
+    /**
+     * The link is signed for the size the caller declares, so storage refuses a body of any
+     * other length. The router's part: the size is required, within the receipt cap, and it
+     * is the DECLARED size that reaches the signer. A router forwarding the cap instead would
+     * pass every refusal test here and break every real upload.
+     */
+    const upload = (sizeBytes?: unknown) => ({
+      expenseId: EXPENSE,
+      filename: 'r.pdf',
+      contentType: 'application/pdf',
+      ...(sizeBytes === undefined ? {} : { sizeBytes }),
+    });
+
+    it.each([
+      ['missing', undefined],
+      ['zero', 0],
+      ['negative', -1],
+      ['fractional', 1.5],
+      ['one byte over 10 MiB', 10_485_761],
+    ])('refuses a %s size before minting a URL', async (_label, sizeBytes) => {
+      const c = await callerFor(makeDb(), UPDATE);
+      await expect(c.receiptUploadUrl(upload(sizeBytes) as never)).rejects.toMatchObject({
+        code: 'BAD_REQUEST',
+      });
+      expect(getUploadUrl).not.toHaveBeenCalled();
+    });
+
+    // VeloExpense: `getUploadUrl` stands for VeloExpense's `presignUpload(key, contentType,
+    // options)`, so the length is read off its third argument.
+    it('accepts exactly 10 MiB', async () => {
+      const c = await callerFor(makeDb(), UPDATE);
+      await c.receiptUploadUrl(upload(10_485_760) as never);
+      expect(getUploadUrl).toHaveBeenCalledWith(
+        expect.any(String),
+        'application/pdf',
+        expect.objectContaining({ contentLength: 10_485_760 }),
+      );
+    });
+
+    it('signs the link for the declared size, not the cap', async () => {
+      const c = await callerFor(makeDb(), UPDATE);
+      await c.receiptUploadUrl(upload(1234) as never);
+      expect(getUploadUrl).toHaveBeenCalledTimes(1);
+      expect(getUploadUrl).toHaveBeenCalledWith(
+        expect.any(String),
+        'application/pdf',
+        expect.objectContaining({ contentLength: 1234 }),
+      );
+    });
+
+    it('refuses a caller without the permission, even with a valid size', async () => {
+      const c = await callerFor(makeDb(), READ);
+      await expect(c.receiptUploadUrl(upload(1234) as never)).rejects.toMatchObject({
+        code: 'FORBIDDEN',
+      });
+      expect(getUploadUrl).not.toHaveBeenCalled();
+    });
+  });
+
+  it('accepts a PDF and an image', async () => {
+    const db = makeDb();
+    const c = await callerFor(db, UPDATE);
+    for (const type of ['application/pdf', 'image/jpeg', 'image/png']) {
+      await passesGuard(c.receiptUploadUrl({ expenseId: EXPENSE, ...file(type) } as never));
+    }
+  });
+
+  it('checks ownership before minting any URL', async () => {
+    const db = makeDb();
+    db.expense.findUnique.mockResolvedValue({
+      reportId: REPORT,
+      ownerId: U('3'),
+      report: { submitterId: U('3'), status: 'DRAFT' },
+    });
+    const c = await callerFor(db, UPDATE);
+    await expect(
+      c.receiptUploadUrl({ expenseId: EXPENSE, ...file('application/pdf') } as never),
+    ).rejects.toMatchObject({ code: 'NOT_FOUND' });
+    expect(getUploadUrl).not.toHaveBeenCalled();
+  });
+
+  it('still allows attaching a receipt to a SUBMITTED report', async () => {
+    /**
+     * Documented deliberately, because it looks like a missing check: the attach path
+     * uses `assertExpenseAttachable`, which admits SUBMITTED as well as the editable
+     * statuses. Attaching supporting documentation is not editing the claim — an
+     * approver asking for a missing receipt on a submitted report is a real flow, and
+     * the worker refuses to redetermine a filed report's numbers from it.
+     */
+    const db = makeDb();
+    db.expense.findUnique.mockResolvedValue(
+      owned({ report: { submitterId: ME, status: 'SUBMITTED' } }),
+    );
+    const c = await callerFor(db, UPDATE);
+    await expect(
+      c.receiptUploadUrl({ expenseId: EXPENSE, ...file('application/pdf') } as never),
+    ).resolves.toBeTruthy();
+    await passesGuard(
+      c.receiptCreate({
+        expenseId: EXPENSE,
+        // VeloExpense: under the tenant's prefix (`receiptPrefix`).
+        key: `org/${ORG}/receipts/${REPORT}/x.pdf`,
+        ...file('application/pdf'),
+      } as never),
+    );
+  });
+
+  it('refuses to attach anything once the report has been decided', async () => {
+    /**
+     * The window closes with the decision. NetSuite's File Cabinet push sends whatever
+     * is on the report at post time, so a document added after approval is evidence
+     * the approver never saw; and there is no post-approval attach path on purpose.
+     */
+    for (const status of ['APPROVED', 'REJECTED', 'REIMBURSED']) {
+      const db = makeDb();
+      db.expense.findUnique.mockResolvedValue(owned({ report: { submitterId: ME, status } }));
+      db.receipt.findUnique.mockResolvedValue({
+        id: 'rc1',
+        s3Key: `${REPORT}/s.pdf`,
+        expenseId: EXPENSE,
+        filename: 's.pdf',
+        contentType: 'application/pdf',
+        sizeBytes: 10,
+        kind: 'BANK_STATEMENT',
+        extraction: null,
+      });
+      db.receipt.findMany.mockResolvedValue([
+        { id: 'rc1', expense: { ownerId: ME, report: { submitterId: ME, status } } },
+      ]);
+      const c = await callerFor(db, UPDATE);
+      const refused = { code: 'BAD_REQUEST', message: expect.stringMatching(/decided/) };
+      const upload = await c
+        .receiptUploadUrl({ expenseId: EXPENSE, ...file('application/pdf') } as never)
+        .catch((e: unknown) => e);
+      expect(upload).toMatchObject(refused);
+      expect(refusalData(upload)).toEqual({ key: REFUSAL_KEYS.documentsClosed });
+      expect(getUploadUrl).not.toHaveBeenCalled();
+      await expect(
+        c.receiptCreate({
+          expenseId: EXPENSE,
+          key: `${REPORT}/x.pdf`,
+          ...file('application/pdf'),
+        } as never),
+      ).rejects.toMatchObject(refused);
+      expect(db.receipt.create).not.toHaveBeenCalled();
+      // VeloExpense: `statementApply` and `startExtraction` — and their refusals here —
+      // arrive with extraction (Wave 3).
+    }
+  });
+});
+
+describe('receipt removal and moves', () => {
+  const receipt = {
+    id: 'rc1',
+    s3Key: `${REPORT}/r.pdf`,
+    expenseId: EXPENSE,
+    filename: 'r.pdf',
+  };
+
+  it('refuses to remove or move a document once the report is submitted', async () => {
+    /**
+     * Evidence on a filed report is what the approver looked at. `receiptRemove`
+     * deletes the row AND the S3 object; `receiptMove` can delete the vacated expense
+     * and restate the total. Both used to check ownership only, so a submitter could
+     * strip the receipt off an APPROVED or REIMBURSED claim — or collapse two approved
+     * expenses into one — after the fact. Both are draft-only writes now.
+     */
+    for (const status of ['SUBMITTED', 'APPROVED', 'REIMBURSED']) {
+      const db = makeDb();
+      db.expense.findUnique.mockResolvedValue(owned({ report: { submitterId: ME, status } }));
+      db.receipt.findUnique.mockResolvedValue(receipt);
+      const c = await callerFor(db, UPDATE);
+      const removed = await c.receiptRemove({ id: U('7') }).catch((e: unknown) => e);
+      expect(removed).toMatchObject({
+        code: 'BAD_REQUEST',
+        message: expect.stringMatching(/not editable/),
+      });
+      // The browser renders this key, in the reader's language; the message is the log's.
+      expect(refusalData(removed)).toEqual({ key: REFUSAL_KEYS.reportNotEditable });
+      expect(db.receipt.delete).not.toHaveBeenCalled();
+      const moved = await c
+        .receiptMove({ id: U('7'), toExpenseId: U('8') })
+        .catch((e: unknown) => e);
+      expect(moved).toMatchObject({
+        code: 'BAD_REQUEST',
+        message: expect.stringMatching(/not editable/),
+      });
+      expect(refusalData(moved)).toEqual({ key: REFUSAL_KEYS.reportNotEditable });
+      expect(db.receipt.update).not.toHaveBeenCalled();
+      expect(db.expense.delete).not.toHaveBeenCalled();
+    }
+  });
+
+  it('still lets the submitter remove and move documents on a RETURNED report', async () => {
+    // An approver sending it back is precisely an invitation to fix the evidence.
+    const db = makeDb();
+    db.expense.findUnique.mockResolvedValue(
+      owned({ report: { submitterId: ME, status: 'RETURNED' } }),
+    );
+    db.receipt.findUnique.mockResolvedValue(receipt);
+    const c = await callerFor(db, UPDATE);
+    await passesGuard(c.receiptRemove({ id: U('7') }));
+    expect(db.receipt.delete).toHaveBeenCalled();
+    await passesGuard(c.receiptMove({ id: U('7'), toExpenseId: U('8') }));
+    expect(db.receipt.update).toHaveBeenCalled();
+  });
+});
+
+describe('manual tax bound', () => {
+  it('refuses paid tax that exceeds the expense amount', async () => {
+    /**
+     * MANUAL figures are trusted verbatim from here to the ledger: the engine takes
+     * them as the split, the allocator multiplies them by the category ITC%, and the
+     * poster carves the recoverable out with `net = gross − recoverable`. $5,000.00 of
+     * GST on a $113.98 lunch therefore posted a $2,500 ITC receivable and a NEGATIVE
+     * meals line, while the report total the approver saw stayed $113.98.
+     */
+    const db = makeDb();
+    const c = await callerFor(db, UPDATE);
+    await expect(
+      c.expenseTaxUpdate({
+        expenseId: EXPENSE,
+        taxSource: 'MANUAL',
+        taxGstHstMinor: 500000n,
+      } as never),
+    ).rejects.toMatchObject({
+      code: 'BAD_REQUEST',
+      message:
+        'Tax of 5000.00 CAD exceeds the expense amount of 113.98 CAD. Tax cannot be more than what was paid.',
+    });
+    expect(db.expense.update).not.toHaveBeenCalled();
+  });
+
+  it('sums the components, keeping any that are left unchanged', async () => {
+    // GST 60 + QST 60 is fine on its own; with 100 of PST already stored it is not.
+    const db = makeDb();
+    db.expense.findUniqueOrThrow.mockResolvedValue({
+      amountMinor: 200n,
+      taxGstHstMinor: null,
+      taxQstMinor: null,
+      taxPstMinor: 100n,
+      currency: { code: 'CAD' },
+    });
+    const c = await callerFor(db, UPDATE);
+    await expect(
+      c.expenseTaxUpdate({
+        expenseId: EXPENSE,
+        taxSource: 'MANUAL',
+        taxGstHstMinor: '60',
+        taxQstMinor: '60',
+      } as never),
+    ).rejects.toMatchObject({ code: 'BAD_REQUEST', message: expect.stringMatching(/2.20 CAD/) });
+    // Clearing the PST explicitly brings the sum back under.
+    await passesGuard(
+      c.expenseTaxUpdate({
+        expenseId: EXPENSE,
+        taxSource: 'MANUAL',
+        taxGstHstMinor: '60',
+        taxQstMinor: '60',
+        taxPstMinor: null,
+      } as never),
+    );
+    expect(db.expense.update).toHaveBeenCalled();
+  });
+
+  it('accepts tax within the amount, and does not bound CALCULATED at all', async () => {
+    const db = makeDb();
+    const c = await callerFor(db, UPDATE);
+    await passesGuard(
+      c.expenseTaxUpdate({
+        expenseId: EXPENSE,
+        taxSource: 'MANUAL',
+        taxGstHstMinor: 500n,
+      } as never),
+    );
+    // CALCULATED hands the figure back to the engine; the typed amounts are ignored.
+    await passesGuard(
+      c.expenseTaxUpdate({
+        expenseId: EXPENSE,
+        taxSource: 'CALCULATED',
+        taxGstHstMinor: 500000n,
+      } as never),
+    );
+    expect(db.expense.findUniqueOrThrow).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe('report read access', () => {
   const reportRow = (submitterId: string) => ({
     id: REPORT,
@@ -511,7 +836,7 @@ describe('input validation', () => {
     const c = await callerFor(db, [...UPDATE, ...READ]);
     for (const attempt of [
       c.deleteExpense({ expenseId: 'nope' } as never),
-      // VeloExpense: `receiptList` joins this list with the receipts port (w2-09).
+      c.receiptList({ expenseId: 'nope' } as never),
       c.report({ reportId: 'nope' } as never),
     ]) {
       await expect(attempt).rejects.toThrow();

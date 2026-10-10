@@ -19,7 +19,13 @@
  *     deactivated, unless the expense already carries it (f09), and stores no NetSuite
  *     business unit or class;
  *   · `attendeeDirectory` searches VeloExpense's one display name and the email, in this
- *     tenant only, leaving deleted people out (ExpenseOS has no server test for it).
+ *     tenant only, leaving deleted people out (ExpenseOS has no server test for it);
+ *   · receipts (d29, d30): `receiptCreate` reads the object back — nothing uploaded and an
+ *     oversized object are refused, the oversized one deleted — and records storage's size
+ *     as STORED; a PENDING row from the old drawer is never shown; another tenant's key is
+ *     refused; the report signs a view link for an hour and `receiptList` for five
+ *     minutes; a report filed from N receipts counts N against the cap; and the receipt
+ *     writes audit as REPORT_CREATED, RECEIPT_ATTACHED and RECEIPT_REMOVED.
  */
 import { permissions as P } from '@expenseos/rbac';
 import { TRPCError } from '@trpc/server';
@@ -463,5 +469,118 @@ describe('attendeeDirectory — the attendee picker\'s search', () => {
 
   it('is refused without the permission to edit a report', async () => {
     expect(await codeOf(search('ada', [P.expense.report.readOwn]))).toBe('FORBIDDEN');
+  });
+});
+
+describe('receipts — VeloExpense\'s storage rules (d29, d30)', () => {
+  let reportId: string;
+  let expenseId: string;
+  const prefix = () => `org/${h.orgId}/receipts/${reportId}`;
+  const pdf = { filename: 'r.pdf', contentType: 'application/pdf' };
+
+  beforeAll(async () => {
+    const caller = h.makeCaller(RW, ownerId);
+    reportId = (await caller.create({ title: 'Receipts', currency: 'CAD' })).id;
+    expenseId = (await caller.createExpense({ reportId })).id;
+  });
+
+  it('refuses a receipt nobody uploaded, and records nothing', async () => {
+    const err = await h
+      .makeCaller(RW, ownerId)
+      .receiptCreate({ expenseId, key: `${prefix()}/never-put.pdf`, ...pdf, sizeBytes: 100 })
+      .catch((e: unknown) => e);
+    expect((err as TRPCError).code).toBe('BAD_REQUEST');
+    expect((err as TRPCError).message).toMatch(/No file was uploaded/);
+    expect(await h.db.receipt.count({ where: { expenseId } })).toBe(0);
+  });
+
+  it('refuses an object over the cap whatever size was declared, and deletes it', async () => {
+    const key = `${prefix()}/huge.pdf`;
+    h.storage.memory.put(key, new Uint8Array(10 * 1024 * 1024 + 1), 'application/pdf');
+    const err = await h
+      .makeCaller(RW, ownerId)
+      .receiptCreate({ expenseId, key, ...pdf, sizeBytes: 100 })
+      .catch((e: unknown) => e);
+    expect((err as TRPCError).code).toBe('BAD_REQUEST');
+    expect(h.storage.memory.has(key)).toBe(false);
+    expect(await h.db.receipt.count({ where: { expenseId } })).toBe(0);
+  });
+
+  it("records the size storage reports, not the client's, as STORED", async () => {
+    const key = `${prefix()}/real.pdf`;
+    h.storage.memory.put(key, new Uint8Array(777), 'application/pdf');
+    const { id } = await h.makeCaller(RW, ownerId).receiptCreate({ expenseId, key, ...pdf, sizeBytes: 100 });
+    expect(await h.db.receipt.findUnique({ where: { id }, select: { sizeBytes: true, status: true } })).toEqual({
+      sizeBytes: 777,
+      status: 'STORED',
+    });
+    expect((await h.lastAudit('Expense', expenseId))?.action).toBe('RECEIPT_ATTACHED');
+  });
+
+  it("refuses another tenant's key, even for the same report id", async () => {
+    const key = `org/00000000-0000-7000-8000-0000000000ee/receipts/${reportId}/theirs.pdf`;
+    h.storage.memory.put(key, new Uint8Array(10), 'application/pdf');
+    await expect(
+      h.makeCaller(RW, ownerId).receiptCreate({ expenseId, key, ...pdf, sizeBytes: 10 }),
+    ).rejects.toThrow(/Invalid receipt key/);
+  });
+
+  it('never shows a PENDING row the old drawer left, in the report or the list', async () => {
+    await h.admin.query(
+      `INSERT INTO receipt (organization_id, expense_id, s3_key, filename, content_type, status, uploaded_by_id)
+       VALUES ($1, $2, $3, 'pending.pdf', 'application/pdf', 'PENDING', $4)`,
+      [h.orgId, expenseId, `${prefix()}/pending.pdf`, ownerId],
+    );
+    const caller = h.makeCaller(RW, ownerId);
+    const listed = (await caller.receiptList({ expenseId })).items.map((i: { filename: string }) => i.filename);
+    const shown = (await caller.report({ reportId })).expenses[0].receipts.map((r: { filename: string }) => r.filename);
+    expect(listed).toEqual(['r.pdf']);
+    expect(shown).toEqual(['r.pdf']);
+  });
+
+  it('signs the report\'s view link for an hour and the list\'s for five minutes', async () => {
+    const caller = h.makeCaller(RW, ownerId);
+    const [onReport] = (await caller.report({ reportId })).expenses[0].receipts;
+    const [onList] = (await caller.receiptList({ expenseId })).items;
+    expect(onReport.url).toMatch(/\?ttl=3600$/);
+    expect(onList.url).toMatch(/\?ttl=300$/);
+  });
+
+  it('audits a removal as RECEIPT_REMOVED and takes the object with it', async () => {
+    const key = `${prefix()}/gone.pdf`;
+    h.storage.memory.put(key, new Uint8Array(5), 'application/pdf');
+    const caller = h.makeCaller(RW, ownerId);
+    const { id } = await caller.receiptCreate({ expenseId, key, ...pdf, sizeBytes: 5 });
+    await caller.receiptRemove({ id });
+    expect((await h.lastAudit('Expense', expenseId))?.action).toBe('RECEIPT_REMOVED');
+    expect(h.storage.memory.has(key)).toBe(false);
+  });
+
+  it('counts every expense of a report filed from receipts against the cap, creating nothing past it', async () => {
+    const used = (
+      await h.admin.query(
+        `SELECT count(*)::int AS n FROM expense WHERE organization_id = $1 AND created_at > now() - interval '365 days'`,
+        [h.orgId],
+      )
+    ).rows[0].n as number;
+    await h.admin.query(
+      `INSERT INTO subscription (organization_id, plan_code, plan_name, status, read_only, features, limits, mirrored_at)
+       VALUES ($1, 'starter', 'Starter', 'ACTIVE', false, '{}'::jsonb, $2::jsonb, clock_timestamp())`,
+      [h.orgId, JSON.stringify({ expensesPerYear: used + 2 })],
+    );
+    try {
+      const caller = h.makeCaller([...RW, P.expense.report.createOwn], ownerId);
+      const reports = async () => (await h.admin.query('SELECT count(*)::int AS n FROM expense_report')).rows[0].n;
+      const before = await reports();
+      const refused = await caller.startFromReceipts({ title: 'Three', count: 3 }).catch((e: unknown) => e);
+      expect(refusalData(refused)).toEqual({ key: REFUSAL_KEYS.expenseLimitReached, params: { limit: used + 2 } });
+      expect(await reports()).toBe(before);
+      // Two fit, and the report is audited as created.
+      const ok = await caller.startFromReceipts({ title: 'Two', count: 2 });
+      expect(ok.expenseIds).toHaveLength(2);
+      expect((await h.lastAudit('ExpenseReport', ok.reportId))?.action).toBe('REPORT_CREATED');
+    } finally {
+      await h.admin.query('DELETE FROM subscription WHERE organization_id = $1', [h.orgId]);
+    }
   });
 });

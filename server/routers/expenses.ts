@@ -11,11 +11,13 @@
  *   · w2-08c — the `report` query, with `serializeExpense` and `EXPENSE_DETAIL_INCLUDE`;
  *   · w2-03 — cost allocation: `dimensionOptions` and `allocationSet`;
  *   · w2-04 — the attendee picker's search, `attendeeDirectory` (the roster itself is
- *     written by `updateExpense`, w2-08b).
+ *     written by `updateExpense`, w2-08b);
+ *   · w2-09 — receipts: `startFromReceipts`, `addReceiptExpenses`, `receiptUploadUrl`,
+ *     `receiptCreate`, `receiptList`, `receiptMove`, `receiptRemove`.
  *
- * The rest of ExpenseOS's router (receipt and statement
- * procedures, `explainPerDiem`, `submit`, `recall`) arrives with the slices after, in
- * ExpenseOS's order and words.
+ * The rest of ExpenseOS's router (`startExtraction`, the grouping and statement procedures —
+ * extraction, Wave 3 — `explainPerDiem`, `submit`, `recall`) arrives with the slices after,
+ * in ExpenseOS's order and words.
  *
  * VeloExpense adaptations are marked `VeloExpense:` where they are made. The shared ones:
  *   · a currency is keyed by its ISO code (`currencyId` holds the code, as `homeCurrencyId`
@@ -24,7 +26,11 @@
  *     tables until Wave 4 ports ExpenseOS's engine (`pendingApproverByReport`);
  *   · a report's number is minted from the organization's sequence, as VeloExpense's own
  *     writer has always done (`mintReportNumber`);
- *   · receipt objects are deleted and signed through VeloExpense's storage (`getStorage`);
+ *   · receipt objects are deleted and signed through VeloExpense's storage (`getStorage`),
+ *     under the tenant's key prefix (`receiptKey`); an upload link is bound to the file's
+ *     length and `receiptCreate` reads the object back before recording it (d29); only a
+ *     STORED receipt is read; the extraction and determination jobs are not queued until
+ *     Wave 3 (`enqueue`);
  *   · `report` reads VeloExpense's own policy violations and ledger posting
  *     (`reportViolations`, `postingStateOf`); there is no NetSuite position, so no coding
  *     gaps, classes or NetSuite business units, and no receipt has a reading until Wave 3;
@@ -43,6 +49,8 @@ import {
   type BusinessUnitSource,
   type CodingDefaultsUser,
   codingDefaultsFor,
+  createBlankExpensesForReceipts,
+  createReportFromReceipts,
   EXPENSE_FX_SELECT,
   ExpensePaymentMethod,
   ExpenseReportStatus,
@@ -54,6 +62,7 @@ import {
   Prisma,
   recomputeReportTotal,
   resolveExpenseFx,
+  resolveIntakeCurrencyId,
 } from '@expenseos/db';
 import { tipMinorOf, tipPayload, totalTipMinor } from '@expenseos/expense-lines';
 import { buildReportRollup, fxRateMapFrom, getCurrency, withFxOverride } from '@expenseos/money';
@@ -64,6 +73,8 @@ import { assertExpenseAllowance, CapReachedError } from '@/lib/billing/caps';
 import type { TenantDb } from '@/lib/db/prisma';
 import { queryRunnerOf } from '@/lib/db/prisma-pg-bridge';
 import { getStorage } from '@/lib/storage';
+import { receiptKey, receiptPrefix } from '@/lib/storage/keys';
+import { RECEIPT_CAP_BYTES } from '@/lib/storage/limits';
 import { currencySymbol } from '@/server/lib/currencySymbol';
 import { explainExpenseTax, resolveExpenseTax } from '@/server/lib/expenseTax';
 import { summarizeExtractionProgress } from '@/server/lib/extractionInFlight';
@@ -82,8 +93,105 @@ import {
   readerTotalsFor,
 } from '@/server/lib/readerCurrency';
 import { callerCanDecideReport } from '@/server/lib/reportApproval';
+import { reportUrl } from '@/server/lib/reportLinks';
 import { REFUSAL_KEYS, type RefusalKey, refusal } from '@/server/refusal';
 import { protectedProcedure, router, withPermission } from '@/server/trpc';
+
+/** 10 MiB cap per receipt/invoice — the shared cap the worker also reads against. */
+const MAX_RECEIPT_BYTES = RECEIPT_CAP_BYTES;
+
+// VeloExpense: `BATCH_THRESHOLD_FILES` (sync vs batch extraction) arrives with extraction
+// (Wave 3), with `startExtraction`.
+
+/** Content types accepted for expense receipts/invoices. Enforced server-side
+ *  (the storage layer itself does not filter). */
+const RECEIPT_CONTENT_TYPES = new Set([
+  'image/jpeg',
+  'image/png',
+  'image/webp',
+  'image/heic',
+  'image/heif',
+  'application/pdf',
+]);
+
+/**
+ * Seconds a receipt upload URL stays valid.
+ *
+ * Longer than the storage default of 300. These URLs are handed to a caller that may be a
+ * phone on hotel wifi pushing 10MB, or an MCP client on a slow link — and an upload that
+ * expires mid-PUT leaves a blank expense whose cause is invisible to the person filing it.
+ */
+const RECEIPT_UPLOAD_TTL_SECONDS = 900;
+
+/** One file about to be uploaded, as the caller describes it before it exists in S3. */
+const receiptFileSchema = z.object({
+  filename: z.string().trim().min(1).max(255),
+  contentType: z.string().trim().min(1).max(120),
+  /** The file's EXACT byte length. Its upload link is signed for this length, so storage
+   *  refuses a PUT of any other size (see `UploadUrlInput.contentLength`), and a file over
+   *  the cap is refused here before any link or expense exists. */
+  sizeBytes: z.number().int().positive().max(MAX_RECEIPT_BYTES),
+});
+
+type ReceiptFile = z.infer<typeof receiptFileSchema>;
+
+/** The extension for an object key, from a filename that may not have one. */
+function extOf(filename: string): string {
+  return filename.includes('.') ? filename.split('.').pop() || 'bin' : 'bin';
+}
+
+/**
+ * Presign one PUT per file, pairing each with the expense it belongs to.
+ *
+ * Every key is built under the REPORT's prefix, which is what `receiptCreate`'s key-prefix
+ * guard checks — so a caller can register only what was presigned for them here, and the
+ * guard needs no loosening to let this path through.
+ *
+ * Content types are validated before anything is created, not per file as we go: half a
+ * report's worth of expenses created and then a rejection is a mess somebody has to clean up
+ * by hand.
+ */
+async function presignReceiptUploads(
+  // VeloExpense: the tenant, for the key's tenant prefix (`receiptKey`).
+  organizationId: string,
+  reportId: string,
+  pairs: readonly { expenseId: string; file: ReceiptFile }[],
+) {
+  return Promise.all(
+    pairs.map(async ({ expenseId, file }) => {
+      const key = receiptKey(organizationId, reportId, extOf(file.filename));
+      // VeloExpense: VeloExpense's storage, length-bound as ExpenseOS's (d29).
+      const upload = await getStorage().presignUpload(key, file.contentType, {
+        // This file's own declared length — never the cap, or every real upload would fail
+        // its signature.
+        contentLength: file.sizeBytes,
+        expiresInSeconds: RECEIPT_UPLOAD_TTL_SECONDS,
+      });
+      return {
+        expenseId,
+        key,
+        filename: file.filename,
+        contentType: file.contentType,
+        url: upload.url,
+        method: 'PUT' as const,
+        headers: upload.headers,
+        expiresIn: upload.expiresInSeconds,
+      };
+    }),
+  );
+}
+
+/** Reject unsupported types up front, naming the offender rather than the batch. */
+function assertReceiptTypes(files: readonly ReceiptFile[]): void {
+  for (const file of files) {
+    if (!RECEIPT_CONTENT_TYPES.has(file.contentType)) {
+      throw new TRPCError({
+        code: 'BAD_REQUEST',
+        message: `Unsupported file type for ${file.filename}: ${file.contentType}`,
+      });
+    }
+  }
+}
 
 /** A report is editable (and (re)submittable) by its submitter while DRAFT or
  *  RETURNED — an approver can return a submitted report for fixes (Phase 3),
@@ -91,6 +199,25 @@ import { protectedProcedure, router, withPermission } from '@/server/trpc';
 const EDITABLE_REPORT_STATUSES: ExpenseReportStatus[] = [
   ExpenseReportStatus.DRAFT,
   ExpenseReportStatus.RETURNED,
+];
+
+/**
+ * Where a document may still be ADDED: the editable statuses, plus SUBMITTED.
+ *
+ * Attaching evidence is not editing the claim — an approver asking for a missing receipt
+ * mid-review is a real flow, and the joint/single-document extraction refuses to move a
+ * filed report's numbers (`prefill.ts`, `determine.ts`). The window closes with the
+ * decision: once a report is APPROVED, REJECTED or REIMBURSED the evidence set is what
+ * the approver signed, and NetSuite's File Cabinet push sends whatever is on the report
+ * at post time. There is deliberately no post-approval attach path; a report whose
+ * evidence is wrong after approval is a report to reject or reverse, not to patch.
+ *
+ * Removing or moving a document is narrower still — `EDITABLE_REPORT_STATUSES` only —
+ * because both destroy or restate what an approver may already have looked at.
+ */
+const ATTACHABLE_REPORT_STATUSES: ExpenseReportStatus[] = [
+  ...EDITABLE_REPORT_STATUSES,
+  ExpenseReportStatus.SUBMITTED,
 ];
 
 function actorOf(ctx: {
@@ -167,6 +294,24 @@ async function assertExpenseDraft(
   expenseId: string,
 ): Promise<{ reportId: string; ownerId: string }> {
   return assertExpenseWritable(ctx, expenseId, EDITABLE_REPORT_STATUSES, NOT_EDITABLE);
+}
+
+/**
+ * As `assertExpenseDraft`, for the document endpoints that ADD evidence: the report may
+ * also be SUBMITTED (see `ATTACHABLE_REPORT_STATUSES`). Delete and move stay on the
+ * draft gate.
+ */
+async function assertExpenseAttachable(
+  ctx: {
+    db: import('@expenseos/db').PrismaClient;
+    session: { user: { id: string } };
+  },
+  expenseId: string,
+): Promise<{ reportId: string; ownerId: string }> {
+  return assertExpenseWritable(ctx, expenseId, ATTACHABLE_REPORT_STATUSES, {
+    key: REFUSAL_KEYS.documentsClosed,
+    message: 'Documents cannot be added once the report has been decided.',
+  });
 }
 
 /** Ownership + a status allow-list, in one read. The two public gates above are the
@@ -608,7 +753,8 @@ const scaledToDecimalString = (v: bigint): string =>
  *     `serializeExpense` puts back ExpenseOS's `{ id, code, symbol }` (id = the code, the
  *     symbol from `currencySymbol`);
  *   · an allocation has no class and no NetSuite business unit (no NetSuite position);
- *   · a receipt has no `extraction` row until extraction is ported (Wave 3).
+ *   · a receipt has no `extraction` row until extraction is ported (Wave 3), and only a
+ *     STORED receipt is read (see `receipts` below).
  */
 const EXPENSE_DETAIL_INCLUDE = {
   currency: { select: { code: true } },
@@ -642,6 +788,9 @@ const EXPENSE_DETAIL_INCLUDE = {
     },
   },
   receipts: {
+    // VeloExpense: only a receipt whose object has been verified in storage — a PENDING row
+    // from the receipt drawer's two-phase upload may name an object that was never PUT.
+    where: { status: 'STORED' },
     orderBy: { uploadedAt: 'desc' },
   },
 } satisfies Prisma.ExpenseInclude;
@@ -733,10 +882,11 @@ async function serializeExpense(e: ExpenseWithDetail) {
         // What the determination decided this document IS (rule 2) — the reason a
         // reviewer can see why the tip came from one file and the tax from another.
         kind: r.kind,
-        // VeloExpense: VeloExpense's storage signs an inline view URL at its own TTL
-        // (DOWNLOAD_URL_TTL_SECONDS). ExpenseOS signs for an hour so the workbench can keep
-        // one URL for the session; that choice is made with the receipts port (w2-09).
-        url: await getStorage().presignDownload(r.s3Key),
+        // 1-hour TTL: the workbench keeps a receipt's presigned URL for the
+        // session (switching between expenses reuses it); the 5-min default
+        // expired mid-session and broke the viewer on revisit.
+        // VeloExpense: VeloExpense's storage, inline (no filename), at ExpenseOS's TTL (d30).
+        url: await getStorage().presignDownload(r.s3Key, undefined, { expiresInSeconds: 3600 }),
         // VeloExpense: no reading until extraction is ported (Wave 3).
         extraction: null,
       })),
@@ -957,6 +1107,55 @@ async function pendingApproverByReport(
  * taken under the organization row's lock so two concurrent creates cannot draw the same
  * one (lib/expenses/service.ts `createReport`, which this mirrors).
  */
+/**
+ * VeloExpense: ExpenseOS's job queue (`@expenseos/jobs`) carries the receipt-reading jobs —
+ * the malware scan and extraction (`expense.extractReceipt`) and the joint determination
+ * (`expense.determineExpense`). Both arrive with extraction (Wave 3); until then there is no
+ * worker to hand them to, so the ported calls come here and nothing is queued.
+ */
+async function enqueue(job: string, payload: Record<string, unknown>): Promise<void> {
+  void job;
+  void payload;
+}
+
+/**
+ * VeloExpense: the tenant this transaction runs as — the same `app.current_org` RLS scopes
+ * every row by — for a receipt key's tenant prefix (`receiptKey`, `receiptPrefix`).
+ */
+async function tenantIdOf(db: TenantDb): Promise<string> {
+  const [org] = await db.$queryRaw<{ id: string | null }[]>`
+    SELECT NULLIF(current_setting('app.current_org', true), '') AS id`;
+  if (!org?.id) throw new TRPCError({ code: 'FORBIDDEN', message: 'No tenant context' });
+  return org.id;
+}
+
+/** VeloExpense: the tenant's slug, for a link on the tenant's own origin (`reportUrl`). */
+async function tenantSlugOf(db: TenantDb): Promise<string | null> {
+  const [org] = await db.$queryRaw<{ slug: string }[]>`
+    SELECT slug FROM organization
+     WHERE id = NULLIF(current_setting('app.current_org', true), '')::uuid`;
+  return org?.slug ?? null;
+}
+
+/**
+ * VeloExpense: the plan's yearly expense cap, checked on the procedure's own transaction
+ * (`queryRunnerOf`) as VeloExpense's own writer checks it, for `adding` new expenses — and a
+ * cap reached is a translatable refusal (`refusals.billing.expenseLimitReached`).
+ */
+async function assertExpenseCap(db: TenantDb, adding = 1): Promise<void> {
+  await assertExpenseAllowance(queryRunnerOf(db), adding).catch((err: unknown) => {
+    if (err instanceof CapReachedError) {
+      throw refusal(
+        'FORBIDDEN',
+        REFUSAL_KEYS.expenseLimitReached,
+        `This organization's plan allows ${err.limit} expenses a year, and that many have been added in the last twelve months.`,
+        { limit: err.limit },
+      );
+    }
+    throw err;
+  });
+}
+
 async function mintReportNumber(db: TenantDb): Promise<string> {
   const [org] = await db.$queryRaw<{ id: string; seq: bigint }[]>`
     SELECT id::text AS id, expense_report_seq AS seq
@@ -1459,17 +1658,7 @@ export const expensesRouter = router({
       // transaction (`queryRunnerOf`) as VeloExpense's own writer checks it — every path
       // that creates an expense counts against it. Not reached by the reuse above, which
       // creates nothing.
-      await assertExpenseAllowance(queryRunnerOf(ctx.db)).catch((err: unknown) => {
-        if (err instanceof CapReachedError) {
-          throw refusal(
-            'FORBIDDEN',
-            REFUSAL_KEYS.expenseLimitReached,
-            `This organization's plan allows ${err.limit} expenses a year, and that many have been added in the last twelve months.`,
-            { limit: err.limit },
-          );
-        }
-        throw err;
-      });
+      await assertExpenseCap(ctx.db);
       const { coding, businessUnitSource } = await filerCodingOf(ctx.db, report.submitter);
       const expense = await ctx.db.expense.create({
         // Placeholder date/amount for a blank entry; extraction or the user fills them.
@@ -1501,6 +1690,496 @@ export const expensesRouter = router({
    * So this re-runs the real pipeline — the same one the write path uses, not a copy — and
    * returns its trace. The narration is somebody else's job.
    */
+  /**
+   * Receipt-first entry: create one report holding one blank expense per receipt
+   * the user is about to upload.
+   *
+   * This is what "quick expense" means in finance — you start from the receipts,
+   * and the report is created around them. (The old QuickExpense pool, a personal
+   * staging area you later attached to a report, was the opposite motion and is
+   * gone.)
+   *
+   * ONE upload batch → ONE report. Uploading again makes another report, so a
+   * user can keep them separate by uploading separately, rather than the system
+   * guessing which receipts belong together.
+   *
+   * Returns the report id and an expense id per file, in the caller's order. The
+   * client then drives the existing `receiptUploadUrl` → `receiptCreate` →
+   * `startExtraction` path against those ids: same upload, same AV scan, same
+   * batching rules. Extraction fills merchant/date/amount, so the expenses aren't
+   * blank for long.
+   *
+   * The report is created even if every upload then fails — a DRAFT with empty
+   * expenses is visible and fixable, whereas a silent no-op leaves the user
+   * wondering where their receipts went.
+   */
+  startFromReceipts: withPermission(P.expense.report.createOwn)
+    .input(
+      z
+        .object({
+          /** How many blank expenses to create, when the caller will presign its own
+           *  uploads (the original web flow). Mutually exclusive with `files`. */
+          count: z.number().int().min(1).max(50).optional(),
+          /**
+           * The files themselves, described but not yet uploaded.
+           *
+           * Supplying these returns a presigned PUT per file alongside the ids, which is
+           * what lets a caller with no tRPC client — the assistant panel after a press, or
+           * an MCP client — file receipts without a second round trip per file.
+           */
+          files: z.array(receiptFileSchema).min(1).max(50).optional(),
+          /** Localized "Untitled report" from the client, so the default title
+           *  isn't English for a French user. Renamed from the workbench later. */
+          title: z.string().trim().min(1).max(200),
+          /** Currency UUID or ISO-4217 code; defaults to the submitter's home
+           *  currency, else USD. */
+          currency: z.string().min(3).optional(),
+        })
+        // One or the other, never both and never neither: `count` with `files` is two
+        // answers to "how many expenses", and a caller that sent both would have no way to
+        // know which one we honoured.
+        .refine((v) => Boolean(v.count) !== Boolean(v.files), {
+          message: 'Provide either count or files, not both.',
+        }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const userId = ctx.session.user.id;
+      const files = input.files;
+      if (files) assertReceiptTypes(files);
+      const count = files?.length ?? input.count ?? 1;
+      const currencyId = await resolveIntakeCurrencyId(ctx.db, {
+        userId,
+        requested: input.currency,
+      });
+      if (!currencyId) throw new TRPCError({ code: 'BAD_REQUEST', message: 'Unknown currency' });
+      // For the link in the response: the report opens in the person's own language. The
+      // coding columns ride along on the same read — the expenses created below are
+      // coded to the filer, and a second query for it would be a round trip for nothing.
+      // VeloExpense: a person carries business unit and department (no class, no NetSuite
+      // business unit), and no language preference — VeloExpense's links carry no locale.
+      const owner = await ctx.db.user.findUnique({
+        where: { id: userId },
+        select: {
+          businessUnitId: true,
+          departmentId: true,
+        },
+      });
+      const filer = await filerCodingOf(ctx.db, owner);
+      // VeloExpense: every expense created here counts against the plan's yearly cap, all
+      // of them checked before any is written.
+      await assertExpenseCap(ctx.db, count);
+
+      // Creation itself lives in @expenseos/db, because the inbound-email worker creates the
+      // same rows and cannot call a tRPC procedure. The audit envelope stays here: the row
+      // records WHICH action filed them, and only this layer knows that.
+      const report = await withAudit(
+        ctx.db,
+        {
+          action: auditActions.report.create,
+          entityType: 'ExpenseReport',
+          actor: actorOf(ctx),
+          details: { via: 'receipts', receipts: count },
+        },
+        async (tx) =>
+          createReportFromReceipts(tx, {
+            // VeloExpense: minted from the tenant's sequence (`mintReportNumber`).
+            number: await mintReportNumber(tx),
+            submitterId: userId,
+            title: input.title,
+            currencyId,
+            // Coded to the filer, the same as an expense added by hand.
+            coding: filer.coding,
+            businessUnitSource: filer.businessUnitSource,
+            count,
+          }),
+        (created) => created.id,
+      );
+
+      const expenseIds = report.expenseIds;
+      return {
+        reportId: report.id,
+        number: report.number,
+        expenseIds,
+        // Absent for the `count` form, so the existing caller's response is unchanged.
+        uploads: files
+          ? await presignReceiptUploads(
+              await tenantIdOf(ctx.db),
+              report.id,
+              files.map((file, i) => ({ expenseId: expenseIds[i] as string, file })),
+            )
+          : undefined,
+        /**
+         * Where to finish the job in a browser.
+         *
+         * For an MCP client that cannot PUT a local file — Claude Desktop with no filesystem
+         * access — this is the whole difference between a dead end and one click. `upload=1`
+         * asks the report page to say why the person arrived, since a report full of blank
+         * expenses explains nothing on its own.
+         */
+        // VeloExpense: on the tenant's own origin (`reportUrl`).
+        reportUrl: reportUrl(report.id, {
+          tenantSlug: await tenantSlugOf(ctx.db),
+          promptUpload: Boolean(files),
+        }),
+      };
+    }),
+
+  /**
+   * Add one blank expense per receipt to a report that already exists, and presign an
+   * upload for each.
+   *
+   * The append counterpart to `startFromReceipts`: "put these three receipts on the report
+   * I am looking at" rather than "make me a report from these three receipts".
+   *
+   * **Why this is not `createExpense` in a loop.** That procedure deliberately reuses an
+   * empty expense already on the report rather than piling up blanks — so N calls return the
+   * SAME id until a receipt is attached to it. `ExpenseReportWorkbench.uploadReceipts` gets
+   * away with it only because each upload completes before the next call. A caller filing a
+   * batch at once would put every receipt on one expense, and `determineExpense` reads
+   * several documents on one expense as ONE charge with a tip — so three dinners would
+   * become one dinner with two tips. This creates exactly as many rows as there are files.
+   */
+  addReceiptExpenses: withPermission(P.expense.report.updateOwn)
+    .input(
+      z.object({
+        reportId: z.string().uuid(),
+        files: z.array(receiptFileSchema).min(1).max(50),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      assertReceiptTypes(input.files);
+      const userId = ctx.session.user.id;
+      const report = await ctx.db.expenseReport.findUnique({
+        where: { id: input.reportId },
+        select: {
+          id: true,
+          number: true,
+          submitterId: true,
+          currencyId: true,
+          status: true,
+          // Coded to the filer, the same as an expense added by hand.
+          // VeloExpense: business unit and department (no class, no NetSuite business unit).
+          submitter: {
+            select: {
+              businessUnitId: true,
+              departmentId: true,
+            },
+          },
+        },
+      });
+      // Somebody else's report and a missing one are the same answer, so an id cannot be
+      // probed for existence.
+      if (!report || report.submitterId !== userId) throw new TRPCError({ code: 'NOT_FOUND' });
+      if (!EDITABLE_REPORT_STATUSES.includes(report.status)) {
+        throw refusal('BAD_REQUEST', NOT_EDITABLE.key, NOT_EDITABLE.message);
+      }
+
+      const filer = await filerCodingOf(ctx.db, report.submitter);
+      // VeloExpense: the plan's yearly expense cap, for every expense about to be created.
+      await assertExpenseCap(ctx.db, input.files.length);
+      const expenseIds = await withAudit(
+        ctx.db,
+        {
+          action: auditActions.report.update,
+          entityType: 'ExpenseReport',
+          entityId: report.id,
+          actor: actorOf(ctx),
+          details: { via: 'receipts', receipts: input.files.length },
+        },
+        (tx) =>
+          createBlankExpensesForReceipts(tx, {
+            reportId: report.id,
+            ownerId: userId,
+            currencyId: report.currencyId,
+            coding: filer.coding,
+            businessUnitSource: filer.businessUnitSource,
+            count: input.files.length,
+          }),
+      );
+
+      // VeloExpense: no language preference to read — the link is the tenant's (`reportUrl`).
+      return {
+        reportId: report.id,
+        number: report.number,
+        expenseIds,
+        uploads: await presignReceiptUploads(
+          await tenantIdOf(ctx.db),
+          report.id,
+          input.files.map((file, i) => ({ expenseId: expenseIds[i] as string, file })),
+        ),
+        reportUrl: reportUrl(report.id, { tenantSlug: await tenantSlugOf(ctx.db), promptUpload: true }),
+      };
+    }),
+
+  /** Presigned PUT URL for uploading a receipt/invoice onto an expense entry.
+   *  The client PUTs the file directly to S3, then calls `receiptCreate`.
+   *  `sizeBytes` is the exact byte length the client will PUT; the link is bound to it. */
+  receiptUploadUrl: withPermission(P.expense.report.updateOwn)
+    .input(
+      z.object({
+        expenseId: z.string().uuid(),
+        filename: z.string().trim().min(1).max(255),
+        contentType: z.string().trim().min(1).max(120),
+        sizeBytes: z.number().int().positive().max(MAX_RECEIPT_BYTES),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      if (!RECEIPT_CONTENT_TYPES.has(input.contentType)) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Unsupported file type.' });
+      }
+      const { reportId } = await assertExpenseAttachable(ctx, input.expenseId);
+      // Object-key prefix: the report for a filed expense, else the expense id
+      // (both UUIDs) so an unfiled receipt still has a stable, scoped prefix.
+      // VeloExpense: under the tenant's prefix as well (`receiptKey`).
+      const keyPrefix = reportId;
+      const ext = input.filename.includes('.') ? input.filename.split('.').pop() || 'bin' : 'bin';
+      const key = receiptKey(await tenantIdOf(ctx.db), keyPrefix, ext);
+      // VeloExpense: VeloExpense's storage, length-bound (d29), at ExpenseOS's 300 seconds.
+      const upload = await getStorage().presignUpload(key, input.contentType, {
+        contentLength: input.sizeBytes,
+        expiresInSeconds: 300,
+      });
+      return {
+        url: upload.url,
+        method: 'PUT' as const,
+        headers: upload.headers,
+        expiresIn: upload.expiresInSeconds,
+        key,
+      };
+    }),
+
+  /** Persist the receipt row after the client has PUT the object to S3. */
+  receiptCreate: withPermission(P.expense.report.updateOwn)
+    .input(
+      z.object({
+        expenseId: z.string().uuid(),
+        key: z.string().trim().min(1).max(512),
+        filename: z.string().trim().min(1).max(255),
+        contentType: z.string().trim().min(1).max(120),
+        sizeBytes: z.number().int().positive().max(MAX_RECEIPT_BYTES),
+        // When true, don't auto-enqueue extraction — the caller uploaded several
+        // files together and will call `startExtraction` once with all ids so
+        // they can be batched. Omitted/false keeps the single-file behavior.
+        deferExtraction: z.boolean().optional(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      if (!RECEIPT_CONTENT_TYPES.has(input.contentType)) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Unsupported file type.' });
+      }
+      const { reportId } = await assertExpenseAttachable(ctx, input.expenseId);
+      // Key-prefix guard: the object must live under this expense's prefix (the
+      // report id when filed, else the expense id), so a caller can't point the
+      // row at another report's (or user's) upload.
+      // VeloExpense: the prefix is the tenant's and the report's (`receiptPrefix`).
+      const keyPrefix = receiptPrefix(await tenantIdOf(ctx.db), reportId);
+      if (!input.key.startsWith(`${keyPrefix}/`) || input.key.includes('..')) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Invalid receipt key' });
+      }
+      // VeloExpense (d29): what storage actually holds, not what the client says it sent.
+      // The link was bound to the declared length, so a body of another size never landed;
+      // this also refuses a key nobody uploaded to, and records the size storage reports.
+      const stored = await getStorage().head(input.key);
+      if (!stored) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'No file was uploaded for this receipt.' });
+      }
+      if (stored.sizeBytes > MAX_RECEIPT_BYTES) {
+        await getStorage()
+          .delete(input.key)
+          .catch(() => undefined);
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'This file is larger than a receipt may be.' });
+      }
+      const created = await withAudit(
+        ctx.db,
+        {
+          action: auditActions.report.receiptAttach,
+          entityType: 'Expense',
+          entityId: input.expenseId,
+          actor: actorOf(ctx),
+          details: { filename: input.filename },
+        },
+        async (tx) =>
+          tx.receipt.create({
+            data: {
+              expenseId: input.expenseId,
+              s3Key: input.key,
+              filename: input.filename,
+              contentType: input.contentType,
+              // VeloExpense: the size storage reports, and verified (above), so STORED.
+              sizeBytes: stored.sizeBytes,
+              status: 'STORED',
+              uploadedById: ctx.session.user.id,
+            },
+            select: { id: true },
+          }),
+      );
+
+      // Kick off AV-scan → AI extraction asynchronously. Best-effort: the
+      // receipt + Expense are already persisted, so a Redis/enqueue hiccup (or
+      // no worker) must not fail the upload — the file stays visible and the
+      // Expense is filled manually. Skipped when the caller defers to a single
+      // `startExtraction` call (multi-file upload → one batch).
+      if (!input.deferExtraction) {
+        try {
+          await enqueue('expense.extractReceipt', { receiptId: created.id });
+        } catch (err) {
+          console.warn(
+            `[expenses.receiptCreate] extraction enqueue failed for receipt ${created.id}: ${
+              err instanceof Error ? err.message : String(err)
+            }`,
+          );
+        }
+      }
+      return created;
+    }),
+
+  // VeloExpense: `startExtraction` arrives with extraction (Wave 3).
+
+  /** List an expense's receipts, each with a short-lived presigned view URL. */
+  receiptList: withPermission(P.expense.report.readOwn)
+    .input(z.object({ expenseId: z.string().uuid() }))
+    .query(async ({ ctx, input }) => {
+      await assertExpenseOwned(ctx, input.expenseId);
+      const rows = await ctx.db.receipt.findMany({
+        // VeloExpense: only a receipt verified in storage (see EXPENSE_DETAIL_INCLUDE).
+        where: { expenseId: input.expenseId, status: 'STORED' },
+        orderBy: { uploadedAt: 'desc' },
+        select: {
+          id: true,
+          filename: true,
+          contentType: true,
+          sizeBytes: true,
+          s3Key: true,
+          uploadedAt: true,
+        },
+      });
+      const items = await Promise.all(
+        rows.map(async ({ s3Key, ...r }) => ({
+          ...r,
+          // VeloExpense: VeloExpense's storage, inline, at its default TTL (ExpenseOS's 300s).
+          url: await getStorage().presignDownload(s3Key),
+        })),
+      );
+      return { items };
+    }),
+
+  // VeloExpense: `receiptGroupingSuggestions`, `statementTargets` and `statementApply` read
+  // extractions, and arrive with extraction (Wave 3).
+
+  /**
+   * Move a receipt to a different expense on the same report.
+   *
+   * The manual counterpart to automatic grouping (`worker/lib/group-receipts.ts`):
+   * grouping folds a bill and its card copy together silently, and this is how
+   * somebody corrects it — or does the merge themselves when the evidence was not
+   * conclusive enough for the pass to act.
+   *
+   * Both expenses re-derive afterwards. The one gaining a document gets the joint
+   * determination that knows a card copy outranks a pre-tip bill; the one losing its
+   * last document is deleted, because an expense with no evidence and no amount is
+   * not a claim.
+   */
+  receiptMove: withPermission(P.expense.report.updateOwn)
+    .input(z.object({ id: z.string().uuid(), toExpenseId: z.string().uuid() }))
+    .mutation(async ({ ctx, input }) => {
+      const receipt = await ctx.db.receipt.findUnique({
+        where: { id: input.id },
+        select: { id: true, expenseId: true, filename: true },
+      });
+      if (!receipt?.expenseId) throw new TRPCError({ code: 'NOT_FOUND' });
+      if (receipt.expenseId === input.toExpenseId) return { ok: true as const, removed: false };
+      // Captured so the null check narrows inside the transaction closure too.
+      const fromExpenseId = receipt.expenseId;
+      // Both ends checked: moving a document is a write to each — and a DRAFT-only
+      // write, because it can delete the vacated expense and restate the total.
+      const from = await assertExpenseDraft(ctx, fromExpenseId);
+      const to = await assertExpenseDraft(ctx, input.toExpenseId);
+      // Across reports it would move money between two totals and, if one is already
+      // submitted, past an approver. A receipt belongs to the report it was filed on.
+      if (from.reportId !== to.reportId) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'A receipt can only move between expenses on the same report.',
+        });
+      }
+
+      const removed = await withAudit(
+        ctx.db,
+        {
+          action: auditActions.report.receiptAttach,
+          entityType: 'Expense',
+          entityId: input.toExpenseId,
+          actor: actorOf(ctx),
+          details: { filename: receipt.filename, from: fromExpenseId },
+        },
+        async (tx) => {
+          await tx.receipt.update({
+            where: { id: receipt.id },
+            data: { expenseId: input.toExpenseId },
+          });
+          const left = await tx.receipt.count({ where: { expenseId: fromExpenseId } });
+          if (left === 0) {
+            await tx.expense.delete({ where: { id: fromExpenseId } });
+            return true;
+          }
+          return false;
+        },
+      );
+
+      await recomputeTotals(ctx.db, input.toExpenseId);
+      if (!removed) await recomputeTotals(ctx.db, fromExpenseId);
+      if (from.reportId) await recomputeReportTotal(ctx.db, from.reportId);
+      // The receiving expense now holds a different document SET, so its joint
+      // determination is re-derived rather than merged into.
+      await enqueue('expense.determineExpense', { expenseId: input.toExpenseId }).catch(() => {});
+      return { ok: true as const, removed };
+    }),
+
+  receiptRemove: withPermission(P.expense.report.updateOwn)
+    .input(z.object({ id: z.string().uuid() }))
+    .mutation(async ({ ctx, input }) => {
+      const receipt = await ctx.db.receipt.findUnique({
+        where: { id: input.id },
+        select: { id: true, s3Key: true, expenseId: true, filename: true },
+      });
+      if (!receipt?.expenseId) throw new TRPCError({ code: 'NOT_FOUND' });
+      // Evidence on a filed report is what the approver looked at; it comes off only
+      // while the report is the submitter's to edit (DRAFT / RETURNED).
+      await assertExpenseDraft(ctx, receipt.expenseId);
+      await withAudit(
+        ctx.db,
+        {
+          action: auditActions.report.receiptDetach,
+          entityType: 'Expense',
+          entityId: receipt.expenseId,
+          actor: actorOf(ctx),
+          details: { filename: receipt.filename },
+        },
+        async (tx) => tx.receipt.delete({ where: { id: receipt.id } }),
+      );
+      // VeloExpense: VeloExpense's storage.
+      await getStorage()
+        .delete(receipt.s3Key)
+        .catch(() => undefined);
+      // Removing a document changes the determination as surely as adding one: an
+      // expense that was $130 because of a card copy is $113 again once that copy
+      // is gone. Only worth a joint pass while more than one document remains —
+      // and a queue hiccup must not fail the delete, which already happened.
+      const remaining = await ctx.db.receipt.count({ where: { expenseId: receipt.expenseId } });
+      if (remaining > 1) {
+        try {
+          await enqueue('expense.determineExpense', { expenseId: receipt.expenseId });
+        } catch (err) {
+          console.warn(
+            `[expenses.receiptRemove] determination enqueue failed for expense ${receipt.expenseId}: ${
+              err instanceof Error ? err.message : String(err)
+            }`,
+          );
+        }
+      }
+      return { ok: true as const };
+    }),
+
   explainTax: protectedProcedure
     .input(z.object({ expenseId: z.string().uuid() }))
     .query(async ({ ctx, input }) => {
