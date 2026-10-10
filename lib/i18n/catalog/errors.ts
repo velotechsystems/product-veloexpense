@@ -147,6 +147,8 @@ export const USER_MESSAGE_CODES = [
   /* the employee directory (lib/employees/service.ts) ──────────────────── */
   'ROLE_UNKNOWN',
   'EMPLOYEE_STATUS_UNKNOWN',
+  /* w2-10: a person's country that is not an ISO-3166-1 alpha-2 code. */
+  'COUNTRY_UNKNOWN',
   'MANAGER_NOT_IN_ORG',
   'EMAIL_TAKEN',
   'MANAGER_CYCLE',
@@ -714,6 +716,9 @@ export const ERROR_COPY: Record<UserMessageCode, Copy> = {
   /* ── the employee directory ────────────────────────────────────────────── */
   ROLE_UNKNOWN: {
     'en-CA': 'That is not a role this product has.',
+  },
+  COUNTRY_UNKNOWN: {
+    'en-CA': 'That is not a country code this product knows.',
   },
   EMPLOYEE_STATUS_UNKNOWN: {
     'en-CA': 'That is not an employee status this product has.',

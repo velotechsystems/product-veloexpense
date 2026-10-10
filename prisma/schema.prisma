@@ -325,6 +325,9 @@ model User {
   name           String?   @map("display_name")
   /// ExpenseOS's EmployeeStatus enum; text with a CHECK here (ACTIVE, ON_LEAVE, DEACTIVATED).
   employeeStatus String    @default("ACTIVE") @map("employee_status")
+  /// ISO-3166-1 alpha-2 country code — ExpenseOS's `User.country`, which mileage pricing
+  /// reads (w2-10). Backfilled from the person's legal entity (0055).
+  country        String?
   managerId      String?   @map("manager_id") @db.Uuid
   departmentId   String?   @map("department_id") @db.Uuid
   businessUnitId String?   @map("business_unit_id") @db.Uuid

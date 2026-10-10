@@ -2655,6 +2655,7 @@ export const UserScalarFieldEnum = {
   email: 'email',
   name: 'name',
   employeeStatus: 'employeeStatus',
+  country: 'country',
   managerId: 'managerId',
   departmentId: 'departmentId',
   businessUnitId: 'businessUnitId',

@@ -155,6 +155,9 @@ function employeeFromForm(form: FormData): svc.EmployeePatch {
     departmentId: text(form, 'departmentId'),
     businessUnitId: text(form, 'businessUnitId'),
     legalEntityId: text(form, 'legalEntityId'),
+    // w2-10: only the edit form carries the field; the invite form leaves it to the
+    // person's legal entity (see `NewEmployee.country`).
+    ...(form.has('country') ? { country: text(form, 'country') } : {}),
   };
 }
 

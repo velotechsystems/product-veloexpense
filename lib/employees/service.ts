@@ -11,6 +11,7 @@
  * ExpenseOS is the behavioral spec, re-implemented tenant-scoped: list, get,
  * getDirectReports, manager-chain resolve, create, update, deactivate.
  */
+import { COUNTRY_CODES } from '@/lib/countries';
 import type { QueryRunner } from '@/lib/db/client';
 import type { UserMessage } from '@/lib/errors/domain';
 import type { UserMessageCode } from '@/lib/i18n/catalog/errors';
@@ -49,6 +50,8 @@ export interface EmployeeRow {
   business_unit_name: string | null;
   legal_entity_id: string | null;
   legal_entity_name: string | null;
+  /** w2-10: ISO-3166-1 alpha-2 — ExpenseOS's `User.country`, read by mileage pricing. */
+  country: string | null;
   deleted_at: Date | null;
   created_at: Date;
   updated_at: Date;
@@ -75,6 +78,12 @@ export interface NewEmployee {
   departmentId?: string | null;
   businessUnitId?: string | null;
   legalEntityId?: string | null;
+  /**
+   * w2-10: ISO-3166-1 alpha-2. On a NEW person, absent means "their legal entity's
+   * country" — what 0055 backfilled everybody with, so a person added later is priced the
+   * same way as one who was here before it. An explicit null leaves it empty.
+   */
+  country?: string | null;
   employeeStatus?: EmployeeStatus;
 }
 
@@ -92,7 +101,8 @@ export class EmployeeError extends DomainError {
       | 'SELF_DEACTIVATE'
       | 'HAS_DIRECT_REPORTS'
       | 'INVALID_ROLE'
-      | 'INVALID_STATUS',
+      | 'INVALID_STATUS'
+      | 'INVALID_COUNTRY',
     userMessage: UserMessageCode | UserMessage | null = null,
   ) {
     super(message, userMessage);
@@ -108,6 +118,7 @@ const EMPLOYEE_COLUMNS = `
   u.department_id, d.label ->> 'en' AS department_name,
   u.business_unit_id, bu.label ->> 'en' AS business_unit_name,
   u.legal_entity_id, le.label ->> 'en' AS legal_entity_name,
+  u.country,
   u.deleted_at, u.created_at, u.updated_at`;
 
 const EMPLOYEE_FROM = `
@@ -242,6 +253,14 @@ function assertRole(role: string | null | undefined) {
   }
 }
 
+/** w2-10: an assigned ISO-3166-1 alpha-2 code, or nothing. The table's CHECK holds the
+ *  shape; this holds the list, and says so in a sentence rather than as a 500. */
+function assertCountry(country: string | null | undefined) {
+  if (country != null && !(COUNTRY_CODES as readonly string[]).includes(country)) {
+    throw new EmployeeError(`invalid country: ${country}`, 'INVALID_COUNTRY', 'COUNTRY_UNKNOWN');
+  }
+}
+
 function assertStatus(status: string | null | undefined) {
   if (status != null && !EMPLOYEE_STATUSES.includes(status as EmployeeStatus)) {
     throw new EmployeeError(`invalid employee status: ${status}`, 'INVALID_STATUS',
@@ -288,11 +307,15 @@ export async function createEmployee(tx: QueryRunner, input: NewEmployee): Promi
   // reaches.
   await assertSeatAvailable(tx);
 
+  assertCountry(input.country);
   const r = await tx.query(
     `INSERT INTO app_user
        (organization_id, email, display_name, title, role, employee_status,
-        manager_id, department_id, business_unit_id, legal_entity_id)
-     VALUES (${ORG}, $1, $2, $3, $4, $5, $6, $7, $8, $9)
+        manager_id, department_id, business_unit_id, legal_entity_id, country)
+     VALUES (${ORG}, $1, $2, $3, $4, $5, $6, $7, $8, $9,
+             -- w2-10: absent = the legal entity's country (see NewEmployee.country).
+             CASE WHEN $10::boolean THEN $11::text
+                  ELSE (SELECT country FROM legal_entity WHERE id = $9::uuid) END)
      RETURNING id`,
     [
       input.email,
@@ -304,6 +327,8 @@ export async function createEmployee(tx: QueryRunner, input: NewEmployee): Promi
       input.departmentId ?? null,
       input.businessUnitId ?? null,
       input.legalEntityId ?? null,
+      'country' in input,
+      input.country ?? null,
     ],
   );
   return (await getEmployee(tx, r.rows[0].id))!;
@@ -324,6 +349,7 @@ export async function updateEmployee(
 
   assertRole(patch.role);
   assertStatus(patch.employeeStatus);
+  assertCountry(patch.country);
 
   if (patch.managerId) {
     await assertManagerInOrg(tx, patch.managerId);
@@ -361,6 +387,8 @@ export async function updateEmployee(
   if ('departmentId' in patch) put('department_id', patch.departmentId ?? null);
   if ('businessUnitId' in patch) put('business_unit_id', patch.businessUnitId ?? null);
   if ('legalEntityId' in patch) put('legal_entity_id', patch.legalEntityId ?? null);
+  // w2-10: the person's own. Changing the legal entity does not move it (0055).
+  if ('country' in patch) put('country', patch.country ?? null);
   if ('employeeStatus' in patch) {
     // Reactivating a DEACTIVATED person takes a seat back — the meter counts
     // `deleted_at IS NULL` — so it is capped like a new one. Without this, a cap

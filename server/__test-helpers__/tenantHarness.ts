@@ -61,14 +61,34 @@ function scoped<T extends object>(target: T, run: <R>(fn: () => Promise<R>) => P
     get(t, prop) {
       if (prop === 'then') return undefined;
       const value = (t as Record<string | symbol, unknown>)[prop];
-      if (typeof value === 'function') {
-        return (...args: unknown[]) =>
-          run(() => (value as (...a: unknown[]) => Promise<unknown>).apply(t, args));
-      }
+      if (typeof value === 'function') return scopedFn(value as (...a: unknown[]) => unknown, t, run);
       if (value && typeof value === 'object') return scoped(value as object, run);
       return value;
     },
   }) as T;
+}
+
+/**
+ * A procedure — or a NESTED ROUTER, which tRPC's caller also hands back as a callable proxy
+ * (`caller.mileageRate.create`). Calling it runs in the tenant scope; reading a property off
+ * it goes one level down, scoped the same way. w2-10: the first suite to call a nested
+ * router through the harness.
+ */
+function scopedFn(
+  fn: (...a: unknown[]) => unknown,
+  self: unknown,
+  run: <R>(fn: () => Promise<R>) => Promise<R>,
+): unknown {
+  return new Proxy(fn, {
+    apply: (_f, _this, args) => run(async () => Reflect.apply(fn, self, args)),
+    get(f, prop) {
+      if (prop === 'then') return undefined;
+      const value = (f as unknown as Record<string | symbol, unknown>)[prop];
+      if (typeof value === 'function') return scopedFn(value as (...a: unknown[]) => unknown, f, run);
+      if (value && typeof value === 'object') return scoped(value as object, run);
+      return value;
+    },
+  });
 }
 
 export async function createTenantHarness(opts: {
