@@ -109,7 +109,7 @@ export async function assertSeatAvailable(tx: QueryRunner): Promise<void> {
  * on what a tenant keeps, and a counter of creations would charge somebody for a
  * line they typed and removed.
  */
-export async function assertExpenseAllowance(tx: QueryRunner): Promise<void> {
+export async function assertExpenseAllowance(tx: QueryRunner, adding = 1): Promise<void> {
   const inForce = await limitInForce(tx, 'expensesPerYear');
   if (inForce === null) return;
   await lockTenant(tx);
@@ -117,7 +117,9 @@ export async function assertExpenseAllowance(tx: QueryRunner): Promise<void> {
     `SELECT count(*)::int AS n FROM expense
       WHERE organization_id = ${ORG} AND created_at > now() - interval '365 days'`,
   );
-  const after = (r.rows[0].n as number) + 1;
+  // `adding` (Wave 2, w2-09): a report filed from N receipts creates N expenses at once,
+  // so the cap is checked against all of them before any is written.
+  const after = (r.rows[0].n as number) + adding;
   if (!withinCap(inForce.plan, 'expensesPerYear', after)) {
     throw new CapReachedError('expensesPerYear', inForce.limit, 'EXPENSE_LIMIT_REACHED');
   }

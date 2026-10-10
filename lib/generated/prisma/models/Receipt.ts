@@ -39,6 +39,7 @@ export type ReceiptMinAggregateOutputType = {
   organizationId: string | null
   expenseId: string | null
   kind: string | null
+  status: string | null
   s3Key: string | null
   filename: string | null
   contentType: string | null
@@ -52,6 +53,7 @@ export type ReceiptMaxAggregateOutputType = {
   organizationId: string | null
   expenseId: string | null
   kind: string | null
+  status: string | null
   s3Key: string | null
   filename: string | null
   contentType: string | null
@@ -65,6 +67,7 @@ export type ReceiptCountAggregateOutputType = {
   organizationId: number
   expenseId: number
   kind: number
+  status: number
   s3Key: number
   filename: number
   contentType: number
@@ -88,6 +91,7 @@ export type ReceiptMinAggregateInputType = {
   organizationId?: true
   expenseId?: true
   kind?: true
+  status?: true
   s3Key?: true
   filename?: true
   contentType?: true
@@ -101,6 +105,7 @@ export type ReceiptMaxAggregateInputType = {
   organizationId?: true
   expenseId?: true
   kind?: true
+  status?: true
   s3Key?: true
   filename?: true
   contentType?: true
@@ -114,6 +119,7 @@ export type ReceiptCountAggregateInputType = {
   organizationId?: true
   expenseId?: true
   kind?: true
+  status?: true
   s3Key?: true
   filename?: true
   contentType?: true
@@ -214,6 +220,7 @@ export type ReceiptGroupByOutputType = {
   organizationId: string
   expenseId: string | null
   kind: string
+  status: string
   s3Key: string
   filename: string
   contentType: string
@@ -250,6 +257,7 @@ export type ReceiptWhereInput = {
   organizationId?: Prisma.UuidFilter<"Receipt"> | string
   expenseId?: Prisma.UuidNullableFilter<"Receipt"> | string | null
   kind?: Prisma.StringFilter<"Receipt"> | string
+  status?: Prisma.StringFilter<"Receipt"> | string
   s3Key?: Prisma.StringFilter<"Receipt"> | string
   filename?: Prisma.StringFilter<"Receipt"> | string
   contentType?: Prisma.StringFilter<"Receipt"> | string
@@ -265,6 +273,7 @@ export type ReceiptOrderByWithRelationInput = {
   organizationId?: Prisma.SortOrder
   expenseId?: Prisma.SortOrderInput | Prisma.SortOrder
   kind?: Prisma.SortOrder
+  status?: Prisma.SortOrder
   s3Key?: Prisma.SortOrder
   filename?: Prisma.SortOrder
   contentType?: Prisma.SortOrder
@@ -284,6 +293,7 @@ export type ReceiptWhereUniqueInput = Prisma.AtLeast<{
   organizationId?: Prisma.UuidFilter<"Receipt"> | string
   expenseId?: Prisma.UuidNullableFilter<"Receipt"> | string | null
   kind?: Prisma.StringFilter<"Receipt"> | string
+  status?: Prisma.StringFilter<"Receipt"> | string
   s3Key?: Prisma.StringFilter<"Receipt"> | string
   filename?: Prisma.StringFilter<"Receipt"> | string
   contentType?: Prisma.StringFilter<"Receipt"> | string
@@ -299,6 +309,7 @@ export type ReceiptOrderByWithAggregationInput = {
   organizationId?: Prisma.SortOrder
   expenseId?: Prisma.SortOrderInput | Prisma.SortOrder
   kind?: Prisma.SortOrder
+  status?: Prisma.SortOrder
   s3Key?: Prisma.SortOrder
   filename?: Prisma.SortOrder
   contentType?: Prisma.SortOrder
@@ -320,6 +331,7 @@ export type ReceiptScalarWhereWithAggregatesInput = {
   organizationId?: Prisma.UuidWithAggregatesFilter<"Receipt"> | string
   expenseId?: Prisma.UuidNullableWithAggregatesFilter<"Receipt"> | string | null
   kind?: Prisma.StringWithAggregatesFilter<"Receipt"> | string
+  status?: Prisma.StringWithAggregatesFilter<"Receipt"> | string
   s3Key?: Prisma.StringWithAggregatesFilter<"Receipt"> | string
   filename?: Prisma.StringWithAggregatesFilter<"Receipt"> | string
   contentType?: Prisma.StringWithAggregatesFilter<"Receipt"> | string
@@ -332,6 +344,7 @@ export type ReceiptCreateInput = {
   id?: string
   organizationId?: string
   kind?: string
+  status?: string
   s3Key: string
   filename: string
   contentType: string
@@ -346,6 +359,7 @@ export type ReceiptUncheckedCreateInput = {
   organizationId?: string
   expenseId?: string | null
   kind?: string
+  status?: string
   s3Key: string
   filename: string
   contentType: string
@@ -358,6 +372,7 @@ export type ReceiptUpdateInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
   organizationId?: Prisma.StringFieldUpdateOperationsInput | string
   kind?: Prisma.StringFieldUpdateOperationsInput | string
+  status?: Prisma.StringFieldUpdateOperationsInput | string
   s3Key?: Prisma.StringFieldUpdateOperationsInput | string
   filename?: Prisma.StringFieldUpdateOperationsInput | string
   contentType?: Prisma.StringFieldUpdateOperationsInput | string
@@ -372,6 +387,7 @@ export type ReceiptUncheckedUpdateInput = {
   organizationId?: Prisma.StringFieldUpdateOperationsInput | string
   expenseId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   kind?: Prisma.StringFieldUpdateOperationsInput | string
+  status?: Prisma.StringFieldUpdateOperationsInput | string
   s3Key?: Prisma.StringFieldUpdateOperationsInput | string
   filename?: Prisma.StringFieldUpdateOperationsInput | string
   contentType?: Prisma.StringFieldUpdateOperationsInput | string
@@ -385,6 +401,7 @@ export type ReceiptCreateManyInput = {
   organizationId?: string
   expenseId?: string | null
   kind?: string
+  status?: string
   s3Key: string
   filename: string
   contentType: string
@@ -397,6 +414,7 @@ export type ReceiptUpdateManyMutationInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
   organizationId?: Prisma.StringFieldUpdateOperationsInput | string
   kind?: Prisma.StringFieldUpdateOperationsInput | string
+  status?: Prisma.StringFieldUpdateOperationsInput | string
   s3Key?: Prisma.StringFieldUpdateOperationsInput | string
   filename?: Prisma.StringFieldUpdateOperationsInput | string
   contentType?: Prisma.StringFieldUpdateOperationsInput | string
@@ -409,6 +427,7 @@ export type ReceiptUncheckedUpdateManyInput = {
   organizationId?: Prisma.StringFieldUpdateOperationsInput | string
   expenseId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   kind?: Prisma.StringFieldUpdateOperationsInput | string
+  status?: Prisma.StringFieldUpdateOperationsInput | string
   s3Key?: Prisma.StringFieldUpdateOperationsInput | string
   filename?: Prisma.StringFieldUpdateOperationsInput | string
   contentType?: Prisma.StringFieldUpdateOperationsInput | string
@@ -437,6 +456,7 @@ export type ReceiptCountOrderByAggregateInput = {
   organizationId?: Prisma.SortOrder
   expenseId?: Prisma.SortOrder
   kind?: Prisma.SortOrder
+  status?: Prisma.SortOrder
   s3Key?: Prisma.SortOrder
   filename?: Prisma.SortOrder
   contentType?: Prisma.SortOrder
@@ -454,6 +474,7 @@ export type ReceiptMaxOrderByAggregateInput = {
   organizationId?: Prisma.SortOrder
   expenseId?: Prisma.SortOrder
   kind?: Prisma.SortOrder
+  status?: Prisma.SortOrder
   s3Key?: Prisma.SortOrder
   filename?: Prisma.SortOrder
   contentType?: Prisma.SortOrder
@@ -467,6 +488,7 @@ export type ReceiptMinOrderByAggregateInput = {
   organizationId?: Prisma.SortOrder
   expenseId?: Prisma.SortOrder
   kind?: Prisma.SortOrder
+  status?: Prisma.SortOrder
   s3Key?: Prisma.SortOrder
   filename?: Prisma.SortOrder
   contentType?: Prisma.SortOrder
@@ -575,6 +597,7 @@ export type ReceiptCreateWithoutExpenseInput = {
   id?: string
   organizationId?: string
   kind?: string
+  status?: string
   s3Key: string
   filename: string
   contentType: string
@@ -587,6 +610,7 @@ export type ReceiptUncheckedCreateWithoutExpenseInput = {
   id?: string
   organizationId?: string
   kind?: string
+  status?: string
   s3Key: string
   filename: string
   contentType: string
@@ -629,6 +653,7 @@ export type ReceiptScalarWhereInput = {
   organizationId?: Prisma.UuidFilter<"Receipt"> | string
   expenseId?: Prisma.UuidNullableFilter<"Receipt"> | string | null
   kind?: Prisma.StringFilter<"Receipt"> | string
+  status?: Prisma.StringFilter<"Receipt"> | string
   s3Key?: Prisma.StringFilter<"Receipt"> | string
   filename?: Prisma.StringFilter<"Receipt"> | string
   contentType?: Prisma.StringFilter<"Receipt"> | string
@@ -641,6 +666,7 @@ export type ReceiptCreateWithoutUploadedByInput = {
   id?: string
   organizationId?: string
   kind?: string
+  status?: string
   s3Key: string
   filename: string
   contentType: string
@@ -654,6 +680,7 @@ export type ReceiptUncheckedCreateWithoutUploadedByInput = {
   organizationId?: string
   expenseId?: string | null
   kind?: string
+  status?: string
   s3Key: string
   filename: string
   contentType: string
@@ -691,6 +718,7 @@ export type ReceiptCreateManyExpenseInput = {
   id?: string
   organizationId?: string
   kind?: string
+  status?: string
   s3Key: string
   filename: string
   contentType: string
@@ -703,6 +731,7 @@ export type ReceiptUpdateWithoutExpenseInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
   organizationId?: Prisma.StringFieldUpdateOperationsInput | string
   kind?: Prisma.StringFieldUpdateOperationsInput | string
+  status?: Prisma.StringFieldUpdateOperationsInput | string
   s3Key?: Prisma.StringFieldUpdateOperationsInput | string
   filename?: Prisma.StringFieldUpdateOperationsInput | string
   contentType?: Prisma.StringFieldUpdateOperationsInput | string
@@ -715,6 +744,7 @@ export type ReceiptUncheckedUpdateWithoutExpenseInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
   organizationId?: Prisma.StringFieldUpdateOperationsInput | string
   kind?: Prisma.StringFieldUpdateOperationsInput | string
+  status?: Prisma.StringFieldUpdateOperationsInput | string
   s3Key?: Prisma.StringFieldUpdateOperationsInput | string
   filename?: Prisma.StringFieldUpdateOperationsInput | string
   contentType?: Prisma.StringFieldUpdateOperationsInput | string
@@ -727,6 +757,7 @@ export type ReceiptUncheckedUpdateManyWithoutExpenseInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
   organizationId?: Prisma.StringFieldUpdateOperationsInput | string
   kind?: Prisma.StringFieldUpdateOperationsInput | string
+  status?: Prisma.StringFieldUpdateOperationsInput | string
   s3Key?: Prisma.StringFieldUpdateOperationsInput | string
   filename?: Prisma.StringFieldUpdateOperationsInput | string
   contentType?: Prisma.StringFieldUpdateOperationsInput | string
@@ -740,6 +771,7 @@ export type ReceiptCreateManyUploadedByInput = {
   organizationId?: string
   expenseId?: string | null
   kind?: string
+  status?: string
   s3Key: string
   filename: string
   contentType: string
@@ -751,6 +783,7 @@ export type ReceiptUpdateWithoutUploadedByInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
   organizationId?: Prisma.StringFieldUpdateOperationsInput | string
   kind?: Prisma.StringFieldUpdateOperationsInput | string
+  status?: Prisma.StringFieldUpdateOperationsInput | string
   s3Key?: Prisma.StringFieldUpdateOperationsInput | string
   filename?: Prisma.StringFieldUpdateOperationsInput | string
   contentType?: Prisma.StringFieldUpdateOperationsInput | string
@@ -764,6 +797,7 @@ export type ReceiptUncheckedUpdateWithoutUploadedByInput = {
   organizationId?: Prisma.StringFieldUpdateOperationsInput | string
   expenseId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   kind?: Prisma.StringFieldUpdateOperationsInput | string
+  status?: Prisma.StringFieldUpdateOperationsInput | string
   s3Key?: Prisma.StringFieldUpdateOperationsInput | string
   filename?: Prisma.StringFieldUpdateOperationsInput | string
   contentType?: Prisma.StringFieldUpdateOperationsInput | string
@@ -776,6 +810,7 @@ export type ReceiptUncheckedUpdateManyWithoutUploadedByInput = {
   organizationId?: Prisma.StringFieldUpdateOperationsInput | string
   expenseId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   kind?: Prisma.StringFieldUpdateOperationsInput | string
+  status?: Prisma.StringFieldUpdateOperationsInput | string
   s3Key?: Prisma.StringFieldUpdateOperationsInput | string
   filename?: Prisma.StringFieldUpdateOperationsInput | string
   contentType?: Prisma.StringFieldUpdateOperationsInput | string
@@ -790,6 +825,7 @@ export type ReceiptSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs 
   organizationId?: boolean
   expenseId?: boolean
   kind?: boolean
+  status?: boolean
   s3Key?: boolean
   filename?: boolean
   contentType?: boolean
@@ -805,6 +841,7 @@ export type ReceiptSelectCreateManyAndReturn<ExtArgs extends runtime.Types.Exten
   organizationId?: boolean
   expenseId?: boolean
   kind?: boolean
+  status?: boolean
   s3Key?: boolean
   filename?: boolean
   contentType?: boolean
@@ -820,6 +857,7 @@ export type ReceiptSelectUpdateManyAndReturn<ExtArgs extends runtime.Types.Exten
   organizationId?: boolean
   expenseId?: boolean
   kind?: boolean
+  status?: boolean
   s3Key?: boolean
   filename?: boolean
   contentType?: boolean
@@ -835,6 +873,7 @@ export type ReceiptSelectScalar = {
   organizationId?: boolean
   expenseId?: boolean
   kind?: boolean
+  status?: boolean
   s3Key?: boolean
   filename?: boolean
   contentType?: boolean
@@ -843,7 +882,7 @@ export type ReceiptSelectScalar = {
   uploadedAt?: boolean
 }
 
-export type ReceiptOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "organizationId" | "expenseId" | "kind" | "s3Key" | "filename" | "contentType" | "sizeBytes" | "uploadedById" | "uploadedAt", ExtArgs["result"]["receipt"]>
+export type ReceiptOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "organizationId" | "expenseId" | "kind" | "status" | "s3Key" | "filename" | "contentType" | "sizeBytes" | "uploadedById" | "uploadedAt", ExtArgs["result"]["receipt"]>
 export type ReceiptInclude<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   expense?: boolean | Prisma.Receipt$expenseArgs<ExtArgs>
   uploadedBy?: boolean | Prisma.UserDefaultArgs<ExtArgs>
@@ -871,6 +910,12 @@ export type $ReceiptPayload<ExtArgs extends runtime.Types.Extensions.InternalArg
      * RECEIPT | ITEMIZED_BILL | CARD_COPY | BANK_STATEMENT | OTHER (a CHECK in the table).
      */
     kind: string
+    /**
+     * VeloExpense: 'PENDING' until the object is verified in storage, then 'STORED'. ExpenseOS
+     * has no such column — its row is written only after the upload — so the ported reads
+     * show STORED receipts only, and the ported writer stores rows already verified (w2-09).
+     */
+    status: string
     /**
      * VeloExpense: unique per tenant, not globally.
      */
@@ -1312,6 +1357,7 @@ export interface ReceiptFieldRefs {
   readonly organizationId: Prisma.FieldRef<"Receipt", 'String'>
   readonly expenseId: Prisma.FieldRef<"Receipt", 'String'>
   readonly kind: Prisma.FieldRef<"Receipt", 'String'>
+  readonly status: Prisma.FieldRef<"Receipt", 'String'>
   readonly s3Key: Prisma.FieldRef<"Receipt", 'String'>
   readonly filename: Prisma.FieldRef<"Receipt", 'String'>
   readonly contentType: Prisma.FieldRef<"Receipt", 'String'>

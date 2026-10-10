@@ -63,3 +63,11 @@ export {
   recomputeReportTotal,
   reportRollupFor,
 } from './reportTotal';
+// Creating the expenses a batch of receipts hangs off (Wave 2, w2-09).
+export {
+  type BlankExpenseInput,
+  createBlankExpensesForReceipts,
+  createReportFromReceipts,
+  type ReportFromReceiptsInput,
+  resolveIntakeCurrencyId,
+} from './receiptIntake';

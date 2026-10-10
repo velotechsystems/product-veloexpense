@@ -47,6 +47,9 @@ const adminAndOthers = {
     lineItemAdd: 'LINE_ITEM_ADDED',
     lineItemUpdate: 'LINE_ITEM_EDITED',
     lineItemDelete: 'LINE_ITEM_REMOVED',
+    create: 'REPORT_CREATED',
+    receiptAttach: 'RECEIPT_ATTACHED',
+    receiptDetach: 'RECEIPT_REMOVED',
   },
 } as const satisfies Record<string, Record<string, AuditAction>>;
 

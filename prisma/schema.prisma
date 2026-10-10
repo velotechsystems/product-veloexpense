@@ -271,6 +271,10 @@ model Receipt {
   expense        Expense? @relation(fields: [expenseId], references: [id], onDelete: Cascade)
   /// RECEIPT | ITEMIZED_BILL | CARD_COPY | BANK_STATEMENT | OTHER (a CHECK in the table).
   kind           String   @default("OTHER")
+  /// VeloExpense: 'PENDING' until the object is verified in storage, then 'STORED'. ExpenseOS
+  /// has no such column — its row is written only after the upload — so the ported reads
+  /// show STORED receipts only, and the ported writer stores rows already verified (w2-09).
+  status         String   @default("PENDING")
   /// VeloExpense: unique per tenant, not globally.
   s3Key          String   @map("s3_key")
   filename       String

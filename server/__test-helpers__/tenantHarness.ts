@@ -15,7 +15,7 @@
  *     (`makeContext`) for the permissions;
  *   · the tenant, its people and its fixtures are this suite's own, created on a database
  *     the suite truncates first (as every VeloExpense db suite does), with storage in
- *     memory and `storage.delete` spied on;
+ *     memory and `storage.delete` and `storage.presignUpload` spied on;
  *   · `lastAudit(entityType, entityId)` reads VeloExpense's `audit_entry` (ExpenseOS:
  *     `db.audit`).
  */
@@ -38,7 +38,16 @@ export interface TenantHarness {
   makeCaller: (perms: readonly string[], userId: string, router?: unknown) => any;
   /** The superuser pool, for fixtures RLS or the Prisma view cannot write. */
   admin: Pool;
-  storage: { delete: ReturnType<typeof vi.fn> };
+  /**
+   * The suite's in-memory storage: `delete` and `presignUpload` spied on, and `memory` itself
+   * for putting an object where a test needs one to exist (`receiptCreate` reads the object
+   * back before it records a receipt, d29).
+   */
+  storage: {
+    delete: ReturnType<typeof vi.fn>;
+    presignUpload: ReturnType<typeof vi.fn>;
+    memory: import('@/lib/storage').MemoryStorage;
+  };
   lastAudit: (
     entityType: string,
     entityId: string,
@@ -97,8 +106,13 @@ export async function createTenantHarness(opts: {
 
   const memory = new MemoryStorage();
   const remove = memory.delete.bind(memory);
-  const storage = { delete: vi.fn((key: string) => remove(key)) };
-  setStorage(Object.assign(memory, { delete: storage.delete }) as never);
+  const presign = memory.presignUpload.bind(memory);
+  const storage = {
+    delete: vi.fn((key: string) => remove(key)),
+    presignUpload: vi.fn((...args: Parameters<typeof presign>) => presign(...args)),
+    memory,
+  };
+  setStorage(Object.assign(memory, { delete: storage.delete, presignUpload: storage.presignUpload }) as never);
 
   const run = <R>(fn: () => Promise<R>) => withTenantDb(orgId, () => fn());
   const db = new Proxy({} as Record<string | symbol, unknown>, {
