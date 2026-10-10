@@ -30,6 +30,7 @@ import { test, expect, type APIRequestContext, type Page } from '@playwright/tes
 import { Pool } from 'pg';
 import { DEFAULT_LOCALE } from '@/lib/i18n/locales';
 import { enumLabel, EVENT_TYPE_COPY, REPORT_STATUS_COPY } from '@/lib/i18n/catalog/enums';
+import { createDraftReport } from './helpers';
 /**
  * VX4-7 part 2a: a report's status is asserted through the CATALOGUE, not as the
  * enum's own spelling.
@@ -185,9 +186,7 @@ async function statusOf(reportTitle: string): Promise<string> {
 }
 
 async function createAndSubmit(page: Page) {
-  await page.goto('/expenses/new');
-  await page.getByLabel('Title').fill(TITLE);
-  await page.getByRole('button', { name: 'Create draft' }).click();
+  await createDraftReport(page, TITLE);
   await expect(page).toHaveURL(/\/expenses\/[0-9a-f-]{36}$/);
   const reportUrl = page.url();
 

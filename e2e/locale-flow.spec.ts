@@ -31,6 +31,7 @@
 import { test, expect, type Page } from '@playwright/test';
 import { Pool } from 'pg';
 import { DEFAULT_LOCALE } from '@/lib/i18n/locales';
+import { createDraftReport } from './helpers';
 
 const ADMIN = 'admin@demo.test';
 
@@ -154,9 +155,7 @@ async function makeDatedReport(): Promise<string> {
  * test would pass by having nothing to look at.
  */
 async function makeViolatingReport(page: Page): Promise<string> {
-  await page.goto('/expenses/new');
-  await page.getByLabel('Title').fill('Locale violation check');
-  await page.getByRole('button', { name: 'Create draft' }).click();
+  await createDraftReport(page, 'Locale violation check');
   await expect(page).toHaveURL(/\/expenses\/[0-9a-f-]{36}$/);
 
   await page.getByLabel('Merchant').first().fill('Le Bistro');
@@ -348,9 +347,17 @@ test.describe('the locale chain, end to end', () => {
     await clearMine();
     reportId = reportId ?? (await makeDatedReport());
 
-    await page.goto('/expenses');
-    await expect(page.getByRole('heading', { name: /Expense reports/i })).toBeVisible();
-    const canadian = await page.locator('table').first().textContent();
+    // w2-05: the ported reports list prints money with its ISO CODE (ExpenseOS's F54 — CAD
+    // and USD share the `$` glyph), which reads the same to an en-CA and an en-US reader. The
+    // report's own page still formats with the reader's symbol until the workbench replaces
+    // it (w2-02), so the claim is made there: the CAD total reads `$` to a Canadian and `CA$`
+    // to an American.
+    const money = async () => {
+      await page.goto(`/expenses/${reportId}`);
+      return page.locator('body').textContent();
+    };
+    const canadian = await money();
+    expect(canadian ?? '').toMatch(/\$/);
     expect(canadian ?? '').not.toContain('CA$');
 
     await page.goto('/preferences');
@@ -358,8 +365,7 @@ test.describe('the locale chain, end to end', () => {
     await page.getByRole('button', { name: 'Save' }).click();
     await expect(page.getByText('Saved.')).toBeVisible();
 
-    await page.goto('/expenses');
-    const american = await page.locator('table').first().textContent();
+    const american = await money();
     expect(american ?? '').toContain('CA$');
     await clearMine();
   });

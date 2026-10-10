@@ -17,6 +17,7 @@
 import { test, expect, type Page } from '@playwright/test';
 import { DEFAULT_LOCALE } from '@/lib/i18n/locales';
 import { enumLabel, REPORT_STATUS_COPY } from '@/lib/i18n/catalog/enums';
+import { createDraftReport } from './helpers';
 /**
  * VX4-7 part 2a: a report's status is asserted through the CATALOGUE, not as the
  * enum's own spelling.
@@ -52,9 +53,7 @@ const RECEIPT_PNG = Buffer.from(
 );
 
 async function createReportWithLine(page: Page, title: string, amount: string) {
-  await page.goto('/expenses/new');
-  await page.getByLabel('Title').fill(title);
-  await page.getByRole('button', { name: 'Create draft' }).click();
+  await createDraftReport(page, title);
   await expect(page).toHaveURL(/\/expenses\/[0-9a-f-]{36}$/);
 
   await page.getByLabel('Merchant').first().fill('Test Cafe');
@@ -163,6 +162,8 @@ test('the report list shows what was just submitted', async ({ page }) => {
   await page.goto('/expenses');
   const row = page.getByRole('row', { name: new RegExp(`E2E over-limit dinner ${RUN}`) });
   await expect(row).toContainText(status('SUBMITTED'));
-  await expect(row).toContainText('$600.00');
+  // w2-05: the ported list prints the total with its ISO code, not the `$` symbol (ExpenseOS's
+  // F54), so the amount is matched without the symbol.
+  await expect(row).toContainText('600.00');
   await expect(row).toContainText('EXP-');
 });

@@ -34,7 +34,7 @@
  */
 import { test, expect } from '@playwright/test';
 import { Pool } from 'pg';
-import { drainNotifications } from './helpers';
+import { createDraftReport, drainNotifications } from './helpers';
 import { DEFAULT_LOCALE } from '@/lib/i18n/locales';
 import { enumLabel, REPORT_STATUS_COPY } from '@/lib/i18n/catalog/enums';
 /**
@@ -195,9 +195,7 @@ test('an over-budget report warns without blocking, and the alert reaches the ow
   // $18 of a $20 period is 90%: over the threshold, under the budget. Under $25
   // too, so the starter receipt rule cannot interfere whether or not it exists
   // yet (see the header).
-  await page.goto('/expenses/new');
-  await page.getByLabel('Title').fill(`E2E budget trip ${RUN}`);
-  await page.getByRole('button', { name: 'Create draft' }).click();
+  await createDraftReport(page, `E2E budget trip ${RUN}`);
   await expect(page).toHaveURL(/\/expenses\/[0-9a-f-]{36}$/);
 
   await page.getByLabel('Merchant').first().fill('Budget Cafe');

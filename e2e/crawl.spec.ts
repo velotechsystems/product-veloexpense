@@ -49,7 +49,6 @@ import { ADMIN_STATE, EMPLOYEE_STATE, MANAGER_STATE } from './helpers';
 const PAGES = [
   '/',
   '/expenses',
-  '/expenses/new',
   '/approvals',
   '/approvals/delegations',
   '/notifications',
@@ -219,26 +218,24 @@ for (const role of ROLES) {
       await page.goto('/expenses');
       await assertNoRenderError(page, '/expenses');
 
-      // NOT `a[href^="/expenses/"]` — that matches the "New report" link at
-      // `/expenses/new`, which is how the first run of this spec failed.
-      const links = await page.locator('a[href^="/expenses/"]').all();
-      const hrefs = (await Promise.all(links.map((l) => l.getAttribute('href')))).filter(
-        (h): h is string => h !== null && /\/expenses\/[0-9a-f-]{36}$/.test(h),
-      );
+      // w2-05: the ported list opens a report by clicking its row — there is no link to
+      // collect — so the first row carrying a report number is the one opened.
+      const row = page.getByRole('row').filter({ hasText: /EXP-\d+/ }).first();
+      const empty = page.getByText('No expense reports', { exact: true });
+      // The list loads its rows client-side: wait for one of the two before deciding.
+      await expect(row.or(empty)).toBeVisible();
 
-      if (hrefs.length === 0) {
+      if ((await row.count()) === 0) {
         // NOT a skip. Only the demo admin owns seeded reports, so a manager and
         // an employee legitimately see none — and "sees none" has a correct
         // rendering that is worth asserting. The first draft skipped here, which
         // meant the test asserted nothing for any of the three roles.
-        await expect(
-          page.getByText(/No reports yet/i),
-          `${role.name} sees neither a report nor the empty state`,
-        ).toBeVisible();
+        // w2-05: the ported list's empty state (`expenses.list.emptyTitle`).
+        await expect(empty, `${role.name} sees neither a report nor the empty state`).toBeVisible();
         return;
       }
 
-      await page.goto(hrefs[0]);
+      await row.click();
       await expect(page).toHaveURL(/\/expenses\/[0-9a-f-]{36}$/);
       await assertNoRenderError(page, '/expenses/[reportId]');
       await assertNoIdInText(page, '/expenses/[reportId]');

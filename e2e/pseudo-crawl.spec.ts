@@ -63,15 +63,29 @@ const { open: OPEN, close: CLOSE } = PSEUDO_MARKERS;
  */
 /**
  * Where the ratchet measures, when that is not the page itself. See the note in
- * the ratchet test. The nonce matches no title and no EXP number, so the table is
- * empty and the count is chrome plus the empty state — all of it copy.
+ * the ratchet test.
+ *
+ * w2-05: `/expenses` left this map. Its server-rendered list read `?q=`, so a nonce no
+ * title matched gave an empty table; ExpenseOS's list (ported in w2-05) filters on the
+ * client and ignores `?q`, so the nonce filtered nothing. It is measured with its table
+ * ROWS left out instead (`ROWS_ARE_DATA`) — the same trade the empty table made.
  */
-const RATCHET_PATH: Record<string, string> = {
-  '/expenses': '/expenses?q=zzz-no-report-has-this-in-its-title',
-};
+const RATCHET_PATH: Record<string, string> = {};
+
+/**
+ * Pages whose table rows are user data, left out of the count once the page has
+ * loaded them. w2-05: ExpenseOS's reports list loads its rows on the client, so the
+ * ratchet waits for a row or the empty state before it reads the page — otherwise the
+ * count would depend on which arrived first — and then skips `<tbody>`. What that
+ * gives up is what the empty-table URL gave up before it: a hardcoded string that
+ * appears only inside a row is invisible to this count.
+ */
+const ROWS_ARE_DATA = new Set(['/expenses']);
 
 const CHROME_CEILING: Record<string, number> = {
-  // Measured on the filtered, empty table — see RATCHET_PATH above. Was 44 while
+  // w2-05: now measured with the rows left out rather than on a filtered-empty table
+  // (see ROWS_ARE_DATA), on ExpenseOS's list; still 0. Before that: measured on the
+  // filtered, empty table — see RATCHET_PATH above. Was 44 while
   // report rows were being counted, and would have risen with every spec that
   // files one.
   // VX4-10 part 2 catalogued this screen: 19 → 1, measured through RATCHET_PATH's
@@ -206,9 +220,10 @@ const CHROME_CEILING: Record<string, number> = {
  * PURELY NUMERIC LINES. An amount, a date, a count — from `Intl` or from the
  * database. Part 1b and 2b are what make those correct; they are not copy.
  */
-async function visibleStrings(page: Page): Promise<string[]> {
-  const text: string[] = await page.evaluate(() => {
+async function visibleStrings(page: Page, opts: { skipRows?: boolean } = {}): Promise<string[]> {
+  const text: string[] = await page.evaluate((skipRows) => {
     const skip = new Set(['SELECT', 'OPTION', 'SCRIPT', 'STYLE', 'NOSCRIPT']);
+    if (skipRows) skip.add('TBODY');
     const out: string[] = [];
     const walk = (node: Node) => {
       if (node.nodeType === Node.ELEMENT_NODE) {
@@ -228,10 +243,14 @@ async function visibleStrings(page: Page): Promise<string[]> {
     };
     walk(document.body);
     return out;
-  });
+  }, opts.skipRows ?? false);
   return text
     .filter((line) => line.length > 1)
-    .filter((line) => !/^[\d\s$.,:%/()+-]+$/.test(line));
+    .filter((line) => !/^[\d\s$.,:%/()+-]+$/.test(line))
+    // w2-05: an amount printed with its ISO code ("CAD 1,234.50", "1 234,50 CAD") is a
+    // number, not copy — ExpenseOS's lists print money that way (its F54), where the
+    // line above already drops the `$` form.
+    .filter((line) => !/^(?:[A-Z]{3}\s?[\d\s.,-]+|[\d\s.,-]+\s?[A-Z]{3})$/.test(line));
 }
 
 function unbracketed(lines: string[]): string[] {
@@ -411,7 +430,13 @@ test.describe('the pseudo-locale crawl', () => {
       // but a row-only string is a real hole, and `enumLabel` call sites inside
       // rows are covered by the badge test above rather than by this one.
       await page.goto(RATCHET_PATH[path] ?? path);
-      const plain = unbracketed(await visibleStrings(page));
+      if (ROWS_ARE_DATA.has(path)) {
+        // Settle first: a row or the empty state (see ROWS_ARE_DATA).
+        await page.locator('tbody tr').first().waitFor();
+      }
+      const plain = unbracketed(
+        await visibleStrings(page, { skipRows: ROWS_ARE_DATA.has(path) }),
+      );
       const ceiling = CHROME_CEILING[path];
       expect(
         ceiling,
