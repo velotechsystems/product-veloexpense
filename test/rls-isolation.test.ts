@@ -2606,6 +2606,115 @@ describe('RLS tenant isolation', () => {
     await admin.query(`DELETE FROM expense_report WHERE title LIKE 'Reading %'`);
   });
 
+  /* ── receipt reading's records (w3-02a, migration 0057) ─────────────────────
+   *
+   * What the worker writes beside a reading: the expense's determinations, the printed
+   * transaction numbers at both grains, and one `ai_usage` row per model call. The worker
+   * writes them as `veloapp` in the job's tenant scope, so each must hold the same line as
+   * every tenant table: a tenant sees its own, cannot write the other's, and cannot point a
+   * row of its own at the other's expense or receipt.
+   */
+  it("receipt reading's records are tenant-isolated, and cannot name another tenant's documents", async () => {
+    const seed = async (org: string, label: string) =>
+      withOrg(org, async (tx) => {
+        const user = (await tx.query('SELECT id FROM app_user WHERE organization_id = $1 LIMIT 1', [org])).rows[0]
+          .id as string;
+        const report = (
+          await tx.query(
+            `INSERT INTO expense_report (organization_id, title, currency_code, submitter_id)
+             VALUES ($1, $2, 'CAD', $3) RETURNING id`,
+            [org, `Read records ${label}`, user],
+          )
+        ).rows[0].id as string;
+        const expense = (
+          await tx.query(`INSERT INTO expense (organization_id, report_id, currency_code) VALUES ($1, $2, 'CAD') RETURNING id`, [
+            org,
+            report,
+          ])
+        ).rows[0].id as string;
+        const receipt = (
+          await tx.query(
+            `INSERT INTO receipt (organization_id, expense_id, s3_key, filename, content_type, uploaded_by_id)
+             VALUES ($1, $2, $3, 'r.pdf', 'application/pdf', $4) RETURNING id`,
+            [org, expense, `org/${org}/receipts/${report}/read.pdf`, user],
+          )
+        ).rows[0].id as string;
+        const source = (
+          await tx.query(
+            `INSERT INTO external_id_source (organization_id, code, label) VALUES ($1, 'merchant-receipt', '{"en":"Merchant receipt"}') RETURNING id`,
+            [org],
+          )
+        ).rows[0].id as string;
+        await tx.query(
+          `INSERT INTO expense_determination (organization_id, expense_id, receipt_ids, proposed)
+           VALUES ($1, $2, ARRAY[$3::uuid], $4)`,
+          [org, expense, receipt, JSON.stringify({ vendor: `Vendor ${label}` })],
+        );
+        await tx.query(
+          `INSERT INTO receipt_external_id (organization_id, source_id, source_value, receipt_id) VALUES ($1, $2, $3, $4)`,
+          [org, source, `TXN-${label}`, receipt],
+        );
+        await tx.query(
+          `INSERT INTO expense_external_id (organization_id, source_id, source_value, expense_id) VALUES ($1, $2, $3, $4)`,
+          [org, source, `TXN-${label}`, expense],
+        );
+        await tx.query(
+          `INSERT INTO ai_usage (organization_id, feature, model, input_tokens, output_tokens, metered, receipt_id, request_id)
+           VALUES ($1, 'receipt_extraction', 'claude-sonnet-5', 2000, 300, false, $2, $3)`,
+          [org, receipt, `req-${label}`],
+        );
+        return { expense, receipt, source };
+      });
+    const a = await seed(orgA, 'A');
+    const b = await seed(orgB, 'B');
+
+    for (const [org, label] of [
+      [orgA, 'A'],
+      [orgB, 'B'],
+    ] as const) {
+      const seen = await withOrg(org, async (tx) => ({
+        det: (await tx.query(`SELECT proposed->>'vendor' AS v FROM expense_determination`)).rows.map((r) => r.v),
+        rx: (await tx.query(`SELECT source_value AS v FROM receipt_external_id`)).rows.map((r) => r.v),
+        ex: (await tx.query(`SELECT source_value AS v FROM expense_external_id`)).rows.map((r) => r.v),
+        ai: (await tx.query(`SELECT request_id AS v FROM ai_usage`)).rows.map((r) => r.v),
+      }));
+      expect(seen).toEqual({
+        det: [`Vendor ${label}`],
+        rx: [`TXN-${label}`],
+        ex: [`TXN-${label}`],
+        ai: [`req-${label}`],
+      });
+    }
+
+    // WITH CHECK: naming the other tenant is refused outright, on every table.
+    for (const sql of [
+      [`INSERT INTO expense_determination (organization_id, expense_id, receipt_ids, proposed) VALUES ($1, $2, '{}', '{}')`, [orgA, a.expense]],
+      [`INSERT INTO ai_usage (organization_id, feature, model, metered, request_id) VALUES ($1, 'receipt_extraction', 'm', false, 'x')`, [orgA]],
+      [`INSERT INTO expense_external_id (organization_id, source_id, source_value, expense_id) VALUES ($1, $2, 'X', $3)`, [orgA, a.source, a.expense]],
+    ] as const) {
+      await expect(withOrg(orgB, (tx) => tx.query(sql[0], [...sql[1]]))).rejects.toThrow(/row-level security|violates/i);
+    }
+    // Composite FKs: B's own rows may not name A's expense, receipt or source.
+    for (const [sql, params] of [
+      [`INSERT INTO expense_determination (organization_id, expense_id, receipt_ids, proposed) VALUES ($1, $2, '{}', '{}')`, [orgB, a.expense]],
+      [`INSERT INTO receipt_external_id (organization_id, source_id, source_value, receipt_id) VALUES ($1, $2, 'X', $3)`, [orgB, b.source, a.receipt]],
+      [`INSERT INTO expense_external_id (organization_id, source_id, source_value, expense_id) VALUES ($1, $2, 'X', $3)`, [orgB, a.source, b.expense]],
+      [`INSERT INTO ai_usage (organization_id, feature, model, metered, receipt_id, request_id) VALUES ($1, 'receipt_extraction', 'm', false, $2, 'x')`, [orgB, a.receipt]],
+    ] as const) {
+      await expect(withOrg(orgB, (tx) => tx.query(sql, [...params]))).rejects.toThrow(/foreign key/i);
+    }
+
+    for (const t of ['expense_determination', 'receipt_external_id', 'expense_external_id', 'ai_usage']) {
+      const viaPlatform = await withPlatformRead((tx) => tx.query(`SELECT count(*)::int AS n FROM ${t}`));
+      expect(viaPlatform.rows[0].n, t).toBe(0);
+      const blind = await withoutOrg((tx) => tx.query(`SELECT count(*)::int AS n FROM ${t}`));
+      expect(blind.rows[0].n, t).toBe(0);
+    }
+
+    await admin.query(`DELETE FROM expense_report WHERE title LIKE 'Read records %'`);
+    await admin.query(`DELETE FROM external_id_source WHERE code = 'merchant-receipt'`);
+  });
+
   /* ── export requests (VX5-12, migration 0041) ─────────────────────────────
    *
    * The ordinary tenant claim, and then the two things specific to this table,

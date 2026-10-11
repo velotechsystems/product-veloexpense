@@ -267,6 +267,7 @@ export type ReceiptWhereInput = {
   expense?: Prisma.XOR<Prisma.ExpenseNullableScalarRelationFilter, Prisma.ExpenseWhereInput> | null
   uploadedBy?: Prisma.XOR<Prisma.UserScalarRelationFilter, Prisma.UserWhereInput>
   extraction?: Prisma.XOR<Prisma.DocumentExtractionNullableScalarRelationFilter, Prisma.DocumentExtractionWhereInput> | null
+  externalIds?: Prisma.ReceiptExternalIdListRelationFilter
 }
 
 export type ReceiptOrderByWithRelationInput = {
@@ -284,6 +285,7 @@ export type ReceiptOrderByWithRelationInput = {
   expense?: Prisma.ExpenseOrderByWithRelationInput
   uploadedBy?: Prisma.UserOrderByWithRelationInput
   extraction?: Prisma.DocumentExtractionOrderByWithRelationInput
+  externalIds?: Prisma.ReceiptExternalIdOrderByRelationAggregateInput
 }
 
 export type ReceiptWhereUniqueInput = Prisma.AtLeast<{
@@ -306,6 +308,7 @@ export type ReceiptWhereUniqueInput = Prisma.AtLeast<{
   expense?: Prisma.XOR<Prisma.ExpenseNullableScalarRelationFilter, Prisma.ExpenseWhereInput> | null
   uploadedBy?: Prisma.XOR<Prisma.UserScalarRelationFilter, Prisma.UserWhereInput>
   extraction?: Prisma.XOR<Prisma.DocumentExtractionNullableScalarRelationFilter, Prisma.DocumentExtractionWhereInput> | null
+  externalIds?: Prisma.ReceiptExternalIdListRelationFilter
 }, "id" | "organizationId_s3Key" | "organizationId_id">
 
 export type ReceiptOrderByWithAggregationInput = {
@@ -357,6 +360,7 @@ export type ReceiptCreateInput = {
   expense?: Prisma.ExpenseCreateNestedOneWithoutReceiptsInput
   uploadedBy: Prisma.UserCreateNestedOneWithoutReceiptsInput
   extraction?: Prisma.DocumentExtractionCreateNestedOneWithoutReceiptInput
+  externalIds?: Prisma.ReceiptExternalIdCreateNestedManyWithoutReceiptInput
 }
 
 export type ReceiptUncheckedCreateInput = {
@@ -372,6 +376,7 @@ export type ReceiptUncheckedCreateInput = {
   uploadedById: string
   uploadedAt?: Date | string
   extraction?: Prisma.DocumentExtractionUncheckedCreateNestedOneWithoutReceiptInput
+  externalIds?: Prisma.ReceiptExternalIdUncheckedCreateNestedManyWithoutReceiptInput
 }
 
 export type ReceiptUpdateInput = {
@@ -387,6 +392,7 @@ export type ReceiptUpdateInput = {
   expense?: Prisma.ExpenseUpdateOneWithoutReceiptsNestedInput
   uploadedBy?: Prisma.UserUpdateOneRequiredWithoutReceiptsNestedInput
   extraction?: Prisma.DocumentExtractionUpdateOneWithoutReceiptNestedInput
+  externalIds?: Prisma.ReceiptExternalIdUpdateManyWithoutReceiptNestedInput
 }
 
 export type ReceiptUncheckedUpdateInput = {
@@ -402,6 +408,7 @@ export type ReceiptUncheckedUpdateInput = {
   uploadedById?: Prisma.StringFieldUpdateOperationsInput | string
   uploadedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   extraction?: Prisma.DocumentExtractionUncheckedUpdateOneWithoutReceiptNestedInput
+  externalIds?: Prisma.ReceiptExternalIdUncheckedUpdateManyWithoutReceiptNestedInput
 }
 
 export type ReceiptCreateManyInput = {
@@ -583,6 +590,20 @@ export type ReceiptUpdateOneRequiredWithoutExtractionNestedInput = {
   update?: Prisma.XOR<Prisma.XOR<Prisma.ReceiptUpdateToOneWithWhereWithoutExtractionInput, Prisma.ReceiptUpdateWithoutExtractionInput>, Prisma.ReceiptUncheckedUpdateWithoutExtractionInput>
 }
 
+export type ReceiptCreateNestedOneWithoutExternalIdsInput = {
+  create?: Prisma.XOR<Prisma.ReceiptCreateWithoutExternalIdsInput, Prisma.ReceiptUncheckedCreateWithoutExternalIdsInput>
+  connectOrCreate?: Prisma.ReceiptCreateOrConnectWithoutExternalIdsInput
+  connect?: Prisma.ReceiptWhereUniqueInput
+}
+
+export type ReceiptUpdateOneRequiredWithoutExternalIdsNestedInput = {
+  create?: Prisma.XOR<Prisma.ReceiptCreateWithoutExternalIdsInput, Prisma.ReceiptUncheckedCreateWithoutExternalIdsInput>
+  connectOrCreate?: Prisma.ReceiptCreateOrConnectWithoutExternalIdsInput
+  upsert?: Prisma.ReceiptUpsertWithoutExternalIdsInput
+  connect?: Prisma.ReceiptWhereUniqueInput
+  update?: Prisma.XOR<Prisma.XOR<Prisma.ReceiptUpdateToOneWithWhereWithoutExternalIdsInput, Prisma.ReceiptUpdateWithoutExternalIdsInput>, Prisma.ReceiptUncheckedUpdateWithoutExternalIdsInput>
+}
+
 export type ReceiptCreateNestedManyWithoutUploadedByInput = {
   create?: Prisma.XOR<Prisma.ReceiptCreateWithoutUploadedByInput, Prisma.ReceiptUncheckedCreateWithoutUploadedByInput> | Prisma.ReceiptCreateWithoutUploadedByInput[] | Prisma.ReceiptUncheckedCreateWithoutUploadedByInput[]
   connectOrCreate?: Prisma.ReceiptCreateOrConnectWithoutUploadedByInput | Prisma.ReceiptCreateOrConnectWithoutUploadedByInput[]
@@ -637,6 +658,7 @@ export type ReceiptCreateWithoutExpenseInput = {
   uploadedAt?: Date | string
   uploadedBy: Prisma.UserCreateNestedOneWithoutReceiptsInput
   extraction?: Prisma.DocumentExtractionCreateNestedOneWithoutReceiptInput
+  externalIds?: Prisma.ReceiptExternalIdCreateNestedManyWithoutReceiptInput
 }
 
 export type ReceiptUncheckedCreateWithoutExpenseInput = {
@@ -651,6 +673,7 @@ export type ReceiptUncheckedCreateWithoutExpenseInput = {
   uploadedById: string
   uploadedAt?: Date | string
   extraction?: Prisma.DocumentExtractionUncheckedCreateNestedOneWithoutReceiptInput
+  externalIds?: Prisma.ReceiptExternalIdUncheckedCreateNestedManyWithoutReceiptInput
 }
 
 export type ReceiptCreateOrConnectWithoutExpenseInput = {
@@ -708,6 +731,7 @@ export type ReceiptCreateWithoutExtractionInput = {
   uploadedAt?: Date | string
   expense?: Prisma.ExpenseCreateNestedOneWithoutReceiptsInput
   uploadedBy: Prisma.UserCreateNestedOneWithoutReceiptsInput
+  externalIds?: Prisma.ReceiptExternalIdCreateNestedManyWithoutReceiptInput
 }
 
 export type ReceiptUncheckedCreateWithoutExtractionInput = {
@@ -722,6 +746,7 @@ export type ReceiptUncheckedCreateWithoutExtractionInput = {
   sizeBytes?: number | null
   uploadedById: string
   uploadedAt?: Date | string
+  externalIds?: Prisma.ReceiptExternalIdUncheckedCreateNestedManyWithoutReceiptInput
 }
 
 export type ReceiptCreateOrConnectWithoutExtractionInput = {
@@ -752,6 +777,7 @@ export type ReceiptUpdateWithoutExtractionInput = {
   uploadedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   expense?: Prisma.ExpenseUpdateOneWithoutReceiptsNestedInput
   uploadedBy?: Prisma.UserUpdateOneRequiredWithoutReceiptsNestedInput
+  externalIds?: Prisma.ReceiptExternalIdUpdateManyWithoutReceiptNestedInput
 }
 
 export type ReceiptUncheckedUpdateWithoutExtractionInput = {
@@ -766,6 +792,83 @@ export type ReceiptUncheckedUpdateWithoutExtractionInput = {
   sizeBytes?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   uploadedById?: Prisma.StringFieldUpdateOperationsInput | string
   uploadedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  externalIds?: Prisma.ReceiptExternalIdUncheckedUpdateManyWithoutReceiptNestedInput
+}
+
+export type ReceiptCreateWithoutExternalIdsInput = {
+  id?: string
+  organizationId?: string
+  kind?: string
+  status?: string
+  s3Key: string
+  filename: string
+  contentType: string
+  sizeBytes?: number | null
+  uploadedAt?: Date | string
+  expense?: Prisma.ExpenseCreateNestedOneWithoutReceiptsInput
+  uploadedBy: Prisma.UserCreateNestedOneWithoutReceiptsInput
+  extraction?: Prisma.DocumentExtractionCreateNestedOneWithoutReceiptInput
+}
+
+export type ReceiptUncheckedCreateWithoutExternalIdsInput = {
+  id?: string
+  organizationId?: string
+  expenseId?: string | null
+  kind?: string
+  status?: string
+  s3Key: string
+  filename: string
+  contentType: string
+  sizeBytes?: number | null
+  uploadedById: string
+  uploadedAt?: Date | string
+  extraction?: Prisma.DocumentExtractionUncheckedCreateNestedOneWithoutReceiptInput
+}
+
+export type ReceiptCreateOrConnectWithoutExternalIdsInput = {
+  where: Prisma.ReceiptWhereUniqueInput
+  create: Prisma.XOR<Prisma.ReceiptCreateWithoutExternalIdsInput, Prisma.ReceiptUncheckedCreateWithoutExternalIdsInput>
+}
+
+export type ReceiptUpsertWithoutExternalIdsInput = {
+  update: Prisma.XOR<Prisma.ReceiptUpdateWithoutExternalIdsInput, Prisma.ReceiptUncheckedUpdateWithoutExternalIdsInput>
+  create: Prisma.XOR<Prisma.ReceiptCreateWithoutExternalIdsInput, Prisma.ReceiptUncheckedCreateWithoutExternalIdsInput>
+  where?: Prisma.ReceiptWhereInput
+}
+
+export type ReceiptUpdateToOneWithWhereWithoutExternalIdsInput = {
+  where?: Prisma.ReceiptWhereInput
+  data: Prisma.XOR<Prisma.ReceiptUpdateWithoutExternalIdsInput, Prisma.ReceiptUncheckedUpdateWithoutExternalIdsInput>
+}
+
+export type ReceiptUpdateWithoutExternalIdsInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  organizationId?: Prisma.StringFieldUpdateOperationsInput | string
+  kind?: Prisma.StringFieldUpdateOperationsInput | string
+  status?: Prisma.StringFieldUpdateOperationsInput | string
+  s3Key?: Prisma.StringFieldUpdateOperationsInput | string
+  filename?: Prisma.StringFieldUpdateOperationsInput | string
+  contentType?: Prisma.StringFieldUpdateOperationsInput | string
+  sizeBytes?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  uploadedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  expense?: Prisma.ExpenseUpdateOneWithoutReceiptsNestedInput
+  uploadedBy?: Prisma.UserUpdateOneRequiredWithoutReceiptsNestedInput
+  extraction?: Prisma.DocumentExtractionUpdateOneWithoutReceiptNestedInput
+}
+
+export type ReceiptUncheckedUpdateWithoutExternalIdsInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  organizationId?: Prisma.StringFieldUpdateOperationsInput | string
+  expenseId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  kind?: Prisma.StringFieldUpdateOperationsInput | string
+  status?: Prisma.StringFieldUpdateOperationsInput | string
+  s3Key?: Prisma.StringFieldUpdateOperationsInput | string
+  filename?: Prisma.StringFieldUpdateOperationsInput | string
+  contentType?: Prisma.StringFieldUpdateOperationsInput | string
+  sizeBytes?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  uploadedById?: Prisma.StringFieldUpdateOperationsInput | string
+  uploadedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  extraction?: Prisma.DocumentExtractionUncheckedUpdateOneWithoutReceiptNestedInput
 }
 
 export type ReceiptCreateWithoutUploadedByInput = {
@@ -780,6 +883,7 @@ export type ReceiptCreateWithoutUploadedByInput = {
   uploadedAt?: Date | string
   expense?: Prisma.ExpenseCreateNestedOneWithoutReceiptsInput
   extraction?: Prisma.DocumentExtractionCreateNestedOneWithoutReceiptInput
+  externalIds?: Prisma.ReceiptExternalIdCreateNestedManyWithoutReceiptInput
 }
 
 export type ReceiptUncheckedCreateWithoutUploadedByInput = {
@@ -794,6 +898,7 @@ export type ReceiptUncheckedCreateWithoutUploadedByInput = {
   sizeBytes?: number | null
   uploadedAt?: Date | string
   extraction?: Prisma.DocumentExtractionUncheckedCreateNestedOneWithoutReceiptInput
+  externalIds?: Prisma.ReceiptExternalIdUncheckedCreateNestedManyWithoutReceiptInput
 }
 
 export type ReceiptCreateOrConnectWithoutUploadedByInput = {
@@ -847,6 +952,7 @@ export type ReceiptUpdateWithoutExpenseInput = {
   uploadedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   uploadedBy?: Prisma.UserUpdateOneRequiredWithoutReceiptsNestedInput
   extraction?: Prisma.DocumentExtractionUpdateOneWithoutReceiptNestedInput
+  externalIds?: Prisma.ReceiptExternalIdUpdateManyWithoutReceiptNestedInput
 }
 
 export type ReceiptUncheckedUpdateWithoutExpenseInput = {
@@ -861,6 +967,7 @@ export type ReceiptUncheckedUpdateWithoutExpenseInput = {
   uploadedById?: Prisma.StringFieldUpdateOperationsInput | string
   uploadedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   extraction?: Prisma.DocumentExtractionUncheckedUpdateOneWithoutReceiptNestedInput
+  externalIds?: Prisma.ReceiptExternalIdUncheckedUpdateManyWithoutReceiptNestedInput
 }
 
 export type ReceiptUncheckedUpdateManyWithoutExpenseInput = {
@@ -901,6 +1008,7 @@ export type ReceiptUpdateWithoutUploadedByInput = {
   uploadedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   expense?: Prisma.ExpenseUpdateOneWithoutReceiptsNestedInput
   extraction?: Prisma.DocumentExtractionUpdateOneWithoutReceiptNestedInput
+  externalIds?: Prisma.ReceiptExternalIdUpdateManyWithoutReceiptNestedInput
 }
 
 export type ReceiptUncheckedUpdateWithoutUploadedByInput = {
@@ -915,6 +1023,7 @@ export type ReceiptUncheckedUpdateWithoutUploadedByInput = {
   sizeBytes?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   uploadedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   extraction?: Prisma.DocumentExtractionUncheckedUpdateOneWithoutReceiptNestedInput
+  externalIds?: Prisma.ReceiptExternalIdUncheckedUpdateManyWithoutReceiptNestedInput
 }
 
 export type ReceiptUncheckedUpdateManyWithoutUploadedByInput = {
@@ -930,6 +1039,35 @@ export type ReceiptUncheckedUpdateManyWithoutUploadedByInput = {
   uploadedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
 }
 
+
+/**
+ * Count Type ReceiptCountOutputType
+ */
+
+export type ReceiptCountOutputType = {
+  externalIds: number
+}
+
+export type ReceiptCountOutputTypeSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  externalIds?: boolean | ReceiptCountOutputTypeCountExternalIdsArgs
+}
+
+/**
+ * ReceiptCountOutputType without action
+ */
+export type ReceiptCountOutputTypeDefaultArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  /**
+   * Select specific fields to fetch from the ReceiptCountOutputType
+   */
+  select?: Prisma.ReceiptCountOutputTypeSelect<ExtArgs> | null
+}
+
+/**
+ * ReceiptCountOutputType without action
+ */
+export type ReceiptCountOutputTypeCountExternalIdsArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  where?: Prisma.ReceiptExternalIdWhereInput
+}
 
 
 export type ReceiptSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetSelect<{
@@ -947,6 +1085,8 @@ export type ReceiptSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs 
   expense?: boolean | Prisma.Receipt$expenseArgs<ExtArgs>
   uploadedBy?: boolean | Prisma.UserDefaultArgs<ExtArgs>
   extraction?: boolean | Prisma.Receipt$extractionArgs<ExtArgs>
+  externalIds?: boolean | Prisma.Receipt$externalIdsArgs<ExtArgs>
+  _count?: boolean | Prisma.ReceiptCountOutputTypeDefaultArgs<ExtArgs>
 }, ExtArgs["result"]["receipt"]>
 
 export type ReceiptSelectCreateManyAndReturn<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetSelect<{
@@ -1000,6 +1140,8 @@ export type ReceiptInclude<ExtArgs extends runtime.Types.Extensions.InternalArgs
   expense?: boolean | Prisma.Receipt$expenseArgs<ExtArgs>
   uploadedBy?: boolean | Prisma.UserDefaultArgs<ExtArgs>
   extraction?: boolean | Prisma.Receipt$extractionArgs<ExtArgs>
+  externalIds?: boolean | Prisma.Receipt$externalIdsArgs<ExtArgs>
+  _count?: boolean | Prisma.ReceiptCountOutputTypeDefaultArgs<ExtArgs>
 }
 export type ReceiptIncludeCreateManyAndReturn<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   expense?: boolean | Prisma.Receipt$expenseArgs<ExtArgs>
@@ -1019,6 +1161,10 @@ export type $ReceiptPayload<ExtArgs extends runtime.Types.Extensions.InternalArg
      * w3-01: the receipt's reading (0056), one per receipt.
      */
     extraction: Prisma.$DocumentExtractionPayload<ExtArgs> | null
+    /**
+     * w3-02a (0057): the transaction number printed on it.
+     */
+    externalIds: Prisma.$ReceiptExternalIdPayload<ExtArgs>[]
   }
   scalars: runtime.Types.Extensions.GetPayloadResult<{
     id: string
@@ -1443,6 +1589,7 @@ export interface Prisma__ReceiptClient<T, Null = never, ExtArgs extends runtime.
   expense<T extends Prisma.Receipt$expenseArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.Receipt$expenseArgs<ExtArgs>>): Prisma.Prisma__ExpenseClient<runtime.Types.Result.GetResult<Prisma.$ExpensePayload<ExtArgs>, T, "findUniqueOrThrow", GlobalOmitOptions> | null, null, ExtArgs, GlobalOmitOptions>
   uploadedBy<T extends Prisma.UserDefaultArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.UserDefaultArgs<ExtArgs>>): Prisma.Prisma__UserClient<runtime.Types.Result.GetResult<Prisma.$UserPayload<ExtArgs>, T, "findUniqueOrThrow", GlobalOmitOptions> | Null, Null, ExtArgs, GlobalOmitOptions>
   extraction<T extends Prisma.Receipt$extractionArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.Receipt$extractionArgs<ExtArgs>>): Prisma.Prisma__DocumentExtractionClient<runtime.Types.Result.GetResult<Prisma.$DocumentExtractionPayload<ExtArgs>, T, "findUniqueOrThrow", GlobalOmitOptions> | null, null, ExtArgs, GlobalOmitOptions>
+  externalIds<T extends Prisma.Receipt$externalIdsArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.Receipt$externalIdsArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$ReceiptExternalIdPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
   /**
    * Attaches callbacks for the resolution and/or rejection of the Promise.
    * @param onfulfilled The callback to execute when the Promise is resolved.
@@ -1919,6 +2066,30 @@ export type Receipt$extractionArgs<ExtArgs extends runtime.Types.Extensions.Inte
    */
   include?: Prisma.DocumentExtractionInclude<ExtArgs> | null
   where?: Prisma.DocumentExtractionWhereInput
+}
+
+/**
+ * Receipt.externalIds
+ */
+export type Receipt$externalIdsArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  /**
+   * Select specific fields to fetch from the ReceiptExternalId
+   */
+  select?: Prisma.ReceiptExternalIdSelect<ExtArgs> | null
+  /**
+   * Omit specific fields from the ReceiptExternalId
+   */
+  omit?: Prisma.ReceiptExternalIdOmit<ExtArgs> | null
+  /**
+   * Choose, which related nodes to fetch as well
+   */
+  include?: Prisma.ReceiptExternalIdInclude<ExtArgs> | null
+  where?: Prisma.ReceiptExternalIdWhereInput
+  orderBy?: Prisma.ReceiptExternalIdOrderByWithRelationInput | Prisma.ReceiptExternalIdOrderByWithRelationInput[]
+  cursor?: Prisma.ReceiptExternalIdWhereUniqueInput
+  take?: number
+  skip?: number
+  distinct?: Prisma.ReceiptExternalIdScalarFieldEnum | Prisma.ReceiptExternalIdScalarFieldEnum[]
 }
 
 /**

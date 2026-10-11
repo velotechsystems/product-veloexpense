@@ -92,6 +92,9 @@ export const AUDIT_ACTIONS = [
   'REPORT_CREATED',
   'RECEIPT_ATTACHED',
   'RECEIPT_REMOVED',
+  /* Wave 3 (w3-02a): a receipt read after its report left DRAFT/RETURNED, and so not
+   * applied — ExpenseOS's `report.extraction.skipped`. Written by the worker. */
+  'REPORT_EXTRACTION_SKIPPED',
 
   /* the report's own transitions. Missing until 4 Oct 2026: a submit and a recall
    * wrote only to `expense_report_event`, so the tamper-evident chain recorded who

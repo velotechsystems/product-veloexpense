@@ -422,6 +422,8 @@ export type ExpenseWhereInput = {
   taxJurisdiction?: Prisma.XOR<Prisma.TaxJurisdictionNullableScalarRelationFilter, Prisma.TaxJurisdictionWhereInput> | null
   lineItems?: Prisma.ExpenseLineItemListRelationFilter
   receipts?: Prisma.ReceiptListRelationFilter
+  determinations?: Prisma.ExpenseDeterminationListRelationFilter
+  externalIds?: Prisma.ExpenseExternalIdListRelationFilter
   attendees?: Prisma.ExpenseAttendeeListRelationFilter
   allocations?: Prisma.ExpenseAllocationListRelationFilter
 }
@@ -459,6 +461,8 @@ export type ExpenseOrderByWithRelationInput = {
   taxJurisdiction?: Prisma.TaxJurisdictionOrderByWithRelationInput
   lineItems?: Prisma.ExpenseLineItemOrderByRelationAggregateInput
   receipts?: Prisma.ReceiptOrderByRelationAggregateInput
+  determinations?: Prisma.ExpenseDeterminationOrderByRelationAggregateInput
+  externalIds?: Prisma.ExpenseExternalIdOrderByRelationAggregateInput
   attendees?: Prisma.ExpenseAttendeeOrderByRelationAggregateInput
   allocations?: Prisma.ExpenseAllocationOrderByRelationAggregateInput
 }
@@ -500,6 +504,8 @@ export type ExpenseWhereUniqueInput = Prisma.AtLeast<{
   taxJurisdiction?: Prisma.XOR<Prisma.TaxJurisdictionNullableScalarRelationFilter, Prisma.TaxJurisdictionWhereInput> | null
   lineItems?: Prisma.ExpenseLineItemListRelationFilter
   receipts?: Prisma.ReceiptListRelationFilter
+  determinations?: Prisma.ExpenseDeterminationListRelationFilter
+  externalIds?: Prisma.ExpenseExternalIdListRelationFilter
   attendees?: Prisma.ExpenseAttendeeListRelationFilter
   allocations?: Prisma.ExpenseAllocationListRelationFilter
 }, "id" | "organizationId_id">
@@ -599,6 +605,8 @@ export type ExpenseCreateInput = {
   taxJurisdiction?: Prisma.TaxJurisdictionCreateNestedOneWithoutExpensesInput
   lineItems?: Prisma.ExpenseLineItemCreateNestedManyWithoutExpenseInput
   receipts?: Prisma.ReceiptCreateNestedManyWithoutExpenseInput
+  determinations?: Prisma.ExpenseDeterminationCreateNestedManyWithoutExpenseInput
+  externalIds?: Prisma.ExpenseExternalIdCreateNestedManyWithoutExpenseInput
   attendees?: Prisma.ExpenseAttendeeCreateNestedManyWithoutExpenseInput
   allocations?: Prisma.ExpenseAllocationCreateNestedManyWithoutExpenseInput
 }
@@ -632,6 +640,8 @@ export type ExpenseUncheckedCreateInput = {
   updatedAt?: Date | string
   lineItems?: Prisma.ExpenseLineItemUncheckedCreateNestedManyWithoutExpenseInput
   receipts?: Prisma.ReceiptUncheckedCreateNestedManyWithoutExpenseInput
+  determinations?: Prisma.ExpenseDeterminationUncheckedCreateNestedManyWithoutExpenseInput
+  externalIds?: Prisma.ExpenseExternalIdUncheckedCreateNestedManyWithoutExpenseInput
   attendees?: Prisma.ExpenseAttendeeUncheckedCreateNestedManyWithoutExpenseInput
   allocations?: Prisma.ExpenseAllocationUncheckedCreateNestedManyWithoutExpenseInput
 }
@@ -665,6 +675,8 @@ export type ExpenseUpdateInput = {
   taxJurisdiction?: Prisma.TaxJurisdictionUpdateOneWithoutExpensesNestedInput
   lineItems?: Prisma.ExpenseLineItemUpdateManyWithoutExpenseNestedInput
   receipts?: Prisma.ReceiptUpdateManyWithoutExpenseNestedInput
+  determinations?: Prisma.ExpenseDeterminationUpdateManyWithoutExpenseNestedInput
+  externalIds?: Prisma.ExpenseExternalIdUpdateManyWithoutExpenseNestedInput
   attendees?: Prisma.ExpenseAttendeeUpdateManyWithoutExpenseNestedInput
   allocations?: Prisma.ExpenseAllocationUpdateManyWithoutExpenseNestedInput
 }
@@ -698,6 +710,8 @@ export type ExpenseUncheckedUpdateInput = {
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   lineItems?: Prisma.ExpenseLineItemUncheckedUpdateManyWithoutExpenseNestedInput
   receipts?: Prisma.ReceiptUncheckedUpdateManyWithoutExpenseNestedInput
+  determinations?: Prisma.ExpenseDeterminationUncheckedUpdateManyWithoutExpenseNestedInput
+  externalIds?: Prisma.ExpenseExternalIdUncheckedUpdateManyWithoutExpenseNestedInput
   attendees?: Prisma.ExpenseAttendeeUncheckedUpdateManyWithoutExpenseNestedInput
   allocations?: Prisma.ExpenseAllocationUncheckedUpdateManyWithoutExpenseNestedInput
 }
@@ -1029,6 +1043,34 @@ export type ExpenseUpdateOneWithoutReceiptsNestedInput = {
   update?: Prisma.XOR<Prisma.XOR<Prisma.ExpenseUpdateToOneWithWhereWithoutReceiptsInput, Prisma.ExpenseUpdateWithoutReceiptsInput>, Prisma.ExpenseUncheckedUpdateWithoutReceiptsInput>
 }
 
+export type ExpenseCreateNestedOneWithoutDeterminationsInput = {
+  create?: Prisma.XOR<Prisma.ExpenseCreateWithoutDeterminationsInput, Prisma.ExpenseUncheckedCreateWithoutDeterminationsInput>
+  connectOrCreate?: Prisma.ExpenseCreateOrConnectWithoutDeterminationsInput
+  connect?: Prisma.ExpenseWhereUniqueInput
+}
+
+export type ExpenseUpdateOneRequiredWithoutDeterminationsNestedInput = {
+  create?: Prisma.XOR<Prisma.ExpenseCreateWithoutDeterminationsInput, Prisma.ExpenseUncheckedCreateWithoutDeterminationsInput>
+  connectOrCreate?: Prisma.ExpenseCreateOrConnectWithoutDeterminationsInput
+  upsert?: Prisma.ExpenseUpsertWithoutDeterminationsInput
+  connect?: Prisma.ExpenseWhereUniqueInput
+  update?: Prisma.XOR<Prisma.XOR<Prisma.ExpenseUpdateToOneWithWhereWithoutDeterminationsInput, Prisma.ExpenseUpdateWithoutDeterminationsInput>, Prisma.ExpenseUncheckedUpdateWithoutDeterminationsInput>
+}
+
+export type ExpenseCreateNestedOneWithoutExternalIdsInput = {
+  create?: Prisma.XOR<Prisma.ExpenseCreateWithoutExternalIdsInput, Prisma.ExpenseUncheckedCreateWithoutExternalIdsInput>
+  connectOrCreate?: Prisma.ExpenseCreateOrConnectWithoutExternalIdsInput
+  connect?: Prisma.ExpenseWhereUniqueInput
+}
+
+export type ExpenseUpdateOneRequiredWithoutExternalIdsNestedInput = {
+  create?: Prisma.XOR<Prisma.ExpenseCreateWithoutExternalIdsInput, Prisma.ExpenseUncheckedCreateWithoutExternalIdsInput>
+  connectOrCreate?: Prisma.ExpenseCreateOrConnectWithoutExternalIdsInput
+  upsert?: Prisma.ExpenseUpsertWithoutExternalIdsInput
+  connect?: Prisma.ExpenseWhereUniqueInput
+  update?: Prisma.XOR<Prisma.XOR<Prisma.ExpenseUpdateToOneWithWhereWithoutExternalIdsInput, Prisma.ExpenseUpdateWithoutExternalIdsInput>, Prisma.ExpenseUncheckedUpdateWithoutExternalIdsInput>
+}
+
 export type ExpenseCreateNestedManyWithoutTaxJurisdictionInput = {
   create?: Prisma.XOR<Prisma.ExpenseCreateWithoutTaxJurisdictionInput, Prisma.ExpenseUncheckedCreateWithoutTaxJurisdictionInput> | Prisma.ExpenseCreateWithoutTaxJurisdictionInput[] | Prisma.ExpenseUncheckedCreateWithoutTaxJurisdictionInput[]
   connectOrCreate?: Prisma.ExpenseCreateOrConnectWithoutTaxJurisdictionInput | Prisma.ExpenseCreateOrConnectWithoutTaxJurisdictionInput[]
@@ -1183,6 +1225,8 @@ export type ExpenseCreateWithoutReportInput = {
   taxJurisdiction?: Prisma.TaxJurisdictionCreateNestedOneWithoutExpensesInput
   lineItems?: Prisma.ExpenseLineItemCreateNestedManyWithoutExpenseInput
   receipts?: Prisma.ReceiptCreateNestedManyWithoutExpenseInput
+  determinations?: Prisma.ExpenseDeterminationCreateNestedManyWithoutExpenseInput
+  externalIds?: Prisma.ExpenseExternalIdCreateNestedManyWithoutExpenseInput
   attendees?: Prisma.ExpenseAttendeeCreateNestedManyWithoutExpenseInput
   allocations?: Prisma.ExpenseAllocationCreateNestedManyWithoutExpenseInput
 }
@@ -1215,6 +1259,8 @@ export type ExpenseUncheckedCreateWithoutReportInput = {
   updatedAt?: Date | string
   lineItems?: Prisma.ExpenseLineItemUncheckedCreateNestedManyWithoutExpenseInput
   receipts?: Prisma.ReceiptUncheckedCreateNestedManyWithoutExpenseInput
+  determinations?: Prisma.ExpenseDeterminationUncheckedCreateNestedManyWithoutExpenseInput
+  externalIds?: Prisma.ExpenseExternalIdUncheckedCreateNestedManyWithoutExpenseInput
   attendees?: Prisma.ExpenseAttendeeUncheckedCreateNestedManyWithoutExpenseInput
   allocations?: Prisma.ExpenseAllocationUncheckedCreateNestedManyWithoutExpenseInput
 }
@@ -1306,6 +1352,8 @@ export type ExpenseCreateWithoutAllocationsInput = {
   taxJurisdiction?: Prisma.TaxJurisdictionCreateNestedOneWithoutExpensesInput
   lineItems?: Prisma.ExpenseLineItemCreateNestedManyWithoutExpenseInput
   receipts?: Prisma.ReceiptCreateNestedManyWithoutExpenseInput
+  determinations?: Prisma.ExpenseDeterminationCreateNestedManyWithoutExpenseInput
+  externalIds?: Prisma.ExpenseExternalIdCreateNestedManyWithoutExpenseInput
   attendees?: Prisma.ExpenseAttendeeCreateNestedManyWithoutExpenseInput
 }
 
@@ -1338,6 +1386,8 @@ export type ExpenseUncheckedCreateWithoutAllocationsInput = {
   updatedAt?: Date | string
   lineItems?: Prisma.ExpenseLineItemUncheckedCreateNestedManyWithoutExpenseInput
   receipts?: Prisma.ReceiptUncheckedCreateNestedManyWithoutExpenseInput
+  determinations?: Prisma.ExpenseDeterminationUncheckedCreateNestedManyWithoutExpenseInput
+  externalIds?: Prisma.ExpenseExternalIdUncheckedCreateNestedManyWithoutExpenseInput
   attendees?: Prisma.ExpenseAttendeeUncheckedCreateNestedManyWithoutExpenseInput
 }
 
@@ -1386,6 +1436,8 @@ export type ExpenseUpdateWithoutAllocationsInput = {
   taxJurisdiction?: Prisma.TaxJurisdictionUpdateOneWithoutExpensesNestedInput
   lineItems?: Prisma.ExpenseLineItemUpdateManyWithoutExpenseNestedInput
   receipts?: Prisma.ReceiptUpdateManyWithoutExpenseNestedInput
+  determinations?: Prisma.ExpenseDeterminationUpdateManyWithoutExpenseNestedInput
+  externalIds?: Prisma.ExpenseExternalIdUpdateManyWithoutExpenseNestedInput
   attendees?: Prisma.ExpenseAttendeeUpdateManyWithoutExpenseNestedInput
 }
 
@@ -1418,6 +1470,8 @@ export type ExpenseUncheckedUpdateWithoutAllocationsInput = {
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   lineItems?: Prisma.ExpenseLineItemUncheckedUpdateManyWithoutExpenseNestedInput
   receipts?: Prisma.ReceiptUncheckedUpdateManyWithoutExpenseNestedInput
+  determinations?: Prisma.ExpenseDeterminationUncheckedUpdateManyWithoutExpenseNestedInput
+  externalIds?: Prisma.ExpenseExternalIdUncheckedUpdateManyWithoutExpenseNestedInput
   attendees?: Prisma.ExpenseAttendeeUncheckedUpdateManyWithoutExpenseNestedInput
 }
 
@@ -1450,6 +1504,8 @@ export type ExpenseCreateWithoutAttendeesInput = {
   taxJurisdiction?: Prisma.TaxJurisdictionCreateNestedOneWithoutExpensesInput
   lineItems?: Prisma.ExpenseLineItemCreateNestedManyWithoutExpenseInput
   receipts?: Prisma.ReceiptCreateNestedManyWithoutExpenseInput
+  determinations?: Prisma.ExpenseDeterminationCreateNestedManyWithoutExpenseInput
+  externalIds?: Prisma.ExpenseExternalIdCreateNestedManyWithoutExpenseInput
   allocations?: Prisma.ExpenseAllocationCreateNestedManyWithoutExpenseInput
 }
 
@@ -1482,6 +1538,8 @@ export type ExpenseUncheckedCreateWithoutAttendeesInput = {
   updatedAt?: Date | string
   lineItems?: Prisma.ExpenseLineItemUncheckedCreateNestedManyWithoutExpenseInput
   receipts?: Prisma.ReceiptUncheckedCreateNestedManyWithoutExpenseInput
+  determinations?: Prisma.ExpenseDeterminationUncheckedCreateNestedManyWithoutExpenseInput
+  externalIds?: Prisma.ExpenseExternalIdUncheckedCreateNestedManyWithoutExpenseInput
   allocations?: Prisma.ExpenseAllocationUncheckedCreateNestedManyWithoutExpenseInput
 }
 
@@ -1530,6 +1588,8 @@ export type ExpenseUpdateWithoutAttendeesInput = {
   taxJurisdiction?: Prisma.TaxJurisdictionUpdateOneWithoutExpensesNestedInput
   lineItems?: Prisma.ExpenseLineItemUpdateManyWithoutExpenseNestedInput
   receipts?: Prisma.ReceiptUpdateManyWithoutExpenseNestedInput
+  determinations?: Prisma.ExpenseDeterminationUpdateManyWithoutExpenseNestedInput
+  externalIds?: Prisma.ExpenseExternalIdUpdateManyWithoutExpenseNestedInput
   allocations?: Prisma.ExpenseAllocationUpdateManyWithoutExpenseNestedInput
 }
 
@@ -1562,6 +1622,8 @@ export type ExpenseUncheckedUpdateWithoutAttendeesInput = {
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   lineItems?: Prisma.ExpenseLineItemUncheckedUpdateManyWithoutExpenseNestedInput
   receipts?: Prisma.ReceiptUncheckedUpdateManyWithoutExpenseNestedInput
+  determinations?: Prisma.ExpenseDeterminationUncheckedUpdateManyWithoutExpenseNestedInput
+  externalIds?: Prisma.ExpenseExternalIdUncheckedUpdateManyWithoutExpenseNestedInput
   allocations?: Prisma.ExpenseAllocationUncheckedUpdateManyWithoutExpenseNestedInput
 }
 
@@ -1593,6 +1655,8 @@ export type ExpenseCreateWithoutLineItemsInput = {
   currency: Prisma.CurrencyCreateNestedOneWithoutExpensesInput
   taxJurisdiction?: Prisma.TaxJurisdictionCreateNestedOneWithoutExpensesInput
   receipts?: Prisma.ReceiptCreateNestedManyWithoutExpenseInput
+  determinations?: Prisma.ExpenseDeterminationCreateNestedManyWithoutExpenseInput
+  externalIds?: Prisma.ExpenseExternalIdCreateNestedManyWithoutExpenseInput
   attendees?: Prisma.ExpenseAttendeeCreateNestedManyWithoutExpenseInput
   allocations?: Prisma.ExpenseAllocationCreateNestedManyWithoutExpenseInput
 }
@@ -1625,6 +1689,8 @@ export type ExpenseUncheckedCreateWithoutLineItemsInput = {
   createdAt?: Date | string
   updatedAt?: Date | string
   receipts?: Prisma.ReceiptUncheckedCreateNestedManyWithoutExpenseInput
+  determinations?: Prisma.ExpenseDeterminationUncheckedCreateNestedManyWithoutExpenseInput
+  externalIds?: Prisma.ExpenseExternalIdUncheckedCreateNestedManyWithoutExpenseInput
   attendees?: Prisma.ExpenseAttendeeUncheckedCreateNestedManyWithoutExpenseInput
   allocations?: Prisma.ExpenseAllocationUncheckedCreateNestedManyWithoutExpenseInput
 }
@@ -1673,6 +1739,8 @@ export type ExpenseUpdateWithoutLineItemsInput = {
   currency?: Prisma.CurrencyUpdateOneRequiredWithoutExpensesNestedInput
   taxJurisdiction?: Prisma.TaxJurisdictionUpdateOneWithoutExpensesNestedInput
   receipts?: Prisma.ReceiptUpdateManyWithoutExpenseNestedInput
+  determinations?: Prisma.ExpenseDeterminationUpdateManyWithoutExpenseNestedInput
+  externalIds?: Prisma.ExpenseExternalIdUpdateManyWithoutExpenseNestedInput
   attendees?: Prisma.ExpenseAttendeeUpdateManyWithoutExpenseNestedInput
   allocations?: Prisma.ExpenseAllocationUpdateManyWithoutExpenseNestedInput
 }
@@ -1705,6 +1773,8 @@ export type ExpenseUncheckedUpdateWithoutLineItemsInput = {
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   receipts?: Prisma.ReceiptUncheckedUpdateManyWithoutExpenseNestedInput
+  determinations?: Prisma.ExpenseDeterminationUncheckedUpdateManyWithoutExpenseNestedInput
+  externalIds?: Prisma.ExpenseExternalIdUncheckedUpdateManyWithoutExpenseNestedInput
   attendees?: Prisma.ExpenseAttendeeUncheckedUpdateManyWithoutExpenseNestedInput
   allocations?: Prisma.ExpenseAllocationUncheckedUpdateManyWithoutExpenseNestedInput
 }
@@ -1737,6 +1807,8 @@ export type ExpenseCreateWithoutReceiptsInput = {
   currency: Prisma.CurrencyCreateNestedOneWithoutExpensesInput
   taxJurisdiction?: Prisma.TaxJurisdictionCreateNestedOneWithoutExpensesInput
   lineItems?: Prisma.ExpenseLineItemCreateNestedManyWithoutExpenseInput
+  determinations?: Prisma.ExpenseDeterminationCreateNestedManyWithoutExpenseInput
+  externalIds?: Prisma.ExpenseExternalIdCreateNestedManyWithoutExpenseInput
   attendees?: Prisma.ExpenseAttendeeCreateNestedManyWithoutExpenseInput
   allocations?: Prisma.ExpenseAllocationCreateNestedManyWithoutExpenseInput
 }
@@ -1769,6 +1841,8 @@ export type ExpenseUncheckedCreateWithoutReceiptsInput = {
   createdAt?: Date | string
   updatedAt?: Date | string
   lineItems?: Prisma.ExpenseLineItemUncheckedCreateNestedManyWithoutExpenseInput
+  determinations?: Prisma.ExpenseDeterminationUncheckedCreateNestedManyWithoutExpenseInput
+  externalIds?: Prisma.ExpenseExternalIdUncheckedCreateNestedManyWithoutExpenseInput
   attendees?: Prisma.ExpenseAttendeeUncheckedCreateNestedManyWithoutExpenseInput
   allocations?: Prisma.ExpenseAllocationUncheckedCreateNestedManyWithoutExpenseInput
 }
@@ -1817,6 +1891,8 @@ export type ExpenseUpdateWithoutReceiptsInput = {
   currency?: Prisma.CurrencyUpdateOneRequiredWithoutExpensesNestedInput
   taxJurisdiction?: Prisma.TaxJurisdictionUpdateOneWithoutExpensesNestedInput
   lineItems?: Prisma.ExpenseLineItemUpdateManyWithoutExpenseNestedInput
+  determinations?: Prisma.ExpenseDeterminationUpdateManyWithoutExpenseNestedInput
+  externalIds?: Prisma.ExpenseExternalIdUpdateManyWithoutExpenseNestedInput
   attendees?: Prisma.ExpenseAttendeeUpdateManyWithoutExpenseNestedInput
   allocations?: Prisma.ExpenseAllocationUpdateManyWithoutExpenseNestedInput
 }
@@ -1849,6 +1925,312 @@ export type ExpenseUncheckedUpdateWithoutReceiptsInput = {
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   lineItems?: Prisma.ExpenseLineItemUncheckedUpdateManyWithoutExpenseNestedInput
+  determinations?: Prisma.ExpenseDeterminationUncheckedUpdateManyWithoutExpenseNestedInput
+  externalIds?: Prisma.ExpenseExternalIdUncheckedUpdateManyWithoutExpenseNestedInput
+  attendees?: Prisma.ExpenseAttendeeUncheckedUpdateManyWithoutExpenseNestedInput
+  allocations?: Prisma.ExpenseAllocationUncheckedUpdateManyWithoutExpenseNestedInput
+}
+
+export type ExpenseCreateWithoutDeterminationsInput = {
+  id?: string
+  organizationId?: string
+  merchant?: string | null
+  placeText?: string | null
+  date?: Date | string | null
+  amountMinor?: bigint | number
+  paymentMethod?: string
+  purpose?: string | null
+  explanation?: string | null
+  subtotalMinor?: bigint | number | null
+  fxRate?: runtime.Decimal | runtime.DecimalJsLike | number | string | null
+  fxRateSource?: string | null
+  homeCurrency?: string | null
+  homeAmountMinor?: bigint | number | null
+  taxGstHstMinor?: bigint | number | null
+  taxQstMinor?: bigint | number | null
+  taxPstMinor?: bigint | number | null
+  recoverableGstHstMinor?: bigint | number | null
+  recoverableQstMinor?: bigint | number | null
+  taxSource?: string
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  report: Prisma.ExpenseReportCreateNestedOneWithoutExpensesInput
+  owner: Prisma.UserCreateNestedOneWithoutExpensesInput
+  currency: Prisma.CurrencyCreateNestedOneWithoutExpensesInput
+  taxJurisdiction?: Prisma.TaxJurisdictionCreateNestedOneWithoutExpensesInput
+  lineItems?: Prisma.ExpenseLineItemCreateNestedManyWithoutExpenseInput
+  receipts?: Prisma.ReceiptCreateNestedManyWithoutExpenseInput
+  externalIds?: Prisma.ExpenseExternalIdCreateNestedManyWithoutExpenseInput
+  attendees?: Prisma.ExpenseAttendeeCreateNestedManyWithoutExpenseInput
+  allocations?: Prisma.ExpenseAllocationCreateNestedManyWithoutExpenseInput
+}
+
+export type ExpenseUncheckedCreateWithoutDeterminationsInput = {
+  id?: string
+  organizationId?: string
+  reportId: string
+  ownerId: string
+  merchant?: string | null
+  placeText?: string | null
+  date?: Date | string | null
+  amountMinor?: bigint | number
+  currencyId: string
+  paymentMethod?: string
+  purpose?: string | null
+  explanation?: string | null
+  subtotalMinor?: bigint | number | null
+  fxRate?: runtime.Decimal | runtime.DecimalJsLike | number | string | null
+  fxRateSource?: string | null
+  homeCurrency?: string | null
+  homeAmountMinor?: bigint | number | null
+  taxGstHstMinor?: bigint | number | null
+  taxQstMinor?: bigint | number | null
+  taxPstMinor?: bigint | number | null
+  recoverableGstHstMinor?: bigint | number | null
+  recoverableQstMinor?: bigint | number | null
+  taxSource?: string
+  taxJurisdictionId?: string | null
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  lineItems?: Prisma.ExpenseLineItemUncheckedCreateNestedManyWithoutExpenseInput
+  receipts?: Prisma.ReceiptUncheckedCreateNestedManyWithoutExpenseInput
+  externalIds?: Prisma.ExpenseExternalIdUncheckedCreateNestedManyWithoutExpenseInput
+  attendees?: Prisma.ExpenseAttendeeUncheckedCreateNestedManyWithoutExpenseInput
+  allocations?: Prisma.ExpenseAllocationUncheckedCreateNestedManyWithoutExpenseInput
+}
+
+export type ExpenseCreateOrConnectWithoutDeterminationsInput = {
+  where: Prisma.ExpenseWhereUniqueInput
+  create: Prisma.XOR<Prisma.ExpenseCreateWithoutDeterminationsInput, Prisma.ExpenseUncheckedCreateWithoutDeterminationsInput>
+}
+
+export type ExpenseUpsertWithoutDeterminationsInput = {
+  update: Prisma.XOR<Prisma.ExpenseUpdateWithoutDeterminationsInput, Prisma.ExpenseUncheckedUpdateWithoutDeterminationsInput>
+  create: Prisma.XOR<Prisma.ExpenseCreateWithoutDeterminationsInput, Prisma.ExpenseUncheckedCreateWithoutDeterminationsInput>
+  where?: Prisma.ExpenseWhereInput
+}
+
+export type ExpenseUpdateToOneWithWhereWithoutDeterminationsInput = {
+  where?: Prisma.ExpenseWhereInput
+  data: Prisma.XOR<Prisma.ExpenseUpdateWithoutDeterminationsInput, Prisma.ExpenseUncheckedUpdateWithoutDeterminationsInput>
+}
+
+export type ExpenseUpdateWithoutDeterminationsInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  organizationId?: Prisma.StringFieldUpdateOperationsInput | string
+  merchant?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  placeText?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  date?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  amountMinor?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
+  paymentMethod?: Prisma.StringFieldUpdateOperationsInput | string
+  purpose?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  explanation?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  subtotalMinor?: Prisma.NullableBigIntFieldUpdateOperationsInput | bigint | number | null
+  fxRate?: Prisma.NullableDecimalFieldUpdateOperationsInput | runtime.Decimal | runtime.DecimalJsLike | number | string | null
+  fxRateSource?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  homeCurrency?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  homeAmountMinor?: Prisma.NullableBigIntFieldUpdateOperationsInput | bigint | number | null
+  taxGstHstMinor?: Prisma.NullableBigIntFieldUpdateOperationsInput | bigint | number | null
+  taxQstMinor?: Prisma.NullableBigIntFieldUpdateOperationsInput | bigint | number | null
+  taxPstMinor?: Prisma.NullableBigIntFieldUpdateOperationsInput | bigint | number | null
+  recoverableGstHstMinor?: Prisma.NullableBigIntFieldUpdateOperationsInput | bigint | number | null
+  recoverableQstMinor?: Prisma.NullableBigIntFieldUpdateOperationsInput | bigint | number | null
+  taxSource?: Prisma.StringFieldUpdateOperationsInput | string
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  report?: Prisma.ExpenseReportUpdateOneRequiredWithoutExpensesNestedInput
+  owner?: Prisma.UserUpdateOneRequiredWithoutExpensesNestedInput
+  currency?: Prisma.CurrencyUpdateOneRequiredWithoutExpensesNestedInput
+  taxJurisdiction?: Prisma.TaxJurisdictionUpdateOneWithoutExpensesNestedInput
+  lineItems?: Prisma.ExpenseLineItemUpdateManyWithoutExpenseNestedInput
+  receipts?: Prisma.ReceiptUpdateManyWithoutExpenseNestedInput
+  externalIds?: Prisma.ExpenseExternalIdUpdateManyWithoutExpenseNestedInput
+  attendees?: Prisma.ExpenseAttendeeUpdateManyWithoutExpenseNestedInput
+  allocations?: Prisma.ExpenseAllocationUpdateManyWithoutExpenseNestedInput
+}
+
+export type ExpenseUncheckedUpdateWithoutDeterminationsInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  organizationId?: Prisma.StringFieldUpdateOperationsInput | string
+  reportId?: Prisma.StringFieldUpdateOperationsInput | string
+  ownerId?: Prisma.StringFieldUpdateOperationsInput | string
+  merchant?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  placeText?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  date?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  amountMinor?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
+  currencyId?: Prisma.StringFieldUpdateOperationsInput | string
+  paymentMethod?: Prisma.StringFieldUpdateOperationsInput | string
+  purpose?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  explanation?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  subtotalMinor?: Prisma.NullableBigIntFieldUpdateOperationsInput | bigint | number | null
+  fxRate?: Prisma.NullableDecimalFieldUpdateOperationsInput | runtime.Decimal | runtime.DecimalJsLike | number | string | null
+  fxRateSource?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  homeCurrency?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  homeAmountMinor?: Prisma.NullableBigIntFieldUpdateOperationsInput | bigint | number | null
+  taxGstHstMinor?: Prisma.NullableBigIntFieldUpdateOperationsInput | bigint | number | null
+  taxQstMinor?: Prisma.NullableBigIntFieldUpdateOperationsInput | bigint | number | null
+  taxPstMinor?: Prisma.NullableBigIntFieldUpdateOperationsInput | bigint | number | null
+  recoverableGstHstMinor?: Prisma.NullableBigIntFieldUpdateOperationsInput | bigint | number | null
+  recoverableQstMinor?: Prisma.NullableBigIntFieldUpdateOperationsInput | bigint | number | null
+  taxSource?: Prisma.StringFieldUpdateOperationsInput | string
+  taxJurisdictionId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  lineItems?: Prisma.ExpenseLineItemUncheckedUpdateManyWithoutExpenseNestedInput
+  receipts?: Prisma.ReceiptUncheckedUpdateManyWithoutExpenseNestedInput
+  externalIds?: Prisma.ExpenseExternalIdUncheckedUpdateManyWithoutExpenseNestedInput
+  attendees?: Prisma.ExpenseAttendeeUncheckedUpdateManyWithoutExpenseNestedInput
+  allocations?: Prisma.ExpenseAllocationUncheckedUpdateManyWithoutExpenseNestedInput
+}
+
+export type ExpenseCreateWithoutExternalIdsInput = {
+  id?: string
+  organizationId?: string
+  merchant?: string | null
+  placeText?: string | null
+  date?: Date | string | null
+  amountMinor?: bigint | number
+  paymentMethod?: string
+  purpose?: string | null
+  explanation?: string | null
+  subtotalMinor?: bigint | number | null
+  fxRate?: runtime.Decimal | runtime.DecimalJsLike | number | string | null
+  fxRateSource?: string | null
+  homeCurrency?: string | null
+  homeAmountMinor?: bigint | number | null
+  taxGstHstMinor?: bigint | number | null
+  taxQstMinor?: bigint | number | null
+  taxPstMinor?: bigint | number | null
+  recoverableGstHstMinor?: bigint | number | null
+  recoverableQstMinor?: bigint | number | null
+  taxSource?: string
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  report: Prisma.ExpenseReportCreateNestedOneWithoutExpensesInput
+  owner: Prisma.UserCreateNestedOneWithoutExpensesInput
+  currency: Prisma.CurrencyCreateNestedOneWithoutExpensesInput
+  taxJurisdiction?: Prisma.TaxJurisdictionCreateNestedOneWithoutExpensesInput
+  lineItems?: Prisma.ExpenseLineItemCreateNestedManyWithoutExpenseInput
+  receipts?: Prisma.ReceiptCreateNestedManyWithoutExpenseInput
+  determinations?: Prisma.ExpenseDeterminationCreateNestedManyWithoutExpenseInput
+  attendees?: Prisma.ExpenseAttendeeCreateNestedManyWithoutExpenseInput
+  allocations?: Prisma.ExpenseAllocationCreateNestedManyWithoutExpenseInput
+}
+
+export type ExpenseUncheckedCreateWithoutExternalIdsInput = {
+  id?: string
+  organizationId?: string
+  reportId: string
+  ownerId: string
+  merchant?: string | null
+  placeText?: string | null
+  date?: Date | string | null
+  amountMinor?: bigint | number
+  currencyId: string
+  paymentMethod?: string
+  purpose?: string | null
+  explanation?: string | null
+  subtotalMinor?: bigint | number | null
+  fxRate?: runtime.Decimal | runtime.DecimalJsLike | number | string | null
+  fxRateSource?: string | null
+  homeCurrency?: string | null
+  homeAmountMinor?: bigint | number | null
+  taxGstHstMinor?: bigint | number | null
+  taxQstMinor?: bigint | number | null
+  taxPstMinor?: bigint | number | null
+  recoverableGstHstMinor?: bigint | number | null
+  recoverableQstMinor?: bigint | number | null
+  taxSource?: string
+  taxJurisdictionId?: string | null
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  lineItems?: Prisma.ExpenseLineItemUncheckedCreateNestedManyWithoutExpenseInput
+  receipts?: Prisma.ReceiptUncheckedCreateNestedManyWithoutExpenseInput
+  determinations?: Prisma.ExpenseDeterminationUncheckedCreateNestedManyWithoutExpenseInput
+  attendees?: Prisma.ExpenseAttendeeUncheckedCreateNestedManyWithoutExpenseInput
+  allocations?: Prisma.ExpenseAllocationUncheckedCreateNestedManyWithoutExpenseInput
+}
+
+export type ExpenseCreateOrConnectWithoutExternalIdsInput = {
+  where: Prisma.ExpenseWhereUniqueInput
+  create: Prisma.XOR<Prisma.ExpenseCreateWithoutExternalIdsInput, Prisma.ExpenseUncheckedCreateWithoutExternalIdsInput>
+}
+
+export type ExpenseUpsertWithoutExternalIdsInput = {
+  update: Prisma.XOR<Prisma.ExpenseUpdateWithoutExternalIdsInput, Prisma.ExpenseUncheckedUpdateWithoutExternalIdsInput>
+  create: Prisma.XOR<Prisma.ExpenseCreateWithoutExternalIdsInput, Prisma.ExpenseUncheckedCreateWithoutExternalIdsInput>
+  where?: Prisma.ExpenseWhereInput
+}
+
+export type ExpenseUpdateToOneWithWhereWithoutExternalIdsInput = {
+  where?: Prisma.ExpenseWhereInput
+  data: Prisma.XOR<Prisma.ExpenseUpdateWithoutExternalIdsInput, Prisma.ExpenseUncheckedUpdateWithoutExternalIdsInput>
+}
+
+export type ExpenseUpdateWithoutExternalIdsInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  organizationId?: Prisma.StringFieldUpdateOperationsInput | string
+  merchant?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  placeText?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  date?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  amountMinor?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
+  paymentMethod?: Prisma.StringFieldUpdateOperationsInput | string
+  purpose?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  explanation?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  subtotalMinor?: Prisma.NullableBigIntFieldUpdateOperationsInput | bigint | number | null
+  fxRate?: Prisma.NullableDecimalFieldUpdateOperationsInput | runtime.Decimal | runtime.DecimalJsLike | number | string | null
+  fxRateSource?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  homeCurrency?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  homeAmountMinor?: Prisma.NullableBigIntFieldUpdateOperationsInput | bigint | number | null
+  taxGstHstMinor?: Prisma.NullableBigIntFieldUpdateOperationsInput | bigint | number | null
+  taxQstMinor?: Prisma.NullableBigIntFieldUpdateOperationsInput | bigint | number | null
+  taxPstMinor?: Prisma.NullableBigIntFieldUpdateOperationsInput | bigint | number | null
+  recoverableGstHstMinor?: Prisma.NullableBigIntFieldUpdateOperationsInput | bigint | number | null
+  recoverableQstMinor?: Prisma.NullableBigIntFieldUpdateOperationsInput | bigint | number | null
+  taxSource?: Prisma.StringFieldUpdateOperationsInput | string
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  report?: Prisma.ExpenseReportUpdateOneRequiredWithoutExpensesNestedInput
+  owner?: Prisma.UserUpdateOneRequiredWithoutExpensesNestedInput
+  currency?: Prisma.CurrencyUpdateOneRequiredWithoutExpensesNestedInput
+  taxJurisdiction?: Prisma.TaxJurisdictionUpdateOneWithoutExpensesNestedInput
+  lineItems?: Prisma.ExpenseLineItemUpdateManyWithoutExpenseNestedInput
+  receipts?: Prisma.ReceiptUpdateManyWithoutExpenseNestedInput
+  determinations?: Prisma.ExpenseDeterminationUpdateManyWithoutExpenseNestedInput
+  attendees?: Prisma.ExpenseAttendeeUpdateManyWithoutExpenseNestedInput
+  allocations?: Prisma.ExpenseAllocationUpdateManyWithoutExpenseNestedInput
+}
+
+export type ExpenseUncheckedUpdateWithoutExternalIdsInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  organizationId?: Prisma.StringFieldUpdateOperationsInput | string
+  reportId?: Prisma.StringFieldUpdateOperationsInput | string
+  ownerId?: Prisma.StringFieldUpdateOperationsInput | string
+  merchant?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  placeText?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  date?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  amountMinor?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
+  currencyId?: Prisma.StringFieldUpdateOperationsInput | string
+  paymentMethod?: Prisma.StringFieldUpdateOperationsInput | string
+  purpose?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  explanation?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  subtotalMinor?: Prisma.NullableBigIntFieldUpdateOperationsInput | bigint | number | null
+  fxRate?: Prisma.NullableDecimalFieldUpdateOperationsInput | runtime.Decimal | runtime.DecimalJsLike | number | string | null
+  fxRateSource?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  homeCurrency?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  homeAmountMinor?: Prisma.NullableBigIntFieldUpdateOperationsInput | bigint | number | null
+  taxGstHstMinor?: Prisma.NullableBigIntFieldUpdateOperationsInput | bigint | number | null
+  taxQstMinor?: Prisma.NullableBigIntFieldUpdateOperationsInput | bigint | number | null
+  taxPstMinor?: Prisma.NullableBigIntFieldUpdateOperationsInput | bigint | number | null
+  recoverableGstHstMinor?: Prisma.NullableBigIntFieldUpdateOperationsInput | bigint | number | null
+  recoverableQstMinor?: Prisma.NullableBigIntFieldUpdateOperationsInput | bigint | number | null
+  taxSource?: Prisma.StringFieldUpdateOperationsInput | string
+  taxJurisdictionId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  lineItems?: Prisma.ExpenseLineItemUncheckedUpdateManyWithoutExpenseNestedInput
+  receipts?: Prisma.ReceiptUncheckedUpdateManyWithoutExpenseNestedInput
+  determinations?: Prisma.ExpenseDeterminationUncheckedUpdateManyWithoutExpenseNestedInput
   attendees?: Prisma.ExpenseAttendeeUncheckedUpdateManyWithoutExpenseNestedInput
   allocations?: Prisma.ExpenseAllocationUncheckedUpdateManyWithoutExpenseNestedInput
 }
@@ -1881,6 +2263,8 @@ export type ExpenseCreateWithoutTaxJurisdictionInput = {
   currency: Prisma.CurrencyCreateNestedOneWithoutExpensesInput
   lineItems?: Prisma.ExpenseLineItemCreateNestedManyWithoutExpenseInput
   receipts?: Prisma.ReceiptCreateNestedManyWithoutExpenseInput
+  determinations?: Prisma.ExpenseDeterminationCreateNestedManyWithoutExpenseInput
+  externalIds?: Prisma.ExpenseExternalIdCreateNestedManyWithoutExpenseInput
   attendees?: Prisma.ExpenseAttendeeCreateNestedManyWithoutExpenseInput
   allocations?: Prisma.ExpenseAllocationCreateNestedManyWithoutExpenseInput
 }
@@ -1913,6 +2297,8 @@ export type ExpenseUncheckedCreateWithoutTaxJurisdictionInput = {
   updatedAt?: Date | string
   lineItems?: Prisma.ExpenseLineItemUncheckedCreateNestedManyWithoutExpenseInput
   receipts?: Prisma.ReceiptUncheckedCreateNestedManyWithoutExpenseInput
+  determinations?: Prisma.ExpenseDeterminationUncheckedCreateNestedManyWithoutExpenseInput
+  externalIds?: Prisma.ExpenseExternalIdUncheckedCreateNestedManyWithoutExpenseInput
   attendees?: Prisma.ExpenseAttendeeUncheckedCreateNestedManyWithoutExpenseInput
   allocations?: Prisma.ExpenseAllocationUncheckedCreateNestedManyWithoutExpenseInput
 }
@@ -1971,6 +2357,8 @@ export type ExpenseCreateWithoutOwnerInput = {
   taxJurisdiction?: Prisma.TaxJurisdictionCreateNestedOneWithoutExpensesInput
   lineItems?: Prisma.ExpenseLineItemCreateNestedManyWithoutExpenseInput
   receipts?: Prisma.ReceiptCreateNestedManyWithoutExpenseInput
+  determinations?: Prisma.ExpenseDeterminationCreateNestedManyWithoutExpenseInput
+  externalIds?: Prisma.ExpenseExternalIdCreateNestedManyWithoutExpenseInput
   attendees?: Prisma.ExpenseAttendeeCreateNestedManyWithoutExpenseInput
   allocations?: Prisma.ExpenseAllocationCreateNestedManyWithoutExpenseInput
 }
@@ -2003,6 +2391,8 @@ export type ExpenseUncheckedCreateWithoutOwnerInput = {
   updatedAt?: Date | string
   lineItems?: Prisma.ExpenseLineItemUncheckedCreateNestedManyWithoutExpenseInput
   receipts?: Prisma.ReceiptUncheckedCreateNestedManyWithoutExpenseInput
+  determinations?: Prisma.ExpenseDeterminationUncheckedCreateNestedManyWithoutExpenseInput
+  externalIds?: Prisma.ExpenseExternalIdUncheckedCreateNestedManyWithoutExpenseInput
   attendees?: Prisma.ExpenseAttendeeUncheckedCreateNestedManyWithoutExpenseInput
   allocations?: Prisma.ExpenseAllocationUncheckedCreateNestedManyWithoutExpenseInput
 }
@@ -2061,6 +2451,8 @@ export type ExpenseCreateWithoutCurrencyInput = {
   taxJurisdiction?: Prisma.TaxJurisdictionCreateNestedOneWithoutExpensesInput
   lineItems?: Prisma.ExpenseLineItemCreateNestedManyWithoutExpenseInput
   receipts?: Prisma.ReceiptCreateNestedManyWithoutExpenseInput
+  determinations?: Prisma.ExpenseDeterminationCreateNestedManyWithoutExpenseInput
+  externalIds?: Prisma.ExpenseExternalIdCreateNestedManyWithoutExpenseInput
   attendees?: Prisma.ExpenseAttendeeCreateNestedManyWithoutExpenseInput
   allocations?: Prisma.ExpenseAllocationCreateNestedManyWithoutExpenseInput
 }
@@ -2093,6 +2485,8 @@ export type ExpenseUncheckedCreateWithoutCurrencyInput = {
   updatedAt?: Date | string
   lineItems?: Prisma.ExpenseLineItemUncheckedCreateNestedManyWithoutExpenseInput
   receipts?: Prisma.ReceiptUncheckedCreateNestedManyWithoutExpenseInput
+  determinations?: Prisma.ExpenseDeterminationUncheckedCreateNestedManyWithoutExpenseInput
+  externalIds?: Prisma.ExpenseExternalIdUncheckedCreateNestedManyWithoutExpenseInput
   attendees?: Prisma.ExpenseAttendeeUncheckedCreateNestedManyWithoutExpenseInput
   allocations?: Prisma.ExpenseAllocationUncheckedCreateNestedManyWithoutExpenseInput
 }
@@ -2179,6 +2573,8 @@ export type ExpenseUpdateWithoutReportInput = {
   taxJurisdiction?: Prisma.TaxJurisdictionUpdateOneWithoutExpensesNestedInput
   lineItems?: Prisma.ExpenseLineItemUpdateManyWithoutExpenseNestedInput
   receipts?: Prisma.ReceiptUpdateManyWithoutExpenseNestedInput
+  determinations?: Prisma.ExpenseDeterminationUpdateManyWithoutExpenseNestedInput
+  externalIds?: Prisma.ExpenseExternalIdUpdateManyWithoutExpenseNestedInput
   attendees?: Prisma.ExpenseAttendeeUpdateManyWithoutExpenseNestedInput
   allocations?: Prisma.ExpenseAllocationUpdateManyWithoutExpenseNestedInput
 }
@@ -2211,6 +2607,8 @@ export type ExpenseUncheckedUpdateWithoutReportInput = {
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   lineItems?: Prisma.ExpenseLineItemUncheckedUpdateManyWithoutExpenseNestedInput
   receipts?: Prisma.ReceiptUncheckedUpdateManyWithoutExpenseNestedInput
+  determinations?: Prisma.ExpenseDeterminationUncheckedUpdateManyWithoutExpenseNestedInput
+  externalIds?: Prisma.ExpenseExternalIdUncheckedUpdateManyWithoutExpenseNestedInput
   attendees?: Prisma.ExpenseAttendeeUncheckedUpdateManyWithoutExpenseNestedInput
   allocations?: Prisma.ExpenseAllocationUncheckedUpdateManyWithoutExpenseNestedInput
 }
@@ -2299,6 +2697,8 @@ export type ExpenseUpdateWithoutTaxJurisdictionInput = {
   currency?: Prisma.CurrencyUpdateOneRequiredWithoutExpensesNestedInput
   lineItems?: Prisma.ExpenseLineItemUpdateManyWithoutExpenseNestedInput
   receipts?: Prisma.ReceiptUpdateManyWithoutExpenseNestedInput
+  determinations?: Prisma.ExpenseDeterminationUpdateManyWithoutExpenseNestedInput
+  externalIds?: Prisma.ExpenseExternalIdUpdateManyWithoutExpenseNestedInput
   attendees?: Prisma.ExpenseAttendeeUpdateManyWithoutExpenseNestedInput
   allocations?: Prisma.ExpenseAllocationUpdateManyWithoutExpenseNestedInput
 }
@@ -2331,6 +2731,8 @@ export type ExpenseUncheckedUpdateWithoutTaxJurisdictionInput = {
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   lineItems?: Prisma.ExpenseLineItemUncheckedUpdateManyWithoutExpenseNestedInput
   receipts?: Prisma.ReceiptUncheckedUpdateManyWithoutExpenseNestedInput
+  determinations?: Prisma.ExpenseDeterminationUncheckedUpdateManyWithoutExpenseNestedInput
+  externalIds?: Prisma.ExpenseExternalIdUncheckedUpdateManyWithoutExpenseNestedInput
   attendees?: Prisma.ExpenseAttendeeUncheckedUpdateManyWithoutExpenseNestedInput
   allocations?: Prisma.ExpenseAllocationUncheckedUpdateManyWithoutExpenseNestedInput
 }
@@ -2419,6 +2821,8 @@ export type ExpenseUpdateWithoutOwnerInput = {
   taxJurisdiction?: Prisma.TaxJurisdictionUpdateOneWithoutExpensesNestedInput
   lineItems?: Prisma.ExpenseLineItemUpdateManyWithoutExpenseNestedInput
   receipts?: Prisma.ReceiptUpdateManyWithoutExpenseNestedInput
+  determinations?: Prisma.ExpenseDeterminationUpdateManyWithoutExpenseNestedInput
+  externalIds?: Prisma.ExpenseExternalIdUpdateManyWithoutExpenseNestedInput
   attendees?: Prisma.ExpenseAttendeeUpdateManyWithoutExpenseNestedInput
   allocations?: Prisma.ExpenseAllocationUpdateManyWithoutExpenseNestedInput
 }
@@ -2451,6 +2855,8 @@ export type ExpenseUncheckedUpdateWithoutOwnerInput = {
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   lineItems?: Prisma.ExpenseLineItemUncheckedUpdateManyWithoutExpenseNestedInput
   receipts?: Prisma.ReceiptUncheckedUpdateManyWithoutExpenseNestedInput
+  determinations?: Prisma.ExpenseDeterminationUncheckedUpdateManyWithoutExpenseNestedInput
+  externalIds?: Prisma.ExpenseExternalIdUncheckedUpdateManyWithoutExpenseNestedInput
   attendees?: Prisma.ExpenseAttendeeUncheckedUpdateManyWithoutExpenseNestedInput
   allocations?: Prisma.ExpenseAllocationUncheckedUpdateManyWithoutExpenseNestedInput
 }
@@ -2539,6 +2945,8 @@ export type ExpenseUpdateWithoutCurrencyInput = {
   taxJurisdiction?: Prisma.TaxJurisdictionUpdateOneWithoutExpensesNestedInput
   lineItems?: Prisma.ExpenseLineItemUpdateManyWithoutExpenseNestedInput
   receipts?: Prisma.ReceiptUpdateManyWithoutExpenseNestedInput
+  determinations?: Prisma.ExpenseDeterminationUpdateManyWithoutExpenseNestedInput
+  externalIds?: Prisma.ExpenseExternalIdUpdateManyWithoutExpenseNestedInput
   attendees?: Prisma.ExpenseAttendeeUpdateManyWithoutExpenseNestedInput
   allocations?: Prisma.ExpenseAllocationUpdateManyWithoutExpenseNestedInput
 }
@@ -2571,6 +2979,8 @@ export type ExpenseUncheckedUpdateWithoutCurrencyInput = {
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   lineItems?: Prisma.ExpenseLineItemUncheckedUpdateManyWithoutExpenseNestedInput
   receipts?: Prisma.ReceiptUncheckedUpdateManyWithoutExpenseNestedInput
+  determinations?: Prisma.ExpenseDeterminationUncheckedUpdateManyWithoutExpenseNestedInput
+  externalIds?: Prisma.ExpenseExternalIdUncheckedUpdateManyWithoutExpenseNestedInput
   attendees?: Prisma.ExpenseAttendeeUncheckedUpdateManyWithoutExpenseNestedInput
   allocations?: Prisma.ExpenseAllocationUncheckedUpdateManyWithoutExpenseNestedInput
 }
@@ -2611,6 +3021,8 @@ export type ExpenseUncheckedUpdateManyWithoutCurrencyInput = {
 export type ExpenseCountOutputType = {
   lineItems: number
   receipts: number
+  determinations: number
+  externalIds: number
   attendees: number
   allocations: number
 }
@@ -2618,6 +3030,8 @@ export type ExpenseCountOutputType = {
 export type ExpenseCountOutputTypeSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   lineItems?: boolean | ExpenseCountOutputTypeCountLineItemsArgs
   receipts?: boolean | ExpenseCountOutputTypeCountReceiptsArgs
+  determinations?: boolean | ExpenseCountOutputTypeCountDeterminationsArgs
+  externalIds?: boolean | ExpenseCountOutputTypeCountExternalIdsArgs
   attendees?: boolean | ExpenseCountOutputTypeCountAttendeesArgs
   allocations?: boolean | ExpenseCountOutputTypeCountAllocationsArgs
 }
@@ -2644,6 +3058,20 @@ export type ExpenseCountOutputTypeCountLineItemsArgs<ExtArgs extends runtime.Typ
  */
 export type ExpenseCountOutputTypeCountReceiptsArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   where?: Prisma.ReceiptWhereInput
+}
+
+/**
+ * ExpenseCountOutputType without action
+ */
+export type ExpenseCountOutputTypeCountDeterminationsArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  where?: Prisma.ExpenseDeterminationWhereInput
+}
+
+/**
+ * ExpenseCountOutputType without action
+ */
+export type ExpenseCountOutputTypeCountExternalIdsArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  where?: Prisma.ExpenseExternalIdWhereInput
 }
 
 /**
@@ -2694,6 +3122,8 @@ export type ExpenseSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs 
   taxJurisdiction?: boolean | Prisma.Expense$taxJurisdictionArgs<ExtArgs>
   lineItems?: boolean | Prisma.Expense$lineItemsArgs<ExtArgs>
   receipts?: boolean | Prisma.Expense$receiptsArgs<ExtArgs>
+  determinations?: boolean | Prisma.Expense$determinationsArgs<ExtArgs>
+  externalIds?: boolean | Prisma.Expense$externalIdsArgs<ExtArgs>
   attendees?: boolean | Prisma.Expense$attendeesArgs<ExtArgs>
   allocations?: boolean | Prisma.Expense$allocationsArgs<ExtArgs>
   _count?: boolean | Prisma.ExpenseCountOutputTypeDefaultArgs<ExtArgs>
@@ -2802,6 +3232,8 @@ export type ExpenseInclude<ExtArgs extends runtime.Types.Extensions.InternalArgs
   taxJurisdiction?: boolean | Prisma.Expense$taxJurisdictionArgs<ExtArgs>
   lineItems?: boolean | Prisma.Expense$lineItemsArgs<ExtArgs>
   receipts?: boolean | Prisma.Expense$receiptsArgs<ExtArgs>
+  determinations?: boolean | Prisma.Expense$determinationsArgs<ExtArgs>
+  externalIds?: boolean | Prisma.Expense$externalIdsArgs<ExtArgs>
   attendees?: boolean | Prisma.Expense$attendeesArgs<ExtArgs>
   allocations?: boolean | Prisma.Expense$allocationsArgs<ExtArgs>
   _count?: boolean | Prisma.ExpenseCountOutputTypeDefaultArgs<ExtArgs>
@@ -2828,6 +3260,11 @@ export type $ExpensePayload<ExtArgs extends runtime.Types.Extensions.InternalArg
     taxJurisdiction: Prisma.$TaxJurisdictionPayload<ExtArgs> | null
     lineItems: Prisma.$ExpenseLineItemPayload<ExtArgs>[]
     receipts: Prisma.$ReceiptPayload<ExtArgs>[]
+    /**
+     * w3-02a (0057): what each reading pass concluded, and the merchant's printed number.
+     */
+    determinations: Prisma.$ExpenseDeterminationPayload<ExtArgs>[]
+    externalIds: Prisma.$ExpenseExternalIdPayload<ExtArgs>[]
     attendees: Prisma.$ExpenseAttendeePayload<ExtArgs>[]
     allocations: Prisma.$ExpenseAllocationPayload<ExtArgs>[]
   }
@@ -3281,6 +3718,8 @@ export interface Prisma__ExpenseClient<T, Null = never, ExtArgs extends runtime.
   taxJurisdiction<T extends Prisma.Expense$taxJurisdictionArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.Expense$taxJurisdictionArgs<ExtArgs>>): Prisma.Prisma__TaxJurisdictionClient<runtime.Types.Result.GetResult<Prisma.$TaxJurisdictionPayload<ExtArgs>, T, "findUniqueOrThrow", GlobalOmitOptions> | null, null, ExtArgs, GlobalOmitOptions>
   lineItems<T extends Prisma.Expense$lineItemsArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.Expense$lineItemsArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$ExpenseLineItemPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
   receipts<T extends Prisma.Expense$receiptsArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.Expense$receiptsArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$ReceiptPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
+  determinations<T extends Prisma.Expense$determinationsArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.Expense$determinationsArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$ExpenseDeterminationPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
+  externalIds<T extends Prisma.Expense$externalIdsArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.Expense$externalIdsArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$ExpenseExternalIdPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
   attendees<T extends Prisma.Expense$attendeesArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.Expense$attendeesArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$ExpenseAttendeePayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
   allocations<T extends Prisma.Expense$allocationsArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.Expense$allocationsArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$ExpenseAllocationPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
   /**
@@ -3803,6 +4242,54 @@ export type Expense$receiptsArgs<ExtArgs extends runtime.Types.Extensions.Intern
   take?: number
   skip?: number
   distinct?: Prisma.ReceiptScalarFieldEnum | Prisma.ReceiptScalarFieldEnum[]
+}
+
+/**
+ * Expense.determinations
+ */
+export type Expense$determinationsArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  /**
+   * Select specific fields to fetch from the ExpenseDetermination
+   */
+  select?: Prisma.ExpenseDeterminationSelect<ExtArgs> | null
+  /**
+   * Omit specific fields from the ExpenseDetermination
+   */
+  omit?: Prisma.ExpenseDeterminationOmit<ExtArgs> | null
+  /**
+   * Choose, which related nodes to fetch as well
+   */
+  include?: Prisma.ExpenseDeterminationInclude<ExtArgs> | null
+  where?: Prisma.ExpenseDeterminationWhereInput
+  orderBy?: Prisma.ExpenseDeterminationOrderByWithRelationInput | Prisma.ExpenseDeterminationOrderByWithRelationInput[]
+  cursor?: Prisma.ExpenseDeterminationWhereUniqueInput
+  take?: number
+  skip?: number
+  distinct?: Prisma.ExpenseDeterminationScalarFieldEnum | Prisma.ExpenseDeterminationScalarFieldEnum[]
+}
+
+/**
+ * Expense.externalIds
+ */
+export type Expense$externalIdsArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  /**
+   * Select specific fields to fetch from the ExpenseExternalId
+   */
+  select?: Prisma.ExpenseExternalIdSelect<ExtArgs> | null
+  /**
+   * Omit specific fields from the ExpenseExternalId
+   */
+  omit?: Prisma.ExpenseExternalIdOmit<ExtArgs> | null
+  /**
+   * Choose, which related nodes to fetch as well
+   */
+  include?: Prisma.ExpenseExternalIdInclude<ExtArgs> | null
+  where?: Prisma.ExpenseExternalIdWhereInput
+  orderBy?: Prisma.ExpenseExternalIdOrderByWithRelationInput | Prisma.ExpenseExternalIdOrderByWithRelationInput[]
+  cursor?: Prisma.ExpenseExternalIdWhereUniqueInput
+  take?: number
+  skip?: number
+  distinct?: Prisma.ExpenseExternalIdScalarFieldEnum | Prisma.ExpenseExternalIdScalarFieldEnum[]
 }
 
 /**

@@ -190,6 +190,9 @@ model Expense {
 
   lineItems   ExpenseLineItem[]
   receipts    Receipt[]
+  /// w3-02a (0057): what each reading pass concluded, and the merchant's printed number.
+  determinations ExpenseDetermination[]
+  externalIds    ExpenseExternalId[]
   attendees   ExpenseAttendee[]
   allocations ExpenseAllocation[]
 
@@ -286,6 +289,8 @@ model Receipt {
   uploadedAt     DateTime @default(now()) @map("uploaded_at") @db.Timestamptz(6)
   /// w3-01: the receipt's reading (0056), one per receipt.
   extraction     DocumentExtraction?
+  /// w3-02a (0057): the transaction number printed on it.
+  externalIds    ReceiptExternalId[]
 
   @@unique([organizationId, s3Key])
   /// w3-01 (0056): the key document_extraction's tenant foreign key references.
@@ -323,6 +328,94 @@ model DocumentExtraction {
   /// The one-to-one key Prisma needs for the tenant relation (0056 declares it too).
   @@unique([organizationId, receiptId])
   @@map("document_extraction")
+}
+
+/// ExpenseOS's ExpenseDetermination (0057, w3-02a): what a reading pass concluded for the
+/// whole expense, and the field-level human edits made after it.
+model ExpenseDetermination {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String   @default(dbgenerated("(NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid")) @map("organization_id") @db.Uuid
+  expenseId      String   @map("expense_id") @db.Uuid
+  expense        Expense  @relation(fields: [organizationId, expenseId], references: [organizationId, id], onDelete: Cascade)
+  /// The document set this pass actually saw.
+  receiptIds     String[] @map("receipt_ids") @db.Uuid
+  /// What the pass concluded for the whole expense: header, lines, tax, FX.
+  proposed       Json
+  /// Field-level human edits made after this pass.
+  overrides      Json     @default("{}")
+  model          String?
+  modelVersion   String?  @map("model_version")
+  confidence     Decimal? @db.Decimal(4, 3)
+  /// Set when a newer pass replaces this one. Null = current. VeloExpense: a bare id in
+  /// Prisma, as ExpenseOS's; 0057 keys it to a row of the same tenant.
+  supersededById String?  @unique @map("superseded_by_id") @db.Uuid
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@unique([organizationId, id])
+  @@index([expenseId, createdAt])
+  @@map("expense_determination")
+}
+
+/// ExpenseOS's ReceiptExternalId (0057, w3-02a): a number printed on one document.
+model ReceiptExternalId {
+  id             String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String           @default(dbgenerated("(NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid")) @map("organization_id") @db.Uuid
+  sourceId       String           @map("source_id") @db.Uuid
+  sourceValue    String           @map("source_value")
+  receiptId      String           @map("receipt_id") @db.Uuid
+  createdAt      DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime         @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  createdBy      String?          @map("created_by") @db.Uuid
+  updatedBy      String?          @map("updated_by") @db.Uuid
+  source         ExternalIdSource @relation(fields: [organizationId, sourceId], references: [organizationId, id], onDelete: Cascade)
+  receipt        Receipt          @relation(fields: [organizationId, receiptId], references: [organizationId, id], onDelete: Cascade)
+
+  @@unique([sourceId, sourceValue, receiptId])
+  @@index([receiptId])
+  @@index([sourceId, sourceValue])
+  @@map("receipt_external_id")
+}
+
+/// ExpenseOS's ExpenseExternalId (0057, w3-02a): the number a determination settled on.
+model ExpenseExternalId {
+  id             String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String           @default(dbgenerated("(NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid")) @map("organization_id") @db.Uuid
+  sourceId       String           @map("source_id") @db.Uuid
+  sourceValue    String           @map("source_value")
+  expenseId      String           @map("expense_id") @db.Uuid
+  createdAt      DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime         @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  createdBy      String?          @map("created_by") @db.Uuid
+  updatedBy      String?          @map("updated_by") @db.Uuid
+  source         ExternalIdSource @relation(fields: [organizationId, sourceId], references: [organizationId, id], onDelete: Cascade)
+  expense        Expense          @relation(fields: [organizationId, expenseId], references: [organizationId, id], onDelete: Cascade)
+
+  @@unique([sourceId, sourceValue, expenseId])
+  @@index([expenseId])
+  @@index([sourceId, sourceValue])
+  @@map("expense_external_id")
+}
+
+/// VeloLedger's ai_usage (0057, w3-02a, d43): one row per model call. Not from ExpenseOS.
+model AiUsage {
+  id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String    @default(dbgenerated("(NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid")) @map("organization_id") @db.Uuid
+  feature        String
+  model          String
+  inputTokens    Int       @default(0) @map("input_tokens")
+  outputTokens   Int       @default(0) @map("output_tokens")
+  costMicroUsd   BigInt    @default(0) @map("cost_micro_usd")
+  /// Included (false) or reported to the platform as credits (true) — d43.
+  metered        Boolean
+  receiptId      String?   @map("receipt_id") @db.Uuid
+  actorUserId    String?   @map("actor_user_id") @db.Uuid
+  requestId      String    @map("request_id")
+  reportedAt     DateTime? @map("reported_at") @db.Timestamptz(6)
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@unique([organizationId, id])
+  @@map("ai_usage")
 }
 
 /// GLOBAL and platform-seeded (d24): the app role can read it and cannot write it.
@@ -424,6 +517,8 @@ model ExternalIdSource {
   departmentAliases   DepartmentExternalId[]
   jobLevelAliases     JobLevelExternalId[]
   fiscalYearAliases   FiscalYearExternalId[]
+  receiptAliases      ReceiptExternalId[]
+  expenseAliases      ExpenseExternalId[]
 
   @@unique([organizationId, code])
   @@unique([organizationId, id])

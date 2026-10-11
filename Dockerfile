@@ -89,7 +89,10 @@ COPY --from=builder --chown=nextjs:nodejs /app/public ./public
 COPY --from=builder --chown=nextjs:nodejs /app/scripts/migrate.mjs /app/scripts/db-bootstrap.mjs /app/scripts/tick.mjs ./scripts/
 COPY --from=builder --chown=nextjs:nodejs /app/prisma/migrations ./prisma/migrations
 # The worker: one bundled file. A native package it keeps external (worker/build.mjs
-# NATIVE_EXTERNALS) has to be in node_modules beside it; none is reached yet.
+# NATIVE_EXTERNALS) has to be in node_modules beside it: `sharp` (receipt images, w3-02a),
+# which the standalone node_modules above already carries because the web app imports the
+# same extraction package. A worker bundle that cannot load it fails at import, before it
+# connects to anything — which is what the deploy's image check runs.
 COPY --from=builder --chown=nextjs:nodejs /app/worker/dist/main.mjs ./worker/dist/main.mjs
 COPY --chmod=0755 scripts/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 

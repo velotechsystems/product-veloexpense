@@ -32,6 +32,8 @@
  *                           unreadable.
  *   google-oauth            {"clientId": …, "clientSecret": …} — the Google
  *                           sign-in client for this environment's host.
+ *   anthropic-api-key       The VeloExpense Anthropic API key (w3-02a, d40),
+ *                           plain text. Read by the worker only.
  */
 import {
   Duration,
@@ -50,7 +52,10 @@ export interface SecurityStackProps extends StackProps {
 }
 
 /** Secrets a person creates before the first deploy. Name suffix under `secretPrefix`. */
-export const MANUAL_SECRETS = ['secret-encryption-key', 'google-oauth'] as const;
+export const MANUAL_SECRETS = ['secret-encryption-key', 'google-oauth', 'anthropic-api-key'] as const;
+
+/** The Anthropic key's name under `secretPrefix` (MANUAL_SECRETS). */
+export const ANTHROPIC_API_KEY_SECRET = 'anthropic-api-key';
 
 export class SecurityStack extends Stack {
   public readonly masterKey: kms.Key;

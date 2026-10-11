@@ -11,10 +11,12 @@ import {
 } from '@expenseos/jobs';
 import { type ConnectionOptions, type Job, Worker } from 'bullmq';
 import { handleExamplePing } from './handlers/example';
+import { handleExtractReceipt } from './handlers/extract-receipt';
 // VeloExpense: ExpenseOS's other handlers are not imported — their jobs are not in the job
-// map (packages/jobs/src/jobs.ts says where each went). The extraction handlers arrive with
-// w3-02.
+// map (packages/jobs/src/jobs.ts says where each went). The batch and joint-determination
+// handlers arrive with w3-02b.
 import { installShutdown } from './lib/shutdown';
+import { inTenant } from './lib/tenant';
 
 /**
  * Handler registry. Each entry takes the typed payload for its job
@@ -29,6 +31,9 @@ import { installShutdown } from './lib/shutdown';
  */
 const HANDLERS: { [N in JobName]?: (data: unknown, job: Job) => Promise<unknown> } = {
   'example.ping': (data) => handleExamplePing(data as never),
+  // VeloExpense: a tenant's job runs as that tenant (`inTenant`, ./lib/tenant).
+  'expense.extractReceipt': (data, job) =>
+    inTenant(data, () => handleExtractReceipt(data as never, job)),
 };
 
 /**

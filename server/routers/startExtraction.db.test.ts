@@ -10,13 +10,14 @@ import { createTenantHarness, type TenantHarness } from '../__test-helpers__/ten
  * `expense.extractReceipt.batch` job. Owner-gated. `enqueue` is mocked, so we
  * assert the job name + payload without a live queue. Gated on DATABASE_URL.
  *
- * VeloExpense: ported with the workbench (w2-02b), which calls `startExtraction` after every
- * upload. Its `enqueue` hands the jobs to nothing until extraction (Wave 3) and is not a
- * module that can be mocked, so ExpenseOS's three routing cases — which job, how many —
- * arrive with the queue. What holds today is pinned instead: the procedure answers for
- * every receipt it was given, and the owner gate.
+ * VeloExpense: ported with the workbench (w2-02b); ExpenseOS's routing cases arrived with the
+ * queue (w3-02a). Each job names its tenant (`organizationId`) — the worker runs it under
+ * that tenant's RLS scope. The batch job is w3-02b, so a bulk selection is read one receipt
+ * per job until then; that case says so, and becomes ExpenseOS's again with the batch.
  */
 
+const { enqueueMock } = vi.hoisted(() => ({ enqueueMock: vi.fn(async () => {}) }));
+vi.mock('@expenseos/jobs', () => ({ enqueue: enqueueMock }));
 vi.mock('@/auth', () => ({ auth: vi.fn(async () => null) }));
 vi.mock('@/lib/tenant/request', () => ({ hostTenantSlug: async () => null }));
 
@@ -71,18 +72,48 @@ describe.skipIf(!process.env.DATABASE_URL)('expenses.startExtraction routing', (
     await h?.end();
   });
 
-  it('answers for a single receipt', async () => {
-    await expect(expenses.startExtraction({ receiptIds: [ids[0]] })).resolves.toEqual({
-      ok: true,
-      count: 1,
+  it('routes a single receipt to the synchronous job', async () => {
+    enqueueMock.mockClear();
+    await expect(expenses.startExtraction({ receiptIds: [ids[0]] })).resolves.toEqual({ ok: true, count: 1 });
+    expect(enqueueMock).toHaveBeenCalledTimes(1);
+    expect(enqueueMock).toHaveBeenCalledWith('expense.extractReceipt', {
+      organizationId: h.orgId,
+      receiptId: ids[0],
     });
   });
 
-  it('answers for a bulk selection (>5), every receipt counted', async () => {
-    await expect(expenses.startExtraction({ receiptIds: ids })).resolves.toEqual({
-      ok: true,
-      count: 6,
-    });
+  it('routes a small selection (≤5) to one synchronous job per receipt', async () => {
+    enqueueMock.mockClear();
+    const five = ids.slice(0, 5);
+    await expenses.startExtraction({ receiptIds: five });
+    expect(enqueueMock).toHaveBeenCalledTimes(5);
+    for (const id of five) {
+      expect(enqueueMock).toHaveBeenCalledWith('expense.extractReceipt', {
+        organizationId: h.orgId,
+        receiptId: id,
+      });
+    }
+  });
+
+  it('VeloExpense: reads a bulk selection (>5) one receipt per job until the batch job lands (w3-02b)', async () => {
+    // ExpenseOS: "routes a bulk selection (>5) to one batch job".
+    enqueueMock.mockClear();
+    await expect(expenses.startExtraction({ receiptIds: ids })).resolves.toEqual({ ok: true, count: 6 });
+    expect(enqueueMock).toHaveBeenCalledTimes(6);
+    const read = enqueueMock.mock.calls.map((c) => (c as unknown as [string, { receiptId: string }])[1].receiptId);
+    expect(read.sort()).toEqual([...ids].sort());
+  });
+
+  it('VeloExpense: a queue that does not answer never holds the request', { timeout: 15_000 }, async () => {
+    // BullMQ retries a down queue forever; the hand-off gives up after its bound (5 s) and
+    // the procedure answers anyway — the receipts stand and can be read again.
+    enqueueMock.mockImplementationOnce(() => new Promise<void>(() => {}));
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const started = Date.now();
+    await expect(expenses.startExtraction({ receiptIds: [ids[0]] })).resolves.toEqual({ ok: true, count: 1 });
+    expect(Date.now() - started).toBeLessThan(10_000);
+    expect(String(warn.mock.calls.at(-1)?.[0])).toMatch(/did not answer/);
+    warn.mockRestore();
   });
 
   it('refuses receipts the caller does not own', async () => {

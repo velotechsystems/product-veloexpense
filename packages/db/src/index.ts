@@ -71,3 +71,26 @@ export {
   type ReportFromReceiptsInput,
   resolveIntakeCurrencyId,
 } from './receiptIntake';
+// Wave 3 (w3-02a). The determination record — what a pass concluded and what a human
+// changed afterwards. Shared because the worker writes determinations and the web records
+// the corrections that must survive the next rebuild (rule 2).
+export {
+  type CurrentDetermination,
+  currentDetermination,
+  type OverrideField,
+  type OverrideMap,
+  overridesForPrompt,
+  overridesOf,
+  recordOverrides,
+  supersedeDetermination,
+} from './determination';
+// The merchant's printed transaction/auth number, persisted so a later duplicate
+// check has something better than vendor + date + total to go on.
+export {
+  expensesWithTransactionId,
+  MERCHANT_RECEIPT_SOURCE,
+  merchantReceiptSourceId,
+  normalizeTransactionId,
+  type RecordTransactionIdInput,
+  recordTransactionId,
+} from './receiptTransactionId';

@@ -52,6 +52,9 @@ const adminAndOthers = {
     receiptDetach: 'RECEIPT_REMOVED',
     /** w2-02a: the FX override (`expenseApprovals.setFxOverride`). */
     fxOverride: 'REPORT_FX_OVERRIDE_SET',
+    /** w3-02a: a document's extraction landed after the report left DRAFT/RETURNED, so the
+     *  worker did not apply it (ExpenseOS's `report.extraction.skipped`). */
+    extractionSkipped: 'REPORT_EXTRACTION_SKIPPED',
   },
 } as const satisfies Record<string, Record<string, AuditAction>>;
 

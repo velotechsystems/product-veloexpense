@@ -12,12 +12,10 @@ import { QUEUE_CONFIG, QUEUE_NAMES } from './queues';
  * carries, and the job id — which is what makes a re-enqueue idempotent instead of a
  * duplicate.
  *
- * VeloExpense: the job map holds `example.ping` alone until w3-02 brings the extraction jobs
+ * VeloExpense: the job map holds `example.ping` and `expense.extractReceipt`
  * (packages/jobs/src/jobs.ts), so the cases ExpenseOS writes against `notification.dispatch`
- * and `approval.sweepExpired` run against `example.ping` and the housekeeping queue. Two
- * halves wait for a second queue to have a job on it, and come back with w3-02: the
- * exponential backoff a retrying queue carries, and a job on another queue getting its own
- * Queue.
+ * and `approval.sweepExpired` run against those two: the housekeeping queue (no backoff) and
+ * the integrations queue (exponential backoff), one job each.
  */
 
 const h = vi.hoisted(() => ({
@@ -105,15 +103,24 @@ describe('enqueue', () => {
   });
 
   it("takes attempts and backoff from the queue's config", async () => {
-    // VeloExpense: on the housekeeping queue, whose `backoffMs: 0` means no backoff at all.
     const { enqueue } = await load();
-    await enqueue('example.ping', {} as never);
+    await enqueue('expense.extractReceipt', {} as never);
     const opts = h.add.mock.calls[0]?.[2] as {
       attempts: number;
       backoff?: { type: string; delay: number };
     };
-    expect(opts.attempts).toBe(QUEUE_CONFIG.housekeeping.defaultAttempts);
-    expect(opts.backoff).toBeUndefined();
+    expect(opts.attempts).toBe(QUEUE_CONFIG.integrations.defaultAttempts);
+    expect(opts.backoff).toEqual({
+      type: 'exponential',
+      delay: QUEUE_CONFIG.integrations.backoffMs,
+    });
+  });
+
+  it('VeloExpense: carries no backoff on a queue configured without one', async () => {
+    // The housekeeping queue's `backoffMs: 0` disables it, rather than meaning "retry now".
+    const { enqueue } = await load();
+    await enqueue('example.ping', {} as never);
+    expect((h.add.mock.calls[0]?.[2] as { backoff?: unknown }).backoff).toBeUndefined();
   });
 
   it('lets a caller override attempts', async () => {
@@ -150,6 +157,8 @@ describe('enqueue', () => {
     await enqueue('example.ping', {} as never);
     await enqueue('example.ping', {} as never);
     expect(h.ctor).toHaveBeenCalledTimes(1);
+    await enqueue('expense.extractReceipt', {} as never);
+    expect(h.ctor).toHaveBeenCalledTimes(2);
   });
 });
 

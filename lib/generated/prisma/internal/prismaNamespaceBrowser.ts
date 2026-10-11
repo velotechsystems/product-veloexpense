@@ -60,6 +60,10 @@ export const ModelName = {
   ExpenseLineItem: 'ExpenseLineItem',
   Receipt: 'Receipt',
   DocumentExtraction: 'DocumentExtraction',
+  ExpenseDetermination: 'ExpenseDetermination',
+  ReceiptExternalId: 'ReceiptExternalId',
+  ExpenseExternalId: 'ExpenseExternalId',
+  AiUsage: 'AiUsage',
   TaxJurisdiction: 'TaxJurisdiction',
   User: 'User',
   BusinessUnit: 'BusinessUnit',
@@ -279,6 +283,73 @@ export const DocumentExtractionScalarFieldEnum = {
 } as const
 
 export type DocumentExtractionScalarFieldEnum = (typeof DocumentExtractionScalarFieldEnum)[keyof typeof DocumentExtractionScalarFieldEnum]
+
+
+export const ExpenseDeterminationScalarFieldEnum = {
+  id: 'id',
+  organizationId: 'organizationId',
+  expenseId: 'expenseId',
+  receiptIds: 'receiptIds',
+  proposed: 'proposed',
+  overrides: 'overrides',
+  model: 'model',
+  modelVersion: 'modelVersion',
+  confidence: 'confidence',
+  supersededById: 'supersededById',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+} as const
+
+export type ExpenseDeterminationScalarFieldEnum = (typeof ExpenseDeterminationScalarFieldEnum)[keyof typeof ExpenseDeterminationScalarFieldEnum]
+
+
+export const ReceiptExternalIdScalarFieldEnum = {
+  id: 'id',
+  organizationId: 'organizationId',
+  sourceId: 'sourceId',
+  sourceValue: 'sourceValue',
+  receiptId: 'receiptId',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt',
+  createdBy: 'createdBy',
+  updatedBy: 'updatedBy'
+} as const
+
+export type ReceiptExternalIdScalarFieldEnum = (typeof ReceiptExternalIdScalarFieldEnum)[keyof typeof ReceiptExternalIdScalarFieldEnum]
+
+
+export const ExpenseExternalIdScalarFieldEnum = {
+  id: 'id',
+  organizationId: 'organizationId',
+  sourceId: 'sourceId',
+  sourceValue: 'sourceValue',
+  expenseId: 'expenseId',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt',
+  createdBy: 'createdBy',
+  updatedBy: 'updatedBy'
+} as const
+
+export type ExpenseExternalIdScalarFieldEnum = (typeof ExpenseExternalIdScalarFieldEnum)[keyof typeof ExpenseExternalIdScalarFieldEnum]
+
+
+export const AiUsageScalarFieldEnum = {
+  id: 'id',
+  organizationId: 'organizationId',
+  feature: 'feature',
+  model: 'model',
+  inputTokens: 'inputTokens',
+  outputTokens: 'outputTokens',
+  costMicroUsd: 'costMicroUsd',
+  metered: 'metered',
+  receiptId: 'receiptId',
+  actorUserId: 'actorUserId',
+  requestId: 'requestId',
+  reportedAt: 'reportedAt',
+  createdAt: 'createdAt'
+} as const
+
+export type AiUsageScalarFieldEnum = (typeof AiUsageScalarFieldEnum)[keyof typeof AiUsageScalarFieldEnum]
 
 
 export const TaxJurisdictionScalarFieldEnum = {

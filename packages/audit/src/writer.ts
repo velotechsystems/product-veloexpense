@@ -40,11 +40,10 @@ export async function writeAudit(tx: TenantDb, input: AuditInput): Promise<void>
     // again, in an append-only table (lib/audit/actions.ts). Refused, so it rolls back.
     throw new Error(`audit: "${input.action}" is not in lib/audit/actions.ts`);
   }
-  if (input.actor.kind !== 'user') {
-    // VeloExpense: a row names exactly one of a user or an external email. A job actor
-    // arrives with the worker port (Wave 3), and is refused until then.
-    throw new Error('audit: system actors are not supported yet (worker port, Wave 3)');
-  }
+  // VeloExpense (w3-02a): a job's row — ExpenseOS's `{ kind: 'system', jobName }` actor —
+  // names neither a user nor an external email, with `system:<job>` as its name and
+  // 'SYSTEM' as its role: the shape 0010 reserves for "an entry no person caused"
+  // (`audit_entry_actor_exclusive` admits both ids null). A user's row is as before.
   const { actorId, actorName } = resolveActor(input.actor);
 
   const [scope] = await tx.$queryRaw<{ org: string | null }[]>`
@@ -56,8 +55,13 @@ export async function writeAudit(tx: TenantDb, input: AuditInput): Promise<void>
 
   // VeloExpense's actor_role is the member's VeloExpense role, read from the row rather
   // than trusted from the session (ExpenseOS's roleLabel is a display string).
-  const [member] = await tx.$queryRaw<{ role: string }[]>`
-    SELECT role FROM app_user WHERE id = ${actorId}::uuid`;
+  let member: { role: string } | undefined;
+  if (input.actor.kind === 'system') {
+    member = { role: 'SYSTEM' };
+  } else {
+    [member] = await tx.$queryRaw<{ role: string }[]>`
+      SELECT role FROM app_user WHERE id = ${actorId}::uuid`;
+  }
   if (!member) throw new Error('audit: the actor is not a member of this organization');
 
   await tx.$executeRaw`
