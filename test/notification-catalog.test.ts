@@ -82,6 +82,8 @@ describe('the taxonomy', () => {
       'BUDGET_THRESHOLD',
       // w2-06: the on-demand receipt chase (`expenseApprovals.chaseReceipts`) emits it.
       'RECEIPT_REMINDER',
+      // w3-05 (d46): the daily `expense.receiptChase` job emits it.
+      'RECEIPT_CHASE',
       // w2-02a: `comments.post` and `expenseApprovals.reassign` emit these.
       'COMMENT',
       'REASSIGNED',

@@ -15,10 +15,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
  * boot is idempotent: editing a pattern updates the schedule in place instead of leaving
  * the old one running beside the new one, which is how a "daily" job ends up firing twice.
  *
- * VeloExpense: the registry holds `example.ping` and the receipt-reading jobs, and there
- * are no schedules yet (worker/src/main.ts says why), so the handler mocks and the registry
- * table are cut to those ported, and the schedule cases hold for whatever is registered — none today, the
- * first with receipt chasing (w3-05).
+ * VeloExpense: the registry holds `example.ping`, the receipt-reading jobs and the receipt
+ * chase, and the chase is the one schedule (worker/src/main.ts says why the rest are routes),
+ * so the handler mocks and the registry table are cut to those ported. ExpenseOS's schedule
+ * cases are back with the chase (w3-05), the count aside. The chase's scheduled run names no
+ * tenant and fans out instead (`fanOutToTenants`); that has its own case below.
  */
 
 const h = vi.hoisted(() => ({
@@ -31,6 +32,7 @@ const h = vi.hoisted(() => ({
   handlers: {} as Record<string, (...args: unknown[]) => unknown>,
   installShutdown: vi.fn(),
   tenants: [] as Array<string | undefined>,
+  fannedOut: [] as Array<[string, unknown]>,
   jobQueues: {} as Record<string, string>,
   queueNames: [] as string[],
 }));
@@ -59,6 +61,12 @@ vi.mock('./handlers/determine-expense', () => ({
     return h.handlers.handleDetermineExpense(...args);
   },
 }));
+vi.mock('./handlers/expense-receipt-chase', () => ({
+  handleExpenseReceiptChase: (...args: unknown[]) => {
+    h.handlers.handleExpenseReceiptChase ??= vi.fn();
+    return h.handlers.handleExpenseReceiptChase(...args);
+  },
+}));
 vi.mock('./handlers/extract-receipt', () => ({
   handleExtractReceipt: (...args: unknown[]) => {
     h.handlers.handleExtractReceipt ??= vi.fn();
@@ -71,6 +79,10 @@ vi.mock('./lib/tenant', () => ({
   inTenant: (data: { organizationId?: string }, run: () => Promise<unknown>) => {
     h.tenants.push(data?.organizationId);
     return run();
+  },
+  fanOutToTenants: async (job: string, data: unknown) => {
+    h.fannedOut.push([job, data]);
+    return 0;
   },
 }));
 
@@ -154,11 +166,20 @@ describe('what it starts', () => {
     expect((h.installShutdown.mock.calls[0][0] as unknown[]).length).toBe(2);
   });
 
-  it('VeloExpense: registers no schedules yet — its passes are /api/internal routes', async () => {
-    // ExpenseOS: "registers the recurring schedules". None of ExpenseOS's schedules runs a job
-    // this worker handles; when the first lands, this becomes ExpenseOS's case again.
+  it('registers the recurring schedules', async () => {
     await boot();
-    expect(h.upsertRecurring).not.toHaveBeenCalled();
+    expect(h.upsertRecurring).toHaveBeenCalled();
+  });
+
+  it('VeloExpense: schedules the receipt chase daily at 13:00 UTC, with no tenant', async () => {
+    // The scheduled run fans out (`fanOutToTenants`); a tenant here would chase one company.
+    await boot();
+    expect(h.upsertRecurring).toHaveBeenCalledWith(
+      'expense-receipt-chase-daily',
+      'expense.receiptChase',
+      { trigger: 'cron' },
+      { pattern: '0 13 * * *', tz: 'UTC' },
+    );
   });
 
   it('keys every schedule on a stable jobId', async () => {
@@ -169,7 +190,8 @@ describe('what it starts', () => {
      */
     await boot();
     const ids = h.upsertRecurring.mock.calls.map((c) => c[0] as string);
-    // VeloExpense: ExpenseOS also asserts more than ten; VeloExpense registers none yet.
+    // VeloExpense: ExpenseOS also asserts more than ten; VeloExpense registers one.
+    expect(ids.length).toBeGreaterThan(0);
     expect(new Set(ids).size).toBe(ids.length);
   });
 
@@ -253,7 +275,8 @@ describe('the whole handler registry', () => {
     ['expense.extractReceipt', 'handleExtractReceipt'],
     ['expense.extractReceipt.batch', 'handleExtractReceiptBatch'],
     ['expense.determineExpense', 'handleDetermineExpense'],
-    // VeloExpense: ExpenseOS's other twenty rows return as their handlers are ported.
+    ['expense.receiptChase', 'handleExpenseReceiptChase'],
+    // VeloExpense: ExpenseOS's other nineteen rows return as their handlers are ported.
   ];
 
   it('routes every job name to its own handler, with the payload untouched', async () => {
@@ -272,7 +295,8 @@ describe('the whole handler registry', () => {
     await boot();
     const worker = h.workers.find((w) => w.name === 'default');
     for (const [name, handler] of REGISTRY) {
-      const data = { job: name };
+      // VeloExpense: every routed job names its tenant (`inTenant`).
+      const data = { job: name, organizationId: 'org-1' };
       const job = { name, data };
       await worker?.processor(job);
       if (handler === 'handleExtractReceipt') {
@@ -373,5 +397,33 @@ describe('VeloExpense: a tenant\'s job runs as its tenant', () => {
     await worker?.processor({ name: 'expense.extractReceipt', data: { organizationId: 'org-1', receiptId: 'r1' } });
     await worker?.processor({ name: 'example.ping', data: { message: 'hi' } });
     expect(h.tenants).toEqual(['org-1']);
+  });
+});
+
+describe('VeloExpense: the receipt chase runs per tenant', () => {
+  beforeEach(() => {
+    h.queueNames = ['default'];
+    h.jobQueues = { 'expense.receiptChase': 'default' };
+    h.tenants = [];
+    h.fannedOut = [];
+  });
+
+  it('fans the scheduled run out to one job per tenant, and chases nothing itself', async () => {
+    await boot();
+    const worker = h.workers.find((w) => w.name === 'default');
+    await worker?.processor({ name: 'expense.receiptChase', data: { trigger: 'cron' } });
+    expect(h.fannedOut).toEqual([['expense.receiptChase', { trigger: 'cron' }]]);
+    expect(h.handlers.handleExpenseReceiptChase).toBeUndefined();
+    expect(h.tenants).toEqual([]);
+  });
+
+  it('chases one tenant as that tenant', async () => {
+    await boot();
+    const worker = h.workers.find((w) => w.name === 'default');
+    const data = { trigger: 'cron', organizationId: 'org-7' };
+    await worker?.processor({ name: 'expense.receiptChase', data });
+    expect(h.tenants).toEqual(['org-7']);
+    expect(h.handlers.handleExpenseReceiptChase).toHaveBeenCalledWith(data);
+    expect(h.fannedOut).toEqual([]);
   });
 });
