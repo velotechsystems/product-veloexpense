@@ -246,27 +246,19 @@
   },
   "report": {
     "state": {
-      "NOT_POSTED": "Absent de NetSuite",
-      "PENDING": "En file pour NetSuite",
-      "SYNCED": "Dans NetSuite",
-      "FAILED": "Échec de publication NetSuite",
-      "DENIED": "Retenu de NetSuite",
-      "RECONCILED": "Dans NetSuite (publié manuellement)",
-      "PROCESSING": "En cours"
+      "NOT_POSTED": "Non envoyé au grand livre",
+      "PENDING": "En file pour le grand livre",
+      "PROCESSING": "Publication en cours",
+      "POSTED": "Au grand livre",
+      "FAILED": "Échec de publication au grand livre",
+      "DEAD": "Publication au grand livre abandonnée",
+      "CANCELLED": "Retenu du grand livre",
+      "NEEDS_REVIEW": "Publication au grand livre à vérifier"
     },
-    "postedUnpaid": "Dans NetSuite · non payé",
-    "paid": "Dans NetSuite · payé",
-    "openInNetSuite": "Ouvrir ce rapport dans NetSuite",
-    "push": "Publier dans NetSuite",
-    "pushing": "Publication…",
-    "retry": "Réessayer la publication",
-    "pushHelp": "Envoyer ce rapport approuvé à NetSuite comme rapport de dépenses non payé.",
-    "retryHelp": "La dernière tentative a échoué. Corrigez le problème signalé, puis réessayez.",
-    "warning": {
-      "noLegalEntity": "NetSuite a attribué la filiale — cet employé n'a pas d'entité juridique définie.",
-      "unmappedLegalEntity": "NetSuite a attribué la filiale — {legalEntity} n'a pas de correspondance NetSuite. À corriger dans Administration → Entités juridiques.",
-      "businessUnitUnmapped": "Unité d'affaires non envoyée : le soumetteur n'a aucune unité d'affaires associée à NetSuite"
-    }
+    "push": "Ouvrir la file de publication",
+    "retry": "Réessayer depuis la file",
+    "pushHelp": "Les rapports approuvés sont publiés depuis la file de publication du grand livre. Ouvrez-la pour voir la place de ce rapport.",
+    "retryHelp": "La dernière tentative a échoué. Corrigez ce qu’elle a signalé, puis réessayez depuis la file de publication."
   },
   "people": {
     "intro": "Là où ExpenseOS et NetSuite ne s’entendent pas sur une personne. La synchronisation ne tranche jamais ; vous le faites.",

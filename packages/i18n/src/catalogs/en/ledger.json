@@ -246,27 +246,19 @@
   },
   "report": {
     "state": {
-      "NOT_POSTED": "Not in NetSuite",
-      "PENDING": "Queued for NetSuite",
-      "SYNCED": "In NetSuite",
-      "FAILED": "NetSuite post failed",
-      "DENIED": "Withheld from NetSuite",
-      "RECONCILED": "In NetSuite (posted by hand)",
-      "PROCESSING": "Processing"
+      "NOT_POSTED": "Not sent to the ledger",
+      "PENDING": "Queued for the ledger",
+      "PROCESSING": "Posting",
+      "POSTED": "In the ledger",
+      "FAILED": "Ledger post failed",
+      "DEAD": "Ledger post gave up",
+      "CANCELLED": "Withheld from the ledger",
+      "NEEDS_REVIEW": "Ledger post needs review"
     },
-    "postedUnpaid": "In NetSuite · unpaid",
-    "paid": "In NetSuite · paid",
-    "openInNetSuite": "Open this report in NetSuite",
-    "push": "Post to NetSuite",
-    "pushing": "Posting…",
-    "retry": "Retry post",
-    "pushHelp": "Send this approved report to NetSuite as an unpaid expense report.",
-    "retryHelp": "The last attempt failed. Fix what it reported, then try again.",
-    "warning": {
-      "noLegalEntity": "NetSuite assigned the subsidiary — this employee has no legal entity set.",
-      "unmappedLegalEntity": "NetSuite assigned the subsidiary — {legalEntity} has no NetSuite mapping. Fix it in Administration → Legal Entities.",
-      "businessUnitUnmapped": "Business unit not sent: the submitter has no business unit mapped to NetSuite"
-    }
+    "push": "Open the posting queue",
+    "retry": "Retry from the queue",
+    "pushHelp": "Approved reports post from the ledger posting queue. Open it to see this report's place in it.",
+    "retryHelp": "The last attempt failed. Fix what it reported, then retry it from the posting queue."
   },
   "people": {
     "intro": "Where ExpenseOS and NetSuite disagree about a person. The sync never picks a side; you do.",

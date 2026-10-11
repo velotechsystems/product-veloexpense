@@ -146,6 +146,7 @@ export {
 export { EmojiPicker, type EmojiPickerProps } from '@/components/ui/emoji-picker';
 export { Input } from '@/components/ui/input';
 export { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+export { ResizablePanels, type ResizablePanelsProps } from '@/components/ui/resizable-panels';
 export { Radio, RadioGroup } from '@/components/ui/radio';
 export {
   Select,

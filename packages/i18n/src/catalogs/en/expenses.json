@@ -87,7 +87,10 @@
     "violationsReportLevel": "This report",
     "zoomIn": "Zoom in",
     "zoomOut": "Zoom out",
-    "zoomReset": "Reset zoom"
+    "zoomReset": "Reset zoom",
+    "reportFindingsTitle": "This report has warnings that need a reason",
+    "reportFindingsBody": "They are about the whole report, not one expense. Say why each is fine — the approver will see it.",
+    "reportFindingsPlaceholder": "Why is this fine?"
   },
   "print": {
     "print": "Print",
@@ -100,10 +103,10 @@
     "class": "Class",
     "department": "Department",
     "heading": "Allocation",
-    "none": "Not coded — no business unit, department or class on this expense.",
+    "none": "Not coded — no business unit or department on this expense.",
     "percent": "Percent",
     "remove": "Remove allocation",
-    "required": "Business Unit, Department and Class are required on every allocation."
+    "required": "Business Unit and Department are required on every allocation."
   },
   "list": {
     "newReport": "New report",
@@ -343,6 +346,7 @@
   "approvals": {
     "acknowledge": "Acknowledge",
     "approve": "Approve",
+    "confirmApprove": "Confirm approval",
     "approveSelected": "Approve {count, plural, one {# report} other {# reports}}",
     "awaitingName": "Awaiting {name}",
     "bulkApproved": "Approved {count, plural, one {# report} other {# reports}}.",
@@ -368,6 +372,7 @@
     "queue": "Queue",
     "reassign": "Reassign",
     "reassignPlaceholder": "Search for an approver…",
+    "reassignNotePlaceholder": "Reason for reassigning (required) — the submitter and the new approver will see it",
     "reject": "Reject",
     "rejectNotePlaceholder": "Reason for rejection (required)",
     "return": "Return for edits",
@@ -384,7 +389,9 @@
     "viewRenamePrompt": "Rename view:",
     "viewTeam": "My team",
     "viewUntitled": "Untitled view",
-    "withColumn": "With"
+    "withColumn": "With",
+    "receiptAck": "I reviewed the {count, plural, =0 {receipts} one {# receipt} other {# receipts}} on this report.",
+    "receiptAckNone": "There are none attached — approving records that."
   },
   "allExpenses": {
     "chaseNone": "Nothing to request — those expenses already have receipts.",

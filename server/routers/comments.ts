@@ -108,7 +108,19 @@ export const commentsRouter = router({
         FROM activity a
         LEFT JOIN app_user u ON u.id = a.actor_id
        WHERE a.subject_type = ${input.subjectType} AND a.subject_id = ${input.subjectId}::uuid
-       ORDER BY a.occurred_at, a.id`;
+      UNION ALL
+      -- VeloExpense (w2-02b): the submit, from the report's own transition log. ExpenseOS
+      -- records a SUBMITTED activity on submit ("notifyReportSubmitted"); VeloExpense's
+      -- lifecycle notifies the approvers with TASK_ASSIGNED instead and logs the transition
+      -- in "expense_report_event", so without this the discussion would start at the first
+      -- decision. Only SUBMIT: every other transition already has its activity.
+      SELECT e.id, 'SUBMITTED' AS type, '{}'::jsonb AS payload, e.created_at AS "createdAt",
+             u.display_name AS "actorName", u.email AS "actorEmail"
+        FROM expense_report_event e
+        LEFT JOIN app_user u ON u.id = e.actor_id
+       WHERE ${input.subjectType} = 'EXPENSE_REPORT' AND e.report_id = ${input.subjectId}::uuid
+         AND e.action = 'SUBMIT'
+       ORDER BY "createdAt", id`;
     return {
       items: rows.map((r) => {
         const payload = (r.payload ?? {}) as {

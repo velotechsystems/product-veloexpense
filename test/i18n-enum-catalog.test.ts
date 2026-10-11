@@ -45,7 +45,6 @@ import {
   RULE_KIND_COPY,
   RULE_DESCRIPTION_COPY,
   SEVERITY_COPY,
-  TRANSITION_ACTION_COPY,
   enumLabel,
   missingCopyMarker,
   type Copy,
@@ -67,7 +66,7 @@ import { DELEGATION_SCOPES } from '@/lib/approvals/tiers';
 /**
  * The rendered enums, each paired with the array that DEFINES it.
  *
- * A union with no runtime array of its own (`TransitionAction`, `InboxRoute`) is
+ * A union with no runtime array of its own (`InboxRoute`) is
  * listed with its members written out. `Decision`,
  * `AccountSource` and `ReceiptStatus` used to be here too; VX4-10 part 4 deleted
  * those catalogues after the new dead-catalogue gate in `scripts/check-i18n.mjs`
@@ -121,12 +120,6 @@ const CATALOGUES: {
     fromArray: true,
   },
   { name: 'DelegationScope', members: DELEGATION_SCOPES, copy: DELEGATION_SCOPE_COPY, fromArray: true },
-  {
-    name: 'TransitionAction',
-    members: ['SUBMIT', 'RECALL', 'APPROVE', 'REJECT', 'RETURN', 'REIMBURSE'],
-    copy: TRANSITION_ACTION_COPY,
-    fromArray: false,
-  },
   {
     name: 'InboxRoute',
     members: ['ASSIGNED', 'DELEGATED', 'ROLE_POOL'],

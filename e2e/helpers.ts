@@ -280,24 +280,6 @@ export async function connectLedger(
 }
 
 /**
- * Submit and approve a one-line report.
- *
- * Every interaction here is COPIED from `expense-flow.spec.ts`,
- * `approval-flow.spec.ts` and `approval-panel.tsx` rather than invented. The first
- * version guessed — `getByLabel(/title/i)`, `getByRole('button', {name: /add an
- * expense/i})`, a report number scraped with `getByText(/EXP-\d+/)` — and would
- * have failed on almost every line: the real labels are exact ('Title', 'Merchant'), the real
- * buttons are 'Create draft' / 'Add expense' / 'Add line item' / 'Submit for
- * approval', the line-item inputs are id-prefixed locators rather than labels, and
- * merchant is FILLED BEFORE the add button is clicked, not after.
- *
- * The lesson, since it cost a CI round trip: when a flow already has a passing
- * spec, take its selectors — and its FIXTURES. Two of the four defects found on
- * the second read were not selectors at all: a category called 'Travel' that the
- * seed does not have, and an approver who is somebody else. Guessing at markup and
- * data you cannot run is the one part of this job with no feedback loop.
- */
-/**
  * Create a DRAFT report and land on it — the step every report-building spec starts with.
  *
  * Wave 2 (w2-05) replaced `/expenses/new` with ExpenseOS's reports list, whose "New report"
@@ -332,6 +314,26 @@ export async function openFirstReport(page: Page): Promise<string | null> {
   return new URL(page.url()).pathname.split('/').pop() ?? null;
 }
 
+/**
+ * Submit and approve a one-line report.
+ *
+ * Every interaction here is COPIED from `expense-flow.spec.ts`,
+ * `approval-flow.spec.ts` and `approval-panel.tsx` rather than invented. The first
+ * version guessed — `getByLabel(/title/i)`, `getByRole('button', {name: /add an
+ * expense/i})`, a report number scraped with `getByText(/EXP-\d+/)` — and would
+ * have failed on almost every line.
+ *
+ * The lesson, since it cost a CI round trip: when a flow already has a passing
+ * spec, take its selectors — and its FIXTURES. Two of the four defects found on
+ * the second read were not selectors at all: a category called 'Travel' that the
+ * seed does not have, and an approver who is somebody else. Guessing at markup and
+ * data you cannot run is the one part of this job with no feedback loop.
+ *
+ * w2-02b: the report page is now ExpenseOS's workbench, and its selectors are taken the
+ * same way — from ExpenseOS's own `e2e/expense-lifecycle.spec.ts` (`addExpense`,
+ * `decide`) — rather than guessed. The pieces are exported for the specs that build a
+ * report and stop short of approving it.
+ */
 export async function submitAndApprove(
   page: Page,
   browser: Browser,
@@ -339,72 +341,144 @@ export async function submitAndApprove(
   amount: string,
 ) {
   await createDraftReport(page, title);
+  await addExpenseLine(page, { vendor: 'Beck Taxi', category: 'Ground Transportation', amount });
+  await submitOpenReport(page);
+  await approveAs(browser, APPROVER_STATE, title);
+}
 
-  await page.getByLabel('Merchant').first().fill('Beck Taxi');
-  // VX4-11: the date is REQUIRED on the form, and `submitReport` refuses a report
-  // holding an undated expense — so the shared helper every ledger, module and
-  // AP-queue spec builds its report with has to supply one.
-  //
-  // TODAY, not a fixed date — see the note in e2e/budget-flow.spec.ts: the date
-  // decides which fiscal period the spend lands in.
-  await page.locator('#new-txnDate').fill(new Date().toISOString().slice(0, 10));
-  await page.getByRole('button', { name: 'Add expense' }).click();
-  await expect(page.getByRole('heading', { name: 'Beck Taxi' })).toBeVisible();
+/**
+ * Add one expense with one line to the open report, on the workbench.
+ *
+ * As ExpenseOS's `expense-lifecycle.spec.ts` does it: the EXPENSE carries the vendor (and the
+ * date — the workbench creates it dated today, which `submitReport` requires); its LINE carries
+ * the category and the amount, and the amount field does not exist until a category is chosen.
+ * The amount is blurred, not merely filled: the field commits on blur.
+ *
+ * 'Ground Transportation', and NOT 'Travel' — there is no category by that name. The seed's
+ * six are Meals & Entertainment, Airfare, Lodging, Ground Transportation, Office Supplies and
+ * Software & Subscriptions; Ground Transportation maps to 68100, which the ledger sink's
+ * `list_accounts` returns, so the adapter's pre-flight passes rather than refusing the bill.
+ *
+ * The category picker is the kit Combobox: a button, found by the placeholder it keeps as
+ * `data-placeholder`, whose options are `role="option"`.
+ */
+export async function addExpenseLine(
+  page: Page,
+  { vendor, category, amount, date }: { vendor: string; category: string; amount: string; date?: string },
+) {
+  // Wait for the NEW expense to be the one open before typing: "Add expense" creates it on
+  // the server and only then selects it, so a vendor typed at once lands in the expense that
+  // was open before — on a second pass, the first one (compliance-flow found this: its second
+  // entry saved with no merchant). The list grows by one, and the editor's vendor is empty.
+  const rows = page.getByRole('checkbox', { name: 'Select expense' });
+  const before = await rows.count();
+  const named = page.getByRole('listitem').filter({ hasText: vendor });
+  const namedBefore = await named.count();
+  await page.getByRole('button', { name: 'Add expense' }).first().click();
+  await expect(rows).toHaveCount(before + 1);
+  const vendorField = page.getByLabel('Vendor');
+  await expect(vendorField).toHaveValue('');
+  await vendorField.fill(vendor);
+  await vendorField.blur();
+  // The expense list names the vendor once the header has saved.
+  await expect(named).toHaveCount(namedBefore + 1);
+  if (date) {
+    const dateField = page.getByLabel('Date', { exact: true });
+    await dateField.fill(date);
+    await dateField.blur();
+  }
+  await addLine(page, category, amount);
+}
 
-  // 'Ground Transportation', and NOT 'Travel' — there is no category by that
-  // name. The seed's six are Meals & Entertainment, Airfare, Lodging, Ground
-  // Transportation, Office Supplies and Software & Subscriptions; 'Travel (100%
-  // deductible)' is the ACCOUNT's name, because three ways of travelling are one
-  // line in the general ledger. That distinction is the whole reason VX3-1 stopped
-  // treating the category list as a chart of accounts, and picking the account's
-  // name out of the category dropdown was walking straight back into it.
-  //
-  // Ground Transportation maps to 68100, which the sink's `list_accounts` returns,
-  // so the adapter's pre-flight passes rather than refusing the bill.
-  await page
-    .locator('select[id^="categoryId-"]')
-    .selectOption({ label: 'Ground Transportation' });
-  await page.locator('input[id^="description-"]').fill('Airport taxi');
-  await page.locator('input[id^="amount-"]').fill(amount);
-  await page.getByRole('button', { name: 'Add line item' }).click();
+/**
+ * Add one line to the expense open in the editor.
+ *
+ * The draft row commits the moment its category is picked, and the editor then re-renders it
+ * as a saved line — so the amount is typed only once the saved row's field exists. Typed into
+ * the draft's field instead, it is lost in that re-render; waiting on the COUNT of amount
+ * fields is what makes the wait real (the same lesson as compliance-flow's form count).
+ */
+export async function addLine(page: Page, category: string, amount: string) {
+  const amounts = page.getByLabel('Amount', { exact: true });
+  const before = await amounts.count();
+  await page.getByRole('button', { name: 'Add line', exact: true }).first().click();
+  await page.locator('[data-placeholder="Select a category"]').last().click();
+  await page.getByRole('option', { name: category }).click();
+  await expect(amounts).toHaveCount(before + 1);
+  const field = amounts.last();
+  await field.fill(amount);
+  await field.blur();
+}
 
-  await page.getByRole('button', { name: 'Submit for approval' }).click();
-  await expect(page.getByTestId('report-status')).toHaveText(status('SUBMITTED'));
+/**
+ * Submit the open report and wait until the top bar says Submitted.
+ *
+ * Waits for the button to be ENABLED first, as ExpenseOS's suite does: the reasons it is
+ * disabled (no expenses yet, a figure still saving) are states the specs create, and a bare
+ * click turns "not ready" into a timeout pointing at the press.
+ */
+export async function submitOpenReport(page: Page) {
+  const submit = page.getByRole('button', { name: 'Submit report' });
+  await expect(submit).toBeEnabled();
+  await submit.click();
+  await expectReportStatus(page, 'SUBMITTED');
+}
 
-  // ── the decision, in the APPROVER's session ───────────────────────────────
-  const approver = await browser.newContext({ storageState: APPROVER_STATE });
-  const approverPage = await approver.newPage();
+/** The open report's status, as the workbench's top bar shows it. */
+export async function expectReportStatus(page: Page, member: string) {
+  await expect(page.getByRole('banner').getByText(status(member), { exact: true })).toBeVisible();
+}
+
+/**
+ * Approve a report in another person's session, from their approvals inbox.
+ *
+ * The inbox links to the report by TITLE; the decide controls live on the report's
+ * workbench. Approve is one press — unless the step requires the receipt-view
+ * acknowledgement (`requireReceiptViewAck`, on by default), when it opens a panel with the
+ * checkbox and "Confirm approval". The SERVER enforces it on APPROVED specifically, so the
+ * helper answers whichever the workbench asks, rather than hard-coding either.
+ */
+export async function approveAs(browser: Browser, storageState: string, title: string) {
+  const ctx = await browser.newContext({ storageState });
+  const approverPage = await ctx.newPage();
   try {
     await approverPage.goto('/approvals');
-    // The inbox links to the report by TITLE; the decide controls live on the
-    // report page, not on /approvals.
     await approverPage.getByRole('link', { name: title }).first().click();
-
-    // WAIT FOR THE PANEL BEFORE ASKING WHAT IS ON IT.
-    //
-    // `count()` does not auto-wait. It answers about the DOM as it stands right
-    // now, and the line above is a client-side Next navigation — so the first
-    // version's `if ((await ack.count()) > 0)` was answered about the /approvals
-    // page it had just left, found no checkbox, and skipped it. The Approve click
-    // then auto-waited, landed on a fully rendered panel, and the server refused
-    // with "this approval step requires you to confirm you reviewed the receipts".
-    // The report stayed SUBMITTED and the failure surfaced ten lines later.
-    //
-    // An auto-waiting assertion first, and the conditional is then a question about
-    // the right page. The conditional itself stays: the acknowledgement is a
-    // per-rung setting (`requireReceiptViewAck`), and the SERVER enforces it on
-    // APPROVED specifically — hard-coding it on breaks the day a tenant turns it
-    // off, and hard-coding it off is the version that just failed.
-    const approve = approverPage.getByRole('button', { name: 'Approve' });
-    await expect(approve).toBeVisible();
-    const ack = approverPage.locator('input[name="receiptViewAcknowledged"]');
-    if ((await ack.count()) > 0) await ack.check();
-
-    await approve.click();
-    // `decideFromForm` redirects back to `/expenses/<id>`, so the status the
-    // approver is looking at is the report's own.
-    await expect(approverPage.getByTestId('report-status')).toHaveText(status('APPROVED'));
+    await decideOnWorkbench(approverPage, 'Approve');
+    await expectReportStatus(approverPage, 'APPROVED');
   } finally {
-    await approver.close();
+    await ctx.close();
   }
+}
+
+/**
+ * Decide the open report from the workbench's top bar.
+ *
+ * Approve answers the receipt acknowledgement when the step asks for it. Reject and Return
+ * open a note and a second, differently-labelled button — and a rejection REQUIRES the note,
+ * so its confirm stays disabled until one is typed (ExpenseOS's `decide`).
+ */
+export async function decideOnWorkbench(
+  page: Page,
+  action: 'Approve' | 'Reject' | 'Return for edits',
+  note = 'Checked by the end-to-end suite.',
+) {
+  const bar = page.getByRole('banner');
+  const button = bar.getByRole('button', { name: action, exact: true });
+  await expect(button).toBeVisible();
+  await button.click();
+  if (action === 'Approve') {
+    const confirm = page.getByRole('button', { name: 'Confirm approval' });
+    // Either the decision went on the press, or the acknowledgement panel opened.
+    await expect(confirm.or(bar.getByText(status('APPROVED'), { exact: true }))).toBeVisible();
+    if (await confirm.isVisible()) {
+      await page.getByRole('checkbox', { name: /I reviewed the/ }).check();
+      await confirm.click();
+    }
+    return;
+  }
+  await page.getByPlaceholder(/Reason for rejection|What needs to change/).fill(note);
+  await page
+    .getByRole('button', { name: action === 'Reject' ? 'Confirm reject' : 'Confirm return' })
+    .click();
 }

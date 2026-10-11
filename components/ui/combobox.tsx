@@ -280,6 +280,11 @@ function ComboboxShell({
           disabled={disabled}
           aria-expanded={open}
           aria-label={ariaLabel}
+          // The field's placeholder, kept on the trigger whatever it shows. The button shows
+          // the placeholder only until something is picked, so this is how a test (or a
+          // ported ExpenseOS test, which found its Base UI input by placeholder) finds a
+          // field that already holds a value. Not read by assistive tech.
+          data-placeholder={placeholder || undefined}
           onPointerDown={(e) => {
             if (disabled || e.button !== 0 || e.pointerType !== 'mouse') return;
             openedOnPointerDown.current = true;

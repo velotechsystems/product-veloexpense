@@ -101,6 +101,31 @@ describe.skipIf(!process.env.DATABASE_URL)('comments router (integration)', () =
       [h.orgId, subjectId, eventType, ownerId, JSON.stringify(payload)],
     );
 
+  describe('the submit, from the transition log (VeloExpense, w2-02b)', () => {
+    it('opens the thread with who submitted, before the first decision', async () => {
+      const subjectId = await newReport();
+      await h.admin.query(
+        `INSERT INTO expense_report_event
+           (organization_id, report_id, action, from_status, to_status, actor_id, created_at)
+         VALUES ($1, $2, 'SUBMIT', 'DRAFT', 'SUBMITTED', $3, now() - interval '1 minute')`,
+        [h.orgId, subjectId, ownerId],
+      );
+      await plant(subjectId, 'APPROVED', { note: 'Fine' });
+      const { items } = await makeCaller(ownerId).thread({ subjectType: 'EXPENSE_REPORT', subjectId });
+      expect(items.map((i: { type: string }) => i.type)).toEqual(['SUBMITTED', 'APPROVED']);
+      expect(items[0].author).toMatchObject({ firstName: 'Owner' });
+      // A transition that already has its activity is not doubled.
+      await h.admin.query(
+        `INSERT INTO expense_report_event
+           (organization_id, report_id, action, from_status, to_status, actor_id)
+         VALUES ($1, $2, 'RECALL', 'SUBMITTED', 'DRAFT', $3)`,
+        [h.orgId, subjectId, ownerId],
+      );
+      const again = await makeCaller(ownerId).thread({ subjectType: 'EXPENSE_REPORT', subjectId });
+      expect(again.items).toHaveLength(2);
+    });
+  });
+
   describe('posting and reading', () => {
     it('round-trips a comment on an expense report', async () => {
       const subjectId = await newReport();

@@ -44,7 +44,6 @@
  */
 import type { EmployeeRole, EmployeeStatus } from '@/lib/employees/service';
 import type { ReportStatus } from '@/lib/expenses/service';
-import type { TransitionAction } from '@/lib/expenses/lifecycle';
 import type { Severity, RuleKind } from '@/lib/policy/rules';
 import type { PostStatus } from '@/lib/integrations/post-outbox';
 import type { FraudSeverity } from '@/lib/fraud/rules';
@@ -80,15 +79,6 @@ export const REPORT_STATUS_COPY: EnumCopy<ReportStatus> = {
   REJECTED: { 'en-CA': 'Rejected' },
   RETURNED: { 'en-CA': 'Returned for changes' },
   REIMBURSED: { 'en-CA': 'Reimbursed' },
-};
-
-export const TRANSITION_ACTION_COPY: EnumCopy<TransitionAction> = {
-  SUBMIT: { 'en-CA': 'Submitted' },
-  RECALL: { 'en-CA': 'Withdrawn' },
-  APPROVE: { 'en-CA': 'Approved' },
-  REJECT: { 'en-CA': 'Rejected' },
-  RETURN: { 'en-CA': 'Returned' },
-  REIMBURSE: { 'en-CA': 'Reimbursed' },
 };
 
 /* ── policy ───────────────────────────────────────────────────────────────── */
@@ -443,8 +433,12 @@ export function missingCopyMarker(value: string): string {
  * catalogue with no call site is where a duplicate hides, and an exemption list
  * would have preserved precisely the condition the gate exists to prevent.
  * `Decision` is the clearest case — APPROVED / REJECTED / RETURNED already
- * overlap `TRANSITION_ACTION_COPY` and `REPORT_STATUS_COPY`, both of which are
- * live, so a third spelling of those words was a drift waiting to happen.
+ * overlapped `TRANSITION_ACTION_COPY` and still overlaps `REPORT_STATUS_COPY`, which
+ * is live, so a third spelling of those words was a drift waiting to happen.
+ *
+ * `TransitionAction` (`TRANSITION_ACTION_COPY`) followed in w2-02b: its one reader was the
+ * old report page's lifecycle bar, retired for ExpenseOS's workbench, whose history is the
+ * report's discussion (`CommentThread`) in the `comments` catalogue's words.
  *
  * If a screen needs any of them, three lines brings it back — and the wording
  * will then be chosen with the screen in front of the author, which is better

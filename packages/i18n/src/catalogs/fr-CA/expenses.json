@@ -87,7 +87,10 @@
     "violationsReportLevel": "Ce rapport",
     "zoomIn": "Agrandir",
     "zoomOut": "Réduire",
-    "zoomReset": "Réinitialiser le zoom"
+    "zoomReset": "Réinitialiser le zoom",
+    "reportFindingsTitle": "Ce rapport a des avertissements qui demandent une raison",
+    "reportFindingsBody": "Ils portent sur l’ensemble du rapport, pas sur une dépense. Dites pourquoi chacun est acceptable — l’approbateur le verra.",
+    "reportFindingsPlaceholder": "Pourquoi est-ce acceptable?"
   },
   "print": {
     "print": "Imprimer",
@@ -100,10 +103,10 @@
     "class": "Classe",
     "department": "Département",
     "heading": "Répartition",
-    "none": "Non codé — aucune unité d'affaires, aucun département ni catégorie sur cette dépense.",
+    "none": "Non codé — aucune unité d’affaires ni aucun département sur cette dépense.",
     "percent": "Pourcentage",
     "remove": "Retirer la répartition",
-    "required": "Une unité d’affaires, un département et une classe sont requis pour chaque répartition."
+    "required": "Une unité d’affaires et un département sont requis pour chaque répartition."
   },
   "list": {
     "newReport": "Nouveau rapport",
@@ -343,6 +346,7 @@
   "approvals": {
     "acknowledge": "Confirmer la lecture",
     "approve": "Approuver",
+    "confirmApprove": "Confirmer l’approbation",
     "approveSelected": "Approuver {count, plural, one {# rapport} other {# rapports}}",
     "awaitingName": "En attente de {name}",
     "bulkApproved": "{count, plural, one {# rapport approuvé} other {# rapports approuvés}}.",
@@ -368,6 +372,7 @@
     "queue": "File",
     "reassign": "Réattribuer",
     "reassignPlaceholder": "Rechercher un approbateur…",
+    "reassignNotePlaceholder": "Motif de la réaffectation (obligatoire) — la personne qui l’a soumis et le nouvel approbateur le verront",
     "reject": "Rejeter",
     "rejectNotePlaceholder": "Motif du rejet (obligatoire)",
     "return": "Retourner pour modification",
@@ -384,7 +389,9 @@
     "viewRenamePrompt": "Renommer la vue :",
     "viewTeam": "Mon équipe",
     "viewUntitled": "Vue sans titre",
-    "withColumn": "Chez"
+    "withColumn": "Chez",
+    "receiptAck": "J’ai examiné {count, plural, =0 {les reçus} one {le reçu} other {les # reçus}} de ce rapport.",
+    "receiptAckNone": "Aucun n’est joint — l’approbation le consignera."
   },
   "allExpenses": {
     "chaseNone": "Rien à demander — ces dépenses ont déjà un reçu.",

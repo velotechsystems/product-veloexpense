@@ -54,6 +54,8 @@ const VENDORED = {
   'input-group': 'components/ui/input-group.tsx',
   command: 'components/ui/command.tsx',
   dialog: 'components/ui/dialog.tsx',
+  // Wave 2: the expense-report workbench's three-pane layout.
+  'resizable-panels': 'components/ui/resizable-panels.tsx',
 };
 
 /**

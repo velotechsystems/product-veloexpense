@@ -738,8 +738,14 @@ describe('receipt uploads', () => {
         } as never),
       ).rejects.toMatchObject(refused);
       expect(db.receipt.create).not.toHaveBeenCalled();
-      // VeloExpense: `statementApply` and `startExtraction` — and their refusals here —
-      // arrive with extraction (Wave 3).
+      // VeloExpense: `statementApply` — and its refusal here — arrives with extraction
+      // (Wave 3). `startExtraction` arrived with the workbench (w2-02b).
+      const reread = await c.startExtraction({ receiptIds: [U('7')] }).catch((e: unknown) => e);
+      expect(reread).toMatchObject({
+        code: 'BAD_REQUEST',
+        message: expect.stringMatching(/decided/),
+      });
+      expect(refusalData(reread)).toEqual({ key: REFUSAL_KEYS.documentsRereadClosed });
     }
   });
 });

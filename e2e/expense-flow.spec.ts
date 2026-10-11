@@ -17,7 +17,7 @@
 import { test, expect, type Page } from '@playwright/test';
 import { DEFAULT_LOCALE } from '@/lib/i18n/locales';
 import { enumLabel, REPORT_STATUS_COPY } from '@/lib/i18n/catalog/enums';
-import { createDraftReport } from './helpers';
+import { addExpenseLine, createDraftReport, expectReportStatus } from './helpers';
 /**
  * VX4-7 part 2a: a report's status is asserted through the CATALOGUE, not as the
  * enum's own spelling.
@@ -52,37 +52,35 @@ const RECEIPT_PNG = Buffer.from(
   'base64',
 );
 
+/**
+ * A draft report with one $`amount` line, on ExpenseOS's workbench (w2-02b; helpers.ts
+ * `addExpenseLine`). The workbench dates a new expense today, which `submitReport` requires
+ * (VX4-11).
+ */
 async function createReportWithLine(page: Page, title: string, amount: string) {
   await createDraftReport(page, title);
-  await expect(page).toHaveURL(/\/expenses\/[0-9a-f-]{36}$/);
-
-  await page.getByLabel('Merchant').first().fill('Test Cafe');
-  // VX4-11: the date is REQUIRED on the form now, and `submitReport` refuses a
-  // report holding an undated expense. Every helper that builds one has to say
-  // when it happened — which is the point of the ticket, arriving here first.
-  await page.locator('#new-txnDate').fill(new Date().toISOString().slice(0, 10));
-  await page.getByRole('button', { name: 'Add expense' }).click();
-  await expect(page.getByRole('heading', { name: 'Test Cafe' })).toBeVisible();
-
-  await page.locator('select[id^="categoryId-"]').selectOption({ label: 'Meals & Entertainment' });
-  await page.locator('input[id^="description-"]').fill('Team lunch');
-  await page.locator('input[id^="amount-"]').fill(amount);
-  await page.getByRole('button', { name: 'Add line item' }).click();
+  await addExpenseLine(page, { vendor: 'Test Cafe', category: 'Meals & Entertainment', amount });
 }
 
+/**
+ * Attach a receipt to the open expense, straight from the browser to storage.
+ *
+ * w2-02b: as ExpenseOS's `expense-lifecycle.spec.ts` does it — the LAST file input is the
+ * expense's own "Attach receipt"; the first is the report-level uploader, which creates a
+ * NEW expense from the file instead. The receipt pane lists it only once `receiptCreate` has
+ * read the object back, which is the proof the PUT reached storage.
+ */
 async function uploadReceipt(page: Page) {
-  await page.getByRole('button', { name: /^Receipts \(\d+\)$/ }).click();
-  await page.locator('input[type="file"]').setInputFiles({
+  await page.locator('input[type="file"]').last().setInputFiles({
     name: 'receipt.png',
     mimeType: 'image/png',
     buffer: RECEIPT_PNG,
   });
-  // The drawer lists it only after confirmUpload() has come back, which is the
-  // proof the PUT reached storage and the server HEADed a real object.
-  await expect(page.getByText('receipt.png')).toBeVisible();
-  // exact: the drawer's scrim is a button labelled "Close receipts".
-  await page.getByRole('button', { name: 'Close', exact: true }).click();
+  await expect(page.getByText('receipt.png').first()).toBeVisible();
 }
+
+/** The workbench's Submit, whose disabled state is the submit gate on the screen. */
+const submitButton = (page: Page) => page.getByRole('button', { name: 'Submit report' });
 
 test.beforeAll(async ({ browser }) => {
   // Rule instances are per tenant and seeded by nobody — scripts/seed.mjs
@@ -102,60 +100,56 @@ test('a blocking violation stops the submit until the receipt is attached', asyn
   await createReportWithLine(page, `E2E blocked trip ${RUN}`, '75.00');
 
   // The total is recomputed server-side inside the same transaction as the write.
-  await expect(page.getByTestId('report-total')).toHaveText('$75.00');
+  await expect(page.getByRole('banner')).toContainText('$75.00');
 
-  // Starter rules: receipts are required above $25, at BLOCK severity.
-  const blocking = page.locator('[data-testid="policy-violation"][data-severity="BLOCK"]');
-  await expect(blocking).toHaveCount(1);
-  await expect(blocking.first()).toContainText('no receipt attached');
-
-  await page.getByRole('button', { name: 'Submit for approval' }).click();
-  // Not getByRole('alert') — Next renders a route announcer with that role too.
-  await expect(page.getByTestId('error-banner')).toContainText(/blocking policy violation/i);
-  await expect(page.getByTestId('report-status')).toHaveText(status('DRAFT'));
+  // Starter rules: receipts are required above $25, at BLOCK severity. w2-02b: on the
+  // workbench the gate is the Submit button itself — disabled, with the reason as its title
+  // — rather than a refusal after the press.
+  await expect(page.getByRole('main').getByText('Policy warnings')).toBeVisible();
+  await expect(submitButton(page)).toBeDisabled();
+  await expect(submitButton(page)).toHaveAttribute('title', /must be resolved/);
+  await expectReportStatus(page, 'DRAFT');
 
   await uploadReceipt(page);
 
-  // Attaching a receipt re-runs the engine, so the panel clears without any
-  // other save (app/receipts/actions.ts).
-  await expect(page.getByTestId('policy-clean')).toBeVisible();
+  // Attaching a receipt re-runs the engine, so the finding clears without any other save.
+  await expect(page.getByRole('main').getByText('Policy warnings')).toHaveCount(0);
 
-  await page.getByRole('button', { name: 'Submit for approval' }).click();
-  await expect(page.getByTestId('report-status')).toHaveText(status('SUBMITTED'));
+  await submitButton(page).click();
+  await expectReportStatus(page, 'SUBMITTED');
 
   // Submitted reports are frozen — the editing affordances are gone.
-  await expect(page.getByRole('button', { name: 'Add line item' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Add line', exact: true })).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Add expense' })).toHaveCount(0);
 
-  // …and the transition is on the record.
-  await expect(page.getByRole('heading', { name: 'History' })).toBeVisible();
-  await expect(page.getByText('DRAFT → SUBMITTED')).toBeVisible();
+  // …and the transition is on the record: w2-02b, the report's discussion carries it.
+  await expect(page.getByText('submitted this')).toBeVisible();
 
-  await page.getByRole('button', { name: 'Recall to draft' }).click();
-  await expect(page.getByTestId('report-status')).toHaveText(status('DRAFT'));
-  await expect(page.getByText('SUBMITTED → DRAFT')).toBeVisible();
+  await page.getByRole('banner').getByRole('button', { name: 'Recall' }).click();
+  await expectReportStatus(page, 'DRAFT');
+  await expect(page.getByText('recalled this')).toBeVisible();
 });
 
-test('a warning is acknowledged with a justification and does not block', async ({ page }) => {
+test('a warning is justified with an explanation and does not block', async ({ page }) => {
   // $600 clears the $500 per-transaction limit (WARNING); the receipt keeps the
   // BLOCK rule quiet so this test is only about the warning.
   await createReportWithLine(page, `E2E over-limit dinner ${RUN}`, '600.00');
   await uploadReceipt(page);
 
-  const warning = page.locator('[data-testid="policy-violation"][data-severity="WARNING"]');
-  await expect(warning).toHaveCount(1);
-  await expect(warning.first()).toContainText('per-transaction limit');
+  await expect(page.getByRole('main').getByText('Policy warnings')).toBeVisible();
+  // w2-11 (d34): a warning needs a reason before the report goes, and on the workbench the
+  // reason is the expense's own "Explain this charge" (ExpenseOS's rule).
+  await expect(submitButton(page)).toBeDisabled();
+  await expect(submitButton(page)).toHaveAttribute('title', /needs an explanation/);
 
-  await warning.first().getByPlaceholder('Why is this exception acceptable?').fill('Client dinner, pre-approved by Finance');
-  await warning.first().getByRole('button', { name: 'Acknowledge' }).click();
+  const explanation = page.getByLabel(/Explain this charge/);
+  await explanation.fill('Client dinner, pre-approved by Finance');
+  await explanation.blur();
 
-  await expect(page.getByRole('heading', { name: 'Acknowledged' })).toBeVisible();
-  await expect(page.getByText('Client dinner, pre-approved by Finance')).toBeVisible();
-
-  // A warning never blocked submission in the first place — Module 9 has it
-  // propagate to the approver instead.
-  await page.getByRole('button', { name: 'Submit for approval' }).click();
-  await expect(page.getByTestId('report-status')).toHaveText(status('SUBMITTED'));
+  // A justified warning goes to the approver rather than blocking — Module 9.
+  await expect(submitButton(page)).toBeEnabled();
+  await submitButton(page).click();
+  await expectReportStatus(page, 'SUBMITTED');
 });
 
 test('the report list shows what was just submitted', async ({ page }) => {
