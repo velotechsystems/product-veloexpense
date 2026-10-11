@@ -296,8 +296,8 @@ export const expenseApprovalsRouter = router({
    * Still one notification per REPORT, however many expenses were selected —
    * five receiptless lines on one report is one piece of news.
    *
-   * VeloExpense: the daily job arrives with the worker jobs; until then this is the only way
-   * a reminder is sent.
+   * VeloExpense: the daily job sends its own event, RECEIPT_CHASE (w3-05, d46), and counts an
+   * ask sent from here as a reminder, as ExpenseOS's does.
    */
   chaseReceipts: protectedProcedure
     .input(z.object({ expenseIds: z.array(z.string().uuid()).min(1).max(200) }))

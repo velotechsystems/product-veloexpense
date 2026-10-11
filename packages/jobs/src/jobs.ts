@@ -56,6 +56,13 @@ export interface JobMap {
    *  VeloExpense: `organizationId`, as on every receipt job (above). */
   'expense.determineExpense': { organizationId: string; expenseId: string };
 
+  /** Daily: remind submitters about draft expenses that still have no receipt.
+   *
+   *  VeloExpense (w3-05): ExpenseOS's job, plus `organizationId`. The schedule fires it
+   *  without one, and that run only fans out: one job per active tenant, each naming its
+   *  tenant, which the worker runs under that tenant's RLS scope like every other job. */
+  'expense.receiptChase': { trigger?: 'cron' | 'manual'; organizationId?: string };
+
   // VeloExpense: ExpenseOS's other jobs are not here. Each arrives with its handler, as the
   // boot check in worker/src/main.ts requires, and most never will: VeloExpense's
   // notifications, approval sweeps, ledger posts and compliance passes run as
@@ -70,4 +77,5 @@ export const JOB_QUEUES: Record<JobName, QueueName> = {
   'expense.extractReceipt': 'integrations',
   'expense.extractReceipt.batch': 'integrations',
   'expense.determineExpense': 'integrations',
+  'expense.receiptChase': 'housekeeping',
 };

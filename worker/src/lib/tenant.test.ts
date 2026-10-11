@@ -9,17 +9,37 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
  * before any statement, with a message that says why.
  */
 
-const h = vi.hoisted(() => ({ scoped: vi.fn() }));
+const h = vi.hoisted(() => ({
+  scoped: vi.fn(),
+  enqueue: vi.fn(async () => undefined),
+  sql: [] as string[],
+  orgs: [] as string[],
+}));
 vi.mock('@/lib/db/prisma', () => ({
   withTenantStatements: (org: string, run: () => Promise<unknown>) => {
     h.scoped(org);
     return run();
   },
 }));
+vi.mock('@expenseos/jobs', () => ({ enqueue: h.enqueue }));
+vi.mock('@/lib/tenant/context', () => ({
+  withoutOrg: async (fn: (tx: unknown) => Promise<unknown>) =>
+    fn({
+      query: async (sql: string) => {
+        h.sql.push(sql);
+        return { rows: h.orgs.map((id) => ({ id })) };
+      },
+    }),
+}));
 
-const { inTenant } = await import('./tenant');
+const { fanOutToTenants, inTenant } = await import('./tenant');
 
-beforeEach(() => h.scoped.mockClear());
+beforeEach(() => {
+  h.scoped.mockClear();
+  h.enqueue.mockClear();
+  h.sql = [];
+  h.orgs = [];
+});
 
 describe('inTenant', () => {
   it('runs the job in the scope of the tenant its payload names', async () => {
@@ -37,4 +57,27 @@ describe('inTenant', () => {
       expect(h.scoped).not.toHaveBeenCalled();
     },
   );
+});
+
+describe('fanOutToTenants (w3-05)', () => {
+  it('queues one job per tenant, each naming its tenant, and runs nothing itself', async () => {
+    h.orgs = ['org-1', 'org-2'];
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    await expect(fanOutToTenants('expense.receiptChase', { trigger: 'cron' })).resolves.toBe(2);
+    expect(h.enqueue.mock.calls).toEqual([
+      ['expense.receiptChase', { trigger: 'cron', organizationId: 'org-1' }],
+      ['expense.receiptChase', { trigger: 'cron', organizationId: 'org-2' }],
+    ]);
+    expect(h.scoped).not.toHaveBeenCalled();
+  });
+
+  it('skips a suspended organization: nobody can act on a reminder about it', async () => {
+    await fanOutToTenants('expense.receiptChase', { trigger: 'cron' });
+    expect(h.sql[0]).toContain("status <> 'suspended'");
+  });
+
+  it('queues nothing when there are no tenants', async () => {
+    await expect(fanOutToTenants('expense.receiptChase', { trigger: 'cron' })).resolves.toBe(0);
+    expect(h.enqueue).not.toHaveBeenCalled();
+  });
 });

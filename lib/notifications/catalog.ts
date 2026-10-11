@@ -108,9 +108,17 @@ export const EVENT_TYPES = [
    * see who is waiting on them".
    *
    * VeloExpense: only the on-demand chase emits it. ExpenseOS's daily `expense.receiptChase`
-   * job, which sends the same event with no actor, arrives with the worker jobs.
+   * job sends the same event with no actor; here it sends RECEIPT_CHASE (below, d46).
    */
   'RECEIPT_REMINDER',
+  /**
+   * The daily reminder that a draft still has expenses without a receipt (w3-05, d46).
+   * ExpenseOS's `expense.receiptChase` job, which ExpenseOS sends as RECEIPT_REMINDER with
+   * no actor. VeloExpense's RECEIPT_REMINDER sentence names who asked, which a job cannot
+   * fill, so the automatic one is its own event: its own wording, and its own preference,
+   * so a person can turn the daily nudge off and still hear when somebody asks.
+   */
+  'RECEIPT_CHASE',
   /**
    * Somebody posted to a report's discussion thread (w2-02a, d37). ExpenseOS's `COMMENT`,
    * addressed to everyone else on the thread — the submitter and anybody an approval task
@@ -418,6 +426,19 @@ export const TEMPLATE_KEYS: readonly TemplateKeyDef[] = [
     // report is not always a draft, so the sentence says who asked, how many, and on which
     // report — `{missing}` from the chase's payload, `{report}` from `reportPayload`.
     shipped: { 'en-CA': '{actor} asked for {missing} missing receipt(s) on {report}.' },
+  },
+  {
+    // VeloExpense (w3-05, d46): the daily job's own key. ExpenseOS sends its reminder under
+    // the key above; here the automatic one is worded and switched separately.
+    key: 'expense_management.report_receipt_chase',
+    name: 'Daily missing-receipt reminder',
+    description:
+      'A draft report still has expenses without a receipt, a few days after they were ' +
+      'added. Sent to the submitter at most once a week per report.',
+    events: [['RECEIPT_CHASE', 'EXPENSE_REPORT']],
+    // No `{actor}`: nobody sent it. `{missing}` from the job's payload, `{report}` from
+    // `reportPayload`.
+    shipped: { 'en-CA': '{report} still has {missing} expense(s) without a receipt.' },
   },
 ];
 

@@ -12,12 +12,13 @@ import {
 import { type ConnectionOptions, type Job, Worker } from 'bullmq';
 import { handleDetermineExpense } from './handlers/determine-expense';
 import { handleExamplePing } from './handlers/example';
+import { handleExpenseReceiptChase } from './handlers/expense-receipt-chase';
 import { handleExtractReceipt } from './handlers/extract-receipt';
 import { handleExtractReceiptBatch } from './handlers/extract-receipt-batch';
 // VeloExpense: ExpenseOS's other handlers are not imported — their jobs are not in the job
 // map (packages/jobs/src/jobs.ts says where each went).
 import { installShutdown } from './lib/shutdown';
-import { inTenant } from './lib/tenant';
+import { fanOutToTenants, inTenant } from './lib/tenant';
 
 /**
  * Handler registry. Each entry takes the typed payload for its job
@@ -38,6 +39,12 @@ const HANDLERS: { [N in JobName]?: (data: unknown, job: Job) => Promise<unknown>
   'expense.extractReceipt.batch': (data) =>
     inTenant(data, () => handleExtractReceiptBatch(data as never)),
   'expense.determineExpense': (data) => inTenant(data, () => handleDetermineExpense(data as never)),
+  // VeloExpense: the schedule's run names no tenant and only fans out, one job per tenant;
+  // each of those runs as its tenant.
+  'expense.receiptChase': (data) =>
+    (data as { organizationId?: string } | null)?.organizationId
+      ? inTenant(data, () => handleExpenseReceiptChase(data as never))
+      : fanOutToTenants('expense.receiptChase', { trigger: 'cron' }),
 };
 
 /**
@@ -54,12 +61,23 @@ interface RecurringJob {
 }
 
 /**
- * VeloExpense: none yet. Every ExpenseOS schedule here runs a job VeloExpense does not route
- * through this worker — its notification, approval, ledger and compliance passes are the
- * `/api/internal/*` routes EventBridge Scheduler calls (infrastructure/cdk config.ts
- * `schedules`). Receipt chasing (w3-05) is the first that will land here.
+ * VeloExpense: ExpenseOS's receipt chase only, so far. Every other ExpenseOS schedule here runs
+ * a job VeloExpense does not route through this worker — its notification, approval, ledger
+ * and compliance passes are the `/api/internal/*` routes EventBridge Scheduler calls
+ * (infrastructure/cdk config.ts `schedules`).
  */
-const RECURRING_JOBS: RecurringJob[] = [];
+const RECURRING_JOBS: RecurringJob[] = [
+  {
+    name: 'expense.receiptChase',
+    data: { trigger: 'cron' },
+    jobId: 'expense-receipt-chase-daily',
+    // Daily at 13:00 UTC (morning in North America) — a nudge that lands
+    // mid-morning gets acted on; one that lands overnight is buried by the
+    // time anyone reads it.
+    pattern: '0 13 * * *',
+    tz: 'UTC',
+  },
+];
 
 async function registerRecurringJobs(): Promise<void> {
   for (const rj of RECURRING_JOBS) {
