@@ -9,7 +9,7 @@ import {
   type ReceiptExtraction,
   sharpNormalizer,
 } from '@expenseos/receipt-extraction';
-import { recordUsage, usageOf } from '@/lib/ai/usage';
+import { type AiFeature, recordUsage, usageOf } from '@/lib/ai/usage';
 import { db } from '@/lib/db/prisma';
 import { type BoundedRead, getStorage } from '@/lib/storage';
 // Subpaths, not the root barrel: a test that mocks `@/lib/storage` wholesale still runs
@@ -392,19 +392,21 @@ function extractionCapBytes(_where: ExtractionKey): number {
  * where the response carries one, so a row can be matched to the provider's own record.
  */
 export async function recordExtractionUsage(
-  receiptId: string,
+  receiptId: string | null,
   result: { model: string; rawResponse: unknown },
+  opts: { feature?: AiFeature; batch?: boolean } = {},
 ): Promise<void> {
   const usage = usageOf(result.rawResponse);
   if (!usage) return;
   const messageId = (result.rawResponse as { id?: unknown } | null)?.id;
   try {
     await recordUsage(db, {
-      feature: 'receipt_extraction',
+      feature: opts.feature ?? 'receipt_extraction',
       model: result.model,
       ...usage,
       requestId: typeof messageId === 'string' ? messageId : randomUUID(),
       receiptId,
+      batch: opts.batch,
     });
   } catch (err) {
     console.error(`[extract-core] failed to record AI usage for receipt ${receiptId}: ${message(err)}`);

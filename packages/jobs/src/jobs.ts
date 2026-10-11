@@ -27,12 +27,39 @@ export interface JobMap {
    *  RLS scope (`withTenantStatements`), so the payload carries it. */
   'expense.extractReceipt': { organizationId: string; receiptId: string; scanAttempt?: number };
 
+  /** Extract SEVERAL receipts uploaded together in one Anthropic Message Batch
+   *  (~50% cheaper, async) — enqueued by expenses.startExtraction when >1 file
+   *  lands at once. Two-phase state machine carried in the payload: submit
+   *  (no `batchId`) scans/normalizes + submits ready docs; poll (`batchId` set)
+   *  re-polls until the batch ends, then finalizes + prefills each. `model` is
+   *  carried from submit → poll so results stamp the model that produced them.
+   *  A lone ready receipt degrades to one synchronous message.
+   *
+   *  VeloExpense: `organizationId`, as on every receipt job (above). */
+  'expense.extractReceipt.batch': {
+    organizationId: string;
+    receiptIds: string[];
+    batchId?: string;
+    model?: string;
+    scanAttempt?: number;
+    pollAttempt?: number;
+  };
+
+  /** Re-determine ONE expense from its WHOLE document set (rule 2). Enqueued by
+   *  expenses.receiptCreate / receiptDelete once an expense holds more than one
+   *  document, and by the extraction handler after a second file's own pass
+   *  finishes. Reads every document together, then WIPES and rebuilds the
+   *  expense's header, lines, tip, tax and FX — replaying the human's recorded
+   *  corrections on top. One document needs no joint pass, so that case never
+   *  enqueues this. Never throws on business failure.
+   *
+   *  VeloExpense: `organizationId`, as on every receipt job (above). */
+  'expense.determineExpense': { organizationId: string; expenseId: string };
+
   // VeloExpense: ExpenseOS's other jobs are not here. Each arrives with its handler, as the
   // boot check in worker/src/main.ts requires, and most never will: VeloExpense's
   // notifications, approval sweeps, ledger posts and compliance passes run as
-  // `/api/internal/*` routes on a schedule (infrastructure/cdk config.ts `schedules`). The
-  // batch and joint-determination jobs (`expense.extractReceipt.batch`,
-  // `expense.determineExpense`) come with w3-02b.
+  // `/api/internal/*` routes on a schedule (infrastructure/cdk config.ts `schedules`).
 }
 
 export type JobName = keyof JobMap;
@@ -41,4 +68,6 @@ export type JobName = keyof JobMap;
 export const JOB_QUEUES: Record<JobName, QueueName> = {
   'example.ping': 'housekeeping',
   'expense.extractReceipt': 'integrations',
+  'expense.extractReceipt.batch': 'integrations',
+  'expense.determineExpense': 'integrations',
 };

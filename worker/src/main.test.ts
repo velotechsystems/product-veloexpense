@@ -15,10 +15,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
  * boot is idempotent: editing a pattern updates the schedule in place instead of leaving
  * the old one running beside the new one, which is how a "daily" job ends up firing twice.
  *
- * VeloExpense: the registry holds `example.ping` alone and there are no schedules yet
- * (worker/src/main.ts says why), so the handler mocks and the registry table are cut to
- * that one, and the schedule cases hold for whatever is registered — none today, the first
- * with receipt chasing (w3-05). Each extraction handler joins both tables with w3-02.
+ * VeloExpense: the registry holds `example.ping` and the receipt-reading jobs, and there
+ * are no schedules yet (worker/src/main.ts says why), so the handler mocks and the registry
+ * table are cut to those ported, and the schedule cases hold for whatever is registered — none today, the
+ * first with receipt chasing (w3-05).
  */
 
 const h = vi.hoisted(() => ({
@@ -47,6 +47,18 @@ vi.mock('./handlers/example', () => ({
   },
 }));
 
+vi.mock('./handlers/extract-receipt-batch', () => ({
+  handleExtractReceiptBatch: (...args: unknown[]) => {
+    h.handlers.handleExtractReceiptBatch ??= vi.fn();
+    return h.handlers.handleExtractReceiptBatch(...args);
+  },
+}));
+vi.mock('./handlers/determine-expense', () => ({
+  handleDetermineExpense: (...args: unknown[]) => {
+    h.handlers.handleDetermineExpense ??= vi.fn();
+    return h.handlers.handleDetermineExpense(...args);
+  },
+}));
 vi.mock('./handlers/extract-receipt', () => ({
   handleExtractReceipt: (...args: unknown[]) => {
     h.handlers.handleExtractReceipt ??= vi.fn();
@@ -239,8 +251,9 @@ describe('the whole handler registry', () => {
   const REGISTRY: Array<[string, string]> = [
     ['example.ping', 'handleExamplePing'],
     ['expense.extractReceipt', 'handleExtractReceipt'],
-    // VeloExpense: ExpenseOS's other twenty-two rows return as their handlers are ported
-    // (the batch and joint-determination jobs with w3-02b).
+    ['expense.extractReceipt.batch', 'handleExtractReceiptBatch'],
+    ['expense.determineExpense', 'handleDetermineExpense'],
+    // VeloExpense: ExpenseOS's other twenty rows return as their handlers are ported.
   ];
 
   it('routes every job name to its own handler, with the payload untouched', async () => {

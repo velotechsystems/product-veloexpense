@@ -21,7 +21,7 @@
 import type { Prisma } from '@/lib/generated/prisma/client';
 
 /** Which feature drove a call. VeloLedger's union, VeloExpense's members. */
-export type AiFeature = 'receipt_extraction';
+export type AiFeature = 'receipt_extraction' | 'expense_determination';
 
 /**
  * Features whose use spends a customer's AI credits (reported to the platform). Empty
@@ -46,12 +46,19 @@ const RATES: Record<string, Rate> = {
   'claude-sonnet-4-6': { inMicroUsdPerTok: 3, outMicroUsdPerTok: 15 },
 };
 
-export function computeCostMicroUsd(model: string, inTok: number, outTok: number): bigint {
+export function computeCostMicroUsd(
+  model: string,
+  inTok: number,
+  outTok: number,
+  opts: { batch?: boolean } = {},
+): bigint {
   const rate = RATES[model];
   if (!rate) return 0n;
-  return (
-    BigInt(inTok) * BigInt(rate.inMicroUsdPerTok) + BigInt(outTok) * BigInt(rate.outMicroUsdPerTok)
-  );
+  const full =
+    BigInt(inTok) * BigInt(rate.inMicroUsdPerTok) + BigInt(outTok) * BigInt(rate.outMicroUsdPerTok);
+  // VeloExpense (w3-02b): a Message Batches call is billed at half the rate, which is the
+  // reason the batch path exists. VERIFY with the rates above.
+  return opts.batch ? full / 2n : full;
 }
 
 /**
@@ -76,6 +83,8 @@ export interface RecordUsageInput {
   requestId: string;
   receiptId?: string | null;
   actorUserId?: string | null;
+  /** Made through the Message Batches API (half rate). */
+  batch?: boolean;
 }
 
 /**
@@ -96,7 +105,9 @@ export async function recordUsage(
       model: input.model,
       inputTokens: input.inputTokens,
       outputTokens: input.outputTokens,
-      costMicroUsd: computeCostMicroUsd(input.model, input.inputTokens, input.outputTokens),
+      costMicroUsd: computeCostMicroUsd(input.model, input.inputTokens, input.outputTokens, {
+        batch: input.batch,
+      }),
       metered: METERED_FEATURES.has(input.feature),
       receiptId: input.receiptId ?? null,
       actorUserId: input.actorUserId ?? null,
