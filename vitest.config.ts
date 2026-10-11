@@ -21,6 +21,7 @@ export default defineConfig({
       { find: /^@expenseos\/tax$/, replacement: r('packages/tax/src/index.ts') },
       { find: /^@expenseos\/expense-lines$/, replacement: r('packages/expense-lines/src/index.ts') },
       { find: /^@expenseos\/receipt-extraction$/, replacement: r('packages/receipt-extraction/src/index.ts') },
+      { find: /^@expenseos\/jobs$/, replacement: r('packages/jobs/src/index.ts') },
       { find: /^@expenseos\/db$/, replacement: r('packages/db/src/index.ts') },
       { find: /^@\//, replacement: r('') },
     ],
@@ -34,6 +35,8 @@ export default defineConfig({
       'test/**/*.test.ts',
       // Tests ported from ExpenseOS stay beside the code they test, as they were there.
       '{packages,server,lib,app,components,i18n}/**/*.test.{ts,tsx}',
+      // Wave 3 (w3-00): ExpenseOS's worker (apps/worker there), under node as it runs.
+      'worker/src/**/*.test.ts',
     ],
     // ExpenseOS runs its colocated tests under jsdom (its `unit` project); a file that
     // needs node says so with `// @vitest-environment node`, as several do.

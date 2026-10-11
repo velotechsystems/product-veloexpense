@@ -2,7 +2,7 @@
 /**
  * VeloExpense – CDK application entry point.
  *
- *   Security → Network → Storage → Data → Compute
+ *   Security → Network → Storage → Data → Cache → Compute
  *
  * Everything here deploys INTO the shared velotech-<sharedStage> infrastructure
  * that product-velocrm's CDK owns (see lib/shared.ts). None of these stacks
@@ -18,6 +18,7 @@
  */
 import 'source-map-support/register';
 import * as cdk from 'aws-cdk-lib';
+import { CacheStack } from '../lib/cache-stack';
 import { buildConfig, type Stage } from '../lib/config';
 import { ComputeStack } from '../lib/compute-stack';
 import { DataStack } from '../lib/data-stack';
@@ -66,6 +67,14 @@ const data = new DataStack(app, `${prefix}-Data`, {
   description: 'VeloExpense - Aurora PostgreSQL Serverless v2',
 });
 
+const cache = new CacheStack(app, `${prefix}-Cache`, {
+  env,
+  config,
+  cacheSecurityGroupId: network.cacheSecurityGroup.securityGroupId,
+  masterKeyArn: security.masterKey.keyArn,
+  description: 'VeloExpense - ElastiCache Valkey for the BullMQ worker',
+});
+
 const compute = new ComputeStack(app, `${prefix}-Compute`, {
   env,
   config,
@@ -78,9 +87,12 @@ const compute = new ComputeStack(app, `${prefix}-Compute`, {
   appDbSecretArn: security.appDbSecret.secretArn,
   // biome-ignore lint: the generated secret always exists on a cluster created with fromGeneratedSecret.
   masterDbSecretArn: data.cluster.secret!.secretArn,
-  description: 'VeloExpense - web service on the shared cluster/ALB, database task, schedules',
+  description: 'VeloExpense - web and worker services on the shared cluster/ALB, database task, schedules',
 });
 
 compute.addStackDependency(storage); // the image must have a repository before a service can pull it
+// Compute reads the redis-url secret BY NAME, so CloudFormation sees no reference to the
+// cache stack; a task started before that secret exists fails to start.
+compute.addStackDependency(cache);
 
 for (const [k, v] of Object.entries(config.tags)) cdk.Tags.of(app).add(k, v);

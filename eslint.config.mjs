@@ -44,6 +44,9 @@ const PORTED_FROM_EXPENSEOS = [
   "packages/expense-lines/**",
   // Wave 3: ExpenseOS's receipt reading, verbatim.
   "packages/receipt-extraction/**",
+  // Wave 3 (w3-00): ExpenseOS's queue surface and its worker (apps/worker there).
+  "packages/jobs/**",
+  "worker/**",
   // Wave 2 (w2-02b): the workbench's pieces outside `app/(app)` — ExpenseOS's attachment
   // viewer and policy-violation helpers, and its design system's resizable panels (in the kit).
   "components/attachments/AttachmentViewer*.tsx",
@@ -91,6 +94,8 @@ const eslintConfig = defineConfig([
     "next-env.d.ts",
     // The CDK app has its own package.json, tsconfig and tests (infrastructure/cdk).
     "infrastructure/**",
+    // The worker's esbuild output (worker/build.mjs).
+    "worker/dist/**",
   ]),
 ]);
 

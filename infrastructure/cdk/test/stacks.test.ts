@@ -8,6 +8,7 @@
 import { App } from 'aws-cdk-lib';
 import { Template } from 'aws-cdk-lib/assertions';
 import { describe, expect, it } from 'vitest';
+import { CacheStack } from '../lib/cache-stack';
 import { buildConfig } from '../lib/config';
 import { ComputeStack } from '../lib/compute-stack';
 import { DataStack } from '../lib/data-stack';
@@ -30,6 +31,12 @@ function synth() {
     databaseSecurityGroupId: network.databaseSecurityGroup.securityGroupId,
     masterKeyArn: security.masterKey.keyArn,
   });
+  const cache = new CacheStack(app, 'Cch', {
+    env,
+    config,
+    cacheSecurityGroupId: network.cacheSecurityGroup.securityGroupId,
+    masterKeyArn: security.masterKey.keyArn,
+  });
   const compute = new ComputeStack(app, 'Cmp', {
     env,
     config,
@@ -42,15 +49,17 @@ function synth() {
     appDbSecretArn: security.appDbSecret.secretArn,
     masterDbSecretArn: data.cluster.secret!.secretArn,
   });
-  const t = (s: SecurityStack | NetworkStack | StorageStack | DataStack | ComputeStack) => Template.fromStack(s);
+  const t = (s: SecurityStack | NetworkStack | StorageStack | DataStack | CacheStack | ComputeStack) =>
+    Template.fromStack(s);
   return {
     config,
     security: t(security),
     network: t(network),
     storage: t(storage),
     data: t(data),
+    cache: t(cache),
     compute: t(compute),
-    all: [security, network, storage, data, compute].map(t),
+    all: [security, network, storage, data, cache, compute].map(t),
   };
 }
 
@@ -167,7 +176,9 @@ describe('credentials go only where they are needed', () => {
 
 describe('the database', () => {
   it('accepts 5432 from the VeloExpense service group only', () => {
-    const rules = resources(s.network, 'AWS::EC2::SecurityGroupIngress');
+    const rules = resources(s.network, 'AWS::EC2::SecurityGroupIngress').filter(
+      ([, r]) => json(r.Properties.GroupId).includes('DatabaseSg'),
+    );
     expect(rules).toHaveLength(1);
     const [[, r]] = rules;
     expect(r.Properties.FromPort).toBe(5432);
@@ -201,6 +212,79 @@ describe('the database', () => {
     expect(gen.ExcludeCharacters ?? '').not.toMatch(/[!-/:-@[-`{-~]{20,}/);
     const app = resources(s.security, 'AWS::SecretsManager::Secret').find(([id]) => id.startsWith('AppDbSecret'))!;
     expect((app[1].Properties.GenerateSecretString as { ExcludePunctuation: boolean }).ExcludePunctuation).toBe(true);
+  });
+});
+
+describe('the queue (w3-00)', () => {
+  const secretsOf = (family: string) => {
+    const [, r] = resources(s.compute, 'AWS::ECS::TaskDefinition').find(
+      ([, t]) => (t.Properties as { Family: string }).Family === family,
+    )!;
+    const defs = (r.Properties as { ContainerDefinitions: Array<{ Secrets?: Array<{ Name: string }>; Command?: string[] }> })
+      .ContainerDefinitions;
+    return { secrets: defs.flatMap((c) => c.Secrets ?? []).map((x) => x.Name), command: defs[0].Command };
+  };
+
+  it('Valkey accepts 6379 from the VeloExpense service group only', () => {
+    const rules = resources(s.network, 'AWS::EC2::SecurityGroupIngress').filter(
+      ([, r]) => json(r.Properties.GroupId).includes('CacheSg'),
+    );
+    expect(rules).toHaveLength(1);
+    expect(rules[0][1].Properties.FromPort).toBe(6379);
+    expect(json(rules[0][1].Properties.SourceSecurityGroupId)).toContain('ServiceSg');
+  });
+
+  it('never evicts a key — BullMQ loses jobs silently if it does', () => {
+    s.cache.hasResourceProperties('AWS::ElastiCache::ParameterGroup', {
+      Properties: { 'maxmemory-policy': 'noeviction' },
+    });
+  });
+
+  it('is encrypted at rest and in transit, behind an AUTH token, in the isolated subnets', () => {
+    s.cache.hasResourceProperties('AWS::ElastiCache::ReplicationGroup', {
+      Engine: 'valkey',
+      AtRestEncryptionEnabled: true,
+      TransitEncryptionEnabled: true,
+    });
+    const [[, rg]] = resources(s.cache, 'AWS::ElastiCache::ReplicationGroup');
+    expect(json(rg.Properties.AuthToken)).toContain('resolve:secretsmanager');
+    const [[, g]] = resources(s.cache, 'AWS::ElastiCache::SubnetGroup');
+    expect(json(g.Properties.SubnetIds)).toContain(sharedParam(s.cache, 'isolated-subnet-1'));
+    expect(json(g.Properties.SubnetIds)).not.toContain('private-subnet');
+  });
+
+  it('the URL secret speaks TLS and holds the token as a reference, not as text', () => {
+    const url = resources(s.cache, 'AWS::SecretsManager::Secret').find(([id]) => id.startsWith('RedisUrl'))!;
+    const value = json(url[1].Properties.SecretString);
+    expect(value).toContain('rediss://:');
+    expect(value).toContain('resolve:secretsmanager');
+  });
+
+  it('the worker runs the bundle with the queue URL and nothing else', () => {
+    const w = secretsOf('veloexpense-dev-worker');
+    expect(w.command).toEqual(['node', 'worker/dist/main.mjs']);
+    expect(w.secrets).toEqual(['REDIS_URL']);
+  });
+
+  it('the web task can enqueue', () => {
+    expect(secretsOf('veloexpense-dev-web').secrets).toContain('REDIS_URL');
+  });
+
+  it('the worker takes no inbound traffic: our group only, no load balancer', () => {
+    const svc = resources(s.compute, 'AWS::ECS::Service').find(
+      ([, r]) => r.Properties.ServiceName === 'veloexpense-dev-worker',
+    )![1];
+    const net = json((svc.Properties.NetworkConfiguration as { AwsvpcConfiguration: unknown }).AwsvpcConfiguration);
+    expect(net).toContain('ServiceSg');
+    expect(net).not.toContain(sharedParam(s.compute, 'apps-sg-id'));
+    expect(svc.Properties.LoadBalancers).toBeUndefined();
+  });
+
+  it('the worker execution role reads the queue URL only', () => {
+    const [, p] = resources(s.compute, 'AWS::IAM::Policy').find(([id]) => id.startsWith('WorkerExecutionRole'))!;
+    const text = json(p.Properties);
+    expect(text).toContain('veloexpense/dev/redis-url');
+    expect(text).not.toMatch(/AuthSecret|WorkerSecret|AppDb|MasterDb|secret-encryption-key|google-oauth|smtp/);
   });
 });
 

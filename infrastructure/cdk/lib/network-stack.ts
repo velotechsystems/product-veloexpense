@@ -11,6 +11,9 @@
  *   database  Aurora. Ingress on 5432 from `service` ONLY. Not from the shared
  *             apps group: that group will hold every other Velotech product's
  *             tasks, and none of them has business on this port.
+ *   cache     Valkey (w3-00). Ingress on 6379 from `service` ONLY, for the same
+ *             reason. The worker joins `service`: it needs the database, the cache
+ *             and the internet (the model API, S3), exactly what the web task needs.
  */
 import { Stack, type StackProps, Tags, aws_ec2 as ec2 } from 'aws-cdk-lib';
 import type { Construct } from 'constructs';
@@ -24,6 +27,7 @@ export interface NetworkStackProps extends StackProps {
 export class NetworkStack extends Stack {
   public readonly serviceSecurityGroup: ec2.SecurityGroup;
   public readonly databaseSecurityGroup: ec2.SecurityGroup;
+  public readonly cacheSecurityGroup: ec2.SecurityGroup;
 
   constructor(scope: Construct, id: string, props: NetworkStackProps) {
     super(scope, id, props);
@@ -48,6 +52,18 @@ export class NetworkStack extends Stack {
       this.serviceSecurityGroup,
       ec2.Port.tcp(5432),
       'PostgreSQL from VeloExpense tasks',
+    );
+
+    this.cacheSecurityGroup = new ec2.SecurityGroup(this, 'CacheSg', {
+      vpc,
+      securityGroupName: `${prefix}-cache-sg`,
+      description: 'VeloExpense Valkey - 6379 from the VeloExpense service group only',
+      allowAllOutbound: false,
+    });
+    this.cacheSecurityGroup.addIngressRule(
+      this.serviceSecurityGroup,
+      ec2.Port.tcp(6379),
+      'Valkey from VeloExpense tasks',
     );
 
     for (const [key, value] of Object.entries(config.tags)) Tags.of(this).add(key, value);
