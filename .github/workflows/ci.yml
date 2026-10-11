@@ -177,6 +177,11 @@ jobs:
       - name: Build
         run: npm run build
 
+      # w3-00. The image runs the worker from this bundle (Dockerfile). Building it here
+      # is what catches an import esbuild cannot resolve before the image build does.
+      - name: Worker bundle
+        run: npm run worker:build
+
       # VX2-10. A `'use server'` module whose exports Next cannot wrap registers
       # NONE of its actions, builds clean, and fails only in a browser with
       # "Failed to find Server Action …" — a message about deployments, for a

@@ -1,10 +1,13 @@
 # VeloExpense production image.
 # Multi-stage: deps -> builder -> runner (Next.js standalone output).
 #
-# One image, three uses (infrastructure/cdk compute-stack.ts):
+# One image, four uses (infrastructure/cdk compute-stack.ts):
 #   web       the default CMD, `node server.js`
 #   database  `node scripts/db-bootstrap.mjs && node scripts/migrate.mjs`
 #   tick      `node scripts/tick.mjs /api/internal/<route>` on a schedule
+#   worker    `node worker/dist/main.mjs`, the BullMQ consumer (w3-00). ExpenseOS builds
+#             the worker its own image; here it is one bundled file in this one
+#             (worker/build.mjs says why).
 # so the runner carries scripts/ and prisma/migrations/ next to the standalone
 # server. `pg` is already in the standalone node_modules because the app uses it.
 #
@@ -38,6 +41,7 @@ COPY . .
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV NODE_ENV=production
 RUN npm run build
+RUN npm run worker:build
 
 FROM public.ecr.aws/docker/library/node:24-alpine AS runner
 WORKDIR /app
@@ -84,6 +88,9 @@ COPY --from=builder --chown=nextjs:nodejs /app/public ./public
 # The database and tick tasks run these against the same standalone node_modules.
 COPY --from=builder --chown=nextjs:nodejs /app/scripts/migrate.mjs /app/scripts/db-bootstrap.mjs /app/scripts/tick.mjs ./scripts/
 COPY --from=builder --chown=nextjs:nodejs /app/prisma/migrations ./prisma/migrations
+# The worker: one bundled file. A native package it keeps external (worker/build.mjs
+# NATIVE_EXTERNALS) has to be in node_modules beside it; none is reached yet.
+COPY --from=builder --chown=nextjs:nodejs /app/worker/dist/main.mjs ./worker/dist/main.mjs
 COPY --chmod=0755 scripts/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 
 USER nextjs

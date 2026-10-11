@@ -1,6 +1,6 @@
 /**
  * ComputeStack – VeloExpense's web service on the SHARED cluster and ALB, the
- * one-off database task, and the scheduled jobs.
+ * BullMQ worker, the one-off database task, and the scheduled jobs.
  *
  * Ported from ExpenseOS `compute-stack.ts`. Kept: Fargate on ARM64; one task
  * role and one execution role per kind of task; secrets imported BY NAME/ARN so
@@ -16,8 +16,11 @@
  *     target group. The ALB reaches the task because the task joins the shared
  *     apps security group; we never touch the ALB's own group (the listener is
  *     imported WITHOUT it, so CDK cannot add rules to it on our behalf).
- *   · NO worker service. Background work is `/api/internal/*`; a scheduled
- *     Fargate task (`scripts/tick.mjs`) calls it with WORKER_SECRET.
+ *   · The worker service (w3-00, d41) runs the SAME image as web, with
+ *     `node worker/dist/main.mjs` (ExpenseOS builds it a repository of its own).
+ *     It runs only the jobs ported with it; VeloExpense's own background work stays
+ *     on `/api/internal/*`, which a scheduled Fargate task (`scripts/tick.mjs`)
+ *     calls with WORKER_SECRET.
  *   · The DATABASE TASK. ExpenseOS ran migrations from an in-VPC CodeBuild runner.
  *     Here the same image runs `scripts/db-bootstrap.mjs` then
  *     `scripts/migrate.mjs` as a one-off task — it is the ONLY task definition
@@ -46,6 +49,7 @@ import {
   aws_secretsmanager as secretsmanager,
 } from 'aws-cdk-lib';
 import type { Construct } from 'constructs';
+import { REDIS_URL_SECRET } from './cache-stack';
 import type { VeloExpenseConfig } from './config';
 import { SHARED_APP_PORT, importShared } from './shared';
 
@@ -69,6 +73,7 @@ export const RDS_CA_PATH = '/app/rds-ca.pem';
 
 export class ComputeStack extends Stack {
   public readonly service: ecs.FargateService;
+  public readonly workerService: ecs.FargateService;
 
   constructor(scope: Construct, id: string, props: ComputeStackProps) {
     super(scope, id, props);
@@ -95,6 +100,8 @@ export class ComputeStack extends Stack {
     const encryptionKey = byName('SecretEncryptionKey', `${config.secretPrefix}/secret-encryption-key`);
     const googleOAuth = byName('GoogleOAuth', `${config.secretPrefix}/google-oauth`);
     const smtp = byName('Smtp', config.smtpSecretName);
+    // Composed by CacheStack (rediss:// with the AUTH token); read by name, as ExpenseOS does.
+    const redisUrl = byName('RedisUrl', `${config.secretPrefix}/${REDIS_URL_SECRET}`);
 
     /** Partial-ARN wildcard for a secret imported by NAME (its ARN ends in a random suffix). */
     const nameArn = (name: string) =>
@@ -127,6 +134,12 @@ export class ComputeStack extends Stack {
       nameArn(`${config.secretPrefix}/secret-encryption-key`),
       nameArn(`${config.secretPrefix}/google-oauth`),
       nameArn(config.smtpSecretName),
+      // The web app enqueues (receipt extraction, w3-02).
+      nameArn(`${config.secretPrefix}/${REDIS_URL_SECRET}`),
+    ]);
+    // The worker: the queue's URL. Each job brings the secrets it needs with its port.
+    const workerExecRole = executionRole('WorkerExecutionRole', 'worker', [
+      nameArn(`${config.secretPrefix}/${REDIS_URL_SECRET}`),
     ]);
     // The database task: the master login and veloapp's (to set its password). Nothing else.
     const dbExecRole = executionRole('DbExecutionRole', 'db', [props.masterDbSecretArn, props.appDbSecretArn]);
@@ -159,6 +172,9 @@ export class ComputeStack extends Stack {
       });
     const dbTaskRole = plainTaskRole('DbTaskRole', 'db');
     const tickTaskRole = plainTaskRole('TickTaskRole', 'tick');
+    // No grants yet: `example.ping` touches nothing. Receipt reading adds S3 read and
+    // the key it needs, with the handlers that use them (w3-02).
+    const workerTaskRole = plainTaskRole('WorkerTaskRole', 'worker');
 
     // ── Logs ──────────────────────────────────────────────────────────────────
     const logGroup = (lid: string, name: string) =>
@@ -221,6 +237,7 @@ export class ComputeStack extends Stack {
         SMTP_USER: ecs.Secret.fromSecretsManager(smtp, 'SMTP_USER'),
         SMTP_PASS: ecs.Secret.fromSecretsManager(smtp, 'SMTP_PASSWORD'),
         EMAIL_FROM: ecs.Secret.fromSecretsManager(smtp, 'SMTP_FROM_ADDRESS'),
+        REDIS_URL: ecs.Secret.fromSecretsManager(redisUrl),
       },
       logging: ecs.LogDrivers.awsLogs({ logGroup: logGroup('WebLogs', 'web'), streamPrefix: 'web' }),
       healthCheck: {
@@ -293,6 +310,47 @@ export class ComputeStack extends Stack {
       listener,
       certificates: [elbv2.ListenerCertificate.fromArn(config.albCertificateArn)],
     });
+
+    // ── 2b. The worker (BullMQ consumer) ──────────────────────────────────────
+    // Ported from ExpenseOS's worker task definition and service. Kept: Fargate ARM64,
+    // ECS Exec, the circuit breaker with rollback, minHealthy 100 / maxHealthy 200, and NO
+    // health check — the worker has no listener; ECS treats the task as healthy while the
+    // process runs and the circuit breaker catches a crash loop. Changed: the web image
+    // with a command (one image here); our service group only (no inbound, so not the
+    // shared apps group); no autoscaling (one task in dev); no 40 GiB ephemeral storage
+    // (ExpenseOS's is for PDF rasterising, which VeloExpense's extraction does not do).
+    const workerTaskDef = new ecs.FargateTaskDefinition(this, 'WorkerTaskDef', {
+      family: `${prefix}-worker`,
+      cpu: config.worker.cpu,
+      memoryLimitMiB: config.worker.memoryMiB,
+      taskRole: workerTaskRole,
+      executionRole: workerExecRole,
+      runtimePlatform: runtime,
+    });
+    workerTaskDef.addContainer('worker', {
+      image,
+      command: ['node', 'worker/dist/main.mjs'],
+      environment: { NODE_ENV: 'production' },
+      secrets: {
+        REDIS_URL: ecs.Secret.fromSecretsManager(redisUrl),
+      },
+      logging: ecs.LogDrivers.awsLogs({ logGroup: logGroup('WorkerLogs', 'worker'), streamPrefix: 'worker' }),
+    });
+
+    this.workerService = new ecs.FargateService(this, 'WorkerService', {
+      serviceName: `${prefix}-worker`,
+      cluster: shared.cluster,
+      taskDefinition: workerTaskDef,
+      desiredCount: config.worker.desiredCount,
+      securityGroups: [serviceSg],
+      vpcSubnets: { subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS },
+      assignPublicIp: false,
+      enableExecuteCommand: true,
+      circuitBreaker: { enable: true, rollback: true },
+      minHealthyPercent: 100,
+      maxHealthyPercent: 200,
+    });
+    Tags.of(this.workerService).add('Product', 'veloexpense');
 
     // ── 3. The database task (bootstrap + migrations), run on demand ──────────
     const dbTaskDef = new ecs.FargateTaskDefinition(this, 'DbTaskDef', {
@@ -398,6 +456,7 @@ export class ComputeStack extends Stack {
     });
     new CfnOutput(this, 'ClusterName', { value: shared.cluster.clusterName });
     new CfnOutput(this, 'DbTaskFamily', { value: dbTaskDef.family });
+    new CfnOutput(this, 'WorkerServiceName', { value: this.workerService.serviceName });
     new CfnOutput(this, 'TaskSubnets', { value: privateSubnetIds.join(',') });
     new CfnOutput(this, 'TaskSecurityGroup', { value: props.serviceSecurityGroupId });
 

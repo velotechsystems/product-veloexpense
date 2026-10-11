@@ -36,6 +36,7 @@
       "@expenseos/tax": ["./packages/tax/src/index.ts"],
       "@expenseos/expense-lines": ["./packages/expense-lines/src/index.ts"],
       "@expenseos/receipt-extraction": ["./packages/receipt-extraction/src/index.ts"],
+      "@expenseos/jobs": ["./packages/jobs/src/index.ts"],
       "@expenseos/db": ["./packages/db/src/index.ts"]
     }
   },
@@ -47,5 +48,5 @@
     ".next/dev/types/**/*.ts",
     "**/*.mts"
   ],
-  "exclude": ["node_modules", "infrastructure"]
+  "exclude": ["node_modules", "infrastructure", "worker/dist"]
 }

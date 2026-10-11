@@ -47,3 +47,5 @@ next-env.d.ts
 /test-results/
 /.e2e-storage/
 /blob-report/
+# The worker's esbuild bundle (worker/build.mjs); the image builds its own.
+/worker/dist/

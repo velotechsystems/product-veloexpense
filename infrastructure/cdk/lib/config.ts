@@ -18,10 +18,12 @@
  *     John: suite-consistent names everywhere, rather than "staging"). They stay
  *     separate fields because production will be stage "prod" on sharedStage
  *     "prod", and nothing should assume the two always match.
- *   · No Valkey, no worker service, no SES stack. VeloExpense has no queue
- *     process — its background work is `/api/internal/*` routes that a scheduled
- *     task calls — and mail goes through the suite's Google Workspace SMTP
+ *   · No SES stack: mail goes through the suite's Google Workspace SMTP
  *     credential, as VeloCRM's does.
+ *   · Valkey and the worker service arrived with receipt extraction (w3-00, d41),
+ *     sized for dev. Background work that was already VeloExpense's own —
+ *     notifications, the ledger, compliance — stays on the `/api/internal/*`
+ *     routes a scheduled task calls; the worker runs only the jobs ported with it.
  */
 
 /** VeloExpense environments. Production is added when it is built, not before. */
@@ -78,6 +80,21 @@ export interface VeloExpenseConfig {
     pgPoolMax: number;
   };
 
+  /** ExpenseOS's ElastiCache Valkey (cache-stack.ts): BullMQ's queues. */
+  valkey: {
+    nodeType: string; // e.g. "cache.t4g.micro"
+    numReplicas: number; // 0 = single-node, >0 = multi-AZ with failover
+    engineVersion: string; // Valkey, e.g. "8.0"
+    snapshotRetentionDays: number;
+  };
+
+  /** The BullMQ consumer (worker/). No listener, so no target group or health route. */
+  worker: {
+    cpu: number;
+    memoryMiB: number;
+    desiredCount: number;
+  };
+
   /**
    * `/api/internal/*` routes the scheduler calls, and how often. A route is only
    * listed once what it needs exists in this environment: the billing routes talk
@@ -122,6 +139,12 @@ const STAGES: Record<Stage, Omit<VeloExpenseConfig, 'resourcePrefix' | 'secretPr
       deletionProtection: false,
     },
     web: { cpu: 512, memoryMiB: 1024, desiredCount: 1, pgPoolMax: 10 },
+    // ExpenseOS's dev runs cache.t4g.small; micro is the smallest that takes the
+    // noeviction parameter group, and one queue consumer is all it serves (d41).
+    valkey: { nodeType: 'cache.t4g.micro', numReplicas: 0, engineVersion: '8.0', snapshotRetentionDays: 1 },
+    // ExpenseOS's dev worker is 1 vCPU / 2 GiB. Half that here: one task, and the
+    // receipt images sharp normalises are phone photos, not scans.
+    worker: { cpu: 512, memoryMiB: 1024, desiredCount: 1 },
     schedules: [
       // Mail: invitations, verification links, approval requests. Without this
       // the outbox only moves when an admin presses "Send waiting mail now".

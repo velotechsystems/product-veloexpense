@@ -18,7 +18,8 @@
  *     before extracting. VeloExpense has no receipt extraction yet, so nothing
  *     would read the verdict; turning it on is part of that port.
  *   · intelligent tiering — receipts here are small and recent; revisit at volume.
- *   · the worker repository — there is no worker image.
+ *   · the worker repository — the worker runs this image with another command
+ *     (compute-stack.ts, w3-00).
  */
 import {
   Duration,
