@@ -58,6 +58,15 @@ export type ExpenseLineItem = Prisma.ExpenseLineItemModel
  */
 export type Receipt = Prisma.ReceiptModel
 /**
+ * Model DocumentExtraction
+ * ExpenseOS's DocumentExtraction (0056, w3-01): one reading of one receipt — the scan's
+ * verdict, the model's extraction and its confidence, and a reviewer's sign-off.
+ * VeloExpense: receipts only (no virtual-card attachment), per tenant; ExpenseOS's
+ * DocScanStatus / DocExtractStatus are text under a CHECK, as the Wave 2 tables keep
+ * ExpenseOS's enums.
+ */
+export type DocumentExtraction = Prisma.DocumentExtractionModel
+/**
  * Model TaxJurisdiction
  * GLOBAL and platform-seeded (d24): the app role can read it and cannot write it.
  */

@@ -392,6 +392,7 @@ export const ModelName = {
   ExpenseAttendee: 'ExpenseAttendee',
   ExpenseLineItem: 'ExpenseLineItem',
   Receipt: 'Receipt',
+  DocumentExtraction: 'DocumentExtraction',
   TaxJurisdiction: 'TaxJurisdiction',
   User: 'User',
   BusinessUnit: 'BusinessUnit',
@@ -426,7 +427,7 @@ export type TypeMap<ExtArgs extends runtime.Types.Extensions.InternalArgs = runt
     omit: GlobalOmitOptions
   }
   meta: {
-    modelProps: "expenseCategory" | "glAccount" | "expenseReport" | "expense" | "expenseAllocation" | "expenseAttendee" | "expenseLineItem" | "receipt" | "taxJurisdiction" | "user" | "businessUnit" | "externalIdSource" | "businessUnitExternalId" | "legalEntity" | "legalEntityExternalId" | "fxRate" | "mileageRate" | "mileageRateTier" | "mileageRateSubject" | "perDiemRate" | "currency" | "department" | "departmentExternalId" | "jobLevel" | "jobLevelExternalId" | "fiscalYear" | "fiscalYearExternalId"
+    modelProps: "expenseCategory" | "glAccount" | "expenseReport" | "expense" | "expenseAllocation" | "expenseAttendee" | "expenseLineItem" | "receipt" | "documentExtraction" | "taxJurisdiction" | "user" | "businessUnit" | "externalIdSource" | "businessUnitExternalId" | "legalEntity" | "legalEntityExternalId" | "fxRate" | "mileageRate" | "mileageRateTier" | "mileageRateSubject" | "perDiemRate" | "currency" | "department" | "departmentExternalId" | "jobLevel" | "jobLevelExternalId" | "fiscalYear" | "fiscalYearExternalId"
     txIsolationLevel: TransactionIsolationLevel
   }
   model: {
@@ -1019,6 +1020,80 @@ export type TypeMap<ExtArgs extends runtime.Types.Extensions.InternalArgs = runt
         count: {
           args: Prisma.ReceiptCountArgs<ExtArgs>
           result: runtime.Types.Utils.Optional<Prisma.ReceiptCountAggregateOutputType> | number
+        }
+      }
+    }
+    DocumentExtraction: {
+      payload: Prisma.$DocumentExtractionPayload<ExtArgs>
+      fields: Prisma.DocumentExtractionFieldRefs
+      operations: {
+        findUnique: {
+          args: Prisma.DocumentExtractionFindUniqueArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$DocumentExtractionPayload> | null
+        }
+        findUniqueOrThrow: {
+          args: Prisma.DocumentExtractionFindUniqueOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$DocumentExtractionPayload>
+        }
+        findFirst: {
+          args: Prisma.DocumentExtractionFindFirstArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$DocumentExtractionPayload> | null
+        }
+        findFirstOrThrow: {
+          args: Prisma.DocumentExtractionFindFirstOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$DocumentExtractionPayload>
+        }
+        findMany: {
+          args: Prisma.DocumentExtractionFindManyArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$DocumentExtractionPayload>[]
+        }
+        create: {
+          args: Prisma.DocumentExtractionCreateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$DocumentExtractionPayload>
+        }
+        createMany: {
+          args: Prisma.DocumentExtractionCreateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        createManyAndReturn: {
+          args: Prisma.DocumentExtractionCreateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$DocumentExtractionPayload>[]
+        }
+        delete: {
+          args: Prisma.DocumentExtractionDeleteArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$DocumentExtractionPayload>
+        }
+        update: {
+          args: Prisma.DocumentExtractionUpdateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$DocumentExtractionPayload>
+        }
+        deleteMany: {
+          args: Prisma.DocumentExtractionDeleteManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateMany: {
+          args: Prisma.DocumentExtractionUpdateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateManyAndReturn: {
+          args: Prisma.DocumentExtractionUpdateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$DocumentExtractionPayload>[]
+        }
+        upsert: {
+          args: Prisma.DocumentExtractionUpsertArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$DocumentExtractionPayload>
+        }
+        aggregate: {
+          args: Prisma.DocumentExtractionAggregateArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.AggregateDocumentExtraction>
+        }
+        groupBy: {
+          args: Prisma.DocumentExtractionGroupByArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.DocumentExtractionGroupByOutputType>[]
+        }
+        count: {
+          args: Prisma.DocumentExtractionCountArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.DocumentExtractionCountAggregateOutputType> | number
         }
       }
     }
@@ -2630,6 +2705,27 @@ export const ReceiptScalarFieldEnum = {
 export type ReceiptScalarFieldEnum = (typeof ReceiptScalarFieldEnum)[keyof typeof ReceiptScalarFieldEnum]
 
 
+export const DocumentExtractionScalarFieldEnum = {
+  id: 'id',
+  organizationId: 'organizationId',
+  receiptId: 'receiptId',
+  scanStatus: 'scanStatus',
+  status: 'status',
+  model: 'model',
+  modelVersion: 'modelVersion',
+  confidence: 'confidence',
+  data: 'data',
+  rawResponse: 'rawResponse',
+  error: 'error',
+  reviewedAt: 'reviewedAt',
+  reviewedBy: 'reviewedBy',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+} as const
+
+export type DocumentExtractionScalarFieldEnum = (typeof DocumentExtractionScalarFieldEnum)[keyof typeof DocumentExtractionScalarFieldEnum]
+
+
 export const TaxJurisdictionScalarFieldEnum = {
   id: 'id',
   countryCode: 'countryCode',
@@ -3190,6 +3286,7 @@ export type GlobalOmitConfig = {
   expenseAttendee?: Prisma.ExpenseAttendeeOmit
   expenseLineItem?: Prisma.ExpenseLineItemOmit
   receipt?: Prisma.ReceiptOmit
+  documentExtraction?: Prisma.DocumentExtractionOmit
   taxJurisdiction?: Prisma.TaxJurisdictionOmit
   user?: Prisma.UserOmit
   businessUnit?: Prisma.BusinessUnitOmit

@@ -42,6 +42,8 @@ const PORTED_FROM_EXPENSEOS = [
   // Wave 2: ExpenseOS's tax engine and expense-line kinds, verbatim.
   "packages/tax/**",
   "packages/expense-lines/**",
+  // Wave 3: ExpenseOS's receipt reading, verbatim.
+  "packages/receipt-extraction/**",
   // Wave 2 (w2-02b): the workbench's pieces outside `app/(app)` — ExpenseOS's attachment
   // viewer and policy-violation helpers, and its design system's resizable panels (in the kit).
   "components/attachments/AttachmentViewer*.tsx",

@@ -19,8 +19,9 @@ import { createTenantHarness, type TenantHarness } from '../__test-helpers__/ten
  * w2-11 brings "re-validating a report" (`validate`, on VeloExpense's policy pass) and
  * "blocks submit when a line was lowered under tax entered earlier" (`submit`); w2-10 the
  * `mileagePreview` block, once a traveller has a country.
- * Not ported here, and where they go: the NETSUITE defaults (VeloExpense has no NetSuite
- * position), and "a receipt still being read holds the submit" (extraction, Wave 3).
+ * Not ported here: the NETSUITE defaults (VeloExpense has no NetSuite
+ * position). "a receipt still being read holds the submit" came with `document_extraction`
+ * (0056, w3-01).
  */
 
 vi.mock('@/auth', () => ({ auth: vi.fn(async () => null) }));
@@ -831,6 +832,156 @@ describe.skipIf(!process.env.DATABASE_URL)('expenses report-editor (integration)
       expect(line.payload).toMatchObject({ tipMinor: '750' });
       // The row decides which line-kind strategy to offer from this.
       expect(line.category.acceptsTip).toBe(true);
+
+      await db.expenseReport.delete({ where: { id: report.id } }).catch(() => {});
+    });
+  });
+
+  describe('a receipt still being read holds the submit', () => {
+    /**
+     * A late reading rewrites the amounts. It used to do so on a report the approver had
+     * already read; #506 made the late write refuse, which threw the reading away. The
+     * owner's call is that the report waits instead — and stops waiting once the worker
+     * has been silent for fifteen minutes, because a lost job must not lock anybody out.
+     */
+    const EXTRACTION_CAP_MS = 15 * 60_000;
+    // VeloExpense: a report has no `approvalInstanceId`; putting one back to DRAFT is its
+    // status and submit stamp (the lifecycle's tasks do not stand in the way of the
+    // assertion, which is only about WHICH reason a refusal gives).
+
+    async function reportWithReceipt(title: string) {
+      const caller = makeCaller(RW, ownerId);
+      const report = await caller.create({ title, currency: 'CAD' });
+      const { id: eid } = await caller.createExpense({ reportId: report.id });
+      await caller.lineItemCreate({ expenseId: eid, categoryId, amountMinor: '4200' });
+      const receipt = await db.receipt.create({
+        data: {
+          expenseId: eid,
+          s3Key: `receipts/test/${report.id}/reading.jpg`,
+          filename: 'reading.jpg',
+          contentType: 'image/jpeg',
+          sizeBytes: 1234,
+          uploadedById: ownerId,
+          // VeloExpense: a verified upload — only a STORED receipt is read or counted.
+          status: 'STORED',
+        },
+        select: { id: true },
+      });
+      return { caller, report, receiptId: receipt.id };
+    }
+
+    /** `submit` either goes through or refuses for some reason; the assertion is about
+     *  WHICH reason, so both outcomes reduce to a sentence. */
+    const submitOutcome = (caller: any, reportId: string) =>
+      caller.submit({ reportId }).then(
+        () => 'submitted',
+        (e: unknown) => (e instanceof Error ? e.message : String(e)),
+      );
+
+    it('refuses while the reading is queued or running, and says how many', async () => {
+      const { caller, report, receiptId } = await reportWithReceipt('Reading in flight');
+      // The worker's first write: queued, nothing attempted yet.
+      await db.documentExtraction.create({
+        data: { receiptId, scanStatus: 'CLEAN', status: 'PENDING' },
+      });
+
+      const detail = await caller.report({ reportId: report.id });
+      expect(detail.extraction).toEqual({ inFlight: 1, stale: 0 });
+
+      const err = await caller.submit({ reportId: report.id }).catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(Error);
+      expect((err as { code?: string }).code).toBe('PRECONDITION_FAILED');
+      expect((err as Error).message).toMatch(/^1 receipt is still being read\./);
+      const after = await db.expenseReport.findUniqueOrThrow({
+        where: { id: report.id },
+        select: { status: true, submittedAt: true },
+      });
+      expect(after).toEqual({ status: 'DRAFT', submittedAt: null });
+
+      // The model has the file now — still in flight.
+      await db.documentExtraction.update({
+        where: { receiptId },
+        data: { status: 'EXTRACTING' },
+      });
+      await expect(caller.submit({ reportId: report.id })).rejects.toMatchObject({
+        code: 'PRECONDITION_FAILED',
+      });
+
+      await db.expenseReport.delete({ where: { id: report.id } }).catch(() => {});
+    });
+
+    it('lets the report go once the reading has landed, or failed', async () => {
+      const { caller, report, receiptId } = await reportWithReceipt('Reading landed');
+      await db.documentExtraction.create({
+        data: { receiptId, scanStatus: 'CLEAN', status: 'EXTRACTED', confidence: 0.9 },
+      });
+      expect((await caller.report({ reportId: report.id })).extraction).toEqual({
+        inFlight: 0,
+        stale: 0,
+      });
+      expect(await submitOutcome(caller, report.id)).not.toMatch(/still being read/);
+
+      // Back to draft if it went through, so the next state can be tried on the same report.
+      await db.expenseReport.update({
+        where: { id: report.id },
+        data: { status: 'DRAFT', submittedAt: null },
+      });
+      await db.documentExtraction.update({
+        where: { receiptId },
+        data: { status: 'FAILED', error: 'the document could not be read' },
+      });
+      expect((await caller.report({ reportId: report.id })).extraction).toEqual({
+        inFlight: 0,
+        stale: 0,
+      });
+      expect(await submitOutcome(caller, report.id)).not.toMatch(/still being read/);
+
+      // The no-API-key contract: parked PENDING with a reason is not "in flight".
+      await db.expenseReport.update({
+        where: { id: report.id },
+        data: { status: 'DRAFT', submittedAt: null },
+      });
+      await db.documentExtraction.update({
+        where: { receiptId },
+        data: { status: 'PENDING', error: 'extraction not configured' },
+      });
+      expect((await caller.report({ reportId: report.id })).extraction).toEqual({
+        inFlight: 0,
+        stale: 0,
+      });
+      expect(await submitOutcome(caller, report.id)).not.toMatch(/still being read/);
+
+      await db.expenseReport.delete({ where: { id: report.id } }).catch(() => {});
+    });
+
+    it('stops holding the report once the worker has been silent for fifteen minutes', async () => {
+      const { caller, report, receiptId } = await reportWithReceipt('Reading abandoned');
+      await db.documentExtraction.create({
+        data: { receiptId, scanStatus: 'CLEAN', status: 'EXTRACTING' },
+      });
+      // Inside the cap: still in flight. `@updatedAt` is honoured when set explicitly.
+      await db.documentExtraction.update({
+        where: { receiptId },
+        data: { updatedAt: new Date(Date.now() - EXTRACTION_CAP_MS + 60_000) },
+      });
+      expect((await caller.report({ reportId: report.id })).extraction).toEqual({
+        inFlight: 1,
+        stale: 0,
+      });
+      await expect(caller.submit({ reportId: report.id })).rejects.toMatchObject({
+        code: 'PRECONDITION_FAILED',
+      });
+
+      // Past it: the row is disclosed as stale and no longer holds the submit.
+      await db.documentExtraction.update({
+        where: { receiptId },
+        data: { updatedAt: new Date(Date.now() - EXTRACTION_CAP_MS - 60_000) },
+      });
+      expect((await caller.report({ reportId: report.id })).extraction).toEqual({
+        inFlight: 0,
+        stale: 1,
+      });
+      expect(await submitOutcome(caller, report.id)).not.toMatch(/still being read/);
 
       await db.expenseReport.delete({ where: { id: report.id } }).catch(() => {});
     });

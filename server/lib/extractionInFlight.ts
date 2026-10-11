@@ -1,4 +1,5 @@
 import type { DocExtractStatus, DocScanStatus } from '@expenseos/db';
+import type { TenantDb } from '@/lib/db/prisma';
 
 /**
  * Is a receipt's reading still in progress — and should that hold the report?
@@ -83,10 +84,30 @@ export function summarizeExtractionProgress(
   return out;
 }
 
-// VeloExpense: `reportExtractionProgress` — the same summary read fresh off ExpenseOS's
-// `DocumentExtraction` rows, for `submit` — arrives with that table when extraction is
-// ported (Wave 3). Until then no receipt has a reading, and the report query summarises
-// the (absent) readings it already loaded.
+/** The summary for every receipt on a report, read fresh — what `submit` decides on.
+ *
+ *  VeloExpense: on VeloExpense's `document_extraction` (0056, w3-01), through the tenant's
+ *  client; its statuses are text under a CHECK, read here as ExpenseOS's enum types. */
+export async function reportExtractionProgress(
+  db: Pick<TenantDb, 'documentExtraction'>,
+  reportId: string,
+  now = new Date(),
+): Promise<ExtractionProgressSummary> {
+  const rows = await db.documentExtraction.findMany({
+    // VeloExpense: STORED receipts only, as the report detail reads them
+    // (`EXPENSE_DETAIL_INCLUDE`), so the screen's count and this refusal's agree.
+    where: { receipt: { status: 'STORED', expense: { reportId } } },
+    select: { scanStatus: true, status: true, error: true, updatedAt: true },
+  });
+  return summarizeExtractionProgress(
+    rows.map((r) => ({
+      ...r,
+      scanStatus: r.scanStatus as DocScanStatus,
+      status: r.status as DocExtractStatus,
+    })),
+    now,
+  );
+}
 
 /** The refusal's sentence. English only, like every other `submit` refusal — the
  *  workbench disables the button with a translated reason before this can be reached. */
