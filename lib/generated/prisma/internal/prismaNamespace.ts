@@ -393,6 +393,10 @@ export const ModelName = {
   ExpenseLineItem: 'ExpenseLineItem',
   Receipt: 'Receipt',
   DocumentExtraction: 'DocumentExtraction',
+  ExpenseDetermination: 'ExpenseDetermination',
+  ReceiptExternalId: 'ReceiptExternalId',
+  ExpenseExternalId: 'ExpenseExternalId',
+  AiUsage: 'AiUsage',
   TaxJurisdiction: 'TaxJurisdiction',
   User: 'User',
   BusinessUnit: 'BusinessUnit',
@@ -427,7 +431,7 @@ export type TypeMap<ExtArgs extends runtime.Types.Extensions.InternalArgs = runt
     omit: GlobalOmitOptions
   }
   meta: {
-    modelProps: "expenseCategory" | "glAccount" | "expenseReport" | "expense" | "expenseAllocation" | "expenseAttendee" | "expenseLineItem" | "receipt" | "documentExtraction" | "taxJurisdiction" | "user" | "businessUnit" | "externalIdSource" | "businessUnitExternalId" | "legalEntity" | "legalEntityExternalId" | "fxRate" | "mileageRate" | "mileageRateTier" | "mileageRateSubject" | "perDiemRate" | "currency" | "department" | "departmentExternalId" | "jobLevel" | "jobLevelExternalId" | "fiscalYear" | "fiscalYearExternalId"
+    modelProps: "expenseCategory" | "glAccount" | "expenseReport" | "expense" | "expenseAllocation" | "expenseAttendee" | "expenseLineItem" | "receipt" | "documentExtraction" | "expenseDetermination" | "receiptExternalId" | "expenseExternalId" | "aiUsage" | "taxJurisdiction" | "user" | "businessUnit" | "externalIdSource" | "businessUnitExternalId" | "legalEntity" | "legalEntityExternalId" | "fxRate" | "mileageRate" | "mileageRateTier" | "mileageRateSubject" | "perDiemRate" | "currency" | "department" | "departmentExternalId" | "jobLevel" | "jobLevelExternalId" | "fiscalYear" | "fiscalYearExternalId"
     txIsolationLevel: TransactionIsolationLevel
   }
   model: {
@@ -1094,6 +1098,302 @@ export type TypeMap<ExtArgs extends runtime.Types.Extensions.InternalArgs = runt
         count: {
           args: Prisma.DocumentExtractionCountArgs<ExtArgs>
           result: runtime.Types.Utils.Optional<Prisma.DocumentExtractionCountAggregateOutputType> | number
+        }
+      }
+    }
+    ExpenseDetermination: {
+      payload: Prisma.$ExpenseDeterminationPayload<ExtArgs>
+      fields: Prisma.ExpenseDeterminationFieldRefs
+      operations: {
+        findUnique: {
+          args: Prisma.ExpenseDeterminationFindUniqueArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ExpenseDeterminationPayload> | null
+        }
+        findUniqueOrThrow: {
+          args: Prisma.ExpenseDeterminationFindUniqueOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ExpenseDeterminationPayload>
+        }
+        findFirst: {
+          args: Prisma.ExpenseDeterminationFindFirstArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ExpenseDeterminationPayload> | null
+        }
+        findFirstOrThrow: {
+          args: Prisma.ExpenseDeterminationFindFirstOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ExpenseDeterminationPayload>
+        }
+        findMany: {
+          args: Prisma.ExpenseDeterminationFindManyArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ExpenseDeterminationPayload>[]
+        }
+        create: {
+          args: Prisma.ExpenseDeterminationCreateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ExpenseDeterminationPayload>
+        }
+        createMany: {
+          args: Prisma.ExpenseDeterminationCreateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        createManyAndReturn: {
+          args: Prisma.ExpenseDeterminationCreateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ExpenseDeterminationPayload>[]
+        }
+        delete: {
+          args: Prisma.ExpenseDeterminationDeleteArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ExpenseDeterminationPayload>
+        }
+        update: {
+          args: Prisma.ExpenseDeterminationUpdateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ExpenseDeterminationPayload>
+        }
+        deleteMany: {
+          args: Prisma.ExpenseDeterminationDeleteManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateMany: {
+          args: Prisma.ExpenseDeterminationUpdateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateManyAndReturn: {
+          args: Prisma.ExpenseDeterminationUpdateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ExpenseDeterminationPayload>[]
+        }
+        upsert: {
+          args: Prisma.ExpenseDeterminationUpsertArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ExpenseDeterminationPayload>
+        }
+        aggregate: {
+          args: Prisma.ExpenseDeterminationAggregateArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.AggregateExpenseDetermination>
+        }
+        groupBy: {
+          args: Prisma.ExpenseDeterminationGroupByArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.ExpenseDeterminationGroupByOutputType>[]
+        }
+        count: {
+          args: Prisma.ExpenseDeterminationCountArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.ExpenseDeterminationCountAggregateOutputType> | number
+        }
+      }
+    }
+    ReceiptExternalId: {
+      payload: Prisma.$ReceiptExternalIdPayload<ExtArgs>
+      fields: Prisma.ReceiptExternalIdFieldRefs
+      operations: {
+        findUnique: {
+          args: Prisma.ReceiptExternalIdFindUniqueArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ReceiptExternalIdPayload> | null
+        }
+        findUniqueOrThrow: {
+          args: Prisma.ReceiptExternalIdFindUniqueOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ReceiptExternalIdPayload>
+        }
+        findFirst: {
+          args: Prisma.ReceiptExternalIdFindFirstArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ReceiptExternalIdPayload> | null
+        }
+        findFirstOrThrow: {
+          args: Prisma.ReceiptExternalIdFindFirstOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ReceiptExternalIdPayload>
+        }
+        findMany: {
+          args: Prisma.ReceiptExternalIdFindManyArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ReceiptExternalIdPayload>[]
+        }
+        create: {
+          args: Prisma.ReceiptExternalIdCreateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ReceiptExternalIdPayload>
+        }
+        createMany: {
+          args: Prisma.ReceiptExternalIdCreateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        createManyAndReturn: {
+          args: Prisma.ReceiptExternalIdCreateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ReceiptExternalIdPayload>[]
+        }
+        delete: {
+          args: Prisma.ReceiptExternalIdDeleteArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ReceiptExternalIdPayload>
+        }
+        update: {
+          args: Prisma.ReceiptExternalIdUpdateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ReceiptExternalIdPayload>
+        }
+        deleteMany: {
+          args: Prisma.ReceiptExternalIdDeleteManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateMany: {
+          args: Prisma.ReceiptExternalIdUpdateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateManyAndReturn: {
+          args: Prisma.ReceiptExternalIdUpdateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ReceiptExternalIdPayload>[]
+        }
+        upsert: {
+          args: Prisma.ReceiptExternalIdUpsertArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ReceiptExternalIdPayload>
+        }
+        aggregate: {
+          args: Prisma.ReceiptExternalIdAggregateArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.AggregateReceiptExternalId>
+        }
+        groupBy: {
+          args: Prisma.ReceiptExternalIdGroupByArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.ReceiptExternalIdGroupByOutputType>[]
+        }
+        count: {
+          args: Prisma.ReceiptExternalIdCountArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.ReceiptExternalIdCountAggregateOutputType> | number
+        }
+      }
+    }
+    ExpenseExternalId: {
+      payload: Prisma.$ExpenseExternalIdPayload<ExtArgs>
+      fields: Prisma.ExpenseExternalIdFieldRefs
+      operations: {
+        findUnique: {
+          args: Prisma.ExpenseExternalIdFindUniqueArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ExpenseExternalIdPayload> | null
+        }
+        findUniqueOrThrow: {
+          args: Prisma.ExpenseExternalIdFindUniqueOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ExpenseExternalIdPayload>
+        }
+        findFirst: {
+          args: Prisma.ExpenseExternalIdFindFirstArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ExpenseExternalIdPayload> | null
+        }
+        findFirstOrThrow: {
+          args: Prisma.ExpenseExternalIdFindFirstOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ExpenseExternalIdPayload>
+        }
+        findMany: {
+          args: Prisma.ExpenseExternalIdFindManyArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ExpenseExternalIdPayload>[]
+        }
+        create: {
+          args: Prisma.ExpenseExternalIdCreateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ExpenseExternalIdPayload>
+        }
+        createMany: {
+          args: Prisma.ExpenseExternalIdCreateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        createManyAndReturn: {
+          args: Prisma.ExpenseExternalIdCreateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ExpenseExternalIdPayload>[]
+        }
+        delete: {
+          args: Prisma.ExpenseExternalIdDeleteArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ExpenseExternalIdPayload>
+        }
+        update: {
+          args: Prisma.ExpenseExternalIdUpdateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ExpenseExternalIdPayload>
+        }
+        deleteMany: {
+          args: Prisma.ExpenseExternalIdDeleteManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateMany: {
+          args: Prisma.ExpenseExternalIdUpdateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateManyAndReturn: {
+          args: Prisma.ExpenseExternalIdUpdateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ExpenseExternalIdPayload>[]
+        }
+        upsert: {
+          args: Prisma.ExpenseExternalIdUpsertArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ExpenseExternalIdPayload>
+        }
+        aggregate: {
+          args: Prisma.ExpenseExternalIdAggregateArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.AggregateExpenseExternalId>
+        }
+        groupBy: {
+          args: Prisma.ExpenseExternalIdGroupByArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.ExpenseExternalIdGroupByOutputType>[]
+        }
+        count: {
+          args: Prisma.ExpenseExternalIdCountArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.ExpenseExternalIdCountAggregateOutputType> | number
+        }
+      }
+    }
+    AiUsage: {
+      payload: Prisma.$AiUsagePayload<ExtArgs>
+      fields: Prisma.AiUsageFieldRefs
+      operations: {
+        findUnique: {
+          args: Prisma.AiUsageFindUniqueArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$AiUsagePayload> | null
+        }
+        findUniqueOrThrow: {
+          args: Prisma.AiUsageFindUniqueOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$AiUsagePayload>
+        }
+        findFirst: {
+          args: Prisma.AiUsageFindFirstArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$AiUsagePayload> | null
+        }
+        findFirstOrThrow: {
+          args: Prisma.AiUsageFindFirstOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$AiUsagePayload>
+        }
+        findMany: {
+          args: Prisma.AiUsageFindManyArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$AiUsagePayload>[]
+        }
+        create: {
+          args: Prisma.AiUsageCreateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$AiUsagePayload>
+        }
+        createMany: {
+          args: Prisma.AiUsageCreateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        createManyAndReturn: {
+          args: Prisma.AiUsageCreateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$AiUsagePayload>[]
+        }
+        delete: {
+          args: Prisma.AiUsageDeleteArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$AiUsagePayload>
+        }
+        update: {
+          args: Prisma.AiUsageUpdateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$AiUsagePayload>
+        }
+        deleteMany: {
+          args: Prisma.AiUsageDeleteManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateMany: {
+          args: Prisma.AiUsageUpdateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateManyAndReturn: {
+          args: Prisma.AiUsageUpdateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$AiUsagePayload>[]
+        }
+        upsert: {
+          args: Prisma.AiUsageUpsertArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$AiUsagePayload>
+        }
+        aggregate: {
+          args: Prisma.AiUsageAggregateArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.AggregateAiUsage>
+        }
+        groupBy: {
+          args: Prisma.AiUsageGroupByArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.AiUsageGroupByOutputType>[]
+        }
+        count: {
+          args: Prisma.AiUsageCountArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.AiUsageCountAggregateOutputType> | number
         }
       }
     }
@@ -2726,6 +3026,73 @@ export const DocumentExtractionScalarFieldEnum = {
 export type DocumentExtractionScalarFieldEnum = (typeof DocumentExtractionScalarFieldEnum)[keyof typeof DocumentExtractionScalarFieldEnum]
 
 
+export const ExpenseDeterminationScalarFieldEnum = {
+  id: 'id',
+  organizationId: 'organizationId',
+  expenseId: 'expenseId',
+  receiptIds: 'receiptIds',
+  proposed: 'proposed',
+  overrides: 'overrides',
+  model: 'model',
+  modelVersion: 'modelVersion',
+  confidence: 'confidence',
+  supersededById: 'supersededById',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+} as const
+
+export type ExpenseDeterminationScalarFieldEnum = (typeof ExpenseDeterminationScalarFieldEnum)[keyof typeof ExpenseDeterminationScalarFieldEnum]
+
+
+export const ReceiptExternalIdScalarFieldEnum = {
+  id: 'id',
+  organizationId: 'organizationId',
+  sourceId: 'sourceId',
+  sourceValue: 'sourceValue',
+  receiptId: 'receiptId',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt',
+  createdBy: 'createdBy',
+  updatedBy: 'updatedBy'
+} as const
+
+export type ReceiptExternalIdScalarFieldEnum = (typeof ReceiptExternalIdScalarFieldEnum)[keyof typeof ReceiptExternalIdScalarFieldEnum]
+
+
+export const ExpenseExternalIdScalarFieldEnum = {
+  id: 'id',
+  organizationId: 'organizationId',
+  sourceId: 'sourceId',
+  sourceValue: 'sourceValue',
+  expenseId: 'expenseId',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt',
+  createdBy: 'createdBy',
+  updatedBy: 'updatedBy'
+} as const
+
+export type ExpenseExternalIdScalarFieldEnum = (typeof ExpenseExternalIdScalarFieldEnum)[keyof typeof ExpenseExternalIdScalarFieldEnum]
+
+
+export const AiUsageScalarFieldEnum = {
+  id: 'id',
+  organizationId: 'organizationId',
+  feature: 'feature',
+  model: 'model',
+  inputTokens: 'inputTokens',
+  outputTokens: 'outputTokens',
+  costMicroUsd: 'costMicroUsd',
+  metered: 'metered',
+  receiptId: 'receiptId',
+  actorUserId: 'actorUserId',
+  requestId: 'requestId',
+  reportedAt: 'reportedAt',
+  createdAt: 'createdAt'
+} as const
+
+export type AiUsageScalarFieldEnum = (typeof AiUsageScalarFieldEnum)[keyof typeof AiUsageScalarFieldEnum]
+
+
 export const TaxJurisdictionScalarFieldEnum = {
   id: 'id',
   countryCode: 'countryCode',
@@ -3287,6 +3654,10 @@ export type GlobalOmitConfig = {
   expenseLineItem?: Prisma.ExpenseLineItemOmit
   receipt?: Prisma.ReceiptOmit
   documentExtraction?: Prisma.DocumentExtractionOmit
+  expenseDetermination?: Prisma.ExpenseDeterminationOmit
+  receiptExternalId?: Prisma.ReceiptExternalIdOmit
+  expenseExternalId?: Prisma.ExpenseExternalIdOmit
+  aiUsage?: Prisma.AiUsageOmit
   taxJurisdiction?: Prisma.TaxJurisdictionOmit
   user?: Prisma.UserOmit
   businessUnit?: Prisma.BusinessUnitOmit

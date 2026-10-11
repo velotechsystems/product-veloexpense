@@ -30,6 +30,7 @@ const h = vi.hoisted(() => ({
   }>,
   handlers: {} as Record<string, (...args: unknown[]) => unknown>,
   installShutdown: vi.fn(),
+  tenants: [] as Array<string | undefined>,
   jobQueues: {} as Record<string, string>,
   queueNames: [] as string[],
 }));
@@ -43,6 +44,21 @@ vi.mock('./handlers/example', () => ({
   handleExamplePing: (...args: unknown[]) => {
     h.handlers.handleExamplePing ??= vi.fn();
     return h.handlers.handleExamplePing(...args);
+  },
+}));
+
+vi.mock('./handlers/extract-receipt', () => ({
+  handleExtractReceipt: (...args: unknown[]) => {
+    h.handlers.handleExtractReceipt ??= vi.fn();
+    return h.handlers.handleExtractReceipt(...args);
+  },
+}));
+// VeloExpense: a tenant's job runs inside `inTenant` (./lib/tenant). Stubbed to run the
+// handler and record which tenant it was asked for; its own refusal is tested beside it.
+vi.mock('./lib/tenant', () => ({
+  inTenant: (data: { organizationId?: string }, run: () => Promise<unknown>) => {
+    h.tenants.push(data?.organizationId);
+    return run();
   },
 }));
 
@@ -222,8 +238,9 @@ describe('the whole handler registry', () => {
    */
   const REGISTRY: Array<[string, string]> = [
     ['example.ping', 'handleExamplePing'],
-    // VeloExpense: ExpenseOS's other twenty-three rows return as their handlers are ported
-    // (the three extraction jobs with w3-02).
+    ['expense.extractReceipt', 'handleExtractReceipt'],
+    // VeloExpense: ExpenseOS's other twenty-two rows return as their handlers are ported
+    // (the batch and joint-determination jobs with w3-02b).
   ];
 
   it('routes every job name to its own handler, with the payload untouched', async () => {
@@ -330,5 +347,18 @@ describe('what a queue reports about itself', () => {
     await boot();
     h.workers[0].listeners.completed?.({ name: 'example.ping', id: '1' });
     expect(String(log.mock.calls.at(-1)?.[0])).toContain('default');
+  });
+});
+
+describe('VeloExpense: a tenant\'s job runs as its tenant', () => {
+  it('hands the extraction job to inTenant with its payload, and nothing else does', async () => {
+    h.queueNames = ['default'];
+    h.jobQueues = { 'example.ping': 'default', 'expense.extractReceipt': 'default' };
+    h.tenants = [];
+    await boot();
+    const worker = h.workers.find((w) => w.name === 'default');
+    await worker?.processor({ name: 'expense.extractReceipt', data: { organizationId: 'org-1', receiptId: 'r1' } });
+    await worker?.processor({ name: 'example.ping', data: { message: 'hi' } });
+    expect(h.tenants).toEqual(['org-1']);
   });
 });

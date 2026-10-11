@@ -69,6 +69,7 @@ import {
   glAccountIdForCategory,
   Prisma,
   recomputeReportTotal,
+  recordOverrides,
   reportRollupFor,
   resolveExpenseFx,
   resolveIntakeCurrencyId,
@@ -80,7 +81,8 @@ import { permissions as P } from '@expenseos/rbac';
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 import { assertExpenseAllowance, CapReachedError } from '@/lib/billing/caps';
-import type { TenantDb } from '@/lib/db/prisma';
+import { afterCommit, currentTenantId, type TenantDb } from '@/lib/db/prisma';
+import { enqueue as enqueueJob } from '@expenseos/jobs';
 import { queryRunnerOf } from '@/lib/db/prisma-pg-bridge';
 import { getStorage } from '@/lib/storage';
 import { receiptKey, receiptPrefix } from '@/lib/storage/keys';
@@ -476,16 +478,22 @@ const optMinor = (v: bigint | string | null | undefined): bigint | null | undefi
  * Fire-and-forget: the write the caller just made is what matters, and losing an
  * override note is not worth failing a save the user already saw succeed.
  */
-function noteOverrides(
-  _db: import('@expenseos/db').PrismaClient,
-  _expenseId: string,
-  _patch: Record<string, string | null | undefined>,
-): void {
-  // VeloExpense: a no-op until receipt extraction is ported (Wave 3). ExpenseOS records
-  // these against the expense's current DETERMINATION (`recordOverrides`), and VeloExpense
-  // has no determinations yet — no extraction has proposed anything, so, in ExpenseOS's
-  // own words above, there is nothing to override. The call sites stay as they are so the
-  // extraction port only has to fill this body in.
+async function noteOverrides(
+  db: import('@expenseos/db').PrismaClient,
+  expenseId: string,
+  patch: Record<string, string | null | undefined>,
+): Promise<void> {
+  // VeloExpense: awaited, where ExpenseOS fires and forgets (`void recordOverrides(…)`).
+  // `db` here is the request's own tenant transaction (lib/db/prisma.ts), which commits when
+  // the procedure returns; a write left running past that would be refused. Still
+  // best-effort: a failure is logged, never thrown at the person's save.
+  await recordOverrides(db, expenseId, patch).catch((err) =>
+    console.warn(
+      `[expenses] recording overrides for ${expenseId} failed: ${
+        err instanceof Error ? err.message : String(err)
+      }`,
+    ),
+  );
 }
 
 /** ISO-4217 exponent for a code; 2 for anything unrecognised, because this feeds
@@ -1226,14 +1234,64 @@ async function pendingApproverByReport(
  * one (lib/expenses/service.ts `createReport`, which this mirrors).
  */
 /**
- * VeloExpense: ExpenseOS's job queue (`@expenseos/jobs`) carries the receipt-reading jobs —
- * the malware scan and extraction (`expense.extractReceipt`) and the joint determination
- * (`expense.determineExpense`). Both arrive with extraction (Wave 3); until then there is no
- * worker to hand them to, so the ported calls come here and nothing is queued.
+ * VeloExpense: hand a receipt-reading job to the worker (`@expenseos/jobs`), as the tenant
+ * the request runs as.
+ *
+ * ExpenseOS's routers call `enqueue` from `@expenseos/jobs` directly. Three things differ
+ * here, all plumbing:
+ *   · the payload carries `organizationId` — the worker runs each job under that tenant's
+ *     RLS scope (worker/src/lib/tenant.ts) and has no other way to know it;
+ *   · the batch (`expense.extractReceipt.batch`) and joint-determination
+ *     (`expense.determineExpense`) jobs arrive with w3-02b. Until then a batch is read one
+ *     receipt per job — the path ExpenseOS takes for a selection of up to
+ *     `BATCH_THRESHOLD_FILES` — and a determination is not queued;
+ *   · the hand-off waits for the COMMIT (`afterCommit`, lib/db/prisma.ts). A request runs
+ *     in one transaction here, so a job queued mid-request could start before the receipt
+ *     row it names is visible, find nothing, and do nothing; ExpenseOS has no request
+ *     transaction, so its enqueue is already after its write;
+ *   · the hand-off is bounded. BullMQ's connection retries a down queue forever
+ *     (`maxRetriesPerRequest: null`, which it requires), and an upload must not hang on it:
+ *     after ENQUEUE_TIMEOUT_MS it gives up. Best-effort, as every caller treats it: the
+ *     failure is logged here (the callers' own catch cannot see work that runs after the
+ *     commit), and the file stands and can be read again.
  */
+const ENQUEUE_TIMEOUT_MS = 5_000;
+
 async function enqueue(job: string, payload: Record<string, unknown>): Promise<void> {
-  void job;
-  void payload;
+  const organizationId = currentTenantId();
+  if (!organizationId) throw new Error(`enqueue ${job}: no tenant scope`);
+  const receiptIds =
+    job === 'expense.extractReceipt'
+      ? [payload.receiptId as string]
+      : job === 'expense.extractReceipt.batch'
+        ? (payload.receiptIds as string[])
+        : [];
+  if (receiptIds.length === 0) return; // expense.determineExpense: w3-02b
+  await afterCommit(async () => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timeout = new Promise<never>((_, reject) => {
+      timer = setTimeout(
+        () => reject(new Error(`the queue did not answer in ${ENQUEUE_TIMEOUT_MS}ms`)),
+        ENQUEUE_TIMEOUT_MS,
+      );
+    });
+    try {
+      await Promise.race([
+        Promise.all(
+          receiptIds.map((receiptId) => enqueueJob('expense.extractReceipt', { organizationId, receiptId })),
+        ),
+        timeout,
+      ]);
+    } catch (err) {
+      console.warn(
+        `[expenses] ${job} enqueue failed for ${receiptIds.length} receipt(s): ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+    } finally {
+      clearTimeout(timer);
+    }
+  });
 }
 
 /**
@@ -3242,7 +3300,7 @@ export const expensesRouter = router({
         where: { id: input.expenseId },
         select: { currency: { select: { code: true } } },
       });
-      noteOverrides(ctx.db, input.expenseId, {
+      await noteOverrides(ctx.db, input.expenseId, {
         merchant: input.merchant ?? undefined,
         placeText: input.placeText ?? undefined,
         date: input.date ? input.date.toISOString().slice(0, 10) : undefined,
@@ -3558,7 +3616,7 @@ export const expensesRouter = router({
       // must stop replacing it wholesale. One marker rather than per-line diffing:
       // the question the rebuild asks is "may I touch these lines", and that has a
       // single answer.
-      noteOverrides(ctx.db, input.expenseId, { lineItems: 'edited by hand' });
+      await noteOverrides(ctx.db, input.expenseId, { lineItems: 'edited by hand' });
       return created;
     }),
 
@@ -3676,7 +3734,7 @@ export const expensesRouter = router({
       );
       // Category/amount change → the expense tax + recoverable re-derive.
       await recomputeTotals(ctx.db, line.expenseId);
-      noteOverrides(ctx.db, line.expenseId, { lineItems: 'edited by hand' });
+      await noteOverrides(ctx.db, line.expenseId, { lineItems: 'edited by hand' });
       return { ok: true as const };
     }),
 
@@ -3706,7 +3764,7 @@ export const expensesRouter = router({
       // must stop replacing it wholesale. One marker rather than per-line diffing:
       // the question the rebuild asks is "may I touch these lines", and that has a
       // single answer.
-      noteOverrides(ctx.db, line.expenseId, { lineItems: 'edited by hand' });
+      await noteOverrides(ctx.db, line.expenseId, { lineItems: 'edited by hand' });
       return { ok: true as const };
     }),
 
@@ -3793,7 +3851,7 @@ export const expensesRouter = router({
       // handing the figure back to the engine, which is not an override at all —
       // hence the nulls, which clear any previous disagreement.
       const manual = input.taxSource === 'MANUAL';
-      noteOverrides(ctx.db, input.expenseId, {
+      await noteOverrides(ctx.db, input.expenseId, {
         taxGstHst: manual ? overrideAmount(input.taxGstHstMinor, code) : null,
         taxQst: manual ? overrideAmount(input.taxQstMinor, code) : null,
         taxPst: manual ? overrideAmount(input.taxPstMinor, code) : null,

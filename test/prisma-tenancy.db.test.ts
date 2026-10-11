@@ -16,7 +16,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { Pool } from 'pg';
 import { Prisma } from '@/lib/generated/prisma/client';
 import { createOrganization } from '@/lib/onboarding/provision';
-import { db, withTenantDb, TenantScopeError } from '@/lib/db/prisma';
+import { afterCommit, db, withTenantDb, withTenantStatements, TenantScopeError, currentTenantId } from '@/lib/db/prisma';
 
 const admin = new Pool({ connectionString: process.env.ADMIN_DATABASE_URL ?? process.env.DATABASE_URL });
 
@@ -162,5 +162,133 @@ describe('scope', () => {
           AND (column_default IS NULL OR column_default NOT LIKE '%app.current_org%')`,
     );
     expect(r.rows.map((x) => x.t)).toEqual([]);
+  });
+});
+
+describe('statement at a time — the worker (w3-02a)', () => {
+  /**
+   * A receipt job writes the reading's status and then waits on the model. Each write has to
+   * be COMMITTED when it returns — the screen and `submit` read it from other connections
+   * while the job is still running — and every one of them still runs as the tenant.
+   */
+  it('commits each write as it returns, visible to another connection before the job ends', async () => {
+    const seenMidJob = await withTenantStatements(A, async () => {
+      await db.expenseCategory.create({ data: { code: 'STMT_VISIBLE', label: { en: 'Visible' } } });
+      const [row] = (
+        await admin.query("SELECT count(*)::int AS n FROM expense_category WHERE code = 'STMT_VISIBLE'")
+      ).rows;
+      return row.n;
+    });
+    expect(seenMidJob).toBe(1);
+  });
+
+  it('runs every statement as the tenant: reads see only it, writes land in it', async () => {
+    const out = await withTenantStatements(A, async () => {
+      const mine = await db.expenseCategory.findMany({ select: { organizationId: true } });
+      const theirs = await db.expenseCategory.count({ where: { organizationId: B } });
+      const made = await db.expenseCategory.create({ data: { code: 'STMT_LANDS', label: { en: 'Lands' } } });
+      const [s] = await db.$queryRaw<{ s: string }[]>`SELECT current_setting('app.current_org', true) AS s`;
+      return { orgs: new Set(mine.map((c) => c.organizationId)), theirs, made: made.organizationId, raw: s.s };
+    });
+    expect(out.orgs).toEqual(new Set([A]));
+    expect(out.theirs).toBe(0);
+    expect(out.made).toBe(A);
+    expect(out.raw).toBe(A);
+  });
+
+  it('db.$transaction(fn) is one real transaction: a throw inside undoes its writes', async () => {
+    await expect(
+      withTenantStatements(A, () =>
+        db.$transaction(async () => {
+          await db.expenseCategory.create({ data: { code: 'STMT_ROLLED', label: { en: 'Rolled' } } });
+          throw new Error('boom');
+        }),
+      ),
+    ).rejects.toThrow('boom');
+    const [row] = (await admin.query("SELECT count(*)::int AS n FROM expense_category WHERE code = 'STMT_ROLLED'"))
+      .rows;
+    expect(row.n).toBe(0);
+  });
+
+  it('refuses the array form of $transaction, whose operations would already have run', async () => {
+    await expect(
+      withTenantStatements(A, async () => db.$transaction([db.expenseCategory.count()] as never)),
+    ).rejects.toBeInstanceOf(TenantScopeError);
+  });
+
+  it('names its tenant, and refuses a nested scope or a malformed id', async () => {
+    expect(await withTenantStatements(A, async () => currentTenantId())).toBe(A);
+    await expect(withTenantStatements(A, () => withTenantStatements(B, async () => 1))).rejects.toBeInstanceOf(
+      TenantScopeError,
+    );
+    await expect(withTenantDb(A, () => withTenantStatements(A, async () => 1))).rejects.toBeInstanceOf(
+      TenantScopeError,
+    );
+    await expect(withTenantStatements('not-a-uuid', async () => 1)).rejects.toBeInstanceOf(TenantScopeError);
+  });
+
+  it('ends with the job: db outside it throws again', async () => {
+    await withTenantStatements(A, async () => db.expenseCategory.count());
+    await expect(async () => db.expenseCategory.findMany()).rejects.toBeInstanceOf(TenantScopeError);
+  });
+});
+
+describe('afterCommit — handing work to another process (w3-02a)', () => {
+  /**
+   * A request runs in one transaction; a job it queues must not start before the rows it
+   * names are visible to the worker's own connection, and must not be queued at all for
+   * rows that were rolled back.
+   */
+  const count = async (code: string) =>
+    (await admin.query('SELECT count(*)::int AS n FROM expense_category WHERE code = $1', [code])).rows[0].n;
+
+  it('runs after the commit, when another connection can already see the write', async () => {
+    let seen = -1;
+    await withTenantDb(A, async () => {
+      await db.expenseCategory.create({ data: { code: 'AC_SEEN', label: { en: 'Seen' } } });
+      await afterCommit(async () => {
+        seen = await count('AC_SEEN');
+      });
+      expect(seen).toBe(-1); // not yet: still inside the transaction
+    });
+    expect(seen).toBe(1);
+  });
+
+  it('runs nothing queued by a transaction that rolled back', async () => {
+    const ran: string[] = [];
+    await expect(
+      withTenantDb(A, async () => {
+        await db.expenseCategory.create({ data: { code: 'AC_ROLLED', label: { en: 'Rolled' } } });
+        await afterCommit(async () => {
+          ran.push('job');
+        });
+        throw new Error('boom');
+      }),
+    ).rejects.toThrow('boom');
+    expect(ran).toEqual([]);
+    expect(await count('AC_ROLLED')).toBe(0);
+  });
+
+  it('runs at once with no transaction to wait for, and never throws at its caller', async () => {
+    const ran: string[] = [];
+    await afterCommit(async () => {
+      ran.push('outside');
+    });
+    await withTenantStatements(A, () =>
+      afterCommit(async () => {
+        ran.push('statements');
+      }),
+    );
+    const warn = (await import('vitest')).vi.spyOn(console, 'warn').mockImplementation(() => {});
+    await expect(
+      withTenantDb(A, () =>
+        afterCommit(async () => {
+          throw new Error('queue down');
+        }),
+      ),
+    ).resolves.toBeUndefined();
+    expect(String(warn.mock.calls.at(-1)?.[0])).toMatch(/queue down/);
+    warn.mockRestore();
+    expect(ran).toEqual(['outside', 'statements']);
   });
 });

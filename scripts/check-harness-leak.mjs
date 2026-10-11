@@ -87,6 +87,12 @@ const HARNESS_PATHS = [
 const ALLOWED = new Set(['scripts/check-harness-leak.mjs']);
 
 const SKIP_DIRS = new Set(['node_modules', '.next', '.git', 'test-results', 'playwright-report']);
+/**
+ * Build output, by path (w3-00): the worker's esbuild bundle, gitignored. It carries
+ * third-party code — the Anthropic SDK's `/v1/sessions/` routes read as the device VM's
+ * mount root — that no commit can contain, and it is rebuilt from the sources scanned here.
+ */
+const SKIP_PATHS = new Set(['worker/dist']);
 
 /**
  * Scanned extensions, plus `Dockerfile` by name. Markdown is absent on purpose —
@@ -99,6 +105,7 @@ function walk(dir, out = []) {
   for (const name of readdirSync(dir)) {
     if (SKIP_DIRS.has(name)) continue;
     const full = join(dir, name);
+    if (SKIP_PATHS.has(relative(ROOT, full).split(sep).join('/'))) continue;
     if (statSync(full).isDirectory()) walk(full, out);
     else out.push(full);
   }

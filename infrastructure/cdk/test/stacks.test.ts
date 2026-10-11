@@ -260,10 +260,20 @@ describe('the queue (w3-00)', () => {
     expect(value).toContain('resolve:secretsmanager');
   });
 
-  it('the worker runs the bundle with the queue URL and nothing else', () => {
+  it('the worker runs the bundle with the queue, veloapp\'s login and the model key — nothing else', () => {
     const w = secretsOf('veloexpense-dev-worker');
     expect(w.command).toEqual(['node', 'worker/dist/main.mjs']);
-    expect(w.secrets).toEqual(['REDIS_URL']);
+    // w3-02a: the database as veloapp (RLS-bound, like the web task) and the Anthropic key.
+    expect([...w.secrets].sort()).toEqual(['ANTHROPIC_API_KEY', 'DB_PASSWORD', 'DB_USER', 'REDIS_URL']);
+  });
+
+  it('only the worker receives the Anthropic key', () => {
+    const holders = resources(s.compute, 'AWS::ECS::TaskDefinition')
+      .filter(([, r]) =>
+        json((r.Properties as { ContainerDefinitions: unknown }).ContainerDefinitions).includes('ANTHROPIC_API_KEY'),
+      )
+      .map(([, r]) => (r.Properties as { Family: string }).Family);
+    expect(holders).toEqual(['veloexpense-dev-worker']);
   });
 
   it('the web task can enqueue', () => {
@@ -280,11 +290,43 @@ describe('the queue (w3-00)', () => {
     expect(svc.Properties.LoadBalancers).toBeUndefined();
   });
 
-  it('the worker execution role reads the queue URL only', () => {
+  it('the worker execution role reads the queue URL, veloapp\'s login and the model key only', () => {
     const [, p] = resources(s.compute, 'AWS::IAM::Policy').find(([id]) => id.startsWith('WorkerExecutionRole'))!;
     const text = json(p.Properties);
     expect(text).toContain('veloexpense/dev/redis-url');
-    expect(text).not.toMatch(/AuthSecret|WorkerSecret|AppDb|MasterDb|secret-encryption-key|google-oauth|smtp/);
+    expect(text).toContain('veloexpense/dev/anthropic-api-key');
+    expect(text).toMatch(/AppDb/);
+    expect(text).not.toMatch(/AuthSecret|WorkerSecret|MasterDb|rds-master|secret-encryption-key|google-oauth|smtp/);
+  });
+
+  it('the worker may read a receipt and its scan tag, and change nothing (w3-02a)', () => {
+    const [, p] = resources(s.compute, 'AWS::IAM::Policy').find(([id]) => id.startsWith('WorkerTaskRole'))!;
+    const text = json(p.Properties);
+    expect(text).toContain('s3:GetObject');
+    expect(text).toContain('s3:GetObjectTagging');
+    expect(text).toContain('veloexpense-dev-receipts-535079144866/*');
+    expect(text).not.toMatch(/s3:PutObject|s3:DeleteObject|s3:ListBucket|kms:Encrypt|kms:GenerateDataKey/);
+  });
+
+  it('the worker reads nothing before GuardDuty has scanned it (d42)', () => {
+    const [[, td]] = resources(s.compute, 'AWS::ECS::TaskDefinition').filter(
+      ([, r]) => (r.Properties as { Family: string }).Family === 'veloexpense-dev-worker',
+    );
+    expect(json(td.Properties)).toContain(json({ Name: 'S3_MALWARE_SCAN', Value: 'guardduty' }));
+  });
+});
+
+describe('malware scanning (w3-02a, d42)', () => {
+  it('GuardDuty scans the receipts bucket and tags each object with its verdict', () => {
+    const [[, plan]] = resources(s.storage, 'AWS::GuardDuty::MalwareProtectionPlan');
+    expect(json(plan.Properties.ProtectedResource)).toContain('ReceiptsBucket');
+    expect(plan.Properties.Actions).toEqual({ Tagging: { Status: 'ENABLED' } });
+  });
+
+  it('the plan waits for its role\'s permissions, or ownership validation fails', () => {
+    const [[, plan]] = resources(s.storage, 'AWS::GuardDuty::MalwareProtectionPlan');
+    const deps = (plan as unknown as { DependsOn?: string[] }).DependsOn ?? [];
+    expect(deps.some((d) => d.startsWith('ReceiptsMalwareScanRoleDefaultPolicy'))).toBe(true);
   });
 });
 

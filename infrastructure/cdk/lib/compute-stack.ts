@@ -50,6 +50,7 @@ import {
 } from 'aws-cdk-lib';
 import type { Construct } from 'constructs';
 import { REDIS_URL_SECRET } from './cache-stack';
+import { ANTHROPIC_API_KEY_SECRET } from './security-stack';
 import type { VeloExpenseConfig } from './config';
 import { SHARED_APP_PORT, importShared } from './shared';
 
@@ -102,6 +103,8 @@ export class ComputeStack extends Stack {
     const smtp = byName('Smtp', config.smtpSecretName);
     // Composed by CacheStack (rediss:// with the AUTH token); read by name, as ExpenseOS does.
     const redisUrl = byName('RedisUrl', `${config.secretPrefix}/${REDIS_URL_SECRET}`);
+    // Made by a person (MANUAL_SECRETS): the VeloExpense Anthropic key, worker only (d40).
+    const anthropicKey = byName('AnthropicApiKey', `${config.secretPrefix}/${ANTHROPIC_API_KEY_SECRET}`);
 
     /** Partial-ARN wildcard for a secret imported by NAME (its ARN ends in a random suffix). */
     const nameArn = (name: string) =>
@@ -137,9 +140,12 @@ export class ComputeStack extends Stack {
       // The web app enqueues (receipt extraction, w3-02).
       nameArn(`${config.secretPrefix}/${REDIS_URL_SECRET}`),
     ]);
-    // The worker: the queue's URL. Each job brings the secrets it needs with its port.
+    // The worker: the queue's URL; and, with receipt reading (w3-02a), veloapp's login —
+    // the same RLS-bound role the web app uses — and the Anthropic key. Nothing else.
     const workerExecRole = executionRole('WorkerExecutionRole', 'worker', [
       nameArn(`${config.secretPrefix}/${REDIS_URL_SECRET}`),
+      props.appDbSecretArn,
+      nameArn(`${config.secretPrefix}/${ANTHROPIC_API_KEY_SECRET}`),
     ]);
     // The database task: the master login and veloapp's (to set its password). Nothing else.
     const dbExecRole = executionRole('DbExecutionRole', 'db', [props.masterDbSecretArn, props.appDbSecretArn]);
@@ -172,9 +178,20 @@ export class ComputeStack extends Stack {
       });
     const dbTaskRole = plainTaskRole('DbTaskRole', 'db');
     const tickTaskRole = plainTaskRole('TickTaskRole', 'tick');
-    // No grants yet: `example.ping` touches nothing. Receipt reading adds S3 read and
-    // the key it needs, with the handlers that use them (w3-02).
+    // Receipt reading (w3-02a): READ a receipt and its GuardDuty scan tag (d42), and decrypt
+    // it (the bucket is SSE-KMS under the master key). No write, no delete, no list: the
+    // worker never changes or enumerates a stored file. ExpenseOS grants its worker the
+    // same reads (GetObject, GetObjectTagging).
     const workerTaskRole = plainTaskRole('WorkerTaskRole', 'worker');
+    workerTaskRole.addToPrincipalPolicy(
+      new iam.PolicyStatement({
+        actions: ['s3:GetObject', 's3:GetObjectTagging'],
+        resources: [`${receiptsArn}/*`],
+      }),
+    );
+    workerTaskRole.addToPrincipalPolicy(
+      new iam.PolicyStatement({ actions: ['kms:Decrypt'], resources: [props.masterKeyArn] }),
+    );
 
     // ── Logs ──────────────────────────────────────────────────────────────────
     const logGroup = (lid: string, name: string) =>
@@ -330,9 +347,24 @@ export class ComputeStack extends Stack {
     workerTaskDef.addContainer('worker', {
       image,
       command: ['node', 'worker/dist/main.mjs'],
-      environment: { NODE_ENV: 'production' },
+      environment: {
+        NODE_ENV: 'production',
+        // Receipt reading (w3-02a). The scan gate is on (d42): no receipt is read before
+        // GuardDuty has tagged it clean. The model is the extraction package's default
+        // unless RECEIPT_EXTRACTION_MODEL is set here.
+        S3_MALWARE_SCAN: 'guardduty',
+        STORAGE_DRIVER: 's3',
+        STORAGE_BUCKET: `${prefix}-receipts-${config.accountId}`,
+        STORAGE_REGION: config.region,
+        // One job at a time per queue is the most this task's pool is asked for.
+        PG_POOL_MAX: '5',
+        ...dbEnv,
+      },
       secrets: {
         REDIS_URL: ecs.Secret.fromSecretsManager(redisUrl),
+        DB_USER: ecs.Secret.fromSecretsManager(appDb, 'username'),
+        DB_PASSWORD: ecs.Secret.fromSecretsManager(appDb, 'password'),
+        ANTHROPIC_API_KEY: ecs.Secret.fromSecretsManager(anthropicKey),
       },
       logging: ecs.LogDrivers.awsLogs({ logGroup: logGroup('WorkerLogs', 'worker'), streamPrefix: 'worker' }),
     });

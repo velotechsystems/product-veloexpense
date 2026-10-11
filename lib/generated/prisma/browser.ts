@@ -67,6 +67,27 @@ export type Receipt = Prisma.ReceiptModel
  */
 export type DocumentExtraction = Prisma.DocumentExtractionModel
 /**
+ * Model ExpenseDetermination
+ * ExpenseOS's ExpenseDetermination (0057, w3-02a): what a reading pass concluded for the
+ * whole expense, and the field-level human edits made after it.
+ */
+export type ExpenseDetermination = Prisma.ExpenseDeterminationModel
+/**
+ * Model ReceiptExternalId
+ * ExpenseOS's ReceiptExternalId (0057, w3-02a): a number printed on one document.
+ */
+export type ReceiptExternalId = Prisma.ReceiptExternalIdModel
+/**
+ * Model ExpenseExternalId
+ * ExpenseOS's ExpenseExternalId (0057, w3-02a): the number a determination settled on.
+ */
+export type ExpenseExternalId = Prisma.ExpenseExternalIdModel
+/**
+ * Model AiUsage
+ * VeloLedger's ai_usage (0057, w3-02a, d43): one row per model call. Not from ExpenseOS.
+ */
+export type AiUsage = Prisma.AiUsageModel
+/**
  * Model TaxJurisdiction
  * GLOBAL and platform-seeded (d24): the app role can read it and cannot write it.
  */

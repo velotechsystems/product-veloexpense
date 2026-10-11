@@ -35,6 +35,8 @@
 import {
   DeleteObjectCommand,
   GetObjectCommand,
+  GetObjectTaggingCommand,
+  NoSuchKey,
   HeadObjectCommand,
   PutObjectCommand,
   S3Client,
@@ -88,6 +90,25 @@ export interface StoredObjectHead {
   contentType: string | null;
 }
 
+/**
+ * The outcome of a bounded read (`Storage.read`, `guardedRead`).
+ *
+ * Ported from ExpenseOS's `@expenseos/storage` types (550b2945, Wave 3 w3-02a).
+ */
+export type BoundedRead =
+  | { ok: true; data: Uint8Array }
+  | { ok: false; reason: 'missing' }
+  | { ok: false; reason: 'too-large'; size?: number };
+
+/**
+ * GuardDuty Malware Protection for S3's verdict on an object, as the worker's scan gate
+ * reads it. Ported from ExpenseOS (550b2945).
+ */
+export type MalwareScanStatus = 'clean' | 'infected' | 'pending' | 'unavailable';
+
+/** The object tag GuardDuty Malware Protection for S3 writes its verdict to. */
+export const GUARDDUTY_SCAN_TAG = 'GuardDutyMalwareScanStatus';
+
 export interface Storage {
   presignUpload(key: string, contentType: string, options?: UploadOptions): Promise<PresignedUpload>;
   presignDownload(key: string, filename?: string, options?: DownloadOptions): Promise<string>;
@@ -118,6 +139,23 @@ export interface Storage {
    * takes a stream when it is given a length, which a file has.
    */
   putFile(key: string, localPath: string, contentType: string): Promise<void>;
+  /**
+   * Read an object's bytes, never more than `maxBytes`: the stream is abandoned at
+   * `maxBytes` + 1 whatever the object's declared size. A missing object is `missing`, any
+   * other failure throws.
+   *
+   * VeloExpense (w3-02a): the worker reads a receipt to send it to the model, the first
+   * thing in this product that reads an object back through the app. Ported from
+   * ExpenseOS's `StorageClient.read`; the worker reaches it through `guardedRead`
+   * (`./guardedRead`), which HEADs first.
+   */
+  read(key: string, maxBytes: number): Promise<BoundedRead>;
+  /**
+   * Read the object's GuardDuty Malware Protection scan-status tag. Maps the
+   * `GuardDutyMalwareScanStatus` object tag to a {@link MalwareScanStatus}.
+   * FAIL-CLOSED: any tag-read error resolves to `'unavailable'` (never `'clean'`).
+   */
+  getMalwareScanStatus(key: string): Promise<MalwareScanStatus>;
 }
 
 /* ── in-memory driver (tests) ──────────────────────────────────────────────── */
@@ -136,14 +174,10 @@ export class MemoryStorage implements Storage {
   }
 
   /**
-   * Test helper: the stored bytes.
+   * Test helper: the stored bytes, whole.
    *
-   * NOT on the `Storage` interface. Nothing in the product reads an object back
-   * — receipts are served to the browser by presigned URL and never pass
-   * through the app — so putting a read on the interface would be an unused
-   * method the S3 driver has to implement. VX5-12 part 2 adds one when the
-   * receipt bundle actually needs to read objects; until then this is a test
-   * affordance beside `put` and `has`, which are the same thing.
+   * The product's read is `read` (w3-02a, the worker's receipt download), which is
+   * bounded; this stays a test affordance beside `put` and `has`.
    */
   body(key: string): Uint8Array | null {
     return this.objects.get(key)?.body ?? null;
@@ -180,6 +214,29 @@ export class MemoryStorage implements Storage {
     // Reads the file whole, which is right HERE and wrong in the S3 driver: this
     // one already holds every object in a Map, so a stream would buy nothing.
     this.objects.set(key, { body: new Uint8Array(await readFile(localPath)), contentType });
+  }
+
+  /** Test scan verdicts by key; an object with none set reads as `clean`. */
+  private readonly scanVerdicts = new Map<string, MalwareScanStatus>();
+
+  /** Test helper: what GuardDuty's tag would say about `key`. */
+  setScanStatus(key: string, status: MalwareScanStatus) {
+    this.scanVerdicts.set(key, status);
+  }
+
+  async read(key: string, maxBytes: number): Promise<BoundedRead> {
+    if (!Number.isSafeInteger(maxBytes) || maxBytes <= 0) {
+      throw new RangeError(`read maxBytes must be a positive integer; got ${maxBytes}`);
+    }
+    const object = this.objects.get(key);
+    if (!object) return { ok: false, reason: 'missing' };
+    if (object.body.byteLength > maxBytes) return { ok: false, reason: 'too-large' };
+    return { ok: true, data: object.body };
+  }
+
+  async getMalwareScanStatus(key: string): Promise<MalwareScanStatus> {
+    if (!this.objects.has(key)) return 'unavailable';
+    return this.scanVerdicts.get(key) ?? 'clean';
   }
 }
 
@@ -267,6 +324,94 @@ export class S3Storage implements Storage {
       }),
     );
   }
+
+  /** Ported from ExpenseOS's S3 `read` (550b2945). */
+  async read(key: string, maxBytes: number): Promise<BoundedRead> {
+    if (!Number.isSafeInteger(maxBytes) || maxBytes <= 0) {
+      throw new RangeError(`read maxBytes must be a positive integer; got ${maxBytes}`);
+    }
+    let body: unknown;
+    try {
+      const res = await this.client.send(new GetObjectCommand({ Bucket: this.bucket, Key: key }));
+      body = res.Body;
+    } catch (e) {
+      // The SDK reports a missing object as `NoSuchKey` on GET and as `NotFound` on HEAD
+      // (see `head()`), hence the different class.
+      if (e instanceof NoSuchKey) return { ok: false, reason: 'missing' };
+      throw e;
+    }
+    // In Node the SDK's body is a `Readable` (an `IncomingMessage` by default), which is
+    // async-iterable. Anything else is a response we cannot bound, so refuse it rather than
+    // fall back to an unbounded collect.
+    if (!isAsyncIterable(body)) {
+      throw new TypeError('GetObject returned a body that cannot be streamed');
+    }
+    const chunks: Uint8Array[] = [];
+    let total = 0;
+    for await (const part of body) {
+      // `ArrayBuffer.isView`, not `instanceof Uint8Array`: a `Buffer` from another realm
+      // (the jsdom test environment, for one) fails `instanceof` while being bytes.
+      if (!ArrayBuffer.isView(part)) {
+        destroy(body);
+        throw new TypeError('GetObject body yielded a non-binary chunk');
+      }
+      const chunk = new Uint8Array(part.buffer, part.byteOffset, part.byteLength);
+      total += chunk.byteLength;
+      if (total > maxBytes) {
+        // Stop pulling. Returning out of the loop already destroys a `Readable` (its async
+        // iterator's `return()` does), but destroying it explicitly does not rest on that.
+        destroy(body);
+        return { ok: false, reason: 'too-large' };
+      }
+      chunks.push(chunk);
+    }
+    const data = new Uint8Array(total);
+    let offset = 0;
+    for (const chunk of chunks) {
+      data.set(chunk, offset);
+      offset += chunk.byteLength;
+    }
+    return { ok: true, data };
+  }
+
+  /** Ported from ExpenseOS's S3 `getMalwareScanStatus` (550b2945). */
+  async getMalwareScanStatus(key: string): Promise<MalwareScanStatus> {
+    let value: string | undefined;
+    try {
+      const res = await this.client.send(
+        new GetObjectTaggingCommand({ Bucket: this.bucket, Key: key }),
+      );
+      value = res.TagSet?.find((t) => t.Key === GUARDDUTY_SCAN_TAG)?.Value;
+    } catch {
+      // Tag read failed (transport/auth/object gone) — fail closed.
+      return 'unavailable';
+    }
+    switch (value) {
+      case 'NO_THREATS_FOUND':
+        return 'clean';
+      case 'THREATS_FOUND':
+        return 'infected';
+      case undefined:
+        // No scan-status tag yet — GuardDuty hasn't finished scanning.
+        return 'pending';
+      default:
+        // ACCESS_DENIED / UNSUPPORTED / FAILED / anything unexpected — fail closed.
+        return 'unavailable';
+    }
+  }
+}
+
+function isAsyncIterable(value: unknown): value is AsyncIterable<unknown> {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    typeof (value as { [Symbol.asyncIterator]?: unknown })[Symbol.asyncIterator] === 'function'
+  );
+}
+
+function destroy(body: unknown): void {
+  const d = (body as { destroy?: unknown }).destroy;
+  if (typeof d === 'function') d.call(body);
 }
 
 /* ── factory ───────────────────────────────────────────────────────────────── */

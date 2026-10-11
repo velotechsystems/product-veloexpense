@@ -135,6 +135,23 @@ export const EXPORTED: Readonly<Record<string, ExportedTable>> = {
   // document, and the reading is what put amounts on their expenses — an export without
   // it could not explain where those amounts came from. No column holds a secret.
   document_extraction: { file: 'document-extractions.csv' },
+  // w3-02a (0057): what each reading pass concluded for an expense and what a person changed
+  // afterwards, and the transaction numbers merchants printed. All the tenant's own records.
+  expense_determination: { file: 'expense-determinations.csv' },
+  receipt_external_id: { file: 'receipt-external-ids.csv' },
+  expense_external_id: { file: 'expense-external-ids.csv' },
+  // w3-02a (0057, d43): the model calls made on the tenant's documents — what was read,
+  // when, with which model, and how many tokens. The tenant's own usage record.
+  ai_usage: {
+    file: 'ai-usage.csv',
+    redact: {
+      cost_micro_usd:
+        "Velotech's own provider cost for the call, an informational estimate from its rate " +
+        'table. It is not what the tenant is charged — receipt reading is included in the ' +
+        'plan, and credits are priced by the platform — so exporting it would state a price ' +
+        'the tenant never paid.',
+    },
+  },
 
   /* ── policy, approvals, delegation ────────────────────────────────────── */
   expense_policy: { file: 'expense-policies.csv' },
