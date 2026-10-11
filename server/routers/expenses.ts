@@ -75,7 +75,12 @@ import {
   resolveIntakeCurrencyId,
 } from '@expenseos/db';
 import { tipMinorOf, tipPayload, totalTipMinor } from '@expenseos/expense-lines';
-import { type GroupCandidate, groupDocuments } from '@expenseos/receipt-extraction';
+import {
+  type GroupCandidate,
+  groupDocuments,
+  matchStatementToExpenses,
+  type StatementLine,
+} from '@expenseos/receipt-extraction';
 import { buildReportRollup, fxRateMapFrom, getCurrency, withFxOverride } from '@expenseos/money';
 import { permissions as P } from '@expenseos/rbac';
 import { TRPCError } from '@trpc/server';
@@ -1727,9 +1732,6 @@ export const expensesRouter = router({
       return after.find((row) => row.id === input.violationId) ?? null;
     }),
 
-  // VeloExpense: ExpenseOS's `markExtractionReviewed` signs off a receipt's reading, which
-  // arrives with extraction (Wave 3).
-
   /** Sign off on a low-confidence receipt extraction — the reviewer confirms the
    *  extracted details on the expense, clearing the verification nudge. Toggles:
    *  a second call un-reviews. Owner-gated (the report's submitter).
@@ -2697,8 +2699,217 @@ export const expensesRouter = router({
       };
     }),
 
-  // VeloExpense: `statementTargets` and `statementApply` match a statement's EXTRACTED
-  // lines to expenses, and arrive with extraction (Wave 3).
+  /**
+   * Which expenses on this report a statement looks like evidence for.
+   *
+   * Derived from the statement's own extracted lines, matched against each expense's
+   * total (and its merchant, as a tie-breaker for a trip where three taxis cost the
+   * same). A recommendation only: a statement page routinely lists charges that belong
+   * to another report or to no report at all.
+   */
+  statementTargets: withPermission(P.expense.report.readOwn)
+    .input(z.object({ receiptId: z.string().uuid() }))
+    .query(async ({ ctx, input }) => {
+      const receipt = await ctx.db.receipt.findUnique({
+        where: { id: input.receiptId },
+        select: {
+          id: true,
+          filename: true,
+          kind: true,
+          expenseId: true,
+          extraction: { select: { data: true } },
+        },
+      });
+      if (!receipt?.expenseId) throw new TRPCError({ code: 'NOT_FOUND' });
+      const home = await assertExpenseOwned(ctx, receipt.expenseId);
+
+      const expenses = await ctx.db.expense.findMany({
+        where: { reportId: home.reportId },
+        select: {
+          id: true,
+          merchant: true,
+          amountMinor: true,
+          // `precision` is the column; there is no `exponent` on Currency, and
+          // selecting one made this query throw for every caller — the whole
+          // apply-a-statement dialog failed on open.
+          // VeloExpense: the column is `minorUnit` (0001's `currency.minor_unit`).
+          currency: { select: { code: true, minorUnit: true } },
+          receipts: { select: { s3Key: true } },
+        },
+      });
+
+      const data = (receipt.extraction?.data ?? {}) as Record<string, unknown>;
+      const rawLines = Array.isArray(data.lineItems) ? data.lineItems : [];
+      const lines: StatementLine[] = rawLines.map((l) => {
+        const row = (l ?? {}) as Record<string, unknown>;
+        return {
+          description: typeof row.description === 'string' ? row.description : '',
+          amount: typeof row.amount === 'number' && Number.isFinite(row.amount) ? row.amount : null,
+        };
+      });
+
+      // The statement's own key, so an expense that already carries a copy is shown as
+      // already covered rather than offered again.
+      const selfKey = (
+        await ctx.db.receipt.findUniqueOrThrow({
+          where: { id: receipt.id },
+          select: { s3Key: true },
+        })
+      ).s3Key;
+      const baseKey = selfKey.split('#')[0];
+
+      const matches = matchStatementToExpenses(
+        lines,
+        expenses.map((e) => ({
+          expenseId: e.id,
+          merchant: e.merchant,
+          // Major units, which is what the statement's lines are in.
+          total: Number(e.amountMinor) / 10 ** (e.currency.minorUnit ?? 2),
+          currencyCode: e.currency.code,
+        })),
+      );
+      const matchByExpense = new Map(matches.map((m) => [m.expenseId, m]));
+
+      return {
+        filename: receipt.filename,
+        kind: receipt.kind,
+        items: expenses.map((e) => ({
+          expenseId: e.id,
+          merchant: e.merchant,
+          amountMinor: e.amountMinor.toString(),
+          currencyCode: e.currency.code,
+          /** Pre-ticked in the UI. */
+          recommended: matchByExpense.has(e.id),
+          matchedLine: matchByExpense.get(e.id)?.line ?? null,
+          strength: matchByExpense.get(e.id)?.strength ?? null,
+          /** Already holds this statement — the source expense, or a prior apply. */
+          alreadyHas: e.receipts.some((r) => r.s3Key.split('#')[0] === baseKey),
+        })),
+      };
+    }),
+
+  /**
+   * Put a statement on every expense it evidences.
+   *
+   * A COPY per expense, not a shared row. `Receipt.s3Key` is unique and
+   * `receiptRemove` deletes the object, so several rows pointing at one key would let
+   * removing the statement from one expense blank it for all the others.
+   *
+   * The extraction is copied too, not re-run: it is the same page, and a second vision
+   * call per expense would bill for reading it again to reach the same answer.
+   */
+  statementApply: withPermission(P.expense.report.updateOwn)
+    .input(
+      z.object({
+        receiptId: z.string().uuid(),
+        expenseIds: z.array(z.string().uuid()).min(1).max(50),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const source = await ctx.db.receipt.findUnique({
+        where: { id: input.receiptId },
+        select: {
+          id: true,
+          s3Key: true,
+          filename: true,
+          contentType: true,
+          sizeBytes: true,
+          kind: true,
+          expenseId: true,
+          extraction: {
+            select: { data: true, confidence: true, model: true, modelVersion: true },
+          },
+        },
+      });
+      if (!source?.expenseId) throw new TRPCError({ code: 'NOT_FOUND' });
+      // Applying a statement ADDS a document to each target, so it is an attach.
+      const home = await assertExpenseAttachable(ctx, source.expenseId);
+
+      const baseKey = source.s3Key.split('#')[0];
+      const targets = await ctx.db.expense.findMany({
+        where: { id: { in: input.expenseIds }, reportId: home.reportId },
+        select: { id: true, receipts: { select: { s3Key: true } } },
+      });
+      // Silently skipping an out-of-report id would apply a statement to fewer
+      // expenses than the user ticked and say nothing.
+      if (targets.length !== new Set(input.expenseIds).size) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'A statement can only be applied to expenses on the same report.',
+        });
+      }
+
+      let applied = 0;
+      for (const target of targets) {
+        if (target.id === source.expenseId) continue;
+        // Idempotent: re-applying must not stack copies of the same page.
+        if (target.receipts.some((r) => r.s3Key.split('#')[0] === baseKey)) continue;
+
+        // The `#` suffix keeps the copies under one recognisable base key, which is
+        // how "already has this statement" is answered without another table.
+        const copyKey = `${baseKey}#${target.id}`;
+        try {
+          // VeloExpense: VeloExpense's storage (`getStorage`). The copy stays under the
+          // source's key, so under the tenant's and the report's prefix (`receiptPrefix`).
+          await getStorage().copy(source.s3Key, copyKey);
+        } catch (err) {
+          throw new TRPCError({
+            code: 'INTERNAL_SERVER_ERROR',
+            message: `Could not copy the statement: ${err instanceof Error ? err.message : String(err)}`,
+          });
+        }
+        await withAudit(
+          ctx.db,
+          {
+            action: auditActions.report.receiptAttach,
+            entityType: 'Expense',
+            entityId: target.id,
+            actor: actorOf(ctx),
+            details: { filename: source.filename, statementOf: source.expenseId },
+          },
+          async (tx) => {
+            const created = await tx.receipt.create({
+              data: {
+                expenseId: target.id,
+                s3Key: copyKey,
+                filename: source.filename,
+                contentType: source.contentType,
+                sizeBytes: source.sizeBytes,
+                kind: source.kind,
+                uploadedById: ctx.session.user.id,
+                // VeloExpense: a receipt row is a document only once its object is in
+                // storage (`status`, d29). This one was copied there, server-side, above.
+                status: 'STORED',
+              },
+              select: { id: true },
+            });
+            // The same reading, carried across. Marked CLEAN + DONE because the source
+            // object already passed the malware gate and was already extracted; the
+            // copy is the same bytes.
+            if (source.extraction) {
+              await tx.documentExtraction.create({
+                data: {
+                  receiptId: created.id,
+                  scanStatus: 'CLEAN',
+                  status: 'EXTRACTED',
+                  model: source.extraction.model,
+                  modelVersion: source.extraction.modelVersion,
+                  confidence: source.extraction.confidence,
+                  data: (source.extraction.data ?? Prisma.DbNull) as Prisma.InputJsonValue,
+                },
+              });
+            }
+          },
+        );
+        applied += 1;
+        // The target now holds a different document set — including the statement's
+        // settled amount and, for a foreign charge, the rate it implies.
+        // VeloExpense: through the router's `enqueue`, which names the tenant and waits for
+        // the commit.
+        await enqueue('expense.determineExpense', { expenseId: target.id }).catch(() => {});
+      }
+      return { applied };
+    }),
 
   /**
    * Move a receipt to a different expense on the same report.
@@ -2950,7 +3161,7 @@ export const expensesRouter = router({
 
       // Confidence threshold below which an extraction is flagged for human
       // verification in the FE (Platform Settings; default 0.7).
-      // VeloExpense: no platform setting yet — ExpenseOS's default, until extraction (Wave 3).
+      // VeloExpense: no Platform Settings — ExpenseOS's default, as a constant.
       const [fxRows, readerCurrency, violations, posting] = await Promise.all([
         ctx.db.fxRate.findMany({ orderBy: { fetchedAt: 'desc' } }),
         // Folded into the same Promise.all so reading it costs no extra round trip.

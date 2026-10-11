@@ -776,8 +776,9 @@ describe('receipt uploads', () => {
         } as never),
       ).rejects.toMatchObject(refused);
       expect(db.receipt.create).not.toHaveBeenCalled();
-      // VeloExpense: `statementApply` — and its refusal here — arrives with extraction
-      // (Wave 3). `startExtraction` arrived with the workbench (w2-02b).
+      await expect(
+        c.statementApply({ receiptId: U('7'), expenseIds: [U('8')] } as never),
+      ).rejects.toMatchObject(refused);
       const reread = await c.startExtraction({ receiptIds: [U('7')] }).catch((e: unknown) => e);
       expect(reread).toMatchObject({
         code: 'BAD_REQUEST',

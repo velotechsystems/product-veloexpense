@@ -22,7 +22,7 @@ import { createTenantHarness, type TenantHarness } from '../__test-helpers__/ten
  *
  * VeloExpense: ExpenseOS's `expenses.expenses.db.test.ts`, the header-edit and delete
  * blocks (w2-08b), and the grouping block (w2-02b; its extraction cases with 0056, w3-01).
- * The statement block arrives with the statement procedures.
+ * The statement block arrived with the statement procedures (w3-04).
  * The cases are ExpenseOS's; the harness is VeloExpense's (`createTenantHarness`: the
  * suite's own tenant, every call inside it under RLS, storage in memory, and
  * `lastAudit` reading `audit_entry`). Currencies are keyed by their ISO code.
@@ -482,6 +482,148 @@ describe.skipIf(!process.env.DATABASE_URL)('expenses on a report (integration)',
       }
     });
   });
+  // ── statementTargets ────────────────────────────────────────────────────────
+
+  describe('which expenses a statement evidences', () => {
+    it('recommends the expense whose total matches a statement line', async () => {
+      /**
+       * The match is on the amount, in major units — the statement's own lines are in
+       * major units and the column is minor, and getting that wrong recommends nothing
+       * or everything.
+       */
+      const { expenseIds } = await scenario(2);
+      const statement = await addReceipt(
+        expenseIds[0],
+        { kind: 'BANK_STATEMENT' },
+        { lineItems: [{ description: 'MERCHANT 1', amount: 10 }] },
+      );
+      const result = await makeCaller(RW, ownerId).statementTargets({ receiptId: statement.id });
+      const first = result.items.find((i: { expenseId: string }) => i.expenseId === expenseIds[0]);
+      expect(first.recommended).toBe(true);
+      expect(first.matchedLine).toContain('MERCHANT 1');
+    });
+
+    it('offers every expense on the report, recommended or not', async () => {
+      // A recommendation only: the person decides, so they need the whole list.
+      const { expenseIds } = await scenario(2);
+      const statement = await addReceipt(
+        expenseIds[0],
+        { kind: 'BANK_STATEMENT' },
+        { lineItems: [{ description: 'MERCHANT 1', amount: 10 }] },
+      );
+      const result = await makeCaller(RW, ownerId).statementTargets({ receiptId: statement.id });
+      expect(result.items).toHaveLength(2);
+      const second = result.items.find((i: { expenseId: string }) => i.expenseId === expenseIds[1]);
+      expect(second.recommended).toBe(false);
+      expect(second.matchedLine).toBeNull();
+    });
+
+    it('marks the expense the statement already sits on as covered', async () => {
+      /**
+       * The statement's own home expense — offering it again would attach a second copy
+       * of the same page.
+       */
+      const { expenseIds } = await scenario(2);
+      const statement = await addReceipt(
+        expenseIds[0],
+        { kind: 'BANK_STATEMENT' },
+        { lineItems: [{ description: 'MERCHANT 1', amount: 10 }] },
+      );
+      const result = await makeCaller(RW, ownerId).statementTargets({ receiptId: statement.id });
+      const home = result.items.find((i: { expenseId: string }) => i.expenseId === expenseIds[0]);
+      expect(home.alreadyHas).toBe(true);
+    });
+
+    it('recognises a prior apply by its key, not by row identity', async () => {
+      /**
+       * A copy carries the same base key with a `#suffix`, because `Receipt.s3Key` is
+       * unique. Comparing rows would offer the same page again on every visit.
+       */
+      const { expenseIds } = await scenario(2);
+      // Unique per run: `s3Key` is a unique column and the test database persists.
+      const base = `stmt/${Math.random().toString(36).slice(2)}.pdf`;
+      const statement = await addReceipt(
+        expenseIds[0],
+        { kind: 'BANK_STATEMENT', s3Key: base },
+        { lineItems: [{ description: 'MERCHANT 2', amount: 20 }] },
+      );
+      await addReceipt(expenseIds[1], { kind: 'BANK_STATEMENT', s3Key: `${base}#2` });
+      const result = await makeCaller(RW, ownerId).statementTargets({ receiptId: statement.id });
+      const other = result.items.find((i: { expenseId: string }) => i.expenseId === expenseIds[1]);
+      expect(other.alreadyHas).toBe(true);
+    });
+
+    it('returns the document’s own name and kind, for the dialog’s title', async () => {
+      const { expenseIds } = await scenario();
+      const statement = await addReceipt(
+        expenseIds[0],
+        { kind: 'BANK_STATEMENT' },
+        { lineItems: [] },
+      );
+      const result = await makeCaller(RW, ownerId).statementTargets({ receiptId: statement.id });
+      expect(result.filename).toBe('doc.pdf');
+      expect(result.kind).toBe('BANK_STATEMENT');
+    });
+
+    it('recommends nothing for a document with no extraction', async () => {
+      // Nothing has been read yet; recommending on no evidence would be a guess.
+      const { expenseIds } = await scenario(2);
+      const statement = await addReceipt(expenseIds[0], { kind: 'BANK_STATEMENT' });
+      const result = await makeCaller(RW, ownerId).statementTargets({ receiptId: statement.id });
+      expect(result.items.every((i: { recommended: boolean }) => i.recommended === false)).toBe(
+        true,
+      );
+    });
+
+    it('ignores a line with no usable amount', async () => {
+      /**
+       * A statement's own header rows extract as text with no amount; treating those as
+       * a zero would match every zero-amount expense.
+       */
+      const { expenseIds } = await scenario(2);
+      const statement = await addReceipt(
+        expenseIds[0],
+        { kind: 'BANK_STATEMENT' },
+        { lineItems: [{ description: 'CLOSING BALANCE' }, { description: null, amount: 'x' }] },
+      );
+      const result = await makeCaller(RW, ownerId).statementTargets({ receiptId: statement.id });
+      expect(result.items.every((i: { recommended: boolean }) => i.recommended === false)).toBe(
+        true,
+      );
+    });
+
+    it('refuses a receipt that is not attached to anything', async () => {
+      /**
+       * `Receipt.expenseId` is nullable for the moment between the upload landing and
+       * the row being wired to its expense — a statement in that state has no report
+       * whose expenses it could be applied to.
+       */
+      const { expenseIds } = await scenario();
+      const orphan = await addReceipt(expenseIds[0]);
+      await db.receipt.update({ where: { id: orphan.id }, data: { expenseId: null } });
+      await expect(
+        makeCaller(RW, ownerId).statementTargets({ receiptId: orphan.id }),
+      ).rejects.toThrow();
+    });
+
+    it('refuses a receipt id that does not exist', async () => {
+      await expect(
+        makeCaller(RW, ownerId).statementTargets({
+          receiptId: '00000000-0000-7000-8000-0000000000fb',
+        }),
+      ).rejects.toThrow();
+    });
+
+    it('refuses somebody else’s document', async () => {
+      if (strangerId === ownerId) return;
+      const { expenseIds } = await scenario();
+      const statement = await addReceipt(expenseIds[0], { kind: 'BANK_STATEMENT' });
+      await expect(
+        makeCaller(RW, strangerId).statementTargets({ receiptId: statement.id }),
+      ).rejects.toThrow();
+    });
+  });
+
   // ── receiptGroupingSuggestions ──────────────────────────────────────────────
 
   describe('suggesting which documents are the same charge', () => {
