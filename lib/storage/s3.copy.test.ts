@@ -76,6 +76,17 @@ describe('copy', () => {
     expect(input.Key).toBe('org/o/receipts/r/s.pdf#e2');
     expect(String(input.CopySource)).toBe(encodeURIComponent('receipts/org/o/receipts/r/s.pdf'));
   });
+
+  it('VeloExpense: starts the copy with no tags, so the web role never writes a scan verdict', async () => {
+    // S3 copies the source's tags by default, and a receipt's tag is GuardDuty's verdict.
+    // Copying it needs tagging permissions the web role must not have; GuardDuty tags the
+    // copy itself. Dev's first statement apply failed without this (w3-04).
+    const s3 = new AwsS3Client(base);
+    await s3.copy('org/o/receipts/r/s.pdf', 'org/o/receipts/r/s.pdf#e2');
+    const input = (sent.at(-1) as CopyObjectCommand).input as unknown as Record<string, unknown>;
+    expect(input.TaggingDirective).toBe('REPLACE');
+    expect(input.Tagging).toBeUndefined();
+  });
 });
 
 describe('VeloExpense: the memory driver copies too', () => {

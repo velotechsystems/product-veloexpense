@@ -355,6 +355,16 @@ export class S3Storage implements Storage {
          */
         CopySource: encodeURIComponent(`${this.bucket}/${fromKey}`),
         Key: toKey,
+        /**
+         * VeloExpense: the copy starts with NO tags. S3 copies the source's tags by default,
+         * and every receipt carries GuardDuty's scan verdict as a tag — copying it needs
+         * `s3:GetObjectTagging` and `s3:PutObjectTagging`, which the web role does not hold,
+         * and the first statement applied on dev failed on exactly that (w3-04). Granting
+         * them would let the web app write a "clean" verdict onto any receipt, which is
+         * the one thing the scan gate must not trust it to do. GuardDuty scans the copy as
+         * a new object and tags it itself.
+         */
+        TaggingDirective: 'REPLACE',
       }),
     );
   }
