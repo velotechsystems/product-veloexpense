@@ -130,6 +130,11 @@ export const EXPORTED: Readonly<Record<string, ExportedTable>> = {
     // files archive, and without it a receipt bundle is a folder of filenames
     // nobody can attach back to an expense.
   },
+  // w3-01 (0056): what was read off each receipt, and who signed the reading off. Nothing
+  // redacted: `data` and `raw_response` are the model's reading of the tenant's own
+  // document, and the reading is what put amounts on their expenses — an export without
+  // it could not explain where those amounts came from. No column holds a secret.
+  document_extraction: { file: 'document-extractions.csv' },
 
   /* ── policy, approvals, delegation ────────────────────────────────────── */
   expense_policy: { file: 'expense-policies.csv' },

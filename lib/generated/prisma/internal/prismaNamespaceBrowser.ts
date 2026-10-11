@@ -59,6 +59,7 @@ export const ModelName = {
   ExpenseAttendee: 'ExpenseAttendee',
   ExpenseLineItem: 'ExpenseLineItem',
   Receipt: 'Receipt',
+  DocumentExtraction: 'DocumentExtraction',
   TaxJurisdiction: 'TaxJurisdiction',
   User: 'User',
   BusinessUnit: 'BusinessUnit',
@@ -257,6 +258,27 @@ export const ReceiptScalarFieldEnum = {
 } as const
 
 export type ReceiptScalarFieldEnum = (typeof ReceiptScalarFieldEnum)[keyof typeof ReceiptScalarFieldEnum]
+
+
+export const DocumentExtractionScalarFieldEnum = {
+  id: 'id',
+  organizationId: 'organizationId',
+  receiptId: 'receiptId',
+  scanStatus: 'scanStatus',
+  status: 'status',
+  model: 'model',
+  modelVersion: 'modelVersion',
+  confidence: 'confidence',
+  data: 'data',
+  rawResponse: 'rawResponse',
+  error: 'error',
+  reviewedAt: 'reviewedAt',
+  reviewedBy: 'reviewedBy',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+} as const
+
+export type DocumentExtractionScalarFieldEnum = (typeof DocumentExtractionScalarFieldEnum)[keyof typeof DocumentExtractionScalarFieldEnum]
 
 
 export const TaxJurisdictionScalarFieldEnum = {

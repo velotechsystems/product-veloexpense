@@ -21,9 +21,8 @@ import { createTenantHarness, type TenantHarness } from '../__test-helpers__/ten
  *     receipts that already share one expense — that suggestion IS the current state.
  *
  * VeloExpense: ExpenseOS's `expenses.expenses.db.test.ts`, the header-edit and delete
- * blocks (w2-08b), and the grouping block's cases that read no extraction (w2-02b). The
- * statement block, and the grouping cases that compare extractions, arrive with extraction
- * (Wave 3).
+ * blocks (w2-08b), and the grouping block (w2-02b; its extraction cases with 0056, w3-01).
+ * The statement block arrives with the statement procedures.
  * The cases are ExpenseOS's; the harness is VeloExpense's (`createTenantHarness`: the
  * suite's own tenant, every call inside it under RLS, storage in memory, and
  * `lastAudit` reading `audit_entry`). Currencies are keyed by their ISO code.
@@ -90,17 +89,17 @@ describe.skipIf(!process.env.DATABASE_URL)('expenses on a report (integration)',
   };
 
   /**
-   * A receipt on an expense.
+   * A receipt on an expense, optionally with a completed extraction.
    *
-   * VeloExpense: without ExpenseOS's optional extraction — VeloExpense has no
-   * `DocumentExtraction` until Wave 3, and the blocks that read one are not ported here.
+   * VeloExpense: ExpenseOS's, on VeloExpense's `document_extraction` (0056, w3-01).
    */
   const addReceipt = async (
     expenseId: string,
     over: Record<string, unknown> = {},
+    extraction?: Record<string, unknown>,
   ): Promise<{ id: string; s3Key: string }> => {
     const s3Key = (over.s3Key as string) ?? `key-${Math.random().toString(36).slice(2)}.pdf`;
-    return db.receipt.create({
+    const receipt = await db.receipt.create({
       data: {
         expenseId,
         filename: 'doc.pdf',
@@ -112,6 +111,18 @@ describe.skipIf(!process.env.DATABASE_URL)('expenses on a report (integration)',
       },
       select: { id: true, s3Key: true },
     });
+    if (extraction) {
+      await db.documentExtraction.create({
+        data: {
+          receiptId: receipt.id,
+          status: 'EXTRACTED',
+          model: 'test',
+          data: extraction,
+          confidence: 0.95,
+        },
+      });
+    }
+    return receipt;
   };
 
   beforeEach(() => {
@@ -474,10 +485,76 @@ describe.skipIf(!process.env.DATABASE_URL)('expenses on a report (integration)',
   // ── receiptGroupingSuggestions ──────────────────────────────────────────────
 
   describe('suggesting which documents are the same charge', () => {
-    // VeloExpense: ExpenseOS's "suggests merging two documents that describe one charge",
-    // "says nothing about two documents already sharing an expense", "says nothing about
-    // unrelated charges" and "names each document, so the suggestion can be judged" give
-    // each receipt an extraction to compare; they arrive with extraction (Wave 3).
+    const extraction = (over: Record<string, unknown> = {}) => ({
+      vendor: 'Blue Bottle',
+      date: '2026-07-01',
+      total: 42.5,
+      currencyCode: 'CAD',
+      ...over,
+    });
+    /** VeloExpense: only a receipt verified in storage is read, so these are STORED. */
+    const STORED = { status: 'STORED' };
+
+    it('suggests merging two documents that describe one charge', async () => {
+      /**
+       * A restaurant bill and its card copy arrive as two expenses each carrying the
+       * full total — the double-claim this exists to catch.
+       */
+      const { reportId, expenseIds } = await scenario(2);
+      await addReceipt(expenseIds[0], STORED, extraction());
+      await addReceipt(expenseIds[1], STORED, extraction());
+      const result = await makeCaller(RW, ownerId).receiptGroupingSuggestions({ reportId });
+      expect(result.items.length).toBeGreaterThan(0);
+      expect(result.items[0].documents).toHaveLength(2);
+    });
+
+    it('says nothing about two documents already sharing an expense', async () => {
+      /**
+       * That IS the merge. Suggesting it again would be a permanent, unactionable
+       * banner on every report with a bill and a tip slip on one line.
+       */
+      const { reportId, expenseIds } = await scenario(1);
+      await addReceipt(expenseIds[0], STORED, extraction());
+      await addReceipt(expenseIds[0], STORED, extraction());
+      const result = await makeCaller(RW, ownerId).receiptGroupingSuggestions({ reportId });
+      expect(result.items).toHaveLength(0);
+    });
+
+    it('says nothing about unrelated charges', async () => {
+      const { reportId, expenseIds } = await scenario(2);
+      await addReceipt(expenseIds[0], STORED, extraction());
+      await addReceipt(
+        expenseIds[1],
+        STORED,
+        extraction({ vendor: 'Air Canada', total: 482.1, date: '2026-07-14' }),
+      );
+      const result = await makeCaller(RW, ownerId).receiptGroupingSuggestions({ reportId });
+      expect(result.items).toHaveLength(0);
+    });
+
+    it('names each document, so the suggestion can be judged', async () => {
+      /**
+       * A merge destroys an expense. The filename, the vendor and the expense's own
+       * merchant are what let somebody agree with it rather than trust it.
+       */
+      const { reportId, expenseIds } = await scenario(2);
+      await addReceipt(expenseIds[0], { ...STORED, filename: 'bill.pdf' }, extraction());
+      await addReceipt(expenseIds[1], { ...STORED, filename: 'card-copy.pdf' }, extraction());
+      const result = await makeCaller(RW, ownerId).receiptGroupingSuggestions({ reportId });
+      const names = result.items[0].documents.map((d: { filename: string }) => d.filename);
+      expect(names).toContain('bill.pdf');
+      expect(names).toContain('card-copy.pdf');
+      expect(result.items[0].documents[0].expenseMerchant).toBeTruthy();
+    });
+
+    it('reads no receipt that has not reached storage (VeloExpense)', async () => {
+      // A PENDING row may name an object that was never PUT; its reading is not evidence.
+      const { reportId, expenseIds } = await scenario(2);
+      await addReceipt(expenseIds[0], STORED, extraction());
+      await addReceipt(expenseIds[1], {}, extraction());
+      const result = await makeCaller(RW, ownerId).receiptGroupingSuggestions({ reportId });
+      expect(result.items).toHaveLength(0);
+    });
 
     it('ignores a document nothing has read yet', async () => {
       // Without an extraction there is no evidence to compare.

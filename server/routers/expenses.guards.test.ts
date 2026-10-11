@@ -411,8 +411,46 @@ describe('report-level guards', () => {
   // could never accept", the expense/expenses wording, the three unresolved-category cases
   // and "does not invent a coding rule when NetSuite is not installed") pin a guard VeloExpense
   // does not have: its coding gate is the lifecycle's (UD-2, only with a connected ledger),
-  // covered in `test/lifecycle.db.test.ts`. "waits for a receipt still being read" comes with
-  // extraction (Wave 3).
+  // covered in `test/lifecycle.db.test.ts`.
+
+  it('waits for a receipt still being read, ahead of every other content check', async () => {
+    /**
+     * A late reading rewrites the amounts, so every check below it — rates, tax, total,
+     * coding, policy — is provisional until it lands. The coding gap is set up here too,
+     * and the sentence has to be the reading's: telling the submitter to code an expense
+     * whose amount is about to change would send them to fix the wrong thing first.
+     *
+     * VeloExpense: there is no NetSuite coding gate to set up (see above), so the checks
+     * that must not be reached are the policy pass and the lifecycle's transition.
+     */
+    const db = makeDb();
+    db.expenseReport.findUnique.mockResolvedValue({
+      id: REPORT,
+      submitterId: ME,
+      status: 'DRAFT',
+      totalMinor: 10_000n,
+      expenses: [],
+    });
+    db.expense.count.mockResolvedValue(1);
+    db.documentExtraction.findMany.mockResolvedValue([
+      { scanStatus: 'CLEAN', status: 'EXTRACTING', error: null, updatedAt: new Date() },
+      { scanStatus: 'SCANNING', status: 'PENDING', error: null, updatedAt: new Date() },
+      // Parked by the worker — not in flight, not counted.
+      {
+        scanStatus: 'CLEAN',
+        status: 'PENDING',
+        error: 'extraction not configured',
+        updatedAt: new Date(),
+      },
+    ]);
+    const c = await callerFor(db, [P.expense.report.createOwn]);
+    await expect(c.submit({ reportId: REPORT })).rejects.toMatchObject({
+      code: 'PRECONDITION_FAILED',
+      message: expect.stringMatching(/^2 receipts are still being read\./),
+    });
+    expect(policyPass).not.toHaveBeenCalled();
+    expect(submitThroughLifecycle).not.toHaveBeenCalled();
+  });
 
   it('VeloExpense: refuses an unjustified warning before the transition (d34)', async () => {
     // ExpenseOS's gate, on VeloExpense's policy pass: the refusal carries the result, and

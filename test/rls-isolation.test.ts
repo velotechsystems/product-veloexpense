@@ -2529,6 +2529,83 @@ describe('RLS tenant isolation', () => {
     await admin.query(`DELETE FROM department WHERE label->>'en' LIKE 'Dept 0054 %'`);
   });
 
+  /* ── Receipt readings (Wave 3, migration 0056) ──────────────────────────────
+   *
+   * A reading is as private as the receipt it reads, and cannot be hung off another
+   * tenant's receipt (the composite key 0056 adds to `receipt`).
+   */
+  it("receipt readings are tenant-isolated, and cannot read another tenant's receipt", async () => {
+    const seed = async (org: string, label: string) =>
+      withOrg(org, async (tx) => {
+        const user = (await tx.query('SELECT id FROM app_user WHERE organization_id = $1 LIMIT 1', [org])).rows[0]
+          .id as string;
+        const report = (
+          await tx.query(
+            `INSERT INTO expense_report (organization_id, title, currency_code, submitter_id)
+             VALUES ($1, $2, 'CAD', $3) RETURNING id`,
+            [org, `Reading ${label}`, user],
+          )
+        ).rows[0].id as string;
+        const expense = (
+          await tx.query(`INSERT INTO expense (organization_id, report_id, currency_code) VALUES ($1, $2, 'CAD') RETURNING id`, [
+            org,
+            report,
+          ])
+        ).rows[0].id as string;
+        const receipt = (
+          await tx.query(
+            `INSERT INTO receipt (organization_id, expense_id, s3_key, filename, content_type, uploaded_by_id)
+             VALUES ($1, $2, $3, 'r.pdf', 'application/pdf', $4) RETURNING id`,
+            [org, expense, `org/${org}/receipts/${report}/r.pdf`, user],
+          )
+        ).rows[0].id as string;
+        await tx.query(
+          `INSERT INTO document_extraction (organization_id, receipt_id, status, data) VALUES ($1, $2, 'EXTRACTED', $3)`,
+          [org, receipt, JSON.stringify({ vendor: `Vendor ${label}` })],
+        );
+        // A second receipt with no reading yet, so the key below fails on the TENANT and
+        // not on the one-reading-per-receipt rule.
+        const bare = (
+          await tx.query(
+            `INSERT INTO receipt (organization_id, expense_id, s3_key, filename, content_type, uploaded_by_id)
+             VALUES ($1, $2, $3, 'bare.pdf', 'application/pdf', $4) RETURNING id`,
+            [org, expense, `org/${org}/receipts/${report}/bare.pdf`, user],
+          )
+        ).rows[0].id as string;
+        return { receipt, bare };
+      });
+    const a = await seed(orgA, 'A');
+    const b = await seed(orgB, 'B');
+
+    for (const [org, label, own] of [
+      [orgA, 'A', a],
+      [orgB, 'B', b],
+    ] as const) {
+      const rows = await withOrg(org, (tx) => tx.query(`SELECT receipt_id, data->>'vendor' AS v FROM document_extraction`));
+      expect(rows.rows).toEqual([{ receipt_id: own.receipt, v: `Vendor ${label}` }]);
+    }
+
+    // WITH CHECK: naming the other tenant is refused outright.
+    await expect(
+      withOrg(orgB, (tx) =>
+        tx.query(`INSERT INTO document_extraction (organization_id, receipt_id) VALUES ($1, $2)`, [orgA, a.receipt]),
+      ),
+    ).rejects.toThrow(/row-level security|violates/i);
+    // Composite FK: B's own row may not read A's receipt.
+    await expect(
+      withOrg(orgB, (tx) =>
+        tx.query(`INSERT INTO document_extraction (organization_id, receipt_id) VALUES ($1, $2)`, [orgB, a.bare]),
+      ),
+    ).rejects.toThrow(/foreign key/i);
+
+    const viaPlatform = await withPlatformRead((tx) => tx.query('SELECT count(*)::int AS n FROM document_extraction'));
+    expect(viaPlatform.rows[0].n).toBe(0);
+    const blind = await withoutOrg((tx) => tx.query('SELECT count(*)::int AS n FROM document_extraction'));
+    expect(blind.rows[0].n).toBe(0);
+
+    await admin.query(`DELETE FROM expense_report WHERE title LIKE 'Reading %'`);
+  });
+
   /* ── export requests (VX5-12, migration 0041) ─────────────────────────────
    *
    * The ordinary tenant claim, and then the two things specific to this table,

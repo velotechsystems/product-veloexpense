@@ -11,11 +11,9 @@ import { createTenantHarness, type TenantHarness } from '../__test-helpers__/ten
  *   - markExtractionReviewed stamps / clears reviewedAt (toggle),
  *   - only the report owner can mark it. Gated on DATABASE_URL.
  *
- * VeloExpense: ported with the workbench (w2-02b). There is no `DocumentExtraction` until
- * extraction (Wave 3), so ExpenseOS's cases that create one and read it back — the threshold
- * and the low-confidence reading on `report()` and on the approver's view, and the toggle —
- * arrive with it. What holds today: `report()` carries the threshold (ExpenseOS's default)
- * and a receipt with no reading, and the sign-off is the owner's alone.
+ * VeloExpense: ExpenseOS's cases on VeloExpense's harness and `document_extraction` (0056,
+ * w3-01). Its last case reads the approver's report view (`expenseApprovals.report`), which
+ * VeloExpense has not ported yet; it arrives with that view.
  */
 
 vi.mock('@/auth', () => ({ auth: vi.fn(async () => null) }));
@@ -66,6 +64,10 @@ describe.skipIf(!process.env.DATABASE_URL)('extraction review (integration)', ()
       select: { id: true },
     });
     receiptId = receipt.id;
+    // A completed but low-confidence extraction (0.50 < the 0.70 default).
+    await db.documentExtraction.create({
+      data: { receiptId, status: 'EXTRACTED', scanStatus: 'CLEAN', confidence: 0.5 },
+    });
   });
 
   afterAll(async () => {
@@ -73,19 +75,27 @@ describe.skipIf(!process.env.DATABASE_URL)('extraction review (integration)', ()
     await h?.end();
   });
 
-  it('report() exposes the threshold, and a receipt nothing has read', async () => {
+  const extractionOf = async () => {
     const detail = await expenses.report({ reportId });
-    expect(detail.extractionReviewThreshold).toBe(0.7);
-    const receipt = detail.expenses[0].receipts.find((r: { id: string }) => r.id === receiptId);
-    expect(receipt).toBeDefined();
-    expect(receipt.extraction).toBeNull();
+    return {
+      threshold: detail.extractionReviewThreshold as number,
+      ext: detail.expenses[0].receipts.find((r: { id: string }) => r.id === receiptId)?.extraction,
+    };
+  };
+
+  it('report() exposes the threshold and an unreviewed low-confidence extraction', async () => {
+    const { threshold, ext } = await extractionOf();
+    expect(threshold).toBe(0.7);
+    expect(ext.confidence).toBeCloseTo(0.5);
+    expect(ext.reviewedAt).toBeNull();
   });
 
-  it('lets the owner sign off', async () => {
-    await expect(expenses.markExtractionReviewed({ receiptId })).resolves.toEqual({ ok: true });
-    await expect(
-      expenses.markExtractionReviewed({ receiptId, reviewed: false }),
-    ).resolves.toEqual({ ok: true });
+  it('marks the extraction reviewed, then clears it (toggle)', async () => {
+    await expenses.markExtractionReviewed({ receiptId });
+    expect((await extractionOf()).ext.reviewedAt).not.toBeNull();
+
+    await expenses.markExtractionReviewed({ receiptId, reviewed: false });
+    expect((await extractionOf()).ext.reviewedAt).toBeNull();
   });
 
   it('refuses a non-owner', async () => {

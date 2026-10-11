@@ -20,6 +20,7 @@ export default defineConfig({
       { find: /^@expenseos\/money$/, replacement: r('packages/money/src/index.ts') },
       { find: /^@expenseos\/tax$/, replacement: r('packages/tax/src/index.ts') },
       { find: /^@expenseos\/expense-lines$/, replacement: r('packages/expense-lines/src/index.ts') },
+      { find: /^@expenseos\/receipt-extraction$/, replacement: r('packages/receipt-extraction/src/index.ts') },
       { find: /^@expenseos\/db$/, replacement: r('packages/db/src/index.ts') },
       { find: /^@\//, replacement: r('') },
     ],

@@ -284,9 +284,45 @@ model Receipt {
   uploadedById   String   @map("uploaded_by_id") @db.Uuid
   uploadedBy     User     @relation("ReceiptUploader", fields: [uploadedById], references: [id], onDelete: Restrict)
   uploadedAt     DateTime @default(now()) @map("uploaded_at") @db.Timestamptz(6)
+  /// w3-01: the receipt's reading (0056), one per receipt.
+  extraction     DocumentExtraction?
 
   @@unique([organizationId, s3Key])
+  /// w3-01 (0056): the key document_extraction's tenant foreign key references.
+  @@unique([organizationId, id])
   @@map("receipt")
+}
+
+/// ExpenseOS's DocumentExtraction (0056, w3-01): one reading of one receipt — the scan's
+/// verdict, the model's extraction and its confidence, and a reviewer's sign-off.
+/// VeloExpense: receipts only (no virtual-card attachment), per tenant; ExpenseOS's
+/// DocScanStatus / DocExtractStatus are text under a CHECK, as the Wave 2 tables keep
+/// ExpenseOS's enums.
+model DocumentExtraction {
+  id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String    @default(dbgenerated("(NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid")) @map("organization_id") @db.Uuid
+  receiptId      String    @unique @map("receipt_id") @db.Uuid
+  receipt        Receipt   @relation(fields: [organizationId, receiptId], references: [organizationId, id], onDelete: Cascade)
+  /// PENDING | SCANNING | CLEAN | INFECTED | FAILED (a CHECK in the table).
+  scanStatus     String    @default("PENDING") @map("scan_status")
+  /// PENDING | EXTRACTING | EXTRACTED | FAILED (a CHECK in the table).
+  status         String    @default("PENDING")
+  model          String?
+  modelVersion   String?   @map("model_version")
+  confidence     Decimal?  @db.Decimal(4, 3)
+  data           Json?
+  rawResponse    Json?     @map("raw_response")
+  error          String?
+  reviewedAt     DateTime? @map("reviewed_at") @db.Timestamptz(6)
+  /// VeloExpense: ExpenseOS's `reviewedBy`, with the tenant key to app_user.
+  reviewedBy     String?   @map("reviewed_by_id") @db.Uuid
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@unique([organizationId, id])
+  /// The one-to-one key Prisma needs for the tenant relation (0056 declares it too).
+  @@unique([organizationId, receiptId])
+  @@map("document_extraction")
 }
 
 /// GLOBAL and platform-seeded (d24): the app role can read it and cannot write it.
