@@ -1081,3 +1081,110 @@ describe('reconcilePreTaxLines (VeloExpense, f24)', () => {
     expect(reconcilePreTaxLines(l(), { charged: 10_000n, taxMinor: 1300n })).toBe(false);
   });
 });
+
+/**
+ * VeloExpense (f24, d45): with proof of payment in the set — a card copy or a statement —
+ * the charged total is the evidence, and the lines are scaled to it whatever the gap. Seen on
+ * dev, 11 Oct, after the pre-tax rule shipped: a $76.84 bill and its $90.00 card slip came
+ * back as lines of 48 + 12 + 20.84 (the last holding the $13.16 tip) — neither tax-inclusive
+ * nor exactly pre-tax — and the expense was $80.84.
+ */
+describe('handleDetermineExpense · proof of payment sets the total (VeloExpense, d45)', () => {
+  const birch = {
+    ...DETERMINATION,
+    data: {
+      ...DETERMINATION.data,
+      documents: [
+        { documentId: 'bill', kind: 'ITEMIZED_BILL', contributed: 'line detail + tax' },
+        { documentId: 'copy', kind: 'CARD_COPY', contributed: 'the amount actually charged' },
+      ],
+      total: 90,
+      subtotal: 68,
+      taxGstHst: 8.84,
+      lineItems: [
+        { description: 'Burger', amount: 48, quantity: 2, categoryCode: 'cat-meals', tip: null },
+        { description: 'Fries', amount: 12, quantity: 1, categoryCode: 'cat-meals', tip: null },
+        { description: 'Iced tea', amount: 20.84, quantity: 2, categoryCode: 'cat-meals', tip: 13.16 },
+      ],
+    },
+  };
+
+  it('the dev case: a $90.00 card slip makes the expense $90.00, tip kept', async () => {
+    h.db.expense.findUnique.mockResolvedValue(
+      expenseWith([receipt('bill', 'CLEAN'), receipt('copy', 'CLEAN')]),
+    );
+    h.determineExpense.mockResolvedValue(birch);
+    await handleDetermineExpense({ organizationId: ORG, expenseId: 'e1' });
+    expect(update(1).amountMinor).toBe(9_000n);
+    // $76.84 split 48 : 12 : 7.68 by largest remainder, and the $13.16 tip stays put.
+    expect(lines().map((l) => l.amountMinor)).toEqual([5450n, 1362n, 2188n]);
+    expect(h.tipPayload).toHaveBeenLastCalledWith(1316n);
+  });
+
+  it('a statement is proof of payment too', async () => {
+    h.db.expense.findUnique.mockResolvedValue(
+      expenseWith([receipt('bill', 'CLEAN'), receipt('copy', 'CLEAN')]),
+    );
+    h.determineExpense.mockResolvedValue({
+      ...birch,
+      data: {
+        ...birch.data,
+        documents: [
+          { documentId: 'bill', kind: 'ITEMIZED_BILL', contributed: 'line detail + tax' },
+          { documentId: 'copy', kind: 'BANK_STATEMENT', contributed: 'the settled amount' },
+        ],
+      },
+    });
+    await handleDetermineExpense({ organizationId: ORG, expenseId: 'e1' });
+    expect(update(1).amountMinor).toBe(9_000n);
+  });
+
+  it('a verdict about a document outside this pass is not proof', async () => {
+    // Only the bill was loaded; a CARD_COPY verdict for a file not in the set is the model
+    // talking about something it was not shown.
+    h.db.expense.findUnique.mockResolvedValue(expenseWith([receipt('bill', 'CLEAN')]));
+    h.determineExpense.mockResolvedValue(birch);
+    await handleDetermineExpense({ organizationId: ORG, expenseId: 'e1' });
+    expect(lines().map((l) => l.amountMinor)).toEqual([4800n, 1200n, 2084n]);
+    expect(update(1).amountMinor).toBe(8_084n);
+  });
+
+  it('without proof of payment the lines still win, as in ExpenseOS', async () => {
+    h.db.expense.findUnique.mockResolvedValue(
+      expenseWith([receipt('bill', 'CLEAN'), receipt('copy', 'CLEAN')]),
+    );
+    h.determineExpense.mockResolvedValue({
+      ...birch,
+      data: {
+        ...birch.data,
+        documents: [
+          { documentId: 'bill', kind: 'ITEMIZED_BILL', contributed: 'line detail + tax' },
+          { documentId: 'copy', kind: 'RECEIPT', contributed: 'a duplicate' },
+        ],
+      },
+    });
+    await handleDetermineExpense({ organizationId: ORG, expenseId: 'e1' });
+    expect(update(1).amountMinor).toBe(8_084n);
+  });
+});
+
+describe('reconcileToCharged (VeloExpense, d45)', () => {
+  it('scales to the charge, keeps tips, adds up to the minor unit', async () => {
+    const { reconcileToCharged } = await import('./lib/determine');
+    const lines = [
+      { amountMinor: 4800n, tipMinor: 0n },
+      { amountMinor: 1200n, tipMinor: 0n },
+      { amountMinor: 2084n, tipMinor: 1316n },
+    ];
+    expect(reconcileToCharged(lines, 9_000n)).toBe(true);
+    expect(lines.map((l) => l.amountMinor)).toEqual([5450n, 1362n, 2188n]);
+  });
+
+  it('does nothing without a charge, when it already matches, or when tips exceed it', async () => {
+    const { reconcileToCharged } = await import('./lib/determine');
+    const l = () => [{ amountMinor: 1000n, tipMinor: 200n }];
+    expect(reconcileToCharged(l(), null)).toBe(false);
+    expect(reconcileToCharged(l(), 1000n)).toBe(false);
+    expect(reconcileToCharged(l(), 150n)).toBe(false);
+  });
+});
