@@ -73,8 +73,11 @@ vi.mock('@/components/attachments/AttachmentViewer', () => ({
   useViewerZoom: () => [1, vi.fn()],
   ZoomControls: () => <div data-testid="zoom" />,
 }));
-// VeloExpense: no `./StatementApplyDialog` to mock — the statement action arrives with
-// extraction (Wave 3); see the note in the document-list suite.
+vi.mock('./StatementApplyDialog', () => ({
+  StatementApplyDialog: ({ receiptId }: { receiptId: string }) => (
+    <div data-testid="statement-dialog" data-receipt={receiptId} />
+  ),
+}));
 
 import { ReceiptPane } from './parts';
 
@@ -413,18 +416,26 @@ describe('the document list', () => {
     expect(screen.queryByText('documentKind.OTHER')).not.toBeInTheDocument();
   });
 
-  // VeloExpense: ExpenseOS's "offers the spread-across-expenses action on a statement only"
-  // and "opens the statement dialog on the statement that was chosen" are not carried over:
-  // the action, its dialog and `statementTargets` / `statementApply` match a statement's
-  // EXTRACTED lines to expenses and arrive with extraction (Wave 3). What still holds is that
-  // no statement action is offered — kept below for an editable report too.
-  it('offers no statement action, even on a statement (until Wave 3)', () => {
+  it('offers the spread-across-expenses action on a statement only', () => {
+    /**
+     * A statement evidences several charges; a restaurant bill evidences one. Offering
+     * the action on the bill invites attaching one meal's receipt to five expenses.
+     */
     show({
       expense: expense({
         receipts: [receipt(), receipt({ id: 'rec-2', kind: 'BANK_STATEMENT' })],
       }),
     });
-    expect(screen.queryByText('openAction')).not.toBeInTheDocument();
+    expect(screen.getAllByText('openAction')).toHaveLength(1);
+  });
+
+  it('opens the statement dialog on the statement that was chosen', async () => {
+    const user = userEvent.setup();
+    show({
+      expense: expense({ receipts: [receipt({ id: 'rec-9', kind: 'BANK_STATEMENT' })] }),
+    });
+    await user.click(screen.getByText('openAction'));
+    expect(screen.getByTestId('statement-dialog')).toHaveAttribute('data-receipt', 'rec-9');
   });
 
   it('offers no statement action on a read-only report', () => {

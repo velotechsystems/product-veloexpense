@@ -66,6 +66,7 @@ import {
   readReceiptDrag,
   setReceiptDrag,
 } from './receiptDrag';
+import { StatementApplyDialog } from './StatementApplyDialog';
 
 export type ReportDetail = inferRouterOutputs<AppRouter>['expenses']['report'];
 export type ExpenseDetail = ReportDetail['expenses'][number];
@@ -1894,6 +1895,7 @@ export function ReceiptPane({
   onRefetchReport?: () => void;
 }) {
   const t = useTranslations('expenses');
+  const tStatement = useTranslations('expenses.statement');
   const refusalText = useRefusalText();
   const uploadUrl = trpc.expenses.receiptUploadUrl.useMutation();
   const receiptCreate = trpc.expenses.receiptCreate.useMutation();
@@ -1912,6 +1914,8 @@ export function ReceiptPane({
     { kind: 'delete'; receiptId: string; filename: string } | { kind: 'replace'; file: File } | null
   >(null);
   const [alsoRemoveLines, setAlsoRemoveLines] = useState(true);
+  /** The statement being spread across expenses, if any. */
+  const [applyStatement, setApplyStatement] = useState<string | null>(null);
 
   const receipts = expense?.receipts ?? [];
   // A move needs an editable report, a source expense, a handler, and somewhere to
@@ -2383,10 +2387,15 @@ export function ReceiptPane({
                   shape for a page that covers five. Shown only on statement rows —
                   offering it on a restaurant bill would invite attaching one meal's
                   receipt to five expenses. */}
-              {/* VeloExpense: the statement action and its dialog (`StatementApplyDialog`,
-                  `statementTargets`, `statementApply`) match a statement's EXTRACTED lines
-                  to expenses, and arrive with extraction (Wave 3). Nothing marks a receipt
-                  a BANK_STATEMENT until then. */}
+              {editable && r.kind === 'BANK_STATEMENT' && (
+                <button
+                  type="button"
+                  className="shrink-0 text-primary text-xs hover:underline"
+                  onClick={() => setApplyStatement(r.id)}
+                >
+                  {tStatement('openAction')}
+                </button>
+              )}
               {canMove && (
                 /*
                  * PLACEMENT — moving a document to another expense, suppressed below `lg`.
@@ -2476,6 +2485,14 @@ export function ReceiptPane({
       )}
 
       {uploadErr && <p className="px-3 py-1 text-destructive text-xs">{uploadErr}</p>}
+
+      {applyStatement && (
+        <StatementApplyDialog
+          receiptId={applyStatement}
+          onClose={() => setApplyStatement(null)}
+          onApplied={onChange}
+        />
+      )}
 
       {confirm && (
         <div className="flex flex-col gap-2 border-warning/40 border-b bg-warning/10 px-3 py-2">

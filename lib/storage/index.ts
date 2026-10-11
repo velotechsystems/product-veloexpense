@@ -33,6 +33,7 @@
  *     minio/minio server /data --console-address ":9001"
  */
 import {
+  CopyObjectCommand,
   DeleteObjectCommand,
   GetObjectCommand,
   GetObjectTaggingCommand,
@@ -115,6 +116,18 @@ export interface Storage {
   /** null when the object does not exist — how confirmUpload detects a no-show. */
   head(key: string): Promise<StoredObjectHead | null>;
   delete(key: string): Promise<void>;
+  /**
+   * Server-side copy, object to object — the bytes never travel through us.
+   *
+   * Exists because a bank statement evidences several charges and has to sit on each
+   * expense it covers. Sharing one key across rows would not do: `Receipt.s3Key` is
+   * unique, and removing the statement from one expense deletes the object, which
+   * would blank it for every other expense still pointing at it. A copy per expense
+   * makes each attachment independently removable.
+   *
+   * VeloExpense (w3-04): ported from ExpenseOS's `StorageClient.copy` (550b2945).
+   */
+  copy(fromKey: string, toKey: string): Promise<void>;
   /**
    * VX5-12 — upload a file the SERVER produced, from a local path.
    *
@@ -208,6 +221,13 @@ export class MemoryStorage implements Storage {
 
   async delete(key: string): Promise<void> {
     this.objects.delete(key);
+  }
+
+  async copy(fromKey: string, toKey: string): Promise<void> {
+    const object = this.objects.get(fromKey);
+    // S3 answers a missing source with NoSuchKey; so does this.
+    if (!object) throw Object.assign(new Error(`NoSuchKey: ${fromKey}`), { name: 'NoSuchKey' });
+    this.objects.set(toKey, { body: object.body, contentType: object.contentType });
   }
 
   async putFile(key: string, localPath: string, contentType: string): Promise<void> {
@@ -306,6 +326,37 @@ export class S3Storage implements Storage {
 
   async delete(key: string): Promise<void> {
     await this.client.send(new DeleteObjectCommand({ Bucket: this.bucket, Key: key }));
+  }
+
+  async copy(fromKey: string, toKey: string): Promise<void> {
+    await this.client.send(
+      new CopyObjectCommand({
+        Bucket: this.bucket,
+        /**
+         * Bucket-qualified and URI-encoded, separator included.
+         *
+         * Encoding the whole string looks wrong — AWS documents CopySource as "bucket and
+         * key separated by a slash, URL-encoded", so `%2F` for the separator reads like a
+         * mistake. It is correct, and here is why, established by inspecting the wire
+         * rather than by reading docs:
+         *
+         *   · The SDK passes this value through to `x-amz-copy-source` **verbatim** — it
+         *     does no encoding of its own. So there is no double-encoding to worry about,
+         *     which is the failure this would otherwise cause (`%252F` reaching S3, which
+         *     decodes once and looks for a key literally called `%2F…`).
+         *   · The server decodes the header before splitting bucket from key, so
+         *     `bucket%2Fa%20b.pdf` resolves to `bucket` + `a b.pdf`.
+         *
+         * The encoding is what makes a key with a space work at all: unencoded, the raw
+         * space goes into an HTTP header covered by the SigV4 signature.
+         *
+         * VeloExpense: a statement copy's key carries a `#` (`<base>#<expenseId>`), which
+         * this encodes as `%23` — the same treatment, and the reason it is needed here.
+         */
+        CopySource: encodeURIComponent(`${this.bucket}/${fromKey}`),
+        Key: toKey,
+      }),
+    );
   }
 
   async putFile(key: string, localPath: string, contentType: string): Promise<void> {
