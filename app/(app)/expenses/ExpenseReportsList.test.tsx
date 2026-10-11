@@ -9,9 +9,9 @@ import { ExpenseReportsList, NewReportDialog } from './ExpenseReportsList';
 
 /**
  * VeloExpense: ExpenseOS's `ExpenseReportsList.test.tsx` (w2-05). The cases are ExpenseOS's,
- * with two VeloExpense adaptations, each marked: the receipt upload asks for no extraction
- * until Wave 3 (`startExtraction` is not ported), and the "New report" control's slop class
- * is set on the control rather than coming from the kit Button (f07).
+ * with one VeloExpense adaptation: the "New report" control's slop class is set on the
+ * control rather than coming from the kit Button (f07). The receipt upload's hand-off to
+ * `startExtraction` is ExpenseOS's again now that extraction has arrived (w3-03).
  */
 
 const h = vi.hoisted(() => ({
@@ -544,9 +544,7 @@ describe('uploading receipts', () => {
     renderList();
     const input = libraryInput();
     fireEvent.change(input, { target: { files: fileList(['a.pdf', 'b.pdf']) } });
-    // VeloExpense: waits for the landing rather than for `startExtraction`, which is not
-    // called until extraction is ported (Wave 3).
-    await vi.waitFor(() => expect(h.push).toHaveBeenCalledWith('/expenses/rep-new'));
+    await vi.waitFor(() => expect(onStartExtraction).toHaveBeenCalled());
     // One report, sized to the batch, with a localized placeholder title.
     expect(onStart.mock.calls[0][0]).toMatchObject({ count: 2, title: 'list.untitledReport' });
     // One presign per file, each against its OWN expense.
@@ -555,9 +553,9 @@ describe('uploading receipts', () => {
       'e1',
       'e2',
     ]);
-    // VeloExpense: no extraction is requested until Wave 3 (ExpenseOS: once, for both
-    // receipts together).
-    expect(onStartExtraction).not.toHaveBeenCalled();
+    // And extraction requested once, for both receipts together.
+    expect(onStartExtraction).toHaveBeenCalledTimes(1);
+    expect(onStartExtraction.mock.calls[0][0]).toMatchObject({ receiptIds: ['r1', 'r2'] });
   });
 
   it("declares each file's own byte length, the size of the body it PUTs", async () => {
@@ -608,17 +606,14 @@ describe('uploading receipts', () => {
      * landed, and you were told", not "the batch failed".
      */
     const onStartExtraction = vi.fn();
-    const onReceiptCreate = vi.fn();
     vi.stubGlobal('fetch', okFetch([false, true]));
-    uploadTrpc({ onStartExtraction, onReceiptCreate });
+    uploadTrpc({ onStartExtraction });
     renderList();
     fireEvent.change(libraryInput(), { target: { files: fileList(['bad.pdf', 'good.pdf']) } });
+    await vi.waitFor(() => expect(onStartExtraction).toHaveBeenCalled());
+    // The survivor still got its extraction queued.
+    expect(onStartExtraction.mock.calls[0][0]).toMatchObject({ receiptIds: ['r1'] });
     expect(await screen.findByText('list.uploadPartial')).toBeInTheDocument();
-    // The survivor was still filed. VeloExpense: filed rather than queued for extraction,
-    // which is not called until Wave 3 (ExpenseOS asserts `receiptIds: ['r1']` on it).
-    expect(onReceiptCreate).toHaveBeenCalledTimes(1);
-    expect(onReceiptCreate.mock.calls[0][0]).toMatchObject({ filename: 'good.pdf' });
-    expect(onStartExtraction).not.toHaveBeenCalled();
   });
 
   it('asks for no extraction when every upload failed', async () => {
