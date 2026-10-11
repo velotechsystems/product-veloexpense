@@ -327,8 +327,7 @@ export function ExpenseReportsList({
   const startFromReceipts = trpc.expenses.startFromReceipts.useMutation();
   const uploadUrl = trpc.expenses.receiptUploadUrl.useMutation();
   const receiptCreate = trpc.expenses.receiptCreate.useMutation();
-  // VeloExpense: no `startExtraction` until extraction is ported (Wave 3) — the receipts are
-  // filed, and the expenses stay blank for the person to fill in the workbench.
+  const startExtraction = trpc.expenses.startExtraction.useMutation();
   const [uploadBusy, setUploadBusy] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const refusalText = useRefusalText();
@@ -379,7 +378,7 @@ export function ExpenseReportsList({
             failed += 1;
           }
         }
-        // VeloExpense: the batch would go to `startExtraction` here (Wave 3).
+        if (receiptIds.length > 0) await startExtraction.mutateAsync({ receiptIds });
         if (failed > 0) setUploadError(t('list.uploadPartial', { failed }));
         router.push(`/expenses/${reportId}`);
       } catch (err) {
@@ -387,7 +386,7 @@ export function ExpenseReportsList({
         setUploadBusy(false);
       }
     },
-    [startFromReceipts, uploadUrl, receiptCreate, router, t, refusalText],
+    [startFromReceipts, uploadUrl, receiptCreate, startExtraction, router, t, refusalText],
   );
 
   /**

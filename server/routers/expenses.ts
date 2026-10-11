@@ -45,8 +45,8 @@
  *   · submit and recall keep ExpenseOS's checks and hand the transition to VeloExpense's
  *     lifecycle (d23, `server/lib/reportLifecycle.ts`), and the policy pass is VeloExpense's
  *     (`runPolicy`) with ExpenseOS's justification rule (d34);
- *   · corrections are not yet recorded against a determination (`noteOverrides` is a
- *     no-op until extraction, Wave 3); a traveller's country is `app_user.country` (0055,
+ *   · corrections are recorded against the current determination, awaited inside the
+ *     request rather than fire-and-forget (w3-02a); a traveller's country is `app_user.country` (0055,
  *     w2-10), backfilled from their legal entity.
  */
 import { auditActions, auditDiff, withAudit } from '@expenseos/audit';
@@ -2509,10 +2509,10 @@ export const expensesRouter = router({
    *  (~50% cheaper, minutes async). Owner-gated: every receipt must belong to an
    *  expense on a report the caller submitted.
    *
-   *  VeloExpense (w2-02b): ported whole for the workbench's uploads, which call it after
-   *  every file. The jobs go to `enqueue`, which queues nothing until extraction (Wave 3),
-   *  so a receipt stays as uploaded and the figures are typed in — ExpenseOS's own
-   *  extraction-off contract (`_workbench/extractionOff.test.ts`). */
+   *  VeloExpense: ported whole with the workbench (w2-02b); the jobs it routes have run
+   *  since w3-02 — one receipt per job up to the threshold, one batch above it — and the
+   *  report list's start-from-receipts upload hands its whole batch here (w3-03). The jobs
+   *  go to `enqueue`, which names the tenant and waits for the commit. */
   startExtraction: withPermission(P.expense.report.updateOwn)
     .input(z.object({ receiptIds: z.array(z.string().uuid()).min(1).max(50) }))
     .mutation(async ({ ctx, input }) => {
