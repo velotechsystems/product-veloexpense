@@ -12,8 +12,7 @@ import { createTenantHarness, type TenantHarness } from '../__test-helpers__/ten
  *
  * VeloExpense: ported with the workbench (w2-02b); ExpenseOS's routing cases arrived with the
  * queue (w3-02a). Each job names its tenant (`organizationId`) — the worker runs it under
- * that tenant's RLS scope. The batch job is w3-02b, so a bulk selection is read one receipt
- * per job until then; that case says so, and becomes ExpenseOS's again with the batch.
+ * that tenant's RLS scope.
  */
 
 const { enqueueMock } = vi.hoisted(() => ({ enqueueMock: vi.fn(async () => {}) }));
@@ -95,13 +94,18 @@ describe.skipIf(!process.env.DATABASE_URL)('expenses.startExtraction routing', (
     }
   });
 
-  it('VeloExpense: reads a bulk selection (>5) one receipt per job until the batch job lands (w3-02b)', async () => {
-    // ExpenseOS: "routes a bulk selection (>5) to one batch job".
+  it('routes a bulk selection (>5) to one batch job', async () => {
     enqueueMock.mockClear();
-    await expect(expenses.startExtraction({ receiptIds: ids })).resolves.toEqual({ ok: true, count: 6 });
-    expect(enqueueMock).toHaveBeenCalledTimes(6);
-    const read = enqueueMock.mock.calls.map((c) => (c as unknown as [string, { receiptId: string }])[1].receiptId);
-    expect(read.sort()).toEqual([...ids].sort());
+    await expenses.startExtraction({ receiptIds: ids });
+    expect(enqueueMock).toHaveBeenCalledTimes(1);
+    const [name, payload] = enqueueMock.mock.calls[0] as unknown as [
+      string,
+      { organizationId: string; receiptIds: string[] },
+    ];
+    expect(name).toBe('expense.extractReceipt.batch');
+    expect([...payload.receiptIds].sort()).toEqual([...ids].sort());
+    // VeloExpense: the batch names its tenant, as every job does.
+    expect(payload.organizationId).toBe(h.orgId);
   });
 
   it('VeloExpense: a queue that does not answer never holds the request', { timeout: 15_000 }, async () => {

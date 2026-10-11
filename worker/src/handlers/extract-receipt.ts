@@ -20,9 +20,8 @@ import { labelEn, loadReviewThreshold, prefillExpense } from './lib/prefill';
  *
  * Ported from ExpenseOS's `apps/worker/src/handlers/extract-receipt.ts` (550b2945), Wave 3
  * (w3-02a). VeloExpense: runs inside the job's tenant scope (worker/src/main.ts), so `db`
- * is the tenant's and the re-poll carries `organizationId`; and the joint determination
- * for an expense holding several documents (`expense.determineExpense`) is not ported yet
- * (w3-02b), so such an expense keeps each document's own reading and is not prefilled.
+ * is the tenant's, and every job it queues — the re-poll, the joint pass — carries
+ * `organizationId`.
  */
 export async function handleExtractReceipt(
   data: JobMap['expense.extractReceipt'],
@@ -88,13 +87,19 @@ export async function handleExtractReceipt(
   const documentCount = await db.receipt.count({ where: { expenseId: receipt.expenseId } });
 
   if (documentCount > 1) {
-    // VeloExpense (w3-02a): ExpenseOS enqueues the joint pass here
-    // (`expense.determineExpense`), which arrives with w3-02b. Until then the documents'
-    // own readings stand on the receipt pane and the expense is left as the person has it:
-    // prefilling from ONE of several documents is exactly what rule 2 forbids.
-    console.info(
-      `[extract-receipt] expense ${receipt.expenseId} holds ${documentCount} documents; the joint determination arrives with w3-02b`,
-    );
+    try {
+      await enqueue('expense.determineExpense', {
+        organizationId: data.organizationId,
+        expenseId: receipt.expenseId,
+      });
+    } catch (err) {
+      // A queue hiccup must not lose the upload. The per-document extraction
+      // above already landed, and the joint pass can be re-driven by the next
+      // upload or by hand.
+      console.warn(
+        `[extract-receipt] determination enqueue failed for expense ${receipt.expenseId}: ${message(err)}`,
+      );
+    }
     return;
   }
 

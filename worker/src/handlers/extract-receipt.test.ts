@@ -20,9 +20,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
  *   · the credential is `anthropicForExtraction` (the environment's key, d40), mocked in
  *     place of ExpenseOS's `resolveAnthropicConfig` — the threading assertions are the same;
  *   · a currency's key is its code, so an adopted currency is written as `CAD`, not an id;
- *   · the joint determination is w3-02b: ExpenseOS's "second document: hands off to the
- *     joint pass" and "a failed enqueue never loses the upload" become the VeloExpense case
- *     below (the second document neither prefills nor enqueues), and return with it.
+ *   · the joint pass the second document hands off to names the tenant too.
  */
 
 const h = vi.hoisted(() => ({
@@ -585,17 +583,24 @@ describe('handleExtractReceipt · determination hand-off', () => {
     });
   });
 
-  it('VeloExpense: second document — no prefill, no determination, and nothing queued until w3-02b', async () => {
-    // ExpenseOS hands this to the joint pass (`expense.determineExpense`), which is not
-    // ported yet. Prefilling from one of the two would be exactly the reading rule 2 forbids,
-    // so the expense is left as the person has it and each document keeps its own reading.
+  it('second document: hands off to the joint pass and does NOT prefill', async () => {
     h.db.receipt.count.mockResolvedValue(2);
-    const info = vi.spyOn(console, 'info').mockImplementation(() => {});
-    await expect(handleExtractReceipt({ organizationId: ORG, receiptId: 'r1' })).resolves.toBeUndefined();
-    expect(h.enqueue).not.toHaveBeenCalled();
+    await handleExtractReceipt({ organizationId: ORG, receiptId: 'r1' });
+    // VeloExpense: the joint pass is its own job, so it names the tenant.
+    expect(h.enqueue).toHaveBeenCalledWith('expense.determineExpense', {
+      organizationId: ORG,
+      expenseId: 'e1',
+    });
+    // Prefilling here would fight the rebuild that is about to run.
     expect(h.db.expenseLineItem.createMany).not.toHaveBeenCalled();
     expect(h.supersedeDetermination).not.toHaveBeenCalled();
-    info.mockRestore();
+  });
+
+  it('a failed enqueue never loses the upload', async () => {
+    h.db.receipt.count.mockResolvedValue(2);
+    h.enqueue.mockRejectedValueOnce(new Error('redis down'));
+    // The per-document extraction already landed; the joint pass can be re-driven.
+    await expect(handleExtractReceipt({ organizationId: ORG, receiptId: 'r1' })).resolves.toBeUndefined();
   });
 
   it('VeloExpense: a scan re-poll carries the tenant, so the next attempt runs as it', async () => {

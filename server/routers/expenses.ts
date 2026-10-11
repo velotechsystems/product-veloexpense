@@ -1241,10 +1241,6 @@ async function pendingApproverByReport(
  * here, all plumbing:
  *   · the payload carries `organizationId` — the worker runs each job under that tenant's
  *     RLS scope (worker/src/lib/tenant.ts) and has no other way to know it;
- *   · the batch (`expense.extractReceipt.batch`) and joint-determination
- *     (`expense.determineExpense`) jobs arrive with w3-02b. Until then a batch is read one
- *     receipt per job — the path ExpenseOS takes for a selection of up to
- *     `BATCH_THRESHOLD_FILES` — and a determination is not queued;
  *   · the hand-off waits for the COMMIT (`afterCommit`, lib/db/prisma.ts). A request runs
  *     in one transaction here, so a job queued mid-request could start before the receipt
  *     row it names is visible, find nothing, and do nothing; ExpenseOS has no request
@@ -1257,16 +1253,11 @@ async function pendingApproverByReport(
  */
 const ENQUEUE_TIMEOUT_MS = 5_000;
 
-async function enqueue(job: string, payload: Record<string, unknown>): Promise<void> {
+type ReceiptJob = 'expense.extractReceipt' | 'expense.extractReceipt.batch' | 'expense.determineExpense';
+
+async function enqueue(job: ReceiptJob, payload: Record<string, unknown>): Promise<void> {
   const organizationId = currentTenantId();
   if (!organizationId) throw new Error(`enqueue ${job}: no tenant scope`);
-  const receiptIds =
-    job === 'expense.extractReceipt'
-      ? [payload.receiptId as string]
-      : job === 'expense.extractReceipt.batch'
-        ? (payload.receiptIds as string[])
-        : [];
-  if (receiptIds.length === 0) return; // expense.determineExpense: w3-02b
   await afterCommit(async () => {
     let timer: ReturnType<typeof setTimeout> | undefined;
     const timeout = new Promise<never>((_, reject) => {
@@ -1276,17 +1267,10 @@ async function enqueue(job: string, payload: Record<string, unknown>): Promise<v
       );
     });
     try {
-      await Promise.race([
-        Promise.all(
-          receiptIds.map((receiptId) => enqueueJob('expense.extractReceipt', { organizationId, receiptId })),
-        ),
-        timeout,
-      ]);
+      await Promise.race([enqueueJob(job, { ...payload, organizationId } as never), timeout]);
     } catch (err) {
       console.warn(
-        `[expenses] ${job} enqueue failed for ${receiptIds.length} receipt(s): ${
-          err instanceof Error ? err.message : String(err)
-        }`,
+        `[expenses] ${job} enqueue failed: ${err instanceof Error ? err.message : String(err)}`,
       );
     } finally {
       clearTimeout(timer);

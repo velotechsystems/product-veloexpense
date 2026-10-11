@@ -10,11 +10,12 @@ import {
   upsertRecurring,
 } from '@expenseos/jobs';
 import { type ConnectionOptions, type Job, Worker } from 'bullmq';
+import { handleDetermineExpense } from './handlers/determine-expense';
 import { handleExamplePing } from './handlers/example';
 import { handleExtractReceipt } from './handlers/extract-receipt';
+import { handleExtractReceiptBatch } from './handlers/extract-receipt-batch';
 // VeloExpense: ExpenseOS's other handlers are not imported — their jobs are not in the job
-// map (packages/jobs/src/jobs.ts says where each went). The batch and joint-determination
-// handlers arrive with w3-02b.
+// map (packages/jobs/src/jobs.ts says where each went).
 import { installShutdown } from './lib/shutdown';
 import { inTenant } from './lib/tenant';
 
@@ -34,6 +35,9 @@ const HANDLERS: { [N in JobName]?: (data: unknown, job: Job) => Promise<unknown>
   // VeloExpense: a tenant's job runs as that tenant (`inTenant`, ./lib/tenant).
   'expense.extractReceipt': (data, job) =>
     inTenant(data, () => handleExtractReceipt(data as never, job)),
+  'expense.extractReceipt.batch': (data) =>
+    inTenant(data, () => handleExtractReceiptBatch(data as never)),
+  'expense.determineExpense': (data) => inTenant(data, () => handleDetermineExpense(data as never)),
 };
 
 /**
