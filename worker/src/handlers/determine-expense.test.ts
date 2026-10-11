@@ -977,3 +977,107 @@ describe('handleDetermineExpense · usage (VeloExpense, d43)', () => {
     expect(h.recordExtractionUsage).not.toHaveBeenCalled();
   });
 });
+
+/**
+ * VeloExpense (f24): lines the model priced before tax. Seen on dev, 11 Oct: a $113 bill
+ * and its $130 card slip came back as pre-tax lines plus the tip, so the expense — which
+ * is totalled from its lines — was $117. The tax now spreads across the lines when the
+ * gap is exactly the stated tax; any other disagreement keeps ExpenseOS's rule that the
+ * lines win (the 999 case above).
+ */
+describe('handleDetermineExpense · lines priced before tax (VeloExpense, f24)', () => {
+  const preTax = (over: Record<string, unknown> = {}) => ({
+    ...DETERMINATION,
+    data: {
+      ...DETERMINATION.data,
+      total: 130,
+      subtotal: 100,
+      taxGstHst: 13,
+      lineItems: [
+        { description: 'Steak frites', amount: 64, quantity: 2, categoryCode: 'cat-meals', tip: null },
+        { description: 'Caesar salad', amount: 16, quantity: 1, categoryCode: 'cat-meals', tip: null },
+        { description: 'Wine', amount: 37, quantity: 2, categoryCode: 'cat-meals', tip: 17 },
+      ],
+      ...over,
+    },
+  });
+
+  it('the dev case: $100 of food, $13 HST and a $17 tip is $130, not $117', async () => {
+    h.db.expense.findUnique.mockResolvedValue(
+      expenseWith([receipt('bill', 'CLEAN'), receipt('copy', 'CLEAN')]),
+    );
+    h.determineExpense.mockResolvedValue(preTax());
+    await handleDetermineExpense({ organizationId: ORG, expenseId: 'e1' });
+    expect(update(1).amountMinor).toBe(13_000n);
+    // $113 of food and tax split 64 : 16 : 20, and the $17 tip stays on its line.
+    expect(lines().map((l) => l.amountMinor)).toEqual([7232n, 1808n, 3960n]);
+    expect(h.tipPayload).toHaveBeenLastCalledWith(1700n);
+  });
+
+  it('weights the recoverable split by each line net of its tip, after the spread', async () => {
+    h.db.expense.findUnique.mockResolvedValue(expenseWith([receipt('bill', 'CLEAN')]));
+    h.determineExpense.mockResolvedValue(preTax());
+    await handleDetermineExpense({ organizationId: ORG, expenseId: 'e1' });
+    expect(
+      h.allocateRecoverable.mock.calls[0][0].lines.map((l: { amountMinor: bigint }) => l.amountMinor),
+    ).toEqual([7232n, 1808n, 2260n]);
+  });
+
+  it('leaves the lines alone when the gap is not the tax', async () => {
+    // $117 of lines against a $150 charge with $13 of tax: something else is wrong, and
+    // a misread total must not rescale good lines.
+    h.db.expense.findUnique.mockResolvedValue(expenseWith([receipt('bill', 'CLEAN')]));
+    h.determineExpense.mockResolvedValue(preTax({ total: 150 }));
+    await handleDetermineExpense({ organizationId: ORG, expenseId: 'e1' });
+    expect(lines().map((l) => l.amountMinor)).toEqual([6400n, 1600n, 3700n]);
+    expect(update(1).amountMinor).toBe(11_700n);
+  });
+
+  it('leaves lines that already include the tax alone', async () => {
+    h.db.expense.findUnique.mockResolvedValue(expenseWith([receipt('bill', 'CLEAN')]));
+    await handleDetermineExpense({ organizationId: ORG, expenseId: 'e1' });
+    expect(lines().map((l) => l.amountMinor)).toEqual([13_000n]);
+    expect(update(1).amountMinor).toBe(13_000n);
+  });
+
+  it('honours a total a person corrected', async () => {
+    h.db.expense.findUnique.mockResolvedValue(expenseWith([receipt('bill', 'CLEAN')]));
+    h.determineExpense.mockResolvedValue(preTax({ total: 999 }));
+    h.overridesForPrompt.mockReturnValue([]);
+    h.currentDetermination.mockResolvedValue({ overrides: { total: '$130.00' } });
+    await handleDetermineExpense({ organizationId: ORG, expenseId: 'e1' });
+    expect(update(1).amountMinor).toBe(13_000n);
+  });
+});
+
+describe('reconcilePreTaxLines (VeloExpense, f24)', () => {
+  it('spreads the tax and keeps tips, to the minor unit', async () => {
+    const { reconcilePreTaxLines } = await import('./lib/determine');
+    const lines = [
+      { amountMinor: 6400n, tipMinor: 0n },
+      { amountMinor: 1600n, tipMinor: 0n },
+      { amountMinor: 3700n, tipMinor: 1700n },
+    ];
+    expect(reconcilePreTaxLines(lines, { charged: 13_000n, taxMinor: 1300n })).toBe(true);
+    expect(lines.map((l) => l.amountMinor)).toEqual([7232n, 1808n, 3960n]);
+    expect(lines.reduce((a, l) => a + l.amountMinor, 0n)).toBe(13_000n);
+  });
+
+  it('absorbs a cent of rounding, and no more', async () => {
+    const { reconcilePreTaxLines } = await import('./lib/determine');
+    const off = [{ amountMinor: 3333n, tipMinor: 0n }, { amountMinor: 3333n, tipMinor: 0n }];
+    expect(reconcilePreTaxLines(off, { charged: 7533n, taxMinor: 866n })).toBe(true);
+    expect(off[0].amountMinor + off[1].amountMinor).toBe(7533n);
+    const far = [{ amountMinor: 3333n, tipMinor: 0n }];
+    expect(reconcilePreTaxLines(far, { charged: 9000n, taxMinor: 866n })).toBe(false);
+    expect(far[0].amountMinor).toBe(3333n);
+  });
+
+  it('does nothing without a charge, without tax, or when the lines already match', async () => {
+    const { reconcilePreTaxLines } = await import('./lib/determine');
+    const l = () => [{ amountMinor: 10_000n, tipMinor: 0n }];
+    expect(reconcilePreTaxLines(l(), { charged: null, taxMinor: 1300n })).toBe(false);
+    expect(reconcilePreTaxLines(l(), { charged: 11_300n, taxMinor: 0n })).toBe(false);
+    expect(reconcilePreTaxLines(l(), { charged: 10_000n, taxMinor: 1300n })).toBe(false);
+  });
+});

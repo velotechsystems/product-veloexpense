@@ -62,7 +62,9 @@ export async function loadReviewThreshold(): Promise<number> {
 
 /** Split `totalMinor` across `weights` proportionally, largest-remainder, so the
  *  parts sum EXACTLY to `totalMinor` (no rounding drift). */
-function allocate(totalMinor: bigint, weights: number[]): bigint[] {
+// VeloExpense: exported so the joint pass can reconcile its lines to the charged total
+// with the same largest-remainder split (determine.ts, f24).
+export function allocate(totalMinor: bigint, weights: number[]): bigint[] {
   const sumW = weights.reduce((a, b) => a + b, 0);
   if (totalMinor === 0n || sumW <= 0) return weights.map(() => 0n);
   const total = Number(totalMinor);
