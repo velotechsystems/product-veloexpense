@@ -94,3 +94,8 @@ export {
   type RecordTransactionIdInput,
   recordTransactionId,
 } from './receiptTransactionId';
+// VeloExpense (w3-06): a report's number from the tenant's own sequence, for the browser and
+// the inbound-email worker alike.
+export { nextReportNumber } from './reportNumber';
+// VeloExpense (w3-06): ExpenseOS's cache namespace, for the inbound-mail dedup and throttle keys.
+export { cacheNamespace } from './cacheNamespace';

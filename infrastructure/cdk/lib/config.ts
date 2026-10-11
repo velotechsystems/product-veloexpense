@@ -18,8 +18,8 @@
  *     John: suite-consistent names everywhere, rather than "staging"). They stay
  *     separate fields because production will be stage "prod" on sharedStage
  *     "prod", and nothing should assume the two always match.
- *   · No SES stack: mail goes through the suite's Google Workspace SMTP
- *     credential, as VeloCRM's does.
+ *   · Outgoing mail goes through the suite's Google Workspace SMTP credential, as
+ *     VeloCRM's does. SES only RECEIVES, for receipts by email (w3-06, mail-stack.ts).
  *   · Valkey and the worker service arrived with receipt extraction (w3-00, d41),
  *     sized for dev. Background work that was already VeloExpense's own —
  *     notifications, the ledger, compliance — stays on the `/api/internal/*`
@@ -105,6 +105,33 @@ export interface VeloExpenseConfig {
   /** Shared suite SMTP credential (Google Workspace, noreply@velotechsys.ai). */
   smtpSecretName: string;
 
+  /**
+   * Receipts by email (w3-06, mail-stack.ts). Absent leaves it off: no Mail stack, and the
+   * app ignores whatever reaches its endpoint (INBOUND_EMAIL_DOMAIN unset).
+   *
+   * ExpenseOS's `ses.inbound` block, reduced to what VeloExpense receives: one mailbox, on
+   * every tenant's own subdomain of `domain` (d47) — no reply mailbox (w5-01), and no public
+   * forwarding domain, since SES receives on the tenant's address itself.
+   */
+  inboundEmail?: {
+    /** Each tenant's mail domain is ONE label under this: `receipts@<tenant>.<domain>`. */
+    domain: string;
+    /** The app endpoint SNS posts to. Public: SNS cannot reach an internal edge. */
+    webhookUrl: string;
+    /** Local parts that mean "receipts", e.g. `['receipts']`. */
+    receiptsMailboxes: string[];
+    /** Days a raw message is kept. ExpenseOS's default, 14. */
+    retentionDays: number;
+    /**
+     * Make this stack's rule set the account's active one. SES allows ONE per account and
+     * region, and the account is shared by every Velotech product — so this is decided per
+     * environment, after checking nothing else uses inbound SES there.
+     */
+    activateRuleSet: boolean;
+    /** Rule set to re-activate when the stack is deleted; absent clears the active set. */
+    restoreRuleSetNameOnDelete?: string;
+  };
+
   tags: Record<string, string>;
 }
 
@@ -156,6 +183,13 @@ const STAGES: Record<Stage, Omit<VeloExpenseConfig, 'resourcePrefix' | 'secretPr
       { name: 'compliance-evaluate', path: '/api/internal/compliance/evaluate', rate: { minutes: 1440 } },
     ],
     smtpSecretName: 'velocrm/smtp-credentials',
+    inboundEmail: {
+      domain: 'mail.dev.veloexpense.ai',
+      webhookUrl: 'https://dev.veloexpense.ai/api/email/inbound',
+      receiptsMailboxes: ['receipts'],
+      retentionDays: 14,
+      activateRuleSet: false,
+    },
   },
 };
 

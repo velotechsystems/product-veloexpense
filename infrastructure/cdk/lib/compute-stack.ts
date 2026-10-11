@@ -50,6 +50,7 @@ import {
 } from 'aws-cdk-lib';
 import type { Construct } from 'constructs';
 import { REDIS_URL_SECRET } from './cache-stack';
+import { INBOUND_OBJECT_PREFIX, inboundMailBucketName, inboundMailTopicName } from './mail-stack';
 import { ANTHROPIC_API_KEY_SECRET } from './security-stack';
 import type { VeloExpenseConfig } from './config';
 import { SHARED_APP_PORT, importShared } from './shared';
@@ -192,6 +193,28 @@ export class ComputeStack extends Stack {
     workerTaskRole.addToPrincipalPolicy(
       new iam.PolicyStatement({ actions: ['kms:Decrypt'], resources: [props.masterKeyArn] }),
     );
+    // Receipts by email (w3-06): the worker WRITES each attachment as a receipt — the first
+    // object it creates — so it may put (and encrypt under the master key), under the receipts
+    // prefix only. Still no delete and no list. GuardDuty scans what it writes like any other
+    // upload, and extraction waits for that verdict (d42).
+    // And it READS the raw message SES stored. Read-only, worker only — the web app never
+    // touches that bucket. ExpenseOS's grant, after its first dev receipt logged "could not
+    // read inbound/…: 403" (the bucket name was handed over as env, with no grant).
+    if (config.inboundEmail) {
+      workerTaskRole.addToPrincipalPolicy(
+        new iam.PolicyStatement({ actions: ['s3:PutObject'], resources: [`${receiptsArn}/org/*`] }),
+      );
+      workerTaskRole.addToPrincipalPolicy(
+        new iam.PolicyStatement({ actions: ['kms:GenerateDataKey'], resources: [props.masterKeyArn] }),
+      );
+      const inboundArn = `arn:aws:s3:::${inboundMailBucketName(config)}`;
+      workerTaskRole.addToPrincipalPolicy(
+        new iam.PolicyStatement({
+          actions: ['s3:GetObject', 's3:GetObjectTagging', 's3:ListBucket'],
+          resources: [inboundArn, `${inboundArn}/${INBOUND_OBJECT_PREFIX}*`],
+        }),
+      );
+    }
 
     // ── Logs ──────────────────────────────────────────────────────────────────
     const logGroup = (lid: string, name: string) =>
@@ -236,6 +259,16 @@ export class ComputeStack extends Stack {
         STORAGE_BUCKET: `${prefix}-receipts-${config.accountId}`,
         STORAGE_REGION: config.region,
         PG_POOL_MAX: String(config.web.pgPoolMax),
+        // Receipts by email (w3-06, d47): the route reads the tenant from the address's label
+        // under this domain, and acts only on messages from this topic — named, not
+        // referenced, so this stack does not depend on the Mail stack.
+        ...(config.inboundEmail
+          ? {
+              INBOUND_EMAIL_DOMAIN: config.inboundEmail.domain,
+              INBOUND_RECEIPTS_MAILBOXES: config.inboundEmail.receiptsMailboxes.join(','),
+              INBOUND_SNS_TOPIC_ARN: `arn:aws:sns:${config.region}:${config.accountId}:${inboundMailTopicName(config)}`,
+            }
+          : {}),
         ...dbEnv,
       },
       secrets: {
@@ -358,6 +391,8 @@ export class ComputeStack extends Stack {
         STORAGE_REGION: config.region,
         // One job at a time per queue is the most this task's pool is asked for.
         PG_POOL_MAX: '5',
+        // Receipts by email (w3-06): the bucket SES stores raw messages in.
+        ...(config.inboundEmail ? { S3_INBOUND_MAIL_BUCKET: inboundMailBucketName(config) } : {}),
         ...dbEnv,
       },
       secrets: {

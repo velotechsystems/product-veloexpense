@@ -120,13 +120,15 @@
   "receiptsEmail": {
     "untitled": "Emailed receipts",
     "filedSubject": "{number}: {title}",
-    "filedBody": "{count} receipt(s) filed on report {number}. ExpenseOS is reading them now — the merchant, date, amount and tax will fill in shortly.\n\nReply to this email to add more receipts to the same report.",
-    "noAccountSubject": "No ExpenseOS account for this address",
-    "noAccountBody": "This address does not have an ExpenseOS account, so the receipts could not be filed. Send them from the address you sign in with.",
+    "filedBody": "{count} receipt(s) filed on report {number}. VeloExpense is reading them now — the merchant, date, amount and tax will fill in shortly.",
+    "noAccountSubject": "No VeloExpense account for this address",
+    "noAccountBody": "This address does not have a VeloExpense account, so the receipts could not be filed. Send them from the address you sign in with.",
     "noReceiptsSubject": "No receipts found",
     "noReceiptsBody": "No receipt was attached, so nothing was created. Attach a photo or a PDF and send it again.",
     "notEditableSubject": "That report can no longer be changed",
-    "notEditableBody": "That expense report has already been submitted, so receipts cannot be added to it. Recall it in ExpenseOS first, or send a new email to start another report."
+    "notEditableBody": "That expense report has already been submitted, so receipts cannot be added to it. Recall it in VeloExpense first, or send a new email to start another report.",
+    "capReachedSubject": "Your plan’s expense limit has been reached",
+    "capReachedBody": "Your organization has added as many expenses this year as its plan allows, so these receipts could not be filed. Ask an administrator about the plan."
   },
   "subject": {
     "VIRTUAL_CARD_REQUEST": "Card request",

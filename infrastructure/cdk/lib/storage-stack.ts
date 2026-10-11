@@ -13,7 +13,8 @@
  *   · exports and audit buckets — VeloExpense has one storage contract,
  *     STORAGE_BUCKET; exports are generated on request and the audit trail is in
  *     Postgres.
- *   · the inbound-mail bucket — receipts by email is not ported.
+ *   · the inbound-mail bucket — it arrived with receipts by email (w3-06) in the Mail
+ *     stack (mail-stack.ts), beside the SES rule that writes it.
  *   · (Since restored) GuardDuty Malware Protection — dropped while nothing read the
  *     verdict; ported back with receipt extraction (w3-02a, d42), below.
  *   · intelligent tiering — receipts here are small and recent; revisit at volume.

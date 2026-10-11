@@ -75,6 +75,16 @@ import { NextResponse, type NextRequest } from 'next/server';
 //                                       every task unhealthy, and the deploy
 //                                       rolls itself back.
 //
+// Wave 3 (w3-06) adds a seventh, and like the provision route it is a SERVICE:
+//   /api/email/inbound                  SES's receipt rule, through SNS. Authenticated
+//                                       by the SNS message signature (a cert from an
+//                                       SNS host only), the pinned topic ARN, the SES
+//                                       verdicts and the From's alignment — all in the
+//                                       route (ExpenseOS's). SNS sends no cookie, and a
+//                                       307 to /login would read to SNS as a failed
+//                                       delivery, retried and then dropped. EXACT path,
+//                                       in both places.
+//
 // TWO PLACES, AND EITHER ONE ALONE IS ENOUGH — MEASURED, NOT ASSUMED. The
 // `matcher` decides whether middleware runs at all; `PUBLIC` is what runs when
 // it does. `/signup` is in both, as `/login` and `/approve` already were, and a
@@ -97,6 +107,7 @@ const PUBLIC = [
   /^\/api\/internal\//,
   /^\/api\/platform\//,
   /^\/api\/health$/,
+  /^\/api\/email\/inbound$/,
   /^\/_next\//,
   /^\/favicon\.ico$/,
   // 2026 brand: the wordmark and the favicon render BEFORE anyone signs in — on
@@ -133,5 +144,5 @@ export function proxy(req: NextRequest) {
 }
 
 export const config = {
-  matcher: ['/((?!api/auth|api/internal|api/platform|api/health$|_next/static|_next/image|favicon.ico|brand/|apple-touch-icon.png|login|approve|signup|invite).*)'],
+  matcher: ['/((?!api/auth|api/internal|api/platform|api/health$|api/email/inbound$|_next/static|_next/image|favicon.ico|brand/|apple-touch-icon.png|login|approve|signup|invite).*)'],
 };
