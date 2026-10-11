@@ -386,22 +386,30 @@ async function applyDetermination(params: {
         notes: null,
       });
     }
-    // VeloExpense (f24): lines the model priced BEFORE tax. The prompt asks for lines that
-    // sum to the total, but nothing checked it: on dev, a $113 bill and its $130 card slip
-    // came back as pre-tax lines (64 + 16 + 20) plus the $17 tip, and since the expense is
-    // totalled from its lines below, it became $117 instead of $130. When the gap between
-    // the lines and the charge is exactly the tax the set states, the lines are pre-tax,
-    // and the tax is spread across them as the single-receipt prefill does (a gross
-    // split). Any other disagreement keeps ExpenseOS's rule that the lines win over a
-    // stated total, so a misread total never rescales good lines. A deliberate departure
-    // from ExpenseOS, which has the same defect.
-    reconcilePreTaxLines(lineData, {
-      charged: applied.totalMinor ?? toMinor(result.total),
-      taxMinor:
-        (applied.taxGstHstMinor ?? toMinor(result.taxGstHst) ?? 0n) +
-        (applied.taxQstMinor ?? toMinor(result.taxQst) ?? 0n) +
-        (applied.taxPstMinor ?? toMinor(result.taxPst) ?? 0n),
-    });
+    // VeloExpense (f24, d44, d45): the lines must add up to what was charged, because the
+    // expense is totalled from its lines below. The prompt asks for that and nothing checked
+    // it. On dev a $113 bill and its $130 card slip came back as pre-tax lines plus the tip
+    // ($117), and a $76.84 bill with a $90.00 slip as lines that were neither ($80.84).
+    //   · When the set holds proof of payment — a card copy or a statement — the charged
+    //     total is the evidence, so the lines are scaled to it whatever the gap, tips kept.
+    //   · Otherwise, when the gap is exactly the stated tax, the lines were priced before
+    //     tax and the tax is spread across them, as the single-receipt prefill does.
+    //   · Any other disagreement keeps ExpenseOS's rule that the lines win, so a misread
+    //     total on a lone bill never rescales good lines.
+    // A deliberate departure from ExpenseOS, which has the same defect.
+    const charged = applied.totalMinor ?? toMinor(result.total);
+    const proofOfPayment = verdicts.some(
+      (v) => v.kind === 'CARD_COPY' || v.kind === 'BANK_STATEMENT',
+    );
+    if (!(proofOfPayment && reconcileToCharged(lineData, charged))) {
+      reconcilePreTaxLines(lineData, {
+        charged,
+        taxMinor:
+          (applied.taxGstHstMinor ?? toMinor(result.taxGstHst) ?? 0n) +
+          (applied.taxQstMinor ?? toMinor(result.taxQst) ?? 0n) +
+          (applied.taxPstMinor ?? toMinor(result.taxPst) ?? 0n),
+      });
+    }
     // One lookup for the whole rebuilt set, not one per line — and OUTSIDE the
     // transaction below, because reference data a write only reads is a round trip
     // held open under a row lock for nothing.
@@ -573,6 +581,33 @@ async function recordDeterminationSkipped(
   } catch (err) {
     console.warn(`[determine] skip not audited for expense ${expenseId}: ${err}`);
   }
+}
+
+/**
+ * VeloExpense (f24, d45): scale a rebuilt line set to the charged total, in place, when the
+ * set holds proof of payment. Tips are fixed amounts the person left, so they stay as they
+ * are; the rest of the charge is split across the lines in proportion to their non-tip
+ * amounts, with the prefill's largest-remainder split so the parts add up to the minor unit.
+ * Returns whether it changed anything: nothing changes when the lines already match, when no
+ * total is known, or when the total cannot even cover the tips.
+ */
+export function reconcileToCharged(
+  lines: { amountMinor: bigint; tipMinor: bigint }[],
+  charged: bigint | null,
+): boolean {
+  if (charged == null || charged <= 0n || lines.length === 0) return false;
+  const sum = lines.reduce((a, l) => a + l.amountMinor, 0n);
+  if (sum === charged) return false;
+  const tips = lines.reduce((a, l) => a + l.tipMinor, 0n);
+  const target = charged - tips;
+  if (target <= 0n) return false;
+  const weights = lines.map((l) => Number(l.amountMinor - l.tipMinor));
+  if (weights.every((w) => w <= 0)) return false;
+  const parts = allocate(target, weights);
+  lines.forEach((l, i) => {
+    l.amountMinor = parts[i] + l.tipMinor;
+  });
+  return true;
 }
 
 /**
