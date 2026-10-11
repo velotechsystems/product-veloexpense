@@ -50,7 +50,7 @@ import { allocateRecoverable } from '@expenseos/tax';
 import { db } from '@/lib/db/prisma';
 import { anthropicForExtraction } from './anthropic';
 import { fetchCleanDocument, message, prepareExtraction, recordExtractionUsage } from './extract-core';
-import { type CategoryRow, labelEn } from './prefill';
+import { allocate, type CategoryRow, labelEn } from './prefill';
 import { isReportEditable, lockReportStatus } from './report-editable';
 
 /** Minor-unit helper bound to one currency's ISO-4217 exponent. */
@@ -386,6 +386,22 @@ async function applyDetermination(params: {
         notes: null,
       });
     }
+    // VeloExpense (f24): lines the model priced BEFORE tax. The prompt asks for lines that
+    // sum to the total, but nothing checked it: on dev, a $113 bill and its $130 card slip
+    // came back as pre-tax lines (64 + 16 + 20) plus the $17 tip, and since the expense is
+    // totalled from its lines below, it became $117 instead of $130. When the gap between
+    // the lines and the charge is exactly the tax the set states, the lines are pre-tax,
+    // and the tax is spread across them as the single-receipt prefill does (a gross
+    // split). Any other disagreement keeps ExpenseOS's rule that the lines win over a
+    // stated total, so a misread total never rescales good lines. A deliberate departure
+    // from ExpenseOS, which has the same defect.
+    reconcilePreTaxLines(lineData, {
+      charged: applied.totalMinor ?? toMinor(result.total),
+      taxMinor:
+        (applied.taxGstHstMinor ?? toMinor(result.taxGstHst) ?? 0n) +
+        (applied.taxQstMinor ?? toMinor(result.taxQst) ?? 0n) +
+        (applied.taxPstMinor ?? toMinor(result.taxPst) ?? 0n),
+    });
     // One lookup for the whole rebuilt set, not one per line — and OUTSIDE the
     // transaction below, because reference data a write only reads is a round trip
     // held open under a row lock for nothing.
@@ -557,4 +573,36 @@ async function recordDeterminationSkipped(
   } catch (err) {
     console.warn(`[determine] skip not audited for expense ${expenseId}: ${err}`);
   }
+}
+
+/**
+ * VeloExpense (f24): spread the tax across lines the model priced before tax, in place.
+ *
+ * Only when the lines plus the stated tax come to the charged total (within one minor unit
+ * per line, plus one, the tolerance `reconcileLineItems` uses). Tips are fixed amounts the
+ * person left, so they stay as they are; the rest of the charge is split across the lines
+ * in proportion to their non-tip amounts, with the prefill's largest-remainder split so the
+ * parts add up to the minor unit. Returns whether it changed anything.
+ */
+export function reconcilePreTaxLines(
+  lines: { amountMinor: bigint; tipMinor: bigint }[],
+  { charged, taxMinor }: { charged: bigint | null; taxMinor: bigint },
+): boolean {
+  if (charged == null || charged <= 0n || taxMinor <= 0n || lines.length === 0) return false;
+  const sum = lines.reduce((a, l) => a + l.amountMinor, 0n);
+  if (sum === charged) return false;
+  const gap = charged - (sum + taxMinor);
+  const tolerance = BigInt(lines.length + 1);
+  if (gap > tolerance || gap < -tolerance) return false;
+  const tips = lines.reduce((a, l) => a + l.tipMinor, 0n);
+  const target = charged - tips;
+  if (target <= 0n) return false;
+  const parts = allocate(
+    target,
+    lines.map((l) => Number(l.amountMinor - l.tipMinor)),
+  );
+  lines.forEach((l, i) => {
+    l.amountMinor = parts[i] + l.tipMinor;
+  });
+  return true;
 }
