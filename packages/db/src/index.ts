@@ -99,3 +99,5 @@ export {
 export { nextReportNumber } from './reportNumber';
 // VeloExpense (w3-06): ExpenseOS's cache namespace, for the inbound-mail dedup and throttle keys.
 export { cacheNamespace } from './cacheNamespace';
+// VeloExpense (f29): one home-currency rule for starting a report and for reading totals.
+export { homeCurrencyCode, LAST_RESORT_CURRENCY } from './homeCurrency';

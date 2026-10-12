@@ -25,6 +25,7 @@
 import type { Prisma, PrismaClient } from '@/lib/generated/prisma/client';
 import type { BusinessUnitSource } from './businessUnitSource';
 import { allocationCreateFor, type CodingDefaults } from './expenseCodingDefaults';
+import { homeCurrencyCode } from './homeCurrency';
 
 type Db = PrismaClient | Prisma.TransactionClient;
 
@@ -33,7 +34,7 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
  * The currency for a receipt batch: an explicit choice, else the submitter's home currency,
- * else USD.
+ * else USD. (VeloExpense: else the tenant's main entity's, else CAD — `homeCurrencyCode`.)
  *
  * Accepts a UUID or an ISO-4217 code because its callers differ — a tRPC input carries
  * whichever the client had, and an email carries nothing at all. Returns the id, so no caller
@@ -59,13 +60,13 @@ export async function resolveIntakeCurrencyId(
     });
     return byCode?.code ?? null;
   }
-  const owner = await db.user.findUnique({
-    where: { id: input.userId },
-    select: { entity: { select: { homeCurrencyId: true } } },
-  });
-  if (owner?.entity?.homeCurrencyId) return owner.entity.homeCurrencyId;
-  const usd = await db.currency.findUnique({ where: { code: 'USD' }, select: { code: true } });
-  return usd?.code ?? null;
+  // VeloExpense (f29): the person's home currency by the same rule the reader's totals use
+  // (`homeCurrencyCode`: their entity, else the tenant's main entity, else CAD), where
+  // ExpenseOS fell back to USD here and to CAD there. Still checked against the currency
+  // table, as ExpenseOS's USD lookup was.
+  const home = await homeCurrencyCode(db, input.userId);
+  const known = await db.currency.findUnique({ where: { code: home }, select: { code: true } });
+  return known?.code ?? null;
 }
 
 export interface BlankExpenseInput {
