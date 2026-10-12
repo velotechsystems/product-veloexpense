@@ -108,14 +108,10 @@ export const USER_MESSAGE_CODES = [
   'REASSIGN_REASON_REQUIRED',
   'TASK_NOT_YOURS',
   'SELF_APPROVAL',
-  'RUN_NOT_RUNNING',
-  'RECEIPT_ACK_REQUIRED',
-  'STEP_UNROUTABLE',
   'SUBMIT_NEEDS_APPROVER',
   /* w4-00c (d58): no published approval workflow governs the report. */
   'SUBMIT_NO_WORKFLOW',
   'REPORT_NOT_AWAITING_APPROVAL',
-  'RUN_ALREADY_OPEN',
 
   /* delegating approvals ────────────────────────────────────────────────── */
   'DELEGATE_FOR_SOMEBODY_ELSE',
@@ -199,24 +195,7 @@ export const USER_MESSAGE_CODES = [
   'VIOLATION_BLOCK_NOT_ACKNOWLEDGEABLE',
   'VIOLATION_NOTE_REQUIRED',
 
-  /* the approval ladder (lib/approvals/tiers.ts, approver-token.ts) ────── */
-  'APPROVER_POSITION_INVALID',
-  'APPROVER_POSITION_DUPLICATE',
-  'APPROVER_KIND_UNKNOWN',
-  'APPROVER_OVERSPECIFIED',
-  'APPROVER_NEEDS_LEVEL',
-  'MANAGER_LEVEL_OUT_OF_RANGE',
-  'APPROVER_NEEDS_ROLE',
-  'APPROVER_NEEDS_PERSON',
-  'APPROVER_NEEDS_EMAIL',
-  'EMAIL_MALFORMED',
-  'RUNG_NAME_REQUIRED',
-  'RUNG_SEQUENCE_OUT_OF_RANGE',
-  'RUNG_THRESHOLD_NEGATIVE',
-  'RUNG_NEEDS_APPROVER',
-  'RUNG_HAS_NO_APPROVER',
-  'LADDER_TOO_LONG',
-  'APPROVER_SELECTION_STALE',
+  /* approvals and analytics ─────────────────────────────────────────────── */
   'TASK_WITHDRAWN',
   'ANALYTICS_RANGE_REQUIRED',
   'ANALYTICS_RANGE_INVERTED',
@@ -592,19 +571,6 @@ export const ERROR_COPY: Record<UserMessageCode, Copy> = {
   SELF_APPROVAL: {
     'en-CA': 'A report cannot be approved by the person who submitted it.',
   },
-  RUN_NOT_RUNNING: {
-    'en-CA': 'This report is no longer going through approval.',
-  },
-  RECEIPT_ACK_REQUIRED: {
-    'en-CA': 'This approval step requires you to confirm you reviewed the receipts.',
-  },
-  STEP_UNROUTABLE: {
-    // The one refusal on this list whose fix belongs to somebody else, so the
-    // copy has to hand it over rather than leave the approver retrying.
-    'en-CA':
-      'This report cannot be routed to its next approver. The approval ladder or the ' +
-      'reporting line needs fixing before it can move — ask your administrator.',
-  },
   SUBMIT_NEEDS_APPROVER: {
     // DECIDED 4 Oct 2026: nobody approves their own expenses, including the only
     // person in the tenant. So this does not offer a way round — it says who to
@@ -624,9 +590,6 @@ export const ERROR_COPY: Record<UserMessageCode, Copy> = {
   },
   REPORT_NOT_AWAITING_APPROVAL: {
     'en-CA': 'That report is not waiting for approval.',
-  },
-  RUN_ALREADY_OPEN: {
-    'en-CA': 'That report is already going through approval.',
   },
 
   /* ── delegating ────────────────────────────────────────────────────────── */
@@ -902,59 +865,7 @@ export const ERROR_COPY: Record<UserMessageCode, Copy> = {
     'en-CA': 'An acknowledgement needs a note explaining the exception.',
   },
 
-  /* ── the approval ladder ───────────────────────────────────────────────── */
-  APPROVER_POSITION_INVALID: {
-    'en-CA': 'An approver needs a whole position of 1 or more.',
-  },
-  APPROVER_POSITION_DUPLICATE: {
-    'en-CA': 'Two approvers share position {position}.',
-  },
-  APPROVER_KIND_UNKNOWN: {
-    'en-CA': 'That is not a kind of approver this product has.',
-  },
-  APPROVER_OVERSPECIFIED: {
-    // The original named the kind's label; kept, because a rung can hold four
-    // kinds at once and "an approver cannot also name anything else" would leave
-    // the admin looking for which row.
-    'en-CA': 'A {rule} approver cannot also name anything else.',
-  },
-  APPROVER_NEEDS_LEVEL: {
-    'en-CA': 'A manager approver needs a level (1 = the direct manager).',
-  },
-  MANAGER_LEVEL_OUT_OF_RANGE: {
-    'en-CA': 'Manager level must be a whole number from 1 to {max}.',
-  },
-  APPROVER_NEEDS_ROLE: {
-    'en-CA': 'A role approver needs a role.',
-  },
-  APPROVER_NEEDS_PERSON: {
-    'en-CA': 'Pick a person.',
-  },
-  APPROVER_NEEDS_EMAIL: {
-    'en-CA': 'An external approver needs an email address.',
-  },
-  EMAIL_MALFORMED: {
-    'en-CA': '“{given}” does not look like an email address.',
-  },
-  RUNG_NAME_REQUIRED: {
-    'en-CA': 'A rung needs a name.',
-  },
-  RUNG_SEQUENCE_OUT_OF_RANGE: {
-    'en-CA': 'Sequence must be a whole number from 1 to {max}.',
-  },
-  RUNG_THRESHOLD_NEGATIVE: {
-    'en-CA': 'A threshold cannot be negative.',
-  },
-  RUNG_NEEDS_APPROVER: {
-    'en-CA': 'A rung needs at least one approver — a rung nobody signs can never complete.',
-  },
-  RUNG_HAS_NO_APPROVER: {
-    // Raised while ROUTING rather than while editing, so the rung is named: the
-    // admin reading this is looking at a stuck report, not at the rung's form.
-    'en-CA':
-      'Approval rung “{name}” has no approver, so it can never be completed — the approval ' +
-      'ladder needs fixing.',
-  },
+  /* ── approvals and analytics ──────────────────────────────────────────── */
   ANALYTICS_RANGE_REQUIRED: {
     'en-CA': 'Analytics needs a start and an end date — there is deliberately no default range.',
   },
@@ -969,19 +880,6 @@ export const ERROR_COPY: Record<UserMessageCode, Copy> = {
     // these deliberately — which is exactly why it deserved a code instead of
     // being the one string on that page nobody could translate.
     'en-CA': 'This report was withdrawn or decided elsewhere, so there is nothing to approve.',
-  },
-  APPROVER_SELECTION_STALE: {
-    // The four `unrecognised …: ${token}` throws in approver-token.ts. Each
-    // interpolated an internal wire token, and each is reachable the same
-    // ordinary way: the ladder screen was open while somebody changed the roles
-    // or the reporting depth underneath it. The copy says what to do rather than
-    // what the token was.
-    'en-CA': 'That approver is no longer available. Reload the page and pick again.',
-  },
-  LADDER_TOO_LONG: {
-    'en-CA':
-      'This report would need {steps} approvals, more than the {max} a single report may ' +
-      'require — the approval ladder needs simplifying.',
   },
 
   /* ── the chart of accounts ─────────────────────────────────────────────── */

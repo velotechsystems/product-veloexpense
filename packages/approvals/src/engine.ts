@@ -491,8 +491,8 @@ async function activeDelegateeFor(
   const specific = scopeForSubject(subjectType);
   if (specific) scopes.push(specific);
   // VeloExpense: the table's names (0008). `revokedAt: null` is ExpenseOS's `active`, and
-  // the range is inclusive calendar dates; `now` is compared as today's date, as the
-  // ladder's resolver compares it.
+  // the range is inclusive calendar dates; `now` is compared as today's date (a delegation
+  // is "away these days", lib/approvals/delegations.ts).
   const d = await db.delegation.findFirst({
     where: {
       fromUserId: delegatorId,

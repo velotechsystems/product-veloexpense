@@ -30,10 +30,13 @@ import type { QueryRunner } from '@/lib/db/client';
 import { DomainError } from '@/lib/errors/domain';
 import type { UserMessageCode } from '@/lib/i18n/catalog/errors';
 import { append as auditAppend } from '@/lib/audit/service';
-import { DELEGATION_SCOPES, type DelegationScope } from '@/lib/approvals/tiers';
 import type { EmployeeRow } from '@/lib/employees/service';
 import { ORG } from '@/lib/tenant/sql';
 
+/** What a delegation covers. Moved here from the approval ladder's lib/approvals/tiers.ts
+ *  when the ladder was retired (w4-00d, d61); delegations outlive it. */
+export const DELEGATION_SCOPES = ['ALL', 'REPORTS'] as const;
+export type DelegationScope = (typeof DELEGATION_SCOPES)[number];
 
 export type DelegationErrorCode =
   | 'NOT_FOUND'

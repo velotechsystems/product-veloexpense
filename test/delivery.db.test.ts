@@ -153,16 +153,12 @@ beforeEach(async () => {
      DELETE FROM notification_preference;
      DELETE FROM notification_template;
      DELETE FROM approval_instance;
-     DELETE FROM approval_task;
-     DELETE FROM approval_request;
      DELETE FROM expense_report_event;
      DELETE FROM policy_violation;
      DELETE FROM receipt;
      DELETE FROM expense_line_item;
      DELETE FROM expense;
      DELETE FROM expense_report;
-     DELETE FROM approval_policy_approver;
-     DELETE FROM approval_policy;
      DELETE FROM expense_policy;
      COMMIT;`,
   );
@@ -429,8 +425,6 @@ describe('a failed send retries and shows in the admin queue', () => {
     const { reportId } = await submitted();
     await admin.query('DELETE FROM expense_line_item');
     await admin.query('DELETE FROM approval_instance');
-    await admin.query('DELETE FROM approval_task');
-    await admin.query('DELETE FROM approval_request');
     await admin.query('DELETE FROM expense_report_event');
     await admin.query('DELETE FROM expense');
     await admin.query('DELETE FROM expense_report WHERE id = $1', [reportId]);

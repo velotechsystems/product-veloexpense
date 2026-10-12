@@ -587,8 +587,8 @@ export async function detectApproverConcentration(
   const since = sinceDate(cfg.lookbackDays);
   const r = await tx.query(
     `WITH decisions AS (
-       -- w4-00c: the approval engine's decisions, and the ladder's from before the cutover
-       -- until it is retired (w4-00d) — a lookback window spans the switch.
+       -- w4-00c: the approval engine's decisions. The ladder's went with its tables (w4-00d,
+       -- d61), so a lookback that spans the cutover starts there.
        SELECT i.subject_id AS report_id, rep.submitter_id, t.decided_by_id
          FROM approval_instance_task t
          JOIN approval_instance i ON i.id = t.instance_id AND i.subject_type = 'EXPENSE_REPORT'
@@ -598,15 +598,6 @@ export async function detectApproverConcentration(
           AND t.decided_at >= $1::date
           -- Self-approval is a different (worse) finding and the engine prevents
           -- it; excluded here so it cannot masquerade as a concentrated pair.
-          AND t.decided_by_id <> rep.submitter_id
-       UNION ALL
-       SELECT req.report_id, rep.submitter_id, t.decided_by_id
-         FROM approval_task t
-         JOIN approval_request req ON req.id = t.request_id
-         JOIN expense_report rep   ON rep.id = req.report_id
-        WHERE t.status = 'APPROVED'
-          AND t.decided_by_id IS NOT NULL
-          AND t.decided_at >= $1::date
           AND t.decided_by_id <> rep.submitter_id
      ),
      pairs AS (

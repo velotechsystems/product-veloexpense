@@ -53,7 +53,7 @@ import type { ControlRunStatus } from '@/lib/fraud/evaluate';
 import type { Capability } from '@/lib/integrations/contract';
 import type { DeliveryStatus } from '@/lib/notifications/outbox';
 import type { Channel, EventType } from '@/lib/notifications/catalog';
-import type { DelegationScope } from '@/lib/approvals/tiers';
+import type { DelegationScope } from '@/lib/approvals/delegations';
 import type { AccountSource } from '@/lib/accounts/service';
 import type { ReceiptStatus } from '@/lib/receipts/service';
 import { DEFAULT_LOCALE, localizedFrom, type Locale } from '../locales';

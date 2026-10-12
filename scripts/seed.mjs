@@ -608,7 +608,8 @@ async function main() {
   await seedModule(demoId, 'compliance');
   await seedReferenceData(demoId);
   // FOUR users, not three. `owner@demo.test` was added when VX2-3 made a submit
-  // open an approval run: submitting routes the ladder, and admin@demo.test —
+  // open an approval run: submitting routed the ladder (the engine's default flow since
+  // w4-00c, which still needs a manager above the submitter), and admin@demo.test —
   // who the e2e signs in as — was the TOP of the reporting line, so their own
   // reports had nobody to approve them. The e2e failed on it, correctly.
   //

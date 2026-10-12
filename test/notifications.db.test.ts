@@ -164,16 +164,12 @@ beforeEach(async () => {
      DELETE FROM notification_template;
      DELETE FROM approval_instance;
      DELETE FROM approval_workflow WHERE key <> 'expense-report-default';
-     DELETE FROM approval_task;
-     DELETE FROM approval_request;
      DELETE FROM expense_report_event;
      DELETE FROM policy_violation;
      DELETE FROM receipt;
      DELETE FROM expense_line_item;
      DELETE FROM expense;
      DELETE FROM expense_report;
-     DELETE FROM approval_policy_approver;
-     DELETE FROM approval_policy;
      DELETE FROM expense_policy;
      COMMIT;`,
   );
@@ -268,7 +264,7 @@ describe('a decision notifies the submitter', () => {
         `BEGIN;
          SELECT set_config('app.audit_purge','on',true);
          DELETE FROM audit_entry; DELETE FROM notification; DELETE FROM activity;
-         DELETE FROM approval_instance; DELETE FROM approval_task; DELETE FROM approval_request;
+         DELETE FROM approval_instance;
          DELETE FROM expense_report_event; DELETE FROM expense_line_item;
          DELETE FROM expense; DELETE FROM expense_report;
          COMMIT;`,

@@ -21,8 +21,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
  * VeloExpense (w4-00c): ExpenseOS's suite, with the mocks moved to VeloExpense's modules
  * (`@/lib/db/prisma`, the notification service, the lifecycle). Its "offered to NetSuite"
  * cases become the report's OUTCOME — recorded through `recordReportOutcome`, inside the
- * engine's sweep, for an approval AND a rejection — and two cases are VeloExpense's own: the
- * cutover's recall (d52) runs first, and it is reported only when it did something.
+ * engine's sweep, for an approval AND a rejection.
  */
 
 const h = vi.hoisted(() => ({
@@ -38,9 +37,6 @@ const h = vi.hoisted(() => ({
   /** VeloExpense: reports whose outcome went through `recordReportOutcome`. */
   outcomes: [] as Array<{ reportId: string; outcome: string; actor: unknown }>,
   outcomeError: null as Error | null,
-  /** VeloExpense (d52): how many ladder reports the cutover recall finds, and the order. */
-  recalled: 0,
-  order: [] as string[],
 }));
 
 vi.mock('@expenseos/approvals/engine', () => ({
@@ -51,7 +47,6 @@ vi.mock('@expenseos/approvals/engine', () => ({
     _now: Date,
     onExpired?: (r: Record<string, unknown>) => Promise<void>,
   ) => {
-    h.order.push('sweep');
     for (const r of h.swept) {
       if (r.outcome === 'SKIPPED' || !onExpired) continue;
       try {
@@ -87,10 +82,7 @@ vi.mock('@/lib/db/prisma', () => {
 });
 vi.mock('@/lib/db/prisma-pg-bridge', () => ({ queryRunnerOf: (tx: unknown) => tx }));
 vi.mock('@/lib/expenses/lifecycle', () => ({
-  recallLadderSubmissions: async () => {
-    h.order.push('recall');
-    return h.recalled;
-  },
+
   recordReportOutcome: async (
     _tx: unknown,
     input: { reportId: string; outcome: string; actor: unknown },
@@ -138,8 +130,6 @@ beforeEach(() => {
   h.taskWhere = undefined;
   h.outcomes = [];
   h.outcomeError = null;
-  h.recalled = 0;
-  h.order = [];
 });
 afterEach(() => {
   vi.restoreAllMocks();
@@ -348,23 +338,5 @@ describe('an expense report the expiry decided', () => {
     ];
     await run();
     expect(h.outcomes).toEqual([]);
-  });
-});
-
-describe('the cutover recall (VeloExpense, d52)', () => {
-  it('runs before the sweep', async () => {
-    quiet();
-    await run();
-    expect(h.order).toEqual(['recall', 'sweep']);
-  });
-
-  it('is reported only when it recalled something', async () => {
-    const log = quiet();
-    await run();
-    expect(String(log.mock.calls[0][0])).not.toContain('recalled');
-    log.mockClear();
-    h.recalled = 3;
-    await run();
-    expect(String(log.mock.calls[0][0])).toContain('recalled from the ladder: 3');
   });
 });

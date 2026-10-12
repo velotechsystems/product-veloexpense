@@ -52,6 +52,7 @@ let submitterId: string;
 let approverId: string;
 let otherApproverId: string;
 let categoryId: string;
+let workflowVersionId: string;
 
 /** A date `n` days ago, as YYYY-MM-DD — the shape `expense.txn_date` holds. */
 const daysAgo = (n: number) => new Date(Date.now() - n * 86_400_000).toISOString().slice(0, 10);
@@ -123,14 +124,45 @@ beforeAll(async () => {
       [orgId],
     );
     categoryId = cat.rows[0].id;
+    // w4-00d: an approval is the engine's now (the ladder's tables are gone, d61), and an
+    // engine instance names the workflow version it ran. An inactive one, so nothing routes on it.
+    const wf = await tx.query(
+      `INSERT INTO approval_workflow (key, name, subject_type, active)
+       VALUES ('fraud-approvals', 'fraud-approvals', 'EXPENSE_REPORT', false) RETURNING id`,
+    );
+    const v = await tx.query(
+      `INSERT INTO approval_workflow_version (workflow_id, version, match_condition, graph, status, published_at)
+       VALUES ($1, 1, '{"always": true}', '{"nodes":[],"edges":[]}', 'PUBLISHED', now()) RETURNING id`,
+      [wf.rows[0].id],
+    );
+    workflowVersionId = v.rows[0].id;
   });
 });
 
+/** w4-00d: one decided approval of a report, as the engine records it — an APPROVED instance
+ *  with one APPROVED task. (The ladder's suite wrote an approval_request and approval_task.) */
+async function engineApproval(reportId: string, deciderId: string): Promise<void> {
+  await withOrg(orgId, async (tx) => {
+    const inst = await tx.query(
+      `INSERT INTO approval_instance (workflow_version_id, subject_type, subject_id, status,
+                                      cursor, completed_at)
+       VALUES ($1, 'EXPENSE_REPORT', $2, 'APPROVED', '{}'::jsonb, clock_timestamp())
+       RETURNING id`,
+      [workflowVersionId, reportId],
+    );
+    await tx.query(
+      `INSERT INTO approval_instance_task (instance_id, node_id, assignee_user_id, status,
+                                           decided_by_id, decided_at)
+       VALUES ($1, 'a', $2, 'APPROVED', $2, clock_timestamp())`,
+      [inst.rows[0].id, deciderId],
+    );
+  });
+}
+
 beforeEach(async () => {
   await admin.query('DELETE FROM fraud_flag');
-  await admin.query('DELETE FROM approval_task');
-  await admin.query('DELETE FROM approval_request');
   await admin.query('DELETE FROM expense_report');
+  await admin.query('DELETE FROM approval_instance');
   await admin.query("UPDATE organization SET fraud_config = '{}'::jsonb WHERE id = $1", [orgId]);
 });
 
@@ -364,24 +396,7 @@ describe('violation density', () => {
 });
 
 describe('approver concentration', () => {
-  async function approve(reportId: string, deciderId: string) {
-    await withOrg(orgId, async (tx) => {
-      const req = await tx.query(
-        `INSERT INTO approval_request (organization_id, report_id, policy_snapshot, total_steps,
-                                       subject_total_minor, subject_currency_code, opened_by_id,
-                                       status, closed_at)
-         VALUES ($1, $2, '{}'::jsonb, 1, 1000, 'CAD', $3, 'APPROVED', clock_timestamp())
-         RETURNING id`,
-        [orgId, reportId, submitterId],
-      );
-      await tx.query(
-        `INSERT INTO approval_task (organization_id, request_id, step, assignee_id, status,
-                                    decided_by_id, decided_at)
-         VALUES ($1, $2, 1, $3, 'APPROVED', $3, clock_timestamp())`,
-        [orgId, req.rows[0].id, deciderId],
-      );
-    });
-  }
+  const approve = engineApproval;
 
   it('flags one approver deciding all of one submitter\'s reports', async () => {
     for (let i = 0; i < 10; i += 1) await approve(await report(`conc ${i}`), approverId);
@@ -597,23 +612,7 @@ describe('every finding can actually be said', () => {
       );
     }
     for (let i = 0; i < 10; i += 1) {
-      const r = await report(`conc ${i}`);
-      await withOrg(orgId, async (tx) => {
-        const req = await tx.query(
-          `INSERT INTO approval_request (organization_id, report_id, policy_snapshot, total_steps,
-                                         subject_total_minor, subject_currency_code, opened_by_id,
-                                         status, closed_at)
-           VALUES ($1, $2, '{}'::jsonb, 1, 1000, 'CAD', $3, 'APPROVED', clock_timestamp())
-         RETURNING id`,
-          [orgId, r, submitterId],
-        );
-        await tx.query(
-          `INSERT INTO approval_task (organization_id, request_id, step, assignee_id, status,
-                                      decided_by_id, decided_at)
-           VALUES ($1, $2, 1, $3, 'APPROVED', $3, clock_timestamp())`,
-          [orgId, req.rows[0].id, approverId],
-        );
-      });
+      await engineApproval(await report(`conc ${i}`), approverId);
     }
 
     const findings = (

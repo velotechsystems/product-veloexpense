@@ -207,9 +207,9 @@ describe('what it starts', () => {
     );
   });
 
-  it('VeloExpense (d52): runs one approval sweep at boot, after the schedules', async () => {
-    // The boot sweep is what recalls the reports a deploy left on the retired ladder, so it
-    // must not wait for the hour. It names no tenant: it fans out like the scheduled run.
+  it('VeloExpense (w4-00c): runs one approval sweep at boot, after the schedules', async () => {
+    // A deadline that passed while the worker was down is acted on now, not at the next hour.
+    // It names no tenant: it fans out like the scheduled run.
     await boot();
     expect(h.enqueue).toHaveBeenCalledWith('approval.sweepExpired', { trigger: 'boot' });
     expect(h.enqueue.mock.invocationCallOrder[0]).toBeGreaterThan(

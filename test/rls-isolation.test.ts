@@ -236,41 +236,40 @@ beforeAll(async () => {
            FROM app_user WHERE organization_id = $1 LIMIT 1`,
         [org, expense.rows[0].id, `org/${org}/receipts/x/${label}.pdf`, `receipt-${label}.pdf`],
       );
-      // VX2-1: the approval schema from migration 0008 — approval_policy,
-      // approval_request, approval_task, delegation. A leaked ladder would tell
-      // one tenant another's spending thresholds; a leaked request or task would
-      // expose who approves whose money, and a leaked delegation who is away.
+      // VX2-1: delegation, from migration 0008, and (w4-00d) the approval engine's run and task
+      // on this report — the ladder's approval_policy, approval_request and approval_task went
+      // with migration 0062 (d61). A leaked run or task would expose who approves whose money,
+      // and a leaked delegation who is away. The workflow is named and keyed as the engine's
+      // own isolation test below expects.
       const owner = label === 'A' ? 'a@x.com' : 'b@x.com';
       const approver = await tx.query(
         `INSERT INTO app_user (organization_id, email, display_name, role)
          VALUES ($1, $2, $3, 'MANAGER') RETURNING id`,
         [org, `approver-${label.toLowerCase()}@x.com`, `Approver ${label}`],
       );
-      const rung = await tx.query(
-        `INSERT INTO approval_policy (organization_id, name, sequence, threshold_minor)
-         VALUES ($1, $2, 1, 0) RETURNING id`,
-        [org, `Ladder ${label}`],
+      const workflow = await tx.query(
+        `INSERT INTO approval_workflow (organization_id, key, name, subject_type, is_default)
+         VALUES ($1, 'default', $2, 'EXPENSE_REPORT', true) RETURNING id`,
+        [org, `Workflow ${label}`],
       );
-      await tx.query(
-        `INSERT INTO approval_policy_approver
-           (organization_id, policy_id, position, approver_kind, manager_level, display_name)
-         VALUES ($1, $2, 1, 'MANAGER', 1, $3)`,
-        [org, rung.rows[0].id, `Signer ${label}`],
-      );
-      const request = await tx.query(
-        `INSERT INTO approval_request
-           (organization_id, report_id, policy_snapshot, total_steps,
-            subject_total_minor, subject_currency_code, opened_by_id)
-         SELECT $1, $2, $3::jsonb, 1, 1000, 'CAD', id
-           FROM app_user WHERE organization_id = $1 AND email = $4
+      const version = await tx.query(
+        `INSERT INTO approval_workflow_version
+           (organization_id, workflow_id, version, match_condition, graph, status)
+         VALUES ($1, $2, 1, '{"always":true}', '{"nodes":[],"edges":[]}', 'PUBLISHED')
          RETURNING id`,
-        [org, report, JSON.stringify([{ step: 1, name: `Ladder ${label}` }]), owner],
+        [org, workflow.rows[0].id],
+      );
+      const run = await tx.query(
+        `INSERT INTO approval_instance
+           (organization_id, workflow_version_id, subject_type, subject_id, cursor)
+         VALUES ($1, $2, 'EXPENSE_REPORT', $3, '{}') RETURNING id`,
+        [org, version.rows[0].id, report],
       );
       await tx.query(
-        `INSERT INTO approval_task
-           (organization_id, request_id, step, assignee_id, note)
-         VALUES ($1, $2, 1, $3, $4)`,
-        [org, request.rows[0].id, approver.rows[0].id, `Task ${label}`],
+        `INSERT INTO approval_instance_task
+           (organization_id, instance_id, node_id, assignee_user_id, label)
+         VALUES ($1, $2, 'n1', $3, $4)`,
+        [org, run.rows[0].id, approver.rows[0].id, `Task ${label}`],
       );
       await tx.query(
         `INSERT INTO delegation
@@ -353,9 +352,9 @@ beforeAll(async () => {
       );
       await tx.query(
         `INSERT INTO action_token
-           (organization_id, token_hash, task_id, action, recipient_id, expires_at, delivery_id)
+           (organization_id, token_hash, instance_task_id, action, recipient_id, expires_at, delivery_id)
          SELECT $1, $2, t.id, 'APPROVE', $3, now() + interval '5 days', $4
-           FROM approval_task t WHERE t.organization_id = $1 LIMIT 1`,
+           FROM approval_instance_task t WHERE t.organization_id = $1 LIMIT 1`,
         [
           org,
           // A 64-char lowercase-hex string, as action_token_hash_shape requires.
@@ -475,38 +474,26 @@ describe('RLS tenant isolation', () => {
     expect(rows.rows).toEqual([{ title: 'Report A', merchant: 'Merchant A', description: 'Line A' }]);
   });
 
-  it('approval ladders, signers, runs, tasks and delegations are tenant-isolated', async () => {
+  it('approval tasks, delegations and the audit log are tenant-isolated', async () => {
+    // w4-00d: the ladder's rungs, signers and requests are gone (migration 0062); the
+    // engine's workflows, versions and runs have their own test below.
     const a = await withOrg(orgA, async (tx) => ({
-      ladder: (await tx.query('SELECT name FROM approval_policy')).rows.map((r) => r.name),
-      signers: (await tx.query('SELECT display_name FROM approval_policy_approver')).rows.map(
-        (r) => r.display_name,
-      ),
-      requests: (await tx.query('SELECT id FROM approval_request')).rows.length,
-      tasks: (await tx.query('SELECT note FROM approval_task')).rows.map((r) => r.note),
+      tasks: (await tx.query('SELECT label FROM approval_instance_task')).rows.map((r) => r.label),
       delegations: (await tx.query('SELECT note FROM delegation')).rows.map((r) => r.note),
       audit: (await tx.query('SELECT actor_name FROM audit_entry')).rows.map((r) => r.actor_name),
     }));
     expect(a).toEqual({
-      ladder: ['Ladder A'],
-      signers: ['Signer A'],
-      requests: 1,
       tasks: ['Task A'],
       delegations: ['Delegation A'],
       audit: ['Actor A'],
     });
 
     const none = await withoutOrg(async (tx) => ({
-      ladder: (await tx.query('SELECT * FROM approval_policy')).rows.length,
-      signers: (await tx.query('SELECT * FROM approval_policy_approver')).rows.length,
-      requests: (await tx.query('SELECT * FROM approval_request')).rows.length,
-      tasks: (await tx.query('SELECT * FROM approval_task')).rows.length,
+      tasks: (await tx.query('SELECT * FROM approval_instance_task')).rows.length,
       delegations: (await tx.query('SELECT * FROM delegation')).rows.length,
       audit: (await tx.query('SELECT * FROM audit_entry')).rows.length,
     }));
     expect(none).toEqual({
-      ladder: 0,
-      signers: 0,
-      requests: 0,
       tasks: 0,
       delegations: 0,
       audit: 0,
@@ -699,31 +686,21 @@ describe('RLS tenant isolation', () => {
   });
 
   it('an approval task cannot be joined back to another tenant report', async () => {
-    // The Phase-2 shape of the join-walk test above: task -> request -> report.
-    // Every hop is independently RLS-scoped, so org A sees its own chain only.
+    // The Phase-2 shape of the join-walk test above: task -> run -> report (w4-00d: on the
+    // engine; the ladder's was task -> request -> report). Every hop is independently
+    // RLS-scoped, so org A sees its own chain only.
     const rows = await withOrg(orgA, (tx) =>
       tx.query(
-        `SELECT r.title, t.note
-           FROM approval_task t
-           JOIN approval_request q ON q.id = t.request_id
-           JOIN expense_report r ON r.id = q.report_id`,
+        `SELECT r.title, t.label
+           FROM approval_instance_task t
+           JOIN approval_instance i ON i.id = t.instance_id
+           JOIN expense_report r ON r.id = i.subject_id`,
       ),
     );
-    expect(rows.rows).toEqual([{ title: 'Report A', note: 'Task A' }]);
+    expect(rows.rows).toEqual([{ title: 'Report A', label: 'Task A' }]);
   });
 
-  it('an approval signer cannot be joined to another tenant ladder', async () => {
-    const rows = await withOrg(orgA, (tx) =>
-      tx.query(
-        `SELECT p.name, ap.display_name
-           FROM approval_policy_approver ap
-           JOIN approval_policy p ON p.id = ap.policy_id`,
-      ),
-    );
-    expect(rows.rows).toEqual([{ name: 'Ladder A', display_name: 'Signer A' }]);
-  });
-
-  it('WITH CHECK rejects a cross-tenant approval request', async () => {
+  it('WITH CHECK rejects a cross-tenant approval run', async () => {
     // The row bodies come from what org A can actually SEE, and only the
     // organization_id is org B's. Selecting org B's rows instead would prove
     // nothing: RLS hides them, the SELECT returns nothing, and the INSERT
@@ -731,11 +708,10 @@ describe('RLS tenant isolation', () => {
     await expect(
       withOrg(orgA, (tx) =>
         tx.query(
-          `INSERT INTO approval_request
-             (organization_id, report_id, policy_snapshot, total_steps,
-              subject_total_minor, subject_currency_code, opened_by_id)
-           SELECT $1, r.id, '[]'::jsonb, 1, 1000, 'CAD', u.id
-             FROM expense_report r, app_user u
+          `INSERT INTO approval_instance
+             (organization_id, workflow_version_id, subject_type, subject_id, cursor)
+           SELECT $1, v.id, 'EXPENSE_REPORT', r.id, '{}'
+             FROM expense_report r, approval_workflow_version v
             LIMIT 1`,
           [orgB],
         ),
@@ -2816,40 +2792,21 @@ describe('RLS tenant isolation', () => {
    * off another tenant's run or be assigned to another tenant's person (composite keys).
    */
   it('approval workflows, versions, runs and tasks are tenant-isolated, across every key', async () => {
-    const seed = (org: string, label: string) =>
+    // w4-00d: each tenant's workflow, version, run and task are the suite's own seed (above),
+    // which the dropped ladder's rows used to occupy; this reads their ids back.
+    const seed = (org: string) =>
       withOrg(org, async (tx) => {
-        const user = (await tx.query('SELECT id FROM app_user WHERE organization_id = $1 LIMIT 1', [org])).rows[0]
-          .id as string;
-        const workflow = (
-          await tx.query(
-            `INSERT INTO approval_workflow (organization_id, key, name, subject_type, is_default)
-             VALUES ($1, 'default', $2, 'EXPENSE_REPORT', true) RETURNING id`,
-            [org, `Workflow ${label}`],
-          )
-        ).rows[0].id as string;
-        const version = (
-          await tx.query(
-            `INSERT INTO approval_workflow_version (organization_id, workflow_id, version, match_condition, graph, status)
-             VALUES ($1, $2, 1, '{"always":true}', '{"nodes":[],"edges":[]}', 'PUBLISHED') RETURNING id`,
-            [org, workflow],
-          )
-        ).rows[0].id as string;
-        const instance = (
-          await tx.query(
-            `INSERT INTO approval_instance (organization_id, workflow_version_id, subject_type, subject_id, cursor)
-             VALUES ($1, $2, 'EXPENSE_REPORT', gen_random_uuid(), '{}') RETURNING id`,
-            [org, version],
-          )
-        ).rows[0].id as string;
-        await tx.query(
-          `INSERT INTO approval_instance_task (organization_id, instance_id, node_id, assignee_user_id, label)
-           VALUES ($1, $2, 'n1', $3, $4)`,
-          [org, instance, user, `Task ${label}`],
+        const { rows } = await tx.query(
+          `SELECT t.assignee_user_id AS user, w.id AS workflow, v.id AS version, i.id AS instance
+             FROM approval_instance_task t
+             JOIN approval_instance i ON i.id = t.instance_id
+             JOIN approval_workflow_version v ON v.id = i.workflow_version_id
+             JOIN approval_workflow w ON w.id = v.workflow_id`,
         );
-        return { user, workflow, version, instance };
+        return rows[0] as { user: string; workflow: string; version: string; instance: string };
       });
-    const a = await seed(orgA, 'A');
-    const b = await seed(orgB, 'B');
+    const a = await seed(orgA);
+    const b = await seed(orgB);
 
     for (const [org, label] of [
       [orgA, 'A'],
@@ -2918,9 +2875,6 @@ describe('RLS tenant isolation', () => {
       const blind = await withoutOrg((tx) => tx.query(`SELECT count(*)::int AS n FROM ${t}`));
       expect(blind.rows[0].n, t).toBe(0);
     }
-
-    await admin.query(`DELETE FROM approval_instance`);
-    await admin.query(`DELETE FROM approval_workflow`);
   });
 
 });
