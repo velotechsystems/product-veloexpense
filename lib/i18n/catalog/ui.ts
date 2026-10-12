@@ -202,7 +202,6 @@ export const UI_COPY = {
   'title.signup.verify': { 'en-CA': 'Confirm your email' },
   'title.invite.accept': { 'en-CA': 'Accept your invitation' },
   'title.admin.analytics': { 'en-CA': 'Spend analytics' },
-  'title.admin.approval.ladder': { 'en-CA': 'Approval ladder' },
   'title.admin.approval.workflows': { 'en-CA': 'Approval workflows' },
   'title.admin.approval.workflow.editor': { 'en-CA': 'Edit approval workflow' },
   'title.admin.billing': { 'en-CA': 'Billing' },

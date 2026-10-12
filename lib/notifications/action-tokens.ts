@@ -88,7 +88,7 @@ export interface IssuedToken {
  * Mint a token for (task, action, recipient).
  *
  * w4-00c: the task is an approval ENGINE task (`approval_instance_task`), stored in
- * `instance_task_id` (0061). The ladder's `task_id` is history only.
+ * `instance_task_id` (0061), which 0062 made the only column a token names its task by.
  *
  * 32 random bytes, base64url. Only the sha256 is persisted, so a database leak
  * yields nothing usable — the raw value exists in exactly one place, which is a
@@ -177,9 +177,6 @@ export async function verifyActionToken(
   if (!row) return null;
   if (!sameHash(row.token_hash as string, expected)) return null;
   if (row.consumed_at !== null) return null;
-  // w4-00c: a ladder link (no engine task) was retired by 0061; one that slipped through
-  // names nothing the engine can decide.
-  if (row.instance_task_id === null) return null;
   if ((row.expires_at as Date).getTime() < now.getTime()) return null;
   return {
     id: row.id as string,

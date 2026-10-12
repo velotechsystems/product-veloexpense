@@ -246,18 +246,22 @@ describe.skipIf(!process.env.DATABASE_URL)('comments router (integration)', () =
       // The fan-out is to participants; a comment defaults to in-app (no email), as in
       // ExpenseOS.
       const subjectId = await newReport();
-      const request = (
+      // w4-00d: a task on the approval engine, under the tenant's default flow (the ladder's
+      // approval_request and approval_task are gone, d61).
+      const instance = (
         await h.admin.query(
-          `INSERT INTO approval_request (organization_id, report_id, policy_snapshot, status, total_steps,
-                                         subject_total_minor, subject_currency_code, opened_by_id)
-           VALUES ($1, $2, '{}'::jsonb, 'RUNNING', 1, 100, 'CAD', $3) RETURNING id`,
-          [h.orgId, subjectId, ownerId],
+          `INSERT INTO approval_instance (organization_id, workflow_version_id, subject_type, subject_id, cursor)
+           SELECT $1, w.current_version_id, 'EXPENSE_REPORT', $2, '{}'::jsonb
+             FROM approval_workflow w WHERE w.organization_id = $1 AND w.key = 'expense-report-default'
+           RETURNING id`,
+          [h.orgId, subjectId],
         )
       ).rows[0].id;
       const approverId = h.people[0].id;
       await h.admin.query(
-        `INSERT INTO approval_task (organization_id, request_id, step, assignee_id) VALUES ($1, $2, 1, $3)`,
-        [h.orgId, request, approverId],
+        `INSERT INTO approval_instance_task (organization_id, instance_id, node_id, assignee_user_id)
+         VALUES ($1, $2, 'manager', $3)`,
+        [h.orgId, instance, approverId],
       );
       await makeCaller(ownerId).post({
         subjectType: 'EXPENSE_REPORT',

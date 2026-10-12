@@ -61,7 +61,7 @@ import { FRAUD_SEVERITIES } from '@/lib/fraud/rules';
 import { CONTROL_SEVERITIES } from '@/lib/fraud/controls';
 import { FLAG_STATUSES } from '@/lib/fraud/review';
 import { CONTROL_RUN_STATUSES } from '@/lib/fraud/evaluate';
-import { DELEGATION_SCOPES } from '@/lib/approvals/tiers';
+import { DELEGATION_SCOPES } from '@/lib/approvals/delegations';
 
 /**
  * The rendered enums, each paired with the array that DEFINES it.

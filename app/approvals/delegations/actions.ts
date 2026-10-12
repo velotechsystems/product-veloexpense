@@ -23,7 +23,7 @@ import { withCurrentOrg } from '@/lib/tenant/request';
 import type { QueryRunner } from '@/lib/db/client';
 import { requireActor } from '@/lib/auth/actor';
 import type { EmployeeRow } from '@/lib/employees/service';
-import type { DelegationScope } from '@/lib/approvals/tiers';
+import type { DelegationScope } from '@/lib/approvals/delegations';
 import {
   createDelegation,
   listDelegations,

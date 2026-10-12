@@ -106,8 +106,8 @@ const REPORT_SUMMARY_SELECT = {
  * VeloExpense: the manager is `app_user.manager_id`, and the tasks are those of EVERY
  * approval of the report rather than only the current instance's (ExpenseOS reads
  * `approvalInstanceId`, which a resubmission repoints), so an approver who returned it can
- * still follow the conversation after it is resubmitted — and, until the ladder is retired
- * (w4-00d), the ladder's runs from before the cutover too.
+ * still follow the conversation after it is resubmitted. (The approval ladder's runs from
+ * before the cutover went with its tables, w4-00d, d61.)
  */
 export async function canViewReport(
   db: import('@/lib/db/prisma').TenantDb,
@@ -129,12 +129,6 @@ export async function canViewReport(
       JOIN approval_instance i ON i.id = t.instance_id
      WHERE i.subject_type = 'EXPENSE_REPORT' AND i.subject_id = ${report.id}::uuid
        AND (t.assignee_user_id = ${userId}::uuid OR t.decided_by_id = ${userId}::uuid)
-    UNION ALL
-    SELECT 1 AS ok
-      FROM approval_task t
-      JOIN approval_request q ON q.id = t.request_id
-     WHERE q.report_id = ${report.id}::uuid
-       AND (t.assignee_id = ${userId}::uuid OR t.decided_by_id = ${userId}::uuid)
      LIMIT 1`;
   if (related.length > 0) return true;
   return callerCanDecideReport(db, report.id, userId, false);

@@ -4,7 +4,7 @@
  *
  * ADMIN only, with the acting user's role read from `app_user` INSIDE the tenant
  * transaction, never from the session token — the same gate as
- * /admin/approval-ladder and /admin/expense-policies.
+ * /admin/expense-policies.
  *
  * ── Why this surface exists at all ──────────────────────────────────────────
  *

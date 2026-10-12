@@ -10,12 +10,11 @@ import { createTenantHarness, type TenantHarness } from '../../../server/__test-
  *   · a lapsed deadline decides a report through VeloExpense's outcome — the history row (no
  *     person: `context.system`), the audit row as the sweep, the budgets, and on APPROVE the
  *     ledger post — and the submitter is told (TASK_EXPIRED);
- *   · a report the deploy left SUBMITTED on the retired ladder goes back to DRAFT with a note
- *     (d52), its ladder run cancelled, once — a second sweep finds nothing;
+ *   · migration 0062 will not drop the ladder under a report still waiting on it (d61);
  *   · a flow that decides on submit (no approval on its path) is recorded as the flow's
  *     decision, with the ledger post queued;
- *   · migration 0061: a history row names a person or says what made it, and an approve link
- *     names an engine task.
+ *   · migrations 0061/0062: a history row names a person or says what made it, and an approve
+ *     link names an engine task.
  *
  * Gated on DATABASE_URL; the hermetic CI run skips it.
  */
@@ -185,77 +184,29 @@ describe.skipIf(!process.env.DATABASE_URL)('approval.sweepExpired (integration)'
     });
   });
 
-  describe('the cutover recall (d52)', () => {
-    /** A report as the ladder left it: SUBMITTED, no instance, a running ladder run. */
-    const ladderLeftover = async (title: string) => {
-      const id = await draft(title);
+  describe('migration 0062, which drops the ladder', () => {
+    // d61. The cutover's recall (d52) put every report the ladder left SUBMITTED back to DRAFT;
+    // one still SUBMITTED with no approval instance is a tenant the sweep never reached, and
+    // dropping the ladder under it would strand it. The migration refuses, naming the tenant.
+    it('refuses while a report is still SUBMITTED with no approval instance, naming the tenant', async () => {
+      const id = await draft('Stranded on the ladder');
       await h.admin.query(
         `UPDATE expense_report SET status = 'SUBMITTED', submitted_at = now() WHERE id = $1`,
         [id],
       );
-      const run = (
-        await h.admin.query(
-          `INSERT INTO approval_request (organization_id, report_id, policy_snapshot, status, total_steps,
-                                         subject_total_minor, subject_currency_code, opened_by_id)
-           VALUES ($1, $2, '[]'::jsonb, 'RUNNING', 1, 4200, 'CAD', $3) RETURNING id`,
-          [h.orgId, id, employee],
-        )
-      ).rows[0].id;
-      await h.admin.query(
-        `INSERT INTO approval_task (organization_id, request_id, step, assignee_id)
-         VALUES ($1, $2, 1, $3)`,
-        [h.orgId, run, manager],
-      );
-      return { id, run };
-    };
-
-    it('puts it back to DRAFT with a note, as the system, and cancels its ladder run', async () => {
-      const { id, run } = await ladderLeftover('Ladder leftover');
-      await sweep();
-
-      const [report] = await row(
-        `SELECT status, submitted_at, approval_instance_id FROM expense_report WHERE id = $1`,
-        [id],
-      );
-      expect(report).toMatchObject({ status: 'DRAFT', submitted_at: null, approval_instance_id: null });
-      const [event] = await row(
-        `SELECT actor_id, note, context FROM expense_report_event WHERE report_id = $1 AND action = 'RECALL'`,
-        [id],
-      );
-      expect(event).toMatchObject({
-        actor_id: null,
-        note: lifecycle.LADDER_RECALL_NOTE,
-        context: { system: 'approval.cutover', cancelledTasks: 1 },
-      });
-      expect((await row(`SELECT status FROM approval_request WHERE id = $1`, [run]))[0].status).toBe(
-        'CANCELLED',
-      );
-      const [audit] = await row(
-        `SELECT actor_name FROM audit_entry WHERE entity_id = $1 AND action = 'REPORT_RECALLED'`,
-        [id],
-      );
-      expect(audit.actor_name).toBe('system:approval.cutover');
-      // The submitter submits it again, on the engine.
-      await submit(id);
-      expect((await row(`SELECT status FROM expense_report WHERE id = $1`, [id]))[0].status).toBe(
-        'SUBMITTED',
-      );
-    });
-
-    it('does it once — a second sweep finds nothing, and an engine submission is never touched', async () => {
-      const { id } = await ladderLeftover('Once only');
-      const onEngine = await draft('On the engine');
-      await submit(onEngine);
-      await sweep();
-      await sweep();
-      const recalls = await row(
-        `SELECT count(*)::int AS n FROM expense_report_event WHERE report_id = $1 AND action = 'RECALL'`,
-        [id],
-      );
-      expect(recalls[0].n).toBe(1);
-      expect(
-        (await row(`SELECT status FROM expense_report WHERE id = $1`, [onEngine]))[0].status,
-      ).toBe('SUBMITTED');
+      try {
+        const { readFileSync } = await import('node:fs');
+        const sql = readFileSync(
+          'prisma/migrations/0062_drop_approval_ladder/migration.sql',
+          'utf8',
+        );
+        const guard = sql.slice(sql.indexOf('DO $$'), sql.indexOf('END $$;') + 'END $$;'.length);
+        await expect(h.admin.query(guard)).rejects.toThrow(
+          /tenant approval-sweep still has 1 report\(s\) SUBMITTED on the approval ladder/,
+        );
+      } finally {
+        await h.admin.query(`UPDATE expense_report SET status = 'DRAFT' WHERE id = $1`, [id]);
+      }
     });
   });
 
@@ -286,7 +237,7 @@ describe.skipIf(!process.env.DATABASE_URL)('approval.sweepExpired (integration)'
     });
   });
 
-  describe('migration 0061', () => {
+  describe('migrations 0061 and 0062', () => {
     it('refuses a history row that names nobody and no system', async () => {
       const id = await draft('Nobody');
       await expect(
@@ -298,14 +249,14 @@ describe.skipIf(!process.env.DATABASE_URL)('approval.sweepExpired (integration)'
       ).rejects.toThrow(/expense_report_event_actor_or_system/);
     });
 
-    it('refuses an approve link that names no task, or both kinds', async () => {
-      const insert = (task: string | null, instanceTask: string | null) =>
+    it('refuses an approve link that names no engine task (0062: the ladder column is gone)', async () => {
+      await expect(
         h.admin.query(
-          `INSERT INTO action_token (organization_id, token_hash, task_id, instance_task_id, action, recipient_id, expires_at)
-           VALUES ($1, repeat('a', 64), $2, $3, 'APPROVE', $4, now() + interval '1 day')`,
-          [h.orgId, task, instanceTask, founder],
-        );
-      await expect(insert(null, null)).rejects.toThrow(/action_token_one_task/);
+          `INSERT INTO action_token (organization_id, token_hash, instance_task_id, action, recipient_id, expires_at)
+           VALUES ($1, repeat('a', 64), NULL, 'APPROVE', $2, now() + interval '1 day')`,
+          [h.orgId, founder],
+        ),
+      ).rejects.toThrow(/instance_task_id/);
     });
   });
 });

@@ -227,10 +227,6 @@ describe('the setup checklist', () => {
         [orgId],
       );
       await tx.query(
-        `INSERT INTO approval_policy (organization_id, name, sequence) VALUES ($1, 'Standard', 1)`,
-        [orgId],
-      );
-      await tx.query(
         `INSERT INTO expense_policy (organization_id, kind, severity, params)
          VALUES ($1, 'RECEIPT_REQUIRED', 'BLOCK', '{"thresholdMinor":5000}'::jsonb)`,
         [orgId],

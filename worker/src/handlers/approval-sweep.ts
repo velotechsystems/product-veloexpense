@@ -2,7 +2,7 @@ import { addBusinessDays, loadRequesterId, sweepExpiredTasks } from '@expenseos/
 import type { JobMap } from '@expenseos/jobs';
 import { db, type TenantDb } from '@/lib/db/prisma';
 import { queryRunnerOf } from '@/lib/db/prisma-pg-bridge';
-import { recallLadderSubmissions, recordReportOutcome } from '@/lib/expenses/lifecycle';
+import { recordReportOutcome } from '@/lib/expenses/lifecycle';
 import type { EventType } from '@/lib/notifications/catalog';
 import {
   notifyRecipients as notifyServiceRecipients,
@@ -37,14 +37,10 @@ import {
  *     sweep for a dropped post; VeloExpense queues the post on the transition and has none;
  *   · the activities carry the report's placeholders (`reportPayload`) and go through
  *     VeloExpense's notification service;
- *   · FIRST, the cutover's recall (d52, `recallLadderSubmissions`): a report still SUBMITTED
- *     on the retired approval ladder goes back to DRAFT. Idempotent, and nothing to do after
- *     the first run.
+ *   · the cutover's recall of reports the approval ladder left SUBMITTED (d52) ran here until
+ *     the ladder's tables were dropped (w4-00d; migration 0062 refuses while one remains).
  */
 export async function handleApprovalSweep(_data: JobMap['approval.sweepExpired']): Promise<void> {
-  // VeloExpense (d52): the ladder's leftovers, before anything else reads a report's state.
-  const recalled = await db.$transaction((tx) => recallLadderSubmissions(queryRunnerOf(tx)));
-
   // VeloExpense: one tenant transaction for the engine's per-task savepoints, and each
   // report's outcome recorded inside its task's savepoint.
   const results = await db.$transaction((tx) =>
@@ -87,9 +83,7 @@ export async function handleApprovalSweep(_data: JobMap['approval.sweepExpired']
 
   const reminded = await sendDeadlineReminders();
   console.log(
-    `[approval.sweep] expired: ${escalated} escalated, ${resolved} resolved; reminders: ${reminded}` +
-      // VeloExpense (d52): said only when it did something.
-      (recalled > 0 ? `; recalled from the ladder: ${recalled}` : ''),
+    `[approval.sweep] expired: ${escalated} escalated, ${resolved} resolved; reminders: ${reminded}`,
   );
 }
 

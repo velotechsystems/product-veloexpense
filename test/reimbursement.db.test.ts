@@ -132,16 +132,12 @@ beforeEach(async () => {
      DELETE FROM notification_preference;
      DELETE FROM notification_template;
      DELETE FROM approval_instance;
-     DELETE FROM approval_task;
-     DELETE FROM approval_request;
      DELETE FROM expense_report_event;
      DELETE FROM policy_violation;
      DELETE FROM receipt;
      DELETE FROM expense_line_item;
      DELETE FROM expense;
      DELETE FROM expense_report;
-     DELETE FROM approval_policy_approver;
-     DELETE FROM approval_policy;
      DELETE FROM expense_policy;
      COMMIT;`,
   );

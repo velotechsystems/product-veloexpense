@@ -25,8 +25,8 @@ import { makeContext } from '../__test-helpers__/trpcCaller';
  * The harness differs, the cases do not:
  *   · ExpenseOS runs against its seeded database; this creates its own tenant, two people
  *     and a currency pair, and runs every call inside that tenant (`withTenantDb`);
- *   · `makeInstance` writes VeloExpense's approval tables (a RUNNING `approval_request`
- *     and its tasks), which is what `list` reads until Wave 4 (`pendingApproverByReport`);
+ *   · `makeInstance` writes the approval engine's tables itself (a RUNNING `approval_instance`
+ *     and its tasks), where ExpenseOS's harness started one through the engine;
  *   · storage is VeloExpense's (`setStorage`), with its `delete` spied on.
  */
 

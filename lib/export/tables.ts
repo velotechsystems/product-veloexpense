@@ -156,10 +156,6 @@ export const EXPORTED: Readonly<Record<string, ExportedTable>> = {
   /* ── policy, approvals, delegation ────────────────────────────────────── */
   expense_policy: { file: 'expense-policies.csv' },
   policy_violation: { file: 'policy-violations.csv' },
-  approval_policy: { file: 'approval-policies.csv' },
-  approval_policy_approver: { file: 'approval-policy-approvers.csv' },
-  approval_request: { file: 'approval-requests.csv' },
-  approval_task: { file: 'approval-tasks.csv' },
   delegation: { file: 'delegations.csv' },
   // w4-00a (0058): ExpenseOS's workflow engine — the workflows a tenant authored, their
   // versions and the runs and tasks they produced. The tenant's own records; nothing secret.

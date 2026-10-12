@@ -168,9 +168,9 @@ async function main(): Promise<void> {
   const workers = QUEUE_NAMES.map(startWorkerFor);
   await Promise.all(workers.map((w) => w.waitUntilReady()));
   await registerRecurringJobs();
-  // VeloExpense (w4-00c, d52): one approval sweep at boot, which is also what recalls the
-  // reports a deploy left SUBMITTED on the retired ladder — within moments of the deploy
-  // rather than at the next hour. Idempotent: a sweep with nothing to do does nothing.
+  // VeloExpense (w4-00c): one approval sweep at boot, so a deadline that passed while the worker
+  // was down is acted on now rather than at the next hour. (It also ran the cutover's recall,
+  // d52, until w4-00d.) Idempotent: a sweep with nothing to do does nothing.
   await enqueue('approval.sweepExpired', { trigger: 'boot' });
   console.log('[worker] ready');
   installShutdown(workers);
