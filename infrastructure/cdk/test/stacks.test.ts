@@ -405,10 +405,23 @@ describe('receipts by email (w3-06)', () => {
     expect(text).toContain('"aws:SourceAccount"');
   });
 
-  it('does not take the account’s one active rule set until the environment says so', () => {
-    // SES allows one active set per account and region, and the account is the suite's.
-    expect(s.config.inboundEmail?.activateRuleSet).toBe(false);
-    expect(resources(s.mail, 'Custom::AWS')).toHaveLength(0);
+  it('activates its rule set, and on delete clears it rather than naming another (d49)', () => {
+    // SES allows one active set per account and region, and the account is the suite's:
+    // dev had none when this was decided, so nothing is displaced and nothing to restore.
+    expect(s.config.inboundEmail?.activateRuleSet).toBe(true);
+    expect(s.config.inboundEmail?.restoreRuleSetNameOnDelete).toBeUndefined();
+    const [[, activate]] = resources(s.mail, 'Custom::AWS');
+    const text = json(activate.Properties);
+    expect(text).toContain('setActiveReceiptRuleSet');
+    // It activates this stack's own set, by reference.
+    const [[setId, set]] = resources(s.mail, 'AWS::SES::ReceiptRuleSet');
+    expect((set.Properties as { RuleSetName: string }).RuleSetName).toBe('veloexpense-dev-inbound');
+    expect(text).toContain(json({ Ref: setId }));
+    // The delete call carries no rule set name, which deactivates every set.
+    const onDelete = JSON.parse(String((activate.Properties as { Delete?: unknown }).Delete ?? '{}')) as {
+      parameters?: Record<string, unknown>;
+    };
+    expect(onDelete.parameters ?? {}).toEqual({});
   });
 
   it('the web task gets the domain and the pinned topic, not the bucket', () => {

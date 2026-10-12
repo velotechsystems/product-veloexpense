@@ -188,7 +188,10 @@ const STAGES: Record<Stage, Omit<VeloExpenseConfig, 'resourcePrefix' | 'secretPr
       webhookUrl: 'https://dev.veloexpense.ai/api/email/inbound',
       receiptsMailboxes: ['receipts'],
       retentionDays: 14,
-      activateRuleSet: false,
+      // Checked 11 Oct 2026 (d49): the account had no receipt rule sets at all, active or
+      // not — VeloPulse's two SES identities send only. So this one is activated, and
+      // deleting the stack clears the active set rather than restoring another.
+      activateRuleSet: true,
     },
   },
 };
