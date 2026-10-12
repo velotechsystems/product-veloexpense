@@ -17,6 +17,7 @@
  */
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { fetchJsonWithRetry } from './lib/fetch-retry.mjs';
 
 const REGISTRY = process.env.UI_KIT_REGISTRY ?? 'https://velotechsystems.github.io/lib-ui-kit/r';
 
@@ -67,11 +68,21 @@ const VENDORED = {
  */
 const VENDORED_MULTI = ['data-display', 'navigation', 'forms'];
 
+/** f31: set once an item has failed for a reason other than a plain 4xx. */
+let registryDown = false;
+
 async function item(name) {
   if (!/^https?:/.test(REGISTRY)) return JSON.parse(readFileSync(join(REGISTRY, `${name}.json`), 'utf8'));
-  const res = await fetch(`${REGISTRY}/${name}.json`, { signal: AbortSignal.timeout(15000) });
-  if (!res.ok) throw new Error(`${REGISTRY}/${name}.json answered ${res.status}`);
-  return res.json();
+  // f31: a 5xx, 429, timeout or network error is retried (twice), so a GitHub Pages blip
+  // does not fail the build; a 404 is still an answer at once. Once one item has used up its
+  // retries the registry is taken to be DOWN, and the rest are asked once each — otherwise an
+  // outage would cost every item three timeouts before the check could say so.
+  try {
+    return await fetchJsonWithRetry(`${REGISTRY}/${name}.json`, { attempts: registryDown ? 1 : 3 });
+  } catch (err) {
+    if (!/answered 4(?!29)\d\d$/.test(String(err.message))) registryDown = true;
+    throw err;
+  }
 }
 
 let failed = 0;
