@@ -242,10 +242,10 @@ async function seedUser(orgId, email, displayName, employee = {}) {
 }
 
 /**
- * w4-00c-1 (d54, d56) — the approval flow every tenant starts on, as `createOrganization`
+ * w4-00c-1 (d54, d56, d59) — the approval flow every tenant starts on, as `createOrganization`
  * gives a real tenant (lib/approvals/defaultWorkflow.ts) and migration 0059 gave the tenants
- * that predate it: Start → the submitter's manager → Approved, the tenant's first active
- * administrator as the no-manager fallback, no deadline. The SQL is 0059's, for one tenant —
+ * that predate it: Start → the submitter's manager → Approved, the Admin role as the
+ * no-manager fallback, no deadline, authored by the first active administrator. The SQL is 0059's, for one tenant —
  * this `.mjs` cannot import the TypeScript. Idempotent: a tenant that has it keeps it.
  */
 async function seedDefaultApprovalWorkflow(orgId) {
@@ -262,9 +262,8 @@ async function seedDefaultApprovalWorkflow(orgId) {
             ORDER BY created_at, id LIMIT 1`,
         )
       ).rows[0]?.id ?? null;
-      const approver = admin
-        ? { kind: 'manager', fallback: { kind: 'user', userId: admin } }
-        : { kind: 'manager' };
+      // The Admin system role's id (@expenseos/rbac SYSTEM_ROLE_IDS.admin) — d59.
+      const approver = { kind: 'manager', fallback: { kind: 'role', roleId: '019e3000-0000-7000-8000-000000000001' } };
       const graph = {
         nodes: [
           { id: 'start', type: 'start', position: { x: 240, y: 40 } },

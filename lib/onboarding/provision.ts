@@ -198,8 +198,9 @@ export async function createOrganization(
      * POLICY, and `lib/onboarding/starter.ts` argues the line. */
     const seededCategories = await seedStarterCategories(tx);
 
-    /* w4-00c-1 (d54, d56) — and the approval flow every tenant starts on: the submitter's
-     * manager approves, this administrator when there is no manager. In this transaction
+    /* w4-00c-1 (d54, d56, d59) — and the approval flow every tenant starts on: the
+     * submitter's manager approves, any administrator when there is no manager. Authored by
+     * this administrator. In this transaction
      * for the same reason as the categories: ExpenseOS's engine approves a report that no
      * workflow governs, so a tenant without one would approve everything on submit. Not a
      * policy in starter.ts's sense — the absence is not benign. */
