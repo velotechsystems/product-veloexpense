@@ -109,10 +109,11 @@ describe('the approvers', () => {
   // finds no tasks (above).
 
   it('scopes the task query to that subject’s instance', async () => {
-    // VeloExpense: to the report, across its runs.
+    // VeloExpense: to the report, across its approvals — the engine's instances and, until
+    // the ladder is retired (w4-00d), its runs: the report's id is bound once for each.
     const { db, tasks } = makeDb(report());
     await threadParticipants(db, 'EXPENSE_REPORT', 'r-7');
-    expect(tasks.mock.calls[0]?.slice(1)).toEqual(['r-7']);
+    expect(tasks.mock.calls[0]?.slice(1)).toEqual(['r-7', 'r-7']);
   });
 });
 

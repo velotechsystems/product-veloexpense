@@ -15,7 +15,7 @@
  * later by someone who has not been bitten by it.
  *
  * The page therefore repeats the facts the approver needs to have seen — who
- * submitted, how much, which step, how many receipts — because the alternative is
+ * submitted, how much, how many receipts — because the alternative is
  * a one-click approval of a number nobody looked at, which is how a rubber stamp
  * gets built. Same reasoning as /approvals having no approve buttons in the list.
  */
@@ -190,10 +190,6 @@ export default async function ApprovePage({
           <dd>{outcome.submitterName}</dd>
           <dt className="text-muted-foreground">Total</dt>
           <dd className="tabular-nums">{outcome.total}</dd>
-          <dt className="text-muted-foreground">Step</dt>
-          <dd>
-            {outcome.step} of {outcome.totalSteps}
-          </dd>
           <dt className="text-muted-foreground">Receipts</dt>
           <dd>{outcome.receiptCount === 0 ? 'none attached' : `${outcome.receiptCount} attached`}</dd>
           <dt className="text-muted-foreground">Acting as</dt>
@@ -202,22 +198,6 @@ export default async function ApprovePage({
 
         <form action={decideFromTokenForm} className="mt-2 flex flex-col gap-3">
           <input type="hidden" name="token" value={token ?? ''} />
-          {outcome.requireReceiptViewAck && outcome.action === 'APPROVED' ? (
-            <label className="flex items-start gap-2 text-sm text-foreground">
-              <input type="checkbox" name="receiptViewAcknowledged" className="mt-1" />
-              <span>
-                I have reviewed the receipts for this report.
-                {outcome.receiptCount === 0 ? (
-                  // Worth saying plainly rather than letting the box be ticked
-                  // over nothing: the rung asks for a confirmation and there is
-                  // no evidence to confirm.
-                  <strong className="block font-medium text-destructive">
-                    There are no receipts attached. Consider returning it instead.
-                  </strong>
-                ) : null}
-              </span>
-            </label>
-          ) : null}
           <div className="flex items-center gap-3">
             <Button type="submit" variant={outcome.action === 'APPROVED' ? 'default' : 'outline'}>
               Yes, {verb.toLowerCase()} it

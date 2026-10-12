@@ -14,8 +14,10 @@
  *    it and it is the reason the feature is safe: "The token only authenticates
  *    the actor and binds one action to one task; the caller still re-runs
  *    canDecide + the atomic claim, so it never bypasses authorization." So this
- *    goes through `engine.decide`, which opens with `assertCanDecide`, exactly as
- *    the browser does. The token replaces the session cookie and nothing else.
+ *    goes through `decideThroughEngine` (w4-00c), which asks ExpenseOS's
+ *    `resolveDecideAccess` before `decideTask` claims the task, exactly as the
+ *    browser's `expenseApprovals.decide` does. The token replaces the session cookie
+ *    and nothing else.
  *
  *    The case that makes it matter: a link that has sat in a mailbox for four days
  *    is precisely when the world has moved — the approver may have been removed
@@ -30,20 +32,29 @@
  *
  * 3. THE TENANT IS RESOLVED FROM THE TOKEN, AND NOTHING ELSE IS. The request has
  *    no session, so `withPlatformRead` finds which organization the token belongs
- *    to — and takes only that. Everything after runs inside `withOrg`. That rule
- *    is what makes a cross-tenant read driven by an untrusted value acceptable;
- *    see `lib/tenant/context.ts`.
+ *    to — and takes only that. Everything after runs inside `withTenantDb` — the
+ *    tenant's Prisma transaction, which the engine needs (w4-00c). That rule is what
+ *    makes a cross-tenant read driven by an untrusted value acceptable; see
+ *    `lib/tenant/context.ts`.
+ *
+ * w4-00c (d57): the receipt-review tick and the ladder's "step N of M" are gone with the
+ * ladder; the page still says how many receipts are attached.
  */
-import { withOrg, withPlatformRead } from '@/lib/tenant/context';
+import { withPlatformRead } from '@/lib/tenant/context';
+import { withTenantDb } from '@/lib/db/prisma';
+import { queryRunnerOf } from '@/lib/db/prisma-pg-bridge';
 import { userMessageOrGeneric, type UserMessage } from '@/lib/errors/domain';
 import { formatMinor } from '@/lib/money';
-import { decide, type Decision } from '@/lib/approvals/engine';
+import { decideThroughEngine } from '@/server/lib/reportLifecycle';
 import {
   consumeActionToken,
   consumeTaskTokens,
   resolveTokenTenant,
   verifyActionToken,
 } from '@/lib/notifications/action-tokens';
+
+/** The decision a link carries. */
+export type Decision = 'APPROVED' | 'REJECTED';
 
 export type ApproveOutcome =
   | { kind: 'INVALID' }
@@ -56,10 +67,6 @@ export type ApproveOutcome =
       total: string;
       submitterName: string;
       recipientName: string;
-      step: number;
-      totalSteps: number;
-      /** The rung asked the approver to confirm they reviewed the receipts. */
-      requireReceiptViewAck: boolean;
       receiptCount: number;
     }
   | { kind: 'DONE'; action: Decision; reportId: string; reportTitle: string }
@@ -82,7 +89,8 @@ export async function inspectToken(rawToken: string): Promise<ApproveOutcome> {
   const tenant = await withPlatformRead((tx) => resolveTokenTenant(tx, rawToken));
   if (!tenant) return { kind: 'INVALID' };
 
-  return withOrg(tenant.organizationId, async (tx): Promise<ApproveOutcome> => {
+  return withTenantDb(tenant.organizationId, async (db): Promise<ApproveOutcome> => {
+    const tx = queryRunnerOf(db);
     // Re-verified INSIDE the tenant, under `tenant_isolation` rather than the
     // narrowed platform policy — see `verifyActionToken` on why both guards
     // exist.
@@ -90,21 +98,20 @@ export async function inspectToken(rawToken: string): Promise<ApproveOutcome> {
     if (!token) return { kind: 'INVALID' };
 
     const r = await tx.query(
-      `SELECT t.step, t.status AS task_status, t.receipt_view_acknowledged_at,
-              q.total_steps, q.status AS run_status, q.policy_snapshot,
-              rep.id AS report_id, rep.title, rep.number, rep.status AS report_status,
+      `SELECT t.status AS task_status, i.status AS instance_status,
+              rep.id AS report_id, rep.title, rep.number,
               rep.total_minor, rep.currency_code,
               COALESCE(sub.display_name, sub.email) AS submitter_name,
               COALESCE(rcp.display_name, rcp.email) AS recipient_name,
               (SELECT count(*)::int FROM receipt rc
                  JOIN expense e ON e.id = rc.expense_id
                 WHERE e.report_id = rep.id AND rc.status = 'STORED') AS receipt_count
-         FROM approval_task    t
-         JOIN approval_request q   ON q.id = t.request_id
-         JOIN expense_report   rep ON rep.id = q.report_id
-         JOIN app_user         sub ON sub.id = rep.submitter_id
-         JOIN app_user         rcp ON rcp.id = $2
-        WHERE t.id = $1`,
+         FROM approval_instance_task t
+         JOIN approval_instance      i   ON i.id = t.instance_id
+         JOIN expense_report         rep ON rep.id = i.subject_id
+         JOIN app_user               sub ON sub.id = rep.submitter_id
+         JOIN app_user               rcp ON rcp.id = $2
+        WHERE t.id = $1 AND i.subject_type = 'EXPENSE_REPORT'`,
       [token.taskId, token.recipientId],
     );
     const row = r.rows[0];
@@ -117,15 +124,18 @@ export async function inspectToken(rawToken: string): Promise<ApproveOutcome> {
         // this file shapes them that way deliberately — which is precisely why
         // they were the strings on the email-approval page that nothing could
         // translate.
+        // w4-00c: the engine SKIPS a task a recall or a return voided, where the ladder
+        // CANCELLED it.
         reason: {
-          code: row.task_status === 'CANCELLED' ? 'TASK_WITHDRAWN' : 'TASK_ALREADY_DECIDED',
+          code:
+            row.task_status === 'SKIPPED' || row.instance_status === 'CANCELLED'
+              ? 'TASK_WITHDRAWN'
+              : 'TASK_ALREADY_DECIDED',
         },
         reportId: row.report_id as string,
       };
     }
 
-    const snapshot = row.policy_snapshot as { step: number; requireReceiptViewAck?: boolean }[];
-    const step = snapshot.find((s) => s.step === (row.step as number));
     return {
       kind: 'READY',
       action: token.action === 'APPROVE' ? 'APPROVED' : 'REJECTED',
@@ -135,9 +145,6 @@ export async function inspectToken(rawToken: string): Promise<ApproveOutcome> {
       total: formatMinor(row.total_minor as string, row.currency_code as string),
       submitterName: row.submitter_name as string,
       recipientName: row.recipient_name as string,
-      step: row.step as number,
-      totalSteps: row.total_steps as number,
-      requireReceiptViewAck: step?.requireReceiptViewAck ?? false,
       receiptCount: row.receipt_count as number,
     };
   });
@@ -154,20 +161,18 @@ export async function inspectToken(rawToken: string): Promise<ApproveOutcome> {
  * too; this makes the second click a clean "already used" rather than a race
  * decided deeper in.
  */
-export async function decideFromToken(
-  rawToken: string,
-  opts: { receiptViewAcknowledged?: boolean } = {},
-): Promise<ApproveOutcome> {
+export async function decideFromToken(rawToken: string): Promise<ApproveOutcome> {
   const tenant = await withPlatformRead((tx) => resolveTokenTenant(tx, rawToken));
   if (!tenant) return { kind: 'INVALID' };
 
-  // The catch is OUTSIDE `withOrg`, and that placement is the whole point.
+  // The catch is OUTSIDE `withTenantDb`, and that placement is the whole point.
   // Catching inside would COMMIT the transaction that had already consumed the
   // token, burning a single-use credential on a decision that did not happen —
   // so a recipient who forgot to tick the receipt box would find their link dead.
   // Letting it escape rolls the consume back with everything else.
   try {
-    return await withOrg(tenant.organizationId, async (tx): Promise<ApproveOutcome> => {
+    return await withTenantDb(tenant.organizationId, async (db): Promise<ApproveOutcome> => {
+      const tx = queryRunnerOf(db);
       const token = await verifyActionToken(tx, rawToken);
       if (!token) return { kind: 'INVALID' };
 
@@ -175,9 +180,9 @@ export async function decideFromToken(
 
       const rep = await tx.query(
         `SELECT rep.id, rep.title
-           FROM approval_task t
-           JOIN approval_request q ON q.id = t.request_id
-           JOIN expense_report rep ON rep.id = q.report_id
+           FROM approval_instance_task t
+           JOIN approval_instance i ON i.id = t.instance_id
+           JOIN expense_report rep ON rep.id = i.subject_id
           WHERE t.id = $1`,
         [token.taskId],
       );
@@ -185,24 +190,21 @@ export async function decideFromToken(
       const reportTitle = (rep.rows[0]?.title as string | undefined) ?? 'the report';
 
       const decision: Decision = token.action === 'APPROVE' ? 'APPROVED' : 'REJECTED';
-      await decide(
-        tx,
-        token.taskId,
-        token.recipientId,
-        decision,
-        {
-          note: 'Decided from an emailed link.',
-          receiptViewAcknowledged: opts.receiptViewAcknowledged === true,
-        },
-        // NOT `isAdmin: true`. The link carries no elevation — an admin clicking
-        // their own emailed link gets exactly the authority the ladder gave them,
-        // and the admin override stays something done deliberately from the
-        // report, by somebody who is signed in.
-        {},
-      );
+      await decideThroughEngine(db, {
+        taskId: token.taskId,
+        actorId: token.recipientId,
+        approve: decision === 'APPROVED',
+        note: 'Decided from an emailed link.',
+        // NOT the override. The link carries no elevation — an admin clicking their own
+        // emailed link gets exactly the authority the workflow gave them, and the
+        // override stays something done deliberately from the report, by somebody who is
+        // signed in.
+        mayOverride: false,
+        context: { via: 'email' },
+      });
 
       // The other half of this task's link pair is now a credential with nothing
-      // to do. Retire it rather than rely on `decide` refusing it.
+      // to do. Retire it rather than rely on the engine refusing it.
       await consumeTaskTokens(tx, token.taskId);
 
       return { kind: 'DONE', action: decision, reportId, reportTitle };
@@ -227,12 +229,13 @@ async function reportIdFor(rawToken: string): Promise<string | null> {
   try {
     const tenant = await withPlatformRead((tx) => resolveTokenTenant(tx, rawToken));
     if (!tenant) return null;
-    return await withOrg(tenant.organizationId, async (tx) => {
+    return await withTenantDb(tenant.organizationId, async (db) => {
+      const tx = queryRunnerOf(db);
       const token = await verifyActionToken(tx, rawToken);
       if (!token) return null;
       const r = await tx.query(
-        `SELECT q.report_id FROM approval_task t
-           JOIN approval_request q ON q.id = t.request_id
+        `SELECT i.subject_id AS report_id FROM approval_instance_task t
+           JOIN approval_instance i ON i.id = t.instance_id
           WHERE t.id = $1`,
         [token.taskId],
       );

@@ -21,13 +21,21 @@
  * of nothing. The codes themselves are unchanged — callers and tests that branch
  * on them see what they always saw. Same codes the setup checklist on the home page already uses
  * (`app/page.tsx`, the APPROVER item), so the wall and the warning agree.
+ *
+ * w4-00c: on ExpenseOS's engine. The default flow (d59) sends a submitter with no manager to
+ * the administrators; a founder alone is the one administrator, and may not approve their own
+ * report, so the submit is refused with the same sentence (`NO_APPROVER`,
+ * `assertSomeoneElseCanDecide` in lib/expenses/lifecycle.ts). The ladder's other routing
+ * failure (an external EMAIL approver) went with the ladder; its place is taken by the two
+ * refusals the engine's flow can give at submit: a flow naming the submitter, and no flow.
  */
 import { describe, it, expect, beforeAll, beforeEach, afterAll } from 'vitest';
 import { Pool } from 'pg';
-import { withOrg } from '@/lib/tenant/context';
+// w4-00c: the lifecycle starts the approval engine, which needs the tenant's Prisma
+// transaction (test/support/tenant-tx.ts) — the same `QueryRunner`, under the same name.
+import { seedDefaultFlow, withTenantTx as withOrg } from './support/tenant-tx';
 import * as expenses from '@/lib/expenses/service';
 import * as lifecycle from '@/lib/expenses/lifecycle';
-import * as approvals from '@/lib/approvals/service';
 import { userMessageOf } from '@/lib/errors/domain';
 import { TEST_ACTOR } from './support/audit-actor';
 import { TODAY } from './support/dates';
@@ -65,6 +73,9 @@ beforeAll(async () => {
     "INSERT INTO organization (slug, name) VALUES ('solo-co','Solo Co') RETURNING id",
   );
   orgId = o.rows[0].id;
+  // w4-00c: the default approval flow a provisioned tenant starts with (d54); without it a
+  // submit is refused (d58).
+  await seedDefaultFlow(orgId);
   await withOrg(orgId, async (tx) => {
     const f = await tx.query(
       `INSERT INTO app_user (organization_id, email, display_name, role)
@@ -82,7 +93,12 @@ beforeAll(async () => {
 
 beforeEach(async () => {
   await admin.query('DELETE FROM expense_report WHERE organization_id = $1', [orgId]);
-  await admin.query('DELETE FROM approval_policy WHERE organization_id = $1', [orgId]);
+  await admin.query('DELETE FROM approval_instance WHERE organization_id = $1', [orgId]);
+  await admin.query(
+    "DELETE FROM approval_workflow WHERE organization_id = $1 AND key <> 'expense-report-default'",
+    [orgId],
+  );
+  await admin.query('UPDATE approval_workflow SET active = true WHERE organization_id = $1', [orgId]);
   await admin.query("DELETE FROM app_user WHERE organization_id = $1 AND id <> $2", [orgId, founderId]);
   await admin.query('UPDATE app_user SET manager_id = NULL WHERE id = $1', [founderId]);
 });
@@ -98,7 +114,7 @@ describe('a founder alone in their tenant', () => {
     const err = await withOrg(orgId, (tx) => lifecycle.submitReport(tx, reportId, founderId)).catch(
       (e: unknown) => e,
     );
-    expect((err as { code?: string }).code).toBe('SELF_APPROVAL');
+    expect((err as { code?: string }).code).toBe('NO_APPROVER');
     expect(userMessageOf(err)?.code).toBe('SUBMIT_NEEDS_APPROVER');
     // The refusal is the whole transaction: still a draft, nothing half-submitted.
     expect(await status(reportId)).toBe('DRAFT');
@@ -116,29 +132,64 @@ describe('a founder alone in their tenant', () => {
   });
 });
 
-describe('any other routing failure at submit', () => {
-  it('gets the STEP_UNROUTABLE sentence, rather than no sentence at all', async () => {
-    // An EMAIL approver rung, which routing refuses until external approvers
-    // can act (EMAIL_APPROVER_UNSUPPORTED) — a routing failure that is not the
-    // solo-founder one, so it must NOT get the invite-somebody sentence.
+describe('the other refusals the flow can give at submit (w4-00c)', () => {
+  it('refuses a flow that names the submitter, with the same sentence', async () => {
+    // A second admin exists, so the default flow would reach somebody — but a more specific
+    // workflow names the founder as the approver of their own report.
     await admin.query(
       `INSERT INTO app_user (organization_id, email, display_name, role)
        VALUES ($1,'second@solo.test','Second','ADMIN')`,
       [orgId],
     );
-    await withOrg(orgId, (tx) =>
-      approvals.createPolicy(tx, {
-        name: 'External',
-        sequence: 1,
-        approvers: [{ position: 1, approverKind: 'EMAIL', externalEmail: 'ext@vendor.test' }],
-      }),
-    );
+    const wf = (
+      await admin.query(
+        `INSERT INTO approval_workflow (organization_id, key, name, subject_type, priority)
+         VALUES ($1, 'self', 'Self', 'EXPENSE_REPORT', 10) RETURNING id`,
+        [orgId],
+      )
+    ).rows[0].id;
+    const graph = {
+      nodes: [
+        { id: 'start', type: 'start' },
+        { id: 'a', type: 'approval', approver: { kind: 'manager', fallback: { kind: 'user', userId: founderId } } },
+        { id: 'done', type: 'approved' },
+      ],
+      edges: [
+        { id: 'e1', source: 'start', target: 'a' },
+        { id: 'e2', source: 'a', target: 'done' },
+      ],
+    };
+    const v = (
+      await admin.query(
+        `INSERT INTO approval_workflow_version (organization_id, workflow_id, version, match_condition, graph, status)
+         VALUES ($1, $2, 1, '{"always": true}', $3::jsonb, 'PUBLISHED') RETURNING id`,
+        [orgId, wf, JSON.stringify(graph)],
+      )
+    ).rows[0].id;
+    await admin.query(`UPDATE approval_workflow SET current_version_id = $1 WHERE id = $2`, [v, wf]);
+
     const reportId = await draft();
     const err = await withOrg(orgId, (tx) => lifecycle.submitReport(tx, reportId, founderId)).catch(
       (e: unknown) => e,
     );
-    expect((err as { code?: string }).code).toBe('EMAIL_APPROVER_UNSUPPORTED');
-    expect(userMessageOf(err)?.code).toBe('STEP_UNROUTABLE');
+    expect((err as { code?: string }).code).toBe('NO_APPROVER');
+    expect(userMessageOf(err)?.code).toBe('SUBMIT_NEEDS_APPROVER');
     expect(await status(reportId)).toBe('DRAFT');
+  });
+
+  it('refuses a report no published workflow governs (d58), and says whose fix it is', async () => {
+    // ExpenseOS approves it. VeloExpense never approves by omission.
+    await admin.query(`UPDATE approval_workflow SET active = false WHERE organization_id = $1`, [orgId]);
+    const reportId = await draft();
+    const err = await withOrg(orgId, (tx) => lifecycle.submitReport(tx, reportId, founderId)).catch(
+      (e: unknown) => e,
+    );
+    expect((err as { code?: string }).code).toBe('NO_WORKFLOW');
+    expect(userMessageOf(err)?.code).toBe('SUBMIT_NO_WORKFLOW');
+    expect(await status(reportId)).toBe('DRAFT');
+    const runs = await admin.query(`SELECT count(*)::int AS n FROM approval_instance WHERE subject_id = $1`, [
+      reportId,
+    ]);
+    expect(runs.rows[0].n).toBe(0);
   });
 });

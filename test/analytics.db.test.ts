@@ -16,7 +16,9 @@
  */
 import { describe, it, expect, beforeAll, beforeEach, afterAll } from 'vitest';
 import { Pool } from 'pg';
-import { withOrg } from '@/lib/tenant/context';
+// w4-00c: the lifecycle starts the approval engine, which needs the tenant's Prisma
+// transaction (test/support/tenant-tx.ts) — the same `QueryRunner`, under the same name.
+import { seedDefaultFlow, withTenantTx as withOrg } from './support/tenant-tx';
 import * as analytics from '@/lib/analytics/service';
 
 const admin = new Pool({
@@ -41,6 +43,9 @@ beforeAll(async () => {
     `INSERT INTO organization (slug, name) VALUES ('ana-co','Ana Co') RETURNING id`,
   );
   orgId = o.rows[0].id;
+  // w4-00c: the default approval flow a provisioned tenant starts with (d54); without it a
+  // submit is refused (d58).
+  await seedDefaultFlow(orgId);
 
   // Immediately after the org and BEFORE any gl_account write — 0022 puts
   // app_module_enabled('accounting') in that table's policy, and this is the

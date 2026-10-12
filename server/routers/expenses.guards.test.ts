@@ -85,12 +85,26 @@ vi.mock('@/lib/policy/service', () => ({
   acknowledgeViolation,
   clearAcknowledgement,
 }));
-const submitThroughLifecycle = stubFn(async () => ({}));
-const recallThroughLifecycle = stubFn(async () => ({ id: REPORT, status: 'DRAFT' }));
+// w4-00c: the lifecycle starts the engine and hands back its result; ExpenseOS's hooks after
+// it (notify the first approvers, the workflow's effects, tell the recalled approvers) are
+// the procedure's, so they are spied on here.
+const submitThroughLifecycle = stubFn(async () => ({
+  approval: { instanceId: 'inst-1', status: 'RUNNING', createdTaskIds: ['t-1'], firedEffects: ['n-1'] },
+}));
+const recallThroughLifecycle = stubFn(async () => ({
+  id: REPORT,
+  status: 'DRAFT',
+  cancelledTaskIds: ['t-1'],
+}));
 vi.mock('@/server/lib/reportLifecycle', () => ({
   submitThroughLifecycle,
   recallThroughLifecycle,
 }));
+const notifyReportSubmitted = stubFn(async () => {});
+const notifyReportRecalled = stubFn(async () => {});
+vi.mock('@/server/lib/reportNotify', () => ({ notifyReportSubmitted, notifyReportRecalled }));
+const executeWorkflowEffects = stubFn(async () => {});
+vi.mock('@/server/lib/workflowEffects', () => ({ executeWorkflowEffects }));
 
 /**
  * VeloExpense: VeloExpense's storage (`getStorage`) in place of ExpenseOS's
@@ -494,6 +508,14 @@ describe('report-level guards', () => {
     const c = await callerFor(db, [P.expense.report.createOwn]);
     const res = await c.submit({ reportId: REPORT });
     expect(submitThroughLifecycle).toHaveBeenCalledWith(db, REPORT, ME);
+    // ExpenseOS's hooks after the start: the first approvers, then the workflow's effects.
+    expect(notifyReportSubmitted).toHaveBeenCalledWith(db, REPORT, ME, ['t-1']);
+    expect(executeWorkflowEffects).toHaveBeenCalledWith(db, {
+      subjectType: 'EXPENSE_REPORT',
+      subjectId: REPORT,
+      effectNodeIds: ['n-1'],
+      actorId: ME,
+    });
     expect(res.report).toMatchObject({ status: 'SUBMITTED', totalMinor: '10000' });
     expect(res.counts).toEqual({ info: 0, warning: 0, block: 0, unjustifiedWarning: 0 });
   });
@@ -1142,9 +1164,10 @@ describe('recall', () => {
      * after the submitter pulled it back, and they would decide on something the
      * submitter is already editing.
      *
-     * VeloExpense: the cancel is the lifecycle's (d23) — `cancelRunForReport` cancels the
-     * run and its pending tasks, pinned in VeloExpense's approval suites. Here: the
-     * procedure hands the report to it as the caller, and returns it as DRAFT.
+     * VeloExpense: the cancel is the lifecycle's (d23, w4-00c) — ExpenseOS's body runs there
+     * under the report lock, pinned in `test/lifecycle.db.test.ts`. Here: the procedure hands
+     * the report to it as the caller, tells the approvers whose tasks it cancelled, and
+     * returns it as DRAFT.
      */
     const db = makeDb();
     db.expenseReport.findUnique.mockResolvedValue({
@@ -1154,6 +1177,7 @@ describe('recall', () => {
     });
     const res = await (await caller(db)).recall({ reportId: REPORT });
     expect(recallThroughLifecycle).toHaveBeenCalledWith(db, REPORT, ME);
+    expect(notifyReportRecalled).toHaveBeenCalledWith(db, REPORT, ME, ['t-1']);
     // DRAFT, and this assertion is why the mismatch survived: it was written FROM the
     // implementation, so it asserted RETURNED — the very thing that made the "Recall to
     // draft" button lie — and would have gone red the moment anybody fixed it.
@@ -1161,6 +1185,7 @@ describe('recall', () => {
   });
 
   // VeloExpense: ExpenseOS's "recalls a report that had no approval instance" covers an
-  // auto-approved report's missing instance. VeloExpense's engine opens a run for every
-  // submit, and `cancelRunForReport` already answers null for a report with none.
+  // auto-approved report's missing instance. VeloExpense refuses a submit with no workflow
+  // (d58), and the lifecycle's cancel answers null for a report with no running instance
+  // (`test/lifecycle.db.test.ts`).
 });

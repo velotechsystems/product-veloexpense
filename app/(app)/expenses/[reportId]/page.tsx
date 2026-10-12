@@ -2,8 +2,7 @@ import { permissions as P } from '@expenseos/rbac';
 import { forbidden } from 'next/navigation';
 import { withTenantDb } from '@/lib/db/prisma';
 import { pageTitle } from '@/lib/i18n/page-title';
-import { decidableTaskForReport } from '@/lib/approvals/inbox';
-import { queryRunnerOf } from '@/lib/db/prisma-pg-bridge';
+import { resolveDecidableTask } from '@/server/lib/reportApproval';
 import { requireActiveModule } from '@/server/platform/guard';
 import { shellContext } from '@/server/shell';
 import { ExpenseReportWorkbench } from './ExpenseReportWorkbench';
@@ -42,14 +41,9 @@ export default async function ExpenseReportPage({
   // override is `decide.any` — the same flag `expenseApprovals.decide` checks —
   // never `read.all`, which shows the queue and must not decide it.
   const mayOverride = rbac.permissions.includes(P.expense.report.decideAny);
-  // VeloExpense: `decidableTaskForReport` — built on the same `resolveDecidableTask` the
-  // `decide` procedure asks (server/lib/reportApproval.ts) — so the page also learns whether
-  // this step requires the receipt-view acknowledgement, which VeloExpense's engine refuses
-  // an approval without (`RECEIPT_ACK_REQUIRED`), and how many receipts it is about.
-  const decidable = await withTenantDb(user.organizationId, (tx) =>
-    decidableTaskForReport(queryRunnerOf(tx), reportId, user.id, { isAdmin: mayOverride }),
+  const taskId = await withTenantDb(user.organizationId, (tx) =>
+    resolveDecidableTask(tx, reportId, user.id, mayOverride),
   );
-  const taskId = decidable?.taskId ?? null;
   const canApprove = taskId != null;
   if (!rbac.permissions.includes(P.expense.report.readOwn) && !canApprove) forbidden();
   return (
@@ -69,11 +63,6 @@ export default async function ExpenseReportPage({
       // Cosmetic — the queue page re-checks.
       canOpenLedgerQueue={rbac.permissions.includes(P.ledger.syncRetry)}
       taskId={taskId ?? undefined}
-      receiptAck={
-        decidable?.requireReceiptViewAck
-          ? { required: true, receiptCount: decidable.receiptCount }
-          : undefined
-      }
     />
   );
 }

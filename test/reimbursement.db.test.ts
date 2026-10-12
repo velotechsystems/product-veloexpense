@@ -20,10 +20,11 @@
  */
 import { describe, it, expect, beforeAll, beforeEach, afterAll } from 'vitest';
 import { Pool } from 'pg';
-import { withOrg } from '@/lib/tenant/context';
+// w4-00c: the lifecycle starts the approval engine, which needs the tenant's Prisma
+// transaction (test/support/tenant-tx.ts) — the same `QueryRunner`, under the same name.
+import { decideAs, seedDefaultFlow, withTenantTx as withOrg } from './support/tenant-tx';
 import * as expenses from '@/lib/expenses/service';
 import * as lifecycle from '@/lib/expenses/lifecycle';
-import { decide } from '@/lib/approvals/engine';
 import { verifyChain } from '@/lib/audit/verify';
 import { listInbox } from '@/lib/notifications/service';
 import { TEST_ACTOR } from './support/audit-actor';
@@ -76,14 +77,12 @@ async function approved(amountMinor = 125000, title = 'Zurich', submitterEmail =
   const who = submitterEmail === SUBMITTER ? submitter : finance;
   const { approval } = await withOrg(orgId, (tx) => lifecycle.submitReport(tx, reportId, who));
   // The approver is ALWAYS `manager`, whoever submitted: both `submitter` and
-  // `finance` have `manager` as their manager_id, and the default ladder routes
+  // `finance` have `manager` as their manager_id, and the default flow routes
   // to the submitter's direct manager. The first version of this helper picked
   // the approver with a ternary and named `submitter` when finance submitted,
   // which is nobody's approver — so the two self-payment tests failed inside the
   // FIXTURE with NOT_AN_APPROVER and never reached their assertions.
-  await withOrg(orgId, (tx) =>
-    decide(tx, approval.taskId, manager, 'APPROVED', { receiptViewAcknowledged: true }),
-  );
+  await decideAs(orgId, approval.createdTaskIds[0], manager, 'APPROVED');
   return reportId;
 }
 
@@ -103,6 +102,9 @@ beforeAll(async () => {
     "INSERT INTO organization (slug, name) VALUES ('reimb-co','Reimb Co') RETURNING id",
   );
   orgId = o.rows[0].id;
+  // w4-00c: the default approval flow a provisioned tenant starts with (d54); without it a
+  // submit is refused (d58).
+  await seedDefaultFlow(orgId);
   manager = await mkUser('mgr@reimb.test', 'MANAGER');
   submitter = await mkUser(SUBMITTER, 'EMPLOYEE', manager);
   // finance is an ADMIN who also has a manager, so their own report can route
@@ -129,6 +131,7 @@ beforeEach(async () => {
      DELETE FROM activity;
      DELETE FROM notification_preference;
      DELETE FROM notification_template;
+     DELETE FROM approval_instance;
      DELETE FROM approval_task;
      DELETE FROM approval_request;
      DELETE FROM expense_report_event;
@@ -285,7 +288,7 @@ describe('what it refuses', () => {
     ).rejects.toThrow(/is SUBMITTED/);
 
     // REJECTED.
-    await withOrg(orgId, (tx) => decide(tx, approval.taskId, manager, 'REJECTED'));
+    await decideAs(orgId, approval.createdTaskIds[0], manager, 'REJECTED');
     await expect(
       withOrg(orgId, (tx) => lifecycle.reimburseReport(tx, reportId, finance)),
     ).rejects.toThrow(/is REJECTED/);

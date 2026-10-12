@@ -75,6 +75,51 @@ afterAll(async () => {
   await h.end();
 });
 
+
+/**
+ * w4-00c: a report out for approval on ExpenseOS's engine, with one pending task assigned to
+ * `assigneeId` — an instance on a one-step workflow, pointed at by the report, as a submit
+ * leaves it. Written as the admin, so a suite can put it anywhere a submit cannot.
+ */
+async function pendingEngineTask(reportId: string, assigneeId: string): Promise<string> {
+  const graph = {
+    nodes: [
+      { id: 'start', type: 'start' },
+      { id: 'n1', type: 'approval', approver: { kind: 'manager' } },
+      { id: 'done', type: 'approved' },
+    ],
+    edges: [
+      { id: 'e1', source: 'start', target: 'n1' },
+      { id: 'e2', source: 'n1', target: 'done' },
+    ],
+  };
+  const wf = await h.admin.query(
+    `INSERT INTO approval_workflow (organization_id, key, name, subject_type)
+     VALUES ($1, $2, 'harness', 'EXPENSE_REPORT') RETURNING id`,
+    [h.orgId, `harness-${Date.now()}-${Math.floor(Math.random() * 1e6)}`],
+  );
+  const v = await h.admin.query(
+    `INSERT INTO approval_workflow_version (organization_id, workflow_id, version, match_condition, graph)
+     VALUES ($1, $2, 1, '{}', $3::jsonb) RETURNING id`,
+    [h.orgId, wf.rows[0].id, JSON.stringify(graph)],
+  );
+  const inst = await h.admin.query(
+    `INSERT INTO approval_instance (organization_id, workflow_version_id, subject_type, subject_id, cursor, effective_graph)
+     VALUES ($1, $2, 'EXPENSE_REPORT', $3, '{}', $4::jsonb) RETURNING id`,
+    [h.orgId, v.rows[0].id, reportId, JSON.stringify(graph)],
+  );
+  const task = await h.admin.query(
+    `INSERT INTO approval_instance_task (organization_id, instance_id, node_id, assignee_user_id)
+     VALUES ($1, $2, 'n1', $3) RETURNING id`,
+    [h.orgId, inst.rows[0].id, assigneeId],
+  );
+  await h.admin.query(`UPDATE expense_report SET approval_instance_id = $1 WHERE id = $2`, [
+    inst.rows[0].id,
+    reportId,
+  ]);
+  return task.rows[0].id as string;
+}
+
 describe('queryRunnerOf — a pg QueryRunner on the Prisma tenant transaction', () => {
   it('passes values as parameters, never as SQL', async () => {
     const { withTenantDb } = await import('@/lib/db/prisma');
@@ -255,18 +300,8 @@ describe('explainTax — who may read it', () => {
     await caller.lineItemCreate({ expenseId, categoryId, amountMinor: '11300' });
     // Out for approval, with a pending task on the approver (VeloExpense's tables).
     await h.admin.query(`UPDATE expense_report SET status = 'SUBMITTED', submitted_at = now() WHERE id = $1`, [reportId]);
-    const request = (
-      await h.admin.query(
-        `INSERT INTO approval_request (organization_id, report_id, policy_snapshot, status, total_steps,
-                                       subject_total_minor, subject_currency_code, opened_by_id)
-         VALUES ($1, $2, '{}'::jsonb, 'RUNNING', 1, 11300, 'CAD', $3) RETURNING id`,
-        [h.orgId, reportId, ownerId],
-      )
-    ).rows[0].id;
-    await h.admin.query(
-      `INSERT INTO approval_task (organization_id, request_id, step, assignee_id) VALUES ($1, $2, 1, $3)`,
-      [h.orgId, request, approverId],
-    );
+    // w4-00c: a pending task on the approval engine, assigned to the approver.
+    await pendingEngineTask(reportId, approverId);
   });
 
   it('answers the submitter', async () => {
@@ -426,18 +461,8 @@ describe('report — VeloExpense\'s tables, in ExpenseOS\'s shape', () => {
     await h.admin.query(`UPDATE expense_report SET status = 'SUBMITTED', submitted_at = now() WHERE id = $1`, [
       reportId,
     ]);
-    const request = (
-      await h.admin.query(
-        `INSERT INTO approval_request (organization_id, report_id, policy_snapshot, status, total_steps,
-                                       subject_total_minor, subject_currency_code, opened_by_id)
-         VALUES ($1, $2, '{}'::jsonb, 'RUNNING', 1, 2500, 'CAD', $3) RETURNING id`,
-        [h.orgId, reportId, ownerId],
-      )
-    ).rows[0].id;
-    await h.admin.query(
-      `INSERT INTO approval_task (organization_id, request_id, step, assignee_id) VALUES ($1, $2, 1, $3)`,
-      [h.orgId, request, approverId],
-    );
+    // w4-00c: a pending task on the approval engine, assigned to the approver.
+    await pendingEngineTask(reportId, approverId);
     expect(await codeOf(h.makeCaller([], approverId).report({ reportId }))).toBe('OK');
     expect(await codeOf(h.makeCaller(RW, strangerId).report({ reportId }))).toBe('NOT_FOUND');
   });

@@ -9,7 +9,9 @@
 import { describe, it, expect, beforeEach, afterAll } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { Pool } from 'pg';
-import { withOrg } from '@/lib/tenant/context';
+// w4-00c: the lifecycle starts the approval engine, which needs the tenant's Prisma
+// transaction (test/support/tenant-tx.ts) — the same `QueryRunner`, under the same name.
+import { withTenantTx as withOrg } from './support/tenant-tx';
 import { createOrganization } from '@/lib/onboarding/provision';
 import { STARTER_CATEGORIES, STARTER_CATEGORY_TRAITS, seedStarterCategories } from '@/lib/onboarding/starter';
 import { setupStatus, SETUP_ITEMS } from '@/lib/onboarding/setup';
@@ -151,7 +153,9 @@ describe('a tenant that has just been created', () => {
         });
         return submitReport(tx, report.id, adminUserId);
       }),
-    ).rejects.toMatchObject({ code: 'SELF_APPROVAL' });
+      // w4-00c: the default flow sends a submitter with no manager to the administrators,
+      // and the only one is the submitter (d59) — refused as NO_APPROVER, same sentence.
+    ).rejects.toMatchObject({ code: 'NO_APPROVER' });
 
     const status = await withOrg(orgId, (tx) => setupStatus(tx));
     expect(state(status, 'APPROVER').done).toBe(false);
@@ -160,11 +164,13 @@ describe('a tenant that has just been created', () => {
 });
 
 describe('the setup checklist', () => {
-  it('starts with categories done and everything else outstanding', async () => {
+  it('starts with categories and the approval flow done, and everything else outstanding', async () => {
     const status = await withOrg(orgId, (tx) => setupStatus(tx));
     expect(state(status, 'CATEGORIES').done).toBe(true);
     expect(state(status, 'CATEGORIES').count).toBe(STARTER_CATEGORIES.length);
-    for (const item of SETUP_ITEMS.filter((i) => i !== 'CATEGORIES')) {
+    // w4-00c: the default approval flow is created with the tenant (d54).
+    expect(state(status, 'APPROVAL_FLOW')).toMatchObject({ done: true, count: 1 });
+    for (const item of SETUP_ITEMS.filter((i) => i !== 'CATEGORIES' && i !== 'APPROVAL_FLOW')) {
       expect(state(status, item).done, `${item} should start outstanding`).toBe(false);
     }
     expect(status.complete).toBe(false);

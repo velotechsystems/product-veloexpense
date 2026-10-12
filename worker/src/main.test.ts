@@ -24,6 +24,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const h = vi.hoisted(() => ({
   upsertRecurring: vi.fn(),
+  enqueue: vi.fn(),
   workers: [] as Array<{
     name: string;
     processor: (job: unknown) => Promise<unknown>;
@@ -65,6 +66,12 @@ vi.mock('./handlers/expense-receipt-chase', () => ({
   handleExpenseReceiptChase: (...args: unknown[]) => {
     h.handlers.handleExpenseReceiptChase ??= vi.fn();
     return h.handlers.handleExpenseReceiptChase(...args);
+  },
+}));
+vi.mock('./handlers/approval-sweep', () => ({
+  handleApprovalSweep: (...args: unknown[]) => {
+    h.handlers.handleApprovalSweep ??= vi.fn();
+    return h.handlers.handleApprovalSweep(...args);
   },
 }));
 vi.mock('./handlers/ingest-receipt-email', () => ({
@@ -117,6 +124,7 @@ vi.mock('bullmq', () => ({
 vi.mock('@expenseos/jobs', () => ({
   getJobsConnection: () => ({}),
   upsertRecurring: (...args: unknown[]) => h.upsertRecurring(...args),
+  enqueue: (...args: unknown[]) => h.enqueue(...args),
   get JOB_QUEUES() {
     return h.jobQueues;
   },
@@ -140,6 +148,7 @@ beforeEach(async () => {
   void JOB_QUEUES;
   void QUEUE_NAMES;
   h.upsertRecurring = vi.fn().mockResolvedValue(undefined);
+  h.enqueue = vi.fn().mockResolvedValue(undefined);
   h.installShutdown = vi.fn();
   h.handlers = {};
   vi.spyOn(console, 'log').mockImplementation(() => {});
@@ -188,6 +197,26 @@ describe('what it starts', () => {
     );
   });
 
+  it('VeloExpense (w4-00c): schedules the approval sweep hourly, with no tenant', async () => {
+    await boot();
+    expect(h.upsertRecurring).toHaveBeenCalledWith(
+      'approval-sweep-expired-hourly',
+      'approval.sweepExpired',
+      { trigger: 'cron' },
+      { pattern: '0 * * * *', tz: 'UTC' },
+    );
+  });
+
+  it('VeloExpense (d52): runs one approval sweep at boot, after the schedules', async () => {
+    // The boot sweep is what recalls the reports a deploy left on the retired ladder, so it
+    // must not wait for the hour. It names no tenant: it fans out like the scheduled run.
+    await boot();
+    expect(h.enqueue).toHaveBeenCalledWith('approval.sweepExpired', { trigger: 'boot' });
+    expect(h.enqueue.mock.invocationCallOrder[0]).toBeGreaterThan(
+      h.upsertRecurring.mock.invocationCallOrder.at(-1) ?? 0,
+    );
+  });
+
   it('keys every schedule on a stable jobId', async () => {
     /**
      * `upsertJobScheduler` keys on the id alone, so a re-register updates in place.
@@ -196,7 +225,7 @@ describe('what it starts', () => {
      */
     await boot();
     const ids = h.upsertRecurring.mock.calls.map((c) => c[0] as string);
-    // VeloExpense: ExpenseOS also asserts more than ten; VeloExpense registers one.
+    // VeloExpense: ExpenseOS also asserts more than ten; VeloExpense registers two.
     expect(ids.length).toBeGreaterThan(0);
     expect(new Set(ids).size).toBe(ids.length);
   });
@@ -432,5 +461,35 @@ describe('VeloExpense: the receipt chase runs per tenant', () => {
     expect(h.tenants).toEqual(['org-7']);
     expect(h.handlers.handleExpenseReceiptChase).toHaveBeenCalledWith(data);
     expect(h.fannedOut).toEqual([]);
+  });
+});
+
+describe('VeloExpense (w4-00c): the approval sweep runs per tenant', () => {
+  beforeEach(() => {
+    h.queueNames = ['default'];
+    h.jobQueues = { 'approval.sweepExpired': 'default' };
+    h.tenants = [];
+    h.fannedOut = [];
+  });
+
+  it('fans the scheduled and the boot run out to one job per tenant, keeping the trigger', async () => {
+    await boot();
+    const worker = h.workers.find((w) => w.name === 'default');
+    await worker?.processor({ name: 'approval.sweepExpired', data: { trigger: 'cron' } });
+    await worker?.processor({ name: 'approval.sweepExpired', data: { trigger: 'boot' } });
+    expect(h.fannedOut).toEqual([
+      ['approval.sweepExpired', { trigger: 'cron' }],
+      ['approval.sweepExpired', { trigger: 'boot' }],
+    ]);
+    expect(h.handlers.handleApprovalSweep).toBeUndefined();
+  });
+
+  it('sweeps one tenant as that tenant', async () => {
+    await boot();
+    const worker = h.workers.find((w) => w.name === 'default');
+    const data = { trigger: 'cron', organizationId: 'org-9' };
+    await worker?.processor({ name: 'approval.sweepExpired', data });
+    expect(h.tenants).toEqual(['org-9']);
+    expect(h.handlers.handleApprovalSweep).toHaveBeenCalledWith(data);
   });
 });

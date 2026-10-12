@@ -20,7 +20,7 @@ const routeExists = (href: string) =>
 const SCREEN: Record<(typeof SETUP_ITEMS)[number], string> = {
   APPROVER: '/admin/employees/invite',
   CATEGORIES: '/admin/expense-categories',
-  APPROVAL_LADDER: '/admin/approval-ladder',
+  APPROVAL_FLOW: '/admin/approval-workflows',
   SPEND_POLICY: '/admin/expense-policies',
   STRUCTURE: '/admin/legal-entities',
   BRANDING: '/admin/branding',

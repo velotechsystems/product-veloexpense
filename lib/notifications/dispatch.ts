@@ -49,8 +49,10 @@ import {
   type ClaimedDelivery,
 } from '@/lib/notifications/outbox';
 import { issueActionToken } from '@/lib/notifications/action-tokens';
-import { decidableTaskForReport } from '@/lib/approvals/inbox';
+import { withTenantDb } from '@/lib/db/prisma';
+import { tenantDbOf } from '@/lib/db/prisma-pg-bridge';
 import { ORG } from '@/lib/tenant/sql';
+import { resolveDecidableTask } from '@/server/lib/reportApproval';
 
 /**
  * The path a token lands on. `/approve` rather than something neutral, and it
@@ -231,12 +233,24 @@ export async function prepareEmail(
   const branding = await getBranding(tx);
 
   // Approve links, only where there is something this person can actually decide.
-  // `decidableTaskForReport` is VX2-4's function, which is the point: the mail
-  // offers a button exactly when the report page would offer one, because both ask
-  // the same question in the same place (AP-15).
+  // w4-00c: `resolveDecidableTask` (server/lib/reportApproval.ts, ExpenseOS's) is what the
+  // report page asks, which is the point: the mail offers a button exactly when the report
+  // page would offer one, because both ask the same question in the same place (AP-15). It
+  // is Prisma code, so it runs on the tenant's Prisma transaction — this one, when it is
+  // bridged, or a read of its own in the same tenant.
   let actions: { approveUrl: string; rejectUrl: string } | null = null;
   if (origin && ACTIONABLE_EVENTS.has(row.event_type)) {
-    const task = await decidableTaskForReport(tx, row.subject_id, row.recipient_id);
+    const decidable = (db: Parameters<typeof resolveDecidableTask>[0]) =>
+      resolveDecidableTask(db, row.subject_id, row.recipient_id, false);
+    const bridged = tenantDbOf(tx);
+    let taskId: string | null;
+    if (bridged) {
+      taskId = await decidable(bridged);
+    } else {
+      const org = await tx.query(`SELECT ${ORG}::text AS id`);
+      taskId = await withTenantDb(org.rows[0].id as string, decidable);
+    }
+    const task = taskId ? { taskId } : null;
     if (task) {
       // Any earlier attempt's links are retired first. They cannot be reused —
       // only the hash is stored, so the raw value is unrecoverable by design — and

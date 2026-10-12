@@ -33,8 +33,7 @@ import {
 } from '@/lib/errors/domain';
 import { DEFAULT_LOCALE, SUPPORTED_LOCALES } from '@/lib/i18n/locales';
 import { missingCopyMarker } from '@/lib/i18n/catalog/enums';
-import { DecisionForbiddenError } from '@/lib/approvals/eligibility';
-import { ApprovalEngineError } from '@/lib/approvals/engine';
+import { ReportDecisionError } from '@/server/lib/reportLifecycle';
 import { DelegationError } from '@/lib/approvals/delegations';
 import { LifecycleError } from '@/lib/expenses/lifecycle';
 import { ExpenseError } from '@/lib/expenses/service';
@@ -106,10 +105,12 @@ describe('a domain error carries a diagnostic AND, sometimes, reader copy', () =
   it('keeps the ids in the message and off the screen', () => {
     // THE assertion this ticket exists for. The log keeps both ids; the code the
     // page will render mentions neither.
-    const err = new DecisionForbiddenError(
+    // w4-00c: the approver's refusal is `ReportDecisionError` since the ladder's
+    // `DecisionForbiddenError` went with it.
+    const err = new ReportDecisionError(
       'user 8b1c0f2e-0000-4000-8000-000000000001 may not decide approval task ' +
         '4f2a77bd-0000-4000-8000-000000000002',
-      'NOT_AN_APPROVER',
+      'FORBIDDEN',
       'TASK_NOT_YOURS',
     );
     expect(err.message).toContain('8b1c0f2e');
@@ -121,9 +122,10 @@ describe('a domain error carries a diagnostic AND, sometimes, reader copy', () =
   });
 
   it('an invariant failure gets no reader copy, on purpose', () => {
-    // `TASK_NOT_FOUND` is a stale or tampered link. Inventing "already decided"
-    // for it would be a guess presented as a fact.
-    const err = new DecisionForbiddenError('approval task x does not exist', 'TASK_NOT_FOUND');
+    // A report that is not there. Inventing a reason for it would be a guess presented
+    // as a fact. (w4-00c: the ladder's TASK_NOT_FOUND refusal was the example; this is
+    // the lifecycle's equivalent, which carries no code either.)
+    const err = new LifecycleError('report x does not exist', 'NOT_FOUND');
     expect(userMessageOf(err)).toBeNull();
     // PART 2c-2 CHANGED THIS. The transitional branch — a DomainError with no
     // code putting its English in the URL — is gone, so an invariant failure now
@@ -164,8 +166,8 @@ describe('a domain error carries a diagnostic AND, sometimes, reader copy', () =
     // still extending plain Error would fall through to UNEXPECTED and silently
     // lose the message it has been showing for months.
     const cases: [DomainError & { code: string }, string][] = [
-      [new DecisionForbiddenError('m', 'TASK_NOT_FOUND'), 'TASK_NOT_FOUND'],
-      [new ApprovalEngineError('m', 'REPORT_NOT_FOUND'), 'REPORT_NOT_FOUND'],
+      // w4-00c: the ladder's two approval classes went with it. Their successor,
+      // `ReportDecisionError`, always carries reader copy, so it is not one of these.
       [new DelegationError('m', 'NOT_FOUND'), 'NOT_FOUND'],
       [new LifecycleError('m', 'NOT_FOUND'), 'NOT_FOUND'],
       [new ExpenseError('m', 'NOT_FOUND'), 'NOT_FOUND'],

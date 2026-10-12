@@ -258,11 +258,9 @@ test('an approver decides from an emailed link, without ever signing in', async 
     await expect(anonPage.getByText('$18.50')).toBeVisible();
     expect(await statusOf(TITLE)).toBe('SUBMITTED');
 
-    // The default rung asks the approver to confirm they reviewed the receipts,
-    // and there are none — so the page says so rather than letting the box be
-    // ticked over nothing.
-    await expect(anonPage.getByText(/no receipts attached/i)).toBeVisible();
-    await anonPage.getByLabel(/reviewed the receipts/i).check();
+    // The page says what the approver is approving, receipts included. (w4-00c: the
+    // ladder's "I reviewed the receipts" tick went with it, d57.)
+    await expect(anonPage.getByText(/none attached/i)).toBeVisible();
 
     await anonPage.getByRole('button', { name: /Yes, approve it/i }).click();
     await expect(anonPage.getByRole('heading', { name: 'Approved' })).toBeVisible();

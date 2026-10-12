@@ -140,38 +140,46 @@ describe.skipIf(!process.env.DATABASE_URL)('expense reports (integration)', () =
    * VeloExpense: VeloExpense's approval tables — a request for the report, RUNNING while
    * any task is pending, and one task per entry in step order.
    */
+  /**
+   * An approval instance on a report, with its tasks — ExpenseOS's helper (an instance on a
+   * throwaway workflow version, tasks in order of creation).
+   *
+   * VeloExpense (w4-00c): written as the admin, under the suite's tenant, and pointed at the
+   * report (`approval_instance_id`), which is where ExpenseOS's list reads it from. Tasks are
+   * created a millisecond apart so "the first one" is the first one written.
+   */
   const makeInstance = async (
     reportId: string,
     tasks: Array<{ assigneeUserId?: string; status?: string }>,
   ): Promise<string> => {
-    const running = tasks.some((t) => (t.status ?? 'PENDING') === 'PENDING');
-    const request = await admin.query(
-      `INSERT INTO approval_request (organization_id, report_id, policy_snapshot, status, total_steps,
-                                     subject_total_minor, subject_currency_code, opened_by_id, closed_at)
-       VALUES ($1, $2, '{}'::jsonb, $3::approval_request_status, $4, 0, 'CAD', $5, $6)
-       RETURNING id`,
-      [orgId, reportId, running ? 'RUNNING' : 'APPROVED', Math.max(tasks.length, 1), ownerId, running ? null : new Date()],
+    const workflow = await admin.query(
+      `INSERT INTO approval_workflow (organization_id, key, name, subject_type)
+       VALUES ($1, $2, 'pendingWith harness', 'EXPENSE_REPORT') RETURNING id`,
+      [orgId, `test-${Date.now()}-${Math.floor(Math.random() * 1e6)}`],
     );
+    const version = await admin.query(
+      `INSERT INTO approval_workflow_version (organization_id, workflow_id, version, match_condition, graph)
+       VALUES ($1, $2, 1, '{}', '{"nodes":[],"edges":[]}') RETURNING id`,
+      [orgId, workflow.rows[0].id],
+    );
+    const instance = await admin.query(
+      `INSERT INTO approval_instance (organization_id, workflow_version_id, subject_type, subject_id, cursor)
+       VALUES ($1, $2, 'EXPENSE_REPORT', $3, '{}') RETURNING id`,
+      [orgId, version.rows[0].id, reportId],
+    );
+    const instanceId = instance.rows[0].id as string;
     for (const [i, t] of tasks.entries()) {
-      const status = t.status ?? 'PENDING';
-      const decided = status !== 'PENDING';
       await admin.query(
-        `INSERT INTO approval_task (organization_id, request_id, step, assignee_id, status, decided_by_id, decided_at,
-                                    resolved_via, claim_role)
-         VALUES ($1, $2, $3, $4, $5::approval_task_status, $6, $7, CASE WHEN $8::text IS NULL THEN 'MANAGER_CHAIN' ELSE 'ROLE' END, $8)`,
-        [
-          orgId,
-          request.rows[0].id,
-          i + 1,
-          t.assigneeUserId ?? null,
-          status,
-          decided ? (t.assigneeUserId ?? ownerId) : null,
-          decided ? new Date() : null,
-          t.assigneeUserId ? null : 'APPROVER',
-        ],
+        `INSERT INTO approval_instance_task (organization_id, instance_id, node_id, status, assignee_user_id, created_at)
+         VALUES ($1, $2, $3, $4, $5, now() + make_interval(secs => $6::int / 1000.0))`,
+        [orgId, instanceId, `n-${i}`, t.status ?? 'PENDING', t.assigneeUserId ?? null, i],
       );
     }
-    return request.rows[0].id;
+    await admin.query(`UPDATE expense_report SET approval_instance_id = $1 WHERE id = $2`, [
+      instanceId,
+      reportId,
+    ]);
+    return instanceId;
   };
 
   /** The newest audit row for an entity. `occurredAt` is the column, not createdAt. */
@@ -465,7 +473,7 @@ describe.skipIf(!process.env.DATABASE_URL)('expense reports (integration)', () =
         (x: { id: string }) => x.id === r.id,
       );
       expect(row.pendingWith).not.toBeNull();
-      // VeloExpense: and it is the first one, by step.
+      // VeloExpense: and it is the first one, by creation.
       expect(row.pendingWith.email).toBe('owner@reports.test');
     });
 

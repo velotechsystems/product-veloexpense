@@ -60,7 +60,6 @@ const PAGES = [
   '/admin/employees',
   '/admin/employees/invite',
   '/admin/expense-policies',
-  '/admin/approval-ladder',
   '/admin/budgets',
   '/admin/chart-of-accounts',
   '/admin/compliance',

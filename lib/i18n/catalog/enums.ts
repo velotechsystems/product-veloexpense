@@ -53,9 +53,7 @@ import type { ControlRunStatus } from '@/lib/fraud/evaluate';
 import type { Capability } from '@/lib/integrations/contract';
 import type { DeliveryStatus } from '@/lib/notifications/outbox';
 import type { Channel, EventType } from '@/lib/notifications/catalog';
-import type { InboxRoute } from '@/lib/approvals/inbox';
 import type { DelegationScope } from '@/lib/approvals/tiers';
-import type { Decision } from '@/lib/approvals/engine';
 import type { AccountSource } from '@/lib/accounts/service';
 import type { ReceiptStatus } from '@/lib/receipts/service';
 import { DEFAULT_LOCALE, localizedFrom, type Locale } from '../locales';
@@ -219,12 +217,15 @@ export const DELEGATION_SCOPE_COPY: EnumCopy<DelegationScope> = {
   REPORTS: { 'en-CA': 'Expense reports' },
 };
 
+/**
+ * How an approval in the /approvals inbox reached you. w4-00c: the engine assigns a task to
+ * a delegate when it is created, so the ladder's DELEGATED ("Covering") is gone; a task open
+ * to you without being assigned — a pool, or the no-manager fallback — is ROLE_POOL.
+ */
+export type InboxRoute = 'ASSIGNED' | 'ROLE_POOL';
+
 export const INBOX_ROUTE_COPY: EnumCopy<InboxRoute> = {
-  // Verbatim from `ROUTE_LABEL`. `DELEGATED` is 'Covering', not the more literal
-  // 'Delegated to you' this catalogue first invented: you are covering for
-  // somebody, which is what an approver would say about it.
   ASSIGNED: { 'en-CA': 'Assigned to you' },
-  DELEGATED: { 'en-CA': 'Covering' },
   ROLE_POOL: { 'en-CA': 'Your role' },
 };
 

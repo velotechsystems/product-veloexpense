@@ -25,11 +25,13 @@
  */
 import { describe, it, expect, beforeAll, beforeEach, afterAll } from 'vitest';
 import { Pool } from 'pg';
-import { withOrg } from '@/lib/tenant/context';
+// w4-00c: the lifecycle starts the approval engine, which needs the tenant's Prisma
+// transaction (test/support/tenant-tx.ts) — the same `QueryRunner`, under the same name.
+import { decideAs, seedDefaultFlow, withTenantTx as withOrg } from './support/tenant-tx';
+import { withOrg as withPgOrg } from '@/lib/tenant/context';
 import * as expenses from '@/lib/expenses/service';
 import * as lifecycle from '@/lib/expenses/lifecycle';
 import * as policy from '@/lib/policy/service';
-import { decide } from '@/lib/approvals/engine';
 import { loadBudgetSnapshots } from '@/lib/budgets/service';
 import * as alertsLib from '@/lib/budgets/alerts';
 import * as budgetAdmin from '@/lib/budgets/admin';
@@ -62,6 +64,10 @@ beforeAll(async () => {
   );
   orgId = o.rows.find((r) => r.slug === 'bud-co').id;
   otherOrgId = o.rows.find((r) => r.slug === 'bud-co-2').id;
+  // w4-00c: the default approval flow a provisioned tenant starts with (d54); without it a
+  // submit is refused (d58).
+  await seedDefaultFlow(orgId);
+  await seedDefaultFlow(otherOrgId);
 
   // IMMEDIATELY after the orgs and BEFORE any gl_account write. Migration `0022`
   // puts `app_module_enabled('accounting')` into `gl_account`'s RLS policy, so an
@@ -507,11 +513,7 @@ describe('the rollup moves on the transitions that change it (BG-3)', () => {
     const submitted = await withOrg(orgId, (tx) =>
       lifecycle.submitReport(tx, reportId, empId),
     );
-    await withOrg(orgId, (tx) =>
-      decide(tx, submitted.approval.taskId, mgrId, 'APPROVED', {
-        receiptViewAcknowledged: true,
-      }),
-    );
+    await decideAs(orgId, submitted.approval.createdTaskIds[0], mgrId, 'APPROVED');
 
     const after = await periodTotals(periodId);
     expect(after.actual).toBe('1800');
@@ -524,9 +526,7 @@ describe('the rollup moves on the transitions that change it (BG-3)', () => {
     const submitted = await withOrg(orgId, (tx) =>
       lifecycle.submitReport(tx, reportId, empId),
     );
-    await withOrg(orgId, (tx) =>
-      decide(tx, submitted.approval.taskId, mgrId, 'REJECTED', { note: 'no' }),
-    );
+    await decideAs(orgId, submitted.approval.createdTaskIds[0], mgrId, 'REJECTED', { note: 'no' });
 
     const after = await periodTotals(periodId);
     expect(after.actual).toBe('0');
@@ -556,11 +556,7 @@ describe('the rollup moves on the transitions that change it (BG-3)', () => {
     const submitted = await withOrg(orgId, (tx) =>
       lifecycle.submitReport(tx, reportId, empId),
     );
-    await withOrg(orgId, (tx) =>
-      decide(tx, submitted.approval.taskId, mgrId, 'APPROVED', {
-        receiptViewAcknowledged: true,
-      }),
-    );
+    await decideAs(orgId, submitted.approval.createdTaskIds[0], mgrId, 'APPROVED');
     const approved = await periodTotals(periodId);
 
     await withOrg(orgId, (tx) => lifecycle.reimburseReport(tx, reportId, admId));
@@ -1264,6 +1260,9 @@ async function moduleOff<T>(run: () => Promise<T>): Promise<T> {
 }
 
 describe('the budgets admin service (VX4-5 part 3b)', () => {
+  // w4-00c: this service runs on its own `pg` transaction in the app (/admin/budgets), and
+  // its duplicate refusals read `pg`'s error code — so it is tested on one, not on the
+  // Prisma bridge the lifecycle suites above need.
   it('converts a percentage to basis points in exactly one place', () => {
     expect(budgetAdmin.percentToBp(90)).toBe(9000);
     expect(budgetAdmin.percentToBp('90')).toBe(9000);
@@ -1282,7 +1281,7 @@ describe('the budgets admin service (VX4-5 part 3b)', () => {
   });
 
   it('creates a budget, and refuses a second one for the same scope', async () => {
-    const made = await withOrg(orgId, (tx) =>
+    const made = await withPgOrg(orgId, (tx) =>
       budgetAdmin.createBudget(tx, {
         name: 'Travel',
         glAccountId: accountId,
@@ -1298,7 +1297,7 @@ describe('the budgets admin service (VX4-5 part 3b)', () => {
     // NULL narrowings are DISTINCT to Postgres by default, so without that clause
     // this second create would succeed and every total afterwards would be wrong.
     await expect(
-      withOrg(orgId, (tx) =>
+      withPgOrg(orgId, (tx) =>
         budgetAdmin.createBudget(tx, {
           name: 'Travel again',
           glAccountId: accountId,
@@ -1310,7 +1309,7 @@ describe('the budgets admin service (VX4-5 part 3b)', () => {
   });
 
   it('a narrower scope is a DIFFERENT budget, not a duplicate', async () => {
-    await withOrg(orgId, (tx) =>
+    await withPgOrg(orgId, (tx) =>
       budgetAdmin.createBudget(tx, {
         name: 'Travel — company',
         glAccountId: accountId,
@@ -1318,7 +1317,7 @@ describe('the budgets admin service (VX4-5 part 3b)', () => {
         fiscalYear: 2026,
       }),
     );
-    const scoped = await withOrg(orgId, (tx) =>
+    const scoped = await withPgOrg(orgId, (tx) =>
       budgetAdmin.createBudget(tx, {
         name: 'Travel — Engineering',
         glAccountId: accountId,
@@ -1328,7 +1327,7 @@ describe('the budgets admin service (VX4-5 part 3b)', () => {
       }),
     );
     expect(scoped.department_name).toBe('Engineering');
-    expect(await withOrg(orgId, (tx) => budgetAdmin.listBudgets(tx))).toHaveLength(2);
+    expect(await withPgOrg(orgId, (tx) => budgetAdmin.listBudgets(tx))).toHaveLength(2);
   });
 
   it('REFUSES every write when the module is off, and still allows the READ', async () => {
@@ -1337,7 +1336,7 @@ describe('the budgets admin service (VX4-5 part 3b)', () => {
     // tell "module off" from "no budgets yet", which is AC-22's mistake.
     await moduleOff(async () => {
       await expect(
-        withOrg(orgId, (tx) =>
+        withPgOrg(orgId, (tx) =>
           budgetAdmin.createBudget(tx, {
             name: 'Nope',
             glAccountId: accountId,
@@ -1347,13 +1346,13 @@ describe('the budgets admin service (VX4-5 part 3b)', () => {
         ),
       ).rejects.toThrow(/not enabled for this organization/);
 
-      const readable = await withOrg(orgId, (tx) => budgetAdmin.listBudgets(tx));
+      const readable = await withPgOrg(orgId, (tx) => budgetAdmin.listBudgets(tx));
       expect(readable).toEqual([]);
     });
   });
 
   it('seeds twelve calendar months, and re-running adds only what is missing', async () => {
-    const made = await withOrg(orgId, (tx) =>
+    const made = await withPgOrg(orgId, (tx) =>
       budgetAdmin.createBudget(tx, {
         name: 'Travel',
         glAccountId: accountId,
@@ -1361,12 +1360,12 @@ describe('the budgets admin service (VX4-5 part 3b)', () => {
         fiscalYear: 2026,
       }),
     );
-    const created = await withOrg(orgId, (tx) =>
+    const created = await withPgOrg(orgId, (tx) =>
       budgetAdmin.seedMonthlyPeriods(tx, made.id, { startsOn: '2026-01-01', amountMinor: 50000 }),
     );
     expect(created).toBe(12);
 
-    const view = await withOrg(orgId, (tx) => budgetAdmin.getBudget(tx, made.id));
+    const view = await withPgOrg(orgId, (tx) => budgetAdmin.getBudget(tx, made.id));
     expect(view!.periods).toHaveLength(12);
     expect(view!.periods[0].starts_on).toBe('2026-01-01');
     // Month arithmetic done by Postgres, not by JavaScript: February lands on the
@@ -1378,17 +1377,17 @@ describe('the budgets admin service (VX4-5 part 3b)', () => {
 
     // IDEMPOTENT on the start-date unique index, so a half-finished seed is
     // finished rather than doubled.
-    const again = await withOrg(orgId, (tx) =>
+    const again = await withPgOrg(orgId, (tx) =>
       budgetAdmin.seedMonthlyPeriods(tx, made.id, { startsOn: '2026-01-01', amountMinor: 50000 }),
     );
     expect(again).toBe(0);
-    expect((await withOrg(orgId, (tx) => budgetAdmin.getBudget(tx, made.id)))!.periods).toHaveLength(
+    expect((await withPgOrg(orgId, (tx) => budgetAdmin.getBudget(tx, made.id)))!.periods).toHaveLength(
       12,
     );
   });
 
   it('four periods is a different seeding decision, not a different schema (BG-5)', async () => {
-    const made = await withOrg(orgId, (tx) =>
+    const made = await withPgOrg(orgId, (tx) =>
       budgetAdmin.createBudget(tx, {
         name: 'Quarterly',
         glAccountId: accountId,
@@ -1396,7 +1395,7 @@ describe('the budgets admin service (VX4-5 part 3b)', () => {
         fiscalYear: 2026,
       }),
     );
-    const created = await withOrg(orgId, (tx) =>
+    const created = await withPgOrg(orgId, (tx) =>
       budgetAdmin.seedMonthlyPeriods(tx, made.id, {
         startsOn: '2026-01-01',
         months: 4,
@@ -1407,7 +1406,7 @@ describe('the budgets admin service (VX4-5 part 3b)', () => {
   });
 
   it('adds a threshold as a PERCENTAGE and refuses the same level twice', async () => {
-    const made = await withOrg(orgId, (tx) =>
+    const made = await withPgOrg(orgId, (tx) =>
       budgetAdmin.createBudget(tx, {
         name: 'Travel',
         glAccountId: accountId,
@@ -1415,17 +1414,17 @@ describe('the budgets admin service (VX4-5 part 3b)', () => {
         fiscalYear: 2026,
       }),
     );
-    await withOrg(orgId, (tx) => budgetAdmin.addThreshold(tx, made.id, '90'));
-    const view = await withOrg(orgId, (tx) => budgetAdmin.getBudget(tx, made.id));
+    await withPgOrg(orgId, (tx) => budgetAdmin.addThreshold(tx, made.id, '90'));
+    const view = await withPgOrg(orgId, (tx) => budgetAdmin.getBudget(tx, made.id));
     expect(view!.thresholds.map((t) => t.threshold_bp)).toEqual([9000]);
 
     await expect(
-      withOrg(orgId, (tx) => budgetAdmin.addThreshold(tx, made.id, '90')),
+      withPgOrg(orgId, (tx) => budgetAdmin.addThreshold(tx, made.id, '90')),
     ).rejects.toMatchObject({ code: 'DUPLICATE_THRESHOLD' });
   });
 
   it('recipients are idempotent, and removing a threshold takes them with it', async () => {
-    const made = await withOrg(orgId, (tx) =>
+    const made = await withPgOrg(orgId, (tx) =>
       budgetAdmin.createBudget(tx, {
         name: 'Travel',
         glAccountId: accountId,
@@ -1433,17 +1432,17 @@ describe('the budgets admin service (VX4-5 part 3b)', () => {
         fiscalYear: 2026,
       }),
     );
-    const thresholdId = await withOrg(orgId, (tx) =>
+    const thresholdId = await withPgOrg(orgId, (tx) =>
       budgetAdmin.addThreshold(tx, made.id, '90'),
     );
     // Twice: a double-click is not an error worth a banner.
-    await withOrg(orgId, (tx) => budgetAdmin.addRecipient(tx, thresholdId, admId));
-    await withOrg(orgId, (tx) => budgetAdmin.addRecipient(tx, thresholdId, admId));
-    let view = await withOrg(orgId, (tx) => budgetAdmin.getBudget(tx, made.id));
+    await withPgOrg(orgId, (tx) => budgetAdmin.addRecipient(tx, thresholdId, admId));
+    await withPgOrg(orgId, (tx) => budgetAdmin.addRecipient(tx, thresholdId, admId));
+    let view = await withPgOrg(orgId, (tx) => budgetAdmin.getBudget(tx, made.id));
     expect(view!.thresholds[0].recipients).toHaveLength(1);
 
-    await withOrg(orgId, (tx) => budgetAdmin.removeThreshold(tx, thresholdId));
-    view = await withOrg(orgId, (tx) => budgetAdmin.getBudget(tx, made.id));
+    await withPgOrg(orgId, (tx) => budgetAdmin.removeThreshold(tx, thresholdId));
+    view = await withPgOrg(orgId, (tx) => budgetAdmin.getBudget(tx, made.id));
     expect(view!.thresholds).toHaveLength(0);
     const orphans = await admin.query(
       'SELECT count(*)::int AS n FROM budget_alert_recipient WHERE threshold_id = $1',
@@ -1456,7 +1455,7 @@ describe('the budgets admin service (VX4-5 part 3b)', () => {
     // The LEFT JOIN in `listBudgets`. An inner join would drop a threshold nobody
     // is named on — which is the NORMAL state, since an empty recipient list means
     // "owner only" — and the screen would then offer no way to add one.
-    const made = await withOrg(orgId, (tx) =>
+    const made = await withPgOrg(orgId, (tx) =>
       budgetAdmin.createBudget(tx, {
         name: 'Travel',
         glAccountId: accountId,
@@ -1464,14 +1463,14 @@ describe('the budgets admin service (VX4-5 part 3b)', () => {
         fiscalYear: 2026,
       }),
     );
-    await withOrg(orgId, (tx) => budgetAdmin.addThreshold(tx, made.id, '75'));
-    const view = await withOrg(orgId, (tx) => budgetAdmin.getBudget(tx, made.id));
+    await withPgOrg(orgId, (tx) => budgetAdmin.addThreshold(tx, made.id, '75'));
+    const view = await withPgOrg(orgId, (tx) => budgetAdmin.getBudget(tx, made.id));
     expect(view!.thresholds).toHaveLength(1);
     expect(view!.thresholds[0].recipients).toEqual([]);
   });
 
   it('clears an owner with an explicit null, which COALESCE could not express', async () => {
-    const made = await withOrg(orgId, (tx) =>
+    const made = await withPgOrg(orgId, (tx) =>
       budgetAdmin.createBudget(tx, {
         name: 'Travel',
         glAccountId: accountId,
@@ -1480,12 +1479,12 @@ describe('the budgets admin service (VX4-5 part 3b)', () => {
         ownerId: mgrId,
       }),
     );
-    const cleared = await withOrg(orgId, (tx) =>
+    const cleared = await withPgOrg(orgId, (tx) =>
       budgetAdmin.updateBudget(tx, made.id, { ownerId: null }),
     );
     expect(cleared.owner_id).toBeNull();
     // An ABSENT key leaves it alone, which is the other half of patch-with-nulls.
-    const renamed = await withOrg(orgId, (tx) =>
+    const renamed = await withPgOrg(orgId, (tx) =>
       budgetAdmin.updateBudget(tx, made.id, { name: 'Travel 2026' }),
     );
     expect(renamed.name).toBe('Travel 2026');
@@ -1493,7 +1492,7 @@ describe('the budgets admin service (VX4-5 part 3b)', () => {
   });
 
   it('deleting a budget takes its periods, thresholds and alert claims with it', async () => {
-    const made = await withOrg(orgId, (tx) =>
+    const made = await withPgOrg(orgId, (tx) =>
       budgetAdmin.createBudget(tx, {
         name: 'Travel',
         glAccountId: accountId,
@@ -1501,10 +1500,10 @@ describe('the budgets admin service (VX4-5 part 3b)', () => {
         fiscalYear: 2026,
       }),
     );
-    await withOrg(orgId, (tx) =>
+    await withPgOrg(orgId, (tx) =>
       budgetAdmin.seedMonthlyPeriods(tx, made.id, { startsOn: '2026-01-01', amountMinor: 1000 }),
     );
-    await withOrg(orgId, (tx) => budgetAdmin.addThreshold(tx, made.id, '90'));
+    await withPgOrg(orgId, (tx) => budgetAdmin.addThreshold(tx, made.id, '90'));
     const period = await admin.query(
       'SELECT id FROM budget_period WHERE budget_id = $1 LIMIT 1',
       [made.id],
@@ -1516,7 +1515,7 @@ describe('the budgets admin service (VX4-5 part 3b)', () => {
       [orgId, period.rows[0].id],
     );
 
-    await withOrg(orgId, (tx) => budgetAdmin.deleteBudget(tx, made.id));
+    await withPgOrg(orgId, (tx) => budgetAdmin.deleteBudget(tx, made.id));
 
     for (const table of ['budget_period', 'budget_alert_threshold', 'budget_alert_claim']) {
       const left = await admin.query(`SELECT count(*)::int AS n FROM ${table}`);

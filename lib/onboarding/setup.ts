@@ -50,8 +50,9 @@ export const SETUP_ITEMS = [
    *  listed anyway, because a founder should be told the six exist and are
    *  theirs to rename rather than discovering them in a picker. */
   'CATEGORIES',
-  /** An approval ladder. Without one, routing falls back to the manager chain. */
-  'APPROVAL_LADDER',
+  /** w4-00c: a published approval workflow for expense reports. Every tenant starts with
+   *  one (d54); without one nothing can be submitted (d58), so this is the item to fix. */
+  'APPROVAL_FLOW',
   /** At least one spend rule, so a submitted report is checked against something. */
   'SPEND_POLICY',
   /** Legal entities, business units, departments — the org chart the reporting
@@ -96,7 +97,10 @@ export async function setupStatus(tx: QueryRunner): Promise<SetupStatus> {
        (SELECT count(*) FROM app_user
          WHERE deleted_at IS NULL AND role IN ('ADMIN', 'MANAGER'))                   AS approvers,
        (SELECT count(*) FROM expense_category WHERE active)                           AS categories,
-       (SELECT count(*) FROM approval_policy)                                         AS ladders,
+       (SELECT count(*) FROM approval_workflow w
+          JOIN approval_workflow_version v ON v.id = w.current_version_id
+         WHERE w.active AND w.subject_type = 'EXPENSE_REPORT'
+           AND v.status = 'PUBLISHED')                                                AS flows,
        (SELECT count(*) FROM expense_policy)                                          AS policies,
        (SELECT count(*) FROM legal_entity)
         + (SELECT count(*) FROM business_unit)
@@ -113,7 +117,7 @@ export async function setupStatus(tx: QueryRunner): Promise<SetupStatus> {
     // approve their own report, which is the whole problem this item names.
     { item: 'APPROVER', done: n('approvers') >= 2, count: n('approvers') },
     { item: 'CATEGORIES', done: n('categories') > 0, count: n('categories') },
-    { item: 'APPROVAL_LADDER', done: n('ladders') > 0, count: n('ladders') },
+    { item: 'APPROVAL_FLOW', done: n('flows') > 0, count: n('flows') },
     { item: 'SPEND_POLICY', done: n('policies') > 0, count: n('policies') },
     { item: 'STRUCTURE', done: n('structure') > 0, count: n('structure') },
     { item: 'BRANDING', done: n('branded') > 0, count: null },

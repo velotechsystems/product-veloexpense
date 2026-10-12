@@ -9,7 +9,9 @@
  */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { Pool } from 'pg';
-import { withOrg } from '@/lib/tenant/context';
+// w4-00c: the lifecycle starts the approval engine, which needs the tenant's Prisma
+// transaction (test/support/tenant-tx.ts) — the same `QueryRunner`, under the same name.
+import { seedDefaultFlow, withTenantTx as withOrg } from './support/tenant-tx';
 import * as expenses from '@/lib/expenses/service';
 import * as policy from '@/lib/policy/service';
 import * as lifecycle from '@/lib/expenses/lifecycle';
@@ -48,6 +50,9 @@ beforeAll(async () => {
     "INSERT INTO organization (slug, name) VALUES ('lifecycle-co','Lifecycle Co') RETURNING id",
   );
   orgId = o.rows[0].id;
+  // w4-00c: the default approval flow a provisioned tenant starts with (d54); without it a
+  // submit is refused (d58).
+  await seedDefaultFlow(orgId);
   await withOrg(orgId, async (tx) => {
     // A MANAGER above the submitter, added when VX2-3 made submit open an
     // approval run: submitting now routes the ladder, and a tenant whose only

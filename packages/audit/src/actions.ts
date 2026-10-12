@@ -66,6 +66,17 @@ const adminAndOthers = {
     /** w3-02a: a document's extraction landed after the report left DRAFT/RETURNED, so the
      *  worker did not apply it (ExpenseOS's `report.extraction.skipped`). */
     extractionSkipped: 'REPORT_EXTRACTION_SKIPPED',
+    /** w4-00c: the approver's actions (`expenseApprovals`). ExpenseOS writes `report.approve`
+     *  / `report.reject` for every decision; VeloExpense's chain names a decision that ends
+     *  the approval apart from one step of several (`stepApprove` / `stepReject`), as its
+     *  ladder did, so `server/lib/reportLifecycle.ts` picks the key from the outcome. */
+    approve: 'REPORT_APPROVED',
+    reject: 'REPORT_REJECTED',
+    stepApprove: 'APPROVAL_STEP_APPROVED',
+    stepReject: 'APPROVAL_STEP_REJECTED',
+    return: 'REPORT_RETURNED',
+    reassign: 'APPROVAL_TASK_REASSIGNED',
+    recall: 'REPORT_RECALLED',
   },
 } as const satisfies Record<string, Record<string, AuditAction>>;
 

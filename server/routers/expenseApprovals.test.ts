@@ -24,21 +24,27 @@ import { makeContext } from '../__test-helpers__/trpcCaller';
  *     the moment it is approved, so posting happens on the decision rather than when
  *     somebody remembers.
  *
- * VeloExpense: ExpenseOS's `expenseApprovals.test.ts`, for the procedures ported in w2-02a —
- * `decide`, `reassign`, `returnForEdit` and `setFxOverride` (d36). The inbox, `decideBulk`
- * and `markReimbursed` come with Wave 4.
+ * VeloExpense: ExpenseOS's `expenseApprovals.test.ts`, for the procedures ported —
+ * `myTasks` (the inbox), `decide`, `reassign`, `returnForEdit` (w4-00c, on ExpenseOS's
+ * engine) and `setFxOverride` (w2-02a). `myDecided`, `decideBulk` and `markReimbursed` are not
+ * ported (d57), and their cases are not here.
  *
- * The boundary moves. ExpenseOS's router calls its engine piece by piece (`canDecide`,
- * `decideTask`, `withAudit`, the notify and post hooks), so its cases assert on each piece.
- * VeloExpense's router hands the whole transition to VeloExpense's engine
- * (`decideThroughEngine`, `reassignThroughEngine`), which checks eligibility, audits with
- * the override flag, hands an approved report to the ledger and notifies — so here the
- * cases assert what the router decides (the fast refusals, the override it passes, the
- * task it picks), and a case about what the ENGINE does is marked with where it is proven:
- * `expenseApprovals.db.test.ts`, against the real engine. `setFxOverride` keeps its own
- * pieces, and its cases are ExpenseOS's.
+ * The bodies of the three actions run in `server/lib/reportLifecycle.ts`, so that the
+ * /approvals form and the emailed link decide the same way; that module runs for real here,
+ * on the same mocked engine pieces ExpenseOS's cases mock (`canDecide`, `decideTask`). Two
+ * differences of plumbing, marked where they show:
+ *   · the audit row: ExpenseOS's `withAudit` around the decision. VeloExpense writes the
+ *     row after it — REPORT_APPROVED / _REJECTED / _RETURNED through `recordReportOutcome`
+ *     (which also does the budgets, history and ledger post), or the step's own row through
+ *     `writeAudit` — so `audited` collects both;
+ *   · ExpenseOS's `postApprovedReport` is VeloExpense's `recordReportOutcome` on APPROVED.
  */
 
+/**
+ * VeloExpense: every audit row the actions write — `writeAudit` (a step, a reassignment) and
+ * `recordReportOutcome` (an outcome) — as ExpenseOS's `withAuditCalls` collected them.
+ */
+const audited: Array<{ action: string; details: Record<string, unknown> }> = [];
 const withAuditCalls: Array<Record<string, unknown>> = [];
 vi.mock('@expenseos/audit', async () => {
   const actual = await vi.importActual<Record<string, unknown>>('@expenseos/audit');
@@ -50,10 +56,61 @@ vi.mock('@expenseos/audit', async () => {
         return fn(db);
       },
     ),
+    writeAudit: vi.fn(async (_db: unknown, row: { action: string; details: Record<string, unknown> }) => {
+      audited.push({ action: row.action, details: row.details });
+    }),
   };
 });
 vi.mock('@/auth', () => ({ auth: stubFn(async () => null) }));
 vi.mock('@/lib/tenant/request', () => ({ hostTenantSlug: async () => null }));
+
+const canDecide = stubFn(async () => true);
+const canClaimUnresolvedApproval = stubFn(async () => false);
+const isEligible = stubFn(async () => false);
+/** VeloExpense: the engine's `DecideResult` (ExpenseOS's mock predates its `status`). */
+const decided = (status = 'APPROVED') => ({
+  status,
+  subjectId: '00000000-0000-7000-8000-000000000002',
+  subjectType: 'EXPENSE_REPORT',
+  createdTaskIds: [] as string[],
+  firedEffects: ['e1'],
+});
+const decideTask = stubFn(async () => decided());
+const primeRequesterIds = stubFn(async () => {});
+const claimNeedsRequester = stubFn(() => true);
+vi.mock('@expenseos/approvals/engine', () => ({
+  canDecide,
+  canClaimUnresolvedApproval,
+  isEligible,
+  decideTask,
+  claimNeedsRequester,
+  primeRequesterIds,
+  /**
+   * The real builder, not a stub: it is synchronous, allocates nothing but empty
+   * memo slots, and the inbox writes its graph memo into the object it hands back.
+   * A `vi.fn()` returning undefined would fail there for reasons that have nothing
+   * to do with what these tests are about.
+   */
+  buildActorEligibilityContext: (actorId: string) => ({
+    actorId,
+    facts: {},
+    auth: {},
+    ancestors: {},
+    minSortOrders: new Map(),
+    requesterIds: new Map(),
+    graphs: new Map(),
+  }),
+}));
+// `data` is present because the inbox reads `graph.data.nodes` to work out whether an
+// UNASSIGNED task is claimable; a success with no data would throw there.
+vi.mock('@expenseos/approvals', () => ({
+  graphSchema: {
+    safeParse: () => ({
+      success: true,
+      data: { nodes: [{ id: 'n1', type: 'approval', approver: { kind: 'manager' } }], edges: [] },
+    }),
+  },
+}));
 
 const recomputeReportTotal = stubFn(async () => {});
 const snapshotExpensesFx = stubFn(async () => {});
@@ -62,40 +119,85 @@ vi.mock('@expenseos/db', async () => {
   return { ...actual, recomputeReportTotal, snapshotExpensesFx };
 });
 
-/** VeloExpense: the engine, at the adapter the router calls. */
-const decideThroughEngine = stubFn(async () => ({
-  decision: 'APPROVED',
-  requestStatus: 'APPROVED',
-  reportStatus: 'APPROVED',
-  nextTaskId: null,
+/** VeloExpense: the report's outcome (ExpenseOS: `postApprovedReport`, and the audit row). */
+const recordReportOutcome = vi.fn(
+  async (_tx: unknown, input: { outcome: string; context?: Record<string, unknown> }) => {
+    audited.push({ action: `REPORT_${input.outcome}`, details: input.context ?? {} });
+  },
+);
+vi.mock('@/lib/expenses/lifecycle', () => ({
+  recordReportOutcome,
+  submitReport: stubFn(async () => ({})),
+  recallReport: stubFn(async () => ({})),
+  LifecycleError: class extends Error {},
 }));
-const reassignThroughEngine = stubFn(async () => ({
-  reportId: '00000000-0000-7000-8000-000000000002',
-  fromUserId: null,
-  toUserId: '00000000-0000-7000-8000-000000000003',
+/** VeloExpense: the billing gate, open. Its refusal has its own suite. */
+vi.mock('@/lib/billing/gate', () => ({ assertTenantMayWrite: stubFn(async () => {}) }));
+
+const callerCanDecideReport = stubFn(async () => false);
+vi.mock('@/server/lib/reportApproval', () => ({ callerCanDecideReport }));
+
+const notifyReportDecision = vi.fn();
+const notifyReportReassigned = vi.fn();
+const notifyReportReturned = vi.fn();
+vi.mock('@/server/lib/reportNotify', () => ({
+  notifyReportDecision,
+  notifyReportReassigned,
+  notifyReportReturned,
 }));
-vi.mock('@/server/lib/reportLifecycle', () => ({ decideThroughEngine, reassignThroughEngine }));
-const resolveDecidableTask = vi.fn<(...args: unknown[]) => Promise<string | null>>(async () => null);
-vi.mock('@/server/lib/reportApproval', () => ({
-  resolveDecidableTask,
-  callerCanDecideReport: stubFn(async () => false),
-}));
+
+const executeWorkflowEffects = vi.fn();
+vi.mock('@/server/lib/workflowEffects', () => ({ executeWorkflowEffects }));
 
 const U = (n: string) => `00000000-0000-7000-8000-00000000000${n}`;
 const ME = U('9');
 const TASK = U('1');
 const REPORT = U('2');
 
+const task = (over: Record<string, unknown> = {}) => ({
+  id: TASK,
+  status: 'PENDING',
+  assigneeUserId: ME,
+  instance: { subjectId: REPORT, status: 'RUNNING' },
+  ...over,
+});
+
 function makeDb(over: Record<string, unknown> = {}) {
   return {
+    approvalTask: {
+      findUnique: stubFn(async () => task() as unknown),
+      findMany: stubFn(async () => [] as unknown[]),
+      update: stubFn(async () => ({ id: TASK })),
+      updateMany: stubFn(async () => ({ count: 0 })),
+    },
+    approvalInstance: {
+      findUnique: stubFn(async () => null as unknown),
+      update: stubFn(async () => ({ id: 'inst-1' })),
+    },
     expenseReport: {
-      findUnique: vi.fn(async () => ({ id: REPORT, status: 'SUBMITTED' }) as unknown),
+      findUnique: vi.fn(
+        async () =>
+          ({
+            id: REPORT,
+            status: 'SUBMITTED',
+            approvalInstanceId: 'inst-1',
+            submitterId: U('8'),
+          }) as unknown,
+      ),
       findMany: stubFn(async () => [] as unknown[]),
       update: stubFn(async () => ({ id: REPORT, status: 'RETURNED' })),
     },
     expense: { findMany: stubFn(async () => [] as unknown[]) },
-    /** VeloExpense: the task's status, read with SQL (`taskStatusOf`). */
-    $queryRaw: vi.fn(async () => [{ status: 'PENDING' }] as unknown[]),
+    receipt: { findMany: stubFn(async () => [] as unknown[]) },
+    user: {
+      findFirst: stubFn(async () => ({ id: U('3'), name: 'Pat', email: 'pat@x.example' }) as unknown),
+      findMany: stubFn(async () => [] as unknown[]),
+      findUnique: stubFn(async () => null as unknown),
+    },
+    /** VeloExpense: the report-row lock, and the bridge's raw statements. */
+    $queryRaw: stubFn(async () => [] as unknown[]),
+    $queryRawUnsafe: stubFn(async () => [] as unknown[]),
+    $executeRawUnsafe: stubFn(async () => 0),
     ...over,
   };
 }
@@ -120,13 +222,66 @@ const FX = [P.expense.report.fxOverride] as const;
 beforeEach(() => {
   vi.clearAllMocks();
   withAuditCalls.length = 0;
-  resolveDecidableTask.mockResolvedValue(null);
+  audited.length = 0;
+  canDecide.mockResolvedValue(true);
+  // `clearAllMocks` wipes call history and LEAVES implementations, so a test that
+  // overrides these would otherwise leak its answer into every later one.
+  canClaimUnresolvedApproval.mockResolvedValue(false);
+  isEligible.mockResolvedValue(false);
+  callerCanDecideReport.mockResolvedValue(false);
+  decideTask.mockResolvedValue(decided());
+});
+
+describe('the inbox', () => {
+  it('returns only pending tasks assigned to the caller', async () => {
+    const db = makeDb();
+    const c = await callerFor(db, []);
+    await c.myTasks();
+    expect(JSON.stringify(db.approvalTask.findMany.mock.calls[0]?.[0]?.where)).toContain('PENDING');
+  });
+
+  it('asks about the claim using the REPORT, not the caller', async () => {
+    /**
+     * `canClaimUnresolvedApproval` needs the subject to find the requester, because
+     * a no-fallback claim is refused to the requester's own subordinates. Its two
+     * id arguments are both strings, so swapping them typechecks perfectly and
+     * silently asks "does the actor report to the actor" — every claim would then
+     * be allowed, and the narrowing would be dead code that still looked live.
+     *
+     * The inbox has to give the same verdict the decide path will, or it renders
+     * rows that 403 when opened.
+     */
+    const db = makeDb();
+    db.approvalTask.findMany
+      .mockResolvedValueOnce([]) // assigned to me: none
+      .mockResolvedValueOnce([
+        {
+          id: TASK,
+          label: 'mgr',
+          nodeId: 'n1',
+          instance: {
+            subjectId: REPORT,
+            effectiveGraph: null,
+            workflowVersion: { graph: {} },
+          },
+        },
+      ]);
+    canClaimUnresolvedApproval.mockResolvedValue(true);
+    const c = await callerFor(db, []);
+    await c.myTasks();
+    const call = canClaimUnresolvedApproval.mock.calls[0];
+    expect(call?.[3]).toBe(REPORT);
+    expect(call?.[4]).toBe(ME);
+  });
+
+  // VeloExpense: "lists what the caller already decided separately" is `myDecided`, which is
+  // not ported (d57).
 });
 
 describe('decide', () => {
   it('404s an unknown task', async () => {
     const db = makeDb();
-    db.$queryRaw.mockResolvedValue([]);
+    db.approvalTask.findUnique.mockResolvedValue(null);
     const c = await callerFor(db, []);
     await expect(c.decide({ taskId: TASK, approve: true })).rejects.toMatchObject({
       code: 'NOT_FOUND',
@@ -137,51 +292,40 @@ describe('decide', () => {
     /**
      * Two approvers clicking at once, or a stale inbox tab, must not both count — and
      * the check is on a fresh read rather than on anything the client sent.
-     *
-     * VeloExpense: VeloExpense's terminal task statuses (it has no EXPIRED).
      */
-    for (const status of ['APPROVED', 'REJECTED', 'SKIPPED', 'CANCELLED']) {
+    for (const status of ['APPROVED', 'REJECTED', 'SKIPPED', 'EXPIRED']) {
       const db = makeDb();
-      db.$queryRaw.mockResolvedValue([{ status }]);
+      db.approvalTask.findUnique.mockResolvedValue(task({ status }));
       const c = await callerFor(db, []);
       await expect(c.decide({ taskId: TASK, approve: true }), status).rejects.toThrow(
         /already decided/,
       );
     }
-    expect(decideThroughEngine).not.toHaveBeenCalled();
+    expect(decideTask).not.toHaveBeenCalled();
   });
 
   it('defers eligibility to the engine', async () => {
     // Delegation, approver pools and admin override all live there; re-implementing
     // any of it here is how the inbox and the decision start disagreeing.
-    // VeloExpense: the engine's refusal comes back through the adapter as FORBIDDEN
-    // (`toTrpcError`); the router asks nothing itself.
-    const { TRPCError } = await import('@trpc/server');
-    decideThroughEngine.mockRejectedValueOnce(new TRPCError({ code: 'FORBIDDEN' }));
+    canDecide.mockResolvedValue(false);
     const db = makeDb();
     const c = await callerFor(db, []);
     await expect(c.decide({ taskId: TASK, approve: true })).rejects.toMatchObject({
       code: 'FORBIDDEN',
     });
+    expect(decideTask).not.toHaveBeenCalled();
   });
 
   it('asks the engine on the task’s own terms first, and records no override for an assignee', async () => {
     // An override holder who IS the assignee is the assignee: one engine call, no
     // override flag, and the audit row says so.
-    // VeloExpense: the engine asks `canDecide` without the override first and labels the
-    // row — proven against the real engine in expenseApprovals.db.test.ts. Here: the
-    // router hands it the override, and nothing else decides.
+    // VeloExpense: asked once by the router's fast refusal and once by the action's body,
+    // both on the task's own terms.
     const db = makeDb();
     await (await callerFor(db, ADMIN)).decide({ taskId: TASK, approve: true });
-    expect(decideThroughEngine).toHaveBeenCalledTimes(1);
-    expect(decideThroughEngine).toHaveBeenCalledWith(
-      db,
-      TASK,
-      ME,
-      'APPROVED',
-      { note: null, receiptViewAcknowledged: undefined },
-      true,
-    );
+    expect(canDecide).toHaveBeenCalledWith(expect.anything(), TASK, ME, false);
+    expect(canDecide).not.toHaveBeenCalledWith(expect.anything(), TASK, ME, true);
+    expect(audited[0]?.details).toMatchObject({ override: false });
   });
 
   it('lets the override decide a task that is not theirs, and audits it as an override', async () => {
@@ -190,12 +334,13 @@ describe('decide', () => {
      * branch, and a decision made on it must be distinguishable in the log from the
      * assigned manager's — a reviewer reading `report.approve` rows has to be able to
      * tell "the manager approved" from "somebody stepped around the manager".
-     *
-     * VeloExpense: the audit half is the engine's (expenseApprovals.db.test.ts).
      */
+    canDecide.mockImplementation(async (...args: unknown[]) => args[3] === true);
     const db = makeDb();
     await (await callerFor(db, ADMIN)).decide({ taskId: TASK, approve: true });
-    expect(decideThroughEngine.mock.calls[0]?.[5]).toBe(true);
+    expect(canDecide).toHaveBeenCalledWith(expect.anything(), TASK, ME, true);
+    expect(audited[0]?.details).toMatchObject({ taskId: TASK, override: true });
+    expect(decideTask).toHaveBeenCalled();
   });
 
   it('refuses an AP clerk a task they were not assigned — read.all is not an override', async () => {
@@ -204,36 +349,85 @@ describe('decide', () => {
      * AP Clerk holds to work its queue — so an AP clerk could approve any report and
      * then, holding `reimburse`, pay it. The engine says "not eligible"; the router must
      * not have a second opinion on the strength of a read permission.
-     *
-     * VeloExpense: the router never hands the engine the override on `read.all`.
      */
+    canDecide.mockResolvedValue(false);
     const db = makeDb();
-    await (await callerFor(db, AP_CLERK)).decide({ taskId: TASK, approve: true });
-    expect(decideThroughEngine.mock.calls[0]?.[5]).toBe(false);
+    const c = await callerFor(db, AP_CLERK);
+    await expect(c.decide({ taskId: TASK, approve: true })).rejects.toMatchObject({
+      code: 'FORBIDDEN',
+    });
+    expect(canDecide).not.toHaveBeenCalledWith(expect.anything(), TASK, ME, true);
+    expect(decideTask).not.toHaveBeenCalled();
+    expect(audited).toHaveLength(0);
   });
 
   it('audits an approval and a rejection as different actions', async () => {
-    // VeloExpense: the engine writes REPORT_APPROVED / REPORT_REJECTED (and the step's
-    // own row); here, the router asks for two different decisions with the note.
     const db = makeDb();
     const c = await callerFor(db, []);
     await c.decide({ taskId: TASK, approve: true });
+    const approveAction = audited[0]?.action;
+    audited.length = 0;
+    decideTask.mockResolvedValue(decided('REJECTED'));
     await c.decide({ taskId: TASK, approve: false, note: 'Missing receipt' });
-    expect(decideThroughEngine.mock.calls.map((call) => call[3])).toEqual(['APPROVED', 'REJECTED']);
-    expect(decideThroughEngine.mock.calls[1]?.[4]).toMatchObject({ note: 'Missing receipt' });
+    expect(audited[0]?.action).not.toBe(approveAction);
+    expect(audited[0]?.details).toEqual({
+      taskId: TASK,
+      note: 'Missing receipt',
+      override: false,
+    });
   });
 
   it('records a null note rather than undefined', async () => {
     const db = makeDb();
     await (await callerFor(db, [])).decide({ taskId: TASK, approve: true });
-    expect(decideThroughEngine.mock.calls[0]?.[4]).toMatchObject({ note: null });
+    expect(audited[0]?.details).toEqual({ taskId: TASK, note: null, override: false });
   });
 
-  // VeloExpense: ExpenseOS's "pushes an approved report to NetSuite at once" and "runs the
-  // workflow effects the engine fired" are the engine's in VeloExpense — it enqueues the
-  // ledger post on the approving transition (VX3-4) and has no workflow effects; and
-  // "notifies on the decision" is the engine's too. The db suite proves the post and the
-  // notification against the real engine.
+  it('pushes an approved report to NetSuite at once', async () => {
+    /**
+     * An approved report is a liability from the moment it is approved, so it posts on
+     * the decision rather than when somebody remembers. The push itself is a no-op
+     * unless this was the terminal decision.
+     *
+     * VeloExpense: the report's outcome, which queues the ledger post on the transition.
+     */
+    const db = makeDb();
+    await (await callerFor(db, [])).decide({ taskId: TASK, approve: true });
+    expect(recordReportOutcome).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ reportId: REPORT, outcome: 'APPROVED', actor: { userId: ME } }),
+    );
+  });
+
+  it('VeloExpense: names one step of several apart from the decision that ends it', async () => {
+    // ExpenseOS writes `report.approve` either way. A step that leaves the approval running
+    // is APPROVAL_STEP_APPROVED, and has no outcome: the report is still out for approval.
+    decideTask.mockResolvedValue(decided('RUNNING'));
+    const db = makeDb();
+    await (await callerFor(db, [])).decide({ taskId: TASK, approve: true });
+    expect(audited).toEqual([
+      { action: 'APPROVAL_STEP_APPROVED', details: { taskId: TASK, note: null, override: false } },
+    ]);
+    expect(recordReportOutcome).not.toHaveBeenCalled();
+  });
+
+  it('runs the workflow effects the engine fired', async () => {
+    const db = makeDb();
+    await (await callerFor(db, [])).decide({ taskId: TASK, approve: true });
+    expect(executeWorkflowEffects).toHaveBeenCalledWith(expect.anything(), {
+      subjectType: 'EXPENSE_REPORT',
+      subjectId: REPORT,
+      effectNodeIds: ['e1'],
+      actorId: ME,
+    });
+  });
+
+  it('notifies on the decision', async () => {
+    const db = makeDb();
+    decideTask.mockResolvedValue(decided('REJECTED'));
+    await (await callerFor(db, [])).decide({ taskId: TASK, approve: false });
+    expect(notifyReportDecision).toHaveBeenCalled();
+  });
 
   it('bounds the note', async () => {
     const c = await callerFor(makeDb(), []);
@@ -241,83 +435,86 @@ describe('decide', () => {
       c.decide({ taskId: TASK, approve: true, note: 'x'.repeat(2001) }),
     ).rejects.toThrow();
   });
-
-  it('VeloExpense: passes on the receipt acknowledgement a VeloExpense step can require', async () => {
-    const db = makeDb();
-    await (await callerFor(db, [])).decide({
-      taskId: TASK,
-      approve: true,
-      receiptViewAcknowledged: true,
-    });
-    expect(decideThroughEngine.mock.calls[0]?.[4]).toMatchObject({
-      receiptViewAcknowledged: true,
-    });
-  });
 });
 
 describe('reassign', () => {
-  const REASON = 'On leave until the 20th.';
+  /** VeloExpense (d37): a reason is required. */
+  const NOTE = 'On leave until the 20th.';
 
   it('is authorized like a decision', async () => {
     // Whoever could decide it can instead hand it to somebody else.
-    // VeloExpense: the engine's eligibility guard, through the adapter.
-    const { TRPCError } = await import('@trpc/server');
-    reassignThroughEngine.mockRejectedValueOnce(new TRPCError({ code: 'FORBIDDEN' }));
+    canDecide.mockResolvedValue(false);
     const db = makeDb();
     const c = await callerFor(db, []);
-    await expect(
-      c.reassign({ taskId: TASK, toUserId: U('3'), note: REASON }),
-    ).rejects.toMatchObject({ code: 'FORBIDDEN' });
+    await expect(c.reassign({ taskId: TASK, toUserId: U('3'), note: NOTE })).rejects.toMatchObject({
+      code: 'FORBIDDEN',
+    });
   });
 
   it('refuses an AP clerk, and audits an override holder’s reassignment as an override', async () => {
     // Reassigning is deciding by another name: the same key, the same label on the row.
-    // VeloExpense: the override reaches the engine only on `decide.any`; the row is the
-    // engine's (expenseApprovals.db.test.ts).
-    await (await callerFor(makeDb(), AP_CLERK)).reassign({
-      taskId: TASK,
-      toUserId: U('3'),
-      note: REASON,
-    });
-    expect(reassignThroughEngine.mock.calls[0]?.[5]).toBe(false);
-    await (await callerFor(makeDb(), ADMIN)).reassign({
-      taskId: TASK,
-      toUserId: U('3'),
-      note: REASON,
-    });
-    expect(reassignThroughEngine.mock.calls[1]?.[5]).toBe(true);
+    canDecide.mockResolvedValue(false);
+    await expect(
+      (await callerFor(makeDb(), AP_CLERK)).reassign({ taskId: TASK, toUserId: U('3'), note: NOTE }),
+    ).rejects.toMatchObject({ code: 'FORBIDDEN' });
+
+    canDecide.mockReset();
+    canDecide.mockImplementation(async (...args: unknown[]) => args[3] === true);
+    await (await callerFor(makeDb(), ADMIN)).reassign({ taskId: TASK, toUserId: U('3'), note: NOTE });
+    expect(audited[0]?.details).toMatchObject({ toUserId: U('3'), override: true });
   });
 
   it('404s an unknown task and refuses a decided one', async () => {
     const missing = makeDb();
-    missing.$queryRaw.mockResolvedValue([]);
+    missing.approvalTask.findUnique.mockResolvedValue(null);
     await expect(
-      (await callerFor(missing, [])).reassign({ taskId: TASK, toUserId: U('3'), note: REASON }),
+      (await callerFor(missing, [])).reassign({ taskId: TASK, toUserId: U('3'), note: NOTE }),
     ).rejects.toMatchObject({ code: 'NOT_FOUND' });
 
     const done = makeDb();
-    done.$queryRaw.mockResolvedValue([{ status: 'APPROVED' }]);
+    done.approvalTask.findUnique.mockResolvedValue(task({ status: 'APPROVED' }));
     await expect(
-      (await callerFor(done, [])).reassign({ taskId: TASK, toUserId: U('3'), note: REASON }),
+      (await callerFor(done, [])).reassign({ taskId: TASK, toUserId: U('3'), note: NOTE }),
     ).rejects.toThrow(/already decided/);
   });
 
-  // VeloExpense: "requires the new assignee to be an active employee" and "notifies the new
-  // assignee" are the engine's (`reassignTask`), proven against it in the db suite.
+  it('requires the new assignee to be an active employee', async () => {
+    // Reassigning to a departed account parks the report where nobody will see it.
+    const db = makeDb();
+    db.user.findFirst.mockResolvedValue(null);
+    const c = await callerFor(db, []);
+    await expect(c.reassign({ taskId: TASK, toUserId: U('3'), note: NOTE })).rejects.toThrow(
+      /Unknown or inactive assignee/,
+    );
+  });
 
-  it('VeloExpense: requires a reason, and hands it to the engine (d37)', async () => {
+  it('notifies the new assignee', async () => {
+    const db = makeDb();
+    await (await callerFor(db, [])).reassign({ taskId: TASK, toUserId: U('3'), note: NOTE });
+    expect(notifyReportReassigned).toHaveBeenCalled();
+  });
+
+  it('VeloExpense: requires a reason, and passes it to the submitter with the new assignee (d37)', async () => {
     const c = await callerFor(makeDb(), []);
     await expect(c.reassign({ taskId: TASK, toUserId: U('3'), note: '   ' })).rejects.toThrow();
-    expect(reassignThroughEngine).not.toHaveBeenCalled();
-    await c.reassign({ taskId: TASK, toUserId: U('3'), note: `  ${REASON}  ` });
-    expect(reassignThroughEngine).toHaveBeenCalledWith(
-      expect.anything(),
-      TASK,
-      ME,
-      U('3'),
-      REASON,
-      false,
-    );
+    await c.reassign({ taskId: TASK, toUserId: U('3'), note: `  ${NOTE}  ` });
+    expect(notifyReportReassigned).toHaveBeenCalledWith(expect.anything(), REPORT, ME, U('3'), {
+      note: NOTE,
+      assigneeName: 'Pat',
+    });
+  });
+
+  it('VeloExpense: refuses the submitter, and the person who already holds it, as the target', async () => {
+    const toSubmitter = makeDb();
+    await expect(
+      (await callerFor(toSubmitter, [])).reassign({ taskId: TASK, toUserId: U('8'), note: NOTE }),
+    ).rejects.toMatchObject({ code: 'BAD_REQUEST' });
+    const toHolder = makeDb();
+    await expect(
+      (await callerFor(toHolder, [])).reassign({ taskId: TASK, toUserId: ME, note: NOTE }),
+    ).rejects.toMatchObject({ code: 'BAD_REQUEST' });
+    expect(toSubmitter.approvalTask.update).not.toHaveBeenCalled();
+    expect(toHolder.approvalTask.update).not.toHaveBeenCalled();
   });
 });
 
@@ -329,14 +526,17 @@ describe('returnForEdit', () => {
      */
     for (const status of ['DRAFT', 'APPROVED', 'RETURNED', 'REIMBURSED']) {
       const db = makeDb();
-      db.expenseReport.findUnique.mockResolvedValue({ id: REPORT, status });
+      db.expenseReport.findUnique.mockResolvedValue({
+        id: REPORT,
+        status,
+        approvalInstanceId: 'inst-1',
+      });
       const c = await callerFor(db, ADMIN);
       await expect(
         c.returnForEdit({ reportId: REPORT, note: 'Please attach the receipt' }),
         status,
       ).rejects.toThrow();
     }
-    expect(decideThroughEngine).not.toHaveBeenCalled();
   });
 
   it('404s a report that does not exist', async () => {
@@ -354,40 +554,25 @@ describe('returnForEdit', () => {
     await expect(c.returnForEdit({ reportId: REPORT, note: 'Fix it' })).rejects.toMatchObject({
       code: 'FORBIDDEN',
     });
-    expect(decideThroughEngine).not.toHaveBeenCalled();
   });
 
   it('lets an admin return it without holding a task, and says so on the audit row', async () => {
-    // VeloExpense: VeloExpense's engine closes a run through a task, so the override
-    // returns it through the report's pending task, as an override — the row is the
-    // engine's (db suite).
-    resolveDecidableTask.mockImplementation(async (...args: unknown[]) =>
-      args[3] === true ? TASK : null,
-    );
     const db = makeDb();
     const c = await callerFor(db, ADMIN);
     await expect(
       c.returnForEdit({ reportId: REPORT, note: 'Please attach the receipt' }),
-    ).resolves.toMatchObject({ status: 'RETURNED' });
-    expect(decideThroughEngine).toHaveBeenCalledWith(
-      db,
-      TASK,
-      ME,
-      'RETURNED',
-      { note: 'Please attach the receipt' },
-      true,
-    );
+    ).resolves.toBeTruthy();
+    expect(audited[0]?.details).toMatchObject({ override: true });
   });
 
   it('records an eligible approver’s return as an ordinary one, override or not', async () => {
     // Eligibility is asked before the override, so a holder who IS an approver is the
     // approver — there is one pending task and the engine says it is theirs.
-    resolveDecidableTask.mockResolvedValue(TASK);
+    // VeloExpense: `callerCanDecideReport` is that question (ExpenseOS: `canDecideReport`).
+    callerCanDecideReport.mockResolvedValue(true);
     const db = makeDb();
     await (await callerFor(db, ADMIN)).returnForEdit({ reportId: REPORT, note: 'Fix it' });
-    expect(resolveDecidableTask).toHaveBeenCalledTimes(1);
-    expect(resolveDecidableTask).toHaveBeenCalledWith(db, REPORT, ME, false);
-    expect(decideThroughEngine.mock.calls[0]?.[5]).toBe(false);
+    expect(audited[0]?.details).toMatchObject({ override: false });
   });
 
   it('refuses an AP clerk who holds no task — read.all does not return a report either', async () => {
@@ -396,15 +581,47 @@ describe('returnForEdit', () => {
     await expect(c.returnForEdit({ reportId: REPORT, note: 'Fix it' })).rejects.toMatchObject({
       code: 'FORBIDDEN',
     });
-    // Never asked on the override's terms.
-    expect(resolveDecidableTask).not.toHaveBeenCalledWith(db, REPORT, ME, true);
-    expect(decideThroughEngine).not.toHaveBeenCalled();
+    expect(audited).toHaveLength(0);
   });
 
-  // VeloExpense: "skips the pending tasks, cancels the instance and returns the report" is
-  // the engine's RETURNED decision (it closes the run and cancels its other tasks), proven
-  // in the db suite; "returns a report that had no approval instance" does not arise — every
-  // VeloExpense submit opens a run; "notifies the submitter" is the engine's, with the note.
+  it('skips the pending tasks, cancels the instance and returns the report', async () => {
+    /**
+     * All three, or the report sits in RETURNED with live approval tasks — every
+     * approver still sees it in their inbox while the submitter is editing it.
+     */
+    const db = makeDb();
+    const c = await callerFor(db, ADMIN);
+    await c.returnForEdit({ reportId: REPORT, note: 'Fix it' });
+    expect(db.approvalTask.updateMany).toHaveBeenCalledWith({
+      where: { instanceId: 'inst-1', status: 'PENDING' },
+      data: { status: 'SKIPPED' },
+    });
+    const instance = db.approvalInstance.update.mock.calls[0]?.[0]?.data as Record<string, unknown>;
+    expect(instance.status).toBe('CANCELLED');
+    expect(instance.completedAt).toBeInstanceOf(Date);
+    expect(db.expenseReport.update.mock.calls[0]?.[0]?.data).toMatchObject({
+      status: 'RETURNED',
+    });
+  });
+
+  it('returns a report that had no approval instance', async () => {
+    // An auto-approved report can still be returned.
+    const db = makeDb();
+    db.expenseReport.findUnique.mockResolvedValue({
+      id: REPORT,
+      status: 'SUBMITTED',
+      approvalInstanceId: null,
+    });
+    const c = await callerFor(db, ADMIN);
+    await expect(c.returnForEdit({ reportId: REPORT, note: 'Fix it' })).resolves.toBeTruthy();
+    expect(db.approvalInstance.update).not.toHaveBeenCalled();
+  });
+
+  it('notifies the submitter', async () => {
+    const db = makeDb();
+    await (await callerFor(db, ADMIN)).returnForEdit({ reportId: REPORT, note: 'Fix it' });
+    expect(notifyReportReturned).toHaveBeenCalled();
+  });
 });
 
 describe('setFxOverride', () => {

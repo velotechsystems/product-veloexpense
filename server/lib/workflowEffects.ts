@@ -28,7 +28,7 @@ import { graphSchema } from '@expenseos/approvals';
 import { type ApprovalSubjectType, loadRequesterId } from '@expenseos/approvals/engine';
 import { auditActions, withAudit } from '@expenseos/audit';
 import type { Prisma } from '@expenseos/db';
-import { SYSTEM_ROLE_IDS } from '@expenseos/rbac';
+import { rolesStandingFor } from '@/lib/approvals/systemRoleHolders';
 import type { TenantDb } from '@/lib/db/prisma';
 import { queryRunnerOf } from '@/lib/db/prisma-pg-bridge';
 import { notifyRecipients, recordActivity, reportPayload } from '@/lib/notifications/service';
@@ -80,12 +80,7 @@ async function resolveNotifyTarget(
     case 'role': {
       // VeloExpense: the text roles that stand for the named system role (`systemRoleFor`:
       // ADMIN → admin, EMPLOYEE and MANAGER → employee). Any other id names nobody yet.
-      const roles =
-        target.roleId === SYSTEM_ROLE_IDS.admin
-          ? ['ADMIN']
-          : target.roleId === SYSTEM_ROLE_IDS.employee
-            ? ['EMPLOYEE', 'MANAGER']
-            : [];
+      const roles = rolesStandingFor(target.roleId);
       if (roles.length === 0) return [];
       const users = await db.user.findMany({
         where: { role: { in: roles }, deletedAt: null },

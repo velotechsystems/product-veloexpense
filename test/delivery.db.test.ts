@@ -21,10 +21,11 @@
  */
 import { describe, it, expect, beforeAll, beforeEach, afterAll } from 'vitest';
 import { Pool } from 'pg';
-import { withOrg, withoutOrg, withPlatformRead } from '@/lib/tenant/context';
+import { withoutOrg, withPlatformRead } from '@/lib/tenant/context';
+// w4-00c: the lifecycle starts the approval engine, which needs the tenant's Prisma
+// transaction (test/support/tenant-tx.ts) — the same `QueryRunner`, under the same name.
+import { decideAs, seedDefaultFlow, submitAsApp, withTenantTx as withOrg } from './support/tenant-tx';
 import * as expenses from '@/lib/expenses/service';
-import * as lifecycle from '@/lib/expenses/lifecycle';
-import { decide } from '@/lib/approvals/engine';
 import {
   MemoryEmailTransport,
   resetEmailTransport,
@@ -81,10 +82,9 @@ async function submitted(amountMinor = 250000, title = 'Munich') {
     await expenses.addLineItem(tx, TEST_ACTOR, expense.id, { categoryId, amountMinor });
     return report.id as string;
   });
-  const { approval } = await withOrg(orgId, (tx) =>
-    lifecycle.submitReport(tx, reportId, submitter),
-  );
-  return { reportId, ...approval };
+  // w4-00c: as the app submits — the transition, then the first approvers told.
+  const { approval } = await submitAsApp(orgId, reportId, submitter);
+  return { reportId, ...approval, taskId: approval.createdTaskIds[0] };
 }
 
 /** The delivery rows for this tenant, whatever their state. */
@@ -123,6 +123,9 @@ beforeAll(async () => {
     "INSERT INTO organization (slug, name) VALUES ('deliv-co','Delivery Co') RETURNING id",
   );
   orgId = o.rows[0].id;
+  // w4-00c: the default approval flow a provisioned tenant starts with (d54); without it a
+  // submit is refused (d58).
+  await seedDefaultFlow(orgId);
   manager = await mkUser('mgr@deliv.test', 'MANAGER');
   submitter = await mkUser(SUBMITTER, 'EMPLOYEE', manager);
   await withOrg(orgId, async (tx) => {
@@ -149,6 +152,7 @@ beforeEach(async () => {
      DELETE FROM activity;
      DELETE FROM notification_preference;
      DELETE FROM notification_template;
+     DELETE FROM approval_instance;
      DELETE FROM approval_task;
      DELETE FROM approval_request;
      DELETE FROM expense_report_event;
@@ -254,13 +258,14 @@ describe('an approval email arrives with working actions', () => {
 
     // The GET-equivalent: reading the token must not decide anything.
     const preview = await inspectToken(tokens.approve);
-    expect(preview).toMatchObject({ kind: 'READY', action: 'APPROVED', step: 1, totalSteps: 1 });
+    // w4-00c: the ladder's "step 1 of 1" is gone with it; the page says who and how much.
+    expect(preview).toMatchObject({ kind: 'READY', action: 'APPROVED', receiptCount: 0 });
     const stillOpen = await admin.query('SELECT status FROM expense_report WHERE id = $1', [
       reportId,
     ]);
     expect(stillOpen.rows[0].status).toBe('SUBMITTED');
 
-    const done = await decideFromToken(tokens.approve, { receiptViewAcknowledged: true });
+    const done = await decideFromToken(tokens.approve);
     expect(done).toMatchObject({ kind: 'DONE', action: 'APPROVED' });
     const settled = await admin.query('SELECT status FROM expense_report WHERE id = $1', [reportId]);
     expect(settled.rows[0].status).toBe('APPROVED');
@@ -273,7 +278,7 @@ describe('an approval email arrives with working actions', () => {
     await submitted();
     await drainOutbox();
     const tokens = tokensFromLastEmail()!;
-    await decideFromToken(tokens.approve, { receiptViewAcknowledged: true });
+    await decideFromToken(tokens.approve);
     // The REJECT link is now a credential with nothing to do. `decide` would
     // refuse it anyway; consuming it means it is not a live credential at all.
     expect(await inspectToken(tokens.reject)).toEqual({ kind: 'INVALID' });
@@ -299,9 +304,7 @@ describe('an approval email arrives with working actions', () => {
     const { reportId, taskId } = await submitted();
     await drainOutbox();
     const tokens = tokensFromLastEmail()!;
-    await withOrg(orgId, (tx) =>
-      decide(tx, taskId, manager, 'APPROVED', { receiptViewAcknowledged: true }),
-    );
+    await decideAs(orgId, taskId, manager, 'APPROVED');
     const outcome = await inspectToken(tokens.approve);
     expect(outcome).toMatchObject({ kind: 'REFUSED', reportId });
     // And using it changes nothing.
@@ -342,9 +345,7 @@ describe('an approval email arrives with working actions', () => {
     // An APPROVED mail goes to the submitter, who has nothing to decide. Buttons
     // there would be a link that always fails.
     const { taskId } = await submitted();
-    await withOrg(orgId, (tx) =>
-      decide(tx, taskId, manager, 'APPROVED', { receiptViewAcknowledged: true }),
-    );
+    await decideAs(orgId, taskId, manager, 'APPROVED');
     mail.reset();
     await drainOutbox();
     const toSubmitter = mail.sent.find((m) => m.to === SUBMITTER);
@@ -427,6 +428,7 @@ describe('a failed send retries and shows in the admin queue', () => {
     // describe.
     const { reportId } = await submitted();
     await admin.query('DELETE FROM expense_line_item');
+    await admin.query('DELETE FROM approval_instance');
     await admin.query('DELETE FROM approval_task');
     await admin.query('DELETE FROM approval_request');
     await admin.query('DELETE FROM expense_report_event');

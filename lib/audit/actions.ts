@@ -107,6 +107,9 @@ export const AUDIT_ACTIONS = [
   'APPROVAL_RUN_OPENED',
   'APPROVAL_RUN_CANCELLED',
   'APPROVAL_STEP_APPROVED',
+  /* w4-00c: a rejection a workflow routes onward (a wired `reject` exit) rather than ending
+     the approval on — ExpenseOS's engine allows it, the ladder did not. */
+  'APPROVAL_STEP_REJECTED',
   'REPORT_APPROVED',
   'REPORT_REJECTED',
   'REPORT_RETURNED',

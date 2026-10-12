@@ -25,11 +25,13 @@ export const SETUP_COPY: Record<SetupItem, { title: string; why: string; href: s
     href: '/admin/expense-categories',
     cta: 'Review categories',
   },
-  APPROVAL_LADDER: {
-    title: 'Decide who approves what',
-    why: 'Without a ladder, everything routes up the reporting line. A ladder is how a large amount reaches somebody more senior than a small one.',
-    href: '/admin/approval-ladder',
-    cta: 'Set up approvals',
+  // w4-00c: the approval workflow, which every tenant starts with (d54/d56/d59). Done while
+  // one is published for expense reports; with none, nothing can be submitted (d58).
+  APPROVAL_FLOW: {
+    title: 'Check who approves',
+    why: 'Reports go to the submitter’s manager, or to an administrator when they have none. Change the flow if large amounts or some departments need somebody else — with no published flow, nothing can be submitted.',
+    href: '/admin/approval-workflows',
+    cta: 'Review approvals',
   },
   SPEND_POLICY: {
     title: 'Set your spend rules',

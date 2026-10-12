@@ -5,13 +5,13 @@
  *   · w2-06 — AP's cross-report expense view and its receipt chase: `expenses` and
  *     `chaseReceipts`, in ExpenseOS's words;
  *   · w2-02a — the approver's actions the workbench calls: `decide`, `reassign`,
- *     `returnForEdit` and `setFxOverride` (d36). The transitions go to VeloExpense's
- *     approval engine through `server/lib/reportLifecycle.ts`, as submit and recall do
- *     (d23); `decideBulk` (the inbox) and `markReimbursed` arrive with the inbox in Wave 4.
- *
- * `myTasks` is NOT ExpenseOS's procedure yet: a VeloExpense stand-in until Wave 4 ports
- * ExpenseOS's graph approval engine, and with it the inbox, the approver-visible report and the
- * decide / return / reimburse actions this file holds in ExpenseOS.
+ *     `returnForEdit` and `setFxOverride` (d36);
+ *   · w4-00c — on ExpenseOS's approval engine: `myTasks` (`loadMyExpenseApprovalTasks`), and
+ *     the three actions' bodies, which run in `server/lib/reportLifecycle.ts` so that the
+ *     /approvals form and the emailed /approve link decide exactly as these do. ExpenseOS's
+ *     fast refusals stay here, in its words. `decideBulk`, `myDecided`, `myTeam`, `report` and
+ *     `markReimbursed` are not ported: VeloExpense keeps its own /approvals inbox and
+ *     reimbursement screen (d57).
  *
  * VeloExpense adaptations are marked `VeloExpense:` where they are made. The shared ones, as in
  * the expenses router:
@@ -20,10 +20,17 @@
  *   · VeloExpense has one display name, so a submitter's is carried in `firstName`;
  *   · only a STORED receipt is a receipt (w2-09): a PENDING row is an upload that never
  *     arrived;
- *   · may-this-caller-decide is asked of VeloExpense's own approvals until Wave 4
- *     (`callerCanDecideReport`), and the activity is recorded through VeloExpense's
- *     notification service on the procedure's own transaction (`queryRunnerOf`).
+ *   · the activity is recorded through VeloExpense's notification service on the
+ *     procedure's own transaction (`queryRunnerOf`).
  */
+import { graphSchema, type WorkflowNode } from '@expenseos/approvals';
+import {
+  buildActorEligibilityContext,
+  canClaimUnresolvedApproval,
+  claimNeedsRequester,
+  isEligible,
+  primeRequesterIds,
+} from '@expenseos/approvals/engine';
 import { auditActions, withAudit } from '@expenseos/audit';
 import {
   ExpenseReportStatus,
@@ -34,13 +41,19 @@ import {
 import { permissions as P } from '@expenseos/rbac';
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
-import { listInbox } from '@/lib/approvals/inbox';
+import type { TenantDb } from '@/lib/db/prisma';
 import { queryRunnerOf } from '@/lib/db/prisma-pg-bridge';
 import { notifyRecipients, recordActivity, reportPayload } from '@/lib/notifications/service';
-import { withOrg } from '@/lib/tenant/context';
+import { APPROVAL_POOL_CAP, capApprovalPool } from '@/server/lib/approvalPoolCap';
 import { currencySymbol } from '@/server/lib/currencySymbol';
-import { callerCanDecideReport, resolveDecidableTask } from '@/server/lib/reportApproval';
-import { decideThroughEngine, reassignThroughEngine } from '@/server/lib/reportLifecycle';
+import { resolveDecideAccess } from '@/server/lib/decideAccess';
+import { callerCanDecideReport } from '@/server/lib/reportApproval';
+import {
+  decideThroughEngine,
+  reassignThroughEngine,
+  returnThroughEngine,
+  toTrpcError,
+} from '@/server/lib/reportLifecycle';
 import { REFUSAL_KEYS, refusal } from '@/server/refusal';
 import { protectedProcedure, router, withPermission } from '@/server/trpc';
 
@@ -66,17 +79,23 @@ function actorOf(ctx: Ctx) {
   };
 }
 
-/**
- * VeloExpense: a task's status, off VeloExpense's `approval_task` (no Prisma model), for the
- * two checks ExpenseOS makes before its engine is asked — that the task exists and is still
- * PENDING. The engine makes both again under its lock; these are the fast refusals, in
- * ExpenseOS's words.
- */
-async function taskStatusOf(db: import('@/lib/db/prisma').TenantDb, taskId: string) {
-  const rows = await db.$queryRaw<Array<{ status: string }>>`
-    SELECT status::text AS status FROM approval_task WHERE id = ${taskId}::uuid`;
-  return rows[0]?.status ?? null;
-}
+/** The shared Prisma client, as the extracted loaders below take it.
+ *  VeloExpense: the request's tenant transaction. */
+type WebDb = TenantDb;
+
+/** Report summary for the inbox list.
+ *  VeloExpense: a currency is keyed by its code (the symbol comes from `currencySymbol`), and
+ *  a submitter has one display name. */
+const REPORT_SUMMARY_SELECT = {
+  id: true,
+  number: true,
+  title: true,
+  status: true,
+  totalMinor: true,
+  submittedAt: true,
+  currency: { select: { code: true } },
+  submitter: { select: { id: true, name: true, email: true } },
+} as const;
 
 /**
  * Can this user see this report? ExpenseOS's `canViewReport`, which the discussion thread
@@ -84,10 +103,11 @@ async function taskStatusOf(db: import('@/lib/db/prisma').TenantDb, taskId: stri
  * or reimburse, the submitter, their direct manager, anyone an approval task touched, or
  * anyone eligible to decide it.
  *
- * VeloExpense: read off VeloExpense's tables — the manager is `app_user.manager_id`, and the
- * tasks are those of EVERY run of the report rather than only the current instance's
- * (VeloExpense keeps a run per submission, where ExpenseOS repoints one field), so an
- * approver who returned it can still follow the conversation after it is resubmitted.
+ * VeloExpense: the manager is `app_user.manager_id`, and the tasks are those of EVERY
+ * approval of the report rather than only the current instance's (ExpenseOS reads
+ * `approvalInstanceId`, which a resubmission repoints), so an approver who returned it can
+ * still follow the conversation after it is resubmitted — and, until the ladder is retired
+ * (w4-00d), the ladder's runs from before the cutover too.
  */
 export async function canViewReport(
   db: import('@/lib/db/prisma').TenantDb,
@@ -105,6 +125,12 @@ export async function canViewReport(
      WHERE s.id = ${report.submitterId}::uuid AND s.manager_id = ${userId}::uuid
     UNION ALL
     SELECT 1 AS ok
+      FROM approval_instance_task t
+      JOIN approval_instance i ON i.id = t.instance_id
+     WHERE i.subject_type = 'EXPENSE_REPORT' AND i.subject_id = ${report.id}::uuid
+       AND (t.assignee_user_id = ${userId}::uuid OR t.decided_by_id = ${userId}::uuid)
+    UNION ALL
+    SELECT 1 AS ok
       FROM approval_task t
       JOIN approval_request q ON q.id = t.request_id
      WHERE q.report_id = ${report.id}::uuid
@@ -114,26 +140,221 @@ export async function canViewReport(
   return callerCanDecideReport(db, report.id, userId, false);
 }
 
-export const expenseApprovalsRouter = router({
+/**
+ * The approver's pending expense-report inbox, as a plain function.
+ *
+ * It is a function rather than only a procedure body so that a caller which has
+ * ALREADY decided this queue is not being shown can simply not call it — the
+ * whole load, pool scan and eligibility walk included, then costs nothing. That
+ * is the short-circuit seam; who decides, and on what, is the caller's business
+ * and is deliberately not decided here.
+ */
+export async function loadMyExpenseApprovalTasks(db: WebDb, actorId: string) {
+  const base = {
+    status: 'PENDING' as const,
+    instance: { status: 'RUNNING' as const, subjectType: 'EXPENSE_REPORT' as const },
+  };
+  const [assignedRaw, unassignedRaw] = await Promise.all([
+    db.approvalTask.findMany({
+      where: { ...base, assigneeUserId: actorId },
+      orderBy: { createdAt: 'asc' },
+      take: APPROVAL_POOL_CAP + 1,
+      select: { id: true, label: true, instance: { select: { subjectId: true } } },
+    }),
+    db.approvalTask.findMany({
+      where: { ...base, assigneeUserId: null },
+      orderBy: { createdAt: 'asc' },
+      // The unassigned pool is not scoped to the caller at all — it is every
+      // unassigned PENDING task in the workspace, and eligibility is decided
+      // afterwards, in application code. Nothing bounded it, so one approver's
+      // login materialized the whole queue. See `approvalPoolCap`: the bound is
+      // on MATERIALIZATION and it is signalled, not on visibility and silent.
+      take: APPROVAL_POOL_CAP + 1,
+      select: {
+        id: true,
+        label: true,
+        nodeId: true,
+        instanceId: true,
+        instance: {
+          select: {
+            subjectId: true,
+            effectiveGraph: true,
+            workflowVersionId: true,
+            workflowVersion: { select: { graph: true } },
+          },
+        },
+      },
+    }),
+  ]);
+  const assigned = capApprovalPool('assigned', 'EXPENSE_REPORT', actorId, assignedRaw);
+  const unassigned = capApprovalPool('unassigned', 'EXPENSE_REPORT', actorId, unassignedRaw);
+
   /**
-   * VeloExpense stand-in, until Wave 4 ports the real one.
+   * One memo, allocated here and dropped when this call returns.
    *
-   * ExpenseOS's sidebar (ported verbatim, `app/(app)/Sidebar.tsx`) puts a count on Approvals from
-   * `expenseApprovals.myTasks`. ExpenseOS's router answers from its graph approval engine, which
-   * VeloExpense gets in Wave 4. Until then the same question — what is waiting for me to decide —
-   * is answered by VeloExpense's own approvals inbox (`lib/approvals/inbox.ts`), the source its
-   * previous sidebar used. The shape is ExpenseOS's (`{ items }`); the sidebar reads only the
-   * count.
-   *
-   * Read on its own tenant connection, scoped to the caller's organization: `listInbox` is
-   * written against VeloExpense's `pg` path, not Prisma.
+   * Everything the eligibility walk used to re-read per task — the actor's own
+   * row, the actor's authorization row, the actor's manager chain, each node's
+   * minimum job level, each subject's requester — is read once through this and
+   * answered from memory afterwards, so the per-task query count is zero. It is
+   * a local because it must be: `@expenseos/approvals` is imported by the
+   * long-lived worker, and a module-scoped authorization cache there would have
+   * no invalidation path.
    */
-  myTasks: protectedProcedure.query(async ({ ctx }) => {
-    const items = await withOrg(ctx.session.user.organizationId, (tx) =>
-      listInbox(tx, ctx.session.user.id, { limit: 100 }),
-    );
-    return { items };
-  }),
+  const cx = buildActorEligibilityContext(actorId);
+
+  /**
+   * Resolve every unassigned task's node, parsing each distinct graph once.
+   *
+   * Instances overwhelmingly share their workflow version's graph, so the parse
+   * is keyed by version — and by instance for the rows that carry their own
+   * inlined `effectiveGraph`, which is per-instance by definition. A failed
+   * parse memoizes as null and is skipped, exactly as the per-task parse did.
+   */
+  const resolved: { task: (typeof unassigned.rows)[number]; node: WorkflowNode }[] = [];
+  for (const t of unassigned.rows) {
+    /**
+     * `!= null`, NOT truthiness, and the value below must agree with it. `effectiveGraph`
+     * is `Json?`, so it can hold a falsy scalar (`false`, `0`, `""`). Under `?` such a row
+     * keyed by VERSION while `?? ` still parsed the instance's own bogus value — memoizing
+     * that failure under the version key and silently dropping every other unassigned task
+     * on that version from the claimable set. The per-task parse this replaced lost only
+     * the one row.
+     */
+    const key =
+      t.instance.effectiveGraph != null ? `i:${t.instanceId}` : `v:${t.instance.workflowVersionId}`;
+    let graph = cx.graphs.get(key);
+    if (graph === undefined) {
+      const parsed = graphSchema.safeParse(
+        t.instance.effectiveGraph ?? t.instance.workflowVersion.graph,
+      );
+      graph = parsed.success ? parsed.data : null;
+      cx.graphs.set(key, graph);
+    }
+    const node = graph?.nodes.find((n) => n.id === t.nodeId);
+    if (node) resolved.push({ task: t, node });
+  }
+
+  /**
+   * The requester ids the claim check will ask for, in one query.
+   *
+   * Narrower than "every unassigned subject" on purpose: a requester is consulted
+   * only by the no-fallback case of the claim rule, so `claimNeedsRequester`
+   * names exactly the subjects that will be asked about. A node with a `user` or
+   * `role` fallback never reads one and is not fetched.
+   */
+  await primeRequesterIds(
+    db,
+    cx,
+    'EXPENSE_REPORT',
+    resolved.filter((r) => claimNeedsRequester(r.node)).map((r) => r.task.instance.subjectId),
+  );
+
+  const claimable: { id: string; label: string | null; subjectId: string }[] = [];
+  for (const { task, node } of resolved) {
+    // Either a filter-pool match, or a relative-approver task that resolved to
+    // nobody — the no-manager case. Without the second check the task is
+    // decidable but invisible, which is the same dead end wearing a different
+    // hat: it would still lapse and auto-reject with nobody having seen it.
+    const eligible =
+      (await isEligible(db, node, actorId, cx)) ||
+      (await canClaimUnresolvedApproval(
+        db,
+        node,
+        'EXPENSE_REPORT',
+        task.instance.subjectId,
+        actorId,
+        cx,
+      ));
+    if (eligible) {
+      claimable.push({ id: task.id, label: task.label, subjectId: task.instance.subjectId });
+    }
+  }
+
+  const all = [
+    ...assigned.rows.map((t) => ({ id: t.id, label: t.label, subjectId: t.instance.subjectId })),
+    ...claimable,
+  ];
+  const ids = [...new Set(all.map((t) => t.subjectId))];
+  const reports = ids.length
+    ? await db.expenseReport.findMany({
+        where: { id: { in: ids } },
+        select: REPORT_SUMMARY_SELECT,
+      })
+    : [];
+  const byId = new Map(reports.map((r) => [r.id, r]));
+  /** The rows this inbox will render: a task whose subject report has gone is dropped,
+   *  and is dropped from the count and the money too — it cannot be actioned. */
+  const rows = all.flatMap((t) => {
+    const report = byId.get(t.subjectId);
+    return report ? [{ taskId: t.id, label: t.label, report }] : [];
+  });
+
+  /**
+   * NO HOME-CURRENCY ROLLUP HERE, DELIBERATELY — and it is not an oversight to be
+   * "restored".
+   *
+   * This procedure used to return `homeCurrency` / `byCurrency` / `homeTotalMinor` /
+   * `excludedCount` for the "At a glance" header badges. Those badges were deleted earlier
+   * in this same branch, and nothing read the four fields afterwards: the inbox reads
+   * `items` / `capped` / `cappedAt`, and `ReportsToApproveCard` reads `count` / `capped`.
+   *
+   * The cost was not theoretical. `readerCurrencyCode` is one `User` read, but
+   * `homeConverterFor` falls through to `fxRate.findMany()` — the whole table, no `take` —
+   * as soon as any queued report is in a foreign currency. `Sidebar.tsx` mounts `myTasks`
+   * for every holder of `expense.report.approve` on EVERY page, so an approver with one
+   * USD and one CAD report in their queue paid for a full `FxRate` scan on each page load
+   * past the stale window, and the result was discarded.
+   *
+   * If a consumer ever needs the rollup again, add it back WITH that consumer, in the same
+   * commit. The reasoning for computing it here rather than in a fourth procedure still
+   * holds — the eligibility loop above has already resolved the exact claimable set, so a
+   * separate `summary` would run the most expensive query on the login path twice — which
+   * is precisely why this comment survives the code it describes.
+   */
+
+  return {
+    // VeloExpense: ExpenseOS's report shape — the currency's symbol from the platform, and
+    // the submitter's one display name in `firstName`.
+    items: rows.map((r) => ({
+      ...r,
+      report: {
+        ...r.report,
+        totalMinor: r.report.totalMinor.toString(),
+        currency: { code: r.report.currency.code, symbol: currencySymbol(r.report.currency.code) },
+        submitter: {
+          id: r.report.submitter.id,
+          firstName: r.report.submitter.name,
+          lastName: null as string | null,
+          email: r.report.submitter.email,
+        },
+      },
+    })),
+    /**
+     * Everything awaiting the caller — of what was materialized. Kept beside `items`
+     * because `items` drops rows whose report has gone, so a header counting the array
+     * it renders would disagree with the queue. When `capped` is true this is a FLOOR,
+     * not a total, and the UI says so rather than presenting a truncated number as if
+     * it were the answer.
+     */
+    count: rows.length,
+    /**
+     * A pool hit the materialization bound and this response is a PREFIX of what is
+     * really pending. The receipt, not the control: the control is the alarmed metric
+     * `capApprovalPool` emits, because a reader being told their list is short does not
+     * get the queue unstuck — an operator does.
+     */
+    capped: assigned.capped || unassigned.capped,
+    /** The bound that was applied, so the notice quotes the number the server
+     *  actually used rather than a copy of it hardcoded in the client. */
+    cappedAt: APPROVAL_POOL_CAP,
+  };
+}
+
+export const expenseApprovalsRouter = router({
+  /** Pending expense-report approval tasks for the caller — assigned to them,
+   *  plus unassigned filter-approver tasks they're eligible to claim. Mirrors
+   *  virtualCardRequests.myTasks. */
+  myTasks: protectedProcedure.query(({ ctx }) => loadMyExpenseApprovalTasks(ctx.db, ctx.rbac.id)),
 
   /**
    * AP's cross-report expense view: every expense the caller may see, flat,
@@ -398,41 +619,51 @@ export const expenseApprovalsRouter = router({
    *  the override is audited as one (`details.override: true`), so the log can tell
    *  the assigned manager's approval from somebody stepping around them.
    *
-   *  VeloExpense: decided on VeloExpense's engine (`decideThroughEngine`, d36), which
-   *  re-checks eligibility under a lock, audits (with the override), hands an approved
-   *  report to the ledger and notifies the submitter with the note — the jobs ExpenseOS's
-   *  `withAudit`, `notifyReportDecision`, `executeWorkflowEffects` and `postApprovedReport`
-   *  do. One input more than ExpenseOS's: `receiptViewAcknowledged`, which a VeloExpense
-   *  approval step can require (VX2-1) before an approval. */
+   *  VeloExpense: after ExpenseOS's fast refusals, the body — `resolveDecideAccess`, the
+   *  audited `decideTask`, `notifyReportDecision`, `executeWorkflowEffects` and the post on
+   *  approval — runs in `decideThroughEngine` (server/lib/reportLifecycle.ts), with the
+   *  billing gate, the report lock and VeloExpense's outcome (budgets, history, ledger post)
+   *  around it. The receipt-view acknowledgement VeloExpense's ladder asked for is gone
+   *  (d57). */
   decide: protectedProcedure
     .input(
       z.object({
         taskId: z.string().uuid(),
         approve: z.boolean(),
         note: z.string().trim().max(2000).optional(),
-        /** VeloExpense: the approver confirms they reviewed the receipts, where the step
-         *  asks for it. Ignored on a rejection, as the engine ignores it. */
-        receiptViewAcknowledged: z.boolean().optional(),
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      const status = await taskStatusOf(ctx.db, input.taskId);
-      if (!status) throw new TRPCError({ code: 'NOT_FOUND' });
-      if (status !== 'PENDING') {
+      const task = await ctx.db.approvalTask.findUnique({
+        where: { id: input.taskId },
+        select: { id: true, status: true, instance: { select: { subjectId: true } } },
+      });
+      if (!task) throw new TRPCError({ code: 'NOT_FOUND' });
+      if (task.status !== 'PENDING') {
         throw new TRPCError({ code: 'BAD_REQUEST', message: 'Task already decided.' });
       }
-      return decideThroughEngine(
+      const access = await resolveDecideAccess(
         ctx.db,
         input.taskId,
         ctx.rbac.id,
-        input.approve ? 'APPROVED' : 'REJECTED',
-        { note: input.note ?? null, receiptViewAcknowledged: input.receiptViewAcknowledged },
         ctx.rbac.permissions.includes(P.expense.report.decideAny),
       );
+      if (!access.allowed) throw new TRPCError({ code: 'FORBIDDEN' });
+      const res = await decideThroughEngine(ctx.db, {
+        taskId: input.taskId,
+        actorId: ctx.rbac.id,
+        approve: input.approve,
+        note: input.note ?? null,
+        mayOverride: ctx.rbac.permissions.includes(P.expense.report.decideAny),
+      }).catch((err: unknown) => {
+        throw toTrpcError(err);
+      });
+      // VeloExpense: ExpenseOS's `DecideResult`, with whether it was decided on the override.
+      return res;
     }),
 
-  // VeloExpense: ExpenseOS's `decideBulk` (the inbox's group approve) arrives with the inbox,
-  // in Wave 4.
+  // VeloExpense: ExpenseOS's `decideBulk` (its inbox's group approve) is not ported — the
+  // /approvals inbox is VeloExpense's own, and decides on the report (d57).
 
   /** Manually reassign a pending approval task to another user. Authorized like
    *  a decision (`canDecide` — the current assignee, an eligible claimant, or the
@@ -440,9 +671,9 @@ export const expenseApprovalsRouter = router({
    *  The target must be an active employee. Audited (`report.reassign`) and the
    *  new assignee is notified.
    *
-   *  VeloExpense: on VeloExpense's engine (`reassignTask`, d36). A REASON is required and
-   *  shown on the report's discussion and to the submitter (d37); the submitter, and the
-   *  person who already holds it, are refused as targets. */
+   *  VeloExpense: the body runs in `reassignThroughEngine` (server/lib/reportLifecycle.ts). A
+   *  REASON is required and shown on the report's discussion and to the submitter (d37); the
+   *  submitter, and the person who already holds it, are refused as targets. */
   reassign: protectedProcedure
     .input(
       z.object({
@@ -453,19 +684,37 @@ export const expenseApprovalsRouter = router({
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      const status = await taskStatusOf(ctx.db, input.taskId);
-      if (!status) throw new TRPCError({ code: 'NOT_FOUND' });
-      if (status !== 'PENDING') {
+      const task = await ctx.db.approvalTask.findUnique({
+        where: { id: input.taskId },
+        select: { id: true, status: true, instance: { select: { subjectId: true } } },
+      });
+      if (!task) throw new TRPCError({ code: 'NOT_FOUND' });
+      if (task.status !== 'PENDING') {
         throw new TRPCError({ code: 'BAD_REQUEST', message: 'Task already decided.' });
       }
-      await reassignThroughEngine(
+      const access = await resolveDecideAccess(
         ctx.db,
         input.taskId,
         ctx.rbac.id,
-        input.toUserId,
-        input.note,
         ctx.rbac.permissions.includes(P.expense.report.decideAny),
       );
+      if (!access.allowed) throw new TRPCError({ code: 'FORBIDDEN' });
+      const target = await ctx.db.user.findFirst({
+        where: { id: input.toUserId, deletedAt: null, employeeStatus: 'ACTIVE' },
+        select: { id: true },
+      });
+      if (!target) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Unknown or inactive assignee.' });
+      }
+      await reassignThroughEngine(ctx.db, {
+        taskId: input.taskId,
+        actorId: ctx.rbac.id,
+        toUserId: input.toUserId,
+        note: input.note,
+        mayOverride: ctx.rbac.permissions.includes(P.expense.report.decideAny),
+      }).catch((err: unknown) => {
+        throw toTrpcError(err);
+      });
       return { ok: true as const };
     }),
 
@@ -473,15 +722,15 @@ export const expenseApprovalsRouter = router({
    *  instance, skip its pending tasks, and flip the report to RETURNED (which
    *  the submitter can edit + resubmit). Eligibility-gated like decide.
    *
-   *  VeloExpense: a RETURNED decision on the caller's own pending task, on VeloExpense's
-   *  engine — which closes the run, cancels its other tasks, moves the report to RETURNED,
-   *  audits (with the override) and notifies the submitter with the note. */
+   *  VeloExpense: the body runs in `returnThroughEngine` (server/lib/reportLifecycle.ts), which
+   *  also writes the report's outcome (budgets, history, REPORT_RETURNED) and tells the
+   *  submitter with the approver's note. */
   returnForEdit: protectedProcedure
     .input(z.object({ reportId: z.string().uuid(), note: z.string().trim().max(2000).optional() }))
     .mutation(async ({ ctx, input }) => {
       const report = await ctx.db.expenseReport.findUnique({
         where: { id: input.reportId },
-        select: { id: true, status: true },
+        select: { id: true, status: true, approvalInstanceId: true },
       });
       if (!report) throw new TRPCError({ code: 'NOT_FOUND' });
       if (report.status !== ExpenseReportStatus.SUBMITTED) {
@@ -493,23 +742,17 @@ export const expenseApprovalsRouter = router({
       // Eligible on one of the report's pending tasks, or holding the override — and the
       // audit row says which. Asked without the override first so an eligible approver
       // who also happens to hold it is recorded as the approver they are.
-      const mayOverride = ctx.rbac.permissions.includes(P.expense.report.decideAny);
-      const own = await resolveDecidableTask(ctx.db, input.reportId, ctx.rbac.id, false);
-      const taskId =
-        own ??
-        (mayOverride
-          ? await resolveDecidableTask(ctx.db, input.reportId, ctx.rbac.id, true)
-          : null);
-      if (!taskId) throw new TRPCError({ code: 'FORBIDDEN' });
-      await decideThroughEngine(
-        ctx.db,
-        taskId,
-        ctx.rbac.id,
-        'RETURNED',
-        { note: input.note ?? null },
-        own === null && mayOverride,
-      );
-      return { id: report.id, status: ExpenseReportStatus.RETURNED };
+      const eligible = await callerCanDecideReport(ctx.db, input.reportId, ctx.rbac.id, false);
+      const override = !eligible && ctx.rbac.permissions.includes(P.expense.report.decideAny);
+      if (!eligible && !override) throw new TRPCError({ code: 'FORBIDDEN' });
+      return returnThroughEngine(ctx.db, {
+        reportId: report.id,
+        actorId: ctx.rbac.id,
+        note: input.note ?? null,
+        mayOverride: ctx.rbac.permissions.includes(P.expense.report.decideAny),
+      }).catch((err: unknown) => {
+        throw toTrpcError(err);
+      });
     }),
 
   // VeloExpense: ExpenseOS's `markReimbursed` stays VeloExpense's reimbursement screen

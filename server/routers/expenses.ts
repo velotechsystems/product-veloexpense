@@ -24,8 +24,6 @@
  * VeloExpense adaptations are marked `VeloExpense:` where they are made. The shared ones:
  *   · a currency is keyed by its ISO code (`currencyId` holds the code, as `homeCurrencyId`
  *     does since 0048), and its symbol comes from the platform (`currencySymbol`);
- *   · who a submitted report is "sitting with" is read from VeloExpense's own approval
- *     tables until Wave 4 ports ExpenseOS's engine (`pendingApproverByReport`);
  *   · a report's number is minted from the organization's sequence, as VeloExpense's own
  *     writer has always done (`mintReportNumber`);
  *   · receipt objects are deleted and signed through VeloExpense's storage (`getStorage`),
@@ -43,7 +41,8 @@
  *   · a new expense counts against the plan's yearly expense cap, checked on the same
  *     transaction (`assertExpenseAllowance` through `queryRunnerOf`);
  *   · submit and recall keep ExpenseOS's checks and hand the transition to VeloExpense's
- *     lifecycle (d23, `server/lib/reportLifecycle.ts`), and the policy pass is VeloExpense's
+ *     lifecycle (d23, `server/lib/reportLifecycle.ts`), which starts and cancels ExpenseOS's
+ *     approval engine in the same transaction (w4-00c), and the policy pass is VeloExpense's
  *     (`runPolicy`) with ExpenseOS's justification rule (d34);
  *   · corrections are recorded against the current determination, awaited inside the
  *     request rather than fire-and-forget (w3-02a); a traveller's country is `app_user.country` (0055,
@@ -123,6 +122,8 @@ import {
 import { callerCanDecideReport } from '@/server/lib/reportApproval';
 import { reportUrl } from '@/server/lib/reportLinks';
 import { recallThroughLifecycle, submitThroughLifecycle } from '@/server/lib/reportLifecycle';
+import { notifyReportRecalled, notifyReportSubmitted } from '@/server/lib/reportNotify';
+import { executeWorkflowEffects } from '@/server/lib/workflowEffects';
 import { REFUSAL_KEYS, type RefusalKey, refusal } from '@/server/refusal';
 import { renderViolation } from '@/lib/i18n/catalog/policy-messages';
 import { loadReaderPrefs } from '@/lib/i18n/service';
@@ -1194,44 +1195,6 @@ async function callerCanReadReport(
 
 
 /**
- * VeloExpense: "who is this report sitting with", from VeloExpense's approval tables.
- *
- * ExpenseOS reads its own engine (`ExpenseReport.approvalInstanceId` → the first PENDING
- * `ApprovalTask`'s assignee). VeloExpense's engine is still its own until Wave 4: a report
- * out for approval has one RUNNING `approval_request`, whose tasks carry the assignee. The
- * rule is ExpenseOS's — the first pending task wins, and a pool task nobody has claimed
- * names nobody — and the shape is the one ExpenseOS's list returns, with VeloExpense's one
- * display name in `firstName` (VeloExpense has no first/last split).
- */
-async function pendingApproverByReport(
-  db: TenantDb,
-  reportIds: readonly string[],
-): Promise<Map<string, { firstName: string | null; lastName: string | null; email: string } | null>> {
-  const out = new Map<string, { firstName: string | null; lastName: string | null; email: string } | null>();
-  if (reportIds.length === 0) return out;
-  const rows = await db.$queryRaw<
-    { report_id: string; display_name: string | null; email: string | null }[]
-  >`
-    SELECT DISTINCT ON (r.report_id)
-           r.report_id::text AS report_id,
-           u.display_name,
-           COALESCE(u.email, t.assignee_email) AS email
-      FROM approval_request r
-      JOIN approval_task t ON t.request_id = r.id AND t.status = 'PENDING'
-      LEFT JOIN app_user u ON u.id = t.assignee_id
-     WHERE r.status = 'RUNNING'
-       AND r.report_id = ANY(${[...reportIds]}::uuid[])
-     ORDER BY r.report_id, t.created_at ASC, t.step ASC`;
-  for (const row of rows) {
-    out.set(
-      row.report_id,
-      row.email ? { firstName: row.display_name, lastName: null, email: row.email } : null,
-    );
-  }
-  return out;
-}
-
-/**
  * VeloExpense: the next report number (`EXP-000042`), from the organization's sequence.
  *
  * ExpenseOS mints it from a global Postgres sequence in the column default. VeloExpense's
@@ -1360,12 +1323,35 @@ export const expensesRouter = router({
       // "Submitted", which tells the submitter nothing about whether it's
       // stuck or with whom. Resolve the current pending approver per report in
       // one query rather than N.
-      // VeloExpense: from VeloExpense's approval tables (`pendingApproverByReport`); first
-      // pending task wins, as below in ExpenseOS.
-      const pendingByReport = await pendingApproverByReport(
-        ctx.db,
-        rows.filter((r) => r.status === 'SUBMITTED').map((r) => r.id),
-      );
+      const instanceIds = rows.flatMap((r) => (r.approvalInstanceId ? [r.approvalInstanceId] : []));
+      const pendingTasks = instanceIds.length
+        ? await ctx.db.approvalTask.findMany({
+            where: { instanceId: { in: instanceIds }, status: 'PENDING' },
+            orderBy: { createdAt: 'asc' },
+            select: {
+              instanceId: true,
+              // VeloExpense: one display name, no first/last split.
+              assignee: { select: { name: true, email: true } },
+            },
+          })
+        : [];
+      const pendingByInstance = new Map<
+        string,
+        { firstName: string | null; lastName: string | null; email: string } | null
+      >();
+      for (const t of pendingTasks) {
+        // First pending task wins; a parallel gate is reported by its first
+        // approver rather than inventing a list the row has no space for.
+        // VeloExpense: ExpenseOS's assignee shape, the display name in `firstName`.
+        if (!pendingByInstance.has(t.instanceId)) {
+          pendingByInstance.set(
+            t.instanceId,
+            t.assignee
+              ? { firstName: t.assignee.name, lastName: null, email: t.assignee.email }
+              : null,
+          );
+        }
+      }
 
       /**
        * Each report's total, also expressed in the READER's own currency.
@@ -1410,7 +1396,9 @@ export const expensesRouter = router({
         expenseCount: r._count.expenses,
         /** Current approver while the report is out for approval. Null when it
          *  isn't pending, or when the task is an unclaimed filter-pool one. */
-        pendingWith: pendingByReport.get(r.id) ?? null,
+        pendingWith: r.approvalInstanceId
+          ? (pendingByInstance.get(r.approvalInstanceId) ?? null)
+          : null,
       }));
     }),
 
@@ -1766,11 +1754,13 @@ export const expensesRouter = router({
    *  is intentionally server-only — FE checks are advisory.
    *
    *  VeloExpense: ExpenseOS's checks, in its order and words, then the TRANSITION through
-   *  VeloExpense's lifecycle (d23, `submitThroughLifecycle`) in place of `startInstance` and
-   *  the hooks after it — the lifecycle re-runs the policy pass under a lock, routes the
-   *  report on VeloExpense's approval engine, notifies the approvers and writes the audit
-   *  chain. Its own gates stand behind these: a lapsed subscription, and an expense with no
-   *  date (VX4-11). */
+   *  VeloExpense's lifecycle (d23, `submitThroughLifecycle`), which re-runs the policy pass
+   *  under a lock and calls ExpenseOS's `startInstance` itself (w4-00c), so the report, its
+   *  instance, the budgets and the audit chain commit together. Its own gates stand behind
+   *  these: a lapsed subscription, an expense with no date (VX4-11), no workflow (d58), and a
+   *  flow that routes only back to the submitter. ExpenseOS's hooks after it follow: notify
+   *  the first approvers, then the workflow's effects. Its `postApprovedReport` is the
+   *  lifecycle's — an approval on submit queues the ledger post on the transition. */
   submit: withPermission(P.expense.report.createOwn)
     .input(z.object({ reportId: z.string().uuid() }))
     .mutation(async ({ ctx, input }) => {
@@ -1920,7 +1910,16 @@ export const expensesRouter = router({
         });
       }
       // VeloExpense: the transition, on VeloExpense's lifecycle (d23) — see the doc comment.
-      await submitThroughLifecycle(ctx.db, input.reportId, ctx.rbac.id);
+      const { approval: start } = await submitThroughLifecycle(ctx.db, input.reportId, ctx.rbac.id);
+      // A workflow parked tasks (RUNNING) → notify the first approvers.
+      await notifyReportSubmitted(ctx.db, input.reportId, ctx.rbac.id, start.createdTaskIds);
+      // Any Notify / Action nodes the run passed through fire now.
+      await executeWorkflowEffects(ctx.db, {
+        subjectType: 'EXPENSE_REPORT',
+        subjectId: input.reportId,
+        effectNodeIds: start.firedEffects,
+        actorId: ctx.rbac.id,
+      });
       const row = await ctx.db.expenseReport.findUniqueOrThrow({ where: { id: input.reportId } });
       return {
         report: { ...row, totalMinor: row.totalMinor.toString() },
@@ -1946,8 +1945,9 @@ export const expensesRouter = router({
    * distinct `RECALLED` activity type already records who did it.
    *
    * VeloExpense: the cancel goes through VeloExpense's lifecycle (d23,
-   * `recallThroughLifecycle`), which cancels the running approval and its pending tasks,
-   * notifies those approvers (RECALLED), recomputes the budgets and writes the audit chain.
+   * `recallThroughLifecycle`), which runs ExpenseOS's body (instance CANCELLED, pending tasks
+   * SKIPPED) under the report lock, recomputes the budgets and writes the audit chain; the
+   * approvers whose tasks it cancelled are told here, as ExpenseOS tells them.
    */
   recall: withPermission(P.expense.report.createOwn)
     .input(z.object({ reportId: z.string().uuid() }))
@@ -1967,6 +1967,7 @@ export const expensesRouter = router({
       }
       // VeloExpense: the transition, on VeloExpense's lifecycle (d23) — see the doc comment.
       const updated = await recallThroughLifecycle(ctx.db, report.id, ctx.rbac.id);
+      await notifyReportRecalled(ctx.db, report.id, ctx.rbac.id, updated.cancelledTaskIds);
       return { id: updated.id as string, status: updated.status as ExpenseReportStatus };
     }),
 

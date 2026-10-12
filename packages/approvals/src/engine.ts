@@ -1666,8 +1666,18 @@ export async function expireTask(db: Db, taskId: string): Promise<ExpireResult> 
 
 /** Find PENDING tasks past their deadline (on RUNNING instances) and expire
  *  each per its node's policy. Returns the per-task outcomes so a caller can
- *  fan out notifications. Bounded per run. */
-export async function sweepExpiredTasks(db: Db, now: Date = new Date()): Promise<ExpireResult[]> {
+ *  fan out notifications. Bounded per run.
+ *
+ *  VeloExpense: `onExpired` runs for each task's outcome INSIDE that task's savepoint, so
+ *  what VeloExpense writes on an outcome (the report's budgets, history, ledger post and
+ *  audit row, `recordReportOutcome`) commits or rolls back with the expiry itself. ExpenseOS
+ *  posts afterwards and lets a half-hourly sweep catch a dropped post; VeloExpense has no
+ *  such sweep. */
+export async function sweepExpiredTasks(
+  db: Db,
+  now: Date = new Date(),
+  onExpired?: (result: ExpireResult) => Promise<void>,
+): Promise<ExpireResult[]> {
   const due = await db.approvalTask.findMany({
     where: {
       status: 'PENDING',
@@ -1695,6 +1705,7 @@ export async function sweepExpiredTasks(db: Db, now: Date = new Date()): Promise
       await db.$executeRaw`SAVEPOINT approval_expire_task`;
       try {
         const result = await expireTask(db, t.id);
+        if (onExpired && result.outcome !== 'SKIPPED') await onExpired(result);
         await db.$executeRaw`RELEASE SAVEPOINT approval_expire_task`;
         out.push(result);
       } catch (err) {

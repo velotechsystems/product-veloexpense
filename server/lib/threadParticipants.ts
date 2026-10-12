@@ -19,8 +19,9 @@
  * VeloExpense: ExpenseOS's `server/lib/threadParticipants.ts` (550b2945), for the one subject
  * with a thread here — the expense report (w2-02a, d37). The card-request and travel
  * subjects arrive with their modules, and the inbound reply path with the email channel.
- * Read off VeloExpense's tables: the tasks of EVERY run of the report, where ExpenseOS reads
- * its one current instance (see `canViewReport`).
+ * The tasks of EVERY approval of the report, where ExpenseOS reads its one current instance
+ * (see `canViewReport`): the engine's instances (w4-00c), and the ladder's runs from before
+ * the cutover until the ladder is retired (w4-00d).
  */
 import type { TenantDb } from '@/lib/db/prisma';
 
@@ -54,6 +55,11 @@ export async function threadParticipants(
 
   const ids = new Set<string>([report.submitterId]);
   const tasks = await db.$queryRaw<Array<{ assigneeId: string | null; decidedById: string | null }>>`
+    SELECT t.assignee_user_id AS "assigneeId", t.decided_by_id AS "decidedById"
+      FROM approval_instance_task t
+      JOIN approval_instance i ON i.id = t.instance_id
+     WHERE i.subject_type = 'EXPENSE_REPORT' AND i.subject_id = ${subjectId}::uuid
+    UNION ALL
     SELECT t.assignee_id AS "assigneeId", t.decided_by_id AS "decidedById"
       FROM approval_task t
       JOIN approval_request q ON q.id = t.request_id
