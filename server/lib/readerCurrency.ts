@@ -17,6 +17,7 @@
 
 // VeloExpense: ported code's `db` is the tenant-scoped client (lib/db/prisma.ts).
 import type { TenantDb as PrismaClient } from '@/lib/db/prisma';
+import { homeCurrencyCode } from '@expenseos/db';
 import { buildReportRollup, convertMoney, fxRateMapFrom } from '@expenseos/money';
 import { sumInHome } from '@/lib/format';
 
@@ -27,18 +28,17 @@ import { sumInHome } from '@/lib/format';
  * person posted outside their entity's base can be re-based without moving the entity.
  * CAD only when neither is set.
  *
+ * VeloExpense (f29): when the person has no entity, the tenant's main entity's comes before
+ * CAD, and starting a report from receipts uses the same rule (`homeCurrencyCode`).
+ *
  * VeloExpense: a person has no `homeCurrencyId` of their own (app_user carries none), so
  * the entity's is the reader's. The entity's `homeCurrencyId` holds the ISO code itself
  * (0048), so there is no Currency row to step through.
  */
 export async function readerCurrencyCode(db: PrismaClient, userId: string): Promise<string> {
-  const me = await db.user.findUnique({
-    where: { id: userId },
-    select: {
-      entity: { select: { homeCurrencyId: true } },
-    },
-  });
-  return me?.entity?.homeCurrencyId ?? 'CAD';
+  // VeloExpense (f29): the entity's, else the tenant's main entity's, else CAD — the same
+  // rule a report started from receipts opens in (`homeCurrencyCode`, @expenseos/db).
+  return homeCurrencyCode(db, userId);
 }
 
 /** Converts a minor-unit amount into the reader's currency, or null when nothing connects
