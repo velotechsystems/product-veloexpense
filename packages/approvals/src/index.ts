@@ -6,13 +6,16 @@
  *
  * VeloExpense: ExpenseOS's `packages/approvals` (550b2945), Wave 4 (w4-00, d50). The pure
  * kernel arrives first (w4-00a): the schema, graph validation, the stepping core, sub-flow
- * inlining, the predicate facts, business days and per-diem. The interpreter (`./engine`)
- * and its budget facts follow in w4-00b, adapted to tenant-scoped tables.
+ * inlining, the predicate facts, business days and per-diem. The interpreter (`./engine`,
+ * imported as `@expenseos/approvals/engine`, since it takes a Prisma client) follows in
+ * w4-00b, adapted to tenant-scoped tables.
  */
 
-// VeloExpense (w4-00a): `./budgets` — ExpenseOS's budget facts for the engine — arrives with the
-// engine itself (w4-00b); VeloExpense's own budgets are a different design (0024), and
-// `resolveBudget` is already ported there (lib/budgets/scope.ts).
+// VeloExpense: `./budgets` — ExpenseOS's budget facts for the engine — is not ported with the
+// engine (w4-00b): it reads ExpenseOS's own budget tables, and VeloExpense's budgets are a
+// different design (0024; `resolveBudget` is already ported in lib/budgets/scope.ts). Budget
+// checks inside approvals (w4-04) decide which numbers the `overBudget` fact reads; until
+// then it reads "not over".
 export { type GraphIssue, validateGraph } from './graph';
 export {
   type PerDiemGroup,

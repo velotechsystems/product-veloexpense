@@ -86,7 +86,8 @@ export const ModelName = {
   ApprovalWorkflow: 'ApprovalWorkflow',
   ApprovalWorkflowVersion: 'ApprovalWorkflowVersion',
   ApprovalInstance: 'ApprovalInstance',
-  ApprovalTask: 'ApprovalTask'
+  ApprovalTask: 'ApprovalTask',
+  Delegation: 'Delegation'
 } as const
 
 export type ModelName = (typeof ModelName)[keyof typeof ModelName]
@@ -387,6 +388,7 @@ export const UserScalarFieldEnum = {
   businessUnitId: 'businessUnitId',
   legalEntityId: 'legalEntityId',
   jobLevelId: 'jobLevelId',
+  role: 'role',
   deletedAt: 'deletedAt',
   createdAt: 'createdAt',
   updatedAt: 'updatedAt'
@@ -700,6 +702,25 @@ export const ApprovalTaskScalarFieldEnum = {
 } as const
 
 export type ApprovalTaskScalarFieldEnum = (typeof ApprovalTaskScalarFieldEnum)[keyof typeof ApprovalTaskScalarFieldEnum]
+
+
+export const DelegationScalarFieldEnum = {
+  id: 'id',
+  organizationId: 'organizationId',
+  fromUserId: 'fromUserId',
+  toUserId: 'toUserId',
+  startsOn: 'startsOn',
+  endsOn: 'endsOn',
+  scope: 'scope',
+  createdById: 'createdById',
+  revokedAt: 'revokedAt',
+  revokedById: 'revokedById',
+  note: 'note',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+} as const
+
+export type DelegationScalarFieldEnum = (typeof DelegationScalarFieldEnum)[keyof typeof DelegationScalarFieldEnum]
 
 
 export const SortOrder = {

@@ -25,6 +25,7 @@ export default defineConfig({
       { find: /^@expenseos\/db$/, replacement: r('packages/db/src/index.ts') },
       { find: /^@expenseos\/predicate$/, replacement: r('packages/predicate/src/index.ts') },
       { find: /^@expenseos\/approvals$/, replacement: r('packages/approvals/src/index.ts') },
+      { find: /^@expenseos\/approvals\/engine$/, replacement: r('packages/approvals/src/engine.ts') },
       { find: /^@\//, replacement: r('') },
     ],
   },

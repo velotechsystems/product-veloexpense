@@ -245,6 +245,7 @@ export type JobLevelWhereInput = {
   createdAt?: Prisma.DateTimeFilter<"JobLevel"> | Date | string
   updatedAt?: Prisma.DateTimeFilter<"JobLevel"> | Date | string
   externalIds?: Prisma.JobLevelExternalIdListRelationFilter
+  users?: Prisma.UserListRelationFilter
 }
 
 export type JobLevelOrderByWithRelationInput = {
@@ -258,6 +259,7 @@ export type JobLevelOrderByWithRelationInput = {
   createdAt?: Prisma.SortOrder
   updatedAt?: Prisma.SortOrder
   externalIds?: Prisma.JobLevelExternalIdOrderByRelationAggregateInput
+  users?: Prisma.UserOrderByRelationAggregateInput
 }
 
 export type JobLevelWhereUniqueInput = Prisma.AtLeast<{
@@ -276,6 +278,7 @@ export type JobLevelWhereUniqueInput = Prisma.AtLeast<{
   createdAt?: Prisma.DateTimeFilter<"JobLevel"> | Date | string
   updatedAt?: Prisma.DateTimeFilter<"JobLevel"> | Date | string
   externalIds?: Prisma.JobLevelExternalIdListRelationFilter
+  users?: Prisma.UserListRelationFilter
 }, "id" | "organizationId_code" | "organizationId_id">
 
 export type JobLevelOrderByWithAggregationInput = {
@@ -321,6 +324,7 @@ export type JobLevelCreateInput = {
   createdAt?: Date | string
   updatedAt?: Date | string
   externalIds?: Prisma.JobLevelExternalIdCreateNestedManyWithoutJobLevelInput
+  users?: Prisma.UserCreateNestedManyWithoutJobLevelInput
 }
 
 export type JobLevelUncheckedCreateInput = {
@@ -334,6 +338,7 @@ export type JobLevelUncheckedCreateInput = {
   createdAt?: Date | string
   updatedAt?: Date | string
   externalIds?: Prisma.JobLevelExternalIdUncheckedCreateNestedManyWithoutJobLevelInput
+  users?: Prisma.UserUncheckedCreateNestedManyWithoutJobLevelInput
 }
 
 export type JobLevelUpdateInput = {
@@ -347,6 +352,7 @@ export type JobLevelUpdateInput = {
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   externalIds?: Prisma.JobLevelExternalIdUpdateManyWithoutJobLevelNestedInput
+  users?: Prisma.UserUpdateManyWithoutJobLevelNestedInput
 }
 
 export type JobLevelUncheckedUpdateInput = {
@@ -360,6 +366,7 @@ export type JobLevelUncheckedUpdateInput = {
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   externalIds?: Prisma.JobLevelExternalIdUncheckedUpdateManyWithoutJobLevelNestedInput
+  users?: Prisma.UserUncheckedUpdateManyWithoutJobLevelNestedInput
 }
 
 export type JobLevelCreateManyInput = {
@@ -396,6 +403,11 @@ export type JobLevelUncheckedUpdateManyInput = {
   active?: Prisma.BoolFieldUpdateOperationsInput | boolean
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+}
+
+export type JobLevelNullableScalarRelationFilter = {
+  is?: Prisma.JobLevelWhereInput | null
+  isNot?: Prisma.JobLevelWhereInput | null
 }
 
 export type JobLevelOrganizationIdCodeCompoundUniqueInput = {
@@ -455,6 +467,22 @@ export type JobLevelScalarRelationFilter = {
   isNot?: Prisma.JobLevelWhereInput
 }
 
+export type JobLevelCreateNestedOneWithoutUsersInput = {
+  create?: Prisma.XOR<Prisma.JobLevelCreateWithoutUsersInput, Prisma.JobLevelUncheckedCreateWithoutUsersInput>
+  connectOrCreate?: Prisma.JobLevelCreateOrConnectWithoutUsersInput
+  connect?: Prisma.JobLevelWhereUniqueInput
+}
+
+export type JobLevelUpdateOneWithoutUsersNestedInput = {
+  create?: Prisma.XOR<Prisma.JobLevelCreateWithoutUsersInput, Prisma.JobLevelUncheckedCreateWithoutUsersInput>
+  connectOrCreate?: Prisma.JobLevelCreateOrConnectWithoutUsersInput
+  upsert?: Prisma.JobLevelUpsertWithoutUsersInput
+  disconnect?: Prisma.JobLevelWhereInput | boolean
+  delete?: Prisma.JobLevelWhereInput | boolean
+  connect?: Prisma.JobLevelWhereUniqueInput
+  update?: Prisma.XOR<Prisma.XOR<Prisma.JobLevelUpdateToOneWithWhereWithoutUsersInput, Prisma.JobLevelUpdateWithoutUsersInput>, Prisma.JobLevelUncheckedUpdateWithoutUsersInput>
+}
+
 export type JobLevelCreateNestedOneWithoutExternalIdsInput = {
   create?: Prisma.XOR<Prisma.JobLevelCreateWithoutExternalIdsInput, Prisma.JobLevelUncheckedCreateWithoutExternalIdsInput>
   connectOrCreate?: Prisma.JobLevelCreateOrConnectWithoutExternalIdsInput
@@ -469,6 +497,74 @@ export type JobLevelUpdateOneRequiredWithoutExternalIdsNestedInput = {
   update?: Prisma.XOR<Prisma.XOR<Prisma.JobLevelUpdateToOneWithWhereWithoutExternalIdsInput, Prisma.JobLevelUpdateWithoutExternalIdsInput>, Prisma.JobLevelUncheckedUpdateWithoutExternalIdsInput>
 }
 
+export type JobLevelCreateWithoutUsersInput = {
+  id?: string
+  organizationId?: string
+  code: string
+  track: string
+  label: Prisma.JsonNullValueInput | runtime.InputJsonValue
+  sortOrder: number
+  active?: boolean
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  externalIds?: Prisma.JobLevelExternalIdCreateNestedManyWithoutJobLevelInput
+}
+
+export type JobLevelUncheckedCreateWithoutUsersInput = {
+  id?: string
+  organizationId?: string
+  code: string
+  track: string
+  label: Prisma.JsonNullValueInput | runtime.InputJsonValue
+  sortOrder: number
+  active?: boolean
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  externalIds?: Prisma.JobLevelExternalIdUncheckedCreateNestedManyWithoutJobLevelInput
+}
+
+export type JobLevelCreateOrConnectWithoutUsersInput = {
+  where: Prisma.JobLevelWhereUniqueInput
+  create: Prisma.XOR<Prisma.JobLevelCreateWithoutUsersInput, Prisma.JobLevelUncheckedCreateWithoutUsersInput>
+}
+
+export type JobLevelUpsertWithoutUsersInput = {
+  update: Prisma.XOR<Prisma.JobLevelUpdateWithoutUsersInput, Prisma.JobLevelUncheckedUpdateWithoutUsersInput>
+  create: Prisma.XOR<Prisma.JobLevelCreateWithoutUsersInput, Prisma.JobLevelUncheckedCreateWithoutUsersInput>
+  where?: Prisma.JobLevelWhereInput
+}
+
+export type JobLevelUpdateToOneWithWhereWithoutUsersInput = {
+  where?: Prisma.JobLevelWhereInput
+  data: Prisma.XOR<Prisma.JobLevelUpdateWithoutUsersInput, Prisma.JobLevelUncheckedUpdateWithoutUsersInput>
+}
+
+export type JobLevelUpdateWithoutUsersInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  organizationId?: Prisma.StringFieldUpdateOperationsInput | string
+  code?: Prisma.StringFieldUpdateOperationsInput | string
+  track?: Prisma.StringFieldUpdateOperationsInput | string
+  label?: Prisma.JsonNullValueInput | runtime.InputJsonValue
+  sortOrder?: Prisma.IntFieldUpdateOperationsInput | number
+  active?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  externalIds?: Prisma.JobLevelExternalIdUpdateManyWithoutJobLevelNestedInput
+}
+
+export type JobLevelUncheckedUpdateWithoutUsersInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  organizationId?: Prisma.StringFieldUpdateOperationsInput | string
+  code?: Prisma.StringFieldUpdateOperationsInput | string
+  track?: Prisma.StringFieldUpdateOperationsInput | string
+  label?: Prisma.JsonNullValueInput | runtime.InputJsonValue
+  sortOrder?: Prisma.IntFieldUpdateOperationsInput | number
+  active?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  externalIds?: Prisma.JobLevelExternalIdUncheckedUpdateManyWithoutJobLevelNestedInput
+}
+
 export type JobLevelCreateWithoutExternalIdsInput = {
   id?: string
   organizationId?: string
@@ -479,6 +575,7 @@ export type JobLevelCreateWithoutExternalIdsInput = {
   active?: boolean
   createdAt?: Date | string
   updatedAt?: Date | string
+  users?: Prisma.UserCreateNestedManyWithoutJobLevelInput
 }
 
 export type JobLevelUncheckedCreateWithoutExternalIdsInput = {
@@ -491,6 +588,7 @@ export type JobLevelUncheckedCreateWithoutExternalIdsInput = {
   active?: boolean
   createdAt?: Date | string
   updatedAt?: Date | string
+  users?: Prisma.UserUncheckedCreateNestedManyWithoutJobLevelInput
 }
 
 export type JobLevelCreateOrConnectWithoutExternalIdsInput = {
@@ -519,6 +617,7 @@ export type JobLevelUpdateWithoutExternalIdsInput = {
   active?: Prisma.BoolFieldUpdateOperationsInput | boolean
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  users?: Prisma.UserUpdateManyWithoutJobLevelNestedInput
 }
 
 export type JobLevelUncheckedUpdateWithoutExternalIdsInput = {
@@ -531,6 +630,7 @@ export type JobLevelUncheckedUpdateWithoutExternalIdsInput = {
   active?: Prisma.BoolFieldUpdateOperationsInput | boolean
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  users?: Prisma.UserUncheckedUpdateManyWithoutJobLevelNestedInput
 }
 
 
@@ -540,10 +640,12 @@ export type JobLevelUncheckedUpdateWithoutExternalIdsInput = {
 
 export type JobLevelCountOutputType = {
   externalIds: number
+  users: number
 }
 
 export type JobLevelCountOutputTypeSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   externalIds?: boolean | JobLevelCountOutputTypeCountExternalIdsArgs
+  users?: boolean | JobLevelCountOutputTypeCountUsersArgs
 }
 
 /**
@@ -563,6 +665,13 @@ export type JobLevelCountOutputTypeCountExternalIdsArgs<ExtArgs extends runtime.
   where?: Prisma.JobLevelExternalIdWhereInput
 }
 
+/**
+ * JobLevelCountOutputType without action
+ */
+export type JobLevelCountOutputTypeCountUsersArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  where?: Prisma.UserWhereInput
+}
+
 
 export type JobLevelSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetSelect<{
   id?: boolean
@@ -575,6 +684,7 @@ export type JobLevelSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs
   createdAt?: boolean
   updatedAt?: boolean
   externalIds?: boolean | Prisma.JobLevel$externalIdsArgs<ExtArgs>
+  users?: boolean | Prisma.JobLevel$usersArgs<ExtArgs>
   _count?: boolean | Prisma.JobLevelCountOutputTypeDefaultArgs<ExtArgs>
 }, ExtArgs["result"]["jobLevel"]>
 
@@ -617,6 +727,7 @@ export type JobLevelSelectScalar = {
 export type JobLevelOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "organizationId" | "code" | "track" | "label" | "sortOrder" | "active" | "createdAt" | "updatedAt", ExtArgs["result"]["jobLevel"]>
 export type JobLevelInclude<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   externalIds?: boolean | Prisma.JobLevel$externalIdsArgs<ExtArgs>
+  users?: boolean | Prisma.JobLevel$usersArgs<ExtArgs>
   _count?: boolean | Prisma.JobLevelCountOutputTypeDefaultArgs<ExtArgs>
 }
 export type JobLevelIncludeCreateManyAndReturn<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {}
@@ -626,6 +737,7 @@ export type $JobLevelPayload<ExtArgs extends runtime.Types.Extensions.InternalAr
   name: "JobLevel"
   objects: {
     externalIds: Prisma.$JobLevelExternalIdPayload<ExtArgs>[]
+    users: Prisma.$UserPayload<ExtArgs>[]
   }
   scalars: runtime.Types.Extensions.GetPayloadResult<{
     id: string
@@ -1035,6 +1147,7 @@ readonly fields: JobLevelFieldRefs;
 export interface Prisma__JobLevelClient<T, Null = never, ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs, GlobalOmitOptions = {}> extends Prisma.PrismaPromise<T> {
   readonly [Symbol.toStringTag]: "PrismaPromise"
   externalIds<T extends Prisma.JobLevel$externalIdsArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.JobLevel$externalIdsArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$JobLevelExternalIdPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
+  users<T extends Prisma.JobLevel$usersArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.JobLevel$usersArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$UserPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
   /**
    * Attaches callbacks for the resolution and/or rejection of the Promise.
    * @param onfulfilled The callback to execute when the Promise is resolved.
@@ -1487,6 +1600,30 @@ export type JobLevel$externalIdsArgs<ExtArgs extends runtime.Types.Extensions.In
   take?: number
   skip?: number
   distinct?: Prisma.JobLevelExternalIdScalarFieldEnum | Prisma.JobLevelExternalIdScalarFieldEnum[]
+}
+
+/**
+ * JobLevel.users
+ */
+export type JobLevel$usersArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  /**
+   * Select specific fields to fetch from the User
+   */
+  select?: Prisma.UserSelect<ExtArgs> | null
+  /**
+   * Omit specific fields from the User
+   */
+  omit?: Prisma.UserOmit<ExtArgs> | null
+  /**
+   * Choose, which related nodes to fetch as well
+   */
+  include?: Prisma.UserInclude<ExtArgs> | null
+  where?: Prisma.UserWhereInput
+  orderBy?: Prisma.UserOrderByWithRelationInput | Prisma.UserOrderByWithRelationInput[]
+  cursor?: Prisma.UserWhereUniqueInput
+  take?: number
+  skip?: number
+  distinct?: Prisma.UserScalarFieldEnum | Prisma.UserScalarFieldEnum[]
 }
 
 /**

@@ -458,6 +458,10 @@ model User {
   /// reads (w2-10). Backfilled from the person's legal entity (0055).
   country        String?
   managerId      String?   @map("manager_id") @db.Uuid
+  /// w4-00b: ExpenseOS's `manager` / `directReports`; the engine counts direct reports.
+  /// The database's key is composite (0019); the relation is on the id alone.
+  manager        User?     @relation("UserManager", fields: [managerId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  directReports  User[]    @relation("UserManager")
   departmentId   String?   @map("department_id") @db.Uuid
   businessUnitId String?   @map("business_unit_id") @db.Uuid
   legalEntityId  String?   @map("legal_entity_id") @db.Uuid
@@ -466,6 +470,13 @@ model User {
   entity         LegalEntity? @relation("UserEntity", fields: [legalEntityId], references: [id])
   /// ExpenseOS's `jobLevelId` (migration 0050). Nothing assigns it yet.
   jobLevelId     String?   @map("job_level_id") @db.Uuid
+  /// w4-00b: the approval engine reads the level's sortOrder. The database's key is
+  /// composite (0050); the relation is on the id alone, as the approval task's.
+  jobLevel       JobLevel? @relation("UserJobLevel", fields: [jobLevelId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  /// VeloExpense's role (EMPLOYEE | MANAGER | ADMIN, 0004), where ExpenseOS has `roleId`.
+  /// The approval engine maps it to an ExpenseOS system role (`systemRoleFor`) until the
+  /// role builder (w4-10).
+  role           String    @default("EMPLOYEE")
   deletedAt      DateTime? @map("deleted_at") @db.Timestamptz(6)
   createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt      DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
@@ -477,6 +488,9 @@ model User {
   /// w4-00a: the workflow engine's tasks (0058).
   approvalTasksAssigned ApprovalTask[] @relation("ApprovalTaskAssignee")
   approvalTasksDecided  ApprovalTask[] @relation("ApprovalTaskDecider")
+  /// w4-00b: the engine's delegation lookups.
+  delegationsFrom       Delegation[]   @relation("DelegationFrom")
+  delegationsTo         Delegation[]   @relation("DelegationTo")
 
   @@map("app_user")
 }
@@ -772,6 +786,7 @@ model JobLevel {
   updatedAt      DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   externalIds JobLevelExternalId[]
+  users       User[]               @relation("UserJobLevel")
 
   @@unique([organizationId, code])
   @@unique([organizationId, id])
@@ -945,4 +960,32 @@ model ApprovalTask {
   @@index([organizationId, assigneeUserId, status])
   @@index([organizationId, instanceId])
   @@map("approval_instance_task")
+}
+
+// ExpenseOS's `Delegation`, on VeloExpense's `delegation` (0008), which the ladder already
+// reads. VeloExpense differences, mapped by the engine (w4-00b):
+//   · from / to user (ExpenseOS: delegator / delegatee);
+//   · inclusive calendar dates `starts_on` / `ends_on` (ExpenseOS: timestamps);
+//   · revoked by `revoked_at` (ExpenseOS: an `active` flag);
+//   · scope ALL | REPORTS, text under a CHECK (ExpenseOS's enum adds VCC).
+// The database's keys are composite (0019); the relations are on the id alone.
+model Delegation {
+  id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String    @default(dbgenerated("(NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid")) @map("organization_id") @db.Uuid
+  fromUserId     String    @map("from_user_id") @db.Uuid
+  fromUser       User      @relation("DelegationFrom", fields: [fromUserId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  toUserId       String    @map("to_user_id") @db.Uuid
+  toUser         User      @relation("DelegationTo", fields: [toUserId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  startsOn       DateTime  @map("starts_on") @db.Date
+  endsOn         DateTime? @map("ends_on") @db.Date
+  /// ALL | REPORTS (a CHECK in the table).
+  scope          String    @default("ALL")
+  createdById    String    @map("created_by_id") @db.Uuid
+  revokedAt      DateTime? @map("revoked_at") @db.Timestamptz(6)
+  revokedById    String?   @map("revoked_by_id") @db.Uuid
+  note           String?
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@map("delegation")
 }
