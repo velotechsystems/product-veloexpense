@@ -36,6 +36,13 @@ const adminAndOthers = {
     fiscalYearSetCurrent: 'FISCAL_YEAR_SET_CURRENT',
     fiscalYearDelete: 'FISCAL_YEAR_DELETED',
   },
+  /** ExpenseOS's `approvalWorkflow.*` keys (w4-01, the workflow builder). */
+  approvalWorkflow: {
+    create: 'APPROVAL_WORKFLOW_CREATED',
+    update: 'APPROVAL_WORKFLOW_UPDATED',
+    saveDraft: 'APPROVAL_WORKFLOW_DRAFT_SAVED',
+    publish: 'APPROVAL_WORKFLOW_PUBLISHED',
+  },
   /**
    * ExpenseOS's `report.*` keys (Wave 2), on VeloExpense's names for the same events
    * (lib/audit/actions.ts, UD-11). Only the keys the ported procedures write so far; the

@@ -85,6 +85,8 @@ const PAGES = [
   '/admin/fx-rates',
   '/admin/mileage-rates',
   '/admin/per-diem-rates',
+  // w4-01: ExpenseOS's workflow builder (the editor itself needs an id, as the report page does).
+  '/admin/approval-workflows',
 ] as const;
 
 /**
