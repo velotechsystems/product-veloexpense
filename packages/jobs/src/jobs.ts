@@ -63,6 +63,44 @@ export interface JobMap {
    *  tenant, which the worker runs under that tenant's RLS scope like every other job. */
   'expense.receiptChase': { trigger?: 'cron' | 'manual'; organizationId?: string };
 
+  /** Turn one inbound receipt email into an expense report.
+   *
+   *  Enqueued by POST /api/email/inbound after the SNS signature, the topic and the SES
+   *  authentication verdicts have been checked and the SES message id claimed once. The raw
+   *  MIME is NOT in the payload — SES stored it in the inbound-mail bucket (its SNS action
+   *  caps out around 150KB, which one phone photo exceeds), so the handler reads the object
+   *  and does everything slow: parse, filter attachments, create or append the report,
+   *  write each receipt, enqueue extraction, acknowledge by email.
+   *
+   *  Deliberately off the request path: SNS redelivers a non-2xx, and a slow handler would
+   *  be redelivered as a duplicate report.
+   *
+   *  VeloExpense (w3-06): plus `organizationId`, the tenant whose address the email was sent
+   *  to (d47). The sender is looked up inside it only, and the job runs as it. `token` is
+   *  carried but not yet read: replying to add receipts arrives with reply threads (w5-01,
+   *  d48). */
+  'email.ingestReceipts': {
+    /** Where SES put the raw message. */
+    bucket: string;
+    objectKey: string;
+    /** SES's own message id — the dedup key already claimed by the route, carried so the
+     *  handler can key its audit rows and log line to the same identity. */
+    sesMessageId: string;
+    /** Which mailbox it arrived at, resolved from the envelope/headers by the route. */
+    mailbox: 'receipts';
+    /**
+     * The From address the route AUTHENTICATED — tied to the domain that passed SPF/DKIM,
+     * lowercased. The handler files the claim as this person and refuses the message if
+     * the MIME it parses names anyone else, so the identity decision is made once, at the
+     * gate, and never re-derived from headers an outsider wrote.
+     */
+    claimant: string;
+    /** The reply token, when the message was addressed to receipts+<token>@ — meaning add
+     *  to an existing report rather than start a new one. */
+    token?: string;
+    organizationId: string;
+  };
+
   // VeloExpense: ExpenseOS's other jobs are not here. Each arrives with its handler, as the
   // boot check in worker/src/main.ts requires, and most never will: VeloExpense's
   // notifications, approval sweeps, ledger posts and compliance passes run as
@@ -78,4 +116,5 @@ export const JOB_QUEUES: Record<JobName, QueueName> = {
   'expense.extractReceipt.batch': 'integrations',
   'expense.determineExpense': 'integrations',
   'expense.receiptChase': 'housekeeping',
+  'email.ingestReceipts': 'integrations',
 };

@@ -12,6 +12,7 @@ import { CacheStack } from '../lib/cache-stack';
 import { buildConfig } from '../lib/config';
 import { ComputeStack } from '../lib/compute-stack';
 import { DataStack } from '../lib/data-stack';
+import { MailStack } from '../lib/mail-stack';
 import { NetworkStack } from '../lib/network-stack';
 import { SecurityStack } from '../lib/security-stack';
 import { StorageStack } from '../lib/storage-stack';
@@ -49,8 +50,10 @@ function synth() {
     appDbSecretArn: security.appDbSecret.secretArn,
     masterDbSecretArn: data.cluster.secret!.secretArn,
   });
-  const t = (s: SecurityStack | NetworkStack | StorageStack | DataStack | CacheStack | ComputeStack) =>
-    Template.fromStack(s);
+  const mail = new MailStack(app, 'Mal', { env, config });
+  const t = (
+    s: SecurityStack | NetworkStack | StorageStack | DataStack | CacheStack | ComputeStack | MailStack,
+  ) => Template.fromStack(s);
   return {
     config,
     security: t(security),
@@ -59,7 +62,8 @@ function synth() {
     data: t(data),
     cache: t(cache),
     compute: t(compute),
-    all: [security, network, storage, data, cache, compute].map(t),
+    mail: t(mail),
+    all: [security, network, storage, data, cache, compute, mail].map(t),
   };
 }
 
@@ -299,13 +303,15 @@ describe('the queue (w3-00)', () => {
     expect(text).not.toMatch(/AuthSecret|WorkerSecret|MasterDb|rds-master|secret-encryption-key|google-oauth|smtp/);
   });
 
-  it('the worker may read a receipt and its scan tag, and change nothing (w3-02a)', () => {
+  it('the worker may read a receipt and its scan tag, and delete or list nothing (w3-02a)', () => {
     const [, p] = resources(s.compute, 'AWS::IAM::Policy').find(([id]) => id.startsWith('WorkerTaskRole'))!;
     const text = json(p.Properties);
     expect(text).toContain('s3:GetObject');
     expect(text).toContain('s3:GetObjectTagging');
     expect(text).toContain('veloexpense-dev-receipts-535079144866/*');
-    expect(text).not.toMatch(/s3:PutObject|s3:DeleteObject|s3:ListBucket|kms:Encrypt|kms:GenerateDataKey/);
+    // w3-06 lets it WRITE an emailed attachment (below); never delete, never list receipts.
+    expect(text).not.toMatch(/s3:DeleteObject|kms:Encrypt/);
+    expect(text).not.toMatch(/"s3:ListBucket","Effect":"Allow","Resource":\["arn:aws:s3:::veloexpense-dev-receipts/);
   });
 
   it('the worker reads nothing before GuardDuty has scanned it (d42)', () => {
@@ -346,5 +352,107 @@ describe('config', () => {
       'arn:aws:acm:ca-central-1:535079144866:certificate/b9d463c0-8c2f-4754-bf39-cd4231b92a9c',
     );
     expect(buildConfig('dev', { albCertificateArn: CERT }).albCertificateArn).toBe(CERT);
+  });
+});
+
+describe('receipts by email (w3-06)', () => {
+  const statements = (tpl: Template, prefix: string) => {
+    const [, p] = resources(tpl, 'AWS::IAM::Policy').find(([id]) => id.startsWith(prefix))!;
+    return (p.Properties as { PolicyDocument: { Statement: Array<Record<string, unknown>> } }).PolicyDocument
+      .Statement;
+  };
+
+  it('receives on every tenant subdomain of the inbound domain, scanned, over TLS, then stops', () => {
+    const [[, rule]] = resources(s.mail, 'AWS::SES::ReceiptRule');
+    const r = (rule.Properties as { Rule: Record<string, unknown> }).Rule;
+    expect(r.Recipients).toEqual(['.mail.dev.veloexpense.ai']);
+    expect(r.ScanEnabled).toBe(true);
+    expect(r.TlsPolicy).toBe('Require');
+    const actions = r.Actions as Array<Record<string, unknown>>;
+    expect(Object.keys(actions[0] ?? {})).toEqual(['S3Action']);
+    expect(json(actions[0])).toContain('"ObjectKeyPrefix":"inbound/"');
+    expect(Object.keys(actions[1] ?? {})).toEqual(['StopAction']);
+  });
+
+  it('lets only SES, from this account, write the bucket — under the inbound prefix', () => {
+    const [[, policy]] = resources(s.mail, 'AWS::S3::BucketPolicy');
+    const text = json(policy.Properties);
+    expect(text).toContain('ses.amazonaws.com');
+    expect(text).toContain('"aws:SourceAccount"');
+    expect(text).toMatch(/inbound\/\*/);
+  });
+
+  it('keeps a raw message two weeks, encrypted, private, over TLS only', () => {
+    const [[, bucket]] = resources(s.mail, 'AWS::S3::Bucket').filter(([, b]) =>
+      json(b.Properties).includes('inbound-mail'),
+    );
+    const text = json(bucket.Properties);
+    expect(text).toContain('"ExpirationInDays":14');
+    expect(text).toContain('AES256');
+    expect(text).toContain('"BlockPublicAcls":true');
+    const [[, policy]] = resources(s.mail, 'AWS::S3::BucketPolicy');
+    expect(json(policy.Properties)).toMatch(/"aws:SecureTransport":"false"/);
+  });
+
+  it('tells the app over HTTPS, and only SES from this account may publish', () => {
+    s.mail.hasResourceProperties('AWS::SNS::Subscription', {
+      Protocol: 'https',
+      Endpoint: 'https://dev.veloexpense.ai/api/email/inbound',
+    });
+    const [[, topicPolicy]] = resources(s.mail, 'AWS::SNS::TopicPolicy');
+    const text = json(topicPolicy.Properties);
+    expect(text).toContain('ses.amazonaws.com');
+    expect(text).toContain('"aws:SourceAccount"');
+  });
+
+  it('activates its rule set, and on delete clears it rather than naming another (d49)', () => {
+    // SES allows one active set per account and region, and the account is the suite's:
+    // dev had none when this was decided, so nothing is displaced and nothing to restore.
+    expect(s.config.inboundEmail?.activateRuleSet).toBe(true);
+    expect(s.config.inboundEmail?.restoreRuleSetNameOnDelete).toBeUndefined();
+    const [[, activate]] = resources(s.mail, 'Custom::AWS');
+    const text = json(activate.Properties);
+    expect(text).toContain('setActiveReceiptRuleSet');
+    // It activates this stack's own set, by reference.
+    const [[setId, set]] = resources(s.mail, 'AWS::SES::ReceiptRuleSet');
+    expect((set.Properties as { RuleSetName: string }).RuleSetName).toBe('veloexpense-dev-inbound');
+    expect(text).toContain(json({ Ref: setId }));
+    // The delete call carries no rule set name, which deactivates every set.
+    const onDelete = JSON.parse(String((activate.Properties as { Delete?: unknown }).Delete ?? '{}')) as {
+      parameters?: Record<string, unknown>;
+    };
+    expect(onDelete.parameters ?? {}).toEqual({});
+  });
+
+  it('the web task gets the domain and the pinned topic, not the bucket', () => {
+    const [[, td]] = resources(s.compute, 'AWS::ECS::TaskDefinition').filter(
+      ([, r]) => (r.Properties as { Family: string }).Family === 'veloexpense-dev-web',
+    );
+    const text = json(td.Properties);
+    expect(text).toContain(json({ Name: 'INBOUND_EMAIL_DOMAIN', Value: 'mail.dev.veloexpense.ai' }));
+    expect(text).toContain(
+      json({ Name: 'INBOUND_SNS_TOPIC_ARN', Value: 'arn:aws:sns:ca-central-1:535079144866:veloexpense-dev-inbound-mail' }),
+    );
+    expect(text).not.toContain('S3_INBOUND_MAIL_BUCKET');
+    const web = json(statements(s.compute, 'WebTaskRole'));
+    expect(web).not.toContain('inbound-mail');
+  });
+
+  it('the worker reads the inbound prefix and writes receipts under the tenant prefix only', () => {
+    const [[, td]] = resources(s.compute, 'AWS::ECS::TaskDefinition').filter(
+      ([, r]) => (r.Properties as { Family: string }).Family === 'veloexpense-dev-worker',
+    );
+    expect(json(td.Properties)).toContain(
+      json({ Name: 'S3_INBOUND_MAIL_BUCKET', Value: 'veloexpense-dev-inbound-mail-535079144866' }),
+    );
+    const worker = statements(s.compute, 'WorkerTaskRole');
+    const put = worker.find((st) => json(st).includes('s3:PutObject'))!;
+    expect(put.Resource).toBe('arn:aws:s3:::veloexpense-dev-receipts-535079144866/org/*');
+    const read = worker.find((st) => json(st).includes('inbound-mail'))!;
+    expect(json(read)).not.toMatch(/PutObject|DeleteObject/);
+    expect(read.Resource).toEqual([
+      'arn:aws:s3:::veloexpense-dev-inbound-mail-535079144866',
+      'arn:aws:s3:::veloexpense-dev-inbound-mail-535079144866/inbound/*',
+    ]);
   });
 });

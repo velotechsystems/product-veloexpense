@@ -67,6 +67,7 @@ import {
   fxOverrideOf,
   fxParamsFrom,
   glAccountIdForCategory,
+  nextReportNumber,
   Prisma,
   recomputeReportTotal,
   recordOverrides,
@@ -1322,15 +1323,11 @@ async function assertExpenseCap(db: TenantDb, adding = 1): Promise<void> {
 }
 
 async function mintReportNumber(db: TenantDb): Promise<string> {
-  const [org] = await db.$queryRaw<{ id: string; seq: bigint }[]>`
-    SELECT id::text AS id, expense_report_seq AS seq
-      FROM organization
-     WHERE id = NULLIF(current_setting('app.current_org', true), '')::uuid
-       FOR UPDATE`;
-  if (!org) throw new TRPCError({ code: 'FORBIDDEN', message: 'No tenant context' });
-  const next = BigInt(org.seq) + 1n;
-  await db.$executeRaw`UPDATE organization SET expense_report_seq = ${next} WHERE id = ${org.id}::uuid`;
-  return `EXP-${next.toString().padStart(6, '0')}`;
+  // VeloExpense (w3-06): the sequence itself is `nextReportNumber` (@expenseos/db), shared
+  // with the inbound-email worker.
+  const number = await nextReportNumber(db);
+  if (!number) throw new TRPCError({ code: 'FORBIDDEN', message: 'No tenant context' });
+  return number;
 }
 
 export const expensesRouter = router({

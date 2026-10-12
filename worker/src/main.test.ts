@@ -67,6 +67,12 @@ vi.mock('./handlers/expense-receipt-chase', () => ({
     return h.handlers.handleExpenseReceiptChase(...args);
   },
 }));
+vi.mock('./handlers/ingest-receipt-email', () => ({
+  handleIngestReceiptEmail: (...args: unknown[]) => {
+    h.handlers.handleIngestReceiptEmail ??= vi.fn();
+    return h.handlers.handleIngestReceiptEmail(...args);
+  },
+}));
 vi.mock('./handlers/extract-receipt', () => ({
   handleExtractReceipt: (...args: unknown[]) => {
     h.handlers.handleExtractReceipt ??= vi.fn();
@@ -276,7 +282,8 @@ describe('the whole handler registry', () => {
     ['expense.extractReceipt.batch', 'handleExtractReceiptBatch'],
     ['expense.determineExpense', 'handleDetermineExpense'],
     ['expense.receiptChase', 'handleExpenseReceiptChase'],
-    // VeloExpense: ExpenseOS's other nineteen rows return as their handlers are ported.
+    ['email.ingestReceipts', 'handleIngestReceiptEmail'],
+    // VeloExpense: ExpenseOS's other eighteen rows return as their handlers are ported.
   ];
 
   it('routes every job name to its own handler, with the payload untouched', async () => {

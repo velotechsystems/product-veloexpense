@@ -153,6 +153,14 @@ export interface Storage {
    */
   putFile(key: string, localPath: string, contentType: string): Promise<void>;
   /**
+   * Upload bytes the SERVER already holds — an attachment parsed out of an emailed receipt.
+   *
+   * VeloExpense (w3-06): ExpenseOS's `StorageClient.put` (550b2945). The inbound-email worker
+   * is the first writer that has the bytes in memory rather than in a file or a browser;
+   * they are capped (10 MiB an attachment) before they get here.
+   */
+  put(input: { key: string; body: Uint8Array; contentType: string }): Promise<void>;
+  /**
    * Read an object's bytes, never more than `maxBytes`: the stream is abandoned at
    * `maxBytes` + 1 whatever the object's declared size. A missing object is `missing`, any
    * other failure throws.
@@ -176,10 +184,26 @@ export interface Storage {
 export class MemoryStorage implements Storage {
   private readonly objects = new Map<string, { body: Uint8Array; contentType: string }>();
 
-  /** Test helper: stand in for the browser completing its PUT. */
-  put(key: string, body: Uint8Array | string, contentType = 'application/octet-stream') {
-    const bytes = typeof body === 'string' ? new TextEncoder().encode(body) : body;
-    this.objects.set(key, { body: bytes, contentType });
+  /**
+   * Test helper: stand in for the browser completing its PUT — and, given one object, the
+   * product's server-side `put` (w3-06).
+   */
+  put(input: { key: string; body: Uint8Array; contentType: string }): Promise<void>;
+  put(key: string, body: Uint8Array | string, contentType?: string): void;
+  put(
+    keyOrInput: string | { key: string; body: Uint8Array; contentType: string },
+    body?: Uint8Array | string,
+    contentType = 'application/octet-stream',
+  ): Promise<void> | void {
+    if (typeof keyOrInput !== 'string') {
+      this.objects.set(keyOrInput.key, {
+        body: keyOrInput.body,
+        contentType: keyOrInput.contentType,
+      });
+      return Promise.resolve();
+    }
+    const bytes = typeof body === 'string' ? new TextEncoder().encode(body ?? '') : (body ?? new Uint8Array());
+    this.objects.set(keyOrInput, { body: bytes, contentType });
   }
 
   has(key: string) {
@@ -387,6 +411,19 @@ export class S3Storage implements Storage {
   }
 
   /** Ported from ExpenseOS's S3 `read` (550b2945). */
+  /** Ported from ExpenseOS's S3 `put` (550b2945). VeloExpense: the bucket's default
+   *  encryption (SSE-KMS with the bucket key, storage-stack.ts) applies, so no key header. */
+  async put(input: { key: string; body: Uint8Array; contentType: string }): Promise<void> {
+    await this.client.send(
+      new PutObjectCommand({
+        Bucket: this.bucket,
+        Key: input.key,
+        Body: input.body,
+        ContentType: input.contentType,
+      }),
+    );
+  }
+
   async read(key: string, maxBytes: number): Promise<BoundedRead> {
     if (!Number.isSafeInteger(maxBytes) || maxBytes <= 0) {
       throw new RangeError(`read maxBytes must be a positive integer; got ${maxBytes}`);
@@ -503,4 +540,31 @@ export function getStorage(): Storage {
   }
   cached = new S3Storage(bucket);
   return cached;
+}
+
+/* ── the inbound-mail bucket (w3-06) ───────────────────────────────────────── */
+
+let inboundOverride: Storage | null = null;
+let inboundCached: Storage | null = null;
+
+/** Tests inject MemoryStorage here; pass null to restore env-driven behaviour. */
+export function setInboundMailStorage(storage: Storage | null) {
+  inboundOverride = storage;
+  if (storage) inboundCached = null;
+}
+
+/**
+ * The bucket SES writes raw inbound mail to — ExpenseOS's `storage.inboundMail`.
+ *
+ * VeloExpense (w3-06): a second bucket, read only by the worker's `email.ingestReceipts`.
+ * Resolved on first use, as ExpenseOS resolves each bucket, so a process without it
+ * configured still serves receipts.
+ */
+export function getInboundMailStorage(): Storage {
+  if (inboundOverride) return inboundOverride;
+  if (inboundCached) return inboundCached;
+  const bucket = process.env.S3_INBOUND_MAIL_BUCKET?.trim();
+  if (!bucket) throw new Error('inbound mail is not configured: set S3_INBOUND_MAIL_BUCKET');
+  inboundCached = new S3Storage(bucket);
+  return inboundCached;
 }

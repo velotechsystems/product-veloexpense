@@ -120,13 +120,15 @@
   "receiptsEmail": {
     "untitled": "Reçus envoyés par courriel",
     "filedSubject": "{number} : {title}",
-    "filedBody": "{count} reçu(s) classé(s) sur la note de frais {number}. ExpenseOS les lit en ce moment — le commerçant, la date, le montant et les taxes seront remplis sous peu.\n\nRépondez à ce courriel pour ajouter d'autres reçus à la même note de frais.",
-    "noAccountSubject": "Aucun compte ExpenseOS pour cette adresse",
-    "noAccountBody": "Cette adresse n'a pas de compte ExpenseOS ; les reçus n'ont donc pas été classés. Envoyez-les depuis l'adresse avec laquelle vous vous connectez.",
+    "filedBody": "{count} reçu(s) classé(s) sur la note de frais {number}. VeloExpense les lit en ce moment — le commerçant, la date, le montant et les taxes seront remplis sous peu.",
+    "noAccountSubject": "Aucun compte VeloExpense pour cette adresse",
+    "noAccountBody": "Cette adresse n'a pas de compte VeloExpense ; les reçus n'ont donc pas été classés. Envoyez-les depuis l'adresse avec laquelle vous vous connectez.",
     "noReceiptsSubject": "Aucun reçu trouvé",
     "noReceiptsBody": "Aucun reçu n'était joint ; rien n'a donc été créé. Joignez une photo ou un PDF et envoyez de nouveau.",
     "notEditableSubject": "Cette note de frais ne peut plus être modifiée",
-    "notEditableBody": "Cette note de frais a déjà été soumise ; il n'est donc pas possible d'y ajouter des reçus. Rappelez-la d'abord dans ExpenseOS, ou envoyez un nouveau courriel pour créer une autre note."
+    "notEditableBody": "Cette note de frais a déjà été soumise ; il n'est donc pas possible d'y ajouter des reçus. Rappelez-la d'abord dans VeloExpense, ou envoyez un nouveau courriel pour créer une autre note.",
+    "capReachedSubject": "La limite de dépenses de votre forfait est atteinte",
+    "capReachedBody": "Votre organisation a ajouté cette année autant de dépenses que son forfait le permet ; ces reçus n'ont donc pas pu être classés. Adressez-vous à un administrateur au sujet du forfait."
   },
   "subject": {
     "VIRTUAL_CARD_REQUEST": "Demande de carte",

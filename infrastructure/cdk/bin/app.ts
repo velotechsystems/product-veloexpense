@@ -2,7 +2,9 @@
 /**
  * VeloExpense – CDK application entry point.
  *
- *   Security → Network → Storage → Data → Cache → Compute
+ *   Security → Network → Storage → Data → Cache → Compute, and Mail where receipts by
+ *   email is configured (w3-06) — on its own: Compute names its topic and bucket rather than
+ *   referencing them, so the two deploy independently.
  *
  * Everything here deploys INTO the shared velotech-<sharedStage> infrastructure
  * that product-velocrm's CDK owns (see lib/shared.ts). None of these stacks
@@ -22,6 +24,7 @@ import { CacheStack } from '../lib/cache-stack';
 import { buildConfig, type Stage } from '../lib/config';
 import { ComputeStack } from '../lib/compute-stack';
 import { DataStack } from '../lib/data-stack';
+import { MailStack } from '../lib/mail-stack';
 import { NetworkStack } from '../lib/network-stack';
 import { SecurityStack } from '../lib/security-stack';
 import { StorageStack } from '../lib/storage-stack';
@@ -94,5 +97,13 @@ compute.addStackDependency(storage); // the image must have a repository before 
 // Compute reads the redis-url secret BY NAME, so CloudFormation sees no reference to the
 // cache stack; a task started before that secret exists fails to start.
 compute.addStackDependency(cache);
+
+if (config.inboundEmail) {
+  new MailStack(app, `${prefix}-Mail`, {
+    env,
+    config,
+    description: 'VeloExpense - receipts by email: SES receiving, the inbound-mail bucket and topic',
+  });
+}
 
 for (const [k, v] of Object.entries(config.tags)) cdk.Tags.of(app).add(k, v);

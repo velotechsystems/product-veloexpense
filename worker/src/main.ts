@@ -15,6 +15,7 @@ import { handleExamplePing } from './handlers/example';
 import { handleExpenseReceiptChase } from './handlers/expense-receipt-chase';
 import { handleExtractReceipt } from './handlers/extract-receipt';
 import { handleExtractReceiptBatch } from './handlers/extract-receipt-batch';
+import { handleIngestReceiptEmail } from './handlers/ingest-receipt-email';
 // VeloExpense: ExpenseOS's other handlers are not imported — their jobs are not in the job
 // map (packages/jobs/src/jobs.ts says where each went).
 import { installShutdown } from './lib/shutdown';
@@ -45,6 +46,8 @@ const HANDLERS: { [N in JobName]?: (data: unknown, job: Job) => Promise<unknown>
     (data as { organizationId?: string } | null)?.organizationId
       ? inTenant(data, () => handleExpenseReceiptChase(data as never))
       : fanOutToTenants('expense.receiptChase', { trigger: 'cron' }),
+  // VeloExpense (w3-06): as the tenant whose address the email was sent to (d47).
+  'email.ingestReceipts': (data) => inTenant(data, () => handleIngestReceiptEmail(data as never)),
 };
 
 /**
