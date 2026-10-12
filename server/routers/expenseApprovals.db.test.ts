@@ -11,9 +11,10 @@ import { createTenantHarness, type TenantHarness } from '../__test-helpers__/ten
  * engine. And since w2-02a the approver's procedures — `decide`, `reassign`, `returnForEdit`,
  * `setFxOverride` — against VeloExpense's real engine, which is where the cases of ExpenseOS's
  * mocked `expenseApprovals.test.ts` about the engine's own work (the audit label, the ledger
- * hand-off, the notification) are proven, with the thread showing each reason (d37). The
- * rest of ExpenseOS's suite (the inbox, the approver's report, decideBulk, reimburse) arrives
- * with the engine in Wave 4.
+ * hand-off, the notification) are proven, with the thread showing each reason (d37). Since
+ * w4-00c all of it runs on ExpenseOS's approval engine, the tenant's default flow (d54/d59):
+ * the submitter's manager, or the administrators when there is none. The rest of ExpenseOS's
+ * suite (the approver's report, decideBulk, reimburse) is not ported (d57).
  *
  * The cases are ExpenseOS's; the harness is VeloExpense's (`createTenantHarness`: the suite's own
  * tenant and people, every call under RLS). Adaptations, each marked:
@@ -86,11 +87,9 @@ describe.skipIf(!process.env.DATABASE_URL)('expense approvals (integration)', ()
   // ── submit / recall, on VeloExpense's lifecycle (w2-11, d23) ──────────
   describe('submit and recall', () => {
     /**
-     * VeloExpense: the submitter is the suite's EMPLOYEE, so the report routes to the
-     * tenant's administrator (the founder) on VeloExpense's engine. ExpenseOS's "submit
-     * auto-approves when no EXPENSE_REPORT workflow matches" has no counterpart: VeloExpense's
-     * engine routes every submit (VX2-3), and refuses one it cannot route rather than
-     * approving it unseen.
+     * VeloExpense: the submitter is the suite's EMPLOYEE, with no manager, so the default flow
+     * sends the report to the administrators (d59). ExpenseOS's "submit auto-approves when no
+     * EXPENSE_REPORT workflow matches" is refused here instead (d58) — its case below.
      */
     let categoryId: string;
     const owner = () => h.makeCaller(OWNER_PERMS, strangerId);
@@ -109,13 +108,14 @@ describe.skipIf(!process.env.DATABASE_URL)('expense approvals (integration)', ()
       await owner().lineItemCreate({ expenseId: id, categoryId, amountMinor });
       return id as string;
     };
+    /** w4-00c: the report's latest approval instance, and how many of its tasks are pending. */
     const runOf = async (reportId: string) =>
       (
         await h.admin.query(
-          `SELECT r.status, count(t.id) FILTER (WHERE t.status = 'PENDING')::int AS pending
-             FROM approval_request r LEFT JOIN approval_task t ON t.request_id = r.id
-            WHERE r.report_id = $1 GROUP BY r.id, r.status, r.opened_at
-            ORDER BY r.opened_at DESC LIMIT 1`,
+          `SELECT i.status, count(t.id) FILTER (WHERE t.status = 'PENDING')::int AS pending
+             FROM approval_instance i LEFT JOIN approval_instance_task t ON t.instance_id = i.id
+            WHERE i.subject_id = $1 GROUP BY i.id, i.status, i.started_at
+            ORDER BY i.started_at DESC LIMIT 1`,
           [reportId],
         )
       ).rows[0] as { status: string; pending: number } | undefined;
@@ -150,16 +150,39 @@ describe.skipIf(!process.env.DATABASE_URL)('expense approvals (integration)', ()
       expect(res.report.status).toBe('SUBMITTED');
     });
 
-    it('submit routes to the approval ladder', async () => {
-      // VeloExpense: ExpenseOS's "submit routes to the seeded amount-tiered workflow", on
-      // VeloExpense's engine — a RUNNING request parked on a pending task.
+    it('submit routes to the default workflow', async () => {
+      // VeloExpense: ExpenseOS's "submit routes to the seeded amount-tiered workflow", on the
+      // tenant's default flow (d54) — a RUNNING instance parked on a pending task, and the
+      // report pointing at it.
       const reportId = await seedReport('DRAFT');
       await addValuedExpense(reportId);
       const res = await owner().submit({ reportId });
       expect(res.report.status).toBe('SUBMITTED');
+      expect(res.report.approvalInstanceId).toBeTruthy();
       const run = await runOf(reportId);
       expect(run?.status).toBe('RUNNING');
       expect(run?.pending, 'the run must park on an approval task').toBeGreaterThan(0);
+    });
+
+    it('VeloExpense: refuses a submit no published workflow governs, where ExpenseOS approves (d58)', async () => {
+      const reportId = await seedReport('DRAFT');
+      await addValuedExpense(reportId);
+      await h.admin.query(`UPDATE approval_workflow SET active = false WHERE organization_id = $1`, [
+        h.orgId,
+      ]);
+      try {
+        await expect(owner().submit({ reportId })).rejects.toMatchObject({
+          code: 'PRECONDITION_FAILED',
+          message: expect.stringMatching(/No approval workflow applies/),
+        });
+        expect(await runOf(reportId)).toBeUndefined();
+        const row = await h.admin.query(`SELECT status FROM expense_report WHERE id = $1`, [reportId]);
+        expect(row.rows[0].status).toBe('DRAFT');
+      } finally {
+        await h.admin.query(`UPDATE approval_workflow SET active = true WHERE organization_id = $1`, [
+          h.orgId,
+        ]);
+      }
     });
 
     it('a RETURNED report is editable + resubmittable', async () => {
@@ -258,9 +281,9 @@ describe.skipIf(!process.env.DATABASE_URL)('expense approvals (integration)', ()
   // ── the approver's actions, on VeloExpense's engine (w2-02a, d36/d37) ──
   describe("the approver's actions", () => {
     /**
-     * The submitter is the suite's EMPLOYEE, so each report's approval routes to the
-     * tenant's administrator (the founder). The deputy can be handed it; the clerk holds
-     * ExpenseOS's AP clerk grants and no task.
+     * The submitter is the suite's EMPLOYEE, whose manager here is the founder, so the default
+     * flow (w4-00c) assigns each report's approval to the founder. The deputy can be handed it;
+     * the clerk holds ExpenseOS's AP clerk grants and no task.
      */
     const ADMIN_PERMS = [P.expense.report.decideAny] as const;
     const AP_CLERK_PERMS = [P.expense.report.readAll, P.expense.report.reimburse] as const;
@@ -292,9 +315,9 @@ describe.skipIf(!process.env.DATABASE_URL)('expense approvals (integration)', ()
     const pendingTaskOn = async (reportId: string) =>
       (
         await h.admin.query(
-          `SELECT t.id, t.assignee_id FROM approval_task t
-             JOIN approval_request q ON q.id = t.request_id
-            WHERE q.report_id = $1 AND t.status = 'PENDING'`,
+          `SELECT t.id, t.assignee_user_id AS assignee_id FROM approval_instance_task t
+             JOIN approval_instance i ON i.id = t.instance_id
+            WHERE i.subject_id = $1 AND t.status = 'PENDING'`,
           [reportId],
         )
       ).rows[0] as { id: string; assignee_id: string } | undefined;
@@ -321,6 +344,8 @@ describe.skipIf(!process.env.DATABASE_URL)('expense approvals (integration)', ()
     beforeAll(async () => {
       deputyId = h.people[2].id;
       clerkId = h.people[3].id;
+      // w4-00c: the founder manages the submitter, so the default flow assigns them the task.
+      await h.admin.query(`UPDATE app_user SET manager_id = $1 WHERE id = $2`, [ownerId, strangerId]);
       categoryId = (
         await db.expenseCategory.create({
           data: { label: { en: 'Approver meals' } },
@@ -330,7 +355,7 @@ describe.skipIf(!process.env.DATABASE_URL)('expense approvals (integration)', ()
     });
 
     it('records the assigned approver’s decision as an ordinary one', async () => {
-      // The other half of the label: the approver the ladder named decides on the task's
+      // The other half of the label: the approver the flow named decides on the task's
       // own terms, override or not, and the log must not call it an override.
       const id = await submitted('Assignee decides');
       const task = await pendingTaskOn(id);
@@ -338,8 +363,6 @@ describe.skipIf(!process.env.DATABASE_URL)('expense approvals (integration)', ()
       await approvals(ADMIN_PERMS, ownerId).decide({
         taskId: task?.id as string,
         approve: true,
-        // VeloExpense: the default ladder asks the approver to confirm the receipts.
-        receiptViewAcknowledged: true,
       });
       expect(await statusOf(id)).toBe('APPROVED');
       expect((await lastAudit(id, 'REPORT_APPROVED'))?.details).toMatchObject({ override: false });
@@ -362,8 +385,7 @@ describe.skipIf(!process.env.DATABASE_URL)('expense approvals (integration)', ()
        * so this call approved the report; with `reimburse` the same person could then
        * pay it, and the audit row read like any manager's approval.
        *
-       * VeloExpense: the clerk's override is VeloExpense's ADMIN-role break-glass, which
-       * the router hands the engine only on `decide.any`.
+       * VeloExpense: the override reaches the engine only on `decide.any`.
        */
       const id = await submitted('Override matrix');
       const task = await pendingTaskOn(id);
@@ -386,7 +408,6 @@ describe.skipIf(!process.env.DATABASE_URL)('expense approvals (integration)', ()
       await approvals(ADMIN_PERMS, clerkId).decide({
         taskId: task?.id as string,
         approve: true,
-        receiptViewAcknowledged: true,
       });
       const row = await lastAudit(id, 'REPORT_APPROVED');
       expect(row?.actor_id).toBe(clerkId);
@@ -469,7 +490,6 @@ describe.skipIf(!process.env.DATABASE_URL)('expense approvals (integration)', ()
       await approvals([], deputyId).decide({
         taskId: task?.id as string,
         approve: true,
-        receiptViewAcknowledged: true,
       });
       expect(await statusOf(id)).toBe('APPROVED');
     });
@@ -485,7 +505,8 @@ describe.skipIf(!process.env.DATABASE_URL)('expense approvals (integration)', ()
         clerkId,
       ]);
       try {
-        await expect(to(clerkId)).rejects.toThrow(/not an active member/);
+        // w4-00c: ExpenseOS's own refusal, which the router makes before the engine is asked.
+        await expect(to(clerkId)).rejects.toThrow(/Unknown or inactive assignee/);
       } finally {
         await h.admin.query(`UPDATE app_user SET employee_status = 'ACTIVE' WHERE id = $1`, [
           clerkId,

@@ -7,25 +7,27 @@
  * (assigned or claimable) approver of a PENDING task on the report's running
  * instance IS the authorization — there's no blanket "approve" permission.
  *
- * VeloExpense: an ADAPTER until Wave 4 ports ExpenseOS's approval engine (d23), not a
- * port. ExpenseOS asks its engine's `canDecide` over its own tasks; VeloExpense's
- * approvals run on its own engine, so the question goes to VeloExpense's
- * `resolveDecidableTask` (lib/approvals/inbox.ts) — the function VeloExpense's own
- * decision panel and decide action already share, ported in shape from this one — on the
- * caller's own transaction (`queryRunnerOf`). `mayOverride` is passed as VeloExpense's
- * `isAdmin` override, which is the same grant: decide anyone's report but your own.
+ * VeloExpense (w4-00c): ExpenseOS's module, replacing the adapter that asked VeloExpense's
+ * approval ladder the same question until the cutover. It reads the report's
+ * `approval_instance_id` (0059) and the engine's tasks, as ExpenseOS does.
  */
-import { resolveDecidableTask as resolveVeloExpenseTask } from '@/lib/approvals/inbox';
-import type { TenantDb } from '@/lib/db/prisma';
-import { queryRunnerOf } from '@/lib/db/prisma-pg-bridge';
+import { canDecide } from '@expenseos/approvals/engine';
+import type { Prisma, PrismaClient } from '@expenseos/db';
 
-type Db = TenantDb;
+/** VeloExpense: the caller's tenant transaction, or the scoped client. */
+type Db = PrismaClient | Prisma.TransactionClient;
 
 /**
  * The first PENDING task on `reportId`'s running approval instance that
  * `userId` may decide — or, with `mayOverride` (the `expense.report.decide.any`
  * grant), any of them but their own. Returns `null` when the report has no
- * running instance or the caller has no decidable task.
+ * running instance or the caller has no decidable task. The returned id is
+ * exactly what `expenseApprovals.decide` expects.
+ *
+ * `mayOverride` MUST be the override permission, not a read permission: this is
+ * what puts Approve / Reject / Return on the workbench, and the mutation behind
+ * those buttons asks the same question with the same flag. Feed it `read.all`
+ * and an AP clerk gets buttons that either 403 or, worse, work.
  */
 export async function resolveDecidableTask(
   db: Db,
@@ -33,13 +35,31 @@ export async function resolveDecidableTask(
   userId: string,
   mayOverride: boolean,
 ): Promise<string | null> {
-  return resolveVeloExpenseTask(queryRunnerOf(db), reportId, userId, { isAdmin: mayOverride });
+  const report = await db.expenseReport.findUnique({
+    where: { id: reportId },
+    select: { approvalInstanceId: true },
+  });
+  if (!report?.approvalInstanceId) return null;
+  const tasks = await db.approvalTask.findMany({
+    where: { instanceId: report.approvalInstanceId, status: 'PENDING' },
+    select: { id: true },
+  });
+  for (const task of tasks) {
+    if (await canDecide(db, task.id, userId, mayOverride)) return task.id;
+  }
+  return null;
 }
 
 /**
  * True when `userId` may decide on `reportId` — an eligible approver of a PENDING task
  * on the report's running instance, which an override holder is for anyone's report but
  * their own.
+ *
+ * The `isAdmin` short-circuit that used to stand here made this DISAGREE with the
+ * mutation it guards: the page offered Approve on the strength of a role, while
+ * `expenseApprovals.decide` asks the engine. Once the engine started refusing a
+ * requester their own subject, that gap became a button that fails when pressed — so
+ * the question is asked in one place, and both surfaces get the same answer.
  */
 export async function callerCanDecideReport(
   db: Db,

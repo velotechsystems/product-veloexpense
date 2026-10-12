@@ -87,6 +87,9 @@ export interface IssuedToken {
 /**
  * Mint a token for (task, action, recipient).
  *
+ * w4-00c: the task is an approval ENGINE task (`approval_instance_task`), stored in
+ * `instance_task_id` (0061). The ladder's `task_id` is history only.
+ *
  * 32 random bytes, base64url. Only the sha256 is persisted, so a database leak
  * yields nothing usable — the raw value exists in exactly one place, which is a
  * link in somebody's mailbox.
@@ -105,7 +108,7 @@ export async function issueActionToken(
   const expiresAt = addBusinessDays(input.now ?? new Date(), TOKEN_TTL_BUSINESS_DAYS);
   const r = await tx.query(
     `INSERT INTO action_token
-       (organization_id, token_hash, task_id, action, recipient_id, expires_at, delivery_id)
+       (organization_id, token_hash, instance_task_id, action, recipient_id, expires_at, delivery_id)
      VALUES (${ORG}, $1, $2, $3, $4, $5, $6)
      RETURNING id`,
     [hashToken(raw), input.taskId, input.action, input.recipientId, expiresAt, input.deliveryId ?? null],
@@ -165,7 +168,7 @@ export async function verifyActionToken(
   if (!raw) return null;
   const expected = hashToken(raw);
   const r = await tx.query(
-    `SELECT id, organization_id, token_hash, task_id, action, recipient_id,
+    `SELECT id, organization_id, token_hash, instance_task_id, action, recipient_id,
             expires_at, consumed_at
        FROM action_token WHERE token_hash = $1`,
     [expected],
@@ -174,11 +177,14 @@ export async function verifyActionToken(
   if (!row) return null;
   if (!sameHash(row.token_hash as string, expected)) return null;
   if (row.consumed_at !== null) return null;
+  // w4-00c: a ladder link (no engine task) was retired by 0061; one that slipped through
+  // names nothing the engine can decide.
+  if (row.instance_task_id === null) return null;
   if ((row.expires_at as Date).getTime() < now.getTime()) return null;
   return {
     id: row.id as string,
     organizationId: row.organization_id as string,
-    taskId: row.task_id as string,
+    taskId: row.instance_task_id as string,
     action: row.action as TokenAction,
     recipientId: row.recipient_id as string,
     expiresAt: row.expires_at as Date,
@@ -225,7 +231,7 @@ export async function consumeActionToken(tx: QueryRunner, id: string): Promise<b
 export async function consumeTaskTokens(tx: QueryRunner, taskId: string): Promise<number> {
   const r = await tx.query(
     `UPDATE action_token SET consumed_at = clock_timestamp()
-      WHERE task_id = $1 AND consumed_at IS NULL`,
+      WHERE instance_task_id = $1 AND consumed_at IS NULL`,
     [taskId],
   );
   return r.rowCount ?? 0;

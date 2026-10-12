@@ -33,7 +33,7 @@ export async function inTenant<T>(data: unknown, run: () => Promise<T>): Promise
  *
  * Returns how many jobs it queued.
  */
-export async function fanOutToTenants<N extends 'expense.receiptChase'>(
+export async function fanOutToTenants<N extends 'expense.receiptChase' | 'approval.sweepExpired'>(
   job: N,
   data: Omit<JobMap[N], 'organizationId'>,
 ): Promise<number> {

@@ -1,87 +1,48 @@
 'use server';
 /**
- * VX2-4 — the approver's actions.
+ * VX2-4 — the approver's inbox, read for /approvals.
  *
- * Gated as a MEMBER, not an admin: being an eligible approver of a pending task
- * IS the authorization, and there is no blanket "approve" permission. That is
- * ExpenseOS's model too, and their `reportApproval.ts` says it best — "being an
- * eligible (assigned or claimable) approver of a PENDING task on the report's
- * running instance IS the authorization".
+ * w4-00c: read from ExpenseOS's engine — `loadMyExpenseApprovalTasks`, the same loader
+ * ExpenseOS's `expenseApprovals.myTasks` answers the sidebar's count from — so the page and
+ * the count cannot disagree. Being an eligible approver of a pending task IS the
+ * authorization, as ExpenseOS says ("being an eligible (assigned or claimable) approver of a
+ * PENDING task on the report's running instance IS the authorization"); deciding happens on
+ * the report, through `expenseApprovals.decide`, which asks the engine again.
  *
- * The decision itself goes through `engine.decide`, which calls
- * `assertCanDecide` as its first statement. So the permission question is asked
- * in exactly one place, by both the page that renders the buttons and the
- * mutation behind them (GAP-AUDIT AP-15).
+ * The form action that decided from this page (`decideFromForm`) is gone with the ladder:
+ * nothing posted to it since the report workbench took over deciding (w2-02a).
  */
-import { redirect } from 'next/navigation';
-import { errorParam } from '@/lib/errors/domain';
-import { revalidatePath } from 'next/cache';
-import { auth } from '@/auth';
-import { withCurrentOrg } from '@/lib/tenant/request';
-import type { QueryRunner } from '@/lib/db/client';
-import { requireActor } from '@/lib/auth/actor';
-import type { EmployeeRow } from '@/lib/employees/service';
-import { listInbox } from '@/lib/approvals/inbox';
-import { decide, type Decision } from '@/lib/approvals/engine';
-
-const PAGE = '/approvals';
-
-async function asActor<T>(fn: (tx: QueryRunner, actor: EmployeeRow) => Promise<T>): Promise<T> {
-  const session = await auth();
-  const email = session?.user?.email;
-  if (!email) throw new Error('unauthenticated');
-  return withCurrentOrg(async (tx) => fn(tx, await requireActor(tx, email)));
-}
+import { SYSTEM_ROLE_IDS } from '@expenseos/rbac';
+import { forbidden } from 'next/navigation';
+import { withTenantDb } from '@/lib/db/prisma';
+import type { InboxRoute } from '@/lib/i18n/catalog/enums';
+import { loadMyExpenseApprovalTasks } from '@/server/routers/expenseApprovals';
+import { shellContext } from '@/server/shell';
 
 export async function getInbox() {
-  return asActor(async (tx, actor) => ({
-    tasks: await listInbox(tx, actor.id, { isAdmin: actor.role === 'ADMIN' }),
-    actor: { id: actor.id, name: actor.display_name ?? actor.email, role: actor.role },
-  }));
-}
-
-const DECISIONS: readonly Decision[] = ['APPROVED', 'REJECTED', 'RETURNED'];
-
-function text(form: FormData, key: string): string | null {
-  const value = form.get(key);
-  if (typeof value !== 'string') return null;
-  const trimmed = value.trim();
-  return trimmed === '' ? null : trimmed;
-}
-
-/**
- * One entry point for all three outcomes. The three buttons are one form with
- * `name="decision"` and different `value`s — no client JS, and no way to submit
- * a decision the server does not recognise.
- */
-export async function decideFromForm(form: FormData) {
-  const taskId = text(form, 'taskId');
-  const reportId = text(form, 'reportId');
-  const back = reportId ? `/expenses/${reportId}` : PAGE;
-  try {
-    const decision = text(form, 'decision');
-    if (!decision || !DECISIONS.includes(decision as Decision)) {
-      throw new Error('pick approve, return, or reject');
-    }
-    if (!taskId) throw new Error('taskId is required');
-    await asActor((tx, actor) =>
-      decide(
-        tx,
-        taskId,
-        actor.id,
-        decision as Decision,
-        {
-          note: text(form, 'note'),
-          receiptViewAcknowledged: form.get('receiptViewAcknowledged') !== null,
-        },
-        { isAdmin: actor.role === 'ADMIN' },
-      ),
+  const shell = await shellContext();
+  if (!shell) forbidden();
+  const { user } = shell;
+  return withTenantDb(user.organizationId, async (db) => {
+    const inbox = await loadMyExpenseApprovalTasks(db, user.id);
+    // VeloExpense: why each one is yours — assigned to you, or open to you to take (a pool,
+    // or the no-manager fallback). The loader lists only those two.
+    const assigned = new Set(
+      (
+        await db.approvalTask.findMany({
+          where: { id: { in: inbox.items.map((i) => i.taskId) }, assigneeUserId: user.id },
+          select: { id: true },
+        })
+      ).map((t) => t.id),
     );
-  } catch (err) {
-    const message = errorParam(err, 'approvals');
-    redirect(`${back}?error=${encodeURIComponent(message)}`);
-  }
-  revalidatePath(PAGE);
-  if (reportId) revalidatePath(`/expenses/${reportId}`);
-  redirect(back);
+    return {
+      tasks: inbox.items.map((i) => ({
+        ...i,
+        route: (assigned.has(i.taskId) ? 'ASSIGNED' : 'ROLE_POOL') as InboxRoute,
+      })),
+      capped: inbox.capped,
+      cappedAt: inbox.cappedAt,
+      actor: { id: user.id, isAdmin: shell.rbac.roleId === SYSTEM_ROLE_IDS.admin },
+    };
+  });
 }

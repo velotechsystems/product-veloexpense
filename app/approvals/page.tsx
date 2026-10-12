@@ -1,10 +1,15 @@
 /**
  * VX2-4 — /approvals, the approver's inbox.
  *
- * "What is waiting on ME": tasks assigned to me, tasks assigned to somebody who
- * delegated to me, and role pools I hold. Deliberately NOT everything an admin
- * could decide — an admin reaches other people's approvals from the report
- * itself, because an inbox that lists the whole tenant is not an inbox.
+ * "What is waiting on ME": tasks assigned to me, and tasks open to me to take — a pool,
+ * or the no-manager fallback. Deliberately NOT everything an admin could decide — an
+ * admin reaches other people's approvals from the report itself, because an inbox that
+ * lists the whole tenant is not an inbox.
+ *
+ * w4-00c: read from ExpenseOS's engine (`getInbox` → `loadMyExpenseApprovalTasks`). A task
+ * is routed to a delegate when it is created, so "covering for" and the ladder's step and
+ * rung columns are gone with the ladder. When the engine stops reading a very large pool
+ * part-way (`capped`), the page says so rather than presenting a prefix as the queue.
  *
  * Deciding happens on the report, not here. An approver who has not opened the
  * report has not seen what they are approving, and one-click approval from a
@@ -59,7 +64,7 @@ export default async function ApprovalsPage({
   // valid on their own types.
   const t = (key: UiKey) => uiText(key, prefs.locale);
   const { error } = await searchParams;
-  const { tasks, actor } = await getInbox();
+  const { tasks, actor, capped, cappedAt } = await getInbox();
 
   return (
     <Screen>
@@ -70,7 +75,7 @@ export default async function ApprovalsPage({
             ? t('approvals.none.waiting')
             : [
                 uiPlural('approvals.count.waiting', tasks.length, {}, prefs.locale),
-                actor.role === 'ADMIN' ? t('approvals.count.admin.suffix') : null,
+                actor.isAdmin ? t('approvals.count.admin.suffix') : null,
               ]
                 .filter(Boolean)
                 .join(' ')
@@ -85,6 +90,11 @@ export default async function ApprovalsPage({
       />
 
       <ErrorBanner message={error} />
+      {capped ? (
+        <p className="text-sm text-muted-foreground">
+          {uiSentence('approvals.capped', { n: String(cappedAt) }, prefs.locale)}
+        </p>
+      ) : null}
 
       <TableCard>
         <Table className="min-w-[840px]">
@@ -93,63 +103,35 @@ export default async function ApprovalsPage({
               <TableHead>{t('approvals.column.report')}</TableHead>
               <TableHead>{t('approvals.column.submitted.by')}</TableHead>
               <TableHead>{t('approvals.column.total')}</TableHead>
-              <TableHead>{t('approvals.column.step')}</TableHead>
               <TableHead>{t('approvals.column.why')}</TableHead>
               <TableHead>{t('approvals.column.waiting.since')}</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {tasks.length === 0 ? (
-              <EmptyRow colSpan={6}>{t('approvals.empty')}</EmptyRow>
+              <EmptyRow colSpan={5}>{t('approvals.empty')}</EmptyRow>
             ) : (
               tasks.map((task) => (
                 <TableRow key={task.taskId}>
                   <TableCell>
                     <Link
-                      href={`/expenses/${task.reportId}`}
+                      href={`/expenses/${task.report.id}`}
                       className="font-medium underline underline-offset-4"
                     >
-                      {task.reportTitle}
+                      {task.report.title}
                     </Link>
-                    <p className="text-xs text-muted-foreground">{task.reportNumber ?? '—'}</p>
+                    <p className="text-xs text-muted-foreground">{task.report.number ?? '—'}</p>
                   </TableCell>
-                  <TableCell>{task.submitterName}</TableCell>
+                  <TableCell>{task.report.submitter.firstName ?? task.report.submitter.email}</TableCell>
                   <TableCell className="tabular-nums">
-                    {formatMinor(task.totalMinor, task.currencyCode, undefined, prefs.locale)}
-                  </TableCell>
-                  <TableCell>
-                    {uiSentence(
-                      'approvals.step.of',
-                      { step: String(task.step), steps: String(task.totalSteps) },
-                      prefs.locale,
-                    )}
-                    {task.rungName ? (
-                      <p className="text-xs text-muted-foreground">{task.rungName}</p>
-                    ) : null}
+                    {formatMinor(task.report.totalMinor, task.report.currency.code, undefined, prefs.locale)}
                   </TableCell>
                   <TableCell>
                     <Badge variant="secondary">{enumLabel(INBOX_ROUTE_COPY, task.route, prefs.locale)}</Badge>
-                    {task.route === 'DELEGATED' && task.coveringFor ? (
-                      <p className="text-xs text-muted-foreground">
-                        {uiSentence('approvals.covering.for', { name: task.coveringFor }, prefs.locale)}
-                      </p>
-                    ) : null}
-                    {task.escalationLevel > 0 ? (
-                      // Non-zero means the ladder was not literally met — the
-                      // resolver walked past somebody absent, or fell short of
-                      // the level the rung asked for. An approver seeing a report
-                      // they did not expect deserves to know why.
-                      <p className="text-xs text-muted-foreground">
-                        {uiPlural(
-                          'approvals.escalated',
-                          task.escalationLevel,
-                          {},
-                          prefs.locale,
-                        )}
-                      </p>
-                    ) : null}
                   </TableCell>
-                  <TableCell className="text-muted-foreground">{formatInstant(task.submittedAt, prefs)}</TableCell>
+                  <TableCell className="text-muted-foreground">
+                    {formatInstant(task.report.submittedAt, prefs)}
+                  </TableCell>
                 </TableRow>
               ))
             )}

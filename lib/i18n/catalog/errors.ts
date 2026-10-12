@@ -112,6 +112,8 @@ export const USER_MESSAGE_CODES = [
   'RECEIPT_ACK_REQUIRED',
   'STEP_UNROUTABLE',
   'SUBMIT_NEEDS_APPROVER',
+  /* w4-00c (d58): no published approval workflow governs the report. */
+  'SUBMIT_NO_WORKFLOW',
   'REPORT_NOT_AWAITING_APPROVAL',
   'RUN_ALREADY_OPEN',
 
@@ -611,6 +613,14 @@ export const ERROR_COPY: Record<UserMessageCode, Copy> = {
       'Nobody else here can approve this report, and an expense report cannot be approved by ' +
       'the person who filed it. Invite somebody who can approve (Employees \u2192 Invite someone) ' +
       'or give yourself a manager, then submit again. Your report is saved as a draft.',
+  },
+  SUBMIT_NO_WORKFLOW: {
+    // d58: ExpenseOS approves a report no workflow governs; VeloExpense refuses it. The fix
+    // is an administrator's, so the copy says whose — and that nothing was lost.
+    'en-CA':
+      'No approval workflow applies to this report, so it cannot be submitted. Ask an ' +
+      'administrator to publish one (Admin \u2192 Approval workflows). Your report has not ' +
+      'been submitted and is unchanged.',
   },
   REPORT_NOT_AWAITING_APPROVAL: {
     'en-CA': 'That report is not waiting for approval.',

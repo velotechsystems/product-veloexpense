@@ -101,7 +101,8 @@ describe("an admin's menu", () => {
         '/admin/notification-templates',
         '/admin/modules',
         '/admin/integrations',
-        '/admin/approval-ladder',
+        // w4-00c: the builder, at its own path, since the cutover retired the ladder.
+        '/admin/approval-workflows',
         // Ported in Wave 0 — the first ExpenseOS screen at its own path.
         '/admin/expense-categories',
         // Ported in Wave 1.

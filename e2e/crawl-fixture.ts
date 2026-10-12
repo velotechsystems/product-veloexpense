@@ -129,6 +129,11 @@ const REPORT_COUNT = 26;
  * rows, so an all-read fixture would leave it uncounted and an all-unread one
  * would leave the read path unrendered.
  */
+/** w4-00c: the crawl's own workflow, inactive so it never routes a real submit. */
+const CRAWL_FLOW_KEY = 'crawl-fixture';
+/** The Admin system role (@expenseos/rbac SYSTEM_ROLE_IDS.admin), the pool's fallback. */
+const ADMIN_ROLE_ID = '019e3000-0000-7000-8000-000000000001';
+
 const NOTIFICATION_COUNT = 3;
 
 export interface CrawlFixture {
@@ -168,19 +173,16 @@ export async function installCrawlFixture(): Promise<CrawlFixture> {
     const employeeId = await userId(pool, orgId, EMPLOYEE_EMAIL);
 
     // ── clean first ────────────────────────────────────────────────────────
-    // Children before parents; `approval_task` has no cascade from the report.
+    // w4-00c: the engine's instances (their tasks cascade), and the workflow they ran on.
     await pool.query(
-      `DELETE FROM approval_task
-        WHERE request_id IN (SELECT q.id FROM approval_request q
-                               JOIN expense_report r ON r.id = q.report_id
-                              WHERE r.title LIKE $1)`,
+      `DELETE FROM approval_instance
+        WHERE subject_id IN (SELECT id FROM expense_report WHERE title LIKE $1)`,
       [`${TAG}%`],
     );
-    await pool.query(
-      `DELETE FROM approval_request
-        WHERE report_id IN (SELECT id FROM expense_report WHERE title LIKE $1)`,
-      [`${TAG}%`],
-    );
+    await pool.query('DELETE FROM approval_workflow WHERE organization_id = $1 AND key = $2', [
+      orgId,
+      CRAWL_FLOW_KEY,
+    ]);
     await pool.query('DELETE FROM expense_report WHERE title LIKE $1', [`${TAG}%`]);
     await pool.query(
       'DELETE FROM delegation WHERE organization_id = $1 AND note = $2',
@@ -201,9 +203,12 @@ export async function installCrawlFixture(): Promise<CrawlFixture> {
     // crawl is the last thing that runs, so nothing downstream is deprived of a
     // task it was going to assert on — and if that ordering ever changes, this is
     // the line that has to be revisited.
+    // w4-00c: on the engine; and the open pool tasks the admin could take, for the same
+    // reason — they are in the admin's inbox too.
     await pool.query(
-      `DELETE FROM approval_task
-        WHERE organization_id = $1 AND assignee_id = $2 AND status = 'PENDING'`,
+      `DELETE FROM approval_instance_task
+        WHERE organization_id = $1 AND status = 'PENDING'
+          AND (assignee_user_id = $2 OR assignee_user_id IS NULL)`,
       [orgId, adminId],
     );
     // The crawl admin's notifications, cleared for the same reason as their
@@ -256,76 +261,78 @@ export async function installCrawlFixture(): Promise<CrawlFixture> {
       [orgId, TAG, adminId, REPORT_COUNT],
     );
 
-    // ── /approvals: one ASSIGNED task, escalated, with a named rung ────────
+    // ── /approvals: one ASSIGNED task, and one open to the admin's role ────
     //
     // Submitted by the EMPLOYEE, never by the admin: `canDecide` drops a report
     // routed to its own submitter, and a fixture that tripped over that would
     // leave the inbox empty while looking correct in the SQL.
     //
-    // escalation_level 1 is deliberate. It is the only way to render "routed 1
-    // step from the rung", a sentence with a count and a plural in it -- and the
-    // reason this ticket needs a plural mechanism rather than two more flat keys.
-    const assigned = await pool.query(
-      `INSERT INTO expense_report
-         (organization_id, number, title, status, total_minor, currency_code,
-          submitter_id, submitted_at)
-       VALUES ($1, 'EXP-9900', $2 || ' awaiting your decision', 'SUBMITTED', 84200, 'CAD', $3, now() - interval '3 days')
-       RETURNING id`,
-      [orgId, TAG, employeeId],
-    );
-    const assignedReport = assigned.rows[0].id as string;
-
-    const request = await pool.query(
-      `INSERT INTO approval_request
-         (organization_id, report_id, policy_snapshot, status, current_step, total_steps,
-          subject_total_minor, subject_currency_code, opened_by_id)
-       VALUES ($1, $2, $3::jsonb, 'RUNNING', 1, 2, 84200, 'CAD', $4)
-       RETURNING id`,
-      [
-        orgId,
-        assignedReport,
-        JSON.stringify([
-          { step: 1, policyName: 'Manager review', requireReceiptViewAck: false },
-          { step: 2, policyName: 'Finance review', requireReceiptViewAck: false },
-        ]),
-        employeeId,
+    // w4-00c: on ExpenseOS's engine — an instance on a one-step workflow, the step's
+    // no-manager fallback the Admin role. The first task is ASSIGNED to the admin ("Assigned
+    // to you"); the second is unassigned, open to the role ("Your role"). The ladder's
+    // escalation count and "covering for" are gone with it.
+    const graph = {
+      nodes: [
+        { id: 'start', type: 'start' },
+        {
+          id: 'review',
+          type: 'approval',
+          approver: { kind: 'manager', fallback: { kind: 'role', roleId: ADMIN_ROLE_ID } },
+        },
+        { id: 'done', type: 'approved' },
       ],
-    );
-    await pool.query(
-      `INSERT INTO approval_task
-         (organization_id, request_id, step, assignee_id, resolved_via, escalation_level, status)
-       VALUES ($1, $2, 1, $3, 'MANAGER_CHAIN', 1, 'PENDING')`,
-      [orgId, request.rows[0].id as string, adminId],
-    );
-
-    // ── /approvals: one DELEGATED task, so "for <name>" renders ────────────
-    const delegated = await pool.query(
-      `INSERT INTO expense_report
-         (organization_id, number, title, status, total_minor, currency_code,
-          submitter_id, submitted_at)
-       VALUES ($1, 'EXP-9901', $2 || ' covering for a colleague', 'SUBMITTED', 41000, 'CAD', $3, now() - interval '2 days')
-       RETURNING id`,
-      [orgId, TAG, employeeId],
-    );
-    const delegatedRequest = await pool.query(
-      `INSERT INTO approval_request
-         (organization_id, report_id, policy_snapshot, status, current_step, total_steps,
-          subject_total_minor, subject_currency_code, opened_by_id)
-       VALUES ($1, $2, $3::jsonb, 'RUNNING', 1, 1, 41000, 'CAD', $4)
-       RETURNING id`,
-      [
-        orgId,
-        delegated.rows[0].id as string,
-        JSON.stringify([{ step: 1, policyName: 'Manager review', requireReceiptViewAck: false }]),
-        employeeId,
+      edges: [
+        { id: 'e1', source: 'start', target: 'review' },
+        { id: 'e2', source: 'review', target: 'done' },
       ],
+    };
+    const workflow = await pool.query(
+      `INSERT INTO approval_workflow (organization_id, key, name, subject_type, active)
+       VALUES ($1, $2, 'Crawl fixture', 'EXPENSE_REPORT', false) RETURNING id`,
+      [orgId, CRAWL_FLOW_KEY],
     );
-    await pool.query(
-      `INSERT INTO approval_task
-         (organization_id, request_id, step, assignee_id, resolved_via, escalation_level, status)
-       VALUES ($1, $2, 1, $3, 'MANAGER_CHAIN', 0, 'PENDING')`,
-      [orgId, delegatedRequest.rows[0].id as string, managerId],
+    const version = await pool.query(
+      `INSERT INTO approval_workflow_version (organization_id, workflow_id, version, match_condition, graph)
+       VALUES ($1, $2, 1, '{"always": true}', $3::jsonb) RETURNING id`,
+      [orgId, workflow.rows[0].id, JSON.stringify(graph)],
     );
+    const awaiting = async (
+      number: string,
+      title: string,
+      totalMinor: number,
+      ago: string,
+      assignee: string | null,
+    ): Promise<string> => {
+      const report = await pool.query(
+        `INSERT INTO expense_report
+           (organization_id, number, title, status, total_minor, currency_code,
+            submitter_id, submitted_at)
+         VALUES ($1, $2, $3, 'SUBMITTED', $4, 'CAD', $5, now() - $6::interval)
+         RETURNING id`,
+        [orgId, number, `${TAG} ${title}`, totalMinor, employeeId, ago],
+      );
+      const reportId = report.rows[0].id as string;
+      const instance = await pool.query(
+        `INSERT INTO approval_instance
+           (organization_id, workflow_version_id, subject_type, subject_id, cursor, effective_graph)
+         VALUES ($1, $2, 'EXPENSE_REPORT', $3, '{}', $4::jsonb) RETURNING id`,
+        [orgId, version.rows[0].id, reportId, JSON.stringify(graph)],
+      );
+      await pool.query(
+        `INSERT INTO approval_instance_task (organization_id, instance_id, node_id, assignee_user_id, label)
+         VALUES ($1, $2, 'review', $3, 'approval')`,
+        [orgId, instance.rows[0].id, assignee],
+      );
+      await pool.query(`UPDATE expense_report SET approval_instance_id = $1 WHERE id = $2`, [
+        instance.rows[0].id,
+        reportId,
+      ]);
+      return reportId;
+    };
+    const assignedReport = await awaiting('EXP-9900', 'awaiting your decision', 84200, '3 days', adminId);
+    await awaiting('EXP-9901', 'open to your role', 41000, '2 days', null);
+
+    // The delegations page still lists one.
     await pool.query(
       `INSERT INTO delegation
          (organization_id, from_user_id, to_user_id, starts_on, ends_on, scope, created_by_id, note)

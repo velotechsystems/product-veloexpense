@@ -24,14 +24,15 @@ test.afterAll(async () => {
 test.describe('as an admin', () => {
   test.use({ storageState: ADMIN_STATE });
 
-  test('is titled at its own path, while the menu still leads to the ladder that routes', async ({ page }) => {
-    // Until the cutover (w4-00c) the ladder decides every approval, so the menu's
-    // "Approval Workflows" still opens it (app/(app)/veloexpenseNav.ts); the cutover moves it.
+  test('is where the menu leads, titled at its own path', async ({ page }) => {
+    // w4-00c: the cutover retired the ladder, so the menu's "Approval Workflows" opens the
+    // builder, and the ladder's old address leads here too.
     await page.goto('/');
     await page.getByRole('link', { name: 'Approval Workflows' }).first().click();
-    await expect(page).toHaveURL(/\/admin\/approval-ladder$/);
-    await page.goto('/admin/approval-workflows');
+    await expect(page).toHaveURL(/\/admin\/approval-workflows$/);
     await expect(page.getByRole('heading', { name: /approval workflows/i, level: 1 })).toBeVisible();
+    await page.goto('/admin/approval-ladder');
+    await expect(page).toHaveURL(/\/admin\/approval-workflows$/);
   });
 
   test('creates a workflow as a draft, opens it on the canvas, and saves it', async ({ page }) => {

@@ -12,7 +12,9 @@
  */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { Pool } from 'pg';
-import { withOrg } from '@/lib/tenant/context';
+// w4-00c: the lifecycle starts the approval engine, which needs the tenant's Prisma
+// transaction (test/support/tenant-tx.ts) — the same `QueryRunner`, under the same name.
+import { seedDefaultFlow, withTenantTx as withOrg } from './support/tenant-tx';
 import * as expenses from '@/lib/expenses/service';
 import * as receipts from '@/lib/receipts/service';
 import * as lifecycle from '@/lib/expenses/lifecycle';
@@ -69,6 +71,9 @@ beforeAll(async () => {
     "INSERT INTO organization (slug, name) VALUES ('access-co','Access Co') RETURNING id",
   );
   orgId = o.rows[0].id;
+  // w4-00c: the default approval flow a provisioned tenant starts with (d54); without it a
+  // submit is refused (d58).
+  await seedDefaultFlow(orgId);
   await withOrg(orgId, async (tx) => {
     owner = await seedUser(tx, 'owner@access.test', 'EMPLOYEE');
     other = await seedUser(tx, 'other@access.test', 'EMPLOYEE');

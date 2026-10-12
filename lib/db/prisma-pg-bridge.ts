@@ -39,6 +39,9 @@ function pgValue(v: unknown): unknown {
   return v;
 }
 
+/** Each bridged runner's Prisma transaction, for `tenantDbOf`. */
+const sources = new WeakMap<object, TenantDb>();
+
 /** The tenant transaction `tx`, as the `QueryRunner` VeloExpense's `pg` services take. */
 export function queryRunnerOf(tx: TenantDb): QueryRunner {
   const runner = {
@@ -54,5 +57,20 @@ export function queryRunnerOf(tx: TenantDb): QueryRunner {
       return { rows: [], rowCount };
     },
   };
+  sources.set(runner, tx);
   return runner as unknown as QueryRunner;
+}
+
+/**
+ * w4-00c: the Prisma transaction behind a runner `queryRunnerOf` made, or null for a plain
+ * `pg` transaction (`withOrg`).
+ *
+ * For the report lifecycle (`lib/expenses/lifecycle.ts`), which is `pg` code and must start
+ * and stop ExpenseOS's approval engine, which is Prisma code, IN THE SAME TRANSACTION as the
+ * status it writes. A runner from `withOrg` is a different connection: the engine there would
+ * wait on the report row the lifecycle has locked. So the lifecycle asks for the transaction
+ * it was really given, and refuses a runner that has none.
+ */
+export function tenantDbOf(runner: QueryRunner): TenantDb | null {
+  return sources.get(runner as unknown as object) ?? null;
 }

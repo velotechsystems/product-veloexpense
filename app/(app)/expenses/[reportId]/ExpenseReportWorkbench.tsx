@@ -317,10 +317,7 @@ const receiptChip = (treatment: string, busy: boolean) =>
  * renderers do not care which: what they branch on is "does pressing this open
  * a panel", so one field carries it rather than two.
  */
-// VeloExpense: `approve` is a panel only when the step requires the receipt-view
-// acknowledgement (see `receiptAck`); otherwise Approve stays the one-press action it is
-// in ExpenseOS.
-type DecidePanel = 'return' | 'reject' | 'reassign' | 'approve';
+type DecidePanel = 'return' | 'reject' | 'reassign';
 
 /** Every action this report offers, to whoever is looking at it. */
 type WorkbenchActionId = DecidePanel | 'approve' | 'recall' | 'submit' | 'delete';
@@ -641,7 +638,6 @@ export function ExpenseReportWorkbench({
   canFxOverride,
   canOpenLedgerQueue,
   taskId,
-  receiptAck,
 }: {
   reportId: string;
   canEdit: boolean;
@@ -659,10 +655,6 @@ export function ExpenseReportWorkbench({
   canOpenLedgerQueue: boolean;
   /** The caller's PENDING task on this report, when they can decide it. */
   taskId?: string;
-  /** VeloExpense: set when the caller's step requires them to confirm they reviewed the
-   *  receipts before approving (`requireReceiptViewAck`, on by default) — VeloExpense's
-   *  engine refuses the approval without it. Not in ExpenseOS. */
-  receiptAck?: { required: true; receiptCount: number };
 }) {
   const toolbarLabels = useToolbarLabels();
   const t = useTranslations('expenses');
@@ -852,8 +844,6 @@ export function ExpenseReportWorkbench({
   const [checked, setChecked] = useState<Set<string>>(new Set());
   // Approver decide flow: 'idle', or a reject/return/reassign popover is open.
   const [decideMode, setDecideMode] = useState<'idle' | DecidePanel>('idle');
-  /** VeloExpense: the receipt-view acknowledgement, ticked in the approve panel. */
-  const [receiptsReviewed, setReceiptsReviewed] = useState(false);
   const [decideNote, setDecideNote] = useState('');
   /**
    * Which currency the header total is READ in. Null = the report's own.
@@ -1509,7 +1499,6 @@ export function ExpenseReportWorkbench({
     // VeloExpense (d37): a reassignment carries a reason too, so the note clears for every
     // panel. ExpenseOS cleared it only for reject and return.
     setDecideNote('');
-    setReceiptsReviewed(false);
     setDecideMode(open ? panel : 'idle');
   };
 
@@ -1523,42 +1512,7 @@ export function ExpenseReportWorkbench({
    * machine stays unforked across the two destinations.
    */
   const decidePanel = (panel: DecidePanel) =>
-    panel === 'approve' ? (
-      // VeloExpense: the acknowledgement VeloExpense's engine requires on this step.
-      // Returning or rejecting does not ask for it: neither claims the evidence was
-      // reviewed. The server enforces it, not this markup.
-      <>
-        <label className="flex items-start gap-2 text-sm">
-          <Checkbox
-            className="mt-0.5"
-            // The kit Checkbox is a Base UI span, which a wrapping <label> does not name.
-            aria-label={t('approvals.receiptAck', { count: receiptAck?.receiptCount ?? 0 })}
-            checked={receiptsReviewed}
-            onCheckedChange={(v) => setReceiptsReviewed(v === true)}
-          />
-          <span>
-            {t('approvals.receiptAck', { count: receiptAck?.receiptCount ?? 0 })}
-            {receiptAck?.receiptCount === 0 && (
-              <strong className="ml-1 text-destructive">{t('approvals.receiptAckNone')}</strong>
-            )}
-          </span>
-        </label>
-        <div className="mt-2 flex justify-end">
-          <Button
-            size="sm"
-            variant="success-outline"
-            disabled={decidePending || !receiptsReviewed}
-            onClick={() => {
-              setSubmitError(null);
-              if (taskId) decide.mutate({ taskId, approve: true, receiptViewAcknowledged: true });
-              setDecideMode('idle');
-            }}
-          >
-            {t('approvals.confirmApprove')}
-          </Button>
-        </div>
-      </>
-    ) : panel === 'reassign' ? (
+    panel === 'reassign' ? (
       <>
         <UserCombobox
           value={reassignTo}
@@ -1672,17 +1626,13 @@ export function ExpenseReportWorkbench({
         {
           id: 'approve',
           label: t('approvals.approve'),
-          // VeloExpense: through the acknowledgement panel when the step requires it.
-          onPress: receiptAck?.required
-            ? () => openDecidePanel('approve', true)
-            : () => {
-                setSubmitError(null);
-                if (taskId) decide.mutate({ taskId, approve: true });
-              },
+          onPress: () => {
+            setSubmitError(null);
+            if (taskId) decide.mutate({ taskId, approve: true });
+          },
           variant: 'success-outline',
           disabled: decidePending,
           emphasis: 'primary',
-          ...(receiptAck?.required ? { needsNote: 'approve' as const } : {}),
         },
       );
     } else {

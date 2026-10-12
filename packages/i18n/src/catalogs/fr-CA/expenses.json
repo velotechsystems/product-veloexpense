@@ -346,7 +346,6 @@
   "approvals": {
     "acknowledge": "Confirmer la lecture",
     "approve": "Approuver",
-    "confirmApprove": "Confirmer l’approbation",
     "approveSelected": "Approuver {count, plural, one {# rapport} other {# rapports}}",
     "awaitingName": "En attente de {name}",
     "bulkApproved": "{count, plural, one {# rapport approuvé} other {# rapports approuvés}}.",
@@ -389,9 +388,7 @@
     "viewRenamePrompt": "Renommer la vue :",
     "viewTeam": "Mon équipe",
     "viewUntitled": "Vue sans titre",
-    "withColumn": "Chez",
-    "receiptAck": "J’ai examiné {count, plural, =0 {les reçus} one {le reçu} other {les # reçus}} de ce rapport.",
-    "receiptAckNone": "Aucun n’est joint — l’approbation le consignera."
+    "withColumn": "Chez"
   },
   "allExpenses": {
     "chaseNone": "Rien à demander — ces dépenses ont déjà un reçu.",

@@ -24,11 +24,20 @@
  */
 import { describe, it, expect, beforeAll, beforeEach, afterAll } from 'vitest';
 import { Pool } from 'pg';
-import { withOrg } from '@/lib/tenant/context';
+// w4-00c: the lifecycle starts the approval engine, which needs the tenant's Prisma
+// transaction (test/support/tenant-tx.ts) — the same `QueryRunner`, under the same name.
+import {
+  decideAs,
+  linearFlow,
+  publishFlow,
+  recallAsApp,
+  seedDefaultFlow,
+  submitAsApp,
+  withTenantTx as withOrg,
+} from './support/tenant-tx';
 import * as expenses from '@/lib/expenses/service';
-import * as lifecycle from '@/lib/expenses/lifecycle';
-import * as approvals from '@/lib/approvals/service';
-import { decide } from '@/lib/approvals/engine';
+import { SYSTEM_ROLE_IDS } from '@expenseos/rbac';
+import { returnThroughEngine } from '@/server/lib/reportLifecycle';
 import { DEFAULT_LOCALE, shippedBody, templateKeyFor } from '@/lib/notifications/catalog';
 import { TEST_ACTOR } from './support/audit-actor';
 import { TODAY } from './support/dates';
@@ -93,10 +102,9 @@ async function submitted(amountMinor = 1000, title = 'Trip') {
     await expenses.addLineItem(tx, TEST_ACTOR, expense.id, { categoryId, amountMinor });
     return report.id as string;
   });
-  const { approval } = await withOrg(orgId, (tx) =>
-    lifecycle.submitReport(tx, reportId, submitter),
-  );
-  return { reportId, ...approval };
+  // w4-00c: as the app submits — the transition, then the first approvers told.
+  const { approval } = await submitAsApp(orgId, reportId, submitter);
+  return { reportId, ...approval, taskId: approval.createdTaskIds[0] };
 }
 
 function inboxOf(userId: string, unreadOnly = false) {
@@ -104,9 +112,7 @@ function inboxOf(userId: string, unreadOnly = false) {
 }
 
 function approve(taskId: string, actorId: string) {
-  return withOrg(orgId, (tx) =>
-    decide(tx, taskId, actorId, 'APPROVED', { receiptViewAcknowledged: true }),
-  );
+  return decideAs(orgId, taskId, actorId, 'APPROVED');
 }
 
 beforeAll(async () => {
@@ -115,6 +121,9 @@ beforeAll(async () => {
     "INSERT INTO organization (slug, name) VALUES ('notif-co','Notif Co') RETURNING id",
   );
   orgId = o.rows[0].id;
+  // w4-00c: the default approval flow a provisioned tenant starts with (d54); without it a
+  // submit is refused (d58).
+  await seedDefaultFlow(orgId);
   manager = await mkUser('mgr@notif.test', 'MANAGER');
   submitter = await mkUser(SUBMITTER, 'EMPLOYEE', manager);
   second = await mkUser('second@notif.test', 'MANAGER', null);
@@ -153,6 +162,8 @@ beforeEach(async () => {
      DELETE FROM activity;
      DELETE FROM notification_preference;
      DELETE FROM notification_template;
+     DELETE FROM approval_instance;
+     DELETE FROM approval_workflow WHERE key <> 'expense-report-default';
      DELETE FROM approval_task;
      DELETE FROM approval_request;
      DELETE FROM expense_report_event;
@@ -257,13 +268,19 @@ describe('a decision notifies the submitter', () => {
         `BEGIN;
          SELECT set_config('app.audit_purge','on',true);
          DELETE FROM audit_entry; DELETE FROM notification; DELETE FROM activity;
-         DELETE FROM approval_task; DELETE FROM approval_request;
+         DELETE FROM approval_instance; DELETE FROM approval_task; DELETE FROM approval_request;
          DELETE FROM expense_report_event; DELETE FROM expense_line_item;
          DELETE FROM expense; DELETE FROM expense_report;
          COMMIT;`,
       );
-      const { taskId } = await submitted();
-      await withOrg(orgId, (tx) => decide(tx, taskId!, manager, decision));
+      const { reportId, taskId } = await submitted();
+      // w4-00c: a return is its own action on the engine (`returnForEdit`), not a decision.
+      if (decision === 'REJECTED') await decideAs(orgId, taskId!, manager, decision);
+      else {
+        await withOrg(orgId, (_tx, db) =>
+          returnThroughEngine(db, { reportId, actorId: manager, note: null, mayOverride: false }),
+        );
+      }
       const mine = await inboxOf(submitter);
       expect(mine.map((r) => r.eventType), decision).toEqual([decision]);
     }
@@ -546,16 +563,9 @@ describe('the fan-out', () => {
   it('tells every active holder of a claim role, and nobody who is not one', async () => {
     // A role pool is the one fan-out wider than one person: nobody is assigned
     // from it, so a task nobody is told about is a task nobody claims.
-    await withOrg(orgId, (tx) =>
-      approvals.createPolicy(tx, {
-        name: 'Finance',
-        sequence: 1,
-        thresholdMinor: '0',
-        requireReceiptViewAck: false,
-        enabled: true,
-        approvers: [{ position: 1, approverKind: 'ROLE', approverRole: 'ADMIN' }],
-      }),
-    );
+    // w4-00c: the engine's pool is a step's ROLE fallback — the default flow's, for a
+    // submitter with no manager on file (d59).
+    await admin.query('UPDATE app_user SET manager_id = NULL WHERE id = $1', [submitter]);
     const otherAdmin = await mkUser('fin2@notif.test', 'ADMIN');
     const goneAdmin = await mkUser('fin3@notif.test', 'ADMIN');
     await admin.query("UPDATE app_user SET employee_status = 'DEACTIVATED' WHERE id = $1", [
@@ -578,27 +588,20 @@ describe('the fan-out', () => {
       "UPDATE app_user SET employee_status = 'DEACTIVATED' WHERE id = ANY($1::uuid[])",
       [[otherAdmin, goneAdmin]],
     );
+    await admin.query('UPDATE app_user SET manager_id = $2 WHERE id = $1', [submitter, manager]);
   });
 
   it('tells the next step approver when a middle step passes, and not the submitter', async () => {
-    await withOrg(orgId, async (tx) => {
-      await approvals.createPolicy(tx, {
-        name: 'Manager',
-        sequence: 1,
-        thresholdMinor: '0',
-        requireReceiptViewAck: false,
-        enabled: true,
-        approvers: [{ position: 1, approverKind: 'MANAGER', managerLevel: 1 }],
-      });
-      await approvals.createPolicy(tx, {
-        name: 'Second',
-        sequence: 2,
-        thresholdMinor: '0',
-        requireReceiptViewAck: false,
-        enabled: true,
-        approvers: [{ position: 1, approverKind: 'USER', approverUserId: second }],
-      });
-    });
+    // w4-00c: two steps on the engine — the manager, then a second approver.
+    await publishFlow(
+      orgId,
+      'two-steps',
+      linearFlow(
+        { kind: 'manager', fallback: { kind: 'role', roleId: SYSTEM_ROLE_IDS.admin } },
+        // A pool of one: the engine has no "named person" approver; a filter on the user is.
+        { kind: 'filter', match: { field: 'userId', op: 'eq', value: second } },
+      ),
+    );
     const { taskId } = await submitted();
     await approve(taskId!, manager);
 
@@ -611,7 +614,7 @@ describe('the fan-out', () => {
   it('tells the approvers whose tasks a recall just cancelled', async () => {
     const { reportId } = await submitted();
     expect((await inboxOf(manager)).map((r) => r.eventType)).toEqual(['TASK_ASSIGNED']);
-    await withOrg(orgId, (tx) => lifecycle.recallReport(tx, reportId, submitter));
+    await recallAsApp(orgId, reportId, submitter);
 
     const theirs = await inboxOf(manager);
     expect(theirs.map((r) => r.eventType).sort()).toEqual(['RECALLED', 'TASK_ASSIGNED']);

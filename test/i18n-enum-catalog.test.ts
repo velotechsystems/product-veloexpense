@@ -122,7 +122,7 @@ const CATALOGUES: {
   { name: 'DelegationScope', members: DELEGATION_SCOPES, copy: DELEGATION_SCOPE_COPY, fromArray: true },
   {
     name: 'InboxRoute',
-    members: ['ASSIGNED', 'DELEGATED', 'ROLE_POOL'],
+    members: ['ASSIGNED', 'ROLE_POOL'], // w4-00c: DELEGATED went with the ladder.
     copy: INBOX_ROUTE_COPY,
     fromArray: false,
   },

@@ -43,8 +43,7 @@ import { decideFromToken } from '@/lib/notifications/approve';
  */
 export async function decideFromTokenForm(form: FormData) {
   const raw = typeof form.get('token') === 'string' ? (form.get('token') as string) : '';
-  const ack = form.get('receiptViewAcknowledged') !== null;
-  const result = await decideFromToken(raw, { receiptViewAcknowledged: ack });
+  const result = await decideFromToken(raw);
   if (result.kind === 'DONE') redirect(`/approve?done=${result.action}`);
   // `result.reason` is a MESSAGE CODE since part 2c-2, not a sentence — the page
   // renders it through `ErrorBanner` like every other refusal. `errorCodeParam`

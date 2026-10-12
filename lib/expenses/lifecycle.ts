@@ -24,11 +24,16 @@ import type { QueryRunner } from '@/lib/db/client';
 import { DomainError, type UserMessage } from '@/lib/errors/domain';
 import type { UserMessageCode } from '@/lib/i18n/catalog/errors';
 import * as policy from '@/lib/policy/service';
-import * as engine from '@/lib/approvals/engine';
+import { startInstance, type StartResult } from '@expenseos/approvals/engine';
+import { writeAudit } from '@expenseos/audit';
 import { recomputeForReport } from '@/lib/budgets/service';
+import { rolesStandingFor } from '@/lib/approvals/systemRoleHolders';
+import { tenantDbOf } from '@/lib/db/prisma-pg-bridge';
+import type { TenantDb } from '@/lib/db/prisma';
+import { enqueuePost } from '@/lib/integrations/post-outbox';
+import { notify, reportPayload } from '@/lib/notifications/service';
 import type { ReportStatus } from '@/lib/expenses/service';
 import { append as auditAppend } from '@/lib/audit/service';
-import { notify, reportPayload } from '@/lib/notifications/service';
 import { capabilityAvailability } from '@/lib/integrations/service';
 import { uncodedCategories, uncodedDiagnostic } from '@/lib/integrations/coding';
 import { ORG } from '@/lib/tenant/sql';
@@ -46,6 +51,12 @@ export type LifecycleErrorCode =
   | 'BLOCKED_BY_POLICY'
   /** w2-11 (d34): a WARNING nobody has justified — ExpenseOS's `unjustifiedWarning` gate. */
   | 'UNJUSTIFIED_WARNING'
+  /** w4-00c (d58): no published workflow governs the report. ExpenseOS approves it; this
+   *  refuses, so a missing flow can never approve spend by omission. */
+  | 'NO_WORKFLOW'
+  /** w4-00c: the flow routed the report only to its own submitter, who may not decide it
+   *  (4 Oct 2026: nobody approves their own expenses, a solo founder included). */
+  | 'NO_APPROVER'
   | 'FORBIDDEN';
 
 export class LifecycleError extends DomainError {
@@ -74,9 +85,11 @@ export interface ReportEvent {
   action: TransitionAction;
   from_status: ReportStatus;
   to_status: ReportStatus;
-  actor_id: string;
+  /** Null for a transition no person made (w4-00c): an approval deadline passing, or a
+   *  flow that decided on submit. `context.system` then names what made it. */
+  actor_id: string | null;
   actor_name: string | null;
-  actor_email: string;
+  actor_email: string | null;
   note: string | null;
   context: Record<string, unknown>;
   created_at: Date;
@@ -93,6 +106,23 @@ const RECALLABLE: ReportStatus[] = ['SUBMITTED', 'RETURNED'];
  * (`decide` closes it), so `openRun` below opens a fresh one, as it does after a recall.
  */
 const SUBMITTABLE: ReportStatus[] = ['DRAFT', 'RETURNED'];
+
+/**
+ * w4-00c: the tenant's Prisma transaction behind `tx`. ExpenseOS's approval engine is Prisma
+ * code, and it must run in the SAME transaction as the status this module writes — a plain
+ * `pg` transaction (`withOrg`) is another connection, and the engine there would queue behind
+ * the report row this one has locked. So a transition is called with `queryRunnerOf(db)`.
+ */
+function requireTenantDb(tx: QueryRunner): TenantDb {
+  const db = tenantDbOf(tx);
+  if (!db) {
+    throw new Error(
+      'lifecycle: a report transition runs on the tenant Prisma transaction (queryRunnerOf), ' +
+        'which the approval engine shares — not on a separate pg transaction',
+    );
+  }
+  return db;
+}
 
 /**
  * The report's head. `lock: true` for a TRANSITION (submit, recall): the row is
@@ -119,7 +149,8 @@ async function recordEvent(
     action: TransitionAction;
     fromStatus: ReportStatus;
     toStatus: ReportStatus;
-    actorId: string;
+    /** Null only for a transition no person made, with `context.system` naming what did. */
+    actorId: string | null;
     note?: string | null;
     context?: Record<string, unknown>;
   },
@@ -144,12 +175,12 @@ export interface SubmitResult {
   report: { id: string; number: string | null; status: ReportStatus; submitted_at: Date };
   validation: policy.ValidationSummary;
   /**
-   * The approval run opened for this submission (VX2-3). Always present: a
-   * SUBMITTED report with no run is the fail-open state — it looks pending
-   * forever and is indistinguishable, from the outside, from one waiting on a
-   * busy manager.
+   * The approval instance started for this submission — ExpenseOS's `startInstance` result
+   * (w4-00c). Never NO_WORKFLOW (d58 refuses that), so a SUBMITTED report always has a
+   * running instance: the fail-open state, a report that looks pending forever, cannot
+   * be reached. Its `createdTaskIds` and `firedEffects` are the caller's to notify and run.
    */
-  approval: { requestId: string; totalSteps: number; taskId: string };
+  approval: StartResult & { instanceId: string };
 }
 
 /** DRAFT → SUBMITTED. Throws LifecycleError with the blocking findings attached. */
@@ -368,19 +399,8 @@ export async function submitReport(
     },
   });
 
-  /**
-   * Open the approval run in THIS transaction.
-   *
-   * Coupled rather than left to the caller on purpose. `openRun` routes every
-   * step all-or-nothing, so an unroutable ladder refuses the submit HERE, while
-   * the employee is at their screen and can be told — instead of days later when
-   * an approver clicks and the report has nowhere to go. The cost is that a
-   * tenant with no manager chain AND no active administrator cannot submit at
-   * all; that is the correct direction to fail, and it is why every tenant is
-   * seeded with an admin.
-   */
-  // REPORT_SUBMITTED into the audit chain, BEFORE the run is opened so the chain
-  // reads in the order things happened: put forward, then routed.
+  // REPORT_SUBMITTED into the audit chain, BEFORE the report is routed, so the chain reads
+  // in the order things happened: put forward, then routed.
   await auditTransition(tx, actorId, 'REPORT_SUBMITTED', reportId, {
     reportNumber: report.number ?? null,
     totalMinor: String(report.total_minor),
@@ -388,9 +408,200 @@ export async function submitReport(
     acknowledgedCount: validation.violations.filter((v) => v.resolved_at !== null).length,
   });
 
-  const approval = await engine.openRun(tx, reportId, actorId);
+  const approval = await routeSubmittedReport(tx, reportId, report.number ?? null);
+  const status = await tx.query(`SELECT status FROM expense_report WHERE id = $1`, [reportId]);
+  return {
+    report: { ...updated.rows[0], status: status.rows[0].status as ReportStatus },
+    validation,
+    approval,
+  };
+}
 
-  return { report: updated.rows[0], validation, approval };
+/**
+ * w4-00c: route a report that has just become SUBMITTED, on ExpenseOS's engine, in THIS
+ * transaction — ExpenseOS's `expenses.submit` after its checks (`startInstance`, the status
+ * it implies, `approvalInstanceId`).
+ *
+ * Coupled to the submit rather than left to the caller, as the ladder's `openRun` was: a
+ * report that cannot be routed is refused HERE, while the employee is at their screen and
+ * can be told, and the whole submit rolls back with it. VeloExpense's differences:
+ *   · NO_WORKFLOW refuses the submit (d58). ExpenseOS approves the report;
+ *   · a flow that routes the report only to its own submitter refuses it (NO_APPROVER) —
+ *     the 4 Oct 2026 rule the ladder enforced, which the engine leaves to `canDecide`, where
+ *     the task would sit with nobody able to act on it;
+ *   · a flow that decides on submit (a condition with no approval on its path) goes through
+ *     `recordReportOutcome`, as a decision does — the budget, the history, the ledger post
+ *     and the audit row. ExpenseOS posts it from the router (`postApprovedReport`).
+ */
+async function routeSubmittedReport(
+  tx: QueryRunner,
+  reportId: string,
+  reportNumber: string | null,
+): Promise<StartResult & { instanceId: string }> {
+  const db = requireTenantDb(tx);
+  const start = await startInstance(db, 'EXPENSE_REPORT', reportId);
+  if (start.status === 'NO_WORKFLOW' || start.instanceId === null) {
+    throw new LifecycleError(
+      `no approval workflow governs report ${reportNumber ?? reportId}`,
+      'NO_WORKFLOW',
+      [],
+      'SUBMIT_NO_WORKFLOW',
+    );
+  }
+  await tx.query(`UPDATE expense_report SET approval_instance_id = $2 WHERE id = $1`, [
+    reportId,
+    start.instanceId,
+  ]);
+  if (start.status === 'RUNNING') {
+    await assertSomeoneElseCanDecide(db, reportId, start.createdTaskIds);
+  } else {
+    await recordReportOutcome(tx, {
+      reportId,
+      outcome: start.status,
+      actor: { system: 'approval.workflow' },
+      note: null,
+      context: { instanceId: start.instanceId },
+    });
+  }
+  return { ...start, instanceId: start.instanceId };
+}
+
+/**
+ * w4-00c: refuse a submit whose first approvals could only be decided by the submitter.
+ *
+ * The engine assigns what the flow names, and `canDecide` refuses a requester their own
+ * report — so a task parked on the submitter, or a pool whose only member is the submitter,
+ * is a report nobody can move. Two cases are knowable here, and both are refused:
+ *   · a task ASSIGNED to the submitter (a named fallback, a manager chain that loops back);
+ *   · an UNASSIGNED task whose node falls back to a ROLE that nobody but the submitter holds
+ *     — the default flow's case (d59) for a solo founder, which `SUBMIT_NEEDS_APPROVER`
+ *     already explains in the words the setup checklist uses.
+ * A filter pool, or a relative approver with no fallback, is open to whoever the engine finds
+ * eligible when they look; this does not try to predict that, and does not refuse it.
+ */
+async function assertSomeoneElseCanDecide(
+  db: TenantDb,
+  reportId: string,
+  taskIds: string[],
+): Promise<void> {
+  if (taskIds.length === 0) return;
+  const report = await db.expenseReport.findUnique({
+    where: { id: reportId },
+    select: { submitterId: true },
+  });
+  if (!report) return;
+  const tasks = await db.approvalTask.findMany({
+    where: { id: { in: taskIds } },
+    select: {
+      assigneeUserId: true,
+      nodeId: true,
+      instance: { select: { effectiveGraph: true } },
+    },
+  });
+  const stranded: boolean[] = [];
+  for (const t of tasks) {
+    if (t.assigneeUserId !== null) {
+      stranded.push(t.assigneeUserId === report.submitterId);
+      continue;
+    }
+    const graph = t.instance.effectiveGraph as {
+      nodes?: Array<{ id: string; approver?: { fallback?: { kind: string; roleId?: string } } }>;
+    } | null;
+    const fallback = graph?.nodes?.find((n) => n.id === t.nodeId)?.approver?.fallback;
+    if (fallback?.kind !== 'role' || !fallback.roleId) {
+      stranded.push(false);
+      continue;
+    }
+    const others = await db.user.count({
+      where: {
+        role: { in: rolesStandingFor(fallback.roleId) },
+        id: { not: report.submitterId },
+        deletedAt: null,
+        employeeStatus: 'ACTIVE',
+      },
+    });
+    stranded.push(others === 0);
+  }
+  // Every first approval stranded: nobody can move the report. One reachable approval of
+  // several (a parallel step) is enough to keep it moving.
+  if (stranded.length > 0 && stranded.every(Boolean)) {
+    throw new LifecycleError(
+      `report ${reportId} would route only to its own submitter`,
+      'NO_APPROVER',
+      [],
+      'SUBMIT_NEEDS_APPROVER',
+    );
+  }
+}
+
+/** The outcomes a decision, a lapsed deadline or a flow can bring a submitted report to. */
+export type ReportOutcome = 'APPROVED' | 'REJECTED' | 'RETURNED';
+
+/** Who brought it about: a person, or — for a deadline or a flow — the named system. */
+export type OutcomeActor = { userId: string } | { system: string };
+
+/**
+ * w4-00c: everything VeloExpense does when a submitted report reaches an outcome, in the
+ * transaction that reached it. The engine writes the status (`applyTerminal`; a return writes
+ * it in `expenseApprovals.returnForEdit`); this writes what follows from it, which the ladder's
+ * `decide` did on the transition and every path to an outcome must do alike:
+ *   · the budgets, recomputed (VX4-5) — the report leaves pending, or becomes actual;
+ *   · the report's history (`expense_report_event`), with the approver's note;
+ *   · on APPROVED, the ledger post queued (VX3-4, AC-6/AC-7), which ExpenseOS's routers call
+ *     `postApprovedReport` for — a row on the transition, so no caller can forget it;
+ *   · the audit chain: REPORT_APPROVED / _REJECTED / _RETURNED, as the person, or as the
+ *     named system (`system:<name>`).
+ * Notifying the submitter is the caller's (`server/lib/reportNotify.ts`), as in ExpenseOS.
+ */
+export async function recordReportOutcome(
+  tx: QueryRunner,
+  input: {
+    reportId: string;
+    outcome: ReportOutcome;
+    actor: OutcomeActor;
+    note: string | null;
+    /** Extra facts for the history row and the audit row (the task, an override). */
+    context?: Record<string, unknown>;
+  },
+): Promise<void> {
+  const userId = 'userId' in input.actor ? input.actor.userId : null;
+  const system = 'system' in input.actor ? input.actor.system : null;
+  await recomputeForReport(tx, input.reportId, userId);
+  await recordEvent(tx, {
+    reportId: input.reportId,
+    action:
+      input.outcome === 'APPROVED' ? 'APPROVE' : input.outcome === 'REJECTED' ? 'REJECT' : 'RETURN',
+    fromStatus: 'SUBMITTED',
+    toStatus: input.outcome,
+    actorId: userId,
+    note: input.note,
+    context: { ...(input.context ?? {}), ...(system ? { system } : {}) },
+  });
+  if (input.outcome === 'APPROVED') await enqueuePost(tx, input.reportId);
+
+  const number = await tx.query(`SELECT number FROM expense_report WHERE id = $1`, [input.reportId]);
+  const action =
+    input.outcome === 'APPROVED'
+      ? 'REPORT_APPROVED'
+      : input.outcome === 'REJECTED'
+        ? 'REPORT_REJECTED'
+        : 'REPORT_RETURNED';
+  const details = {
+    reportNumber: (number.rows[0]?.number as string | null | undefined) ?? null,
+    note: input.note,
+    ...(input.context ?? {}),
+  };
+  if (userId) {
+    await auditTransition(tx, userId, action, input.reportId, details);
+  } else {
+    await writeAudit(requireTenantDb(tx), {
+      action,
+      entityType: 'expense_report',
+      entityId: input.reportId,
+      actor: { kind: 'system', jobName: system ?? 'approval' },
+      details,
+    });
+  }
 }
 
 /**
@@ -404,7 +615,12 @@ export async function submitReport(
 async function auditTransition(
   tx: QueryRunner,
   actorId: string,
-  action: 'REPORT_SUBMITTED' | 'REPORT_RECALLED',
+  action:
+    | 'REPORT_SUBMITTED'
+    | 'REPORT_RECALLED'
+    | 'REPORT_APPROVED'
+    | 'REPORT_REJECTED'
+    | 'REPORT_RETURNED',
   reportId: string,
   details: Record<string, unknown>,
 ): Promise<void> {
@@ -462,22 +678,18 @@ export async function recallReport(
     );
   }
 
-  // Cancel the approval run, or the next submit cannot open one —
-  // approval_request_one_running_idx allows exactly one RUNNING request per
-  // report. Recalling and resubmitting deliberately opens a NEW run rather than
-  // resuming the old one: 0008's reasoning is that a report's total can move
-  // while it is back in DRAFT, so re-banding an existing run would let an
-  // employee returned at three sign-offs trim a line and resubmit into one.
-  // REPORT_RECALLED BEFORE the run is cancelled, so the chain reads cause then
-  // effect — taken back, then the run voided — the mirror of submit's order.
-  // The cancelled run's id is on its own APPROVAL_RUN_CANCELLED row.
+  // Cancel the approval instance. Recalling and resubmitting deliberately starts a NEW
+  // instance rather than resuming the old one: a report's total can move while it is back
+  // in DRAFT, and the workflow it matches can move with it.
+  // ExpenseOS writes no audit row of its own for the cancelled instance, so REPORT_RECALLED
+  // carries it: which instance was voided, and how many pending tasks with it.
+  const cancelled = await cancelApprovalInstance(requireTenantDb(tx), reportId);
   await auditTransition(tx, actorId, 'REPORT_RECALLED', reportId, {
     reportNumber: report.number ?? null,
     fromStatus: report.status,
     note: note ?? null,
+    ...(cancelled ? { instanceId: cancelled.instanceId, cancelledTasks: cancelled.taskIds.length } : {}),
   });
-
-  const cancelled = await engine.cancelRunForReport(tx, reportId, actorId);
 
   // Back to DRAFT is spend LEAVING the pending total. Without this a recalled
   // report keeps consuming its budget forever, and the only thing on screen would
@@ -492,12 +704,134 @@ export async function recallReport(
     actorId,
     note: note ?? null,
     context: cancelled
-      ? { cancelledRequestId: cancelled.requestId, cancelledTasks: cancelled.cancelledTasks }
+      ? { cancelledInstanceId: cancelled.instanceId, cancelledTasks: cancelled.taskIds.length }
       : {},
   });
 
-  return updated.rows[0];
+  // The approvers whose pending tasks were cancelled — the caller tells them
+  // (`notifyReportRecalled`), as ExpenseOS's `expenses.recall` does.
+  return { ...updated.rows[0], cancelledTaskIds: cancelled?.taskIds ?? [] };
 }
+
+/**
+ * w4-00c: ExpenseOS's recall body (`expenses.recall`, 550b2945) — the report's running
+ * instance CANCELLED and its pending tasks SKIPPED — returning the tasks it cancelled,
+ * captured BEFORE they were skipped. Null when nothing was running: a RETURNED report's
+ * instance has already ended, and refusing the recall on that basis would strand it.
+ *
+ * VeloExpense: the instance is the report's `approval_instance_id`, read under the lock the
+ * recall already holds on the report, and a cancelled instance's tasks are only those still
+ * PENDING, as ExpenseOS's are.
+ */
+async function cancelApprovalInstance(
+  db: TenantDb,
+  reportId: string,
+): Promise<{ instanceId: string; taskIds: string[] } | null> {
+  const report = await db.expenseReport.findUnique({
+    where: { id: reportId },
+    select: { approvalInstanceId: true },
+  });
+  const instanceId = report?.approvalInstanceId ?? null;
+  if (!instanceId) return null;
+  const instance = await db.approvalInstance.findUnique({
+    where: { id: instanceId },
+    select: { status: true },
+  });
+  if (instance?.status !== 'RUNNING') return null;
+  // Capture the approvers to notify BEFORE the tasks are skipped.
+  const taskIds = (
+    await db.approvalTask.findMany({
+      where: { instanceId, status: 'PENDING' },
+      select: { id: true },
+    })
+  ).map((tk) => tk.id);
+  await db.approvalTask.updateMany({
+    where: { instanceId, status: 'PENDING' },
+    data: { status: 'SKIPPED' },
+  });
+  await db.approvalInstance.update({
+    where: { id: instanceId },
+    data: { status: 'CANCELLED', completedAt: new Date() },
+  });
+  return { instanceId, taskIds };
+}
+
+/**
+ * w4-00c (d52): a report submitted on the approval LADDER, before the cutover, goes back to
+ * DRAFT with a note in its history, and its submitter submits it again on the new engine.
+ *
+ * Such a report is SUBMITTED with no `approval_instance_id`: every submit after the cutover
+ * starts an instance (`routeSubmittedReport`), so the pair names exactly the ladder's
+ * leftovers and running this twice finds nothing the second time. Each one is recalled as a
+ * recall is — the report row locked, its ladder run and pending tasks CANCELLED, the budgets
+ * recomputed, the history row and the audit row written — by the system, not a person
+ * (`approval.cutover`). The submitter is not notified: d52 asks for the history note, and the
+ * report is back in their drafts where they will see it.
+ *
+ * Run per tenant by the approval sweep (`worker/src/handlers/approval-sweep.ts`), which the
+ * worker runs once at boot as well as hourly, so it happens within moments of the deploy.
+ * Returns how many reports it recalled.
+ */
+export async function recallLadderSubmissions(tx: QueryRunner): Promise<number> {
+  const db = requireTenantDb(tx);
+  const leftovers = await tx.query(
+    `SELECT id FROM expense_report WHERE status = 'SUBMITTED' AND approval_instance_id IS NULL`,
+  );
+  let recalled = 0;
+  for (const row of leftovers.rows) {
+    const reportId = row.id as string;
+    const report = await requireReport(tx, reportId, true);
+    const updated = await tx.query(
+      `UPDATE expense_report
+          SET status = 'DRAFT', submitted_at = NULL, updated_at = now()
+        WHERE id = $1 AND status = 'SUBMITTED' AND approval_instance_id IS NULL`,
+      [reportId],
+    );
+    if (updated.rowCount !== 1) continue;
+    const runs = await tx.query(
+      `UPDATE approval_request SET status = 'CANCELLED', closed_at = clock_timestamp()
+        WHERE report_id = $1 AND status = 'RUNNING'
+        RETURNING id`,
+      [reportId],
+    );
+    const tasks = await tx.query(
+      `UPDATE approval_task t SET status = 'CANCELLED', decided_at = clock_timestamp()
+         FROM approval_request q
+        WHERE q.id = t.request_id AND q.report_id = $1 AND t.status = 'PENDING'`,
+      [reportId],
+    );
+    await recomputeForReport(tx, reportId, null);
+    const context = {
+      system: 'approval.cutover',
+      cancelledRequestIds: runs.rows.map((r) => r.id as string),
+      cancelledTasks: tasks.rowCount ?? 0,
+    };
+    await recordEvent(tx, {
+      reportId,
+      action: 'RECALL',
+      fromStatus: 'SUBMITTED',
+      toStatus: 'DRAFT',
+      actorId: null,
+      note: LADDER_RECALL_NOTE,
+      context,
+    });
+    await writeAudit(db, {
+      action: 'REPORT_RECALLED',
+      entityType: 'expense_report',
+      entityId: reportId,
+      actor: { kind: 'system', jobName: 'approval.cutover' },
+      details: { reportNumber: report.number ?? null, fromStatus: 'SUBMITTED', ...context },
+    });
+    recalled += 1;
+  }
+  return recalled;
+}
+
+/** The history note on a report the cutover recalled (d52). Stored, not rendered from a
+ *  key: it is a record of what was said at the time, like an approver's note. */
+export const LADDER_RECALL_NOTE =
+  'Returned to draft when approvals moved to the new workflow engine. Nothing in it changed — ' +
+  'submit it again to send it for approval.';
 
 /* ── reimbursement ─────────────────────────────────────────────────────────── */
 
@@ -746,7 +1080,7 @@ export async function listEvents(tx: QueryRunner, reportId: string): Promise<Rep
             u.display_name AS actor_name, u.email AS actor_email,
             e.note, e.context, e.created_at
        FROM expense_report_event e
-       JOIN app_user u ON u.id = e.actor_id
+       LEFT JOIN app_user u ON u.id = e.actor_id
       WHERE e.report_id = $1
       ORDER BY e.created_at DESC, e.id DESC`,
     [reportId],

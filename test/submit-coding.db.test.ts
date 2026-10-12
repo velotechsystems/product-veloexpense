@@ -28,7 +28,9 @@ process.env.SECRET_ENCRYPTION_KEY =
 
 import { describe, it, expect, beforeAll, beforeEach, afterAll } from 'vitest';
 import { Pool } from 'pg';
-import { withOrg } from '@/lib/tenant/context';
+// w4-00c: the lifecycle starts the approval engine, which needs the tenant's Prisma
+// transaction (test/support/tenant-tx.ts) — the same `QueryRunner`, under the same name.
+import { seedDefaultFlow, withTenantTx as withOrg } from './support/tenant-tx';
 import * as svc from '@/lib/expenses/service';
 import * as lifecycle from '@/lib/expenses/lifecycle';
 import * as integrations from '@/lib/integrations/service';
@@ -90,6 +92,9 @@ beforeAll(async () => {
     "INSERT INTO organization (slug, name) VALUES ('coding-co','Coding Co') RETURNING id",
   );
   orgId = o.rows[0].id;
+  // w4-00c: the default approval flow a provisioned tenant starts with (d54); without it a
+  // submit is refused (d58).
+  await seedDefaultFlow(orgId);
   // VX4-1: absence means off, and since 0022 the gate is in `gl_account`'s RLS
   // policy, so this has to precede the account insert.
   await admin.query(

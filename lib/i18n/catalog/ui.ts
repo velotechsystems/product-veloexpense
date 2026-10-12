@@ -309,7 +309,6 @@ export const UI_COPY = {
   'approvals.column.report': { 'en-CA': 'Report' },
   'approvals.column.submitted.by': { 'en-CA': 'Submitted by' },
   'approvals.column.total': { 'en-CA': 'Total' },
-  'approvals.column.step': { 'en-CA': 'Step' },
   'approvals.column.why': { 'en-CA': 'Why you' },
   'approvals.column.waiting.since': { 'en-CA': 'Waiting since' },
   // The link TEXT of `approvals.footer`, and the same for `expenses.empty.start`.
@@ -489,10 +488,10 @@ export const UI_SENTENCES = {
   /* ── /approvals ─────────────────────────────────────────────────────────── */
   'approvals.count.waiting.one': { 'en-CA': '{n} waiting on you' },
   'approvals.count.waiting.other': { 'en-CA': '{n} waiting on you' },
-  'approvals.step.of': { 'en-CA': '{step} of {steps}' },
-  'approvals.covering.for': { 'en-CA': 'for {name}' },
-  'approvals.escalated.one': { 'en-CA': 'routed {n} step from the rung' },
-  'approvals.escalated.other': { 'en-CA': 'routed {n} steps from the rung' },
+  // w4-00c: the engine stopped reading a very large pool at {n} (`capApprovalPool`).
+  'approvals.capped': {
+    'en-CA': 'More than {n} approvals are open to you; this list shows the oldest {n}.',
+  },
   'approvals.footer': {
     'en-CA':
       'Open a report to approve, return or reject it — the decision lives with the thing you are deciding on. Going away? {link} — you keep your queue, your stand-in gains the ability to decide.',

@@ -27,13 +27,18 @@
  *
  * ── HOW THE RACE IS FORCED ─────────────────────────────────────────────────
  *
- * Same technique as `test/policy-concurrent-validate.db.test.ts` (#129): raw
- * clients, because `withOrg` commits and so cannot express an overlap. The FIRST
+ * Same technique as `test/policy-concurrent-validate.db.test.ts` (#129): the FIRST
  * transaction does its whole job and stays open; the SECOND is started and not
  * awaited; `waitUntilBlocked` asks Postgres — not the promise — whether the
  * second is actually waiting on a lock before the first commits. A run in which
  * the second never blocked did not overlap anything and fails rather than
  * passing vacuously.
+ *
+ * w4-00c: the two transactions are the tenant's Prisma transactions (`holdOpen`,
+ * `contend`), not raw clients, because a submit, a recall and a decision now start or
+ * move ExpenseOS's approval engine, which runs on Prisma in the same transaction
+ * (test/support/tenant-tx.ts). Each still commits only when told to, so the overlap is
+ * the same one.
  *
  * WHICH lock the second transaction waits on is recorded, not required. Before
  * the fix it is often the audit chain's per-org advisory lock (`lib/audit/chain.ts`)
@@ -45,20 +50,22 @@
  * report lock", and that rejection is what showed where `addLineItem` queues.)
  */
 import { describe, it, expect, beforeAll, beforeEach, afterAll } from 'vitest';
-import { Pool, type PoolClient } from 'pg';
-import { withOrg } from '@/lib/tenant/context';
+import { Pool } from 'pg';
+// w4-00c: the lifecycle starts the approval engine, which needs the tenant's Prisma
+// transaction (test/support/tenant-tx.ts) — the same `QueryRunner`, under the same name.
+import { seedDefaultFlow, withTenantTx as withOrg } from './support/tenant-tx';
 import * as expenses from '@/lib/expenses/service';
 import * as lifecycle from '@/lib/expenses/lifecycle';
 import * as policy from '@/lib/policy/service';
-import { decide } from '@/lib/approvals/engine';
+import { decideThroughEngine } from '@/server/lib/reportLifecycle';
+import type { QueryRunner } from '@/lib/db/client';
+import type { TenantDb } from '@/lib/db/prisma';
 import { TEST_ACTOR } from './support/audit-actor';
 import { TODAY } from './support/dates';
 
 const admin = new Pool({
   connectionString: process.env.ADMIN_DATABASE_URL ?? process.env.DATABASE_URL,
 });
-/** The app role, so the clients below are under RLS exactly as the app is. */
-const app = new Pool({ connectionString: process.env.DATABASE_URL });
 
 let orgId: string;
 let categoryId: string;
@@ -68,16 +75,48 @@ const SUBMITTER = 'sub@lock.test';
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-/** A client already inside a transaction, scoped to the tenant. */
-async function begin(): Promise<PoolClient> {
-  const client = await app.connect();
-  await client.query('BEGIN');
-  await client.query("SELECT set_config('app.current_org', $1, true)", [orgId]);
-  return client;
+type Work<T> = (tx: QueryRunner, db: TenantDb) => Promise<T>;
+
+/**
+ * w4-00c: the FIRST transaction — the tenant's, under RLS as the app is. It does `work`, then
+ * stays OPEN, holding whatever `work` locked, until `release()`; `committed` settles at COMMIT.
+ */
+function holdOpen<T>(work: Work<T>) {
+  let release!: () => void;
+  const gate = new Promise<void>((r) => (release = r));
+  let ready!: (v: T) => void;
+  let failed!: (e: unknown) => void;
+  const done = new Promise<T>((res, rej) => {
+    ready = res;
+    failed = rej;
+  });
+  const committed = withOrg(orgId, async (tx, db) => {
+    try {
+      ready(await work(tx, db));
+    } catch (e) {
+      failed(e);
+      throw e;
+    }
+    await gate;
+  }).catch(() => {});
+  return { done, release, committed };
 }
 
-async function pidOf(client: PoolClient): Promise<number> {
-  return (await client.query('SELECT pg_backend_pid() AS pid')).rows[0].pid as number;
+/**
+ * w4-00c: the SECOND transaction. It reports its backend pid first, so `waitUntilBlocked` can
+ * watch it, then runs `work`; `result` settles once it has COMMITTED (`ok`) or rolled back on
+ * the error `work` threw.
+ */
+function contend<T>(work: Work<T>) {
+  let tell!: (pid: number) => void;
+  const pid = new Promise<number>((r) => (tell = r));
+  const result = outcome(
+    withOrg(orgId, async (tx, db) => {
+      tell((await tx.query('SELECT pg_backend_pid() AS pid')).rows[0].pid as number);
+      return work(tx, db);
+    }),
+  );
+  return { pid, result };
 }
 
 /**
@@ -120,18 +159,6 @@ async function waitUntilBlocked(
   }
 }
 
-/**
- * ROLLBACK both, A first (it may be what B is waiting on), then release. A
- * client returned to the pool mid-transaction poisons every later test that
- * draws it — the first run of this suite timed out three tests that way.
- */
-async function closeBoth(a: PoolClient, b: PoolClient) {
-  await a.query('ROLLBACK').catch(() => {});
-  await b.query('ROLLBACK').catch(() => {});
-  a.release();
-  b.release();
-}
-
 /** Settle a promise into a value or the error it threw, for asserting after COMMIT. */
 async function outcome<T>(p: Promise<T>): Promise<{ ok: true; value: T } | { ok: false; error: unknown }> {
   try {
@@ -171,6 +198,9 @@ beforeAll(async () => {
     "INSERT INTO organization (slug, name) VALUES ('lock-co','Lock Co') RETURNING id",
   );
   orgId = o.rows[0].id;
+  // w4-00c: the default approval flow a provisioned tenant starts with (d54); without it a
+  // submit is refused (d58).
+  await seedDefaultFlow(orgId);
   await withOrg(orgId, async (tx) => {
     const m = await tx.query(
       `INSERT INTO app_user (organization_id, email, display_name, role)
@@ -198,7 +228,6 @@ beforeEach(async () => {
 
 afterAll(async () => {
   await admin.query('TRUNCATE app_user, organization CASCADE');
-  await app.end();
   await admin.end();
 });
 
@@ -207,30 +236,21 @@ describe('a submit and an edit of the same report, overlapping', () => {
     const { reportId, expenseId } = await draft();
     const before = await reportState(reportId);
 
-    const a = await begin();
-    const b = await begin();
-    const bPid = await pidOf(b);
-    try {
-      await lifecycle.submitReport(a, reportId, submitterId);
+    const a = holdOpen((tx) => lifecycle.submitReport(tx, reportId, submitterId));
+    await a.done;
+    const b = contend((tx) =>
+      expenses.addLineItem(tx, TEST_ACTOR, expenseId, { categoryId, amountMinor: 99_00 }),
+    );
+    const waitedOn = await waitUntilBlocked(await b.pid, b.result, 'edit behind submit');
+    // At the CHECK, on the report row — not at the end, on the audit chain.
+    expect(waitedOn, 'the second transaction did not wait at its status check').not.toBe('advisory');
+    a.release();
+    await a.committed;
 
-      const edit = outcome(
-        expenses.addLineItem(b, TEST_ACTOR, expenseId, { categoryId, amountMinor: 99_00 }),
-      );
-      const waitedOn = await waitUntilBlocked(bPid, edit, 'edit behind submit');
-      // At the CHECK, on the report row — not at the end, on the audit chain.
-      expect(waitedOn, 'the second transaction did not wait at its status check').not.toBe('advisory');
-      await a.query('COMMIT');
-
-      const result = await edit;
-      if (result.ok) await b.query('COMMIT');
-      else await b.query('ROLLBACK');
-
-      expect(result.ok, 'the edit landed on a report that was submitted while it waited').toBe(false);
-      expect((result as { error: { code?: string } }).error.code).toBe('NOT_DRAFT');
-      expect(await reportState(reportId)).toEqual({ ...before, status: 'SUBMITTED' });
-    } finally {
-      await closeBoth(a, b);
-    }
+    const result = await b.result;
+    expect(result.ok, 'the edit landed on a report that was submitted while it waited').toBe(false);
+    expect((result as { error: { code?: string } }).error.code).toBe('NOT_DRAFT');
+    expect(await reportState(reportId)).toEqual({ ...before, status: 'SUBMITTED' });
   });
 
   it("a submit that waits behind an edit validates the report WITH that edit's line", async () => {
@@ -244,110 +264,102 @@ describe('a submit and an edit of the same report, overlapping', () => {
     );
     const { reportId, expenseId } = await draft(10_00);
 
-    const a = await begin();
-    const b = await begin();
-    const bPid = await pidOf(b);
-    try {
-      await expenses.addLineItem(a, TEST_ACTOR, expenseId, { categoryId, amountMinor: 75_00 });
+    const a = holdOpen((tx) =>
+      expenses.addLineItem(tx, TEST_ACTOR, expenseId, { categoryId, amountMinor: 75_00 }),
+    );
+    await a.done;
+    const b = contend((tx) => lifecycle.submitReport(tx, reportId, submitterId));
+    const waitedOn = await waitUntilBlocked(await b.pid, b.result, 'submit behind edit');
+    // At the CHECK, on the report row — not at the end, on the audit chain.
+    expect(waitedOn, 'the second transaction did not wait at its status check').not.toBe('advisory');
+    a.release();
+    await a.committed;
 
-      const submit = outcome(lifecycle.submitReport(b, reportId, submitterId));
-      const waitedOn = await waitUntilBlocked(bPid, submit, 'submit behind edit');
-      // At the CHECK, on the report row — not at the end, on the audit chain.
-      expect(waitedOn, 'the second transaction did not wait at its status check').not.toBe('advisory');
-      await a.query('COMMIT');
-
-      const result = await submit;
-      if (result.ok) await b.query('COMMIT');
-      else await b.query('ROLLBACK');
-
-      expect(
-        result.ok,
-        'the submit went through having validated the report without the over-limit line',
-      ).toBe(false);
-      expect((result as { error: { code?: string } }).error.code).toBe('BLOCKED_BY_POLICY');
-      expect((await reportState(reportId)).status).toBe('DRAFT');
-    } finally {
-      await closeBoth(a, b);
-    }
+    const result = await b.result;
+    expect(
+      result.ok,
+      'the submit went through having validated the report without the over-limit line',
+    ).toBe(false);
+    expect((result as { error: { code?: string } }).error.code).toBe('BLOCKED_BY_POLICY');
+    expect((await reportState(reportId)).status).toBe('DRAFT');
   });
 });
+
+/** w4-00c: the report's pending engine task. */
+async function pendingTask(reportId: string): Promise<string[]> {
+  const task = await admin.query(
+    `SELECT t.id FROM approval_instance_task t JOIN approval_instance i ON i.id = t.instance_id
+      WHERE i.subject_id = $1 AND t.status = 'PENDING'`,
+    [reportId],
+  );
+  return task.rows.map((r) => r.id as string);
+}
 
 describe('an approval and a recall of the same report, overlapping', () => {
   it('a recall that waits behind an approval is REFUSED, and the report stays APPROVED', async () => {
     const { reportId } = await draft();
     await withOrg(orgId, (tx) => lifecycle.submitReport(tx, reportId, submitterId));
-    const task = await admin.query(
-      `SELECT t.id FROM approval_task t JOIN approval_request q ON q.id = t.request_id
-        WHERE q.report_id = $1 AND t.status = 'PENDING'`,
-      [reportId],
+    const tasks = await pendingTask(reportId);
+    expect(tasks).toHaveLength(1);
+
+    const a = holdOpen((_tx, db) =>
+      decideThroughEngine(db, {
+        taskId: tasks[0],
+        actorId: managerId,
+        approve: true,
+        note: null,
+        mayOverride: false,
+      }),
     );
-    expect(task.rows).toHaveLength(1);
+    await a.done;
+    const b = contend((tx) => lifecycle.recallReport(tx, reportId, submitterId, 'changed my mind'));
+    const waitedOn = await waitUntilBlocked(await b.pid, b.result, 'recall behind approval');
+    // At the CHECK, on the report row — not at the end, on the audit chain.
+    expect(waitedOn, 'the second transaction did not wait at its status check').not.toBe('advisory');
+    a.release();
+    await a.committed;
 
-    const a = await begin();
-    const b = await begin();
-    const bPid = await pidOf(b);
-    try {
-      await decide(a, task.rows[0].id as string, managerId, 'APPROVED', {
-        receiptViewAcknowledged: true,
-      });
-
-      const recall = outcome(lifecycle.recallReport(b, reportId, submitterId, 'changed my mind'));
-      const waitedOn = await waitUntilBlocked(bPid, recall, 'recall behind approval');
-      // At the CHECK, on the report row — not at the end, on the audit chain.
-      expect(waitedOn, 'the second transaction did not wait at its status check').not.toBe('advisory');
-      await a.query('COMMIT');
-
-      const result = await recall;
-      if (result.ok) await b.query('COMMIT');
-      else await b.query('ROLLBACK');
-
-      expect(result.ok, 'the recall put an APPROVED report back into DRAFT').toBe(false);
-      expect((result as { error: { code?: string } }).error.code).toBe('WRONG_STATUS');
-      expect((await reportState(reportId)).status).toBe('APPROVED');
-    } finally {
-      await closeBoth(a, b);
-    }
+    const result = await b.result;
+    expect(result.ok, 'the recall put an APPROVED report back into DRAFT').toBe(false);
+    expect((result as { error: { code?: string } }).error.code).toBe('WRONG_STATUS');
+    expect((await reportState(reportId)).status).toBe('APPROVED');
   });
 });
 
 describe('the other ordering, and the last write', () => {
   it('a decision that waits behind a recall is refused, and the report stays DRAFT', async () => {
     // Pinned for completeness, and said plainly: this one PASSED before the fix
-    // too. The task claim (`UPDATE approval_task … AND status = 'PENDING'`)
-    // already refused a decision on a task the recall had cancelled. Removing
-    // the engine's report lock does not fail it. That lock is there for the
-    // ORDER — report row, then tasks — which the recall and the decision used to
-    // take in opposite directions; a deadlock needs a timing this suite cannot
-    // force deterministically, so it is argued in the code, not proven here.
+    // too. The task claim (`UPDATE … AND status = 'PENDING'`) already refused a
+    // decision on a task the recall had cancelled. Removing the report lock does
+    // not fail it. That lock is there for the ORDER — report row, then tasks —
+    // which the recall and the decision used to take in opposite directions; a
+    // deadlock needs a timing this suite cannot force deterministically, so it is
+    // argued in the code, not proven here.
+    // w4-00c: the decision now waits at the lock in `decideThroughEngine`, and is refused
+    // there, under the lock, as withdrawn (the recall SKIPPED its task).
     const { reportId } = await draft();
     await withOrg(orgId, (tx) => lifecycle.submitReport(tx, reportId, submitterId));
-    const task = await admin.query(
-      `SELECT t.id FROM approval_task t JOIN approval_request q ON q.id = t.request_id
-        WHERE q.report_id = $1 AND t.status = 'PENDING'`,
-      [reportId],
+    const tasks = await pendingTask(reportId);
+
+    const a = holdOpen((tx) => lifecycle.recallReport(tx, reportId, submitterId, 'one more receipt'));
+    await a.done;
+    const b = contend((_tx, db) =>
+      decideThroughEngine(db, {
+        taskId: tasks[0],
+        actorId: managerId,
+        approve: true,
+        note: null,
+        mayOverride: false,
+      }),
     );
+    await waitUntilBlocked(await b.pid, b.result, 'approval behind recall');
+    a.release();
+    await a.committed;
 
-    const a = await begin();
-    const b = await begin();
-    const bPid = await pidOf(b);
-    try {
-      await lifecycle.recallReport(a, reportId, submitterId, 'one more receipt');
-
-      const approve = outcome(
-        decide(b, task.rows[0].id as string, managerId, 'APPROVED', { receiptViewAcknowledged: true }),
-      );
-      await waitUntilBlocked(bPid, approve, 'approval behind recall');
-      await a.query('COMMIT');
-
-      const result = await approve;
-      if (result.ok) await b.query('COMMIT');
-      else await b.query('ROLLBACK');
-
-      expect(result.ok, 'a cancelled task was decided').toBe(false);
-      expect((await reportState(reportId)).status).toBe('DRAFT');
-    } finally {
-      await closeBoth(a, b);
-    }
+    const result = await b.result;
+    expect(result.ok, 'a cancelled task was decided').toBe(false);
+    expect((result as { error: { code?: string } }).error.code).toBe('TASK_NOT_FOUND');
+    expect((await reportState(reportId)).status).toBe('DRAFT');
   });
 
   it('the total WRITE refuses a report that is not a DRAFT, whoever calls it', async () => {

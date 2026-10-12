@@ -7,9 +7,11 @@ import {
   QUEUE_CONFIG,
   QUEUE_NAMES,
   type QueueName,
+  enqueue,
   upsertRecurring,
 } from '@expenseos/jobs';
 import { type ConnectionOptions, type Job, Worker } from 'bullmq';
+import { handleApprovalSweep } from './handlers/approval-sweep';
 import { handleDetermineExpense } from './handlers/determine-expense';
 import { handleExamplePing } from './handlers/example';
 import { handleExpenseReceiptChase } from './handlers/expense-receipt-chase';
@@ -46,6 +48,13 @@ const HANDLERS: { [N in JobName]?: (data: unknown, job: Job) => Promise<unknown>
     (data as { organizationId?: string } | null)?.organizationId
       ? inTenant(data, () => handleExpenseReceiptChase(data as never))
       : fanOutToTenants('expense.receiptChase', { trigger: 'cron' }),
+  // VeloExpense (w4-00c): as `expense.receiptChase` — the schedule's run fans out per tenant.
+  'approval.sweepExpired': (data) =>
+    (data as { organizationId?: string } | null)?.organizationId
+      ? inTenant(data, () => handleApprovalSweep(data as never))
+      : fanOutToTenants('approval.sweepExpired', {
+          trigger: (data as { trigger?: 'cron' | 'manual' | 'boot' } | null)?.trigger ?? 'cron',
+        }),
   // VeloExpense (w3-06): as the tenant whose address the email was sent to (d47).
   'email.ingestReceipts': (data) => inTenant(data, () => handleIngestReceiptEmail(data as never)),
 };
@@ -64,12 +73,21 @@ interface RecurringJob {
 }
 
 /**
- * VeloExpense: ExpenseOS's receipt chase only, so far. Every other ExpenseOS schedule here runs
- * a job VeloExpense does not route through this worker — its notification, approval, ledger
- * and compliance passes are the `/api/internal/*` routes EventBridge Scheduler calls
+ * VeloExpense: ExpenseOS's receipt chase and approval sweep, so far. Every other ExpenseOS
+ * schedule here runs a job VeloExpense does not route through this worker — its notification,
+ * ledger and compliance passes are the `/api/internal/*` routes EventBridge Scheduler calls
  * (infrastructure/cdk config.ts `schedules`).
  */
 const RECURRING_JOBS: RecurringJob[] = [
+  {
+    name: 'approval.sweepExpired',
+    data: { trigger: 'cron' },
+    jobId: 'approval-sweep-expired-hourly',
+    // Hourly — deadlines are day-grained, so an hourly sweep keeps expiry and
+    // "due soon" reminders timely without hammering the DB.
+    pattern: '0 * * * *',
+    tz: 'UTC',
+  },
   {
     name: 'expense.receiptChase',
     data: { trigger: 'cron' },
@@ -150,6 +168,10 @@ async function main(): Promise<void> {
   const workers = QUEUE_NAMES.map(startWorkerFor);
   await Promise.all(workers.map((w) => w.waitUntilReady()));
   await registerRecurringJobs();
+  // VeloExpense (w4-00c, d52): one approval sweep at boot, which is also what recalls the
+  // reports a deploy left SUBMITTED on the retired ladder — within moments of the deploy
+  // rather than at the next hour. Idempotent: a sweep with nothing to do does nothing.
+  await enqueue('approval.sweepExpired', { trigger: 'boot' });
   console.log('[worker] ready');
   installShutdown(workers);
 }

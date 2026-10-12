@@ -19,7 +19,7 @@ import { ADMIN_STATE, EMPLOYEE_STATE } from './helpers';
 const HEADING: Record<SetupItem, string> = {
   APPROVER: 'Invite somebody who can approve',
   CATEGORIES: 'Check your expense categories',
-  APPROVAL_LADDER: 'Decide who approves what',
+  APPROVAL_FLOW: 'Check who approves',
   SPEND_POLICY: 'Set your spend rules',
   STRUCTURE: 'Describe your organization',
   BRANDING: 'Make it look like yours',
@@ -31,7 +31,7 @@ const HEADING: Record<SetupItem, string> = {
 const ACTION: Record<SetupItem, { cta: string; href: string }> = {
   APPROVER: { cta: 'Invite someone', href: '/admin/employees/invite' },
   CATEGORIES: { cta: 'Review categories', href: '/admin/expense-categories' },
-  APPROVAL_LADDER: { cta: 'Set up approvals', href: '/admin/approval-ladder' },
+  APPROVAL_FLOW: { cta: 'Review approvals', href: '/admin/approval-workflows' },
   SPEND_POLICY: { cta: 'Add a rule', href: '/admin/expense-policies' },
   STRUCTURE: { cta: 'Add structure', href: '/admin/legal-entities' },
   BRANDING: { cta: 'Add branding', href: '/admin/branding' },

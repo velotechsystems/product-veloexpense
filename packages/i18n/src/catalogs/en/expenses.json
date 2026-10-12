@@ -346,7 +346,6 @@
   "approvals": {
     "acknowledge": "Acknowledge",
     "approve": "Approve",
-    "confirmApprove": "Confirm approval",
     "approveSelected": "Approve {count, plural, one {# report} other {# reports}}",
     "awaitingName": "Awaiting {name}",
     "bulkApproved": "Approved {count, plural, one {# report} other {# reports}}.",
@@ -389,9 +388,7 @@
     "viewRenamePrompt": "Rename view:",
     "viewTeam": "My team",
     "viewUntitled": "Untitled view",
-    "withColumn": "With",
-    "receiptAck": "I reviewed the {count, plural, =0 {receipts} one {# receipt} other {# receipts}} on this report.",
-    "receiptAckNone": "There are none attached — approving records that."
+    "withColumn": "With"
   },
   "allExpenses": {
     "chaseNone": "Nothing to request — those expenses already have receipts.",

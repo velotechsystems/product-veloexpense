@@ -45,10 +45,6 @@ export const VELOEXPENSE_ROUTES: Readonly<Record<string, string | null>> = {
   '/dashboard': '/',
   '/expenses/approvals': '/approvals',
   '/delegations': '/approvals/delegations',
-  // w4-01: ExpenseOS's builder is ported at its own path, but the ladder routes every
-  // approval until the cutover (w4-00c, d55), so the menu keeps leading to the ladder; the
-  // cutover deletes this line.
-  '/admin/approval-workflows': '/admin/approval-ladder',
 
   // Not ported yet. Each leaves with the wave that ports its screen (parity doc).
   '/users': null,

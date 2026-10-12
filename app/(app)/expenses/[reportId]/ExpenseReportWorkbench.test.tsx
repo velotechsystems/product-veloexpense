@@ -1576,52 +1576,9 @@ describe('deciding as the approver', () => {
     expect(sent('reassign')).toHaveLength(0);
   });
 
-  describe('a step that requires the receipt-view acknowledgement (VeloExpense)', () => {
-    /**
-     * VeloExpense's engine refuses an approval on such a step without it
-     * (`RECEIPT_ACK_REQUIRED`), and the step default is on. So Approve opens a panel that
-     * asks for it rather than deciding on the press; returning and rejecting never ask,
-     * because neither claims the evidence was reviewed.
-     */
-    const withAck = (receiptCount: number) =>
-      show({ status: 'SUBMITTED' }, { ...approver, receiptAck: { required: true, receiptCount } });
-
-    it('asks for the acknowledgement before approving, and sends it', async () => {
-      const user = userEvent.setup();
-      withAck(2);
-      await user.click(within(topbar()).getByRole('button', { name: 'approvals.approve' }));
-      expect(sent('decide')).toHaveLength(0);
-      const confirm = await screen.findByRole('button', { name: 'approvals.confirmApprove' });
-      expect(confirm).toBeDisabled();
-      expect(screen.getByText('approvals.receiptAck:2')).toBeInTheDocument();
-      await user.click(screen.getByRole('checkbox', { name: 'approvals.receiptAck:2' }));
-      await user.click(confirm);
-      expect(sent('decide')[0]).toEqual({
-        taskId: 'task-1',
-        approve: true,
-        receiptViewAcknowledged: true,
-      });
-    });
-
-    it('says so when there are no receipts to have reviewed', async () => {
-      const user = userEvent.setup();
-      withAck(0);
-      await user.click(within(topbar()).getByRole('button', { name: 'approvals.approve' }));
-      expect(await screen.findByText('approvals.receiptAckNone')).toBeInTheDocument();
-    });
-
-    it('does not ask for it to reject', async () => {
-      const user = userEvent.setup();
-      withAck(2);
-      await user.click(within(topbar()).getByRole('button', { name: 'approvals.reject' }));
-      await user.type(
-        await screen.findByPlaceholderText('approvals.rejectNotePlaceholder'),
-        'Missing receipts',
-      );
-      await user.click(screen.getByRole('button', { name: 'approvals.confirmReject' }));
-      expect(sent('decide')[0]).not.toHaveProperty('receiptViewAcknowledged');
-    });
-  });
+  // VeloExpense: the receipt-view acknowledgement panel and its three cases went with the
+  // ladder at the cutover (w4-00c, d57) — ExpenseOS's engine has no such step setting, and
+  // Approve is again the one-press action it is in ExpenseOS.
 
   it('will not reassign to nobody', async () => {
     const user = userEvent.setup();

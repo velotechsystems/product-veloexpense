@@ -353,13 +353,11 @@ export async function checkReturnsWithoutNote(
  * an approver opened a receipt, so they implement approval with no receipt ON
  * FILE — "the stronger deficiency anyway" — and decline to fake the rest.
  *
- * WE ACTUALLY HAVE THE OTHER HALF: VX2-1's `require_receipt_view_ack` and
- * `approval_task.receipt_view_acknowledged_at`. It is deliberately NOT checked
- * here, because it is a per-rung SETTING: a tenant that has not turned it on has
- * no acknowledgement to be missing, and reporting every approval in that tenant
- * as a deficiency would be reporting a configuration choice as a failure. A
- * control over "the rung demanded an acknowledgement and none was recorded" is a
- * real seventh control and belongs to a ticket that can think about it.
+ * VeloExpense's ladder recorded the other half — VX2-1's `require_receipt_view_ack` and
+ * `approval_task.receipt_view_acknowledged_at` — and this deliberately never checked it: it
+ * was a per-rung setting, and a tenant that had not turned it on had no acknowledgement to
+ * be missing. The acknowledgement went with the ladder at the cutover (w4-00c, d57);
+ * ExpenseOS's engine has none, so this control is now exactly upstream's.
  */
 export async function checkApprovedWithoutReceipt(
   tx: QueryRunner,

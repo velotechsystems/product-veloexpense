@@ -56,6 +56,14 @@ export interface JobMap {
    *  VeloExpense: `organizationId`, as on every receipt job (above). */
   'expense.determineExpense': { organizationId: string; expenseId: string };
 
+  /** Sweep approval tasks past their deadline: apply each task's onExpire
+   *  policy (escalate/reject/approve) and send "deadline approaching"
+   *  reminders. Recurring; can also be triggered ad-hoc.
+   *
+   *  VeloExpense (w4-00c): plus `organizationId`, as `expense.receiptChase` — the schedule's
+   *  run names no tenant and only fans out, one job per tenant. */
+  'approval.sweepExpired': { trigger?: 'cron' | 'manual' | 'boot'; organizationId?: string };
+
   /** Daily: remind submitters about draft expenses that still have no receipt.
    *
    *  VeloExpense (w3-05): ExpenseOS's job, plus `organizationId`. The schedule fires it
@@ -103,8 +111,8 @@ export interface JobMap {
 
   // VeloExpense: ExpenseOS's other jobs are not here. Each arrives with its handler, as the
   // boot check in worker/src/main.ts requires, and most never will: VeloExpense's
-  // notifications, approval sweeps, ledger posts and compliance passes run as
-  // `/api/internal/*` routes on a schedule (infrastructure/cdk config.ts `schedules`).
+  // notifications, ledger posts and compliance passes run as `/api/internal/*` routes on a
+  // schedule (infrastructure/cdk config.ts `schedules`).
 }
 
 export type JobName = keyof JobMap;
@@ -115,6 +123,7 @@ export const JOB_QUEUES: Record<JobName, QueueName> = {
   'expense.extractReceipt': 'integrations',
   'expense.extractReceipt.batch': 'integrations',
   'expense.determineExpense': 'integrations',
+  'approval.sweepExpired': 'housekeeping',
   'expense.receiptChase': 'housekeeping',
   'email.ingestReceipts': 'integrations',
 };
