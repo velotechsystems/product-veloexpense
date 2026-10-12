@@ -136,6 +136,22 @@ export const EVENT_TYPES = [
    * assignee still gets TASK_ASSIGNED.
    */
   'REASSIGNED',
+  /**
+   * w4-00c (ExpenseOS's events, with its approval engine). A Notify node in a report's
+   * approval workflow sent an FYI (`server/lib/workflowEffects.ts`), to whoever the node
+   * names — never to the person whose action fired it.
+   */
+  'NOTIFY',
+  /**
+   * An approval task passed the deadline an admin set on its step, and the step's
+   * `onExpire` ran — escalated, rejected or approved (`approval.sweepExpired`). Addressed to
+   * the submitter, and to the new approver on an escalation. VeloExpense's default flow
+   * sets no deadline (d56), so only a step an admin gave one can send it.
+   */
+  'TASK_EXPIRED',
+  /** An approval task is within a business day of its deadline: a reminder to its approver,
+   *  once per task (`approval.sweepExpired`). */
+  'DEADLINE_NEAR',
 ] as const;
 export type EventType = (typeof EVENT_TYPES)[number];
 
@@ -439,6 +455,31 @@ export const TEMPLATE_KEYS: readonly TemplateKeyDef[] = [
     // No `{actor}`: nobody sent it. `{missing}` from the job's payload, `{report}` from
     // `reportPayload`.
     shipped: { 'en-CA': '{report} still has {missing} expense(s) without a receipt.' },
+  },
+  {
+    // ExpenseOS's key, name and description (`templateKeys.ts`), w4-00c.
+    key: 'expense_management.report_update',
+    name: 'Expense report update',
+    description: 'A workflow Notify node sent an FYI about an expense report.',
+    events: [['NOTIFY', 'EXPENSE_REPORT']],
+    // VeloExpense: ExpenseOS ships the event label alone. `{report}` from `reportPayload`.
+    shipped: { 'en-CA': 'An update on {report} from its approval workflow.' },
+  },
+  {
+    // ExpenseOS's key, name and description (`templateKeys.ts`), w4-00c.
+    key: 'expense_management.report_approval_expired',
+    name: 'Expense report approval expired',
+    description: 'An approval task on an expense report passed its deadline without a decision.',
+    events: [['TASK_EXPIRED', 'EXPENSE_REPORT']],
+    shipped: { 'en-CA': 'The approval of {report} passed its deadline without a decision.' },
+  },
+  {
+    // ExpenseOS's key, name and description (`templateKeys.ts`), w4-00c.
+    key: 'expense_management.report_approval_due_soon',
+    name: 'Expense report approval due soon',
+    description: 'An approval task on an expense report is approaching its deadline.',
+    events: [['DEADLINE_NEAR', 'EXPENSE_REPORT']],
+    shipped: { 'en-CA': 'The approval of {report} is due soon.' },
   },
 ];
 

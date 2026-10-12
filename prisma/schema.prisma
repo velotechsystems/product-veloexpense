@@ -140,6 +140,9 @@ model ExpenseReport {
   updatedAt              DateTime            @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
   submittedAt            DateTime?           @map("submitted_at") @db.Timestamptz(6)
   approvedAt             DateTime?           @map("approved_at") @db.Timestamptz(6)
+  /// ExpenseOS's `approvalInstanceId`: the approval run deciding the report (0059). The
+  /// database's key is composite; only the scalar is described.
+  approvalInstanceId     String?             @map("approval_instance_id") @db.Uuid
 
   expenses Expense[]
 

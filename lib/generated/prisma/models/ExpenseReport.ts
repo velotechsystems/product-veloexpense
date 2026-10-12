@@ -54,6 +54,7 @@ export type ExpenseReportMinAggregateOutputType = {
   updatedAt: Date | null
   submittedAt: Date | null
   approvedAt: Date | null
+  approvalInstanceId: string | null
 }
 
 export type ExpenseReportMaxAggregateOutputType = {
@@ -74,6 +75,7 @@ export type ExpenseReportMaxAggregateOutputType = {
   updatedAt: Date | null
   submittedAt: Date | null
   approvedAt: Date | null
+  approvalInstanceId: string | null
 }
 
 export type ExpenseReportCountAggregateOutputType = {
@@ -95,6 +97,7 @@ export type ExpenseReportCountAggregateOutputType = {
   updatedAt: number
   submittedAt: number
   approvedAt: number
+  approvalInstanceId: number
   _all: number
 }
 
@@ -127,6 +130,7 @@ export type ExpenseReportMinAggregateInputType = {
   updatedAt?: true
   submittedAt?: true
   approvedAt?: true
+  approvalInstanceId?: true
 }
 
 export type ExpenseReportMaxAggregateInputType = {
@@ -147,6 +151,7 @@ export type ExpenseReportMaxAggregateInputType = {
   updatedAt?: true
   submittedAt?: true
   approvedAt?: true
+  approvalInstanceId?: true
 }
 
 export type ExpenseReportCountAggregateInputType = {
@@ -168,6 +173,7 @@ export type ExpenseReportCountAggregateInputType = {
   updatedAt?: true
   submittedAt?: true
   approvedAt?: true
+  approvalInstanceId?: true
   _all?: true
 }
 
@@ -276,6 +282,7 @@ export type ExpenseReportGroupByOutputType = {
   updatedAt: Date
   submittedAt: Date | null
   approvedAt: Date | null
+  approvalInstanceId: string | null
   _count: ExpenseReportCountAggregateOutputType | null
   _avg: ExpenseReportAvgAggregateOutputType | null
   _sum: ExpenseReportSumAggregateOutputType | null
@@ -320,6 +327,7 @@ export type ExpenseReportWhereInput = {
   updatedAt?: Prisma.DateTimeFilter<"ExpenseReport"> | Date | string
   submittedAt?: Prisma.DateTimeNullableFilter<"ExpenseReport"> | Date | string | null
   approvedAt?: Prisma.DateTimeNullableFilter<"ExpenseReport"> | Date | string | null
+  approvalInstanceId?: Prisma.UuidNullableFilter<"ExpenseReport"> | string | null
   currency?: Prisma.XOR<Prisma.CurrencyScalarRelationFilter, Prisma.CurrencyWhereInput>
   submitter?: Prisma.XOR<Prisma.UserScalarRelationFilter, Prisma.UserWhereInput>
   expenses?: Prisma.ExpenseListRelationFilter
@@ -344,6 +352,7 @@ export type ExpenseReportOrderByWithRelationInput = {
   updatedAt?: Prisma.SortOrder
   submittedAt?: Prisma.SortOrderInput | Prisma.SortOrder
   approvedAt?: Prisma.SortOrderInput | Prisma.SortOrder
+  approvalInstanceId?: Prisma.SortOrderInput | Prisma.SortOrder
   currency?: Prisma.CurrencyOrderByWithRelationInput
   submitter?: Prisma.UserOrderByWithRelationInput
   expenses?: Prisma.ExpenseOrderByRelationAggregateInput
@@ -372,6 +381,7 @@ export type ExpenseReportWhereUniqueInput = Prisma.AtLeast<{
   updatedAt?: Prisma.DateTimeFilter<"ExpenseReport"> | Date | string
   submittedAt?: Prisma.DateTimeNullableFilter<"ExpenseReport"> | Date | string | null
   approvedAt?: Prisma.DateTimeNullableFilter<"ExpenseReport"> | Date | string | null
+  approvalInstanceId?: Prisma.UuidNullableFilter<"ExpenseReport"> | string | null
   currency?: Prisma.XOR<Prisma.CurrencyScalarRelationFilter, Prisma.CurrencyWhereInput>
   submitter?: Prisma.XOR<Prisma.UserScalarRelationFilter, Prisma.UserWhereInput>
   expenses?: Prisma.ExpenseListRelationFilter
@@ -396,6 +406,7 @@ export type ExpenseReportOrderByWithAggregationInput = {
   updatedAt?: Prisma.SortOrder
   submittedAt?: Prisma.SortOrderInput | Prisma.SortOrder
   approvedAt?: Prisma.SortOrderInput | Prisma.SortOrder
+  approvalInstanceId?: Prisma.SortOrderInput | Prisma.SortOrder
   _count?: Prisma.ExpenseReportCountOrderByAggregateInput
   _avg?: Prisma.ExpenseReportAvgOrderByAggregateInput
   _max?: Prisma.ExpenseReportMaxOrderByAggregateInput
@@ -425,6 +436,7 @@ export type ExpenseReportScalarWhereWithAggregatesInput = {
   updatedAt?: Prisma.DateTimeWithAggregatesFilter<"ExpenseReport"> | Date | string
   submittedAt?: Prisma.DateTimeNullableWithAggregatesFilter<"ExpenseReport"> | Date | string | null
   approvedAt?: Prisma.DateTimeNullableWithAggregatesFilter<"ExpenseReport"> | Date | string | null
+  approvalInstanceId?: Prisma.UuidNullableWithAggregatesFilter<"ExpenseReport"> | string | null
 }
 
 export type ExpenseReportCreateInput = {
@@ -444,6 +456,7 @@ export type ExpenseReportCreateInput = {
   updatedAt?: Date | string
   submittedAt?: Date | string | null
   approvedAt?: Date | string | null
+  approvalInstanceId?: string | null
   currency: Prisma.CurrencyCreateNestedOneWithoutReportsInput
   submitter: Prisma.UserCreateNestedOneWithoutReportsInput
   expenses?: Prisma.ExpenseCreateNestedManyWithoutReportInput
@@ -468,6 +481,7 @@ export type ExpenseReportUncheckedCreateInput = {
   updatedAt?: Date | string
   submittedAt?: Date | string | null
   approvedAt?: Date | string | null
+  approvalInstanceId?: string | null
   expenses?: Prisma.ExpenseUncheckedCreateNestedManyWithoutReportInput
 }
 
@@ -488,6 +502,7 @@ export type ExpenseReportUpdateInput = {
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   submittedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   approvedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  approvalInstanceId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   currency?: Prisma.CurrencyUpdateOneRequiredWithoutReportsNestedInput
   submitter?: Prisma.UserUpdateOneRequiredWithoutReportsNestedInput
   expenses?: Prisma.ExpenseUpdateManyWithoutReportNestedInput
@@ -512,6 +527,7 @@ export type ExpenseReportUncheckedUpdateInput = {
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   submittedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   approvedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  approvalInstanceId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   expenses?: Prisma.ExpenseUncheckedUpdateManyWithoutReportNestedInput
 }
 
@@ -534,6 +550,7 @@ export type ExpenseReportCreateManyInput = {
   updatedAt?: Date | string
   submittedAt?: Date | string | null
   approvedAt?: Date | string | null
+  approvalInstanceId?: string | null
 }
 
 export type ExpenseReportUpdateManyMutationInput = {
@@ -553,6 +570,7 @@ export type ExpenseReportUpdateManyMutationInput = {
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   submittedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   approvedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  approvalInstanceId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
 }
 
 export type ExpenseReportUncheckedUpdateManyInput = {
@@ -574,6 +592,7 @@ export type ExpenseReportUncheckedUpdateManyInput = {
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   submittedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   approvedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  approvalInstanceId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
 }
 
 export type ExpenseReportOrganizationIdIdCompoundUniqueInput = {
@@ -600,6 +619,7 @@ export type ExpenseReportCountOrderByAggregateInput = {
   updatedAt?: Prisma.SortOrder
   submittedAt?: Prisma.SortOrder
   approvedAt?: Prisma.SortOrder
+  approvalInstanceId?: Prisma.SortOrder
 }
 
 export type ExpenseReportAvgOrderByAggregateInput = {
@@ -625,6 +645,7 @@ export type ExpenseReportMaxOrderByAggregateInput = {
   updatedAt?: Prisma.SortOrder
   submittedAt?: Prisma.SortOrder
   approvedAt?: Prisma.SortOrder
+  approvalInstanceId?: Prisma.SortOrder
 }
 
 export type ExpenseReportMinOrderByAggregateInput = {
@@ -645,6 +666,7 @@ export type ExpenseReportMinOrderByAggregateInput = {
   updatedAt?: Prisma.SortOrder
   submittedAt?: Prisma.SortOrder
   approvedAt?: Prisma.SortOrder
+  approvalInstanceId?: Prisma.SortOrder
 }
 
 export type ExpenseReportSumOrderByAggregateInput = {
@@ -806,6 +828,7 @@ export type ExpenseReportCreateWithoutExpensesInput = {
   updatedAt?: Date | string
   submittedAt?: Date | string | null
   approvedAt?: Date | string | null
+  approvalInstanceId?: string | null
   currency: Prisma.CurrencyCreateNestedOneWithoutReportsInput
   submitter: Prisma.UserCreateNestedOneWithoutReportsInput
 }
@@ -829,6 +852,7 @@ export type ExpenseReportUncheckedCreateWithoutExpensesInput = {
   updatedAt?: Date | string
   submittedAt?: Date | string | null
   approvedAt?: Date | string | null
+  approvalInstanceId?: string | null
 }
 
 export type ExpenseReportCreateOrConnectWithoutExpensesInput = {
@@ -864,6 +888,7 @@ export type ExpenseReportUpdateWithoutExpensesInput = {
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   submittedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   approvedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  approvalInstanceId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   currency?: Prisma.CurrencyUpdateOneRequiredWithoutReportsNestedInput
   submitter?: Prisma.UserUpdateOneRequiredWithoutReportsNestedInput
 }
@@ -887,6 +912,7 @@ export type ExpenseReportUncheckedUpdateWithoutExpensesInput = {
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   submittedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   approvedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  approvalInstanceId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
 }
 
 export type ExpenseReportCreateWithoutSubmitterInput = {
@@ -906,6 +932,7 @@ export type ExpenseReportCreateWithoutSubmitterInput = {
   updatedAt?: Date | string
   submittedAt?: Date | string | null
   approvedAt?: Date | string | null
+  approvalInstanceId?: string | null
   currency: Prisma.CurrencyCreateNestedOneWithoutReportsInput
   expenses?: Prisma.ExpenseCreateNestedManyWithoutReportInput
 }
@@ -928,6 +955,7 @@ export type ExpenseReportUncheckedCreateWithoutSubmitterInput = {
   updatedAt?: Date | string
   submittedAt?: Date | string | null
   approvedAt?: Date | string | null
+  approvalInstanceId?: string | null
   expenses?: Prisma.ExpenseUncheckedCreateNestedManyWithoutReportInput
 }
 
@@ -979,6 +1007,7 @@ export type ExpenseReportScalarWhereInput = {
   updatedAt?: Prisma.DateTimeFilter<"ExpenseReport"> | Date | string
   submittedAt?: Prisma.DateTimeNullableFilter<"ExpenseReport"> | Date | string | null
   approvedAt?: Prisma.DateTimeNullableFilter<"ExpenseReport"> | Date | string | null
+  approvalInstanceId?: Prisma.UuidNullableFilter<"ExpenseReport"> | string | null
 }
 
 export type ExpenseReportCreateWithoutCurrencyInput = {
@@ -998,6 +1027,7 @@ export type ExpenseReportCreateWithoutCurrencyInput = {
   updatedAt?: Date | string
   submittedAt?: Date | string | null
   approvedAt?: Date | string | null
+  approvalInstanceId?: string | null
   submitter: Prisma.UserCreateNestedOneWithoutReportsInput
   expenses?: Prisma.ExpenseCreateNestedManyWithoutReportInput
 }
@@ -1020,6 +1050,7 @@ export type ExpenseReportUncheckedCreateWithoutCurrencyInput = {
   updatedAt?: Date | string
   submittedAt?: Date | string | null
   approvedAt?: Date | string | null
+  approvalInstanceId?: string | null
   expenses?: Prisma.ExpenseUncheckedCreateNestedManyWithoutReportInput
 }
 
@@ -1067,6 +1098,7 @@ export type ExpenseReportCreateManySubmitterInput = {
   updatedAt?: Date | string
   submittedAt?: Date | string | null
   approvedAt?: Date | string | null
+  approvalInstanceId?: string | null
 }
 
 export type ExpenseReportUpdateWithoutSubmitterInput = {
@@ -1086,6 +1118,7 @@ export type ExpenseReportUpdateWithoutSubmitterInput = {
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   submittedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   approvedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  approvalInstanceId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   currency?: Prisma.CurrencyUpdateOneRequiredWithoutReportsNestedInput
   expenses?: Prisma.ExpenseUpdateManyWithoutReportNestedInput
 }
@@ -1108,6 +1141,7 @@ export type ExpenseReportUncheckedUpdateWithoutSubmitterInput = {
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   submittedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   approvedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  approvalInstanceId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   expenses?: Prisma.ExpenseUncheckedUpdateManyWithoutReportNestedInput
 }
 
@@ -1129,6 +1163,7 @@ export type ExpenseReportUncheckedUpdateManyWithoutSubmitterInput = {
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   submittedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   approvedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  approvalInstanceId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
 }
 
 export type ExpenseReportCreateManyCurrencyInput = {
@@ -1149,6 +1184,7 @@ export type ExpenseReportCreateManyCurrencyInput = {
   updatedAt?: Date | string
   submittedAt?: Date | string | null
   approvedAt?: Date | string | null
+  approvalInstanceId?: string | null
 }
 
 export type ExpenseReportUpdateWithoutCurrencyInput = {
@@ -1168,6 +1204,7 @@ export type ExpenseReportUpdateWithoutCurrencyInput = {
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   submittedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   approvedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  approvalInstanceId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   submitter?: Prisma.UserUpdateOneRequiredWithoutReportsNestedInput
   expenses?: Prisma.ExpenseUpdateManyWithoutReportNestedInput
 }
@@ -1190,6 +1227,7 @@ export type ExpenseReportUncheckedUpdateWithoutCurrencyInput = {
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   submittedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   approvedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  approvalInstanceId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   expenses?: Prisma.ExpenseUncheckedUpdateManyWithoutReportNestedInput
 }
 
@@ -1211,6 +1249,7 @@ export type ExpenseReportUncheckedUpdateManyWithoutCurrencyInput = {
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   submittedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   approvedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  approvalInstanceId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
 }
 
 
@@ -1263,6 +1302,7 @@ export type ExpenseReportSelect<ExtArgs extends runtime.Types.Extensions.Interna
   updatedAt?: boolean
   submittedAt?: boolean
   approvedAt?: boolean
+  approvalInstanceId?: boolean
   currency?: boolean | Prisma.CurrencyDefaultArgs<ExtArgs>
   submitter?: boolean | Prisma.UserDefaultArgs<ExtArgs>
   expenses?: boolean | Prisma.ExpenseReport$expensesArgs<ExtArgs>
@@ -1288,6 +1328,7 @@ export type ExpenseReportSelectCreateManyAndReturn<ExtArgs extends runtime.Types
   updatedAt?: boolean
   submittedAt?: boolean
   approvedAt?: boolean
+  approvalInstanceId?: boolean
   currency?: boolean | Prisma.CurrencyDefaultArgs<ExtArgs>
   submitter?: boolean | Prisma.UserDefaultArgs<ExtArgs>
 }, ExtArgs["result"]["expenseReport"]>
@@ -1311,6 +1352,7 @@ export type ExpenseReportSelectUpdateManyAndReturn<ExtArgs extends runtime.Types
   updatedAt?: boolean
   submittedAt?: boolean
   approvedAt?: boolean
+  approvalInstanceId?: boolean
   currency?: boolean | Prisma.CurrencyDefaultArgs<ExtArgs>
   submitter?: boolean | Prisma.UserDefaultArgs<ExtArgs>
 }, ExtArgs["result"]["expenseReport"]>
@@ -1334,9 +1376,10 @@ export type ExpenseReportSelectScalar = {
   updatedAt?: boolean
   submittedAt?: boolean
   approvedAt?: boolean
+  approvalInstanceId?: boolean
 }
 
-export type ExpenseReportOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "organizationId" | "number" | "title" | "purpose" | "status" | "totalMinor" | "currencyId" | "submitterId" | "metadata" | "fxRateOverride" | "fxRateOverrideCurrency" | "fxRateOverrideAt" | "fxRateOverrideById" | "createdAt" | "updatedAt" | "submittedAt" | "approvedAt", ExtArgs["result"]["expenseReport"]>
+export type ExpenseReportOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "organizationId" | "number" | "title" | "purpose" | "status" | "totalMinor" | "currencyId" | "submitterId" | "metadata" | "fxRateOverride" | "fxRateOverrideCurrency" | "fxRateOverrideAt" | "fxRateOverrideById" | "createdAt" | "updatedAt" | "submittedAt" | "approvedAt" | "approvalInstanceId", ExtArgs["result"]["expenseReport"]>
 export type ExpenseReportInclude<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   currency?: boolean | Prisma.CurrencyDefaultArgs<ExtArgs>
   submitter?: boolean | Prisma.UserDefaultArgs<ExtArgs>
@@ -1387,6 +1430,11 @@ export type $ExpenseReportPayload<ExtArgs extends runtime.Types.Extensions.Inter
     updatedAt: Date
     submittedAt: Date | null
     approvedAt: Date | null
+    /**
+     * ExpenseOS's `approvalInstanceId`: the approval run deciding the report (0059). The
+     * database's key is composite; only the scalar is described.
+     */
+    approvalInstanceId: string | null
   }, ExtArgs["result"]["expenseReport"]>
   composites: {}
 }
@@ -1831,6 +1879,7 @@ export interface ExpenseReportFieldRefs {
   readonly updatedAt: Prisma.FieldRef<"ExpenseReport", 'DateTime'>
   readonly submittedAt: Prisma.FieldRef<"ExpenseReport", 'DateTime'>
   readonly approvedAt: Prisma.FieldRef<"ExpenseReport", 'DateTime'>
+  readonly approvalInstanceId: Prisma.FieldRef<"ExpenseReport", 'String'>
 }
     
 

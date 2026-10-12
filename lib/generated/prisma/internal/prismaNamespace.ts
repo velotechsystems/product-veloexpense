@@ -3273,7 +3273,8 @@ export const ExpenseReportScalarFieldEnum = {
   createdAt: 'createdAt',
   updatedAt: 'updatedAt',
   submittedAt: 'submittedAt',
-  approvedAt: 'approvedAt'
+  approvedAt: 'approvedAt',
+  approvalInstanceId: 'approvalInstanceId'
 } as const
 
 export type ExpenseReportScalarFieldEnum = (typeof ExpenseReportScalarFieldEnum)[keyof typeof ExpenseReportScalarFieldEnum]

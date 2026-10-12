@@ -57,7 +57,8 @@ describe('the taxonomy', () => {
     // durable choice, because it is deliberately absent rather than merely
     // unbuilt (the person who clicked Submit does not need telling).
     expect(isEventType('SUBMITTED')).toBe(false);
-    expect(isEventType('DEADLINE_NEAR')).toBe(false);
+    // `DEADLINE_NEAR` was a second control here until w4-00c gave it an emitter (the expiry
+    // sweep) — the very drift the note above describes. `SUBMITTED` stays the durable one.
     expect(isChannel('SMS')).toBe(false);
     expect(isChannel('in_app')).toBe(false);
   });
@@ -87,6 +88,12 @@ describe('the taxonomy', () => {
       // w2-02a: `comments.post` and `expenseApprovals.reassign` emit these.
       'COMMENT',
       'REASSIGNED',
+      // w4-00c: ExpenseOS's engine events — a workflow's Notify node (server/lib/workflowEffects)
+      // and the expiry sweep (approval.sweepExpired) emit them, once approvals run on the
+      // engine (w4-00c-2).
+      'NOTIFY',
+      'TASK_EXPIRED',
+      'DEADLINE_NEAR',
     ]);
   });
 });

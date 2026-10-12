@@ -53,7 +53,8 @@ export function buildNodeConfig(
             ttlBusinessDays: {
               type: 'integer',
               title: 'Decision deadline (business days)',
-              description: 'Blank = the default (5). Weekends are skipped.',
+              // VeloExpense (d56): a blank deadline is no deadline (ExpenseOS: the default, 5).
+              description: 'Blank = no deadline. Weekends are skipped.',
               minimum: 1,
               maximum: 60,
             },

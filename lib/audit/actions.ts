@@ -169,6 +169,8 @@ export const AUDIT_ACTIONS = [
   'APPROVAL_WORKFLOW_UPDATED',
   'APPROVAL_WORKFLOW_DRAFT_SAVED',
   'APPROVAL_WORKFLOW_PUBLISHED',
+  /* A workflow's Action node ran its `audit.log` hook (ExpenseOS's workflow.actionFired). */
+  'WORKFLOW_ACTION_FIRED',
   /* FX rates — the Wave 1 port (ExpenseOS's `config.fxRate.update`). A rate is only
      ever added: the table is append-only and the newest per pair wins. */
   'FX_RATE_ADDED',

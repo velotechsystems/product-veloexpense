@@ -1243,8 +1243,13 @@ async function createTasksForNodes(
     );
     // Stamp the deadline from the node's TTL (default applies when unset). Only
     // approval nodes park as human tasks, so all created tasks get one.
-    const ttl =
-      node.type === 'approval' ? (node.ttlBusinessDays ?? DEFAULT_TTL_BUSINESS_DAYS) : null;
+    //
+    // VeloExpense (d56): a node with no TTL has NO deadline. ExpenseOS applies
+    // DEFAULT_TTL_BUSINESS_DAYS, so every task expires and escalates; VeloExpense's default
+    // flow is "the manager approves, and nothing happens on its own", and a deadline is
+    // something an admin sets on a step in the builder. The escalation path below still
+    // re-stamps an expired task from its node's TTL.
+    const ttl = node.type === 'approval' ? (node.ttlBusinessDays ?? null) : null;
     const task = await db.approvalTask.create({
       data: {
         instanceId,

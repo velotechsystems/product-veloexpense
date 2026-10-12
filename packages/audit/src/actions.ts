@@ -43,6 +43,10 @@ const adminAndOthers = {
     saveDraft: 'APPROVAL_WORKFLOW_DRAFT_SAVED',
     publish: 'APPROVAL_WORKFLOW_PUBLISHED',
   },
+  /** ExpenseOS's `workflow.*` key (w4-00c, server/lib/workflowEffects). */
+  workflow: {
+    actionFired: 'WORKFLOW_ACTION_FIRED',
+  },
   /**
    * ExpenseOS's `report.*` keys (Wave 2), on VeloExpense's names for the same events
    * (lib/audit/actions.ts, UD-11). Only the keys the ported procedures write so far; the
