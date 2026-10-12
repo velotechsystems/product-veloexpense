@@ -415,7 +415,11 @@ export const ModelName = {
   JobLevel: 'JobLevel',
   JobLevelExternalId: 'JobLevelExternalId',
   FiscalYear: 'FiscalYear',
-  FiscalYearExternalId: 'FiscalYearExternalId'
+  FiscalYearExternalId: 'FiscalYearExternalId',
+  ApprovalWorkflow: 'ApprovalWorkflow',
+  ApprovalWorkflowVersion: 'ApprovalWorkflowVersion',
+  ApprovalInstance: 'ApprovalInstance',
+  ApprovalTask: 'ApprovalTask'
 } as const
 
 export type ModelName = (typeof ModelName)[keyof typeof ModelName]
@@ -431,7 +435,7 @@ export type TypeMap<ExtArgs extends runtime.Types.Extensions.InternalArgs = runt
     omit: GlobalOmitOptions
   }
   meta: {
-    modelProps: "expenseCategory" | "glAccount" | "expenseReport" | "expense" | "expenseAllocation" | "expenseAttendee" | "expenseLineItem" | "receipt" | "documentExtraction" | "expenseDetermination" | "receiptExternalId" | "expenseExternalId" | "aiUsage" | "taxJurisdiction" | "user" | "businessUnit" | "externalIdSource" | "businessUnitExternalId" | "legalEntity" | "legalEntityExternalId" | "fxRate" | "mileageRate" | "mileageRateTier" | "mileageRateSubject" | "perDiemRate" | "currency" | "department" | "departmentExternalId" | "jobLevel" | "jobLevelExternalId" | "fiscalYear" | "fiscalYearExternalId"
+    modelProps: "expenseCategory" | "glAccount" | "expenseReport" | "expense" | "expenseAllocation" | "expenseAttendee" | "expenseLineItem" | "receipt" | "documentExtraction" | "expenseDetermination" | "receiptExternalId" | "expenseExternalId" | "aiUsage" | "taxJurisdiction" | "user" | "businessUnit" | "externalIdSource" | "businessUnitExternalId" | "legalEntity" | "legalEntityExternalId" | "fxRate" | "mileageRate" | "mileageRateTier" | "mileageRateSubject" | "perDiemRate" | "currency" | "department" | "departmentExternalId" | "jobLevel" | "jobLevelExternalId" | "fiscalYear" | "fiscalYearExternalId" | "approvalWorkflow" | "approvalWorkflowVersion" | "approvalInstance" | "approvalTask"
     txIsolationLevel: TransactionIsolationLevel
   }
   model: {
@@ -2803,6 +2807,302 @@ export type TypeMap<ExtArgs extends runtime.Types.Extensions.InternalArgs = runt
         }
       }
     }
+    ApprovalWorkflow: {
+      payload: Prisma.$ApprovalWorkflowPayload<ExtArgs>
+      fields: Prisma.ApprovalWorkflowFieldRefs
+      operations: {
+        findUnique: {
+          args: Prisma.ApprovalWorkflowFindUniqueArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ApprovalWorkflowPayload> | null
+        }
+        findUniqueOrThrow: {
+          args: Prisma.ApprovalWorkflowFindUniqueOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ApprovalWorkflowPayload>
+        }
+        findFirst: {
+          args: Prisma.ApprovalWorkflowFindFirstArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ApprovalWorkflowPayload> | null
+        }
+        findFirstOrThrow: {
+          args: Prisma.ApprovalWorkflowFindFirstOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ApprovalWorkflowPayload>
+        }
+        findMany: {
+          args: Prisma.ApprovalWorkflowFindManyArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ApprovalWorkflowPayload>[]
+        }
+        create: {
+          args: Prisma.ApprovalWorkflowCreateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ApprovalWorkflowPayload>
+        }
+        createMany: {
+          args: Prisma.ApprovalWorkflowCreateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        createManyAndReturn: {
+          args: Prisma.ApprovalWorkflowCreateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ApprovalWorkflowPayload>[]
+        }
+        delete: {
+          args: Prisma.ApprovalWorkflowDeleteArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ApprovalWorkflowPayload>
+        }
+        update: {
+          args: Prisma.ApprovalWorkflowUpdateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ApprovalWorkflowPayload>
+        }
+        deleteMany: {
+          args: Prisma.ApprovalWorkflowDeleteManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateMany: {
+          args: Prisma.ApprovalWorkflowUpdateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateManyAndReturn: {
+          args: Prisma.ApprovalWorkflowUpdateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ApprovalWorkflowPayload>[]
+        }
+        upsert: {
+          args: Prisma.ApprovalWorkflowUpsertArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ApprovalWorkflowPayload>
+        }
+        aggregate: {
+          args: Prisma.ApprovalWorkflowAggregateArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.AggregateApprovalWorkflow>
+        }
+        groupBy: {
+          args: Prisma.ApprovalWorkflowGroupByArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.ApprovalWorkflowGroupByOutputType>[]
+        }
+        count: {
+          args: Prisma.ApprovalWorkflowCountArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.ApprovalWorkflowCountAggregateOutputType> | number
+        }
+      }
+    }
+    ApprovalWorkflowVersion: {
+      payload: Prisma.$ApprovalWorkflowVersionPayload<ExtArgs>
+      fields: Prisma.ApprovalWorkflowVersionFieldRefs
+      operations: {
+        findUnique: {
+          args: Prisma.ApprovalWorkflowVersionFindUniqueArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ApprovalWorkflowVersionPayload> | null
+        }
+        findUniqueOrThrow: {
+          args: Prisma.ApprovalWorkflowVersionFindUniqueOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ApprovalWorkflowVersionPayload>
+        }
+        findFirst: {
+          args: Prisma.ApprovalWorkflowVersionFindFirstArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ApprovalWorkflowVersionPayload> | null
+        }
+        findFirstOrThrow: {
+          args: Prisma.ApprovalWorkflowVersionFindFirstOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ApprovalWorkflowVersionPayload>
+        }
+        findMany: {
+          args: Prisma.ApprovalWorkflowVersionFindManyArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ApprovalWorkflowVersionPayload>[]
+        }
+        create: {
+          args: Prisma.ApprovalWorkflowVersionCreateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ApprovalWorkflowVersionPayload>
+        }
+        createMany: {
+          args: Prisma.ApprovalWorkflowVersionCreateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        createManyAndReturn: {
+          args: Prisma.ApprovalWorkflowVersionCreateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ApprovalWorkflowVersionPayload>[]
+        }
+        delete: {
+          args: Prisma.ApprovalWorkflowVersionDeleteArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ApprovalWorkflowVersionPayload>
+        }
+        update: {
+          args: Prisma.ApprovalWorkflowVersionUpdateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ApprovalWorkflowVersionPayload>
+        }
+        deleteMany: {
+          args: Prisma.ApprovalWorkflowVersionDeleteManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateMany: {
+          args: Prisma.ApprovalWorkflowVersionUpdateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateManyAndReturn: {
+          args: Prisma.ApprovalWorkflowVersionUpdateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ApprovalWorkflowVersionPayload>[]
+        }
+        upsert: {
+          args: Prisma.ApprovalWorkflowVersionUpsertArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ApprovalWorkflowVersionPayload>
+        }
+        aggregate: {
+          args: Prisma.ApprovalWorkflowVersionAggregateArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.AggregateApprovalWorkflowVersion>
+        }
+        groupBy: {
+          args: Prisma.ApprovalWorkflowVersionGroupByArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.ApprovalWorkflowVersionGroupByOutputType>[]
+        }
+        count: {
+          args: Prisma.ApprovalWorkflowVersionCountArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.ApprovalWorkflowVersionCountAggregateOutputType> | number
+        }
+      }
+    }
+    ApprovalInstance: {
+      payload: Prisma.$ApprovalInstancePayload<ExtArgs>
+      fields: Prisma.ApprovalInstanceFieldRefs
+      operations: {
+        findUnique: {
+          args: Prisma.ApprovalInstanceFindUniqueArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ApprovalInstancePayload> | null
+        }
+        findUniqueOrThrow: {
+          args: Prisma.ApprovalInstanceFindUniqueOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ApprovalInstancePayload>
+        }
+        findFirst: {
+          args: Prisma.ApprovalInstanceFindFirstArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ApprovalInstancePayload> | null
+        }
+        findFirstOrThrow: {
+          args: Prisma.ApprovalInstanceFindFirstOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ApprovalInstancePayload>
+        }
+        findMany: {
+          args: Prisma.ApprovalInstanceFindManyArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ApprovalInstancePayload>[]
+        }
+        create: {
+          args: Prisma.ApprovalInstanceCreateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ApprovalInstancePayload>
+        }
+        createMany: {
+          args: Prisma.ApprovalInstanceCreateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        createManyAndReturn: {
+          args: Prisma.ApprovalInstanceCreateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ApprovalInstancePayload>[]
+        }
+        delete: {
+          args: Prisma.ApprovalInstanceDeleteArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ApprovalInstancePayload>
+        }
+        update: {
+          args: Prisma.ApprovalInstanceUpdateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ApprovalInstancePayload>
+        }
+        deleteMany: {
+          args: Prisma.ApprovalInstanceDeleteManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateMany: {
+          args: Prisma.ApprovalInstanceUpdateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateManyAndReturn: {
+          args: Prisma.ApprovalInstanceUpdateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ApprovalInstancePayload>[]
+        }
+        upsert: {
+          args: Prisma.ApprovalInstanceUpsertArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ApprovalInstancePayload>
+        }
+        aggregate: {
+          args: Prisma.ApprovalInstanceAggregateArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.AggregateApprovalInstance>
+        }
+        groupBy: {
+          args: Prisma.ApprovalInstanceGroupByArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.ApprovalInstanceGroupByOutputType>[]
+        }
+        count: {
+          args: Prisma.ApprovalInstanceCountArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.ApprovalInstanceCountAggregateOutputType> | number
+        }
+      }
+    }
+    ApprovalTask: {
+      payload: Prisma.$ApprovalTaskPayload<ExtArgs>
+      fields: Prisma.ApprovalTaskFieldRefs
+      operations: {
+        findUnique: {
+          args: Prisma.ApprovalTaskFindUniqueArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ApprovalTaskPayload> | null
+        }
+        findUniqueOrThrow: {
+          args: Prisma.ApprovalTaskFindUniqueOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ApprovalTaskPayload>
+        }
+        findFirst: {
+          args: Prisma.ApprovalTaskFindFirstArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ApprovalTaskPayload> | null
+        }
+        findFirstOrThrow: {
+          args: Prisma.ApprovalTaskFindFirstOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ApprovalTaskPayload>
+        }
+        findMany: {
+          args: Prisma.ApprovalTaskFindManyArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ApprovalTaskPayload>[]
+        }
+        create: {
+          args: Prisma.ApprovalTaskCreateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ApprovalTaskPayload>
+        }
+        createMany: {
+          args: Prisma.ApprovalTaskCreateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        createManyAndReturn: {
+          args: Prisma.ApprovalTaskCreateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ApprovalTaskPayload>[]
+        }
+        delete: {
+          args: Prisma.ApprovalTaskDeleteArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ApprovalTaskPayload>
+        }
+        update: {
+          args: Prisma.ApprovalTaskUpdateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ApprovalTaskPayload>
+        }
+        deleteMany: {
+          args: Prisma.ApprovalTaskDeleteManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateMany: {
+          args: Prisma.ApprovalTaskUpdateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateManyAndReturn: {
+          args: Prisma.ApprovalTaskUpdateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ApprovalTaskPayload>[]
+        }
+        upsert: {
+          args: Prisma.ApprovalTaskUpsertArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ApprovalTaskPayload>
+        }
+        aggregate: {
+          args: Prisma.ApprovalTaskAggregateArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.AggregateApprovalTask>
+        }
+        groupBy: {
+          args: Prisma.ApprovalTaskGroupByArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.ApprovalTaskGroupByOutputType>[]
+        }
+        count: {
+          args: Prisma.ApprovalTaskCountArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.ApprovalTaskCountAggregateOutputType> | number
+        }
+      }
+    }
   }
 } & {
   other: {
@@ -3363,6 +3663,82 @@ export const FiscalYearExternalIdScalarFieldEnum = {
 export type FiscalYearExternalIdScalarFieldEnum = (typeof FiscalYearExternalIdScalarFieldEnum)[keyof typeof FiscalYearExternalIdScalarFieldEnum]
 
 
+export const ApprovalWorkflowScalarFieldEnum = {
+  id: 'id',
+  organizationId: 'organizationId',
+  key: 'key',
+  name: 'name',
+  description: 'description',
+  subjectType: 'subjectType',
+  callable: 'callable',
+  isDefault: 'isDefault',
+  priority: 'priority',
+  active: 'active',
+  currentVersionId: 'currentVersionId',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt',
+  createdBy: 'createdBy',
+  updatedBy: 'updatedBy'
+} as const
+
+export type ApprovalWorkflowScalarFieldEnum = (typeof ApprovalWorkflowScalarFieldEnum)[keyof typeof ApprovalWorkflowScalarFieldEnum]
+
+
+export const ApprovalWorkflowVersionScalarFieldEnum = {
+  id: 'id',
+  organizationId: 'organizationId',
+  workflowId: 'workflowId',
+  version: 'version',
+  matchCondition: 'matchCondition',
+  graph: 'graph',
+  status: 'status',
+  publishedAt: 'publishedAt',
+  publishedBy: 'publishedBy',
+  createdAt: 'createdAt'
+} as const
+
+export type ApprovalWorkflowVersionScalarFieldEnum = (typeof ApprovalWorkflowVersionScalarFieldEnum)[keyof typeof ApprovalWorkflowVersionScalarFieldEnum]
+
+
+export const ApprovalInstanceScalarFieldEnum = {
+  id: 'id',
+  organizationId: 'organizationId',
+  workflowVersionId: 'workflowVersionId',
+  subjectType: 'subjectType',
+  subjectId: 'subjectId',
+  status: 'status',
+  cursor: 'cursor',
+  effectiveGraph: 'effectiveGraph',
+  parentInstanceId: 'parentInstanceId',
+  callDepth: 'callDepth',
+  startedAt: 'startedAt',
+  completedAt: 'completedAt'
+} as const
+
+export type ApprovalInstanceScalarFieldEnum = (typeof ApprovalInstanceScalarFieldEnum)[keyof typeof ApprovalInstanceScalarFieldEnum]
+
+
+export const ApprovalTaskScalarFieldEnum = {
+  id: 'id',
+  organizationId: 'organizationId',
+  instanceId: 'instanceId',
+  nodeId: 'nodeId',
+  assigneeUserId: 'assigneeUserId',
+  label: 'label',
+  status: 'status',
+  decidedById: 'decidedById',
+  decidedAt: 'decidedAt',
+  note: 'note',
+  expiresAt: 'expiresAt',
+  escalationLevel: 'escalationLevel',
+  deadlineReminderAt: 'deadlineReminderAt',
+  parallelGroup: 'parallelGroup',
+  createdAt: 'createdAt'
+} as const
+
+export type ApprovalTaskScalarFieldEnum = (typeof ApprovalTaskScalarFieldEnum)[keyof typeof ApprovalTaskScalarFieldEnum]
+
+
 export const SortOrder = {
   asc: 'asc',
   desc: 'desc'
@@ -3677,6 +4053,10 @@ export type GlobalOmitConfig = {
   jobLevelExternalId?: Prisma.JobLevelExternalIdOmit
   fiscalYear?: Prisma.FiscalYearOmit
   fiscalYearExternalId?: Prisma.FiscalYearExternalIdOmit
+  approvalWorkflow?: Prisma.ApprovalWorkflowOmit
+  approvalWorkflowVersion?: Prisma.ApprovalWorkflowVersionOmit
+  approvalInstance?: Prisma.ApprovalInstanceOmit
+  approvalTask?: Prisma.ApprovalTaskOmit
 }
 
 /* Types for Logging */

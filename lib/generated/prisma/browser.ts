@@ -182,3 +182,24 @@ export type FiscalYear = Prisma.FiscalYearModel
  * 
  */
 export type FiscalYearExternalId = Prisma.FiscalYearExternalIdModel
+/**
+ * Model ApprovalWorkflow
+ * ExpenseOS's ApprovalWorkflow. `key` is unique within the tenant.
+ */
+export type ApprovalWorkflow = Prisma.ApprovalWorkflowModel
+/**
+ * Model ApprovalWorkflowVersion
+ * ExpenseOS's ApprovalWorkflowVersion.
+ */
+export type ApprovalWorkflowVersion = Prisma.ApprovalWorkflowVersionModel
+/**
+ * Model ApprovalInstance
+ * ExpenseOS's ApprovalInstance: one run of a published version over one subject.
+ */
+export type ApprovalInstance = Prisma.ApprovalInstanceModel
+/**
+ * Model ApprovalTask
+ * ExpenseOS's ApprovalTask: one required approver at one node. VeloExpense: the table is
+ * `approval_instance_task` until the ladder's `approval_task` is retired (w4-00d).
+ */
+export type ApprovalTask = Prisma.ApprovalTaskModel

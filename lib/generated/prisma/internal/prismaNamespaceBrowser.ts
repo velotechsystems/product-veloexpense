@@ -82,7 +82,11 @@ export const ModelName = {
   JobLevel: 'JobLevel',
   JobLevelExternalId: 'JobLevelExternalId',
   FiscalYear: 'FiscalYear',
-  FiscalYearExternalId: 'FiscalYearExternalId'
+  FiscalYearExternalId: 'FiscalYearExternalId',
+  ApprovalWorkflow: 'ApprovalWorkflow',
+  ApprovalWorkflowVersion: 'ApprovalWorkflowVersion',
+  ApprovalInstance: 'ApprovalInstance',
+  ApprovalTask: 'ApprovalTask'
 } as const
 
 export type ModelName = (typeof ModelName)[keyof typeof ModelName]
@@ -620,6 +624,82 @@ export const FiscalYearExternalIdScalarFieldEnum = {
 } as const
 
 export type FiscalYearExternalIdScalarFieldEnum = (typeof FiscalYearExternalIdScalarFieldEnum)[keyof typeof FiscalYearExternalIdScalarFieldEnum]
+
+
+export const ApprovalWorkflowScalarFieldEnum = {
+  id: 'id',
+  organizationId: 'organizationId',
+  key: 'key',
+  name: 'name',
+  description: 'description',
+  subjectType: 'subjectType',
+  callable: 'callable',
+  isDefault: 'isDefault',
+  priority: 'priority',
+  active: 'active',
+  currentVersionId: 'currentVersionId',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt',
+  createdBy: 'createdBy',
+  updatedBy: 'updatedBy'
+} as const
+
+export type ApprovalWorkflowScalarFieldEnum = (typeof ApprovalWorkflowScalarFieldEnum)[keyof typeof ApprovalWorkflowScalarFieldEnum]
+
+
+export const ApprovalWorkflowVersionScalarFieldEnum = {
+  id: 'id',
+  organizationId: 'organizationId',
+  workflowId: 'workflowId',
+  version: 'version',
+  matchCondition: 'matchCondition',
+  graph: 'graph',
+  status: 'status',
+  publishedAt: 'publishedAt',
+  publishedBy: 'publishedBy',
+  createdAt: 'createdAt'
+} as const
+
+export type ApprovalWorkflowVersionScalarFieldEnum = (typeof ApprovalWorkflowVersionScalarFieldEnum)[keyof typeof ApprovalWorkflowVersionScalarFieldEnum]
+
+
+export const ApprovalInstanceScalarFieldEnum = {
+  id: 'id',
+  organizationId: 'organizationId',
+  workflowVersionId: 'workflowVersionId',
+  subjectType: 'subjectType',
+  subjectId: 'subjectId',
+  status: 'status',
+  cursor: 'cursor',
+  effectiveGraph: 'effectiveGraph',
+  parentInstanceId: 'parentInstanceId',
+  callDepth: 'callDepth',
+  startedAt: 'startedAt',
+  completedAt: 'completedAt'
+} as const
+
+export type ApprovalInstanceScalarFieldEnum = (typeof ApprovalInstanceScalarFieldEnum)[keyof typeof ApprovalInstanceScalarFieldEnum]
+
+
+export const ApprovalTaskScalarFieldEnum = {
+  id: 'id',
+  organizationId: 'organizationId',
+  instanceId: 'instanceId',
+  nodeId: 'nodeId',
+  assigneeUserId: 'assigneeUserId',
+  label: 'label',
+  status: 'status',
+  decidedById: 'decidedById',
+  decidedAt: 'decidedAt',
+  note: 'note',
+  expiresAt: 'expiresAt',
+  escalationLevel: 'escalationLevel',
+  deadlineReminderAt: 'deadlineReminderAt',
+  parallelGroup: 'parallelGroup',
+  createdAt: 'createdAt'
+} as const
+
+export type ApprovalTaskScalarFieldEnum = (typeof ApprovalTaskScalarFieldEnum)[keyof typeof ApprovalTaskScalarFieldEnum]
 
 
 export const SortOrder = {

@@ -691,6 +691,13 @@ Two notes for the TTL ticket, both confirmed against `0008`:
 
 ### AP-9 · The workflow model diverges by design — `engine-core.ts` and `graph.ts` are **not** port targets
 
+> **SUPERSEDED 11 Oct 2026 (d50, Wave 4 w4-00).** The goal changed from an MVP ladder to matching
+> ExpenseOS's workflows, so the graph engine IS now ported and the ladder retires: the pure
+> kernel (`engine-core.ts`, `graph.ts`, `schema.ts`, `inline.ts`) in w4-00a with migration 0058,
+> the interpreter (`engine.ts`) in w4-00b, the cutover in w4-00c, the ladder's removal in w4-00d. Each tenant's ladder becomes an
+> equivalent published workflow (d51); reports awaiting approval at the cutover go back to draft
+> (d52). The reasoning below is kept as it was written, for the record of why it was once right.
+
 Worth stating plainly so a later "faithful port" pass does not try. `engine-core.ts` is a
 BPMN-lite **token interpreter over a directed graph**: tokens flow from a `start` node toward a
 terminal; `if` / `switch` nodes route on a predicate; `parallel` forks one token per branch and the
