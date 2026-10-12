@@ -142,11 +142,14 @@ export class ComputeStack extends Stack {
       nameArn(`${config.secretPrefix}/${REDIS_URL_SECRET}`),
     ]);
     // The worker: the queue's URL; and, with receipt reading (w3-02a), veloapp's login —
-    // the same RLS-bound role the web app uses — and the Anthropic key. Nothing else.
+    // the same RLS-bound role the web app uses — and the Anthropic key. And the mail relay:
+    // receipts by email (w3-06) answers the sender from the worker, as ExpenseOS's worker
+    // does (its `sharedSecrets` give both tasks SMTP). Nothing else.
     const workerExecRole = executionRole('WorkerExecutionRole', 'worker', [
       nameArn(`${config.secretPrefix}/${REDIS_URL_SECRET}`),
       props.appDbSecretArn,
       nameArn(`${config.secretPrefix}/${ANTHROPIC_API_KEY_SECRET}`),
+      nameArn(config.smtpSecretName),
     ]);
     // The database task: the master login and veloapp's (to set its password). Nothing else.
     const dbExecRole = executionRole('DbExecutionRole', 'db', [props.masterDbSecretArn, props.appDbSecretArn]);
@@ -400,6 +403,14 @@ export class ComputeStack extends Stack {
         DB_USER: ecs.Secret.fromSecretsManager(appDb, 'username'),
         DB_PASSWORD: ecs.Secret.fromSecretsManager(appDb, 'password'),
         ANTHROPIC_API_KEY: ecs.Secret.fromSecretsManager(anthropicKey),
+        // The acknowledgement and cap emails of receipts by email (w3-06). Without these
+        // the worker falls back to the console transport: the reply is logged, not sent.
+        // The same relay and the same mapping as the web task's.
+        SMTP_HOST: ecs.Secret.fromSecretsManager(smtp, 'SMTP_HOST'),
+        SMTP_PORT: ecs.Secret.fromSecretsManager(smtp, 'SMTP_PORT'),
+        SMTP_USER: ecs.Secret.fromSecretsManager(smtp, 'SMTP_USER'),
+        SMTP_PASS: ecs.Secret.fromSecretsManager(smtp, 'SMTP_PASSWORD'),
+        EMAIL_FROM: ecs.Secret.fromSecretsManager(smtp, 'SMTP_FROM_ADDRESS'),
       },
       logging: ecs.LogDrivers.awsLogs({ logGroup: logGroup('WorkerLogs', 'worker'), streamPrefix: 'worker' }),
     });

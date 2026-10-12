@@ -264,11 +264,28 @@ describe('the queue (w3-00)', () => {
     expect(value).toContain('resolve:secretsmanager');
   });
 
-  it('the worker runs the bundle with the queue, veloapp\'s login and the model key — nothing else', () => {
+  it('the worker runs the bundle with the queue, veloapp\'s login, the model key and the mail relay — nothing else', () => {
     const w = secretsOf('veloexpense-dev-worker');
     expect(w.command).toEqual(['node', 'worker/dist/main.mjs']);
     // w3-02a: the database as veloapp (RLS-bound, like the web task) and the Anthropic key.
-    expect([...w.secrets].sort()).toEqual(['ANTHROPIC_API_KEY', 'DB_PASSWORD', 'DB_USER', 'REDIS_URL']);
+    // w3-06: the relay, so a receipt emailed in is acknowledged rather than logged.
+    expect([...w.secrets].sort()).toEqual([
+      'ANTHROPIC_API_KEY',
+      'DB_PASSWORD',
+      'DB_USER',
+      'EMAIL_FROM',
+      'REDIS_URL',
+      'SMTP_HOST',
+      'SMTP_PASS',
+      'SMTP_PORT',
+      'SMTP_USER',
+    ]);
+  });
+
+  it('the worker and the web task read the same relay under the same names', () => {
+    const relay = (family: string) =>
+      [...secretsOf(family).secrets].filter((n) => n.startsWith('SMTP_') || n === 'EMAIL_FROM').sort();
+    expect(relay('veloexpense-dev-worker')).toEqual(relay('veloexpense-dev-web'));
   });
 
   it('only the worker receives the Anthropic key', () => {
@@ -294,13 +311,14 @@ describe('the queue (w3-00)', () => {
     expect(svc.Properties.LoadBalancers).toBeUndefined();
   });
 
-  it('the worker execution role reads the queue URL, veloapp\'s login and the model key only', () => {
+  it('the worker execution role reads the queue URL, veloapp\'s login, the model key and the relay only', () => {
     const [, p] = resources(s.compute, 'AWS::IAM::Policy').find(([id]) => id.startsWith('WorkerExecutionRole'))!;
     const text = json(p.Properties);
     expect(text).toContain('veloexpense/dev/redis-url');
     expect(text).toContain('veloexpense/dev/anthropic-api-key');
+    expect(text).toContain('velocrm/smtp-credentials');
     expect(text).toMatch(/AppDb/);
-    expect(text).not.toMatch(/AuthSecret|WorkerSecret|MasterDb|rds-master|secret-encryption-key|google-oauth|smtp/);
+    expect(text).not.toMatch(/AuthSecret|WorkerSecret|MasterDb|rds-master|secret-encryption-key|google-oauth/);
   });
 
   it('the worker may read a receipt and its scan tag, and delete or list nothing (w3-02a)', () => {
