@@ -185,6 +185,7 @@ describe('isPortedScreen', () => {
       '/admin/fx-rates',
       '/admin/mileage-rates',
       '/admin/per-diem-rates',
+      '/admin/approval-workflows',
     ]);
   });
 });

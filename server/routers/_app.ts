@@ -1,5 +1,6 @@
 import { router } from '@/server/trpc';
 import { appSettingsRouter } from './appSettings';
+import { approvalWorkflowsRouter } from './approvalWorkflows';
 import { businessUnitsRouter } from './businessUnits';
 import { commentsRouter } from './comments';
 import { departmentsRouter } from './departments';
@@ -21,6 +22,8 @@ import { policiesRouter } from './policies';
  */
 export const appRouter = router({
   appSettings: appSettingsRouter,
+  // w4-01: ExpenseOS's workflow builder (d55: lands before the cutover).
+  approvalWorkflows: approvalWorkflowsRouter,
   businessUnits: businessUnitsRouter,
   // w2-02a: the discussion on a report (d37).
   comments: commentsRouter,
