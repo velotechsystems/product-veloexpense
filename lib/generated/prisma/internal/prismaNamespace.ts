@@ -419,7 +419,8 @@ export const ModelName = {
   ApprovalWorkflow: 'ApprovalWorkflow',
   ApprovalWorkflowVersion: 'ApprovalWorkflowVersion',
   ApprovalInstance: 'ApprovalInstance',
-  ApprovalTask: 'ApprovalTask'
+  ApprovalTask: 'ApprovalTask',
+  Delegation: 'Delegation'
 } as const
 
 export type ModelName = (typeof ModelName)[keyof typeof ModelName]
@@ -435,7 +436,7 @@ export type TypeMap<ExtArgs extends runtime.Types.Extensions.InternalArgs = runt
     omit: GlobalOmitOptions
   }
   meta: {
-    modelProps: "expenseCategory" | "glAccount" | "expenseReport" | "expense" | "expenseAllocation" | "expenseAttendee" | "expenseLineItem" | "receipt" | "documentExtraction" | "expenseDetermination" | "receiptExternalId" | "expenseExternalId" | "aiUsage" | "taxJurisdiction" | "user" | "businessUnit" | "externalIdSource" | "businessUnitExternalId" | "legalEntity" | "legalEntityExternalId" | "fxRate" | "mileageRate" | "mileageRateTier" | "mileageRateSubject" | "perDiemRate" | "currency" | "department" | "departmentExternalId" | "jobLevel" | "jobLevelExternalId" | "fiscalYear" | "fiscalYearExternalId" | "approvalWorkflow" | "approvalWorkflowVersion" | "approvalInstance" | "approvalTask"
+    modelProps: "expenseCategory" | "glAccount" | "expenseReport" | "expense" | "expenseAllocation" | "expenseAttendee" | "expenseLineItem" | "receipt" | "documentExtraction" | "expenseDetermination" | "receiptExternalId" | "expenseExternalId" | "aiUsage" | "taxJurisdiction" | "user" | "businessUnit" | "externalIdSource" | "businessUnitExternalId" | "legalEntity" | "legalEntityExternalId" | "fxRate" | "mileageRate" | "mileageRateTier" | "mileageRateSubject" | "perDiemRate" | "currency" | "department" | "departmentExternalId" | "jobLevel" | "jobLevelExternalId" | "fiscalYear" | "fiscalYearExternalId" | "approvalWorkflow" | "approvalWorkflowVersion" | "approvalInstance" | "approvalTask" | "delegation"
     txIsolationLevel: TransactionIsolationLevel
   }
   model: {
@@ -3103,6 +3104,80 @@ export type TypeMap<ExtArgs extends runtime.Types.Extensions.InternalArgs = runt
         }
       }
     }
+    Delegation: {
+      payload: Prisma.$DelegationPayload<ExtArgs>
+      fields: Prisma.DelegationFieldRefs
+      operations: {
+        findUnique: {
+          args: Prisma.DelegationFindUniqueArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$DelegationPayload> | null
+        }
+        findUniqueOrThrow: {
+          args: Prisma.DelegationFindUniqueOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$DelegationPayload>
+        }
+        findFirst: {
+          args: Prisma.DelegationFindFirstArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$DelegationPayload> | null
+        }
+        findFirstOrThrow: {
+          args: Prisma.DelegationFindFirstOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$DelegationPayload>
+        }
+        findMany: {
+          args: Prisma.DelegationFindManyArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$DelegationPayload>[]
+        }
+        create: {
+          args: Prisma.DelegationCreateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$DelegationPayload>
+        }
+        createMany: {
+          args: Prisma.DelegationCreateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        createManyAndReturn: {
+          args: Prisma.DelegationCreateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$DelegationPayload>[]
+        }
+        delete: {
+          args: Prisma.DelegationDeleteArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$DelegationPayload>
+        }
+        update: {
+          args: Prisma.DelegationUpdateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$DelegationPayload>
+        }
+        deleteMany: {
+          args: Prisma.DelegationDeleteManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateMany: {
+          args: Prisma.DelegationUpdateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateManyAndReturn: {
+          args: Prisma.DelegationUpdateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$DelegationPayload>[]
+        }
+        upsert: {
+          args: Prisma.DelegationUpsertArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$DelegationPayload>
+        }
+        aggregate: {
+          args: Prisma.DelegationAggregateArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.AggregateDelegation>
+        }
+        groupBy: {
+          args: Prisma.DelegationGroupByArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.DelegationGroupByOutputType>[]
+        }
+        count: {
+          args: Prisma.DelegationCountArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.DelegationCountAggregateOutputType> | number
+        }
+      }
+    }
   }
 } & {
   other: {
@@ -3424,6 +3499,7 @@ export const UserScalarFieldEnum = {
   businessUnitId: 'businessUnitId',
   legalEntityId: 'legalEntityId',
   jobLevelId: 'jobLevelId',
+  role: 'role',
   deletedAt: 'deletedAt',
   createdAt: 'createdAt',
   updatedAt: 'updatedAt'
@@ -3737,6 +3813,25 @@ export const ApprovalTaskScalarFieldEnum = {
 } as const
 
 export type ApprovalTaskScalarFieldEnum = (typeof ApprovalTaskScalarFieldEnum)[keyof typeof ApprovalTaskScalarFieldEnum]
+
+
+export const DelegationScalarFieldEnum = {
+  id: 'id',
+  organizationId: 'organizationId',
+  fromUserId: 'fromUserId',
+  toUserId: 'toUserId',
+  startsOn: 'startsOn',
+  endsOn: 'endsOn',
+  scope: 'scope',
+  createdById: 'createdById',
+  revokedAt: 'revokedAt',
+  revokedById: 'revokedById',
+  note: 'note',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+} as const
+
+export type DelegationScalarFieldEnum = (typeof DelegationScalarFieldEnum)[keyof typeof DelegationScalarFieldEnum]
 
 
 export const SortOrder = {
@@ -4057,6 +4152,7 @@ export type GlobalOmitConfig = {
   approvalWorkflowVersion?: Prisma.ApprovalWorkflowVersionOmit
   approvalInstance?: Prisma.ApprovalInstanceOmit
   approvalTask?: Prisma.ApprovalTaskOmit
+  delegation?: Prisma.DelegationOmit
 }
 
 /* Types for Logging */

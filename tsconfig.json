@@ -39,7 +39,8 @@
       "@expenseos/jobs": ["./packages/jobs/src/index.ts"],
       "@expenseos/db": ["./packages/db/src/index.ts"],
       "@expenseos/predicate": ["./packages/predicate/src/index.ts"],
-      "@expenseos/approvals": ["./packages/approvals/src/index.ts"]
+      "@expenseos/approvals": ["./packages/approvals/src/index.ts"],
+      "@expenseos/approvals/engine": ["./packages/approvals/src/engine.ts"]
     }
   },
   "include": [

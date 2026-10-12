@@ -203,3 +203,8 @@ export type ApprovalInstance = Prisma.ApprovalInstanceModel
  * `approval_instance_task` until the ladder's `approval_task` is retired (w4-00d).
  */
 export type ApprovalTask = Prisma.ApprovalTaskModel
+/**
+ * Model Delegation
+ * 
+ */
+export type Delegation = Prisma.DelegationModel
