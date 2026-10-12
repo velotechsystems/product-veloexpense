@@ -94,7 +94,9 @@ describe('every tenant chain verifies', () => {
     const present = new Set(actions.rows.map((r) => r.action as string));
     // Not the full taxonomy: only what a seeded database plus the e2e must have
     // produced. Adding to this list is a decision, not housekeeping.
-    for (const expected of ['APPROVAL_RUN_OPENED', 'REPORT_APPROVED', 'REPORT_REIMBURSED']) {
+    // w4-00c: REPORT_SUBMITTED in place of the ladder's APPROVAL_RUN_OPENED — ExpenseOS's engine
+    // writes no row of its own when it starts, so the submit is the row a submit leaves.
+    for (const expected of ['REPORT_SUBMITTED', 'REPORT_APPROVED', 'REPORT_REIMBURSED']) {
       expect(present.has(expected), `${expected} should be in the audit chain`).toBe(true);
     }
   });
