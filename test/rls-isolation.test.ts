@@ -2809,4 +2809,118 @@ describe('RLS tenant isolation', () => {
     await admin.query('DELETE FROM tenant_export');
   });
 
+  /* ── approval workflows (Wave 4, w4-00a, migration 0058) ────────────────────
+   *
+   * A workflow, its versions, its runs and their tasks are each tenant's own; a version
+   * cannot hang off another tenant's workflow, a run off another tenant's version, a task
+   * off another tenant's run or be assigned to another tenant's person (composite keys).
+   */
+  it('approval workflows, versions, runs and tasks are tenant-isolated, across every key', async () => {
+    const seed = (org: string, label: string) =>
+      withOrg(org, async (tx) => {
+        const user = (await tx.query('SELECT id FROM app_user WHERE organization_id = $1 LIMIT 1', [org])).rows[0]
+          .id as string;
+        const workflow = (
+          await tx.query(
+            `INSERT INTO approval_workflow (organization_id, key, name, subject_type, is_default)
+             VALUES ($1, 'default', $2, 'EXPENSE_REPORT', true) RETURNING id`,
+            [org, `Workflow ${label}`],
+          )
+        ).rows[0].id as string;
+        const version = (
+          await tx.query(
+            `INSERT INTO approval_workflow_version (organization_id, workflow_id, version, match_condition, graph, status)
+             VALUES ($1, $2, 1, '{"always":true}', '{"nodes":[],"edges":[]}', 'PUBLISHED') RETURNING id`,
+            [org, workflow],
+          )
+        ).rows[0].id as string;
+        const instance = (
+          await tx.query(
+            `INSERT INTO approval_instance (organization_id, workflow_version_id, subject_type, subject_id, cursor)
+             VALUES ($1, $2, 'EXPENSE_REPORT', gen_random_uuid(), '{}') RETURNING id`,
+            [org, version],
+          )
+        ).rows[0].id as string;
+        await tx.query(
+          `INSERT INTO approval_instance_task (organization_id, instance_id, node_id, assignee_user_id, label)
+           VALUES ($1, $2, 'n1', $3, $4)`,
+          [org, instance, user, `Task ${label}`],
+        );
+        return { user, workflow, version, instance };
+      });
+    const a = await seed(orgA, 'A');
+    const b = await seed(orgB, 'B');
+
+    for (const [org, label] of [
+      [orgA, 'A'],
+      [orgB, 'B'],
+    ] as const) {
+      const names = await withOrg(org, (tx) => tx.query('SELECT name FROM approval_workflow'));
+      expect(names.rows).toEqual([{ name: `Workflow ${label}` }]);
+      const tasks = await withOrg(org, (tx) => tx.query('SELECT label FROM approval_instance_task'));
+      expect(tasks.rows).toEqual([{ label: `Task ${label}` }]);
+      for (const t of ['approval_workflow_version', 'approval_instance']) {
+        const n = await withOrg(org, (tx) => tx.query(`SELECT count(*)::int AS n FROM ${t}`));
+        expect(n.rows[0].n, t).toBe(1);
+      }
+    }
+
+    // Both tenants hold a workflow keyed 'default' (seeded above): a key is unique per tenant.
+    // WITH CHECK: naming the other tenant is refused outright.
+    await expect(
+      withOrg(orgB, (tx) =>
+        tx.query(
+          `INSERT INTO approval_workflow (organization_id, key, name, subject_type) VALUES ($1, 'x', 'x', 'EXPENSE_REPORT')`,
+          [orgA],
+        ),
+      ),
+    ).rejects.toThrow(/row-level security|violates/i);
+    // Composite keys: B's own rows may not reach A's workflow, version, run or person.
+    await expect(
+      withOrg(orgB, (tx) =>
+        tx.query(
+          `INSERT INTO approval_workflow_version (organization_id, workflow_id, version, match_condition, graph)
+           VALUES ($1, $2, 9, '{}', '{}')`,
+          [orgB, a.workflow],
+        ),
+      ),
+    ).rejects.toThrow(/foreign key/i);
+    await expect(
+      withOrg(orgB, (tx) =>
+        tx.query(
+          `INSERT INTO approval_instance (organization_id, workflow_version_id, subject_type, subject_id, cursor)
+           VALUES ($1, $2, 'EXPENSE_REPORT', gen_random_uuid(), '{}')`,
+          [orgB, a.version],
+        ),
+      ),
+    ).rejects.toThrow(/foreign key/i);
+    await expect(
+      withOrg(orgB, (tx) =>
+        tx.query(`INSERT INTO approval_instance_task (organization_id, instance_id, node_id) VALUES ($1, $2, 'n')`, [
+          orgB,
+          a.instance,
+        ]),
+      ),
+    ).rejects.toThrow(/foreign key/i);
+    await expect(
+      withOrg(orgB, (tx) =>
+        tx.query(
+          `INSERT INTO approval_instance_task (organization_id, instance_id, node_id, assignee_user_id) VALUES ($1, $2, 'n', $3)`,
+          [orgB, b.instance, a.user],
+        ),
+      ),
+    ).rejects.toThrow(/foreign key/i);
+
+    // NO HATCH, in either direction.
+    for (const t of ['approval_workflow', 'approval_workflow_version', 'approval_instance', 'approval_instance_task']) {
+      const viaPlatform = await withPlatformRead((tx) => tx.query(`SELECT count(*)::int AS n FROM ${t}`));
+      expect(viaPlatform.rows[0].n, t).toBe(0);
+      const blind = await withoutOrg((tx) => tx.query(`SELECT count(*)::int AS n FROM ${t}`));
+      expect(blind.rows[0].n, t).toBe(0);
+    }
+
+    await admin.query(`DELETE FROM approval_instance`);
+    await admin.query(`DELETE FROM approval_workflow`);
+  });
+
 });

@@ -474,6 +474,9 @@ model User {
   expenses     Expense[]       @relation("ExpenseOwner")
   receipts     Receipt[]       @relation("ReceiptUploader")
   mileageRates MileageRateSubject[] @relation("MileageRateSubject")
+  /// w4-00a: the workflow engine's tasks (0058).
+  approvalTasksAssigned ApprovalTask[] @relation("ApprovalTaskAssignee")
+  approvalTasksDecided  ApprovalTask[] @relation("ApprovalTaskDecider")
 
   @@map("app_user")
 }
@@ -826,4 +829,120 @@ model FiscalYearExternalId {
   @@unique([sourceId, sourceValue])
   @@index([fiscalYearId])
   @@map("fiscal_year_external_id")
+}
+
+// ── Approval workflows (Wave 4, w4-00a, migration 0058, d50) ─────────────────
+// ExpenseOS's ApprovalWorkflow / ApprovalWorkflowVersion / ApprovalInstance / ApprovalTask
+// (550b2945), per tenant. Its enums are text under CHECKs here, as the Wave 2 tables keep
+// them. Nothing reads these until the interpreter (w4-00b); the ladder (0008) still runs
+// every approval until the cutover.
+
+/// ExpenseOS's ApprovalWorkflow. `key` is unique within the tenant.
+model ApprovalWorkflow {
+  id               String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId   String   @default(dbgenerated("(NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid")) @map("organization_id") @db.Uuid
+  key              String
+  name             String
+  description      String?
+  /// EXPENSE_REPORT | TRAVEL_REQUEST (a CHECK in the table).
+  subjectType      String   @map("subject_type")
+  callable         Boolean  @default(false)
+  isDefault        Boolean  @default(false) @map("is_default")
+  priority         Int      @default(0)
+  active           Boolean  @default(true)
+  /// A plain pointer to the in-effect PUBLISHED version, as ExpenseOS has it (no relation).
+  currentVersionId String?  @map("current_version_id") @db.Uuid
+  versions         ApprovalWorkflowVersion[] @relation("WorkflowVersions")
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  createdBy        String?  @map("created_by") @db.Uuid
+  updatedBy        String?  @map("updated_by") @db.Uuid
+
+  @@unique([organizationId, id])
+  @@unique([organizationId, key])
+  @@map("approval_workflow")
+}
+
+/// ExpenseOS's ApprovalWorkflowVersion.
+model ApprovalWorkflowVersion {
+  id             String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String           @default(dbgenerated("(NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid")) @map("organization_id") @db.Uuid
+  workflowId     String           @map("workflow_id") @db.Uuid
+  workflow       ApprovalWorkflow @relation("WorkflowVersions", fields: [organizationId, workflowId], references: [organizationId, id], onDelete: Cascade)
+  version        Int
+  /// Predicate selecting which subjects this workflow governs (Zod-validated).
+  matchCondition Json             @map("match_condition")
+  /// { nodes, edges } authored in the editor (Zod-validated at publish).
+  graph          Json
+  /// DRAFT | PUBLISHED | ARCHIVED (a CHECK in the table).
+  status         String           @default("DRAFT")
+  publishedAt    DateTime?        @map("published_at") @db.Timestamptz(6)
+  publishedBy    String?          @map("published_by") @db.Uuid
+  createdAt      DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+  instances      ApprovalInstance[] @relation("InstanceVersion")
+
+  @@unique([organizationId, id])
+  @@unique([organizationId, workflowId, version])
+  @@map("approval_workflow_version")
+}
+
+/// ExpenseOS's ApprovalInstance: one run of a published version over one subject.
+model ApprovalInstance {
+  id                String                  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId    String                  @default(dbgenerated("(NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid")) @map("organization_id") @db.Uuid
+  workflowVersionId String                  @map("workflow_version_id") @db.Uuid
+  workflowVersion   ApprovalWorkflowVersion @relation("InstanceVersion", fields: [organizationId, workflowVersionId], references: [organizationId, id], onDelete: Restrict)
+  /// EXPENSE_REPORT | TRAVEL_REQUEST (a CHECK in the table).
+  subjectType       String                  @map("subject_type")
+  subjectId         String                  @map("subject_id") @db.Uuid
+  /// RUNNING | APPROVED | REJECTED | CANCELLED (a CHECK in the table).
+  status            String                  @default("RUNNING")
+  cursor            Json
+  /// The flattened graph actually executed — CallWorkflow nodes inlined at instantiation.
+  effectiveGraph    Json?                   @map("effective_graph")
+  parentInstanceId  String?                 @map("parent_instance_id") @db.Uuid
+  parent            ApprovalInstance?       @relation("SubflowStack", fields: [organizationId, parentInstanceId], references: [organizationId, id], onDelete: NoAction, onUpdate: NoAction)
+  children          ApprovalInstance[]      @relation("SubflowStack")
+  callDepth         Int                     @default(0) @map("call_depth")
+  startedAt         DateTime                @default(now()) @map("started_at") @db.Timestamptz(6)
+  completedAt       DateTime?               @map("completed_at") @db.Timestamptz(6)
+  tasks             ApprovalTask[]
+
+  @@unique([organizationId, id])
+  @@index([organizationId, subjectType, subjectId])
+  @@map("approval_instance")
+}
+
+/// ExpenseOS's ApprovalTask: one required approver at one node. VeloExpense: the table is
+/// `approval_instance_task` until the ladder's `approval_task` is retired (w4-00d).
+model ApprovalTask {
+  id                 String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId     String           @default(dbgenerated("(NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid")) @map("organization_id") @db.Uuid
+  instanceId         String           @map("instance_id") @db.Uuid
+  instance           ApprovalInstance @relation(fields: [organizationId, instanceId], references: [organizationId, id], onDelete: Cascade)
+  /// Node id within the version's graph that created this task.
+  nodeId             String           @map("node_id")
+  /// The database's key is composite (organization_id, assignee_user_id), as Receipt's
+  /// uploader; the relation is on the id alone because User has no composite unique.
+  assigneeUserId     String?          @map("assignee_user_id") @db.Uuid
+  assignee           User?            @relation("ApprovalTaskAssignee", fields: [assigneeUserId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  label              String?
+  /// PENDING | APPROVED | REJECTED | SKIPPED | EXPIRED (a CHECK in the table).
+  status             String           @default("PENDING")
+  decidedById        String?          @map("decided_by_id") @db.Uuid
+  decidedBy          User?            @relation("ApprovalTaskDecider", fields: [decidedById], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  decidedAt          DateTime?        @map("decided_at") @db.Timestamptz(6)
+  note               String?
+  /// Deadline (from the node's ttlBusinessDays) after which the sweep applies onExpire.
+  expiresAt          DateTime?        @map("expires_at") @db.Timestamptz(6)
+  escalationLevel    Int              @default(0) @map("escalation_level")
+  deadlineReminderAt DateTime?        @map("deadline_reminder_at") @db.Timestamptz(6)
+  /// Groups tasks forked by the same Parallel node (for the join policy).
+  parallelGroup      String?          @map("parallel_group")
+  createdAt          DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@unique([organizationId, id])
+  @@index([organizationId, assigneeUserId, status])
+  @@index([organizationId, instanceId])
+  @@map("approval_instance_task")
 }
