@@ -242,6 +242,70 @@ async function seedUser(orgId, email, displayName, employee = {}) {
 }
 
 /**
+ * w4-00c-1 (d54, d56) — the approval flow every tenant starts on, as `createOrganization`
+ * gives a real tenant (lib/approvals/defaultWorkflow.ts) and migration 0059 gave the tenants
+ * that predate it: Start → the submitter's manager → Approved, the tenant's first active
+ * administrator as the no-manager fallback, no deadline. The SQL is 0059's, for one tenant —
+ * this `.mjs` cannot import the TypeScript. Idempotent: a tenant that has it keeps it.
+ */
+async function seedDefaultApprovalWorkflow(orgId) {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query("SELECT set_config('app.current_org', $1, true)", [orgId]);
+    const has = await client.query(`SELECT 1 FROM approval_workflow WHERE key = 'expense-report-default'`);
+    if (has.rows.length === 0) {
+      const admin = (
+        await client.query(
+          `SELECT id FROM app_user
+            WHERE role = 'ADMIN' AND deleted_at IS NULL AND employee_status = 'ACTIVE'
+            ORDER BY created_at, id LIMIT 1`,
+        )
+      ).rows[0]?.id ?? null;
+      const approver = admin
+        ? { kind: 'manager', fallback: { kind: 'user', userId: admin } }
+        : { kind: 'manager' };
+      const graph = {
+        nodes: [
+          { id: 'start', type: 'start', position: { x: 240, y: 40 } },
+          { id: 'manager', type: 'approval', approver, position: { x: 240, y: 170 } },
+          { id: 'approved', type: 'approved', position: { x: 240, y: 320 } },
+        ],
+        edges: [
+          { id: 'e1', source: 'start', target: 'manager' },
+          { id: 'e2', source: 'manager', target: 'approved' },
+        ],
+      };
+      const wf = (
+        await client.query(
+          `INSERT INTO approval_workflow (key, name, description, subject_type, is_default, priority, active, created_by)
+           VALUES ('expense-report-default', 'Default — Manager approval',
+                   'The submitter''s direct manager approves. With no manager on file, the fallback approver does.',
+                   'EXPENSE_REPORT', true, 0, true, $1)
+           RETURNING id`,
+          [admin],
+        )
+      ).rows[0].id;
+      const ver = (
+        await client.query(
+          `INSERT INTO approval_workflow_version (workflow_id, version, match_condition, graph, status, published_at, published_by)
+           VALUES ($1, 1, '{"always": true}'::jsonb, $2::jsonb, 'PUBLISHED', now(), $3)
+           RETURNING id`,
+          [wf, JSON.stringify(graph), admin],
+        )
+      ).rows[0].id;
+      await client.query(`UPDATE approval_workflow SET current_version_id = $1 WHERE id = $2`, [ver, wf]);
+    }
+    await client.query('COMMIT');
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+/**
  * VX1-2 — give the demo tenant a reporting line and org placement so the admin
  * directory has something to show: employee → manager → admin, all placed in
  * the seeded department / business unit / legal entity. Idempotent.
@@ -558,6 +622,7 @@ async function main() {
   await seedUser(demoId, 'manager@demo.test', 'Demo Manager', { role: 'MANAGER', title: 'Finance Manager' });
   await seedUser(demoId, 'employee@demo.test', 'Demo Employee', { role: 'EMPLOYEE', title: 'Analyst' });
   await seedReportingLine(demoId);
+  await seedDefaultApprovalWorkflow(demoId);
 
   // ── VX3-9a: a SECOND populated tenant, on a DIFFERENT ledger ───────────────
   //
@@ -598,6 +663,7 @@ async function main() {
     // the controller's spend and the sole-approver flag covers the owner's own.
     chain: [['admin@second.test', 'owner@second.test']],
   });
+  await seedDefaultApprovalWorkflow(secondId);
 
   // ── NO LEDGER IS SEEDED, and the reason is worth writing down ──────────────
   //

@@ -62,6 +62,7 @@ import type { UserMessageCode } from '@/lib/i18n/catalog/errors';
 import { append as auditAppend } from '@/lib/audit/service';
 import { seedStarterCategories } from '@/lib/onboarding/starter';
 import { checkSlug, type SlugRefusal } from '@/lib/onboarding/slug';
+import { seedDefaultExpenseWorkflow } from '@/lib/approvals/defaultWorkflow';
 
 export type ProvisionErrorCode = SlugRefusal | 'SLUG_TAKEN' | 'NAME_REQUIRED' | 'EMAIL_REQUIRED';
 
@@ -196,6 +197,13 @@ export async function createOrganization(
      * Categories and nothing else: everything else a new tenant lacks is a
      * POLICY, and `lib/onboarding/starter.ts` argues the line. */
     const seededCategories = await seedStarterCategories(tx);
+
+    /* w4-00c-1 (d54, d56) — and the approval flow every tenant starts on: the submitter's
+     * manager approves, this administrator when there is no manager. In this transaction
+     * for the same reason as the categories: ExpenseOS's engine approves a report that no
+     * workflow governs, so a tenant without one would approve everything on submit. Not a
+     * policy in starter.ts's sense — the absence is not benign. */
+    await seedDefaultExpenseWorkflow(tx, adminUserId);
 
     /* VX5-19 — NO TRIAL IS STARTED HERE, and its absence is the decision.
      *

@@ -370,6 +370,10 @@ export const EVENT_TYPE_COPY: EnumCopy<EventType> = {
   RECEIPT_CHASE: { 'en-CA': 'A draft still has expenses without a receipt' },
   COMMENT: { 'en-CA': 'Someone commented on a report' },
   REASSIGNED: { 'en-CA': 'An approval was passed to someone else' },
+  // w4-00c: ExpenseOS's labels for its approval engine's events (notifications.json).
+  NOTIFY: { 'en-CA': 'An update from an approval workflow' },
+  TASK_EXPIRED: { 'en-CA': 'An expense report approval expired' },
+  DEADLINE_NEAR: { 'en-CA': 'An expense report approval is due soon' },
 };
 
 /* ── receipts ─────────────────────────────────────────────────────────────── */
