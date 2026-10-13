@@ -1,0 +1,78 @@
+# ===========================================================================
+# Mirror base images — copies the two upstream images this repo builds and tests
+# on into GitHub's container registry, so CI never pulls them anonymously (f33).
+#
+# WHY. ECR Public's anonymous pulls are limited per IP, and GitHub's hosted runners
+# share IPs with everyone else's. On 12-13 Oct 2026 that limit ("toomanyrequests:
+# Data limit exceeded") failed CI's Postgres service and the Security workflow's
+# image build. Docker Hub had the same problem first (f15, #174). ghcr.io is
+# GitHub's own registry, next to the runners, with no published anonymous quota of
+# that kind; if one ever bites, the pulls can sign in with the job's GITHUB_TOKEN.
+#
+#   public.ecr.aws/docker/library/node:24-alpine  ->  ghcr.io/velotechsystems/base-node:24-alpine
+#   public.ecr.aws/docker/library/postgres:16     ->  ghcr.io/velotechsystems/base-postgres:16
+#
+# `imagetools create` copies the manifest list unchanged — every platform, the same
+# digests — so the mirror IS the upstream image, not a rebuild of it.
+#
+# The packages must be PUBLIC (package settings → Change visibility). The Dockerfile
+# and ci.yml pull them with no credentials, and so does the Security workflow's image
+# build, which runs in the shared infra-ci-cd engine. They are public upstream images,
+# so nothing is disclosed.
+#
+# Weekly, the day before the Monday Security scan, so the scan sees the week's base.
+# Run it by hand (Actions → Mirror base images → Run workflow) to pick up an urgent
+# upstream fix sooner.
+# ===========================================================================
+name: Mirror base images
+
+on:
+  schedule:
+    - cron: '0 5 * * 0' # Sundays 05:00 UTC
+  workflow_dispatch: {}
+
+concurrency:
+  group: mirror-base-images
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  mirror:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Copy the images
+        # The source is still pulled anonymously, once a week. When that one pull meets
+        # the limit, wait and try again rather than failing the week: four tries, a
+        # minute, two, four apart.
+        run: |
+          set -euo pipefail
+          copy() {
+            local src="$1" dst="$2" wait=60
+            for attempt in 1 2 3 4; do
+              if docker buildx imagetools create --tag "$dst" "$src"; then
+                docker buildx imagetools inspect "$dst" | head -n 3
+                return 0
+              fi
+              if [ "$attempt" -lt 4 ]; then
+                echo "attempt $attempt failed; retrying in ${wait}s"
+                sleep "$wait"
+                wait=$((wait * 2))
+              fi
+            done
+            echo "::error::could not copy $src"
+            return 1
+          }
+          copy public.ecr.aws/docker/library/node:24-alpine ghcr.io/velotechsystems/base-node:24-alpine
+          copy public.ecr.aws/docker/library/postgres:16 ghcr.io/velotechsystems/base-postgres:16
