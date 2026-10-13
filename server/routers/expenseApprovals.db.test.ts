@@ -13,8 +13,9 @@ import { createTenantHarness, type TenantHarness } from '../__test-helpers__/ten
  * mocked `expenseApprovals.test.ts` about the engine's own work (the audit label, the ledger
  * hand-off, the notification) are proven, with the thread showing each reason (d37). Since
  * w4-00c all of it runs on ExpenseOS's approval engine, the tenant's default flow (d54/d59):
- * the submitter's manager, or the administrators when there is none. The rest of ExpenseOS's
- * suite (the approver's report, decideBulk, reimburse) is not ported (d57).
+ * the submitter's manager, or the administrators when there is none. The approver's report,
+ * decideBulk, myDecided and myTeam came with the inbox (w4-05/w4-07); ExpenseOS's reimburse case
+ * is not ported (d71).
  *
  * The cases are ExpenseOS's; the harness is VeloExpense's (`createTenantHarness`: the suite's own
  * tenant and people, every call under RLS). Adaptations, each marked:
@@ -431,6 +432,100 @@ describe.skipIf(!process.env.DATABASE_URL)('expense approvals (integration)', ()
       });
       // …and the approver, who no longer holds a task, still reads it.
       expect((await comments(ownerId, id)).items).toHaveLength(thread.items.length);
+    });
+
+    /*
+     * w4-05/w4-07 (d71): ExpenseOS's inbox queries, ported with the inbox — the approver's
+     * `report`, `myDecided`, `myTeam` and `decideBulk`. VeloExpense: the "team" here is the
+     * founder's one report (the submitter); "someone else decides it" is the deputy, after a
+     * reassignment, where ExpenseOS routes a large report past the manager with a tiered flow.
+     */
+    it('report detail: submitter + reimburser can read; a stranger cannot', async () => {
+      const reportId = await submitted('Readable detail');
+      await expect(approvals(OWNER_PERMS, strangerId).report({ reportId })).resolves.toMatchObject({
+        id: reportId,
+      });
+      await expect(approvals(REIMBURSER_PERMS, clerkId).report({ reportId })).resolves.toMatchObject({
+        id: reportId,
+      });
+      // VeloExpense: the deputy, holding no task and no grant, is the stranger here.
+      await expect(approvals([], deputyId).report({ reportId })).rejects.toThrow(/FORBIDDEN/);
+    });
+
+    it('decideBulk is resilient: unknown/undecidable tasks are skipped, not thrown', async () => {
+      // A random (non-existent) task id is reported as skipped rather than
+      // failing the whole batch — the property that separates decideBulk from a
+      // naive loop of `decide` (which would throw NOT_FOUND). Approval mechanics
+      // themselves ride on decideTask, covered by the single-decide path.
+      const bogus = '00000000-0000-7000-8000-000000000000';
+      const res = await approvals(ADMIN_PERMS, ownerId).decideBulk({ taskIds: [bogus] });
+      expect(res.approved).toEqual([]);
+      expect(res.skipped).toEqual([{ taskId: bogus, reason: 'not_found' }]);
+    });
+
+    it('VeloExpense: decideBulk approves through the engine, each one marked as bulk', async () => {
+      // Each approval is the single decision's path (`decideThroughEngine`): the report's
+      // outcome, its audit row — with `bulk: true` — and the ledger post.
+      const a = await submitted('Bulk one');
+      const b = await submitted('Bulk two');
+      const tasks = [(await pendingTaskOn(a))?.id, (await pendingTaskOn(b))?.id] as string[];
+      const res = await approvals([], ownerId).decideBulk({ taskIds: tasks });
+      expect(res).toEqual({ approved: tasks, skipped: [] });
+      for (const id of [a, b]) {
+        expect(await statusOf(id)).toBe('APPROVED');
+        expect((await lastAudit(id, 'REPORT_APPROVED'))?.details).toMatchObject({ bulk: true, override: false });
+      }
+      // The clerk holds no task: the same ids again are not pending, and nothing else moves.
+      const again = await approvals(AP_CLERK_PERMS, clerkId).decideBulk({ taskIds: tasks });
+      expect(again.skipped.map((s: any) => s.reason)).toEqual(['not_pending', 'not_pending']);
+    });
+
+    it("shows a manager their report's submission and who holds it", async () => {
+      const id = await submitted('With the manager');
+      const { items } = await approvals([], ownerId).myTeam();
+      const row = items.find((i: any) => i.report.id === id);
+      expect(row, 'the manager sees their report').toBeTruthy();
+      expect(row?.pendingWith?.id).toBe(ownerId);
+      expect(row?.lastDecision).toBeNull();
+    });
+
+    it('keeps the report with the manager after someone else decides it', async () => {
+      const id = await submitted('Decided by the deputy');
+      const task = await pendingTaskOn(id);
+      await approvals([], ownerId).reassign({
+        taskId: task?.id as string,
+        toUserId: deputyId,
+        note: 'Covering this week.',
+      });
+      await approvals([], deputyId).decide({ taskId: task?.id as string, approve: true });
+
+      const { items } = await approvals([], ownerId).myTeam();
+      const row = items.find((i: any) => i.report.id === id);
+      expect(row, 'a decided report must not vanish from the manager').toBeTruthy();
+      expect(row?.pendingWith).toBeNull();
+      expect(row?.lastDecision?.decision).toBe('APPROVED');
+      expect(row?.lastDecision?.by?.id).toBe(deputyId);
+
+      // ExpenseOS's "lets an approver open a report they already decided": the deputy holds no
+      // readAll / reimburse permission, and the "Decided by me" row must still open.
+      await expect(approvals([], deputyId).report({ reportId: id })).resolves.toMatchObject({ id });
+      // …and it is in the deputy's own history (myDecided).
+      const decided = await approvals([], deputyId).myDecided();
+      expect(decided.items.find((i: any) => i.report.id === id)).toMatchObject({ decision: 'APPROVED' });
+    });
+
+    it('excludes drafts, and shows nothing to someone who manages nobody', async () => {
+      const draft = await owner().create({ title: 'Still a draft', currency: 'CAD' });
+      const { items } = await approvals([], ownerId).myTeam();
+      expect(items.map((i: any) => i.report.id)).not.toContain(draft.id);
+      expect((await approvals([], deputyId).myTeam()).items).toHaveLength(0);
+    });
+
+    it('grants read to the manager and submitter, but not to an outsider', async () => {
+      const id = await submitted('Read access matrix');
+      await expect(approvals([], ownerId).report({ reportId: id })).resolves.toMatchObject({ id });
+      await expect(approvals([], strangerId).report({ reportId: id })).resolves.toMatchObject({ id });
+      await expect(approvals([], clerkId).report({ reportId: id })).rejects.toThrow(/FORBIDDEN/i);
     });
 
     it('returnForEdit (approver): SUBMITTED → RETURNED with the reason, then resubmittable', async () => {

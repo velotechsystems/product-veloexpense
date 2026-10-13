@@ -52,7 +52,7 @@ export default async function Forbidden() {
         <Link href="/expenses" className="underline underline-offset-4">
           Your reports
         </Link>
-        <Link href="/approvals" className="underline underline-offset-4">
+        <Link href="/expenses/approvals" className="underline underline-offset-4">
           Approvals
         </Link>
       </div>

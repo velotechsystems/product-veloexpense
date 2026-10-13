@@ -6,7 +6,8 @@
  * table (0063), so an old link cannot say which report it was about; it opens the
  * approver's queue, where that report is waiting if it still needs them. `proxy.ts`
  * still lets the path through without a session, so the redirect is what a signed-out
- * reader meets first, and /approvals then sends them to sign in and back.
+ * reader meets first, and the queue then sends them to sign in and back. Since w4-05/w4-07
+ * (d71) the queue is ExpenseOS's, at /expenses/approvals.
  */
 import { redirect } from 'next/navigation';
 import { pageTitle } from '@/lib/i18n/page-title';
@@ -18,5 +19,5 @@ export function generateMetadata() {
 }
 
 export default function ApprovePage(): never {
-  redirect('/approvals');
+  redirect('/expenses/approvals');
 }

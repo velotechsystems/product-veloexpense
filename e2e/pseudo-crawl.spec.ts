@@ -110,7 +110,8 @@ const CHROME_CEILING: Record<string, number> = {
   //
   // So this is a floor of `5 × rows`, and the fixture is what fixes `rows` at two
   // no matter what ran first. Change the fixture's row count and change this.
-  '/approvals': 10,
+  // w4-05/w4-07 (d71): ExpenseOS's inbox, in place of VeloExpense's /approvals.
+  '/expenses/approvals': 10,
   // VX4-10 part 3 catalogued this screen: 30 → 3, and the 42 it replaces was
   // never a measurement of anything. It was taken on a fuller database and passed
   // on the HEADROOM between itself and whatever a given run happened to produce —
@@ -243,7 +244,7 @@ function unbracketed(lines: string[]): string[] {
 
 const PAGES = [
   '/expenses',
-  '/approvals',
+  '/expenses/approvals',
   '/notifications',
   '/preferences',
   '/admin/locale',

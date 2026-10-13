@@ -39,7 +39,6 @@ import {
   EVENT_TYPE_COPY,
   FRAUD_FLAG_STATUS_COPY,
   FRAUD_SEVERITY_COPY,
-  INBOX_ROUTE_COPY,
   POST_STATUS_COPY,
   REPORT_STATUS_COPY,
   enumLabel,
@@ -103,12 +102,6 @@ const CATALOGUES: {
     fromArray: true,
   },
   { name: 'DelegationScope', members: DELEGATION_SCOPES, copy: DELEGATION_SCOPE_COPY, fromArray: true },
-  {
-    name: 'InboxRoute',
-    members: ['ASSIGNED', 'ROLE_POOL'], // w4-00c: DELEGATED went with the ladder.
-    copy: INBOX_ROUTE_COPY,
-    fromArray: false,
-  },
 ];
 
 describe('every rendered enum member has copy, in every locale we ship', () => {

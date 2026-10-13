@@ -432,23 +432,30 @@ export async function expectReportStatus(page: Page, member: string) {
 /**
  * Approve a report in another person's session, from their approvals inbox.
  *
- * The inbox links to the report by TITLE; the decide controls live on the report's
- * workbench. Approve is one press — unless the step requires the receipt-view
- * acknowledgement (`requireReceiptViewAck`, on by default), when it opens a panel with the
- * checkbox and "Confirm approval". The SERVER enforces it on APPROVED specifically, so the
- * helper answers whichever the workbench asks, rather than hard-coding either.
+ * w4-05/w4-07 (d71): the inbox is ExpenseOS's (/expenses/approvals). A row opens the
+ * approver's drawer — the report's lines and receipts, read-only — and Approve there decides
+ * it. Then the report has left the pending queue, and the Decided queue lists it as approved,
+ * which is the approver's own record that it happened. (Before d71 the inbox linked to the
+ * report and the decision was made on the workbench — `decideOnWorkbench`, still used by the
+ * specs that decide there.)
  */
 export async function approveAs(browser: Browser, storageState: string, title: string) {
   const ctx = await browser.newContext({ storageState });
   const approverPage = await ctx.newPage();
   try {
-    await approverPage.goto('/approvals');
-    await approverPage.getByRole('link', { name: title }).first().click();
-    await decideOnWorkbench(approverPage, 'Approve');
-    await expectReportStatus(approverPage, 'APPROVED');
+    await approverPage.goto('/expenses/approvals');
+    await approverPage.getByRole('row', { name: new RegExp(escapeRegExp(title)) }).first().click();
+    const drawer = approverPage.getByRole('dialog');
+    await drawer.getByRole('button', { name: 'Approve', exact: true }).click();
+    await expect(drawer).toBeHidden();
+    await expect(approverPage.getByRole('row', { name: new RegExp(escapeRegExp(title)) })).toHaveCount(0);
   } finally {
     await ctx.close();
   }
+}
+
+function escapeRegExp(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 /**

@@ -192,6 +192,7 @@ export const UI_COPY = {
   // w2-06: ExpenseOS's cross-report view, named as ExpenseOS's menu names it.
   'title.expenses.all': { 'en-CA': 'All expenses' },
   'title.approvals': { 'en-CA': 'Approvals' },
+  'title.expenses.approvals': { 'en-CA': 'Approvals' },
   'title.approvals.delegations': { 'en-CA': 'Delegations' },
   'title.approve': { 'en-CA': 'Approve a report' },
   'title.notifications': { 'en-CA': 'Notifications' },

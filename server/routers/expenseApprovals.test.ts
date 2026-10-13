@@ -26,8 +26,8 @@ import { makeContext } from '../__test-helpers__/trpcCaller';
  *
  * VeloExpense: ExpenseOS's `expenseApprovals.test.ts`, for the procedures ported —
  * `myTasks` (the inbox), `decide`, `reassign`, `returnForEdit` (w4-00c, on ExpenseOS's
- * engine) and `setFxOverride` (w2-02a). `myDecided`, `decideBulk` and `markReimbursed` are not
- * ported (d57), and their cases are not here.
+ * engine) and `setFxOverride` (w2-02a). `myDecided` and `decideBulk` came with the inbox
+ * (w4-05/w4-07, d71); `markReimbursed` is not ported (d71), and its cases are not here.
  *
  * The bodies of the three actions run in `server/lib/reportLifecycle.ts`, so that the
  * /approvals form and the emailed link decide the same way; that module runs for real here,
@@ -194,6 +194,8 @@ function makeDb(over: Record<string, unknown> = {}) {
       findMany: stubFn(async () => [] as unknown[]),
       findUnique: stubFn(async () => null as unknown),
     },
+    /** VeloExpense (f29): the reader's currency falls back to the tenant's main entity. */
+    legalEntity: { findFirst: stubFn(async () => null as unknown) },
     /** VeloExpense: the report-row lock, and the bridge's raw statements. */
     $queryRaw: stubFn(async () => [] as unknown[]),
     $queryRawUnsafe: stubFn(async () => [] as unknown[]),
@@ -274,8 +276,14 @@ describe('the inbox', () => {
     expect(call?.[4]).toBe(ME);
   });
 
-  // VeloExpense: "lists what the caller already decided separately" is `myDecided`, which is
-  // not ported (d57).
+  it('lists what the caller already decided separately', async () => {
+    // An approver needs to see their own history, not just their queue.
+    // VeloExpense (w4-05/w4-07, d71): `myDecided` is ported with the inbox.
+    const db = makeDb();
+    const c = await callerFor(db, []);
+    await c.myDecided();
+    expect(JSON.stringify(db.approvalTask.findMany.mock.calls[0]?.[0]?.where)).toContain(ME);
+  });
 });
 
 describe('decide', () => {
@@ -433,6 +441,101 @@ describe('decide', () => {
     const c = await callerFor(makeDb(), []);
     await expect(
       c.decide({ taskId: TASK, approve: true, note: 'x'.repeat(2001) }),
+    ).rejects.toThrow();
+  });
+});
+
+/*
+ * VeloExpense (w4-05/w4-07, d71): ported with the inbox. Each approval runs through
+ * `decideThroughEngine`, as a single `decide` does: the engine is asked twice per task (the
+ * router's fast refusal, then the action's body), so a case that scripted ExpenseOS's calls in
+ * ORDER answers per task instead; the audit rows are VeloExpense's (`audited` — the report's
+ * outcome row carries the details), and the post on approval is `recordReportOutcome`.
+ * ExpenseOS's "requires the reimburse permission" family is `markReimbursed`, not ported (d71).
+ */
+describe('decideBulk', () => {
+  it('is approve-only by design', async () => {
+    // A bulk reject would need a per-report reason, which belongs in the single flow.
+    const c = await callerFor(makeDb(), []);
+    await c.decideBulk({ taskIds: [TASK] });
+    expect(decideTask).toHaveBeenCalledWith(expect.anything(), TASK, true, ME, null);
+  });
+
+  it('reports each skipped task with its reason', async () => {
+    /**
+     * A partial result has to be visible. Failing the batch on one stale task would
+     * make an inbox group action unusable — there is always one stale row.
+     */
+    const db = makeDb();
+    db.approvalTask.findUnique
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(task({ status: 'APPROVED' }))
+      .mockResolvedValueOnce(task())
+      .mockResolvedValue(task());
+    // VeloExpense: per task — U('6') is not the caller's; the rest are.
+    canDecide.mockImplementation(async (...args: unknown[]) => args[1] !== U('6'));
+    const c = await callerFor(db, []);
+    const out = await c.decideBulk({ taskIds: [U('4'), U('5'), U('6'), TASK] });
+    expect(out.skipped).toEqual([
+      { taskId: U('4'), reason: 'not_found' },
+      { taskId: U('5'), reason: 'not_pending' },
+      { taskId: U('6'), reason: 'forbidden' },
+    ]);
+    expect(out.approved).toEqual([TASK]);
+  });
+
+  it('skips, rather than approves, every task an AP clerk was not assigned', async () => {
+    // The bulk variant of the finding: 100 task ids at once, none of them theirs.
+    canDecide.mockResolvedValue(false);
+    const db = makeDb();
+    const c = await callerFor(db, AP_CLERK);
+    const out = await c.decideBulk({ taskIds: [U('4'), TASK] });
+    expect(out.approved).toEqual([]);
+    expect(out.skipped.map((s: { reason: string }) => s.reason)).toEqual([
+      'forbidden',
+      'forbidden',
+    ]);
+    expect(decideTask).not.toHaveBeenCalled();
+  });
+
+  it('labels each override in a batch on its own audit row', async () => {
+    // First task: assigned to the caller. Second: somebody else's, taken on the override.
+    // VeloExpense: per task, as above.
+    canDecide.mockImplementation(async (...args: unknown[]) => args[1] === U('4') || args[3] === true);
+    const db = makeDb();
+    const out = await (await callerFor(db, ADMIN)).decideBulk({ taskIds: [U('4'), TASK] });
+    expect(out.approved).toEqual([U('4'), TASK]);
+    expect(audited.map((a) => (a.details as { override: boolean }).override)).toEqual([false, true]);
+  });
+
+  it('keeps going after a skip', async () => {
+    const db = makeDb();
+    db.approvalTask.findUnique.mockResolvedValueOnce(null).mockResolvedValue(task());
+    const c = await callerFor(db, []);
+    const out = await c.decideBulk({ taskIds: [U('4'), TASK] });
+    expect(out.approved).toEqual([TASK]);
+    expect(decideTask).toHaveBeenCalledOnce();
+  });
+
+  it('marks each audit row as part of a bulk action', async () => {
+    // So the trail distinguishes a considered single approval from a group click.
+    const db = makeDb();
+    await (await callerFor(db, [])).decideBulk({ taskIds: [TASK] });
+    expect(audited[0]?.details).toMatchObject({ bulk: true });
+  });
+
+  it('posts and notifies for each approval', async () => {
+    const db = makeDb();
+    await (await callerFor(db, [])).decideBulk({ taskIds: [TASK, U('7')] });
+    expect(recordReportOutcome).toHaveBeenCalledTimes(2);
+    expect(notifyReportDecision).toHaveBeenCalledTimes(2);
+  });
+
+  it('requires at least one id and caps the batch', async () => {
+    const c = await callerFor(makeDb(), []);
+    await expect(c.decideBulk({ taskIds: [] })).rejects.toThrow();
+    await expect(
+      c.decideBulk({ taskIds: Array.from({ length: 101 }, () => TASK) }),
     ).rejects.toThrow();
   });
 });

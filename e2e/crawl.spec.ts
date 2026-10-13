@@ -51,7 +51,8 @@ const PAGES = [
   '/expenses',
   // w2-06: ExpenseOS's cross-report view, AP / admin only (see ADMIN_ONLY).
   '/expenses/all',
-  '/approvals',
+  // w4-05/w4-07 (d71): ExpenseOS's inbox, in place of VeloExpense's /approvals.
+  '/expenses/approvals',
   '/approvals/delegations',
   '/notifications',
   '/notifications/preferences',

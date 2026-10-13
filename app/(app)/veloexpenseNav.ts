@@ -42,7 +42,6 @@ import {
 export const VELOEXPENSE_ROUTES: Readonly<Record<string, string | null>> = {
   // Same screen, different path.
   '/dashboard': '/',
-  '/expenses/approvals': '/approvals',
   '/delegations': '/approvals/delegations',
 
   // Not ported yet. Each leaves with the wave that ports its screen (parity doc).
@@ -176,6 +175,8 @@ export const PORTED_SCREENS: readonly string[] = [
   '/admin/policies',
   // w4-02e: the policy-violation register.
   '/admin/policy-violations',
+  // w4-05/w4-07 (d71): the approvals inbox, in place of VeloExpense's /approvals.
+  '/expenses/approvals',
 ];
 
 /** Whether the top bar should title this path: it is a ported ExpenseOS screen. */
