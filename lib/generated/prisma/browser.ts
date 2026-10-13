@@ -213,3 +213,8 @@ export type Delegation = Prisma.DelegationModel
  * 
  */
 export type PolicyRule = Prisma.PolicyRuleModel
+/**
+ * Model ExpensePolicy
+ * 
+ */
+export type ExpensePolicy = Prisma.ExpensePolicyModel

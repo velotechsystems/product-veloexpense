@@ -190,6 +190,9 @@ export const AUDIT_ACTIONS = [
   /* Policy rules — the w4-02b port (ExpenseOS's `config.policyRule.update`): one action for
      a rule instance's create, update and delete, the operation in `details.op`. */
   'POLICY_RULE_CHANGED',
+  /* A category's policy — the w4-02c port (ExpenseOS's `config.policy.update`): its limits
+     and receipt flag, created or changed (an upsert). */
+  'EXPENSE_POLICY_CHANGED',
   'MODULE_ENABLED',
   'MODULE_DISABLED',
   'USER_LOCALE_CHANGED',

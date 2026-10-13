@@ -217,6 +217,7 @@ export const UI_COPY = {
   'title.admin.mileage.rates': { 'en-CA': 'Mileage rates' },
   'title.admin.per.diem.rates': { 'en-CA': 'Per-diem rates' },
   'title.admin.policy.rules': { 'en-CA': 'Policy rules' },
+  'title.admin.policies': { 'en-CA': 'Expense policies' },
   'title.admin.employees': { 'en-CA': 'Employees' },
   'title.admin.employees.invite': { 'en-CA': 'Invite someone' },
   // Fallback for the employee detail page, which titles itself by the person's

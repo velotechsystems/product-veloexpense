@@ -62,6 +62,8 @@ model ExpenseCategory {
   updatedAt         DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   lineItems ExpenseLineItem[]
+  /// w4-02c: ExpenseOS's per-category policy (`expense_category_policy`, 0065).
+  policy    ExpensePolicy?
 
   @@unique([organizationId, id])
   @@map("expense_category")
@@ -1042,4 +1044,33 @@ model PolicyRule {
   @@index([organizationId, enabled, scope, effectiveFrom])
   @@index([organizationId, categoryId])
   @@map("policy_rule")
+}
+
+// ExpenseOS's `ExpensePolicy` (w4-02c, d63/d65), on `expense_category_policy` (0065): one
+// row per expense category, its limits (minor units of the policy currency) and receipt
+// flag, read by the built-in rule kinds. VeloExpense differences:
+//   · the table name, because `expense_policy` is VeloExpense's v1 rule table until the
+//     cutover (w4-02d) drops it;
+//   · per tenant; the database's key to the category is composite (0065), the relation
+//     here is on the category id alone, as ported code reads it.
+model ExpensePolicy {
+  /// PK = categoryId (1:1 with ExpenseCategory).
+  categoryId               String          @id @map("category_id") @db.Uuid
+  organizationId           String          @default(dbgenerated("(NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid")) @map("organization_id") @db.Uuid
+  category                 ExpenseCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  /// When true, every line item in this category must carry at least one Receipt.
+  receiptRequired          Boolean         @default(true) @map("receipt_required")
+  /// Reserved (ExpenseOS Phase 3): force the approval lane for this category.
+  approvalRequired         Boolean         @default(true) @map("approval_required")
+  /// Per-transaction (single line item) ceiling. Null = no cap.
+  perTransactionLimitMinor BigInt?         @map("per_transaction_limit_minor")
+  dailyLimitMinor          BigInt?         @map("daily_limit_minor")
+  monthlyLimitMinor        BigInt?         @map("monthly_limit_minor")
+  annualLimitMinor         BigInt?         @map("annual_limit_minor")
+  notes                    String?
+  createdAt                DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt                DateTime        @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@unique([organizationId, categoryId])
+  @@map("expense_category_policy")
 }

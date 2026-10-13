@@ -167,6 +167,9 @@ describe('permission gates', () => {
       code: 'FORBIDDEN',
     });
     await expect(
+      reader.expensePolicy.upsert({ categoryId: U('1'), patch: { receiptRequired: true } }),
+    ).rejects.toMatchObject({ code: 'FORBIDDEN' });
+    await expect(
       reader.fxRate.add({ base: 'usd', quote: 'cad', rate: '1.35' } as never),
     ).rejects.toMatchObject({ code: 'FORBIDDEN' });
   });
@@ -175,13 +178,87 @@ describe('permission gates', () => {
     const db = makeDb();
     const c = await callerFor(db, []);
     await expect(c.mileageRate.list()).rejects.toMatchObject({ code: 'FORBIDDEN' });
+    await expect(c.expensePolicy.list()).rejects.toMatchObject({ code: 'FORBIDDEN' });
+    // VeloExpense: kept from the w1-07 port, beside ExpenseOS's `expensePolicy` line.
     await expect(c.fxRate.latest()).rejects.toMatchObject({ code: 'FORBIDDEN' });
   });
 });
 
-// VeloExpense: the `expensePolicy` tests arrive with that sub-router's port (the expense
-// policy screen) and `systemFlag` with its own. `policyRule.kinds` is at the end of this
-// file, as in ExpenseOS; the rest of `policyRule` is in policies.rules.test.ts.
+// VeloExpense: the `systemFlag` tests arrive with that sub-router's port. `policyRule.kinds`
+// is at the end of this file, as in ExpenseOS; the rest of `policyRule` is in
+// policies.rules.test.ts.
+
+describe('expensePolicy', () => {
+  it('serialises the money columns as strings', async () => {
+    /**
+     * These are BigInt minor units. Returning them raw makes the response
+     * unserialisable; returning them as numbers loses precision at scale.
+     */
+    const db = makeDb();
+    db.expensePolicy.upsert.mockResolvedValue({
+      categoryId: U('1'),
+      receiptRequired: true,
+      approvalRequired: false,
+      perTransactionLimitMinor: 250_00n,
+      dailyLimitMinor: null,
+      monthlyLimitMinor: null,
+      annualLimitMinor: null,
+      notes: null,
+    });
+    const c = await callerFor(db, [P.config.policyUpdate]);
+    const out = await c.expensePolicy.upsert({
+      categoryId: U('1'),
+      patch: { receiptRequired: true },
+    });
+    expect(out.perTransactionLimitMinor).toBe('25000');
+    expect(out.dailyLimitMinor).toBeNull();
+  });
+
+  it('upserts so a category with no policy yet still works', async () => {
+    const db = makeDb();
+    const c = await callerFor(db, [P.config.policyUpdate]);
+    await c.expensePolicy.upsert({ categoryId: U('1'), patch: { approvalRequired: true } });
+    const args = db.expensePolicy.upsert.mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(args.where).toEqual({ categoryId: U('1') });
+    expect(args.create).toMatchObject({ categoryId: U('1'), approvalRequired: true });
+  });
+
+  it('records the patch in the audit trail', async () => {
+    const db = makeDb();
+    const c = await callerFor(db, [P.config.policyUpdate]);
+    await c.expensePolicy.upsert({ categoryId: U('1'), patch: { receiptRequired: false } });
+    expect(withAuditCalls[0]).toMatchObject({
+      entityType: 'ExpensePolicy',
+      entityId: U('1'),
+      details: { categoryId: U('1'), patch: { receiptRequired: false } },
+    });
+    // VeloExpense: the registry's name for ExpenseOS's `config.policy.update`.
+    expect(withAuditCalls[0]).toMatchObject({ action: 'EXPENSE_POLICY_CHANGED' });
+  });
+
+  it('answers what the table refuses as a 4xx, not a 500 (VeloExpense)', async () => {
+    const db = makeDb();
+    db.expensePolicy.upsert
+      .mockRejectedValueOnce(Object.assign(new Error('fk'), { code: 'P2003' }))
+      .mockRejectedValueOnce(Object.assign(new Error('pk'), { code: 'P2002' }))
+      .mockRejectedValueOnce(new Error('violates check constraint "expense_category_policy_limits_nonnegative"'))
+      .mockRejectedValueOnce(
+        new Error('new row violates row-level security policy (USING expression) for table "expense_category_policy"'),
+      );
+    const c = await callerFor(db, [P.config.policyUpdate]);
+    for (let i = 0; i < 4; i += 1) {
+      await expect(
+        c.expensePolicy.upsert({ categoryId: U('1'), patch: { dailyLimitMinor: '100' } }),
+      ).rejects.toMatchObject({ code: 'BAD_REQUEST' });
+    }
+  });
+
+  it('tells the screen the organization’s policy currency (VeloExpense)', async () => {
+    const db = makeDb({ $queryRaw: stubFn(async () => [{ code: 'USD' }] as unknown[]) });
+    const c = await callerFor(db, READ);
+    await expect(c.expensePolicy.currency()).resolves.toEqual({ code: 'USD' });
+  });
+});
 
 describe('fxRate', () => {
   it('returns the newest row per pair only', async () => {

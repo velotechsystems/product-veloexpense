@@ -421,7 +421,8 @@ export const ModelName = {
   ApprovalInstance: 'ApprovalInstance',
   ApprovalTask: 'ApprovalTask',
   Delegation: 'Delegation',
-  PolicyRule: 'PolicyRule'
+  PolicyRule: 'PolicyRule',
+  ExpensePolicy: 'ExpensePolicy'
 } as const
 
 export type ModelName = (typeof ModelName)[keyof typeof ModelName]
@@ -437,7 +438,7 @@ export type TypeMap<ExtArgs extends runtime.Types.Extensions.InternalArgs = runt
     omit: GlobalOmitOptions
   }
   meta: {
-    modelProps: "expenseCategory" | "glAccount" | "expenseReport" | "expense" | "expenseAllocation" | "expenseAttendee" | "expenseLineItem" | "receipt" | "documentExtraction" | "expenseDetermination" | "receiptExternalId" | "expenseExternalId" | "aiUsage" | "taxJurisdiction" | "user" | "businessUnit" | "externalIdSource" | "businessUnitExternalId" | "legalEntity" | "legalEntityExternalId" | "fxRate" | "mileageRate" | "mileageRateTier" | "mileageRateSubject" | "perDiemRate" | "currency" | "department" | "departmentExternalId" | "jobLevel" | "jobLevelExternalId" | "fiscalYear" | "fiscalYearExternalId" | "approvalWorkflow" | "approvalWorkflowVersion" | "approvalInstance" | "approvalTask" | "delegation" | "policyRule"
+    modelProps: "expenseCategory" | "glAccount" | "expenseReport" | "expense" | "expenseAllocation" | "expenseAttendee" | "expenseLineItem" | "receipt" | "documentExtraction" | "expenseDetermination" | "receiptExternalId" | "expenseExternalId" | "aiUsage" | "taxJurisdiction" | "user" | "businessUnit" | "externalIdSource" | "businessUnitExternalId" | "legalEntity" | "legalEntityExternalId" | "fxRate" | "mileageRate" | "mileageRateTier" | "mileageRateSubject" | "perDiemRate" | "currency" | "department" | "departmentExternalId" | "jobLevel" | "jobLevelExternalId" | "fiscalYear" | "fiscalYearExternalId" | "approvalWorkflow" | "approvalWorkflowVersion" | "approvalInstance" | "approvalTask" | "delegation" | "policyRule" | "expensePolicy"
     txIsolationLevel: TransactionIsolationLevel
   }
   model: {
@@ -3253,6 +3254,80 @@ export type TypeMap<ExtArgs extends runtime.Types.Extensions.InternalArgs = runt
         }
       }
     }
+    ExpensePolicy: {
+      payload: Prisma.$ExpensePolicyPayload<ExtArgs>
+      fields: Prisma.ExpensePolicyFieldRefs
+      operations: {
+        findUnique: {
+          args: Prisma.ExpensePolicyFindUniqueArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ExpensePolicyPayload> | null
+        }
+        findUniqueOrThrow: {
+          args: Prisma.ExpensePolicyFindUniqueOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ExpensePolicyPayload>
+        }
+        findFirst: {
+          args: Prisma.ExpensePolicyFindFirstArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ExpensePolicyPayload> | null
+        }
+        findFirstOrThrow: {
+          args: Prisma.ExpensePolicyFindFirstOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ExpensePolicyPayload>
+        }
+        findMany: {
+          args: Prisma.ExpensePolicyFindManyArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ExpensePolicyPayload>[]
+        }
+        create: {
+          args: Prisma.ExpensePolicyCreateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ExpensePolicyPayload>
+        }
+        createMany: {
+          args: Prisma.ExpensePolicyCreateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        createManyAndReturn: {
+          args: Prisma.ExpensePolicyCreateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ExpensePolicyPayload>[]
+        }
+        delete: {
+          args: Prisma.ExpensePolicyDeleteArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ExpensePolicyPayload>
+        }
+        update: {
+          args: Prisma.ExpensePolicyUpdateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ExpensePolicyPayload>
+        }
+        deleteMany: {
+          args: Prisma.ExpensePolicyDeleteManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateMany: {
+          args: Prisma.ExpensePolicyUpdateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateManyAndReturn: {
+          args: Prisma.ExpensePolicyUpdateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ExpensePolicyPayload>[]
+        }
+        upsert: {
+          args: Prisma.ExpensePolicyUpsertArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ExpensePolicyPayload>
+        }
+        aggregate: {
+          args: Prisma.ExpensePolicyAggregateArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.AggregateExpensePolicy>
+        }
+        groupBy: {
+          args: Prisma.ExpensePolicyGroupByArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.ExpensePolicyGroupByOutputType>[]
+        }
+        count: {
+          args: Prisma.ExpensePolicyCountArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.ExpensePolicyCountAggregateOutputType> | number
+        }
+      }
+    }
   }
 } & {
   other: {
@@ -3936,6 +4011,23 @@ export const PolicyRuleScalarFieldEnum = {
 export type PolicyRuleScalarFieldEnum = (typeof PolicyRuleScalarFieldEnum)[keyof typeof PolicyRuleScalarFieldEnum]
 
 
+export const ExpensePolicyScalarFieldEnum = {
+  categoryId: 'categoryId',
+  organizationId: 'organizationId',
+  receiptRequired: 'receiptRequired',
+  approvalRequired: 'approvalRequired',
+  perTransactionLimitMinor: 'perTransactionLimitMinor',
+  dailyLimitMinor: 'dailyLimitMinor',
+  monthlyLimitMinor: 'monthlyLimitMinor',
+  annualLimitMinor: 'annualLimitMinor',
+  notes: 'notes',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+} as const
+
+export type ExpensePolicyScalarFieldEnum = (typeof ExpensePolicyScalarFieldEnum)[keyof typeof ExpensePolicyScalarFieldEnum]
+
+
 export const SortOrder = {
   asc: 'asc',
   desc: 'desc'
@@ -4270,6 +4362,7 @@ export type GlobalOmitConfig = {
   approvalTask?: Prisma.ApprovalTaskOmit
   delegation?: Prisma.DelegationOmit
   policyRule?: Prisma.PolicyRuleOmit
+  expensePolicy?: Prisma.ExpensePolicyOmit
 }
 
 /* Types for Logging */
