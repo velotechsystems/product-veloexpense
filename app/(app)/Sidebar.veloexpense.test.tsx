@@ -113,9 +113,10 @@ describe("an admin's menu", () => {
         '/admin/fx-rates',
         '/admin/mileage-rates',
         '/admin/per-diem-rates',
-        // Ported in Wave 4 (w4-02b, w4-02c).
+        // Ported in Wave 4 (w4-02b, w4-02c, w4-02e).
         '/admin/policy-rules',
         '/admin/policies',
+        '/admin/policy-violations',
         // Ported in Wave 2 (w2-06).
         '/expenses/all',
       ].sort(),
@@ -191,6 +192,7 @@ describe('isPortedScreen', () => {
       '/admin/approval-workflows',
       '/admin/policy-rules',
       '/admin/policies',
+      '/admin/policy-violations',
     ]);
   });
 });

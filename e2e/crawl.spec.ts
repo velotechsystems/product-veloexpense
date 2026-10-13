@@ -88,6 +88,8 @@ const PAGES = [
   // w4-02b: ExpenseOS's Rule Builder; w4-02c: its per-category policies.
   '/admin/policy-rules',
   '/admin/policies',
+  // w4-02e: ExpenseOS's policy-violation register.
+  '/admin/policy-violations',
 ] as const;
 
 /**

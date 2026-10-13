@@ -49,7 +49,6 @@ export const VELOEXPENSE_ROUTES: Readonly<Record<string, string | null>> = {
   '/users': null,
   '/travel': null,
   '/admin/travel-categories': null,
-  '/admin/policy-violations': null,
   '/virtual-cards/requests': null,
   '/virtual-cards': null,
   '/virtual-cards/transactions': null,
@@ -175,6 +174,8 @@ export const PORTED_SCREENS: readonly string[] = [
   '/admin/policy-rules',
   // w4-02c: the per-category policies.
   '/admin/policies',
+  // w4-02e: the policy-violation register.
+  '/admin/policy-violations',
 ];
 
 /** Whether the top bar should title this path: it is a ported ExpenseOS screen. */

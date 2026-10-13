@@ -55,6 +55,7 @@ const U = (n: string) => `00000000-0000-7000-8000-00000000000${n}`;
 const ME = U('9');
 const RATE = U('1');
 const RULE = U('2');
+const VIOLATION = U('3');
 
 const perDiem = (over: Record<string, unknown> = {}) => ({
   id: RATE,
@@ -87,6 +88,15 @@ function makeDb(over: Record<string, unknown> = {}) {
       update: stubFn(async () => ({ id: RULE })),
       delete: stubFn(async () => ({ id: RULE })),
     },
+    policyViolation: {
+      findMany: stubFn(async () => [] as unknown[]),
+      findUnique: stubFn(async () => ({ id: VIOLATION, severity: 'WARNING' }) as unknown),
+      update: stubFn(async () => ({ id: VIOLATION })),
+    },
+    // VeloExpense: the register's subject, expense, line and submitter lookups (w4-02e).
+    expenseReport: { findMany: stubFn(async () => [] as unknown[]) },
+    expense: { findMany: stubFn(async () => [] as unknown[]) },
+    user: { findMany: stubFn(async () => [] as unknown[]) },
     expenseCategory: { findMany: stubFn(async () => [] as unknown[]) },
     jobLevel: { findMany: stubFn(async () => [] as unknown[]) },
     legalEntity: { findMany: stubFn(async () => [] as unknown[]) },
@@ -102,7 +112,7 @@ function makeDb(over: Record<string, unknown> = {}) {
     expensePolicy: { findMany: stubFn(async () => [] as unknown[]), upsert: vi.fn() },
     fxRate: { findMany: stubFn(async () => [] as unknown[]), create: vi.fn() },
     mileageRate: { findMany: stubFn(async () => [] as unknown[]) },
-    expenseLineItem: { count: stubFn(async () => 0) },
+    expenseLineItem: { count: stubFn(async () => 0), findMany: stubFn(async () => [] as unknown[]) },
     // VeloExpense: `policyRule.kinds` reads the organization's policy currency (0015).
     $queryRaw: stubFn(async () => [{ code: 'CAD' }] as unknown[]),
     ...over,
@@ -424,6 +434,214 @@ describe('policyRule', () => {
       code: 'NOT_FOUND',
     });
     await expect(c.policyRule.delete({ id: RULE })).rejects.toMatchObject({ code: 'NOT_FOUND' });
+  });
+});
+
+describe('policyRule.violations', () => {
+  it('caps the page and defaults it', async () => {
+    const db = makeDb();
+    const c = await callerFor(db, READ);
+    await c.policyRule.violations();
+    expect(db.policyViolation.findMany.mock.calls[0]?.[0]?.take).toBe(500);
+    await expect(c.policyRule.violations({ limit: 1001 })).rejects.toThrow();
+    await expect(c.policyRule.violations({ limit: 0 })).rejects.toThrow();
+  });
+
+  /**
+   * The register carries BOTH subjects now.
+   *
+   * A violation belongs either to an expense report or to a travel request, and this is
+   * the page that exists to show exceptions — so keeping the row shape report-shaped
+   * would have hidden precisely the ones that BLOCK rather than warn. The subject is
+   * projected to a neutral triple, which is the code these cases cover.
+   *
+   * VeloExpense: no travel yet, so ExpenseOS's two travel cases ("projects a travel
+   * violation…", "lists both subjects in one page") wait for it; the row keeps the travel
+   * fields, null. The subject, expense, line and submitter are separate lookups here
+   * (PolicyViolation has no Prisma relations), so the fixture is four tables, not one
+   * nested row.
+   */
+  const reportRow = {
+    id: 'v-rep',
+    severity: 'WARNING',
+    message: 'perTransactionLimit',
+    ruleCode: RULE,
+    resolvedAt: null,
+    resolveNote: null,
+    createdAt: new Date('2026-08-01T00:00:00Z'),
+    reportId: 'rep-1',
+    lineItemId: 'li-1',
+    expenseId: 'exp-1',
+  };
+  const withSubject = (
+    rows: unknown[],
+    submitter: { name: string | null; email: string } = { name: 'Dana Patel', email: 'dana@e.inc' },
+  ) =>
+    makeDb({
+      policyViolation: {
+        findMany: stubFn(async () => rows),
+        findUnique: stubFn(async () => null as unknown),
+        update: stubFn(async () => ({})),
+      },
+      expenseReport: {
+        findMany: stubFn(async () => [
+          { id: 'rep-1', number: 'EXP-1042', title: 'Toronto client visit', submitterId: 'u-1' },
+        ]),
+      },
+      expense: {
+        findMany: stubFn(async () => [{ id: 'exp-1', merchant: 'Canoe', date: new Date('2026-07-28T00:00:00Z') }]),
+      },
+      expenseLineItem: {
+        count: stubFn(async () => 0),
+        findMany: stubFn(async () => [{ id: 'li-1', category: { label: { en: 'Meals' } } }]),
+      },
+      user: { findMany: stubFn(async () => [{ id: 'u-1', ...submitter }]) },
+      policyRule: {
+        findMany: stubFn(async () => [{ id: RULE, kindCode: 'PREDICATE_LINE' }]),
+        findUnique: stubFn(async () => null as unknown),
+      },
+    });
+
+  it('projects an expense violation to the neutral subject triple', async () => {
+    const c = await callerFor(withSubject([reportRow]), READ);
+    const [row] = await c.policyRule.violations();
+    expect(row).toMatchObject({
+      subjectKind: 'REPORT',
+      subjectNumber: 'EXP-1042',
+      subjectTitle: 'Toronto client visit',
+      reportId: 'rep-1',
+      travelRequestId: null,
+      submitterName: 'Dana Patel',
+      merchant: 'Canoe',
+      categoryLabel: { en: 'Meals' },
+      kind: 'PREDICATE_LINE',
+    });
+  });
+
+  it('falls back to an email when a submitter has no name', async () => {
+    // VeloExpense: on a report (no travel), and a blank display name rather than first/last.
+    for (const name of [null, '  ']) {
+      const c = await callerFor(withSubject([reportRow], { name, email: 'nobody@e.inc' }), READ);
+      const [row] = await c.policyRule.violations();
+      expect(row.submitterName).toBe('nobody@e.inc');
+    }
+  });
+
+  it('renders a dash rather than crashing on a row with neither subject', async () => {
+    /**
+     * Unreachable while `PolicyViolation_one_subject` holds — which is the point of the
+     * CHECK. But the register is a read path over historical rows, and a dash beats a
+     * 500 if the constraint is ever dropped or the query is ever changed to a left join
+     * that produces one.
+     *
+     * VeloExpense: the report's foreign key is the constraint; a report the lookup does
+     * not return stands in for the missing subject.
+     */
+    const c = await callerFor(withSubject([{ ...reportRow, reportId: 'rep-gone' }]), READ);
+    const [row] = await c.policyRule.violations();
+    expect(row.submitterName).toBe('—');
+    expect(row.subjectNumber).toBe('');
+    expect(row.subjectTitle).toBeNull();
+  });
+
+  it('names a row from before the cutover by the kind its v1 rule became (VeloExpense)', async () => {
+    /**
+     * 0066 kept those rows with v1's kind NAME in `rule_code`. A name is not a rule id, and
+     * in a uuid `IN` list it is a query error — the register would be down for any tenant
+     * with history. So only uuid-shaped codes are looked up, and a v1 name maps to its kind.
+     */
+    const db = withSubject([
+      reportRow,
+      { ...reportRow, id: 'v-old', ruleCode: 'PER_TRANSACTION_LIMIT' },
+      { ...reportRow, id: 'v-old2', ruleCode: 'RECEIPT_REQUIRED' },
+      { ...reportRow, id: 'v-old3', ruleCode: 'NON_NEGATIVE_AMOUNT' },
+    ]);
+    const c = await callerFor(db, READ);
+    const rows = await c.policyRule.violations();
+    expect(rows.map((r) => r.kind)).toEqual(['PREDICATE_LINE', 'PER_TXN_LIMIT', 'RECEIPT_REQUIRED', 'NON_NEGATIVE_AMOUNT']);
+    expect(db.policyRule.findMany.mock.calls[0]?.[0]).toMatchObject({ where: { id: { in: [RULE] } } });
+  });
+});
+
+describe('policyRule.resolveViolation', () => {
+  it('404s a violation that does not exist', async () => {
+    const db = makeDb();
+    db.policyViolation.findUnique.mockResolvedValue(null);
+    const c = await callerFor(db, POLICY);
+    await expect(c.policyRule.resolveViolation({ id: VIOLATION })).rejects.toMatchObject({
+      code: 'NOT_FOUND',
+    });
+  });
+
+  it('refuses to resolve a BLOCK', async () => {
+    /**
+     * WARNING and INFO never stop a submission by construction, so acknowledging one is
+     * oversight. A BLOCK is the thing actually preventing a filing — clearing it here
+     * would be an override with no approval behind it.
+     */
+    const db = makeDb();
+    db.policyViolation.findUnique.mockResolvedValue({ id: VIOLATION, severity: 'BLOCK' });
+    const c = await callerFor(db, POLICY);
+    await expect(
+      c.policyRule.resolveViolation({ id: VIOLATION, note: 'Approved verbally' }),
+    ).rejects.toThrow();
+    expect(db.policyViolation.update).not.toHaveBeenCalled();
+  });
+
+  it('acknowledges a warning with a note', async () => {
+    const db = makeDb();
+    const c = await callerFor(db, POLICY);
+    await c.policyRule.resolveViolation({ id: VIOLATION, note: 'Client dinner, pre-approved' });
+    const data = db.policyViolation.update.mock.calls[0]?.[0]?.data as Record<string, unknown>;
+    expect(data.resolveNote).toBe('Client dinner, pre-approved');
+    expect(data.resolvedBy).toBe(ME);
+    expect(data.resolvedAt).toBeInstanceOf(Date);
+  });
+
+  it('clears the acknowledgment on a blank note', async () => {
+    /**
+     * A blank note un-acknowledges rather than storing an empty one, so the register
+     * distinguishes "somebody signed off" from "somebody opened the dialog and changed
+     * their mind".
+     */
+    const db = makeDb();
+    const c = await callerFor(db, POLICY);
+    for (const note of [undefined, null, '', '   ']) {
+      db.policyViolation.update.mockClear();
+      await c.policyRule.resolveViolation({ id: VIOLATION, note } as never);
+      const data = db.policyViolation.update.mock.calls[0]?.[0]?.data as Record<string, unknown>;
+      expect(data.resolvedAt, JSON.stringify(note)).toBeNull();
+      expect(data.resolveNote).toBeNull();
+    }
+  });
+
+  it('trims the note before storing it', async () => {
+    const db = makeDb();
+    const c = await callerFor(db, POLICY);
+    await c.policyRule.resolveViolation({ id: VIOLATION, note: '  Pre-approved  ' });
+    expect(
+      (db.policyViolation.update.mock.calls[0]?.[0]?.data as { resolveNote: string }).resolveNote,
+    ).toBe('Pre-approved');
+  });
+
+  it('bounds the note', async () => {
+    const c = await callerFor(makeDb(), POLICY);
+    await expect(
+      c.policyRule.resolveViolation({ id: VIOLATION, note: 'x'.repeat(2001) }),
+    ).rejects.toThrow();
+  });
+
+  it('audits the acknowledgment against the violation, not the rule', async () => {
+    const db = makeDb();
+    const c = await callerFor(db, POLICY);
+    await c.policyRule.resolveViolation({ id: VIOLATION, note: 'ok' });
+    expect(withAuditCalls[0]?.entityType).toBe('PolicyViolation');
+    // VeloExpense: one action for the registry, the op and note in details, the violation's id.
+    expect(withAuditCalls[0]).toMatchObject({
+      action: 'POLICY_RULE_CHANGED',
+      entityId: VIOLATION,
+      details: { op: 'resolveViolation', note: 'ok' },
+    });
   });
 });
 
