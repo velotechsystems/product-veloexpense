@@ -46,6 +46,8 @@ import { queryRunnerOf } from '@/lib/db/prisma-pg-bridge';
 import { notifyRecipients, recordActivity, reportPayload } from '@/lib/notifications/service';
 import { APPROVAL_POOL_CAP, capApprovalPool } from '@/server/lib/approvalPoolCap';
 import { currencySymbol } from '@/server/lib/currencySymbol';
+import { homeConverterFor, readerCurrencyCode } from '@/server/lib/readerCurrency';
+import { getStorage } from '@/lib/storage';
 import { resolveDecideAccess } from '@/server/lib/decideAccess';
 import { callerCanDecideReport } from '@/server/lib/reportApproval';
 import {
@@ -95,6 +97,83 @@ const REPORT_SUMMARY_SELECT = {
   submittedAt: true,
   currency: { select: { code: true } },
   submitter: { select: { id: true, name: true, email: true } },
+} as const;
+
+/** VeloExpense: ExpenseOS's report-summary shape from a `REPORT_SUMMARY_SELECT` row — the
+ *  currency's symbol from the platform, the submitter's one display name in `firstName`. */
+function summaryShape<
+  R extends {
+    totalMinor: bigint;
+    currency: { code: string };
+    submitter: { id: string; name: string | null; email: string };
+  },
+>(r: R) {
+  return {
+    ...r,
+    totalMinor: r.totalMinor.toString(),
+    currency: { code: r.currency.code, symbol: currencySymbol(r.currency.code) },
+    submitter: {
+      id: r.submitter.id,
+      firstName: r.submitter.name,
+      lastName: null as string | null,
+      email: r.submitter.email,
+    },
+  };
+}
+
+/** VeloExpense: a person as ExpenseOS's inbox reads one (`firstName`/`lastName`/`email`). */
+function personShape(u: { id: string; name: string | null; email: string } | null) {
+  return u ? { id: u.id, firstName: u.name, lastName: null as string | null, email: u.email } : null;
+}
+
+/** Full report detail for the approver review view (expenses + line items +
+ *  attendees + receipts), same shape the submitter's `report` query returns.
+ *
+ *  VeloExpense: a currency is keyed by its code; the submitter's entity carries its home
+ *  currency's CODE; only STORED receipts (w2-09); violations are read on their own
+ *  (`PolicyViolation` is no relation of this model here). */
+const REPORT_DETAIL_INCLUDE = {
+  currency: { select: { code: true } },
+  submitter: {
+    select: {
+      id: true,
+      name: true,
+      email: true,
+      // Home currency + ITC eligibility, both of which the review view renders
+      // against (rules 3 and 6).
+      entity: { select: { homeCurrencyId: true, itcRecoverable: true } },
+    },
+  },
+  expenses: {
+    orderBy: { createdAt: 'asc' },
+    include: {
+      currency: { select: { code: true } },
+      lineItems: {
+        orderBy: { createdAt: 'asc' },
+        include: { category: { select: { id: true, label: true, icon: true } } },
+      },
+      attendees: {
+        orderBy: { createdAt: 'asc' },
+        select: { id: true, name: true, company: true, isExternal: true },
+      },
+      receipts: {
+        where: STORED,
+        orderBy: { uploadedAt: 'desc' },
+        include: {
+          extraction: {
+            select: {
+              scanStatus: true,
+              status: true,
+              confidence: true,
+              data: true,
+              error: true,
+              reviewedAt: true,
+            },
+          },
+        },
+      },
+    },
+  },
 } as const;
 
 /**
@@ -349,6 +428,263 @@ export const expenseApprovalsRouter = router({
    *  plus unassigned filter-approver tasks they're eligible to claim. Mirrors
    *  virtualCardRequests.myTasks. */
   myTasks: protectedProcedure.query(({ ctx }) => loadMyExpenseApprovalTasks(ctx.db, ctx.rbac.id)),
+
+  /** Reports the caller has already DECIDED — the "decided by me" history that
+   *  the pending inbox drops once a task leaves PENDING (A2/A3). Any expense-
+   *  report task the caller decided (APPROVED / REJECTED), newest decision
+   *  first, with the outcome + when. Read-only in the UI.
+   *
+   *  VeloExpense (w4-05/w4-07, d71): ported with the inbox; the report rows in ExpenseOS's
+   *  summary shape (`summaryShape`). */
+  myDecided: protectedProcedure.query(async ({ ctx }) => {
+    const tasks = await ctx.db.approvalTask.findMany({
+      where: {
+        decidedById: ctx.rbac.id,
+        status: { in: ['APPROVED', 'REJECTED'] },
+        instance: { subjectType: 'EXPENSE_REPORT' as const },
+      },
+      orderBy: { decidedAt: 'desc' },
+      select: {
+        id: true,
+        status: true,
+        decidedAt: true,
+        instance: { select: { subjectId: true } },
+      },
+    });
+    // One report may have several decided tasks (multi-step); keep the most
+    // recent decision per report (tasks are already newest-first).
+    const seen = new Set<string>();
+    const ordered: { taskId: string; status: string; decidedAt: Date | null; reportId: string }[] =
+      [];
+    for (const t of tasks) {
+      if (seen.has(t.instance.subjectId)) continue;
+      seen.add(t.instance.subjectId);
+      ordered.push({
+        taskId: t.id,
+        status: t.status,
+        decidedAt: t.decidedAt,
+        reportId: t.instance.subjectId,
+      });
+    }
+    const reports = ordered.length
+      ? await ctx.db.expenseReport.findMany({
+          where: { id: { in: [...seen] } },
+          select: REPORT_SUMMARY_SELECT,
+        })
+      : [];
+    const byId = new Map(reports.map((r) => [r.id, r]));
+    /**
+     * Also in the READER's currency, because this list is summed on screen.
+     *
+     * An approver's history spans whatever currencies their team submitted in, and adding
+     * USD cents to CAD cents under a single `$` is the error `expenses.list` already
+     * learned not to make (F54). A report with no rate path comes back null and is
+     * EXCLUDED from the sum by the caller, never folded in at face value.
+     */
+    const homeCurrency = await readerCurrencyCode(ctx.db, ctx.rbac.id);
+    const inHomeCurrency = await homeConverterFor(
+      ctx.db,
+      homeCurrency,
+      reports.map((r) => r.currency.code),
+    );
+    return {
+      homeCurrency,
+      items: ordered.flatMap((o) => {
+        const report = byId.get(o.reportId);
+        return report
+          ? [
+              {
+                taskId: o.taskId,
+                decision: o.status,
+                decidedAt: o.decidedAt,
+                report: {
+                  ...summaryShape(report),
+                  homeTotalMinor: inHomeCurrency(report.totalMinor, report.currency.code),
+                },
+              },
+            ]
+          : [];
+      }),
+    };
+  }),
+
+  /** Every submitted report from one of the caller's DIRECT REPORTS, whatever
+   *  its status and whoever ended up deciding it.
+   *
+   *  The pending inbox is keyed on task assignment, so a manager loses sight of
+   *  a report the moment tier routing, escalation or delegation sends it
+   *  elsewhere — and `myDecided` only covers what the caller decided
+   *  themselves. Neither answers "what is my team spending, and what happened
+   *  to it", which is the question a manager actually has. Drafts are excluded:
+   *  an unsubmitted report isn't the manager's business yet.
+   *
+   *  Each row carries where the report currently sits (`pendingWith`) and the
+   *  most recent decision on it (`lastDecision`), so the manager can see both
+   *  that it exists and who has it.
+   *
+   *  VeloExpense (w4-05/w4-07, d71): ported with the inbox; people in ExpenseOS's shape
+   *  (`personShape`). */
+  myTeam: protectedProcedure.query(async ({ ctx }) => {
+    const reports = await ctx.db.user.findMany({
+      where: { managerId: ctx.rbac.id, deletedAt: null },
+      select: { id: true },
+    });
+    if (reports.length === 0) return { items: [] };
+
+    const rows = await ctx.db.expenseReport.findMany({
+      where: {
+        submitterId: { in: reports.map((r) => r.id) },
+        status: { not: ExpenseReportStatus.DRAFT },
+      },
+      orderBy: { submittedAt: 'desc' },
+      select: { ...REPORT_SUMMARY_SELECT, approvalInstanceId: true },
+    });
+    if (rows.length === 0) return { items: [] };
+
+    // One pass over every task on those instances — who holds each report now,
+    // and what the last decision on it was.
+    const instanceIds = rows.flatMap((r) => (r.approvalInstanceId ? [r.approvalInstanceId] : []));
+    const tasks = instanceIds.length
+      ? await ctx.db.approvalTask.findMany({
+          where: { instanceId: { in: instanceIds } },
+          orderBy: { createdAt: 'asc' },
+          select: {
+            instanceId: true,
+            status: true,
+            decidedAt: true,
+            assignee: { select: { id: true, name: true, email: true } },
+            decidedBy: { select: { id: true, name: true, email: true } },
+          },
+        })
+      : [];
+
+    type Person = ReturnType<typeof personShape>;
+    const pendingWith = new Map<string, Person>();
+    const lastDecision = new Map<string, { by: Person; decision: string; at: Date | null }>();
+    for (const t of tasks) {
+      if (t.status === 'PENDING') {
+        if (!pendingWith.has(t.instanceId)) pendingWith.set(t.instanceId, personShape(t.assignee));
+      } else if (t.status === 'APPROVED' || t.status === 'REJECTED') {
+        // Ascending createdAt — the last write is the newest decision.
+        lastDecision.set(t.instanceId, {
+          by: personShape(t.decidedBy),
+          decision: t.status,
+          at: t.decidedAt,
+        });
+      }
+    }
+
+    return {
+      items: rows.map(({ approvalInstanceId, ...report }) => ({
+        report: summaryShape(report),
+        pendingWith: approvalInstanceId ? (pendingWith.get(approvalInstanceId) ?? null) : null,
+        lastDecision: approvalInstanceId ? (lastDecision.get(approvalInstanceId) ?? null) : null,
+      })),
+    };
+  }),
+
+  /** Approver-visible report detail. Readable by an eligible approver, an
+   *  AP reimburser, a chain/all reader, the submitter's direct manager, or the
+   *  submitter themselves (see `canViewReport`). Mirrors the submitter's
+   *  `expenses.report` mapping: bigints stringified, receipts presigned.
+   *
+   *  VeloExpense (w4-05/w4-07, d71): ported with the inbox. No Platform Settings, so the
+   *  extraction review threshold is ExpenseOS's default as a constant (as `expenses.report`
+   *  has it); receipts are presigned through VeloExpense's storage; violations are read on
+   *  their own; currencies carry the platform's symbol; the submitter's one display name is
+   *  in `firstName`. */
+  report: protectedProcedure
+    .input(z.object({ reportId: z.string().uuid() }))
+    .query(async ({ ctx, input }) => {
+      const report = await ctx.db.expenseReport.findUnique({
+        where: { id: input.reportId },
+        include: REPORT_DETAIL_INCLUDE,
+      });
+      if (!report) throw new TRPCError({ code: 'NOT_FOUND' });
+      const perms = ctx.rbac.permissions;
+      if (!(await canViewReport(ctx.db, report, ctx.rbac.id, perms))) {
+        throw new TRPCError({ code: 'FORBIDDEN' });
+      }
+
+      // Confidence threshold below which an extraction is flagged for the
+      // approver to verify (Platform Settings; default 0.7).
+      const extractionReviewThreshold = 0.7;
+      const violations = await ctx.db.policyViolation.findMany({
+        where: { reportId: report.id },
+        orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+      });
+      const storage = getStorage();
+      const withSymbol = (code: string) => ({ code, symbol: currencySymbol(code) });
+
+      const expenses = await Promise.all(
+        report.expenses.map(async (e) => ({
+          id: e.id,
+          merchant: e.merchant,
+          placeText: e.placeText,
+          date: e.date,
+          explanation: e.explanation,
+          attendees: e.attendees,
+          amountMinor: e.amountMinor.toString(),
+          // Tax is on the expense now (a receipt = one tax total).
+          taxGstHstMinor: e.taxGstHstMinor?.toString() ?? null,
+          taxQstMinor: e.taxQstMinor?.toString() ?? null,
+          currency: withSymbol(e.currency.code),
+          // The conversion as filed — an approver has to approve the same
+          // home-currency figure the employee will be paid (rule 3).
+          fxRate: e.fxRate?.toString() ?? null,
+          fxRateSource: e.fxRateSource,
+          homeCurrency: e.homeCurrency,
+          homeAmountMinor: e.homeAmountMinor?.toString() ?? null,
+          lineItems: e.lineItems.map((li) => ({
+            id: li.id,
+            category: li.category,
+            amountMinor: li.amountMinor.toString(),
+          })),
+          receipts: await Promise.all(
+            e.receipts.map(async (r) => ({
+              id: r.id,
+              filename: r.filename,
+              contentType: r.contentType,
+              uploadedAt: r.uploadedAt,
+              url: await storage.presignDownload(r.s3Key),
+              extraction: r.extraction
+                ? {
+                    scanStatus: r.extraction.scanStatus,
+                    status: r.extraction.status,
+                    confidence: r.extraction.confidence ? Number(r.extraction.confidence) : null,
+                    reviewedAt: r.extraction.reviewedAt,
+                  }
+                : null,
+            })),
+          ),
+        })),
+      );
+
+      const homeCode = report.submitter.entity?.homeCurrencyId ?? null;
+      return {
+        id: report.id,
+        number: report.number,
+        title: report.title,
+        purpose: report.purpose,
+        status: report.status,
+        totalMinor: report.totalMinor.toString(),
+        currency: withSymbol(report.currency.code),
+        submittedAt: report.submittedAt,
+        submitter: {
+          id: report.submitter.id,
+          firstName: report.submitter.name,
+          lastName: null as string | null,
+          email: report.submitter.email,
+        },
+        entity: {
+          homeCurrency: homeCode ? { code: homeCode } : null,
+          itcRecoverable: report.submitter.entity?.itcRecoverable ?? true,
+        },
+        violations,
+        extractionReviewThreshold,
+        expenses,
+      };
+    }),
 
   /**
    * AP's cross-report expense view: every expense the caller may see, flat,
@@ -656,8 +992,63 @@ export const expenseApprovalsRouter = router({
       return res;
     }),
 
-  // VeloExpense: ExpenseOS's `decideBulk` (its inbox's group approve) is not ported — the
-  // /approvals inbox is VeloExpense's own, and decides on the report (d57).
+  /** Approve several pending tasks at once (the inbox group action). Each task
+   *  is decided independently — re-checked for PENDING + eligibility, audited,
+   *  and its notifications + workflow effects fired — so one ineligible/stale
+   *  task never fails the batch. Returns which ids were approved vs skipped so
+   *  the UI can report a partial result. Approve-only by design: a bulk reject
+   *  would need a per-report reason, which belongs in the single-report flow.
+   *
+   *  VeloExpense (w4-05/w4-07, d71): each approval runs through `decideThroughEngine`, as
+   *  `decide` does — the billing gate, the report lock, the audit, VeloExpense's outcome
+   *  (budgets, history, ledger post), the notifications and the workflow effects — with
+   *  `bulk: true` in the audit's details, as ExpenseOS writes it. The request is ONE tenant
+   *  transaction here, so a refusal raised inside the engine (after the checks above, which
+   *  skip what ExpenseOS skips) fails the whole batch rather than being skipped: swallowing
+   *  it could keep the half of that task's writes made before the throw. */
+  decideBulk: protectedProcedure
+    .input(
+      z.object({
+        taskIds: z.array(z.string().uuid()).min(1).max(100),
+        note: z.string().trim().max(2000).optional(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const mayOverride = ctx.rbac.permissions.includes(P.expense.report.decideAny);
+      const approved: string[] = [];
+      const skipped: { taskId: string; reason: 'not_found' | 'not_pending' | 'forbidden' }[] = [];
+      for (const taskId of input.taskIds) {
+        const task = await ctx.db.approvalTask.findUnique({
+          where: { id: taskId },
+          select: { id: true, status: true, instance: { select: { subjectId: true } } },
+        });
+        if (!task) {
+          skipped.push({ taskId, reason: 'not_found' });
+          continue;
+        }
+        if (task.status !== 'PENDING') {
+          skipped.push({ taskId, reason: 'not_pending' });
+          continue;
+        }
+        const access = await resolveDecideAccess(ctx.db, taskId, ctx.rbac.id, mayOverride);
+        if (!access.allowed) {
+          skipped.push({ taskId, reason: 'forbidden' });
+          continue;
+        }
+        await decideThroughEngine(ctx.db, {
+          taskId,
+          actorId: ctx.rbac.id,
+          approve: true,
+          note: input.note ?? null,
+          mayOverride,
+          context: { bulk: true },
+        }).catch((err: unknown) => {
+          throw toTrpcError(err);
+        });
+        approved.push(taskId);
+      }
+      return { approved, skipped };
+    }),
 
   /** Manually reassign a pending approval task to another user. Authorized like
    *  a decision (`canDecide` — the current assignee, an eligible claimant, or the

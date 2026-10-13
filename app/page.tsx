@@ -44,7 +44,7 @@ export const dynamic = 'force-dynamic';
 
 const LINKS = [
   { href: '/expenses', label: 'Expense reports', hint: 'File a report, or pick up a draft.', Icon: Receipt },
-  { href: '/approvals', label: 'Approvals', hint: 'What is waiting on you.', Icon: CircleCheck },
+  { href: '/expenses/approvals', label: 'Approvals', hint: 'What is waiting on you.', Icon: CircleCheck },
   { href: '/notifications', label: 'Notifications', hint: 'What has happened recently.', Icon: Bell },
 ];
 

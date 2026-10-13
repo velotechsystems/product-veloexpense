@@ -85,7 +85,8 @@ describe("an admin's menu", () => {
         '/notifications',
         '/expenses',
         '/admin/reimbursements',
-        '/approvals',
+        // w4-05/w4-07 (d71): ExpenseOS's inbox, at its own path, in place of /approvals.
+        '/expenses/approvals',
         '/approvals/delegations',
         '/admin/analytics',
         '/admin/budgets',
@@ -152,7 +153,7 @@ describe("an admin's menu", () => {
 describe("an employee's menu", () => {
   it('has their own screens and no admin screen', () => {
     show('employee');
-    expect(hrefs()).toEqual(['/', '/approvals', '/approvals/delegations', '/expenses', '/notifications']);
+    expect(hrefs()).toEqual(['/', '/approvals/delegations', '/expenses', '/expenses/approvals', '/notifications']);
   });
 });
 
@@ -193,6 +194,7 @@ describe('isPortedScreen', () => {
       '/admin/policy-rules',
       '/admin/policies',
       '/admin/policy-violations',
+      '/expenses/approvals',
     ]);
   });
 });

@@ -96,18 +96,6 @@ export const DELEGATION_SCOPE_COPY: EnumCopy<DelegationScope> = {
   REPORTS: { 'en-CA': 'Expense reports' },
 };
 
-/**
- * How an approval in the /approvals inbox reached you. w4-00c: the engine assigns a task to
- * a delegate when it is created, so the ladder's DELEGATED ("Covering") is gone; a task open
- * to you without being assigned — a pool, or the no-manager fallback — is ROLE_POOL.
- */
-export type InboxRoute = 'ASSIGNED' | 'ROLE_POOL';
-
-export const INBOX_ROUTE_COPY: EnumCopy<InboxRoute> = {
-  ASSIGNED: { 'en-CA': 'Assigned to you' },
-  ROLE_POOL: { 'en-CA': 'Your role' },
-};
-
 /* ── people ───────────────────────────────────────────────────────────────── */
 
 export const EMPLOYEE_ROLE_COPY: EnumCopy<EmployeeRole> = {
