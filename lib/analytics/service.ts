@@ -30,7 +30,7 @@
  * $125.50, and "a filed claim is worth what it was worth when it was incurred.
  * Otherwise an approved report's total moves on its own overnight." Every group
  * here is converted at the rate for ITS OWN DAY, through the same date-bounded
- * `lib/policy/rates.ts` lookup the policy engine and the budget rollup use.
+ * `lib/fx/rates.ts` lookup the budget rollup uses too.
  *
  * ── AN-10: the aggregation shape (John's call, 2 Sep) ───────────────────────
  *
@@ -55,8 +55,8 @@ import type { UserMessage } from '@/lib/errors/domain';
 import type { UserMessageCode } from '@/lib/i18n/catalog/errors';
 import { DomainError } from '@/lib/errors/domain';
 import { convertMinor } from '@/lib/money';
-import { buildRateLookup, type RateLookup, type RateRow } from '@/lib/policy/rates';
-import { policyCurrencyCode } from '@/lib/policy/service';
+import { buildRateLookup, type RateLookup, type RateRow } from '@/lib/fx/rates';
+import { policyCurrencyCode } from '@/lib/fx/policyCurrency';
 import { requireModule } from '@/lib/modules/service';
 import { COMMITTED_STATUSES, COUNTED_STATUSES } from '@/lib/spend/statuses';
 

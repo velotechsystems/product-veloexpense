@@ -44,7 +44,6 @@
  */
 import type { EmployeeRole, EmployeeStatus } from '@/lib/employees/service';
 import type { ReportStatus } from '@/lib/expenses/service';
-import type { Severity, RuleKind } from '@/lib/policy/rules';
 import type { PostStatus } from '@/lib/integrations/post-outbox';
 import type { FraudSeverity } from '@/lib/fraud/rules';
 import type { ControlSeverity } from '@/lib/fraud/controls';
@@ -81,130 +80,10 @@ export const REPORT_STATUS_COPY: EnumCopy<ReportStatus> = {
 
 /* ── policy ───────────────────────────────────────────────────────────────── */
 
-export const SEVERITY_COPY: EnumCopy<Severity> = {
-  INFO: { 'en-CA': 'For information' },
-  WARNING: { 'en-CA': 'Warning' },
-  // Not "Block": the word on the screen should say what it does to the person
-  // reading it, and what it does is refuse the submission until they fix it.
-  BLOCK: { 'en-CA': 'Must be fixed' },
-};
-
-/**
- * ── THIS CATALOGUE WAS DEAD UNTIL VX4-10 PART 4, AND THAT IS THE STORY ─────
- *
- * Built in VX4-7 part 2a with full coverage of `RuleKind` and a passing test in
- * `test/i18n-enum-catalog.test.ts`. It had exactly two consumers, and both were
- * that test file. Nothing in `lib/` or `app/` ever asked it anything.
- *
- * Meanwhile `lib/policy/rules.ts` carried a `label` on every `RuleDefinition` —
- * a SECOND list of the same five names — and that is what `/admin/expense-policies`
- * rendered, what `lib/policy/service.ts` put into eight refusal messages, and
- * therefore the only one a person ever read.
- *
- * The two had already drifted on two of five members:
- *
- *   NON_NEGATIVE_AMOUNT   catalogue: "Amount cannot be negative"
- *                            rules.ts: "No negative amounts"   ← what shipped
- *   BUDGET_OVERAGE        catalogue: "Budget overage"
- *                            rules.ts: "Over budget"           ← what shipped
- *
- * UD-9's defect in its purest form, and the fourth time this tree has paid for
- * it. What made it invisible is worth more than the fix: a coverage test can
- * prove a catalogue covers its union and cannot notice that nobody reads the
- * catalogue. `scripts/check-i18n.mjs` now refuses a catalogue here whose only
- * references are its own test.
- *
- * ── WHICH WORDING SURVIVED, AND WHY IT IS THE LIVE ONE ─────────────────────
- *
- * `rules.ts`', on both disagreements. Not because it is better — "Amount cannot
- * be negative" is arguably clearer than "No negative amounts" — but because it is
- * what readers see today, and a ticket about removing a duplicate list is not a
- * ticket about changing copy. Changing both at once would have meant nobody could
- * tell afterwards which change caused a complaint. The wording question is now a
- * one-line edit here, which is the whole point of the catalogue existing.
- */
-export const RULE_KIND_COPY: EnumCopy<RuleKind> = {
-  PER_TRANSACTION_LIMIT: { 'en-CA': 'Per-transaction limit' },
-  RECEIPT_REQUIRED: { 'en-CA': 'Receipt required' },
-  CATEGORY_ACTIVE: { 'en-CA': 'Category must be active' },
-  NON_NEGATIVE_AMOUNT: { 'en-CA': 'No negative amounts' },
-  BUDGET_OVERAGE: { 'en-CA': 'Over budget' },
-};
-
-/**
- * What a rule's PARAMETER is called, for the sentence a refusal makes.
- *
- * Keyed `<RuleKind>.<paramName>`, and the compound key is forced rather than
- * chosen: both parameters in the product are named `thresholdMinor` and they are
- * NOT called the same thing — it is "Limit" on a per-transaction cap and "Only
- * above" on a receipt requirement, because those are different questions with the
- * same storage. A catalogue keyed by the parameter name alone would have to pick
- * one and be wrong on the other screen.
- *
- * So this is not an `EnumCopy<T>` — there is no union of `(kind, param)` pairs in
- * the type system. Coverage still comes from the product's own enumeration rather
- * than from a hand-kept list: `RULE_DEFINITIONS` names every pair, so
- * `test/i18n-policy-params.test.ts` walks `RULE_KINDS × definition.params` and
- * refuses a pair with no entry. Same guarantee, arrived at through a loop instead
- * of through a type.
- *
- * WHY IT IS CATALOGUED AT ALL: these appear inside `POLICY_PARAM_REQUIRED` and
- * friends, which are themselves catalogued sentences. `'{rule} needs {field}.'`
- * rendered a French template with `Limit` inside it, because the param was filled
- * with an English literal at the throw site. See `PARAM_CATALOGUES` in
- * `errors.ts` for the half that resolves them.
- */
-export const RULE_PARAM_COPY: Record<string, Copy> = {
-  'PER_TRANSACTION_LIMIT.thresholdMinor': { 'en-CA': 'Limit' },
-  'RECEIPT_REQUIRED.thresholdMinor': { 'en-CA': 'Only above' },
-};
-
-/** The key `RULE_PARAM_COPY` uses. One place, so no call site spells it. */
-export function ruleParamKey(kind: string, paramName: string): string {
-  return `${kind}.${paramName}`;
-}
-
-/**
- * What each rule DOES, in a sentence, for the admin choosing whether to enable it.
- *
- * Genuinely un-catalogued before part 4 — unlike the labels above, no catalogue
- * held these at all. They render only on `/admin/expense-policies`, which is why
- * no gate saw them: that screen sat behind a pseudo-locale ceiling of 46 from the
- * day the ratchet was built until the day this ticket lowered it.
- *
- * A separate catalogue from the labels rather than a `{ label, description }`
- * pair per member, because `Copy` is a locale-keyed STRING map and nesting a
- * second level inside it would put an object where `localizedFrom` expects a
- * string — the same mechanical trap VX4-10 part 2 hit with plural forms, where a
- * nested value passes through unpseudoized and the crawl then counts a catalogued
- * string as un-catalogued. Two flat catalogues keyed by the same union cost one
- * extra declaration and keep every value a string.
- *
- * Verbatim from the `description` fields they replace. Wording changes are a
- * separate decision, for the reason given above the labels.
- */
-export const RULE_DESCRIPTION_COPY: EnumCopy<RuleKind> = {
-  PER_TRANSACTION_LIMIT: {
-    'en-CA':
-      'Flags any single line item above the limit. Scope it to one category to give, say, meals a tighter cap than airfare.',
-  },
-  RECEIPT_REQUIRED: {
-    'en-CA':
-      'Flags an expense with no receipt attached. Set a limit to require receipts only above an amount.',
-  },
-  CATEGORY_ACTIVE: {
-    'en-CA':
-      'Flags a line item coded to a category the tenant has retired. Catches reports left in draft across a chart-of-accounts change.',
-  },
-  NON_NEGATIVE_AMOUNT: {
-    'en-CA':
-      'Flags a line item below zero. Credits and refunds belong on the original report, not as a negative line.',
-  },
-  BUDGET_OVERAGE: {
-    'en-CA':
-      'Flags a report whose spend takes a budget period past its budget, counting what is already approved and what is still awaiting a decision. Warns; it never blocks.',
-  },
-};
+// w4-02d: VeloExpense's v1 rule catalogues (SEVERITY_COPY, RULE_KIND_COPY, RULE_PARAM_COPY,
+// RULE_DESCRIPTION_COPY) went with v1's engine and its /admin/expense-policies screen, their
+// only readers. ExpenseOS's rule kinds, severities and messages are next-intl copy
+// (`policyRules.*`, `expenses.policy.labels.*`).
 
 /* ── approvals ────────────────────────────────────────────────────────────── */
 

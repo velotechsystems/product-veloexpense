@@ -29,7 +29,7 @@
 
 import type { PerDiemRateRow, PerDiemTier } from '@expenseos/approvals';
 import type { ExpensePolicy, FxRate, PolicyViolationSeverity, Prisma } from '@expenseos/db';
-import type { BuiltFacts } from './facts';
+import type { BuiltFacts, FxGap } from './facts';
 import { type Finding, RULE_KINDS } from './kinds';
 // VeloExpense: `BudgetImpact` from ./types (ExpenseOS imports it from its approvals engine's
 // budgets, which arrive with w4-04); no travel types (out of scope).
@@ -98,13 +98,19 @@ export interface PolicyContext {
  *  kind cannot forge severity — that's the point of the Finding/Violation split. */
 function stamp(t: RuleTranslator, inst: PolicyRuleInstance, f: Finding): Violation {
   const kind = RULE_KINDS[inst.kindCode];
+  // A built-in kind may override severity/message per finding (e.g. the
+  // per-transaction kind's degraded fxRateMissing INFO); admin PREDICATE kinds
+  // never set these, so the instance's own values govern.
+  const severity = f.severity ?? inst.severity;
   return {
     // Each instance is its own rule; its id is the stable code (dedupe + analytics).
     ruleCode: inst.id,
-    // A built-in kind may override severity/message per finding (e.g. the
-    // per-transaction kind's degraded fxRateMissing INFO); admin PREDICATE kinds
-    // never set these, so the instance's own values govern.
-    severity: f.severity ?? inst.severity,
+    // VeloExpense (BG-4): held to the kind's ceiling, so a row forced past it — a seed, an
+    // import, a hand edit — still cannot block.
+    severity:
+      kind?.maxSeverity && SEVERITY_RANK[severity] > SEVERITY_RANK[kind.maxSeverity]
+        ? kind.maxSeverity
+        : severity,
     message: t(
       f.messageKey || inst.messageKey || kind?.messageKey || 'policy.generic',
       f.messageValues,
@@ -114,6 +120,31 @@ function stamp(t: RuleTranslator, inst: PolicyRuleInstance, f: Finding): Violati
     // Not persisted — `kindCode` exists only so `keepMostSevere` can tell two instances of the
     // SAME rule kind apart from two unrelated rules that happen to hit one line.
     kindCode: inst.kindCode,
+  };
+}
+
+/** VeloExpense (PE-7): the facts a missing FX rate leaves unknown, by scope. */
+const LINE_AMOUNT_FACTS: ReadonlySet<string> = new Set(['lineAmount']);
+const REPORT_AMOUNT_FACTS: ReadonlySet<string> = new Set(['reportTotal', 'maxLineAmount']);
+
+/** VeloExpense (PE-7): does this condition compare any of these facts, at any depth? */
+function comparesAmount(condition: unknown, fields: ReadonlySet<string>): boolean {
+  if (!condition || typeof condition !== 'object') return false;
+  if (Array.isArray(condition)) return condition.some((c) => comparesAmount(c, fields));
+  const node = condition as Record<string, unknown>;
+  if (typeof node.field === 'string' && fields.has(node.field)) return true;
+  return Object.values(node).some((v) => typeof v === 'object' && comparesAmount(v, fields));
+}
+
+/** VeloExpense (PE-7): the INFO a rule raises when it cannot convert an amount — the same
+ *  `fxRateMissing` the built-in per-transaction kind degrades to. */
+function fxGapFinding(gap: FxGap, lineItemId: string | null): Finding {
+  return {
+    lineItemId,
+    severity: 'INFO',
+    messageKey: 'fxRateMissing',
+    messageValues: { from: gap.from, to: gap.to },
+    data: { from: gap.from, to: gap.to },
   };
 }
 
@@ -187,6 +218,10 @@ export function runRules(ctx: PolicyContext): Violation[] {
     t: ctx.t,
   };
 
+  // VeloExpense (f36): each line's category, so an AGGREGATE kind's findings can be held to
+  // the instance's category scope below.
+  const categoryOfLine = new Map(ctx.report.lineItems.map((l) => [l.id, l.category.id]));
+
   for (const inst of ctx.rules) {
     const kind = RULE_KINDS[inst.kindCode];
     if (!kind) continue;
@@ -194,14 +229,35 @@ export function runRules(ctx: PolicyContext): Violation[] {
       for (const line of ctx.facts.lines) {
         // A category-scoped LINE rule only evaluates lines of that category.
         if (inst.categoryId && line.categoryId !== inst.categoryId) continue;
+        // VeloExpense (PE-7, d67): a rule comparing this line's amount cannot be decided
+        // when the amount has no rate into the policy currency. Say so, rather than let
+        // the null fact read as "under every limit".
+        if (line.fxGap && comparesAmount(inst.condition, LINE_AMOUNT_FACTS)) {
+          out.push(stamp(ctx.t, inst, fxGapFinding(line.fxGap, line.lineItemId)));
+          continue;
+        }
         const f = kind.evaluate(line.facts, inst);
         if (f) out.push(stamp(ctx.t, inst, { ...f, lineItemId: f.lineItemId ?? line.lineItemId }));
       }
     } else if (kind.scope === 'REPORT' && kind.evaluate) {
+      // VeloExpense (PE-7): as above, for the report's converted totals.
+      if (ctx.facts.reportFxGap && comparesAmount(inst.condition, REPORT_AMOUNT_FACTS)) {
+        out.push(stamp(ctx.t, inst, fxGapFinding(ctx.facts.reportFxGap, null)));
+        continue;
+      }
       const f = kind.evaluate(ctx.facts.report, inst);
       if (f) out.push(stamp(ctx.t, inst, f));
     } else if (kind.scope === 'AGGREGATE' && kind.evaluateAggregate) {
-      for (const f of kind.evaluateAggregate(inst, agg)) out.push(stamp(ctx.t, inst, f));
+      for (const f of kind.evaluateAggregate(inst, agg)) {
+        // VeloExpense (f36): ExpenseOS applies a rule's category scope to LINE kinds only,
+        // so an AGGREGATE kind scoped to one category (a receipt threshold for Meals, say)
+        // fired on every category — a silent widening of the policy an admin wrote. A
+        // line finding outside the scope is dropped; a report-level one stands.
+        if (inst.categoryId && f.lineItemId && categoryOfLine.get(f.lineItemId) !== inst.categoryId) {
+          continue;
+        }
+        out.push(stamp(ctx.t, inst, f));
+      }
     }
   }
 

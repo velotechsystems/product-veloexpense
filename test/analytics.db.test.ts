@@ -293,7 +293,7 @@ describe('a missing rate is loud, never coerced (AN-7)', () => {
 
   it('converts by RECIPROCAL when only the other direction is published', async () => {
     // The Bank of Canada publishes CAD-quoted pairs, so USD->CAD exists and
-    // CAD->USD does not. `lib/policy/rates.ts` derives the reciprocal, and doing
+    // CAD->USD does not. `lib/fx/rates.ts` derives the reciprocal, and doing
     // the FX in SQL would have meant reimplementing that rule in a query.
     await admin.query(`UPDATE organization SET policy_currency_code = 'USD' WHERE id = $1`, [orgId]);
     try {

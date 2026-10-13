@@ -2,6 +2,7 @@
 
 import {
   Button,
+  Combobox,
   DataTableToolbar,
   Drawer,
   DrawerContent,
@@ -44,7 +45,7 @@ import { trpc } from '@/lib/trpc/client';
  * Ported from ExpenseOS (550b2945) with the `expensePolicy` router (w4-02c, d65).
  * VeloExpense: the limits are labelled and converted in the organization's policy
  * currency (`policies.expensePolicy.currency`), where ExpenseOS assumes CAD (its TODO
- * below). Nothing enforces these limits until the cutover (w4-02d).
+ * below). And the policy currency's control (d68), above the table.
  */
 
 interface PolicyRow {
@@ -194,7 +195,17 @@ export function ExpensePoliciesAdmin({ canWrite }: { canWrite: boolean }) {
   const tableLabels = useTableLabels();
   const query = trpc.policies.expensePolicy.byCategory.useQuery();
   // VeloExpense: the organization's policy currency; CAD until it has loaded.
-  const currency = trpc.policies.expensePolicy.currency.useQuery().data?.code ?? POLICY_CURRENCY;
+  const currencyQ = trpc.policies.expensePolicy.currency.useQuery();
+  const currency = currencyQ.data?.code ?? POLICY_CURRENCY;
+  // VeloExpense (d68): the control that changes it — VeloExpense's v1 policy screen held it
+  // before the cutover (w4-02d). Held locally until saved, so a mis-pick is not a write.
+  const [pickedCurrency, setPickedCurrency] = useState<string | null>(null);
+  const setCurrency = trpc.policies.expensePolicy.setCurrency.useMutation({
+    onSuccess: () => {
+      setPickedCurrency(null);
+      return currencyQ.refetch();
+    },
+  });
   const upsert = trpc.policies.expensePolicy.upsert.useMutation({
     onSuccess: () => query.refetch(),
   });
@@ -322,6 +333,36 @@ export function ExpensePoliciesAdmin({ canWrite }: { canWrite: boolean }) {
 
   return (
     <div className="flex h-full min-h-0 flex-col gap-3">
+      {/* VeloExpense (d68): the policy currency, beside the limits stated in it. */}
+      <div className="flex flex-wrap items-center gap-3 rounded-md border border-border bg-card px-3 py-2">
+        <label htmlFor="policy-currency" className="font-medium text-foreground text-sm">
+          {t('currency.label')}
+        </label>
+        {canWrite ? (
+          <div className="w-32">
+            <Combobox
+              id="policy-currency"
+              items={(currencyQ.data?.options ?? [currency]).map((c) => ({ value: c, label: c }))}
+              value={pickedCurrency ?? currency}
+              onValueChange={(v) => setPickedCurrency(v && v !== currency ? v : null)}
+            />
+          </div>
+        ) : (
+          <span id="policy-currency" className="text-foreground text-sm tabular-nums">
+            {currency}
+          </span>
+        )}
+        {canWrite && pickedCurrency && (
+          <Button
+            size="sm"
+            disabled={setCurrency.isPending}
+            onClick={() => setCurrency.mutate({ code: pickedCurrency })}
+          >
+            {setCurrency.isPending ? tc('saving') : tc('save')}
+          </Button>
+        )}
+        <p className="text-muted-foreground text-xs">{t('currency.note')}</p>
+      </div>
       <div className="rounded-md border border-border bg-card">
         <FilterPillBar<ColumnId>
           labels={pillBar.chromeLabels}

@@ -422,7 +422,8 @@ export const ModelName = {
   ApprovalTask: 'ApprovalTask',
   Delegation: 'Delegation',
   PolicyRule: 'PolicyRule',
-  ExpensePolicy: 'ExpensePolicy'
+  ExpensePolicy: 'ExpensePolicy',
+  PolicyViolation: 'PolicyViolation'
 } as const
 
 export type ModelName = (typeof ModelName)[keyof typeof ModelName]
@@ -438,7 +439,7 @@ export type TypeMap<ExtArgs extends runtime.Types.Extensions.InternalArgs = runt
     omit: GlobalOmitOptions
   }
   meta: {
-    modelProps: "expenseCategory" | "glAccount" | "expenseReport" | "expense" | "expenseAllocation" | "expenseAttendee" | "expenseLineItem" | "receipt" | "documentExtraction" | "expenseDetermination" | "receiptExternalId" | "expenseExternalId" | "aiUsage" | "taxJurisdiction" | "user" | "businessUnit" | "externalIdSource" | "businessUnitExternalId" | "legalEntity" | "legalEntityExternalId" | "fxRate" | "mileageRate" | "mileageRateTier" | "mileageRateSubject" | "perDiemRate" | "currency" | "department" | "departmentExternalId" | "jobLevel" | "jobLevelExternalId" | "fiscalYear" | "fiscalYearExternalId" | "approvalWorkflow" | "approvalWorkflowVersion" | "approvalInstance" | "approvalTask" | "delegation" | "policyRule" | "expensePolicy"
+    modelProps: "expenseCategory" | "glAccount" | "expenseReport" | "expense" | "expenseAllocation" | "expenseAttendee" | "expenseLineItem" | "receipt" | "documentExtraction" | "expenseDetermination" | "receiptExternalId" | "expenseExternalId" | "aiUsage" | "taxJurisdiction" | "user" | "businessUnit" | "externalIdSource" | "businessUnitExternalId" | "legalEntity" | "legalEntityExternalId" | "fxRate" | "mileageRate" | "mileageRateTier" | "mileageRateSubject" | "perDiemRate" | "currency" | "department" | "departmentExternalId" | "jobLevel" | "jobLevelExternalId" | "fiscalYear" | "fiscalYearExternalId" | "approvalWorkflow" | "approvalWorkflowVersion" | "approvalInstance" | "approvalTask" | "delegation" | "policyRule" | "expensePolicy" | "policyViolation"
     txIsolationLevel: TransactionIsolationLevel
   }
   model: {
@@ -3328,6 +3329,80 @@ export type TypeMap<ExtArgs extends runtime.Types.Extensions.InternalArgs = runt
         }
       }
     }
+    PolicyViolation: {
+      payload: Prisma.$PolicyViolationPayload<ExtArgs>
+      fields: Prisma.PolicyViolationFieldRefs
+      operations: {
+        findUnique: {
+          args: Prisma.PolicyViolationFindUniqueArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$PolicyViolationPayload> | null
+        }
+        findUniqueOrThrow: {
+          args: Prisma.PolicyViolationFindUniqueOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$PolicyViolationPayload>
+        }
+        findFirst: {
+          args: Prisma.PolicyViolationFindFirstArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$PolicyViolationPayload> | null
+        }
+        findFirstOrThrow: {
+          args: Prisma.PolicyViolationFindFirstOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$PolicyViolationPayload>
+        }
+        findMany: {
+          args: Prisma.PolicyViolationFindManyArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$PolicyViolationPayload>[]
+        }
+        create: {
+          args: Prisma.PolicyViolationCreateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$PolicyViolationPayload>
+        }
+        createMany: {
+          args: Prisma.PolicyViolationCreateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        createManyAndReturn: {
+          args: Prisma.PolicyViolationCreateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$PolicyViolationPayload>[]
+        }
+        delete: {
+          args: Prisma.PolicyViolationDeleteArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$PolicyViolationPayload>
+        }
+        update: {
+          args: Prisma.PolicyViolationUpdateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$PolicyViolationPayload>
+        }
+        deleteMany: {
+          args: Prisma.PolicyViolationDeleteManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateMany: {
+          args: Prisma.PolicyViolationUpdateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateManyAndReturn: {
+          args: Prisma.PolicyViolationUpdateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$PolicyViolationPayload>[]
+        }
+        upsert: {
+          args: Prisma.PolicyViolationUpsertArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$PolicyViolationPayload>
+        }
+        aggregate: {
+          args: Prisma.PolicyViolationAggregateArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.AggregatePolicyViolation>
+        }
+        groupBy: {
+          args: Prisma.PolicyViolationGroupByArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.PolicyViolationGroupByOutputType>[]
+        }
+        count: {
+          args: Prisma.PolicyViolationCountArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.PolicyViolationCountAggregateOutputType> | number
+        }
+      }
+    }
   }
 } & {
   other: {
@@ -4028,6 +4103,25 @@ export const ExpensePolicyScalarFieldEnum = {
 export type ExpensePolicyScalarFieldEnum = (typeof ExpensePolicyScalarFieldEnum)[keyof typeof ExpensePolicyScalarFieldEnum]
 
 
+export const PolicyViolationScalarFieldEnum = {
+  id: 'id',
+  organizationId: 'organizationId',
+  reportId: 'reportId',
+  expenseId: 'expenseId',
+  lineItemId: 'lineItemId',
+  ruleCode: 'ruleCode',
+  severity: 'severity',
+  message: 'message',
+  data: 'data',
+  resolvedAt: 'resolvedAt',
+  resolvedBy: 'resolvedBy',
+  resolveNote: 'resolveNote',
+  createdAt: 'createdAt'
+} as const
+
+export type PolicyViolationScalarFieldEnum = (typeof PolicyViolationScalarFieldEnum)[keyof typeof PolicyViolationScalarFieldEnum]
+
+
 export const SortOrder = {
   asc: 'asc',
   desc: 'desc'
@@ -4363,6 +4457,7 @@ export type GlobalOmitConfig = {
   delegation?: Prisma.DelegationOmit
   policyRule?: Prisma.PolicyRuleOmit
   expensePolicy?: Prisma.ExpensePolicyOmit
+  policyViolation?: Prisma.PolicyViolationOmit
 }
 
 /* Types for Logging */

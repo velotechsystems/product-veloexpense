@@ -86,16 +86,31 @@ export interface FactSource {
   policyCurrency?: string;
 }
 
+/**
+ * VeloExpense (w4-02d, d67, GAP-AUDIT PE-7): a conversion into the policy currency that
+ * could not be made, because no FX rate links the two currencies.
+ */
+export interface FxGap {
+  from: string;
+  to: string;
+}
+
 /** A line's facts paired with the ids the runner needs to scope + anchor it. */
 export interface BuiltLine {
   lineItemId: string;
   categoryId: string;
   facts: LineFacts;
+  /** VeloExpense (PE-7): set when this line's amount has no rate into the policy currency.
+   *  `lineAmount` is then `null`, and a rule comparing it reports the gap instead. */
+  fxGap?: FxGap;
 }
 
 export interface BuiltFacts {
   report: ReportFacts;
   lines: BuiltLine[];
+  /** VeloExpense (PE-7): set when an amount behind `reportTotal` / `maxLineAmount` has no
+   *  rate into the policy currency; both facts are then `null`. */
+  reportFxGap?: FxGap;
 }
 
 const DAY = ['0', '1', '2', '3', '4', '5', '6'] as const; // getUTCDay(): 0=Sun … 6=Sat
@@ -104,43 +119,61 @@ const DAY = ['0', '1', '2', '3', '4', '5', '6'] as const; // getUTCDay(): 0=Sun 
 export function buildFacts(src: FactSource): BuiltFacts {
   // Convert a minor amount into the policy currency for numeric amount facts —
   // so thresholds compare in one currency across a multi-currency report. No
-  // rate map (or same currency, or missing rate) → raw minor units unchanged.
-  const toPolicyMinor = (amountMinor: bigint, fromCode: string): bigint => {
+  // rate map (or same currency) → raw minor units unchanged.
+  //
+  // VeloExpense (PE-7, d67): a MISSING rate is `null`, not the raw minor units. ExpenseOS
+  // passes the unconverted number through, so ¥10,000 compares as 10,000 against a CAD
+  // limit and €40 slips under a $50 one, silently. A null fact matches no numeric
+  // comparison, and the runner reports the gap as an INFO finding instead (engine.ts).
+  const toPolicyMinor = (amountMinor: bigint, fromCode: string): bigint | null => {
     const to = src.policyCurrency;
     if (!src.fxRates || !to || fromCode === to) return amountMinor;
     const converted = convertMoney({ amountMinor, currencyCode: fromCode }, to, src.fxRates);
-    return converted ? converted.amountMinor : amountMinor;
+    return converted ? converted.amountMinor : null;
   };
+  const gapOf = (fromCode: string): FxGap | undefined =>
+    src.policyCurrency ? { from: fromCode, to: src.policyCurrency } : undefined;
+  const asFact = (minor: bigint | null): number | null => (minor === null ? null : Number(minor));
 
-  const lines: BuiltLine[] = src.lines.map((l) => ({
-    lineItemId: l.lineItemId,
-    categoryId: l.categoryId,
-    facts: {
-      lineAmount: Number(toPolicyMinor(l.amountMinor, l.currencyCode)),
-      lineCurrency: l.currencyCode,
+  const lines: BuiltLine[] = src.lines.map((l) => {
+    const inPolicy = toPolicyMinor(l.amountMinor, l.currencyCode);
+    return {
+      lineItemId: l.lineItemId,
       categoryId: l.categoryId,
-      categoryCode: l.categoryCode,
-      merchant: l.merchant,
-      date: l.date.toISOString().slice(0, 10),
-      dayOfWeek: DAY[l.date.getUTCDay()],
-      hasReceipt: l.hasReceipt ? 'true' : 'false',
-      isFutureDated: l.date > src.now ? 'true' : 'false',
-    },
-  }));
+      ...(inPolicy === null ? { fxGap: gapOf(l.currencyCode) } : {}),
+      facts: {
+        lineAmount: asFact(inPolicy),
+        lineCurrency: l.currencyCode,
+        categoryId: l.categoryId,
+        categoryCode: l.categoryCode,
+        merchant: l.merchant,
+        date: l.date.toISOString().slice(0, 10),
+        dayOfWeek: DAY[l.date.getUTCDay()],
+        hasReceipt: l.hasReceipt ? 'true' : 'false',
+        isFutureDated: l.date > src.now ? 'true' : 'false',
+      },
+    };
+  });
 
   const categoryIds = [...new Set(src.lines.map((l) => l.categoryId))];
   // Max is taken AFTER converting to the policy currency (comparing raw minor
   // units across currencies would pick the wrong line).
-  const maxLineMinor = src.lines.reduce((m, l) => {
+  // VeloExpense (PE-7): one unconvertible line leaves the maximum unknown.
+  let reportFxGap: FxGap | undefined;
+  const maxLineMinor = src.lines.reduce<bigint | null>((m, l) => {
     const v = toPolicyMinor(l.amountMinor, l.currencyCode);
+    if (v === null) reportFxGap ??= gapOf(l.currencyCode);
+    if (m === null || v === null) return null;
     return v > m ? v : m;
   }, 0n);
+  const totalInPolicy = toPolicyMinor(src.reportTotalMinor, src.reportCurrencyCode);
+  if (totalInPolicy === null) reportFxGap ??= gapOf(src.reportCurrencyCode);
 
   const report: ReportFacts = {
-    reportTotal: Number(toPolicyMinor(src.reportTotalMinor, src.reportCurrencyCode)),
+    reportTotal: asFact(totalInPolicy),
     reportCurrency: src.reportCurrencyCode,
     lineCount: src.lines.length,
-    maxLineAmount: Number(maxLineMinor),
+    maxLineAmount: asFact(maxLineMinor),
     categoryIds,
     submitterJobLevelId: src.submitter.jobLevelId,
     submitterDepartmentId: src.submitter.departmentId,
@@ -149,5 +182,5 @@ export function buildFacts(src: FactSource): BuiltFacts {
     submitterHomeCurrency: src.submitter.homeCurrency,
   };
 
-  return { report, lines };
+  return { report, lines, ...(reportFxGap ? { reportFxGap } : {}) };
 }

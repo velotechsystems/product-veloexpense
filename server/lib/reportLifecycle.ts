@@ -115,9 +115,15 @@ export function toTrpcError(err: unknown): unknown {
 }
 
 /** DRAFT | RETURNED → SUBMITTED, on VeloExpense's lifecycle. */
-export async function submitThroughLifecycle(db: TenantDb, reportId: string, actorId: string) {
+export async function submitThroughLifecycle(
+  db: TenantDb,
+  reportId: string,
+  actorId: string,
+  /** w4-02d: the policy pass the lifecycle runs under its lock (`SubmitOptions`). */
+  policyPass?: () => Promise<unknown>,
+) {
   try {
-    return await submitReport(queryRunnerOf(db), reportId, actorId);
+    return await submitReport(queryRunnerOf(db), reportId, actorId, { policyPass });
   } catch (err) {
     throw toTrpcError(err);
   }

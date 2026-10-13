@@ -101,7 +101,8 @@ export async function setupStatus(tx: QueryRunner): Promise<SetupStatus> {
           JOIN approval_workflow_version v ON v.id = w.current_version_id
          WHERE w.active AND w.subject_type = 'EXPENSE_REPORT'
            AND v.status = 'PUBLISHED')                                                AS flows,
-       (SELECT count(*) FROM expense_policy)                                          AS policies,
+       -- w4-02d: ExpenseOS's rule instances; v1's expense_policy is gone.
+       (SELECT count(*) FROM policy_rule)                                             AS policies,
        (SELECT count(*) FROM legal_entity)
         + (SELECT count(*) FROM business_unit)
         + (SELECT count(*) FROM department)                                           AS structure,

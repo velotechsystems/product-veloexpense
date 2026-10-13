@@ -42,9 +42,6 @@ import {
   INBOX_ROUTE_COPY,
   POST_STATUS_COPY,
   REPORT_STATUS_COPY,
-  RULE_KIND_COPY,
-  RULE_DESCRIPTION_COPY,
-  SEVERITY_COPY,
   enumLabel,
   missingCopyMarker,
   type Copy,
@@ -53,7 +50,6 @@ import {
 /* The runtime arrays, from the modules that OWN each enum. */
 import { REPORT_STATUSES } from '@/lib/expenses/service';
 import { EMPLOYEE_ROLES, EMPLOYEE_STATUSES } from '@/lib/employees/service';
-import { SEVERITIES, RULE_KINDS } from '@/lib/policy/rules';
 import { CHANNELS, EVENT_TYPES } from '@/lib/notifications/catalog';
 import { CAPABILITIES } from '@/lib/integrations/contract';
 import { POST_STATUSES } from '@/lib/integrations/post-outbox';
@@ -86,21 +82,8 @@ const CATALOGUES: {
   { name: 'ReportStatus', members: REPORT_STATUSES, copy: REPORT_STATUS_COPY, fromArray: true },
   { name: 'EmployeeRole', members: EMPLOYEE_ROLES, copy: EMPLOYEE_ROLE_COPY, fromArray: true },
   { name: 'EmployeeStatus', members: EMPLOYEE_STATUSES, copy: EMPLOYEE_STATUS_COPY, fromArray: true },
-  { name: 'Severity', members: SEVERITIES, copy: SEVERITY_COPY, fromArray: true },
-  { name: 'RuleKind', members: RULE_KINDS, copy: RULE_KIND_COPY, fromArray: true },
-  // VX4-10 part 4. A SECOND catalogue on the same union — the rule's SENTENCE, not
-  // its name — and it is in this table for the same reason the first one is: a new
-  // rule kind must be a failure in both, and the union is what makes that free.
-  //
-  // Named with a suffix rather than 'RuleKind' twice, because the `owned` check
-  // below looks up by name and two entries called the same thing would let one
-  // shadow the other.
-  {
-    name: 'RuleKind (descriptions)',
-    members: RULE_KINDS,
-    copy: RULE_DESCRIPTION_COPY,
-    fromArray: true,
-  },
+  // w4-02d: `Severity`, `RuleKind` and the rule descriptions went with VeloExpense's v1 policy
+  // engine; ExpenseOS's are next-intl copy (`policyRules.*`).
   { name: 'Channel', members: CHANNELS, copy: CHANNEL_COPY, fromArray: true },
   { name: 'EventType', members: EVENT_TYPES, copy: EVENT_TYPE_COPY, fromArray: true },
   { name: 'Capability', members: CAPABILITIES, copy: CAPABILITY_COPY, fromArray: true },
@@ -181,8 +164,6 @@ describe('every rendered enum member has copy, in every locale we ship', () => {
       ReportStatus: REPORT_STATUSES,
       EmployeeRole: EMPLOYEE_ROLES,
       EmployeeStatus: EMPLOYEE_STATUSES,
-      Severity: SEVERITIES,
-      RuleKind: RULE_KINDS,
       Channel: CHANNELS,
       EventType: EVENT_TYPES,
       Capability: CAPABILITIES,
@@ -251,7 +232,6 @@ describe('the assertion can actually fail', () => {
 describe('enumLabel at the render boundary', () => {
   it('renders the authored word', () => {
     expect(enumLabel(REPORT_STATUS_COPY, 'SUBMITTED', 'en-CA')).toBe('Submitted');
-    expect(enumLabel(SEVERITY_COPY, 'BLOCK', 'en-CA')).toBe('Must be fixed');
   });
 
   it('inherits en-CA for en-US where there is no override', () => {

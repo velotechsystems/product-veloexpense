@@ -145,23 +145,7 @@ const CHROME_CEILING: Record<string, number> = {
   //
   // Any page that shows a formatted date has the same irreducible floor.
   '/preferences': 1,
-  // VX4-10 part 4 catalogued this screen: 46 → ZERO, and it is the only page in
-  // this list that reaches zero. Worth saying why, because "0" invites the same
-  // suspicion the other ceilings have earned.
-  //
-  // A policy ROW contributes no un-catalogued text node at all. Its rule name and
-  // description now come from `RULE_KIND_COPY` / `RULE_DESCRIPTION_COPY`; its
-  // severity, category and threshold currency are `<select>` contents, which
-  // `visibleStrings` skips by design; its threshold and dates are input VALUES,
-  // not text; and Save/Delete are catalogued. So unlike `/approvals` (5 × rows)
-  // and `/notifications` (1 × rows), this screen's count does not move with its
-  // data, and 0 is a property of the page rather than of the database it was
-  // measured against.
-  //
-  // That also means this is the one ceiling here with no per-row term to keep in
-  // step with a fixture. If it ever reads 1, something was added — which is what a
-  // ratchet is for.
-  '/admin/expense-policies': 0,
+  // w4-02d: `/admin/expense-policies` (ceiling 0) went with VeloExpense's v1 policy engine.
   // VX4-10 part 2: 19 → 5, and the five are the SAMPLES this screen exists to
   // show — `localeName()` output for two locales, their formatted instants, and a
   // formatted amount. Cataloguing them would defeat the screen: IL-1 is that
@@ -262,7 +246,6 @@ const PAGES = [
   '/approvals',
   '/notifications',
   '/preferences',
-  '/admin/expense-policies',
   '/admin/locale',
   // VX4-10. Added with its ceiling measured on the same run that catalogued it,
   // rather than inherited. `/admin/billing` shipped in VX5-11 and was outside

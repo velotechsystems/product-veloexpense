@@ -31,7 +31,10 @@ import { decideAs, seedDefaultFlow, withTenantTx as withOrg } from './support/te
 import { withOrg as withPgOrg } from '@/lib/tenant/context';
 import * as expenses from '@/lib/expenses/service';
 import * as lifecycle from '@/lib/expenses/lifecycle';
-import * as policy from '@/lib/policy/service';
+// w4-02d: the policy pass is ExpenseOS's engine (server/policy/validate.ts) since the cutover;
+// its BUDGET_OVERAGE kind reads VeloExpense's budgets through server/policy/budgetBridge.ts.
+import { withTenantDb } from '@/lib/db/prisma';
+import { validateReport } from '@/server/policy/validate';
 import { loadBudgetSnapshots } from '@/lib/budgets/service';
 import * as alertsLib from '@/lib/budgets/alerts';
 import * as budgetAdmin from '@/lib/budgets/admin';
@@ -159,12 +162,9 @@ beforeEach(async () => {
   await admin.query('TRUNCATE expense_report CASCADE');
   // The unconvertible-spend tests below assert on the ABSENCE of a rate. (`fx_rate`
   // was global until 0051, so the truncate above left it; it is per tenant now.)
-  // `test/policy.db.test.ts` clears it the same way for the same reason.
   await admin.query('DELETE FROM fx_rate');
-  // Amounts stay under the starter receipt threshold so submit is not blocked;
-  // `expense-flow`'s rules are not installed here, but leaving room is cheaper
-  // than depending on that.
-  await admin.query('DELETE FROM expense_policy');
+  // Each test arms the rules it needs (w4-02d: ExpenseOS's `policy_rule`).
+  await admin.query('DELETE FROM policy_rule');
 });
 
 afterAll(async () => {
@@ -487,8 +487,23 @@ async function draftIn(currencyCode: string, amountMinor: number): Promise<strin
   });
 }
 
-const budgetRule = () =>
-  withOrg(orgId, (tx) => policy.createPolicy(tx, { kind: 'BUDGET_OVERAGE' }));
+/** w4-02d: an ExpenseOS BUDGET_OVERAGE instance, as the cutover converts v1's. */
+const budgetRule = async (severity: 'INFO' | 'WARNING' | 'BLOCK' = 'WARNING') =>
+  (
+    await admin.query(
+      `INSERT INTO policy_rule (organization_id, kind_code, scope, severity, params, message_key, effective_from)
+       VALUES ($1, 'BUDGET_OVERAGE', 'AGGREGATE', $2::policy_severity, '{}', 'budgetOverage', '2000-01-01') RETURNING id`,
+      [orgId, severity],
+    )
+  ).rows[0] as { id: string };
+
+/** w4-02d: the policy pass, as the submit procedure runs it. */
+const validate = (reportId: string) =>
+  withTenantDb(orgId, (db) => validateReport({ db, reportId, t: (k) => k }));
+
+type Impact = { budgetId: string; usedMinor: string; amountMinor: string };
+const impactsOf = (finding: { data?: unknown } | undefined) =>
+  ((finding?.data ?? {}) as { impacts?: Impact[] }).impacts ?? [];
 
 describe('the rollup moves on the transitions that change it (BG-3)', () => {
   it('submitting puts the report into pending, and stamps rolled_up_at', async () => {
@@ -598,30 +613,34 @@ describe('the rollup moves on the transitions that change it (BG-3)', () => {
 });
 
 describe('BUDGET_OVERAGE (BG-4)', () => {
+  // w4-02d: ExpenseOS's kind, fed from VeloExpense's budgets (d66). One finding for the
+  // report, every crossed budget in `data.impacts` — ExpenseOS's shape — where v1 raised one
+  // per period. An impact's `usedMinor` is the projection (approved + in flight + this
+  // report); the overage is `usedMinor - amountMinor`.
   it('warns when this report takes the period past its budget', async () => {
-    await budgetRule();
+    const rule = await budgetRule();
     await makeBudget({ amountMinor: 1000 });
     const reportId = await draft(1800);
 
-    const summary = await withOrg(orgId, (tx) => policy.validateReport(tx, reportId));
-    const finding = summary.violations.find((v) => v.rule_code === 'BUDGET_OVERAGE');
+    const summary = await validate(reportId);
+    const finding = summary.violations.find((v) => v.ruleCode === rule.id);
     expect(finding).toBeDefined();
     expect(finding!.severity).toBe('WARNING');
-    expect(finding!.message).toMatch(/over by/);
-    expect(String(finding!.data.overageMinor)).toBe('800');
+    expect(finding!.message).toBe('budgetOverage');
+    expect(impactsOf(finding)).toEqual([expect.objectContaining({ usedMinor: '1800', amountMinor: '1000' })]);
   });
 
   it('says nothing when the report fits', async () => {
-    await budgetRule();
+    const rule = await budgetRule();
     await makeBudget({ amountMinor: 100000 });
     const reportId = await draft(1800);
 
-    const summary = await withOrg(orgId, (tx) => policy.validateReport(tx, reportId));
-    expect(summary.violations.filter((v) => v.rule_code === 'BUDGET_OVERAGE')).toHaveLength(0);
+    const summary = await validate(reportId);
+    expect(summary.violations.filter((v) => v.ruleCode === rule.id)).toHaveLength(0);
   });
 
   it('counts what is already in flight, not just what is approved', async () => {
-    await budgetRule();
+    const rule = await budgetRule();
     const { periodId } = await makeBudget({ amountMinor: 3000 });
 
     // One report already submitted and awaiting a decision.
@@ -633,10 +652,9 @@ describe('BUDGET_OVERAGE (BG-4)', () => {
     // beside the first (3600 > 3000). Warning somebody at 60% while an
     // already-submitted report would take them to 120% reads as headroom.
     const second = await draft(1800);
-    const summary = await withOrg(orgId, (tx) => policy.validateReport(tx, second));
-    const finding = summary.violations.find((v) => v.rule_code === 'BUDGET_OVERAGE');
-    expect(finding).toBeDefined();
-    expect(String(finding!.data.overageMinor)).toBe('600');
+    const summary = await validate(second);
+    const finding = summary.violations.find((v) => v.ruleCode === rule.id);
+    expect(impactsOf(finding)).toEqual([expect.objectContaining({ usedMinor: '3600', amountMinor: '3000' })]);
   });
 
   it('does not run the LOADER at all when no BUDGET_OVERAGE instance is enabled', async () => {
@@ -650,13 +668,13 @@ describe('BUDGET_OVERAGE (BG-4)', () => {
     // period. `rolled_up_at` still NULL is proof it never ran.
     const { periodId } = await makeBudget({ amountMinor: 1000 });
     const reportId = await draft(1800);
-    const summary = await withOrg(orgId, (tx) => policy.validateReport(tx, reportId));
+    const summary = await validate(reportId);
     expect(await periodTotals(periodId).then((t) => t.rolledUpAt)).toBeNull();
     expect(summary.violations).toHaveLength(0);
   });
 
   it('calculates a never-calculated period rather than reading it as zero spend', async () => {
-    await budgetRule();
+    const rule = await budgetRule();
     const { periodId } = await makeBudget({ amountMinor: 3000 });
 
     // Prior spend that no rollup has ever seen — an import, a seed, or simply the
@@ -669,51 +687,43 @@ describe('BUDGET_OVERAGE (BG-4)', () => {
     expect((await periodTotals(periodId)).rolledUpAt).toBeNull();
 
     const reportId = await draft(1000);
-    const summary = await withOrg(orgId, (tx) => policy.validateReport(tx, reportId));
+    const summary = await validate(reportId);
 
     // Reading the uncalculated baseline as zero would have answered "3000 of
     // 3000, you are fine". It is 3500.
     expect((await periodTotals(periodId)).rolledUpAt).not.toBeNull();
-    const finding = summary.violations.find((v) => v.rule_code === 'BUDGET_OVERAGE');
-    expect(finding).toBeDefined();
-    expect(String(finding!.data.overageMinor)).toBe('500');
+    const finding = summary.violations.find((v) => v.ruleCode === rule.id);
+    expect(impactsOf(finding)).toEqual([expect.objectContaining({ usedMinor: '3500', amountMinor: '3000' })]);
   });
 
-  it('reports unconvertible spend as its own INFO finding beside the overage', async () => {
-    await budgetRule();
+  it('raises nothing on spend it cannot convert (w4-02d: v1’s separate INFO is not carried)', async () => {
+    // v1 raised an INFO beside the overage saying the projection was a floor. ExpenseOS's
+    // BudgetImpact has no place for it (server/policy/budgetBridge.ts); budget checks in
+    // approvals (w4-04) decide how the ported engine reports it. Pinned so the gap is
+    // visible rather than assumed.
+    const rule = await budgetRule();
     await makeBudget({ amountMinor: 100000, currencyCode: 'CAD' });
     const reportId = await draftIn('USD', 1800);
 
-    const summary = await withOrg(orgId, (tx) => policy.validateReport(tx, reportId));
-    const info = summary.violations.find(
-      (v) => v.rule_code === 'BUDGET_OVERAGE' && v.severity === 'INFO',
-    );
-    expect(info).toBeDefined();
-    expect(info!.message).toMatch(/floor rather than a total/);
-    expect(info!.data.reportMissingRateFrom).toEqual(['USD']);
-    // The two findings have DIFFERENT keys, which is what lets them coexist —
-    // ExpenseOS collapses everything this rule emits onto one row and loses all
-    // but the first (their kinds.ts says so in its own comment).
-    expect(info!.finding_key).toMatch(/\|fx$/);
+    const summary = await validate(reportId);
+    expect(summary.violations.filter((v) => v.ruleCode === rule.id)).toHaveLength(0);
   });
 
-  it('gives each budget period its own finding, so each can be justified separately', async () => {
-    await budgetRule();
+  it('attributes the report to the most specific budget, and names it in the finding', async () => {
+    const rule = await budgetRule();
     await makeBudget({ name: 'Travel — company', amountMinor: 1000 });
-    await makeBudget({
+    const { budgetId } = await makeBudget({
       name: 'Travel — Engineering',
       departmentId: engineeringId,
       amountMinor: 1000,
     });
     // Only the department budget is attributed to (most-specific-first), so this
-    // report raises exactly one finding — and its key names the budget, which is
-    // what makes a second budget's finding a second row rather than a lost one.
+    // report crosses exactly one budget.
     const reportId = await draft(1800);
-    const summary = await withOrg(orgId, (tx) => policy.validateReport(tx, reportId));
-    const found = summary.violations.filter((v) => v.rule_code === 'BUDGET_OVERAGE');
+    const summary = await validate(reportId);
+    const found = summary.violations.filter((v) => v.ruleCode === rule.id);
     expect(found).toHaveLength(1);
-    expect(found[0].message).toMatch(/Travel — Engineering/);
-    expect(found[0].finding_key).not.toBe('');
+    expect(impactsOf(found[0]).map((i) => i.budgetId)).toEqual([budgetId]);
   });
 
   it('loads snapshots only for the periods the report actually lands in', async () => {
@@ -726,63 +736,40 @@ describe('BUDGET_OVERAGE (BG-4)', () => {
   });
 });
 
-describe('a budget never blocks, and that is enforced in both places', () => {
-  it('REFUSES a BLOCK severity at the write', async () => {
-    await expect(
-      withOrg(orgId, (tx) => policy.createPolicy(tx, { kind: 'BUDGET_OVERAGE', severity: 'BLOCK' })),
-    ).rejects.toMatchObject({ code: 'SEVERITY_ABOVE_MAXIMUM' });
-  });
+describe('a budget never blocks (BG-4, kept at w4-02d)', () => {
+  // The write half — the Rule Builder's router refusing BLOCK on BUDGET_OVERAGE — is in
+  // server/routers/policies.rules.test.ts.
 
-  it('REFUSES an update to BLOCK', async () => {
-    const created = await budgetRule();
-    await expect(
-      withOrg(orgId, (tx) => policy.updatePolicy(tx, created.id, { severity: 'BLOCK' })),
-    ).rejects.toMatchObject({ code: 'SEVERITY_ABOVE_MAXIMUM' });
-  });
-
-  it('still allows WARNING and INFO', async () => {
-    const created = await budgetRule();
-    const lowered = await withOrg(orgId, (tx) =>
-      policy.updatePolicy(tx, created.id, { severity: 'INFO' }),
-    );
-    expect(lowered.severity).toBe('INFO');
-  });
-
-  it('CLAMPS a row forced to BLOCK behind the service’s back', async () => {
+  it('CLAMPS a row forced to BLOCK behind the router’s back', async () => {
     // The half that makes the maximum an invariant rather than a form validation.
     // A seed, an importer, a restored backup or Phase 5's provisioning all reach
-    // `expense_policy` without passing through `createPolicy`.
-    const created = await budgetRule();
-    await admin.query('UPDATE expense_policy SET severity = $2 WHERE id = $1', [
-      created.id,
-      'BLOCK',
-    ]);
+    // `policy_rule` without passing through the router.
+    const rule = await budgetRule('BLOCK');
     await makeBudget({ amountMinor: 1000 });
     const reportId = await draft(1800);
 
-    const summary = await withOrg(orgId, (tx) => policy.validateReport(tx, reportId));
-    const finding = summary.violations.find(
-      (v) => v.rule_code === 'BUDGET_OVERAGE' && v.finding_key.endsWith('|fx') === false,
-    );
+    const summary = await validate(reportId);
+    const finding = summary.violations.find((v) => v.ruleCode === rule.id);
     expect(finding!.severity).toBe('WARNING');
     // And the consequence that actually matters: an over-budget report is still
     // submittable. BG-4's whole point is that the money has already left, so an
     // unsubmittable claim strands a real expense.
-    expect(summary.blocking).toBe(false);
+    expect(summary.counts.block).toBe(0);
   });
 
-  it('does not clamp a rule that declares no maximum', async () => {
-    // The clamp is not a global downgrade: RECEIPT_REQUIRED is BLOCK by design
-    // and stays BLOCK. Without this the previous test would also pass on a
-    // `validateReport` that simply capped everything at WARNING.
-    await withOrg(orgId, (tx) =>
-      policy.createPolicy(tx, { kind: 'RECEIPT_REQUIRED', severity: 'BLOCK', params: {} }),
+  it('does not clamp a kind that declares no maximum', async () => {
+    // The clamp is not a global downgrade: a receipt threshold at BLOCK stays BLOCK.
+    // Without this the previous test would also pass on a `validateReport` that simply
+    // capped everything at WARNING.
+    await admin.query(
+      `INSERT INTO policy_rule (organization_id, kind_code, scope, severity, params, message_key, effective_from)
+       VALUES ($1, 'RECEIPT_THRESHOLD', 'AGGREGATE', 'BLOCK', '{"thresholdMinor":"0"}', 'receiptThreshold', '2000-01-01')`,
+      [orgId],
     );
     const reportId = await draft(1800);
-    const summary = await withOrg(orgId, (tx) => policy.validateReport(tx, reportId));
-    const finding = summary.violations.find((v) => v.rule_code === 'RECEIPT_REQUIRED');
-    expect(finding!.severity).toBe('BLOCK');
-    expect(summary.blocking).toBe(true);
+    const summary = await validate(reportId);
+    expect(summary.violations.find((v) => v.message === 'receiptThreshold')?.severity).toBe('BLOCK');
+    expect(summary.counts.block).toBe(1);
   });
 });
 
@@ -1159,7 +1146,7 @@ describe('budget threshold alerts fire once per crossing (BG-6)', () => {
     expect((await periodTotals(periodId)).rolledUpAt).toBeNull();
 
     const r = await draft(50);
-    const summary = await withOrg(orgId, (tx) => policy.validateReport(tx, r));
+    const summary = await validate(r);
 
     // The rollup DID run — the never-calculated path from part 2 — and it found
     // 1900 of 2000, which is over the 90% threshold.
@@ -1167,7 +1154,7 @@ describe('budget threshold alerts fire once per crossing (BG-6)', () => {
     expect(after.rolledUpAt).not.toBeNull();
     expect(after.actual).toBe('1900');
     // The rule answered too, so this is not a case of nothing having happened.
-    expect(summary.violations.some((v) => v.rule_code === 'BUDGET_OVERAGE')).toBe(false);
+    expect(summary.violations).toHaveLength(0);
 
     // …and NOTHING was claimed or sent, because a lazy initialisation of a
     // baseline is not an observation that spend moved.

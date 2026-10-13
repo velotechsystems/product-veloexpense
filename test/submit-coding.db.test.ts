@@ -34,7 +34,9 @@ import { seedDefaultFlow, withTenantTx as withOrg } from './support/tenant-tx';
 import * as svc from '@/lib/expenses/service';
 import * as lifecycle from '@/lib/expenses/lifecycle';
 import * as integrations from '@/lib/integrations/service';
-import * as policy from '@/lib/policy/service';
+// w4-02d: the policy pass is ExpenseOS's engine, handed to the lifecycle as the submit
+// procedure hands it.
+import { validateReport } from '@/server/policy/validate';
 import { uncodedCategories, uncodedDiagnostic } from '@/lib/integrations/coding';
 import { renderUserMessage } from '@/lib/i18n/catalog/errors';
 import { errorParam, userMessageOf } from '@/lib/errors/domain';
@@ -84,7 +86,11 @@ async function draftOn(categoryId: string, amountMinor = 5000) {
 }
 
 const submit = (reportId: string) =>
-  withOrg(orgId, (tx) => lifecycle.submitReport(tx, reportId, userId));
+  withOrg(orgId, (tx, db) =>
+    lifecycle.submitReport(tx, reportId, userId, {
+      policyPass: () => validateReport({ db, reportId, t: (k) => k }),
+    }),
+  );
 
 beforeAll(async () => {
   await admin.query('TRUNCATE app_user, organization CASCADE');
@@ -143,7 +149,7 @@ beforeAll(async () => {
 
 beforeEach(async () => {
   await admin.query('DELETE FROM integration_installation');
-  await admin.query('DELETE FROM expense_policy');
+  await admin.query('DELETE FROM policy_rule');
 });
 
 afterAll(async () => {
@@ -282,16 +288,13 @@ describe('the submit gate', () => {
    */
   it('reports the coding BEFORE the policy pass', async () => {
     await connectLedger();
-    // A rule that blocks everything, so both problems are live at once.
-    // A real rule kind — `RULE_KINDS` is the registry, and `createPolicy`
-    // validates against it rather than a CHECK constraint (VX1-7). My first draft
-    // invented 'AMOUNT_LIMIT' and the service refused it, correctly.
-    await withOrg(orgId, (tx) =>
-      policy.createPolicy(tx, {
-        kind: 'PER_TRANSACTION_LIMIT',
-        severity: 'BLOCK',
-        params: { thresholdMinor: '1' },
-      }),
+    // A rule that blocks everything, so both problems are live at once (w4-02d: an ExpenseOS
+    // line predicate, over one minor unit).
+    await admin.query(
+      `INSERT INTO policy_rule (organization_id, kind_code, scope, severity, condition, params, message_key, effective_from)
+       VALUES ($1, 'PREDICATE_LINE', 'LINE', 'BLOCK',
+               '{"all":[{"field":"lineAmount","op":"gt","value":1}]}', '{}', 'perTransactionLimit', '2000-01-01')`,
+      [orgId],
     );
     const { reportId } = await draftOn(unmappedCategoryId);
     const err = await submit(reportId).catch((e: unknown) => e);

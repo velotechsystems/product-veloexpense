@@ -366,6 +366,19 @@ describe('policyRule', () => {
     expect(db.policyRule.create).not.toHaveBeenCalled();
   });
 
+  it('refuses a budget rule more severe than WARNING (VeloExpense, BG-4)', async () => {
+    // A budget never blocks: the money has already left, and a claim nobody can submit
+    // strands a real expense.
+    const db = makeDb();
+    const c = await callerFor(db, POLICY);
+    await expect(
+      c.policyRule.create(rule({ kindCode: 'BUDGET_OVERAGE', severity: 'BLOCK' }) as never),
+    ).rejects.toMatchObject({ code: 'BAD_REQUEST' });
+    await expect(
+      c.policyRule.create(rule({ kindCode: 'BUDGET_OVERAGE', severity: 'WARNING' }) as never),
+    ).resolves.toBeTruthy();
+  });
+
   it('takes the scope from the kind, never from the caller', async () => {
     const db = makeDb();
     const c = await callerFor(db, POLICY);

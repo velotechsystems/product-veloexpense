@@ -147,6 +147,10 @@
       "monthlyLimit": "Monthly limit",
       "annualLimit": "Annual limit",
       "notes": "Internal notes"
+    },
+    "currency": {
+      "label": "Limits are in",
+      "note": "Changing the currency does not convert the limits already set."
     }
   },
   "jobLevels": {

@@ -36,7 +36,8 @@ export const SETUP_COPY: Record<SetupItem, { title: string; why: string; href: s
   SPEND_POLICY: {
     title: 'Set your spend rules',
     why: 'Limits and receipt requirements are checked when a report is submitted. With no rules, nothing is ever flagged.',
-    href: '/admin/expense-policies',
+    // w4-02d: the Rule Builder, since the cutover (/admin/expense-policies is gone).
+    href: '/admin/policy-rules',
     cta: 'Add a rule',
   },
   STRUCTURE: {

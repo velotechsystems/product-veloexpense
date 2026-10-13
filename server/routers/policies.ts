@@ -76,8 +76,8 @@ const optionalMinorInput = z
 // ── ExpensePolicy ────────────────────────────────────────────────────
 //
 // VeloExpense (w4-02c, d65): ExpenseOS's per-category policy, on `expense_category_policy`
-// (0065). Nothing reads it until the cutover (w4-02d); lib/policy still enforces the limits
-// on `expense_policy`. Differences, marked: the screen is told the organization's policy
+// (0065), read by ExpenseOS's per-category kinds since the cutover (w4-02d). Differences,
+// marked: the screen is told the organization's policy
 // currency (`currency`), where ExpenseOS's assumes CAD; what the table refuses is a 4xx
 // (`expensePolicyWrite`); and the audit action is VeloExpense's registry name.
 
@@ -444,8 +444,8 @@ async function assertMileageReferencesKnown(
 // can't mismatch), the `condition` is validated against the kind's
 // conditionSchema, and `params` against its paramsSchema.
 //
-// VeloExpense (w4-02b): nothing reads these rows until the cutover (w4-02c); the engine
-// that enforces policy today is still lib/policy. Differences from ExpenseOS, marked:
+// VeloExpense (w4-02b): since the cutover (w4-02d) these rows are what submit checks
+// (server/policy/validate.ts). Differences from ExpenseOS, marked:
 //   · the policy currency is the organization's `policy_currency_code` (0015), where
 //     ExpenseOS keeps a `policyCurrency` system flag;
 //   · there is no role table until the role builder (w4-10, d64): `scopeOptions` offers
@@ -502,6 +502,15 @@ function coerceRuleData(input: z.infer<typeof policyRuleInput>) {
     throw new TRPCError({
       code: 'BAD_REQUEST',
       message: `Invalid params: ${params.error.message}`,
+    });
+  }
+
+  // VeloExpense (BG-4): a kind's severity ceiling — a budget never blocks.
+  const rank = { INFO: 0, WARNING: 1, BLOCK: 2 } as const;
+  if (kind.maxSeverity && rank[input.severity] > rank[kind.maxSeverity]) {
+    throw new TRPCError({
+      code: 'BAD_REQUEST',
+      message: `${kind.code} cannot be more severe than ${kind.maxSeverity}.`,
     });
   }
 
@@ -613,10 +622,64 @@ export const policiesRouter = router({
       }));
     }),
     /** VeloExpense: the currency the limits are in — the organization's policy currency —
-     *  so the screen labels and converts them in it (ExpenseOS's screen assumes CAD). */
-    currency: withPermission(P.config.policyRead).query(async ({ ctx }) => ({
-      code: await policyCurrencyOf(ctx.db),
-    })),
+     *  so the screen labels and converts them in it (ExpenseOS's screen assumes CAD); and,
+     *  for the control that changes it (d68), the currencies it may be. */
+    currency: withPermission(P.config.policyRead).query(async ({ ctx }) => {
+      const [code, rows] = await Promise.all([
+        policyCurrencyOf(ctx.db),
+        ctx.db.currency.findMany({ select: { code: true }, orderBy: { code: 'asc' } }),
+      ]);
+      return { code, options: rows.map((r) => r.code) };
+    }),
+
+    /**
+     * VeloExpense (w4-02d, d68): change the organization's policy currency.
+     *
+     * ExpenseOS keeps it in a system flag with no screen; VeloExpense's v1 policy screen
+     * was its only control, and went with v1's engine at the cutover, so it lives here,
+     * beside the limits it is the currency of. The limits already set are NOT converted —
+     * a limit is a figure an admin chose in a currency, and silently re-pricing it at
+     * today's rate would be a policy nobody chose (the screen says so). Audited.
+     */
+    setCurrency: withPermission(P.config.policyUpdate)
+      .input(z.object({ code: z.string().regex(/^[A-Za-z]{3}$/) }))
+      .mutation(async ({ ctx, input }) => {
+        const code = input.code.toUpperCase();
+        const known = await ctx.db.currency.findUnique({ where: { code }, select: { code: true } });
+        if (!known) {
+          throw new TRPCError({ code: 'BAD_REQUEST', message: `${code} is not a currency the system has.` });
+        }
+        const from = await policyCurrencyOf(ctx.db);
+        await withAudit(
+          ctx.db,
+          {
+            action: 'POLICY_CURRENCY_SET',
+            entityType: 'Organization',
+            actor: {
+              kind: 'user',
+              id: ctx.rbac.id,
+              name: ctx.session.user.name ?? ctx.session.user.email,
+              roleLabel: ctx.rbac.roleLabel,
+            },
+            details: { from, to: code },
+          },
+          // `organization` is not RLS-scoped (it has no organization_id): the WHERE on the
+          // tenant's own id is what keeps this to one row (PE-8's write half). The row's id
+          // is the audit entry's entity; no row means no tenant, and nothing is audited.
+          async (tx) => {
+            const rows = await tx.$queryRaw<Array<{ id: string }>>`
+              UPDATE organization SET policy_currency_code = ${code}, updated_at = now()
+               WHERE id = NULLIF(current_setting('app.current_org', true), '')::uuid
+              RETURNING id::text AS id`;
+            if (rows.length !== 1) {
+              throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'No tenant to set the policy currency for.' });
+            }
+            return rows[0].id;
+          },
+          (id) => id,
+        );
+        return { code };
+      }),
     /** Upsert by categoryId. Always called with a known category id —
      *  the policy row is created at seed time, so this is effectively
      *  an update, but using upsert keeps the handler tolerant if

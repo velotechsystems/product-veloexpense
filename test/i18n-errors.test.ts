@@ -415,36 +415,8 @@ describe('placeholders and copy agree', () => {
     }
   });
 
-  it('an enum-typed param renders its CATALOGUED words, not the key', () => {
-    // The assertion the change is for. `POLICY_PARAM_REQUIRED` used to be filled
-    // at the throw site with an English rule name, so a French reader got a
-    // French template with English inside it. The param now carries the key and
-    // `renderUserMessage` resolves it where the locale is known.
-    const text = renderUserMessage(
-      encodeUserMessage({
-        code: 'POLICY_PARAM_REQUIRED',
-        params: { rule: 'PER_TRANSACTION_LIMIT', field: 'PER_TRANSACTION_LIMIT.thresholdMinor' },
-      }),
-      'en-CA',
-    );
-    expect(text).toBe('Per-transaction limit needs Limit.');
-    // The key itself must NOT survive into the sentence — that is the defect
-    // shape a silent fall-through would produce, and it looks almost right.
-    expect(text).not.toContain('PER_TRANSACTION_LIMIT');
-  });
-
-  it('and an unknown member becomes the marker rather than the raw key', () => {
-    // Loud, and the same shape as everywhere else. A sentence containing
-    // `NO_SUCH_RULE` reads as content; one containing `{NO_SUCH_RULE}` cannot.
-    const text = renderUserMessage(
-      encodeUserMessage({
-        code: 'POLICY_PARAM_REQUIRED',
-        params: { rule: 'NO_SUCH_RULE', field: 'PER_TRANSACTION_LIMIT.thresholdMinor' },
-      }),
-      'en-CA',
-    );
-    expect(text).toContain('{NO_SUCH_RULE}');
-  });
+  // w4-02d: the two cases on an enum-typed param (`POLICY_PARAM_REQUIRED`'s `{rule}` and
+  // `{field}`) went with VeloExpense's v1 policy refusals, the only codes with such params.
 
   it('a parameterised code renders once its params arrive, in every locale', () => {
     // Fixture values per placeholder name, so this covers all ~30 parameterised
@@ -459,11 +431,8 @@ describe('placeholders and copy agree', () => {
     // `'{X} needs {X}.'`, which is the marker doing its job. Feeding real keys
     // makes the assertion STRONGER than it was — it now proves the catalogue
     // lookup resolves, not merely that the template fills.
-    const ENUM_PARAM_FIXTURES: Record<string, string> = {
-      rule: 'PER_TRANSACTION_LIMIT',
-      field: 'PER_TRANSACTION_LIMIT.thresholdMinor',
-      maximum: 'WARNING',
-    };
+    // w4-02d: none left since the v1 policy refusals went; kept for the next keyed param.
+    const ENUM_PARAM_FIXTURES: Record<string, string> = {};
     const value = (key: string) => {
       const enumFixture = ENUM_PARAM_FIXTURES[key];
       if (enumFixture !== undefined) return enumFixture;

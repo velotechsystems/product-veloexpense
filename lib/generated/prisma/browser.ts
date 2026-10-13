@@ -218,3 +218,8 @@ export type PolicyRule = Prisma.PolicyRuleModel
  * 
  */
 export type ExpensePolicy = Prisma.ExpensePolicyModel
+/**
+ * Model PolicyViolation
+ * 
+ */
+export type PolicyViolation = Prisma.PolicyViolationModel

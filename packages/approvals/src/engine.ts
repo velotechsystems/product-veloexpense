@@ -156,10 +156,12 @@ async function loadSubject(
     // A category flagged `approvalRequired` forces the report into an approval
     // lane (a hook the ExpensePolicy schema reserves for exactly this).
     //
-    // VeloExpense: `expense_policy` (0006) has no `approvalRequired` column — a policy row
-    // here is a rule instance, not a per-category policy — so no category forces the lane
-    // and this reads false until ExpenseOS's category policies arrive (w4-02). VeloExpense
-    // never auto-approves, so nothing routes around approval on its account.
+    // VeloExpense: v1's `expense_policy` (0006) had no `approvalRequired` column — a policy row
+    // here is a rule instance, not a per-category policy — so no category forced the lane.
+    // ExpenseOS's category policies arrived at w4-02c (`expense_category_policy`); reading
+    // their `approvalRequired` here is the approvals engine's port, not the policy cutover's,
+    // so this still reads false. VeloExpense never auto-approves, so nothing routes around
+    // approval on its account.
     const requiresApproval: boolean = false;
 
     // Per-diem overage (Phase 5c). Conservative: sum each (day + placeText)'s

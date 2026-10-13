@@ -116,6 +116,10 @@ export interface HydratedReport {
        *  flight has no attendees to name, and asking for them would produce a
        *  violation nobody can satisfy. */
       requiresAttendees: boolean;
+      /** VeloExpense (w4-02d, d70): false once an admin has deactivated the category —
+       *  what `CATEGORY_ACTIVE` (server/policy/veloexpenseKinds.ts) refuses. Absent reads as
+       *  active, as ExpenseOS's lines always are. */
+      active?: boolean;
     };
     currency: { code: string };
     receipts: Array<{ id: string }>;

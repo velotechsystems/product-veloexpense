@@ -149,7 +149,7 @@ beforeEach(async () => {
      DELETE FROM expense_line_item;
      DELETE FROM expense;
      DELETE FROM expense_report;
-     DELETE FROM expense_policy;
+     DELETE FROM policy_rule;
      COMMIT;`,
   );
 });

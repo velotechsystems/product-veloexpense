@@ -253,10 +253,51 @@ describe('expensePolicy', () => {
     }
   });
 
-  it('tells the screen the organization’s policy currency (VeloExpense)', async () => {
-    const db = makeDb({ $queryRaw: stubFn(async () => [{ code: 'USD' }] as unknown[]) });
+  it('tells the screen the organization’s policy currency, and the ones it may be (VeloExpense)', async () => {
+    const db = makeDb({
+      $queryRaw: stubFn(async () => [{ code: 'USD' }] as unknown[]),
+      currency: {
+        findMany: stubFn(async () => [{ code: 'CAD' }, { code: 'USD' }] as unknown[]),
+        findUnique: stubFn(async () => null as unknown),
+      },
+    });
     const c = await callerFor(db, READ);
-    await expect(c.expensePolicy.currency()).resolves.toEqual({ code: 'USD' });
+    await expect(c.expensePolicy.currency()).resolves.toEqual({ code: 'USD', options: ['CAD', 'USD'] });
+  });
+
+  describe('setCurrency (VeloExpense, d68)', () => {
+    const withCurrencies = () =>
+      makeDb({
+        // One stub for both raw statements: the current currency read, then the UPDATE
+        // ... RETURNING id (its id is the audit entity).
+        $queryRaw: stubFn(async () => [{ code: 'CAD', id: 'org-1' }] as unknown[]),
+        currency: {
+          findMany: stubFn(async () => [] as unknown[]),
+          findUnique: stubFn(async (a: { where: { code: string } }) =>
+            (['CAD', 'USD'].includes(a.where.code) ? { code: a.where.code } : null) as unknown,
+          ),
+        },
+      });
+
+    it('needs the policy write permission', async () => {
+      const c = await callerFor(withCurrencies(), READ);
+      await expect(c.expensePolicy.setCurrency({ code: 'USD' })).rejects.toMatchObject({ code: 'FORBIDDEN' });
+    });
+
+    it('sets a currency the system has, audited with where it came from', async () => {
+      const db = withCurrencies();
+      const c = await callerFor(db, [P.config.policyUpdate]);
+      await expect(c.expensePolicy.setCurrency({ code: 'usd' })).resolves.toEqual({ code: 'USD' });
+      expect((db as unknown as { $queryRaw: ReturnType<typeof stubFn> }).$queryRaw).toHaveBeenCalledTimes(2);
+      expect(withAuditCalls[0]).toMatchObject({ action: 'POLICY_CURRENCY_SET', details: { from: 'CAD', to: 'USD' } });
+    });
+
+    it('refuses one it does not have', async () => {
+      const db = withCurrencies();
+      const c = await callerFor(db, [P.config.policyUpdate]);
+      await expect(c.expensePolicy.setCurrency({ code: 'ZZZ' })).rejects.toMatchObject({ code: 'BAD_REQUEST' });
+      expect((db as unknown as { $queryRaw: ReturnType<typeof stubFn> }).$queryRaw).not.toHaveBeenCalled();
+    });
   });
 });
 

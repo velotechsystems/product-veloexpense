@@ -1074,3 +1074,35 @@ model ExpensePolicy {
   @@unique([organizationId, categoryId])
   @@map("expense_category_policy")
 }
+
+// ExpenseOS's `PolicyViolation` (w4-02d), on VeloExpense's `policy_violation` (0006, reshaped
+// to this by 0066): one finding of a rule instance against a report, on a line or an
+// expense or the whole report. VeloExpense differences:
+//   · no travel subject (ExpenseOS's `travelRequestId` / `travelLineId`): travel is out of
+//     scope, so `reportId` is required;
+//   · scalars only; the database's keys are composite (0006, 0019, 0066);
+//   · `data` is never null (the column's default is `{}`).
+model PolicyViolation {
+  id             String                  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String                  @default(dbgenerated("(NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid")) @map("organization_id") @db.Uuid
+  reportId       String                  @map("report_id") @db.Uuid
+  /// Optional expense-scope anchor (entry-level rules).
+  expenseId      String?                 @map("expense_id") @db.Uuid
+  lineItemId     String?                 @map("line_item_id") @db.Uuid
+  /// The firing rule instance's id (`policy_rule.id`); a v1 kind name on rows written
+  /// before the cutover.
+  ruleCode       String                  @map("rule_code")
+  severity       PolicyViolationSeverity
+  /// The message KEY (`policy.labels.<key>`), rendered in the reader's locale; a sentence
+  /// on rows written before the cutover.
+  message        String
+  /// Rule-specific structured payload — the values the message's placeholders read.
+  data           Json                    @default("{}")
+  resolvedAt     DateTime?               @map("resolved_at") @db.Timestamptz(6)
+  resolvedBy     String?                 @map("resolved_by_id") @db.Uuid
+  resolveNote    String?                 @map("resolve_note")
+  createdAt      DateTime                @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@index([reportId])
+  @@map("policy_violation")
+}

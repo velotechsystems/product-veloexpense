@@ -222,8 +222,10 @@ describe.skipIf(!process.env.DATABASE_URL)('expense approvals (integration)', ()
       const reportId = await seedReport('DRAFT');
       await addValuedExpense(reportId, '9000');
       await h.admin.query(
-        `INSERT INTO expense_policy (organization_id, kind, severity, params)
-         VALUES ($1, 'PER_TRANSACTION_LIMIT', 'WARNING', '{"thresholdMinor": 5000}')`,
+        // w4-02d: a per-transaction limit as the cutover converts v1's (a line predicate).
+        `INSERT INTO policy_rule (organization_id, kind_code, scope, severity, condition, params, message_key, effective_from)
+         VALUES ($1, 'PREDICATE_LINE', 'LINE', 'WARNING', '{"all":[{"field":"lineAmount","op":"gt","value":5000}]}',
+                 '{}', 'perTransactionLimit', '2000-01-01')`,
         [h.orgId],
       );
       try {
@@ -256,7 +258,7 @@ describe.skipIf(!process.env.DATABASE_URL)('expense approvals (integration)', ()
         expect(res.counts).toMatchObject({ warning: 1, unjustifiedWarning: 0 });
       } finally {
         await h.admin.query(
-          `DELETE FROM expense_policy WHERE organization_id = $1 AND kind = 'PER_TRANSACTION_LIMIT'`,
+          `DELETE FROM policy_rule WHERE organization_id = $1 AND message_key = 'perTransactionLimit'`,
           [h.orgId],
         );
       }

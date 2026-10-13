@@ -12,7 +12,7 @@ import { Badge } from '@/components/ui/badge';
 import { TableCell, TableRow } from '@/components/ui/table';
 import { SURFACE } from '@/components/screen';
 import type { ReportStatus } from '@/lib/expenses/service';
-import { enumLabel, REPORT_STATUS_COPY, SEVERITY_COPY } from '@/lib/i18n/catalog/enums';
+import { enumLabel, REPORT_STATUS_COPY } from '@/lib/i18n/catalog/enums';
 import { renderUserMessage } from '@/lib/i18n/catalog/errors';
 import { readerPrefs } from '@/lib/i18n/request';
 
@@ -52,19 +52,7 @@ export function StatusBadge({ status, locale }: { status: ReportStatus; locale: 
   );
 }
 
-const SEVERITY_TONE: Record<string, Tone> = {
-  BLOCK: 'destructive',
-  WARNING: 'warning',
-  INFO: 'muted',
-};
-
-export function SeverityBadge({ severity, locale }: { severity: string; locale: string }) {
-  return (
-    <Badge className="shrink-0" variant={SEVERITY_TONE[severity] ?? 'muted'}>
-      {enumLabel(SEVERITY_COPY, severity, locale)}
-    </Badge>
-  );
-}
+// w4-02d: `SeverityBadge` went with /admin/expense-policies, its only reader.
 
 /** Validation failures come back as ?error=… so a plain form post can show them. */
 /**

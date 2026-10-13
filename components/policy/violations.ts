@@ -96,7 +96,13 @@ export function violationValues(
   const code = typeof data.policyCurrency === 'string' ? data.policyCurrency : null;
   const raw = data.thresholdMinor;
   if (code && (typeof raw === 'string' || typeof raw === 'number')) {
-    out.threshold = formatMinor(BigInt(raw), { code }, locale);
+    // VeloExpense: with the ISO code. ExpenseOS passed `{ code }` alone, which formatMinor
+    // reads as "the caller prints the code beside it" — but no `{threshold}` label names the
+    // currency, so the sentence read "Receipt required over 25.00", in no currency at all.
+    // The code rather than a symbol because the narrow `$` is CAD's and USD's alike, and the
+    // policy currency need not be the report's (F54's reason for `withCode`). The digits and
+    // the side the code sits on are still the reader's: `CAD 25.00`, `25,00 CAD`.
+    out.threshold = formatMinor(BigInt(raw), { code }, locale, { withCode: true });
   }
 
   /**

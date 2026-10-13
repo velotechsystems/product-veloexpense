@@ -18,8 +18,8 @@ export function generateMetadata() {
  * than `auth()` plus `resolveRbacUser(db, …)`; a reader without the permission is REFUSED
  * (`forbidden()`, a 403 that says why) where ExpenseOS answers 404, as every VeloExpense
  * admin screen does. As in ExpenseOS, the page checks no module; its menu entry sits under
- * Compliance & Audit. Until the cutover (w4-02d) these limits are stored, not enforced:
- * lib/policy still checks the ones on /admin/expense-policies.
+ * Compliance & Audit. Since the cutover (w4-02d) these limits are enforced by ExpenseOS's
+ * engine (server/policy), through its per-category kinds.
  */
 export default async function ExpensePoliciesPage() {
   const shell = await shellContext();

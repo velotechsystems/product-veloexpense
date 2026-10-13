@@ -18,6 +18,8 @@ import { z } from 'zod';
 import { BUILTIN_KINDS } from './builtinKinds';
 import { linePredicateSchema, reportPredicateSchema } from './facts';
 import type { AggregateContext, PolicyRuleInstance, Severity } from './types';
+// VeloExpense (w4-02d, d70): VeloExpense's own kinds, registered with ExpenseOS's below.
+import { VELOEXPENSE_KINDS } from './veloexpenseKinds';
 
 /** Facts a kind needs; the loader hydrates the union across enabled kinds. */
 export type FactRequirement =
@@ -103,6 +105,12 @@ export interface RuleKind {
   /** Param names of which at least one must be set (MILEAGE_MAX's refine). */
   paramsAtLeastOneOf?: readonly string[];
   defaultSeverity: Severity;
+  /**
+   * VeloExpense (w4-02d): the most severe an instance of this kind may be — the router
+   * refuses more and the engine clamps a row set past it by other means. ExpenseOS has no
+   * ceiling; VeloExpense's v1 engine had one on BUDGET_OVERAGE (BG-4), kept below.
+   */
+  maxSeverity?: Severity;
   /** Fallback i18n key when an instance doesn't set its own. */
   messageKey: string;
   /** LINE / REPORT kinds: evaluate one fact unit → a Finding (or null). */
@@ -211,6 +219,9 @@ const budgetOverageKind: RuleKind = {
   requires: ['BUDGET_IMPACTS'],
   paramsSchema: emptyParams,
   defaultSeverity: 'WARNING',
+  // VeloExpense (BG-4, kept at w4-02d): a budget never BLOCKS. The money has already left,
+  // so a claim nobody can submit strands a real expense; the warning is the control.
+  maxSeverity: 'WARNING',
   messageKey: 'budgetOverage',
   evaluateAggregate: (_inst, agg) => {
     const impacts = agg.budgetImpacts;
@@ -258,6 +269,7 @@ export const RULE_KINDS: Readonly<Record<string, RuleKind>> = Object.freeze({
   PER_DIEM: perDiemKind,
   BUDGET_OVERAGE: budgetOverageKind,
   ...Object.fromEntries(BUILTIN_KINDS.map((k) => [k.code, k])),
+  ...Object.fromEntries(VELOEXPENSE_KINDS.map((k) => [k.code, k])),
 });
 
 /** Registry codes an admin can author against (for the Rule Builder + router

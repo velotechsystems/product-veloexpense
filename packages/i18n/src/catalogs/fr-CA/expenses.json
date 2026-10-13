@@ -339,7 +339,8 @@
       },
       "travelCabinClass": "Ce voyage demande la classe {cabin}, que votre échelon n'est pas autorisé à réserver.",
       "travelOverrun": "{categoryCount, plural, one {Une catégorie de voyage dépasse} other {# catégories de voyage dépassent}} le budget approuvé — la pire de {overrunPercent} %, au-delà de la tolérance de {tolerancePercent} %.",
-      "travelLineDetailRequired": "Cette ligne nécessite une brève explication de sa nécessité."
+      "travelLineDetailRequired": "Cette ligne nécessite une brève explication de sa nécessité.",
+      "categoryInactive": "Catégorie qui n’est plus utilisée — choisissez-en une autre"
     },
     "onNLines": "sur {count} lignes"
   },

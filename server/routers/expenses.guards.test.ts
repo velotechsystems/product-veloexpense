@@ -67,30 +67,29 @@ vi.mock('@expenseos/db', async (importOriginal) => {
 });
 
 /**
- * VeloExpense: w2-11. VeloExpense's policy pass in place of ExpenseOS's
- * `@/server/policy/validate`, and the lifecycle adapter (d23) in place of its approval
- * engine and the notify / post / effects hooks. Both have their own database-backed suites;
- * here they are the boundary the guards stop at.
+ * VeloExpense: ExpenseOS's `@/server/policy/validate` since the cutover (w4-02d), and the
+ * lifecycle adapter (d23) in place of its approval engine and the notify / post / effects
+ * hooks. Both have their own database-backed suites; here they are the boundary the guards
+ * stop at.
  */
 const policyPass = vi.fn(async () => ({
   violations: [] as unknown[],
-  counts: { INFO: 0, WARNING: 0, BLOCK: 0 },
-  blocking: false,
-  unjustifiedWarning: 0,
+  counts: { info: 0, warning: 0, block: 0, unjustifiedWarning: 0 },
 }));
-const acknowledgeViolation = stubFn(async () => ({}));
-const clearAcknowledgement = stubFn(async () => {});
-vi.mock('@/lib/policy/service', () => ({
-  validateReport: policyPass,
-  acknowledgeViolation,
-  clearAcknowledgement,
-}));
+vi.mock('@/server/policy/validate', () => ({ validateReport: policyPass }));
 // w4-00c: the lifecycle starts the engine and hands back its result; ExpenseOS's hooks after
 // it (notify the first approvers, the workflow's effects, tell the recalled approvers) are
 // the procedure's, so they are spied on here.
-const submitThroughLifecycle = stubFn(async () => ({
-  approval: { instanceId: 'inst-1', status: 'RUNNING', createdTaskIds: ['t-1'], firedEffects: ['n-1'] },
-}));
+// w4-02d: the lifecycle runs the procedure's policy pass under its lock, so the stand-in
+// runs it too — that is where a policy refusal now comes from.
+const submitThroughLifecycle = stubFn(
+  async (_db: unknown, _reportId: string, _actorId: string, pass?: () => Promise<unknown>) => {
+    await pass?.();
+    return {
+      approval: { instanceId: 'inst-1', status: 'RUNNING', createdTaskIds: ['t-1'], firedEffects: ['n-1'] },
+    };
+  },
+);
 const recallThroughLifecycle = stubFn(async () => ({
   id: REPORT,
   status: 'DRAFT',
@@ -202,9 +201,7 @@ function makeDb(over: Record<string, unknown> = {}) {
     },
     policyViolation: {
       findMany: stubFn(async () => [] as unknown[]),
-      findUnique: vi.fn(
-        async () => ({ id: U('4'), severity: 'WARNING', report: { submitterId: ME } }) as unknown,
-      ),
+      findUnique: vi.fn(async () => ({ id: U('4'), severity: 'WARNING', reportId: REPORT }) as unknown),
       update: stubFn(async () => ({ id: U('4') })),
       updateMany: stubFn(async () => ({ count: 0 })),
     },
@@ -467,8 +464,9 @@ describe('report-level guards', () => {
   });
 
   it('VeloExpense: refuses an unjustified warning before the transition (d34)', async () => {
-    // ExpenseOS's gate, on VeloExpense's policy pass: the refusal carries the result, and
-    // the lifecycle is never asked.
+    // ExpenseOS's gate: the refusal carries the result, and nothing after the transition
+    // runs. w4-02d: the pass runs inside the lifecycle, under its lock, so the lifecycle IS
+    // asked — and refuses before it moves the report.
     const db = makeDb();
     db.expenseReport.findUnique.mockResolvedValue({
       id: REPORT,
@@ -479,16 +477,14 @@ describe('report-level guards', () => {
     db.expense.count.mockResolvedValue(1);
     policyPass.mockResolvedValueOnce({
       violations: [],
-      counts: { INFO: 0, WARNING: 1, BLOCK: 0 },
-      blocking: false,
-      unjustifiedWarning: 1,
+      counts: { info: 0, warning: 1, block: 0, unjustifiedWarning: 1 },
     });
     const c = await callerFor(db, [P.expense.report.createOwn]);
     await expect(c.submit({ reportId: REPORT })).rejects.toMatchObject({
       code: 'PRECONDITION_FAILED',
       message: 'Report has unresolved policy violations.',
     });
-    expect(submitThroughLifecycle).not.toHaveBeenCalled();
+    expect(notifyReportSubmitted).not.toHaveBeenCalled();
   });
 
   it('VeloExpense: hands a clean, RETURNED report to the lifecycle as the caller', async () => {
@@ -507,7 +503,8 @@ describe('report-level guards', () => {
     }));
     const c = await callerFor(db, [P.expense.report.createOwn]);
     const res = await c.submit({ reportId: REPORT });
-    expect(submitThroughLifecycle).toHaveBeenCalledWith(db, REPORT, ME);
+    expect(submitThroughLifecycle).toHaveBeenCalledWith(db, REPORT, ME, expect.any(Function));
+    expect(policyPass).toHaveBeenCalledOnce();
     // ExpenseOS's hooks after the start: the first approvers, then the workflow's effects.
     expect(notifyReportSubmitted).toHaveBeenCalledWith(db, REPORT, ME, ['t-1']);
     expect(executeWorkflowEffects).toHaveBeenCalledWith(db, {
@@ -1053,15 +1050,19 @@ describe('input validation', () => {
 
 describe('justifyViolation', () => {
   const caller = (db: unknown) => callerFor(db, UPDATE);
-  /** VeloExpense: the violation lookup is SQL (`$queryRaw`), with the report's submitter. */
-  const violation = (over: Record<string, unknown> = {}) => [
-    { id: U('4'), severity: 'WARNING', reportId: REPORT, submitterId: ME, ...over },
-  ];
+  // VeloExpense: no `report` relation on the violation model — its submitter is read beside it.
+  const reportOf = (db: ReturnType<typeof makeDb>, submitterId: string) =>
+    db.expenseReport.findUnique.mockResolvedValue({ submitterId } as never);
 
   it('404s a violation on somebody else’s report', async () => {
     // Same non-enumeration rule: a 403 would confirm the violation exists.
     const db = makeDb();
-    db.$queryRaw.mockResolvedValue(violation({ submitterId: U('3') }));
+    db.policyViolation.findUnique.mockResolvedValue({
+      id: U('4'),
+      severity: 'WARNING',
+      reportId: REPORT,
+    });
+    reportOf(db, U('3'));
     await expect(
       (await caller(db)).justifyViolation({ violationId: U('4'), note: 'Client dinner' }),
     ).rejects.toMatchObject({ code: 'NOT_FOUND' });
@@ -1069,7 +1070,7 @@ describe('justifyViolation', () => {
 
   it('404s a violation that does not exist', async () => {
     const db = makeDb();
-    db.$queryRaw.mockResolvedValue([]);
+    db.policyViolation.findUnique.mockResolvedValue(null);
     await expect(
       (await caller(db)).justifyViolation({ violationId: U('4'), note: 'x' }),
     ).rejects.toMatchObject({ code: 'NOT_FOUND' });
@@ -1082,41 +1083,40 @@ describe('justifyViolation', () => {
      * only WARNING and INFO are acknowledgeable.
      */
     const db = makeDb();
-    db.$queryRaw.mockResolvedValue(violation({ severity: 'BLOCK' }));
+    db.policyViolation.findUnique.mockResolvedValue({
+      id: U('4'),
+      severity: 'BLOCK',
+      reportId: REPORT,
+    });
+    reportOf(db, ME);
     await expect(
       (await caller(db)).justifyViolation({ violationId: U('4'), note: 'Please allow it' }),
     ).rejects.toThrow();
-    expect(acknowledgeViolation).not.toHaveBeenCalled();
+    expect(db.policyViolation.update).not.toHaveBeenCalled();
   });
 
   it('stores a trimmed justification', async () => {
-    // VeloExpense: through `acknowledgeViolation`, which stamps who and when.
     const db = makeDb();
-    db.$queryRaw.mockResolvedValue(violation());
+    reportOf(db, ME);
     await (await caller(db)).justifyViolation({ violationId: U('4'), note: '  Client dinner  ' });
-    expect(acknowledgeViolation).toHaveBeenCalledWith(
-      expect.anything(),
-      U('4'),
-      ME,
-      'Client dinner',
-    );
+    const data = db.policyViolation.update.mock.calls[0]?.[0]?.data as Record<string, unknown>;
+    expect(data.resolveNote).toBe('Client dinner');
+    expect(data.resolvedBy).toBe(ME);
+    expect(data.resolvedAt).toBeInstanceOf(Date);
   });
 
   it('clears the justification on a blank note', async () => {
     // Mirrors the admin register: a blank note un-acknowledges rather than storing an
     // empty justification that reads as signed off.
     const db = makeDb();
-    db.$queryRaw.mockResolvedValue(violation());
+    reportOf(db, ME);
     const c = await caller(db);
     for (const note of [undefined, null, '', '   ']) {
-      clearAcknowledgement.mockClear();
+      db.policyViolation.update.mockClear();
       await c.justifyViolation({ violationId: U('4'), note } as never);
-      expect(clearAcknowledgement, JSON.stringify(note)).toHaveBeenCalledWith(
-        expect.anything(),
-        U('4'),
-      );
+      const data = db.policyViolation.update.mock.calls[0]?.[0]?.data as Record<string, unknown>;
+      expect(data.resolvedAt, JSON.stringify(note)).toBeNull();
     }
-    expect(acknowledgeViolation).not.toHaveBeenCalled();
   });
 
   it('bounds the note', async () => {

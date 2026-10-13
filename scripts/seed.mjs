@@ -429,7 +429,7 @@ const COA_TEMPLATE = 'na-expense-claims';
  * it makes cross-currency policy checks work in the demo tenant and in the e2e,
  * and it is recognisable as a fixture rather than mistakable for market data.
  *
- * Only USD->CAD is inserted. CAD->USD is DERIVED by lib/policy/rates.ts, which is
+ * Only USD->CAD is inserted. CAD->USD is DERIVED by lib/fx/rates.ts, which is
  * PE-7's fix: ExpenseOS stored one direction and looked up forward-only, so a
  * tenant whose policy currency was USD found every CAD amount unconvertible.
  * Seeding one direction here means the derivation is exercised by default rather

@@ -1,13 +1,8 @@
 /**
- * VX4-5 part 2 — the pure half: budget attribution and the severity clamp.
+ * VX4-5 part 2 — the pure half: budget attribution.
  *
- * No database. `lib/budgets/scope.ts` and the severity helpers in
- * `lib/policy/rules.ts` are pure by the same house rule that keeps `rules.ts` and
- * `rates.ts` pure, and this is what that buys.
- *
- * The last two blocks are GUARDS in the house pattern — generated over the
- * registry rather than written per rule, so a rule kind added next year cannot
- * quietly opt out of them.
+ * No database. `lib/budgets/scope.ts` is pure, and this is what that buys. (The severity
+ * clamp this file also covered went with VeloExpense's v1 policy engine at w4-02d.)
  */
 import { describe, it, expect } from 'vitest';
 import {
@@ -17,14 +12,6 @@ import {
   type BudgetScope,
   type BudgetSnapshot,
 } from '@/lib/budgets/scope';
-import {
-  clampSeverity,
-  severityExceeds,
-  DEFAULT_POLICIES,
-  RULE_DEFINITIONS,
-  RULE_KINDS,
-  SEVERITIES,
-} from '@/lib/policy/rules';
 
 const ACC = 'acc-1';
 const BU = 'bu-1';
@@ -127,49 +114,6 @@ describe('the projection counts what is committed AND what is in flight', () => 
   });
 });
 
-/* ── the clamp, as arithmetic over SEVERITIES ───────────────────────────────── */
-
-describe('severity clamping is an index comparison, not a hand-written order', () => {
-  it('ranks by position in SEVERITIES', () => {
-    expect(severityExceeds('BLOCK', 'WARNING')).toBe(true);
-    expect(severityExceeds('WARNING', 'WARNING')).toBe(false);
-    expect(severityExceeds('INFO', 'WARNING')).toBe(false);
-  });
-
-  it('holds a severity down to the maximum', () => {
-    expect(clampSeverity('BLOCK', 'WARNING')).toBe('WARNING');
-    expect(clampSeverity('INFO', 'WARNING')).toBe('INFO');
-  });
-
-  it('leaves a rule with no maximum alone', () => {
-    for (const s of SEVERITIES) expect(clampSeverity(s, undefined)).toBe(s);
-  });
-});
-
-/* ── guards, generated over the registry ────────────────────────────────────── */
-
-describe('every rule definition is internally consistent (guard)', () => {
-  it.each(RULE_KINDS)('%s default severity is within its own maximum', (kind) => {
-    const definition = RULE_DEFINITIONS[kind];
-    if (definition.maxSeverity === undefined) return;
-    // A default the write path would refuse is a rule nobody can create from the
-    // "Add a rule" form without changing the severity first.
-    expect(severityExceeds(definition.defaultSeverity, definition.maxSeverity)).toBe(false);
-  });
-
-  it('at least one rule declares a maximum, or this file proves nothing', () => {
-    // The guard above passes vacuously if no rule has a maximum — an assertion
-    // that can only produce one outcome. This is the check that it cannot.
-    expect(RULE_KINDS.some((k) => RULE_DEFINITIONS[k].maxSeverity !== undefined)).toBe(true);
-  });
-});
-
-describe('the starter set respects the maximums (guard)', () => {
-  it.each(DEFAULT_POLICIES)('$kind at $severity is creatable', (preset) => {
-    const maximum = RULE_DEFINITIONS[preset.kind].maxSeverity;
-    if (maximum === undefined) return;
-    // "Restore starter rules" writes these straight to SQL, bypassing
-    // `createPolicy` and therefore bypassing its refusal.
-    expect(severityExceeds(preset.severity, maximum)).toBe(false);
-  });
-});
+// w4-02d: the severity-clamp and starter-set guards tested VeloExpense's v1 rule registry
+// (lib/policy/rules.ts), which went with that engine at the cutover. ExpenseOS's kinds carry
+// no severity ceiling; `BUDGET_OVERAGE` is WARNING by default and an admin chooses.

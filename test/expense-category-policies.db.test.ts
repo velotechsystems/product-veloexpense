@@ -8,6 +8,7 @@
  *     (`EXPENSE_POLICY_CHANGED`) into a chain that verifies;
  *   · VeloExpense: `currency` is the organization's policy currency; another tenant's
  *     category and a negative limit are BAD_REQUEST; deleting a category takes its policy;
+ *     the policy currency is set per tenant (d68, w4-02d), audited;
  *   · tenancy and permissions.
  */
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
@@ -105,8 +106,33 @@ describe('a category’s policy', () => {
   it('is labelled in the organization’s policy currency', async () => {
     await admin.query(`UPDATE organization SET policy_currency_code = 'USD' WHERE id = $1`, [A]);
     try {
-      expect(await boss().policies.expensePolicy.currency()).toEqual({ code: 'USD' });
-      expect(await as('boss@beta.test', B).policies.expensePolicy.currency()).toEqual({ code: 'CAD' });
+      expect(await boss().policies.expensePolicy.currency()).toMatchObject({ code: 'USD' });
+      expect(await as('boss@beta.test', B).policies.expensePolicy.currency()).toMatchObject({ code: 'CAD' });
+    } finally {
+      await admin.query(`UPDATE organization SET policy_currency_code = 'CAD' WHERE id = $1`, [A]);
+    }
+  });
+
+  it('VeloExpense (d68): is set by an admin for its own tenant only, audited into a chain that verifies', async () => {
+    try {
+      expect(await boss().policies.expensePolicy.setCurrency({ code: 'eur' })).toEqual({ code: 'EUR' });
+      const rows = (
+        await admin.query(`SELECT id, policy_currency_code FROM organization WHERE id = ANY($1::uuid[]) ORDER BY name`, [[A, B]])
+      ).rows;
+      expect(rows).toEqual([
+        { id: A, policy_currency_code: 'EUR' },
+        { id: B, policy_currency_code: 'CAD' },
+      ]);
+      const audit = (
+        await admin.query(
+          `SELECT organization_id, entity_type, entity_id, details FROM audit_entry WHERE action = 'POLICY_CURRENCY_SET'`,
+        )
+      ).rows;
+      expect(audit).toEqual([
+        { organization_id: A, entity_type: 'Organization', entity_id: A, details: { from: 'CAD', to: 'EUR' } },
+      ]);
+      expect((await withOrg(A, (tx) => verifyChain(tx))).ok).toBe(true);
+      expect(await codeOf(as('emp@alpha.test', A).policies.expensePolicy.setCurrency({ code: 'USD' }))).toBe('FORBIDDEN');
     } finally {
       await admin.query(`UPDATE organization SET policy_currency_code = 'CAD' WHERE id = $1`, [A]);
     }

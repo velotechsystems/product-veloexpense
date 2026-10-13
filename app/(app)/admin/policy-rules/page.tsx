@@ -20,8 +20,8 @@ export function generateMetadata() {
  * the session and `RbacUser` come from the request's shell context (server/shell.ts) rather
  * than `auth()` plus `resolveRbacUser(db, …)`, and a reader without the permission is
  * REFUSED (`forbidden()`, a 403 that says why) where ExpenseOS answers 404, as every
- * VeloExpense admin screen does. An inactive module is still a 404. Until the cutover
- * (w4-02c) the rules written here are stored, not enforced: lib/policy still checks.
+ * VeloExpense admin screen does. An inactive module is still a 404. Since the cutover
+ * (w4-02d) the rules written here are what submit checks (server/policy/validate.ts).
  */
 export default async function PolicyRulesPage() {
   const shell = await shellContext();

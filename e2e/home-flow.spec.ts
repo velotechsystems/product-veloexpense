@@ -32,7 +32,7 @@ const ACTION: Record<SetupItem, { cta: string; href: string }> = {
   APPROVER: { cta: 'Invite someone', href: '/admin/employees/invite' },
   CATEGORIES: { cta: 'Review categories', href: '/admin/expense-categories' },
   APPROVAL_FLOW: { cta: 'Review approvals', href: '/admin/approval-workflows' },
-  SPEND_POLICY: { cta: 'Add a rule', href: '/admin/expense-policies' },
+  SPEND_POLICY: { cta: 'Add a rule', href: '/admin/policy-rules' },
   STRUCTURE: { cta: 'Add structure', href: '/admin/legal-entities' },
   BRANDING: { cta: 'Add branding', href: '/admin/branding' },
 };

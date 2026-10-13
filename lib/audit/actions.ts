@@ -193,6 +193,8 @@ export const AUDIT_ACTIONS = [
   /* A category's policy — the w4-02c port (ExpenseOS's `config.policy.update`): its limits
      and receipt flag, created or changed (an upsert). */
   'EXPENSE_POLICY_CHANGED',
+  /* The organization's policy currency, set on /admin/policies (w4-02d, d68). */
+  'POLICY_CURRENCY_SET',
   'MODULE_ENABLED',
   'MODULE_DISABLED',
   'USER_LOCALE_CHANGED',
