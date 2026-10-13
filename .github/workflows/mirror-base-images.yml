@@ -53,26 +53,36 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Copy the images
-        # The source is still pulled anonymously, once a week. When that one pull meets
-        # the limit, wait and try again rather than failing the week: four tries, a
-        # minute, two, four apart.
+        # The source is still pulled anonymously, once a week, and that pull can meet a
+        # limit too (the first run met ECR Public's "Rate exceeded" twice). So each try
+        # alternates between two copies of the same official image — ECR Public's mirror
+        # and Docker Hub, both published by Docker from the same source — and waits longer
+        # each time: four tries, a minute, two, four apart.
         run: |
           set -euo pipefail
           copy() {
-            local src="$1" dst="$2" wait=60
+            local name="$1" dst="$2" wait=60 src
             for attempt in 1 2 3 4; do
+              if [ $((attempt % 2)) -eq 1 ]; then
+                src="public.ecr.aws/docker/library/${name}"
+              else
+                src="docker.io/library/${name}"
+              fi
               if docker buildx imagetools create --tag "$dst" "$src"; then
-                docker buildx imagetools inspect "$dst" | head -n 3
+                # The whole inspect output, deliberately not piped into `head`: under
+                # pipefail, head closing the pipe early made inspect exit 255 and failed
+                # a copy that had succeeded (the first run, 13 Oct 2026).
+                docker buildx imagetools inspect "$dst"
                 return 0
               fi
               if [ "$attempt" -lt 4 ]; then
-                echo "attempt $attempt failed; retrying in ${wait}s"
+                echo "attempt $attempt ($src) failed; retrying in ${wait}s"
                 sleep "$wait"
                 wait=$((wait * 2))
               fi
             done
-            echo "::error::could not copy $src"
+            echo "::error::could not copy $name"
             return 1
           }
-          copy public.ecr.aws/docker/library/node:24-alpine ghcr.io/velotechsystems/base-node:24-alpine
-          copy public.ecr.aws/docker/library/postgres:16 ghcr.io/velotechsystems/base-postgres:16
+          copy node:24-alpine ghcr.io/velotechsystems/base-node:24-alpine
+          copy postgres:16 ghcr.io/velotechsystems/base-postgres:16
