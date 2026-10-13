@@ -3,7 +3,7 @@
     "title": "Violations de politique",
     "showing": "Affichage de {shown} sur {total}",
     "emptyTitle": "Aucune violation de politique",
-    "emptyBody": "Les infractions soulevées lors de la validation des rapports et des demandes de voyage apparaissent ici — examinez les avertissements et accusez réception des exceptions.",
+    "emptyBody": "Les infractions soulevées lors de la validation des rapports de dépenses apparaissent ici — examinez les avertissements et accusez réception des exceptions.",
     "col": {
       "report": "Rapport",
       "submitter": "Soumetteur",

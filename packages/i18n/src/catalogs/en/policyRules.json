@@ -3,7 +3,7 @@
     "title": "Policy Violations",
     "showing": "Showing {shown} of {total}",
     "emptyTitle": "No policy violations",
-    "emptyBody": "Violations raised when reports and travel requests are validated appear here — review warnings and acknowledge exceptions.",
+    "emptyBody": "Violations raised when expense reports are validated appear here — review warnings and acknowledge exceptions.",
     "col": {
       "report": "Report",
       "submitter": "Submitter",

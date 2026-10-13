@@ -454,7 +454,7 @@ async function assertMileageReferencesKnown(
 //     then the audit in a second, empty transaction), and what the table refuses — another
 //     tenant's scope or category, an end before the start, a rule that is not the
 //     tenant's — is a 4xx rather than a 500 (`policyRuleWrite`);
-//   · `violations` and `resolveViolation` arrive with the violations register (w4-02d).
+//   · `violations` and `resolveViolation` came with the violations register (w4-02e).
 
 const policyRuleInput = z.object({
   kindCode: z.string().min(1),
@@ -1248,6 +1248,123 @@ export const policiesRouter = router({
       }));
     }),
 
+    /**
+     * Org-wide policy-violation register — the admin exceptions view. Most recent
+     * first, bounded. `ruleCode` is the firing rule instance's id; we resolve it to the
+     * human kind code for display. Reads are cheap (Phase-2 volume); a cursor + server
+     * filters can come later.
+     *
+     * Covers BOTH subjects. A violation now belongs either to an expense report or to a
+     * travel request, and the register is the page that exists to show exceptions — so
+     * filtering travel out to keep the row shape report-shaped would hide precisely the
+     * exceptions that block rather than warn. The subject is therefore projected to a
+     * neutral `subjectKind` / `subjectNumber` / `subjectTitle` triple, with both ids
+     * kept so a row can still link to the right place.
+     *
+     * VeloExpense (w4-02e):
+     *   · no travel yet, so every subject is a REPORT and the travel fields are null — the
+     *     row keeps ExpenseOS's shape so the screen ports unchanged;
+     *   · `PolicyViolation` carries no Prisma relations here (its foreign keys are SQL's,
+     *     0066), so the report, expense, line and submitter are read in four batched
+     *     lookups rather than one nested select;
+     *   · the submitter's name is the user's display name (VeloExpense has no first/last);
+     *   · rows written before the cutover keep v1's kind NAME as `ruleCode`, not a rule id
+     *     (0066). Only uuid-shaped codes are looked up — a v1 name in a uuid `IN` list is a
+     *     query error, which would take the whole register down — and a v1 name is shown
+     *     as the kind it became (`LEGACY_V1_KINDS`).
+     */
+    violations: withPermission(P.config.policyRead)
+      .input(z.object({ limit: z.number().int().min(1).max(1000).default(500) }).optional())
+      .query(async ({ ctx, input }) => {
+        const rows = await ctx.db.policyViolation.findMany({
+          take: input?.limit ?? 500,
+          orderBy: { createdAt: 'desc' },
+          select: {
+            id: true,
+            severity: true,
+            message: true,
+            /**
+             * The message's ICU VALUES live here — `thresholdMinor`, `policyCurrency`
+             * and the travel percentages. Without it the client resolves "Receipt
+             * expected over {threshold}" and has nothing to put in the placeholder, so
+             * it renders the braces at the reader.
+             */
+            data: true,
+            ruleCode: true,
+            resolvedAt: true,
+            resolveNote: true,
+            createdAt: true,
+            reportId: true,
+            lineItemId: true,
+            expenseId: true,
+          },
+        });
+        const ids = <K extends 'reportId' | 'expenseId' | 'lineItemId'>(k: K) =>
+          [...new Set(rows.map((r) => r[k]).filter((v): v is string => !!v))];
+        const [reports, expenses, lines] = await Promise.all([
+          ctx.db.expenseReport.findMany({
+            where: { id: { in: ids('reportId') } },
+            select: { id: true, number: true, title: true, submitterId: true },
+          }),
+          ctx.db.expense.findMany({
+            where: { id: { in: ids('expenseId') } },
+            select: { id: true, merchant: true, date: true },
+          }),
+          ctx.db.expenseLineItem.findMany({
+            where: { id: { in: ids('lineItemId') } },
+            select: { id: true, category: { select: { label: true } } },
+          }),
+        ]);
+        const submitters = await ctx.db.user.findMany({
+          where: { id: { in: [...new Set(reports.map((r) => r.submitterId))] } },
+          select: { id: true, name: true, email: true },
+        });
+        const reportById = new Map(reports.map((r) => [r.id, r]));
+        const expenseById = new Map(expenses.map((e) => [e.id, e]));
+        const lineById = new Map(lines.map((l) => [l.id, l]));
+        const userById = new Map(submitters.map((u) => [u.id, u]));
+        // Resolve instance-id ruleCodes → kind codes for display.
+        const ruleIds = [...new Set(rows.map((r) => r.ruleCode))].filter((c) => UUID_SHAPE.test(c));
+        const kinds = await ctx.db.policyRule.findMany({
+          where: { id: { in: ruleIds } },
+          select: { id: true, kindCode: true },
+        });
+        const kindById = new Map(kinds.map((k) => [k.id, k.kindCode]));
+        return rows.map((r) => {
+          const report = reportById.get(r.reportId) ?? null;
+          const s = report ? (userById.get(report.submitterId) ?? null) : null;
+          const name = s
+            ? s.name?.trim() || s.email
+            : // Unreachable while the report's foreign keys hold; a dash beats a crash if
+              // it ever does not.
+              '—';
+          const expense = r.expenseId ? (expenseById.get(r.expenseId) ?? null) : null;
+          const line = r.lineItemId ? (lineById.get(r.lineItemId) ?? null) : null;
+          return {
+            id: r.id,
+            severity: r.severity,
+            message: r.message,
+            data: r.data,
+            kind: kindById.get(r.ruleCode) ?? LEGACY_V1_KINDS[r.ruleCode] ?? r.ruleCode,
+            resolvedAt: r.resolvedAt,
+            resolveNote: r.resolveNote,
+            createdAt: r.createdAt,
+            subjectKind: 'REPORT' as 'TRAVEL_REQUEST' | 'REPORT',
+            subjectNumber: report?.number ?? '',
+            subjectTitle: report?.title ?? null,
+            reportId: r.reportId,
+            travelRequestId: null as string | null,
+            submitterName: name,
+            lineItemId: r.lineItemId,
+            expenseId: r.expenseId,
+            travelLineId: null as string | null,
+            merchant: expense?.merchant ?? null,
+            expenseDate: expense?.date ?? null,
+            categoryLabel: (line?.category?.label as Record<string, string> | null) ?? null,
+          };
+        });
+      }),
+
     create: policyRuleWrite()
       .input(policyRuleInput)
       .mutation(async ({ ctx, input }) => {
@@ -1281,8 +1398,55 @@ export const policiesRouter = router({
         );
         return { ok: true };
       }),
+
+    /** Acknowledge (or un-acknowledge) a policy violation from the admin
+     *  register. WARNING/INFO never block submission by construction (only BLOCK
+     *  does), so this is an oversight acknowledgment + audit trail, not an
+     *  override — a BLOCK is never resolvable here. A note acknowledges; a blank
+     *  note clears the acknowledgment (mirrors the submitter `justifyViolation`).
+     *
+     *  VeloExpense (w4-02e): audited in the same transaction as the update (as every
+     *  policy-rule write here), with the violation as the entity. Another tenant's
+     *  violation is invisible under RLS, so it is NOT_FOUND like a missing one. */
+    resolveViolation: withPermission(P.config.policyUpdate)
+      .input(z.object({ id: z.string().uuid(), note: z.string().max(2000).nullish() }))
+      .mutation(async ({ ctx, input }) => {
+        const v = await ctx.db.policyViolation.findUnique({ where: { id: input.id } });
+        if (!v) throw new TRPCError({ code: 'NOT_FOUND', message: 'Violation not found' });
+        if (v.severity === 'BLOCK') {
+          throw new TRPCError({
+            code: 'BAD_REQUEST',
+            message: 'A blocking violation cannot be resolved',
+          });
+        }
+        const note = input.note?.trim() ? input.note.trim() : null;
+        return withAudit(
+          ctx.db,
+          { ...policyRuleAudit(ctx, { op: 'resolveViolation', note }, input.id), entityType: 'PolicyViolation' },
+          (tx) =>
+            tx.policyViolation.update({
+              where: { id: input.id },
+              data: note
+                ? { resolvedAt: new Date(), resolvedBy: ctx.rbac.id, resolveNote: note }
+                : { resolvedAt: null, resolvedBy: null, resolveNote: null },
+            }),
+        );
+      }),
   }),
 });
+
+/** A `policy_rule.id` — what `policy_violation.rule_code` holds since the cutover. */
+const UUID_SHAPE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * VeloExpense: the kind each v1 rule became at the cutover (0066), for a violation row
+ * written before it, whose `rule_code` is still v1's kind name. Only the name that changed
+ * is listed; v1's other names are the same kind here, and NON_NEGATIVE_AMOUNT (dropped —
+ * the table refuses a negative amount) shows as itself.
+ */
+const LEGACY_V1_KINDS: Readonly<Record<string, string>> = {
+  PER_TRANSACTION_LIMIT: 'PER_TXN_LIMIT',
+};
 
 interface PolicyRuleAuditCtx {
   rbac: { id: string; roleLabel: string };
@@ -1295,8 +1459,8 @@ interface PolicyRuleAuditCtx {
  *
  * VeloExpense: ExpenseOS's `writePolicyRuleAudit` runs `withAudit` with an empty body
  * AFTER the write, so a failed audit leaves an unaudited rule. Here the envelope is
- * handed to `withAudit` around the write itself, in one transaction. The violation
- * entity type arrives with `resolveViolation` (w4-02d).
+ * handed to `withAudit` around the write itself, in one transaction. `resolveViolation`
+ * (w4-02e) uses the same envelope with the violation as the entity.
  */
 function policyRuleAudit(ctx: PolicyRuleAuditCtx, details: Record<string, unknown>, entityId?: string) {
   return {
