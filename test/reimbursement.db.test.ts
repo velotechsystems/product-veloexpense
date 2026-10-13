@@ -125,7 +125,6 @@ beforeEach(async () => {
     `BEGIN;
      SELECT set_config('app.audit_purge', 'on', true);
      DELETE FROM audit_entry;
-     DELETE FROM action_token;
      DELETE FROM notification_delivery;
      DELETE FROM notification;
      DELETE FROM activity;

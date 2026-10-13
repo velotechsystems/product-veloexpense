@@ -92,8 +92,8 @@ const PAGES = [
  * Excluded, each for a reason rather than because it failed:
  *   `/login`      — the only page with no session, and `auth.setup.ts` is the
  *                   spec that owns it.
- *   `/approve`     — reached by a signed token from an email, not by a signed-in
- *                   person; `oauth-flow` and the token specs own it.
+ *   `/approve`     — renders nothing: since d62 it only redirects an old emailed
+ *                   link to /approvals, which the crawl visits.
  *   `/signup`, `/signup/verify`, `/invite/accept` — same reason: reached with no
  *                   session, from a link in a mailbox. `signup-flow.spec.ts` and
  *                   `invite-flow.spec.ts` own them.

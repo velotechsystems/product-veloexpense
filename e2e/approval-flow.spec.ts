@@ -6,18 +6,16 @@
  * depend on and no unit test can reach:
  *
  *   - a notification email actually LEAVING the app, over SMTP, and arriving
- *     with its approve link intact. Every VX2-8 vitest runs on the in-memory
- *     transport, which proves the message was composed and nothing about whether
- *     mail works — the same trap VX1-9 recorded for MemoryStorage. In particular
- *     it is the only thing that can catch quoted-printable breaking a token
- *     across two lines, which would kill every approve link in production while
- *     24 tests stayed green.
- *   - an approver deciding from that link with NO SESSION AT ALL. The whole
- *     point of the feature is a person who never signs in, so the spec opens the
- *     link in a context with no cookies.
- *   - the confirm step. Nothing may happen on the GET — mail scanners prefetch
- *     links — so the spec asserts the report is still SUBMITTED after loading
- *     the page and only moves once the button is pressed.
+ *     with its link intact. Every VX2-8 vitest runs on the in-memory transport,
+ *     which proves the message was composed and nothing about whether mail works —
+ *     the same trap VX1-9 recorded for MemoryStorage. Quoted-printable can break a
+ *     long URL across two lines; this is the only place that would show.
+ *   - d62 (13 Oct 2026): the approver decides ON THE REPORT, signed in, having read
+ *     it. The mail carries one link — to the report — and no approve or reject link.
+ *     So the spec follows that link twice: with no session, where it must end at
+ *     sign-in and decide nothing, and in the approver's session, where the
+ *     workbench offers Approve. (Until d62 this spec decided from a one-click
+ *     emailed token with no session at all.)
  *   - the outbox draining through its real entry point, the same `drainOutbox`
  *     the route and the admin button call.
  *
@@ -30,7 +28,14 @@ import { test, expect, type APIRequestContext, type Page } from '@playwright/tes
 import { Pool } from 'pg';
 import { DEFAULT_LOCALE } from '@/lib/i18n/locales';
 import { enumLabel, EVENT_TYPE_COPY } from '@/lib/i18n/catalog/enums';
-import { addExpenseLine, createDraftReport, expectReportStatus, submitOpenReport } from './helpers';
+import {
+  addExpenseLine,
+  APPROVER_STATE,
+  createDraftReport,
+  decideOnWorkbench,
+  expectReportStatus,
+  submitOpenReport,
+} from './helpers';
 /**
  * VX4-7 part 2a: a report's status is asserted through the CATALOGUE, not as the
  * enum's own spelling.
@@ -124,53 +129,32 @@ async function drain(request: APIRequestContext) {
   return res.json() as Promise<{ sent: number; failed: number; dead: number }>;
 }
 
-/** Poll the sink until a message to `to` carries an approve link. */
-async function waitForApproveLink(request: APIRequestContext, to: string): Promise<string> {
+/** Poll the sink until a message to `to` from this run arrives; return the report link in it. */
+async function waitForReportLink(
+  request: APIRequestContext,
+  to: string,
+  reportId: string,
+): Promise<string> {
   let last: Captured[] = [];
   await expect
     .poll(
       async () => {
         last = await inbox(request);
-        return last.some((m) => mine(m, to) && m.text.includes('/approve?token='));
+        return last.some((m) => mine(m, to));
       },
-      {
-        message: `no approve link mailed to ${to}`,
-        timeout: 15_000,
-      },
+      { message: `nothing mailed to ${to}`, timeout: 15_000 },
     )
     .toBe(true);
-  const message = last.find((m) => mine(m, to) && m.text.includes('/approve?token='))!;
-  const match = message.text.match(/(https?:\/\/\S*\/approve\?token=[\w-]+)/);
-  expect(match, 'the mail should carry an absolute approve URL').not.toBeNull();
-
-  // TWO DISTINCT TOKENS, not two occurrences.
-  //
-  // The first version of this counted matches and expected 2; CI found 4, and it
-  // was right. The message is multipart and the sink deliberately keeps every
-  // part in one blob (scripts/e2e-mail.mjs says why it does not split them), so
-  // each link appears once in text/plain and once in text/html. Counting
-  // occurrences was asserting the MIME structure by accident. Counting DISTINCT
-  // tokens asserts the thing that matters: Approve and Reject are two separate
-  // single-use credentials.
-  const tokens = [...message.text.matchAll(/\/approve\?token=([\w-]+)/g)].map((m) => m[1]);
-  const distinct = new Set(tokens);
-  expect(distinct.size, 'approve and reject should be two different tokens').toBe(2);
-
-  // And each appears more than once — which is the useful half of what the old
-  // assertion was checking by accident: BOTH MIME parts carry the links. A
-  // recipient whose client prefers text/plain and one whose client prefers
-  // text/html must each get something to click.
-  for (const token of distinct) {
-    expect(
-      tokens.filter((t) => t === token).length,
-      'each link should appear in both the text and the HTML part',
-    ).toBeGreaterThan(1);
-  }
-  // The FIRST occurrence is Approve — dispatch.ts writes them in that order, in
-  // both parts. Asserted so a change to that order fails here rather than
-  // silently rejecting things somebody meant to approve.
-  expect(match![1], 'the first link should be the approve one').toContain(tokens[0]);
-  return match![1];
+  const message = last.find((m) => mine(m, to))!;
+  const links = [...message.text.matchAll(/https?:\/\/[^\s"<>]+/g)].map((m) => m[0]);
+  const toReport = links.filter((l) => l.endsWith(`/expenses/${reportId}`));
+  // In BOTH MIME parts — a client that prefers text/plain and one that prefers
+  // text/html must each get something to click. (The sink keeps every part in one
+  // blob; scripts/e2e-mail.mjs says why.)
+  expect(toReport.length, 'the report link should be in the text and the HTML part').toBeGreaterThan(1);
+  // And it is the ONLY kind of link: nothing in the mail can decide anything.
+  expect(message.text).not.toMatch(/\/approve\b|token=/);
+  return toReport[0];
 }
 
 async function statusOf(reportTitle: string): Promise<string> {
@@ -215,12 +199,13 @@ test.beforeAll(async ({ request }) => {
   await request.delete(`${MAIL_HTTP}/messages`);
 });
 
-test('an approver decides from an emailed link, without ever signing in', async ({
+test('the approver is mailed a link to the report, and decides there, signed in', async ({
   page,
   request,
   browser,
 }) => {
   const reportUrl = await createAndSubmit(page);
+  const reportId = reportUrl.split('/').pop()!;
 
   // Nothing has been sent yet: submit only ENQUEUES. If this ever fails, the
   // outbox has started sending inline and the retry/queue behaviour is bypassed.
@@ -230,46 +215,44 @@ test('an approver decides from an emailed link, without ever signing in', async 
   expect(summary).toMatchObject({ failed: 0, dead: 0 });
   expect(summary.sent).toBeGreaterThanOrEqual(1);
 
-  const approveUrl = await waitForApproveLink(request, APPROVER);
+  const link = await waitForReportLink(request, APPROVER, reportId);
 
   // The mail says what it is about, so an approver can triage without opening it.
   const mail = (await inbox(request)).find((m) => mine(m, APPROVER))!;
   expect(mail.subject).toBeTruthy();
   expect(mail.text).toContain(TITLE);
   expect(mail.text).toContain('18.50');
+  expect(mail.text).toContain('Review and approve');
   // RFC 3834 — without it a well-behaved out-of-office responder answers this
   // and the two of them keep going (GAP-AUDIT NT-18).
   expect(mail.headers['auto-submitted']).toBe('auto-generated');
   // The link is absolute. An empty APP_URL produced relative-to-nothing links in
   // ExpenseOS and every deployed notification went out unusable (NT-14).
-  expect(approveUrl).toMatch(/^http:\/\/localhost:\d+\/approve\?token=/);
+  expect(link).toMatch(/^http:\/\/localhost:\d+\/expenses\//);
 
-  // ── the approver, with NO session ─────────────────────────────────────────
+  // ── with NO session: the link asks you to sign in, and decides nothing ───
   const anonymous = await browser.newContext({ storageState: { cookies: [], origins: [] } });
   const anonPage = await anonymous.newPage();
   try {
-    await anonPage.goto(approveUrl);
-
-    // It renders a QUESTION and did not decide anything. Mail clients and
-    // security gateways prefetch links; a GET that approved would be approved by
-    // Outlook. This assertion is the guard on that.
-    await expect(anonPage.getByRole('heading', { name: /Approve this expense report/ })).toBeVisible();
-    await expect(anonPage.getByText(TITLE)).toBeVisible();
-    await expect(anonPage.getByText('$18.50')).toBeVisible();
+    await anonPage.goto(link);
+    await expect(anonPage).toHaveURL(/\/login/);
     expect(await statusOf(TITLE)).toBe('SUBMITTED');
-
-    // The page says what the approver is approving, receipts included. (w4-00c: the
-    // ladder's "I reviewed the receipts" tick went with it, d57.)
-    await expect(anonPage.getByText(/none attached/i)).toBeVisible();
-
-    await anonPage.getByRole('button', { name: /Yes, approve it/i }).click();
-    await expect(anonPage.getByRole('heading', { name: 'Approved' })).toBeVisible();
-
-    // Single use: the same URL is now spent.
-    await anonPage.goto(approveUrl);
-    await expect(anonPage.getByRole('heading', { name: /no longer works/i })).toBeVisible();
   } finally {
     await anonymous.close();
+  }
+
+  // ── the approver, signed in: the link opens the report, and Approve is on it ─
+  const approver = await browser.newContext({ storageState: APPROVER_STATE });
+  const approverPage = await approver.newPage();
+  try {
+    await approverPage.goto(link);
+    await expect(approverPage).toHaveURL(new RegExp(`/expenses/${reportId}$`));
+    // Opening it decided nothing.
+    expect(await statusOf(TITLE)).toBe('SUBMITTED');
+    await decideOnWorkbench(approverPage, 'Approve');
+    await expectReportStatus(approverPage, 'APPROVED');
+  } finally {
+    await approver.close();
   }
 
   expect(await statusOf(TITLE)).toBe('APPROVED');
@@ -298,9 +281,9 @@ test('the submitter is notified in-app, and by mail', async ({ page, request }) 
     .toBe(true);
   const theirs = (await inbox(request)).find((m) => mine(m, SUBMITTER))!;
   expect(theirs.text).toContain(TITLE);
-  // No action links: the submitter has nothing to decide, and a button that
-  // always fails is worse than no button.
-  expect(theirs.text).not.toContain('/approve?token=');
+  // A plain link to the report: the submitter has nothing to decide.
+  expect(theirs.text).toContain('Open the report');
+  expect(theirs.text).not.toContain('Review and approve');
 });
 
 test('finance marks it reimbursed, and the queue empties', async ({ browser, request }) => {

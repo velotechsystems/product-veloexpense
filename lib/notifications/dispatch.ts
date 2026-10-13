@@ -8,8 +8,7 @@
  *
  * ── The shape of a delivery, and why it is three transactions ───────────────
  *
- *   tx1  withOrg  claim the row, read everything the message needs, mint the
- *                 approve links. Commits.
+ *   tx1  withOrg  claim the row, read everything the message needs. Commits.
  *   ---  no tx    send. An SMTP round trip takes seconds and must not hold a
  *                 pooled connection or a row lock while it does.
  *   tx2  withOrg  mark SENT, or FAILED with the reason and a backoff.
@@ -48,29 +47,25 @@ import {
   markSent,
   type ClaimedDelivery,
 } from '@/lib/notifications/outbox';
-import { issueActionToken } from '@/lib/notifications/action-tokens';
 import { withTenantDb } from '@/lib/db/prisma';
 import { tenantDbOf } from '@/lib/db/prisma-pg-bridge';
 import { ORG } from '@/lib/tenant/sql';
 import { resolveDecidableTask } from '@/server/lib/reportApproval';
 
 /**
- * The path a token lands on. `/approve` rather than something neutral, and it
- * must never change: TOKENS LIVE FIVE BUSINESS DAYS, so a rename breaks every
- * link already sitting in an approver's inbox. ExpenseOS learned this the other
- * way round — their path is still `/vcc-action` from when the feature was
- * card-only, kept "as the path rather than being renamed to something neutral
- * because tokens live five business days".
- */
-export const APPROVE_PATH = '/approve';
-
-/**
- * Event types where the recipient can act inline, so the mail carries buttons.
+ * Event types addressed to somebody who may have a decision to make, so the mail's
+ * link to the report is its button ("Review and approve") rather than a plain link.
  *
  * TASK_ASSIGNED only. ExpenseOS's set is `SUBMITTED | TASK_ASSIGNED |
  * DEADLINE_NEAR`; VeloExpense emits neither of the others (NT-15, and VX2-7's
  * taxonomy test asserts the list). An APPROVED or REJECTED mail is addressed to
  * the submitter, who has nothing to decide.
+ *
+ * VeloExpense (d62, 13 Oct 2026): an approval email carries NO approve or reject link.
+ * It links to the report, and the approver decides there, signed in, having read it.
+ * ExpenseOS mails single-use approve/reject tokens (`actionTokens.ts`, its
+ * `notification-dispatch.ts`); VeloExpense ported them (VX2-8) and retired them here,
+ * with the `/approve` confirm page and the `action_token` table (0063).
  */
 const ACTIONABLE_EVENTS = new Set(['TASK_ASSIGNED']);
 
@@ -216,8 +211,8 @@ export async function prepareEmail(
   // VX5-5: the TENANT's origin, not the deployment's. `prepareEmail` already runs
   // inside `withOrg(job.organizationId)`, so the slug is the tenant this message
   // is about, by construction — the same reasoning the branding read below has.
-  // An approve link that lands on the tenant's own address arrives where the host
-  // and the reader's session already agree.
+  // A report link that lands on the tenant's own address arrives where the host and
+  // the reader's session already agree.
   // `prepareEmail` runs inside the tenant transaction already, so the current
   // org is the tenant this message is about — read it the way every other
   // tenant-scoped statement in this file does rather than threading an id in.
@@ -232,14 +227,15 @@ export async function prepareEmail(
   // (see `email-shell.ts` on why a remote logo is broken here, not merely blocked).
   const branding = await getBranding(tx);
 
-  // Approve links, only where there is something this person can actually decide.
-  // w4-00c: `resolveDecidableTask` (server/lib/reportApproval.ts, ExpenseOS's) is what the
-  // report page asks, which is the point: the mail offers a button exactly when the report
-  // page would offer one, because both ask the same question in the same place (AP-15). It
-  // is Prisma code, so it runs on the tenant's Prisma transaction — this one, when it is
-  // bridged, or a read of its own in the same tenant.
-  let actions: { approveUrl: string; rejectUrl: string } | null = null;
-  if (origin && ACTIONABLE_EVENTS.has(row.event_type)) {
+  // Whether this person can decide the report: the mail's report link is then its button,
+  // worded for the decision. w4-00c: `resolveDecidableTask` (server/lib/reportApproval.ts,
+  // ExpenseOS's) is what the report page asks, which is the point: the mail says "review
+  // and approve" exactly when the report page will offer Approve, because both ask the
+  // same question in the same place (AP-15). It is Prisma code, so it runs on the tenant's
+  // Prisma transaction — this one, when it is bridged, or a read of its own in the same
+  // tenant.
+  let decide = false;
+  if (reportUrl && ACTIONABLE_EVENTS.has(row.event_type)) {
     const decidable = (db: Parameters<typeof resolveDecidableTask>[0]) =>
       resolveDecidableTask(db, row.subject_id, row.recipient_id, false);
     const bridged = tenantDbOf(tx);
@@ -250,36 +246,7 @@ export async function prepareEmail(
       const org = await tx.query(`SELECT ${ORG}::text AS id`);
       taskId = await withTenantDb(org.rows[0].id as string, decidable);
     }
-    const task = taskId ? { taskId } : null;
-    if (task) {
-      // Any earlier attempt's links are retired first. They cannot be reused —
-      // only the hash is stored, so the raw value is unrecoverable by design — and
-      // leaving them live would accumulate one live credential pair per attempt
-      // for one task. Cost, stated because it is real: if an earlier attempt did
-      // reach the recipient, its buttons now fail and they land on a page that
-      // says so and links to the report.
-      await tx.query(
-        `UPDATE action_token SET consumed_at = clock_timestamp()
-          WHERE delivery_id = $1 AND consumed_at IS NULL`,
-        [claim.id],
-      );
-      const approve = await issueActionToken(tx, {
-        taskId: task.taskId,
-        action: 'APPROVE',
-        recipientId: row.recipient_id,
-        deliveryId: claim.id,
-      });
-      const reject = await issueActionToken(tx, {
-        taskId: task.taskId,
-        action: 'REJECT',
-        recipientId: row.recipient_id,
-        deliveryId: claim.id,
-      });
-      actions = {
-        approveUrl: `${origin}${APPROVE_PATH}?token=${approve.raw}`,
-        rejectUrl: `${origin}${APPROVE_PATH}?token=${reject.raw}`,
-      };
-    }
+    decide = taskId !== null;
   }
 
   const subject =
@@ -292,8 +259,8 @@ export async function prepareEmail(
       to: row.recipient_email,
       subject,
       from: fromAddress(),
-      text: plainText(rendered.body, reportUrl, actions),
-      html: htmlBody(branding.name, branding.brandColor, rendered.body, reportUrl, actions),
+      text: plainText(rendered.body, reportUrl, decide),
+      html: htmlBody(branding.name, branding.brandColor, rendered.body, reportUrl, decide),
       ...threadHeaders(claim.notificationId, row.subject_id, row.recipient_id),
       headers: {
         // RFC 3834. Ported with ExpenseOS's reason, which nobody derives from
@@ -343,20 +310,14 @@ function messageIdDomain(): string {
   );
 }
 
-function plainText(
-  body: string,
-  reportUrl: string | null,
-  actions: { approveUrl: string; rejectUrl: string } | null,
-): string {
+/** The report link's wording: the decision, when the recipient has one to make. */
+function reportLinkLabel(decide: boolean): string {
+  return decide ? 'Review and approve' : 'Open the report';
+}
+
+function plainText(body: string, reportUrl: string | null, decide: boolean): string {
   const parts = [body, ''];
-  if (actions) {
-    parts.push(`Approve: ${actions.approveUrl}`, `Reject:  ${actions.rejectUrl}`, '');
-  }
-  if (reportUrl) parts.push(`Open the report: ${reportUrl}`);
-  // Said in the mail, not only in the docs: a link that acts on one click is a
-  // link a mail scanner can trip. Ours asks first, and the recipient should know
-  // that before they click.
-  if (actions) parts.push('', 'Both links ask you to confirm before anything happens.');
+  if (reportUrl) parts.push(`${reportLinkLabel(decide)}: ${reportUrl}`);
   return parts.join('\n');
 }
 
@@ -366,34 +327,26 @@ function plainText(
  * `notification-dispatch.ts:181` has and the one we inherited from it. It now
  * builds only the BODY, and `emailShell` wraps it in the tenant's branding.
  *
- * THE APPROVE LINK IS THE PRIMARY ACTION AND THEREFORE THE BUTTON, and the split
- * matters more than it looks: the recipient who most needs this mail is the
- * approver deciding from a link without ever signing in (VX2-8), and for them the
- * button IS the product. "Open the report" stays a plain link below it, because a
- * second button competing with the first is how a one-click mistake happens.
- *
- * The confirm-first sentence survives the rewrite verbatim. It is not decoration:
- * a link that acts on one click is a link a mail scanner can trip, ours asks
- * first, and the recipient should know that BEFORE they click rather than after.
+ * d62: for an approver the report link IS the primary action, so it is the button
+ * ("Review and approve"); the decision is made on the report, signed in. For anybody
+ * else it stays a plain link — a button on a mail that asks nothing of its reader
+ * over-promises.
  */
 function htmlBody(
   organizationName: string,
   brandColor: string | null,
   body: string,
   reportUrl: string | null,
-  actions: { approveUrl: string; rejectUrl: string } | null,
+  decide: boolean,
 ): string {
-  const links: { label: string; url: string }[] = [];
-  if (actions) links.push({ label: 'Reject', url: actions.rejectUrl });
-  if (reportUrl) links.push({ label: 'Open the report', url: reportUrl });
-
+  const link = reportUrl ? { label: reportLinkLabel(decide), url: reportUrl } : null;
   return emailShell({
     organizationName,
     brandColor,
     bodyHtml: `<p style="margin:0">${escapeHtml(body)}</p>`,
-    cta: actions ? { label: 'Approve', url: actions.approveUrl } : null,
-    links,
-    footnote: actions ? 'Both links ask you to confirm before anything happens.' : null,
+    cta: decide ? link : null,
+    links: !decide && link ? [link] : [],
+    footnote: null,
   });
 }
 
