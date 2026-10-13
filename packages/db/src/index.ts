@@ -9,9 +9,8 @@
  */
 export { Prisma, type PrismaClient } from '@/lib/generated/prisma/client';
 // w4-02a: the policy engine's model types. `FxRate` is VeloExpense's own table; `ExpensePolicy`
-// is ExpenseOS's shape until its table arrives (w4-02d) — see ./expensePolicy.
-export type { FxRate } from '@/lib/generated/prisma/client';
-export type { ExpensePolicy } from './expensePolicy';
+// is ExpenseOS's per-category policy, on `expense_category_policy` (w4-02c, 0065).
+export type { ExpensePolicy, FxRate } from '@/lib/generated/prisma/client';
 export {
   DocExtractStatus,
   DocScanStatus,

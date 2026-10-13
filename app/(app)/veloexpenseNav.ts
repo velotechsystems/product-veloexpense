@@ -5,7 +5,6 @@ import {
   IconChartBar,
   IconChartPie,
   IconCreditCard,
-  IconFileDescription,
   IconLanguage,
   IconListNumbers,
   IconPalette,
@@ -59,7 +58,6 @@ export const VELOEXPENSE_ROUTES: Readonly<Record<string, string | null>> = {
   // VeloExpense's are admin screens, so they are VeloExpense items below until ported.
   '/analytics': null,
   '/budgets': null,
-  '/admin/policies': null,
   '/admin/audit-trail': null,
   '/admin/fraud-detection': null,
   '/admin/control-evaluation': null,
@@ -114,7 +112,9 @@ export interface VeloExpenseNavItem {
 export const VELOEXPENSE_ITEMS: Readonly<Record<string, readonly VeloExpenseNavItem[]>> = {
   expenseManagement: [
     { key: 'reimbursements', icon: IconBuildingBank, to: '/admin/reimbursements', requires: VELOEXPENSE_ADMIN },
-    { key: 'expensePolicies', icon: IconFileDescription, to: '/admin/expense-policies', requires: VELOEXPENSE_ADMIN },
+    // w4-02c: VeloExpense's own `expensePolicies` item (/admin/expense-policies) went when
+    // ExpenseOS's screen of that name was ported (/admin/policies). The old editor is still
+    // what lib/policy enforces until the cutover (w4-02d) and stays reachable at its URL.
   ],
   financeReporting: [
     {
@@ -173,6 +173,8 @@ export const PORTED_SCREENS: readonly string[] = [
   '/admin/approval-workflows',
   // w4-02b: the Rule Builder.
   '/admin/policy-rules',
+  // w4-02c: the per-category policies.
+  '/admin/policies',
 ];
 
 /** Whether the top bar should title this path: it is a ported ExpenseOS screen. */

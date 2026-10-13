@@ -2820,6 +2820,62 @@ describe('RLS tenant isolation', () => {
     await admin.query('DELETE FROM policy_rule');
   });
 
+  /* ── per-category policies (Wave 4, w4-02c, migration 0065) ──────────────────────
+   *
+   * ExpenseOS's ExpensePolicy: a category's limits are its tenant's own, and a policy may
+   * not hang off another tenant's category (composite key).
+   */
+  it('category policies are tenant-isolated, and cannot hang off another tenant\'s category', async () => {
+    const seed = (org: string, notes: string) =>
+      withOrg(org, async (tx) => {
+        const category = (
+          await tx.query('SELECT id FROM expense_category WHERE organization_id = $1 LIMIT 1', [org])
+        ).rows[0].id as string;
+        await tx.query(
+          `INSERT INTO expense_category_policy (organization_id, category_id, per_transaction_limit_minor, notes)
+           VALUES ($1, $2, 5000, $3)`,
+          [org, category, notes],
+        );
+        return category;
+      });
+    const categoryA = await seed(orgA, 'Policy A');
+    await seed(orgB, 'Policy B');
+
+    for (const [org, label] of [
+      [orgA, 'A'],
+      [orgB, 'B'],
+    ] as const) {
+      const rows = await withOrg(org, (tx) => tx.query('SELECT notes FROM expense_category_policy'));
+      expect(rows.rows).toEqual([{ notes: `Policy ${label}` }]);
+    }
+    expect((await withoutOrg((tx) => tx.query('SELECT * FROM expense_category_policy'))).rows).toHaveLength(0);
+    expect(
+      (await withPlatformRead((tx) => tx.query('SELECT * FROM expense_category_policy'))).rows,
+    ).toHaveLength(0);
+
+    // WITH CHECK: naming the other tenant is refused outright.
+    await expect(
+      withOrg(orgB, (tx) =>
+        tx.query(
+          `INSERT INTO expense_category_policy (organization_id, category_id) VALUES ($1, gen_random_uuid())`,
+          [orgA],
+        ),
+      ),
+    ).rejects.toThrow(/row-level security|violates/i);
+    // Composite key: B may not write a policy for A's category.
+    await admin.query('DELETE FROM expense_category_policy WHERE category_id = $1', [categoryA]);
+    await expect(
+      withOrg(orgB, (tx) =>
+        tx.query(`INSERT INTO expense_category_policy (organization_id, category_id) VALUES ($1, $2)`, [
+          orgB,
+          categoryA,
+        ]),
+      ),
+    ).rejects.toThrow(/foreign key/i);
+
+    await admin.query('DELETE FROM expense_category_policy');
+  });
+
   it('approval workflows, versions, runs and tasks are tenant-isolated, across every key', async () => {
     // w4-00d: each tenant's workflow, version, run and task are the suite's own seed (above),
     // which the dropped ladder's rows used to occupy; this reads their ids back.

@@ -86,6 +86,8 @@ const adminAndOthers = {
  * error rather than a refused write.
  */
 const CONFIG_ACTIONS = {
+  /** w4-02c: a category's policy (ExpenseOS's `config.policy.update`). */
+  policy: 'EXPENSE_POLICY_CHANGED',
   fxRate: 'FX_RATE_ADDED',
   mileageRate: 'MILEAGE_RATE_CHANGED',
   /** w4-02b: every rule-instance write, the operation in `details.op` (as ExpenseOS). */

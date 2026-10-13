@@ -35,7 +35,8 @@
  * audited (ExpenseOS's per-diem writes are not, though this header says they are), and a
  * refusal the table makes — another tenant's category or scope, an end before the
  * start, a negative cap — is a 4xx (`perDiemWrite`). `policyRule` with the Rule Builder,
- * /admin/policy-rules (w4-02b, d63): see its section below for what differs.
+ * /admin/policy-rules (w4-02b, d63), and `expensePolicy` with /admin/policies (w4-02c,
+ * d65): see their sections below for what differs.
  */
 
 import { auditActions, withAudit } from '@expenseos/audit';
@@ -51,6 +52,121 @@ import { LINE_FIELDS, REPORT_FIELDS } from '@/server/policy/facts';
 import { RULE_KIND_CODES, RULE_KINDS } from '@/server/policy/kinds';
 import { REFUSAL_KEYS, refusal } from '@/server/refusal';
 import { router, withPermission } from '@/server/trpc';
+
+// ── Common shapes ────────────────────────────────────────────────────
+
+/** BigInt cents come back to clients as strings — same convention used
+ *  by every other money-bearing tRPC router in the app. */
+function minorOut(n: bigint | null | undefined): string | null {
+  return n == null ? null : n.toString();
+}
+
+/** Z input that accepts string|number|bigint and coerces to bigint
+ *  cents (with a sanity range). null → null (use to clear a limit). */
+const optionalMinorInput = z
+  .union([z.string(), z.number(), z.bigint(), z.null()])
+  .transform((v) => {
+    if (v == null) return null;
+    if (typeof v === 'bigint') return v;
+    const n = BigInt(typeof v === 'string' ? v : Math.round(v));
+    return n;
+  })
+  .nullable();
+
+// ── ExpensePolicy ────────────────────────────────────────────────────
+//
+// VeloExpense (w4-02c, d65): ExpenseOS's per-category policy, on `expense_category_policy`
+// (0065). Nothing reads it until the cutover (w4-02d); lib/policy still enforces the limits
+// on `expense_policy`. Differences, marked: the screen is told the organization's policy
+// currency (`currency`), where ExpenseOS's assumes CAD; what the table refuses is a 4xx
+// (`expensePolicyWrite`); and the audit action is VeloExpense's registry name.
+
+const expensePolicyOut = (p: {
+  categoryId: string;
+  receiptRequired: boolean;
+  approvalRequired: boolean;
+  perTransactionLimitMinor: bigint | null;
+  dailyLimitMinor: bigint | null;
+  monthlyLimitMinor: bigint | null;
+  annualLimitMinor: bigint | null;
+  notes: string | null;
+}) => ({
+  categoryId: p.categoryId,
+  receiptRequired: p.receiptRequired,
+  approvalRequired: p.approvalRequired,
+  perTransactionLimitMinor: minorOut(p.perTransactionLimitMinor),
+  dailyLimitMinor: minorOut(p.dailyLimitMinor),
+  monthlyLimitMinor: minorOut(p.monthlyLimitMinor),
+  annualLimitMinor: minorOut(p.annualLimitMinor),
+  notes: p.notes,
+});
+
+const expensePolicyPatch = z.object({
+  receiptRequired: z.boolean().optional(),
+  approvalRequired: z.boolean().optional(),
+  perTransactionLimitMinor: optionalMinorInput.optional(),
+  dailyLimitMinor: optionalMinorInput.optional(),
+  monthlyLimitMinor: optionalMinorInput.optional(),
+  annualLimitMinor: optionalMinorInput.optional(),
+  notes: z.string().nullable().optional(),
+});
+
+/** VeloExpense: a policy patch with its BigInt limits as minor-unit strings, for the audit. */
+function auditablePatch(patch: z.infer<typeof expensePolicyPatch>): Record<string, unknown> {
+  return Object.fromEntries(
+    Object.entries(patch).map(([k, v]) => [k, typeof v === 'bigint' ? v.toString() : v]),
+  );
+}
+
+/**
+ * VeloExpense: what `expense_category_policy` refuses (0065), as a 4xx. A category the
+ * tenant does not have fails the composite foreign key (P2003). If another tenant already
+ * has a policy row under that id, the upsert's ON CONFLICT reaches a row RLS hides, which
+ * Postgres refuses ("new row violates row-level security policy"; P2002 if it ever surfaces
+ * as the key instead); that is answered the same way, so it says nothing about the other
+ * tenant. And a limit cannot be negative.
+ */
+function expensePolicyRefusal(cause: unknown): TRPCError | null {
+  const err = cause as { code?: string; message?: string } | null;
+  const hiddenRow =
+    err?.message?.includes('row-level security policy') &&
+    err.message.includes('expense_category_policy');
+  if (err?.code === 'P2003' || err?.code === 'P2002' || hiddenRow) {
+    return new TRPCError({
+      code: 'BAD_REQUEST',
+      message: 'That category is not one this organization has.',
+      cause,
+    });
+  }
+  if (err?.message?.includes('expense_category_policy_limits_nonnegative')) {
+    return new TRPCError({ code: 'BAD_REQUEST', message: 'A limit cannot be negative.', cause });
+  }
+  return null;
+}
+
+/** VeloExpense: `withPermission(P.config.policyUpdate)` with `expensePolicyRefusal` applied. */
+function expensePolicyWrite() {
+  return withPermission(P.config.policyUpdate).use(async ({ next }) => {
+    const result = await next();
+    if (!result.ok) {
+      const refused = expensePolicyRefusal(result.error.cause);
+      if (refused) throw refused;
+    }
+    return result;
+  });
+}
+
+/**
+ * VeloExpense: the organization's policy currency (`policy_currency_code`, 0015, NOT NULL
+ * DEFAULT 'CAD'), read in the tenant's transaction. ExpenseOS reads a `policyCurrency`
+ * system flag. CAD when there is no organization row, as ExpenseOS defaults.
+ */
+async function policyCurrencyOf(db: TenantDb): Promise<string> {
+  const rows = await db.$queryRaw<Array<{ code: string }>>`
+    SELECT policy_currency_code AS code FROM organization
+     WHERE id = NULLIF(current_setting('app.current_org', true), '')::uuid`;
+  return rows[0]?.code ?? 'CAD';
+}
 
 // ── FxRate ───────────────────────────────────────────────────────────
 
@@ -467,6 +583,76 @@ function policyRuleDetails(op: string, data: Partial<ReturnType<typeof coerceRul
 // ── Router ───────────────────────────────────────────────────────────
 
 export const policiesRouter = router({
+  // ── ExpensePolicy (one row per ExpenseCategory) ────────────────
+  expensePolicy: router({
+    list: withPermission(P.config.policyRead).query(async ({ ctx }) => {
+      const rows = await ctx.db.expensePolicy.findMany({
+        orderBy: { categoryId: 'asc' },
+      });
+      return rows.map(expensePolicyOut);
+    }),
+    /** Admin "Expense Policies" page view — every active category
+     *  joined with its policy (or null when missing). Returned in
+     *  sortOrder so the table reads the same as the category picker. */
+    byCategory: withPermission(P.config.policyRead).query(async ({ ctx }) => {
+      const cats = await ctx.db.expenseCategory.findMany({
+        where: { active: true },
+        orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }],
+        // The GL account is a reference now, so its number comes from the joined
+        // row rather than off the category.
+        include: { policy: true, glAccount: { select: { number: true } } },
+      });
+      return cats.map((c) => ({
+        category: {
+          id: c.id,
+          label: c.label as Record<string, string>,
+          icon: c.icon,
+          glAccount: c.glAccount?.number ?? null,
+        },
+        policy: c.policy ? expensePolicyOut(c.policy) : null,
+      }));
+    }),
+    /** VeloExpense: the currency the limits are in — the organization's policy currency —
+     *  so the screen labels and converts them in it (ExpenseOS's screen assumes CAD). */
+    currency: withPermission(P.config.policyRead).query(async ({ ctx }) => ({
+      code: await policyCurrencyOf(ctx.db),
+    })),
+    /** Upsert by categoryId. Always called with a known category id —
+     *  the policy row is created at seed time, so this is effectively
+     *  an update, but using upsert keeps the handler tolerant if
+     *  someone hand-deleted a row. */
+    upsert: expensePolicyWrite()
+      .input(z.object({ categoryId: z.string().uuid(), patch: expensePolicyPatch }))
+      .mutation(async ({ ctx, input }) => {
+        // Hash-chained via withAudit — a placeholder `entryHash: ''` collides on
+        // the second policy edit (the hash column is unique).
+        const updated = await withAudit(
+          ctx.db,
+          {
+            action: auditActions.config('policy'),
+            entityType: 'ExpensePolicy',
+            entityId: input.categoryId,
+            actor: {
+              kind: 'user',
+              id: ctx.rbac.id,
+              name: ctx.session.user.name ?? ctx.session.user.email,
+              roleLabel: ctx.rbac.roleLabel,
+            },
+            // VeloExpense: the limits as minor-unit strings. The audit chain refuses a BigInt
+            // (it would not survive the hash's canonical JSON), which ExpenseOS's patch holds.
+            details: { categoryId: input.categoryId, patch: auditablePatch(input.patch) },
+          },
+          (tx) =>
+            tx.expensePolicy.upsert({
+              where: { categoryId: input.categoryId },
+              update: input.patch,
+              create: { categoryId: input.categoryId, ...input.patch },
+            }),
+        );
+        return expensePolicyOut(updated);
+      }),
+  }),
+
   // ── FxRate (append-only — new fetchedAt per refresh) ───────────
   fxRate: router({
     /** Latest row per (base, quote) pair — what the engine uses at
@@ -932,12 +1118,7 @@ export const policiesRouter = router({
        * VeloExpense: the organization's `policy_currency_code` (0015, NOT NULL DEFAULT
        * 'CAD'), read in the tenant's transaction, rather than a `policyCurrency` system flag.
        */
-      policyCurrency:
-        (
-          await ctx.db.$queryRaw<Array<{ code: string }>>`
-            SELECT policy_currency_code AS code FROM organization
-             WHERE id = NULLIF(current_setting('app.current_org', true), '')::uuid`
-        )[0]?.code ?? 'CAD',
+      policyCurrency: await policyCurrencyOf(ctx.db),
       kinds: RULE_KIND_CODES.map((code) => {
         const k = RULE_KINDS[code]!;
         return {

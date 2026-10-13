@@ -88,7 +88,8 @@ export const ModelName = {
   ApprovalInstance: 'ApprovalInstance',
   ApprovalTask: 'ApprovalTask',
   Delegation: 'Delegation',
-  PolicyRule: 'PolicyRule'
+  PolicyRule: 'PolicyRule',
+  ExpensePolicy: 'ExpensePolicy'
 } as const
 
 export type ModelName = (typeof ModelName)[keyof typeof ModelName]
@@ -749,6 +750,23 @@ export const PolicyRuleScalarFieldEnum = {
 } as const
 
 export type PolicyRuleScalarFieldEnum = (typeof PolicyRuleScalarFieldEnum)[keyof typeof PolicyRuleScalarFieldEnum]
+
+
+export const ExpensePolicyScalarFieldEnum = {
+  categoryId: 'categoryId',
+  organizationId: 'organizationId',
+  receiptRequired: 'receiptRequired',
+  approvalRequired: 'approvalRequired',
+  perTransactionLimitMinor: 'perTransactionLimitMinor',
+  dailyLimitMinor: 'dailyLimitMinor',
+  monthlyLimitMinor: 'monthlyLimitMinor',
+  annualLimitMinor: 'annualLimitMinor',
+  notes: 'notes',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+} as const
+
+export type ExpensePolicyScalarFieldEnum = (typeof ExpensePolicyScalarFieldEnum)[keyof typeof ExpensePolicyScalarFieldEnum]
 
 
 export const SortOrder = {
