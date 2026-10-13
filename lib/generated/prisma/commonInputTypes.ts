@@ -483,6 +483,23 @@ export type DecimalWithAggregatesFilter<$PrismaModel = never> = {
   _max?: Prisma.NestedDecimalFilter<$PrismaModel>
 }
 
+export type EnumPolicyViolationSeverityFilter<$PrismaModel = never> = {
+  equals?: $Enums.PolicyViolationSeverity | Prisma.EnumPolicyViolationSeverityFieldRefInput<$PrismaModel>
+  in?: $Enums.PolicyViolationSeverity[] | Prisma.ListEnumPolicyViolationSeverityFieldRefInput<$PrismaModel>
+  notIn?: $Enums.PolicyViolationSeverity[] | Prisma.ListEnumPolicyViolationSeverityFieldRefInput<$PrismaModel>
+  not?: Prisma.NestedEnumPolicyViolationSeverityFilter<$PrismaModel> | $Enums.PolicyViolationSeverity
+}
+
+export type EnumPolicyViolationSeverityWithAggregatesFilter<$PrismaModel = never> = {
+  equals?: $Enums.PolicyViolationSeverity | Prisma.EnumPolicyViolationSeverityFieldRefInput<$PrismaModel>
+  in?: $Enums.PolicyViolationSeverity[] | Prisma.ListEnumPolicyViolationSeverityFieldRefInput<$PrismaModel>
+  notIn?: $Enums.PolicyViolationSeverity[] | Prisma.ListEnumPolicyViolationSeverityFieldRefInput<$PrismaModel>
+  not?: Prisma.NestedEnumPolicyViolationSeverityWithAggregatesFilter<$PrismaModel> | $Enums.PolicyViolationSeverity
+  _count?: Prisma.NestedIntFilter<$PrismaModel>
+  _min?: Prisma.NestedEnumPolicyViolationSeverityFilter<$PrismaModel>
+  _max?: Prisma.NestedEnumPolicyViolationSeverityFilter<$PrismaModel>
+}
+
 export type NestedUuidFilter<$PrismaModel = never> = {
   equals?: string | Prisma.StringFieldRefInput<$PrismaModel>
   in?: string[] | Prisma.ListStringFieldRefInput<$PrismaModel>
@@ -905,6 +922,23 @@ export type NestedDecimalWithAggregatesFilter<$PrismaModel = never> = {
   _sum?: Prisma.NestedDecimalFilter<$PrismaModel>
   _min?: Prisma.NestedDecimalFilter<$PrismaModel>
   _max?: Prisma.NestedDecimalFilter<$PrismaModel>
+}
+
+export type NestedEnumPolicyViolationSeverityFilter<$PrismaModel = never> = {
+  equals?: $Enums.PolicyViolationSeverity | Prisma.EnumPolicyViolationSeverityFieldRefInput<$PrismaModel>
+  in?: $Enums.PolicyViolationSeverity[] | Prisma.ListEnumPolicyViolationSeverityFieldRefInput<$PrismaModel>
+  notIn?: $Enums.PolicyViolationSeverity[] | Prisma.ListEnumPolicyViolationSeverityFieldRefInput<$PrismaModel>
+  not?: Prisma.NestedEnumPolicyViolationSeverityFilter<$PrismaModel> | $Enums.PolicyViolationSeverity
+}
+
+export type NestedEnumPolicyViolationSeverityWithAggregatesFilter<$PrismaModel = never> = {
+  equals?: $Enums.PolicyViolationSeverity | Prisma.EnumPolicyViolationSeverityFieldRefInput<$PrismaModel>
+  in?: $Enums.PolicyViolationSeverity[] | Prisma.ListEnumPolicyViolationSeverityFieldRefInput<$PrismaModel>
+  notIn?: $Enums.PolicyViolationSeverity[] | Prisma.ListEnumPolicyViolationSeverityFieldRefInput<$PrismaModel>
+  not?: Prisma.NestedEnumPolicyViolationSeverityWithAggregatesFilter<$PrismaModel> | $Enums.PolicyViolationSeverity
+  _count?: Prisma.NestedIntFilter<$PrismaModel>
+  _min?: Prisma.NestedEnumPolicyViolationSeverityFilter<$PrismaModel>
+  _max?: Prisma.NestedEnumPolicyViolationSeverityFilter<$PrismaModel>
 }
 
 

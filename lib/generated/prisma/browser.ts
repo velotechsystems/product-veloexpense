@@ -208,3 +208,8 @@ export type ApprovalTask = Prisma.ApprovalTaskModel
  * 
  */
 export type Delegation = Prisma.DelegationModel
+/**
+ * Model PolicyRule
+ * 
+ */
+export type PolicyRule = Prisma.PolicyRuleModel

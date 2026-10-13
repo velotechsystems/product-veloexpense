@@ -187,6 +187,9 @@ export const AUDIT_ACTIONS = [
   'PER_DIEM_RATE_CREATED',
   'PER_DIEM_RATE_UPDATED',
   'PER_DIEM_RATE_DELETED',
+  /* Policy rules — the w4-02b port (ExpenseOS's `config.policyRule.update`): one action for
+     a rule instance's create, update and delete, the operation in `details.op`. */
+  'POLICY_RULE_CHANGED',
   'MODULE_ENABLED',
   'MODULE_DISABLED',
   'USER_LOCALE_CHANGED',

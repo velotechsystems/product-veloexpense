@@ -50,7 +50,6 @@ export const VELOEXPENSE_ROUTES: Readonly<Record<string, string | null>> = {
   '/users': null,
   '/travel': null,
   '/admin/travel-categories': null,
-  '/admin/policy-rules': null,
   '/admin/policy-violations': null,
   '/virtual-cards/requests': null,
   '/virtual-cards': null,
@@ -172,6 +171,8 @@ export const PORTED_SCREENS: readonly string[] = [
   '/admin/per-diem-rates',
   // w4-01: the workflow builder (its editor, `/[id]`, by inheritance).
   '/admin/approval-workflows',
+  // w4-02b: the Rule Builder.
+  '/admin/policy-rules',
 ];
 
 /** Whether the top bar should title this path: it is a ported ExpenseOS screen. */

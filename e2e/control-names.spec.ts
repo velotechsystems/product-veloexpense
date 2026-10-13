@@ -17,6 +17,7 @@ const SCREENS: Array<{ path: string; add: string }> = [
   { path: '/admin/fiscal-years', add: 'Add fiscal year' },
   { path: '/admin/mileage-rates', add: 'Add rate' },
   { path: '/admin/per-diem-rates', add: 'Add rate' },
+  { path: '/admin/policy-rules', add: 'New Rule' },
 ];
 
 async function unnamedControls(page: Page): Promise<string[]> {

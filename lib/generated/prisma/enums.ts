@@ -19,3 +19,12 @@ export const ExpenseReportStatus = {
 } as const
 
 export type ExpenseReportStatus = (typeof ExpenseReportStatus)[keyof typeof ExpenseReportStatus]
+
+
+export const PolicyViolationSeverity = {
+  INFO: 'INFO',
+  WARNING: 'WARNING',
+  BLOCK: 'BLOCK'
+} as const
+
+export type PolicyViolationSeverity = (typeof PolicyViolationSeverity)[keyof typeof PolicyViolationSeverity]
