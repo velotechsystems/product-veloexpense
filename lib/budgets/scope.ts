@@ -98,8 +98,17 @@ export interface BudgetSnapshot {
    * into "you are fine".
    */
   unconvertibleMinor: bigint;
-  /** THIS report's contribution, converted. Not yet in the stored rollup. */
+  /** THIS report's contribution, converted. In the stored rollup only once submitted —
+   *  see `reportInRollup`. */
   reportMinor: bigint;
+  /**
+   * Whether THIS report is already counted in `actualMinor` / `pendingMinor`: true once it
+   * is past DRAFT (`COUNTED_STATUSES`), because submit recomputes the rollup on the
+   * transition. w4-04: the approval engine builds its facts AFTER that recompute, so adding
+   * `reportMinor` again there would count the report twice and route on a number nobody
+   * was shown.
+   */
+  reportInRollup: boolean;
   /**
    * Currency codes in THIS report whose spend on this budget could not be
    * converted. Empty is the normal case; non-empty is a diagnostic an admin can
@@ -108,9 +117,10 @@ export interface BudgetSnapshot {
   reportMissingRateFrom: string[];
 }
 
-/** What the period will stand at if this report is approved as filed. */
+/** What the period will stand at if this report is approved as filed — with this report
+ *  counted exactly once, whether or not the rollup already holds it. */
 export function projectedMinor(s: BudgetSnapshot): bigint {
-  return s.actualMinor + s.pendingMinor + s.reportMinor;
+  return s.actualMinor + s.pendingMinor + (s.reportInRollup ? 0n : s.reportMinor);
 }
 
 /**

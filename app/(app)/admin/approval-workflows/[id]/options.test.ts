@@ -77,15 +77,13 @@ describe('fieldsForSubject', () => {
     expect(fields).toContain('lineCount');
   });
 
-  it('hides, on a report, the facts the engine does not fill yet (VeloExpense)', () => {
-    /** VeloExpense: stated rather than computed until w4-02 / w4-04, so a condition on one
-     *  would never match (packages/approvals/src/engine.ts). */
+  it('offers, on a report, the facts the engine now fills (VeloExpense, w4-04)', () => {
+    /** VeloExpense: w4-01 hid these while the engine stated them rather than computed them;
+     *  since w4-04 it computes all three, so a condition on them can match. */
     const fields = fieldsForSubject('EXPENSE_REPORT');
     for (const f of ['requiresApproval', 'overBudget', 'budgetOverageMinor'] as const) {
-      expect(fields, f).not.toContain(f);
+      expect(fields, f).toContain(f);
     }
-    expect(fields).toContain('hasPolicyViolation');
-    expect(fields).toContain('overPerDiem');
   });
 
   it('offers everything for a subject with no hidden set', () => {

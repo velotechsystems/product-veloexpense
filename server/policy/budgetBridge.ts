@@ -2,21 +2,23 @@
  * VeloExpense (w4-02d, d66): the budget impacts ExpenseOS's `BUDGET_OVERAGE` kind reads,
  * from VeloExpense's own budgets.
  *
- * ExpenseOS computes them in its approval engine (`evaluateReportAgainstBudgets`), which
- * arrives with budget checks inside approvals (w4-04). Until then this maps VeloExpense's
+ * ExpenseOS computes them in its approval engine (`evaluateReportAgainstBudgets`). Here the
+ * engine reads THIS (packages/approvals/src/budgets.ts, w4-04), so the number an approver is
+ * routed on is the number the submitter was shown — ExpenseOS's rule. It maps VeloExpense's
  * per-period projection (`lib/budgets`, the same numbers v1's `BUDGET_OVERAGE` read) into
- * ExpenseOS's `BudgetImpact` shape, so the warning tenants already had keeps firing:
+ * ExpenseOS's `BudgetImpact` shape:
  *
  *   · an impact is a period this report's spend takes PAST its budget (projected spend —
- *     approved + in flight + this report — over the amount), as v1 judged it; its
+ *     approved + in flight + this report, the report counted once whatever its status,
+ *     w4-04 — over the amount), as v1 judged it; its
  *     `crossedBp` is the 100% line (10000 bp). VeloExpense's alert thresholds below 100%
  *     are the alerts' business (lib/budgets/alerts.ts), not the submit check's, as before;
  *   · `glAccountId` and `monthIndex` (1-based within the budget's year) are read from the
  *     budget and its periods, as ExpenseOS reports them.
  *
  * Not carried: v1's separate INFO when a period's projection rests on spend that could not
- * be converted. `BudgetImpact` has no place for it; budget checks in approvals (w4-04)
- * decide how ExpenseOS's engine reports it.
+ * be converted. `BudgetImpact` has no place for it, and ExpenseOS's engine routes on the
+ * converted spend alone, as the approval facts here do (w4-04).
  */
 import type { TenantDb } from '@/lib/db/prisma';
 import { queryRunnerOf } from '@/lib/db/prisma-pg-bridge';

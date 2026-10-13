@@ -28,20 +28,11 @@ const REPORT_ONLY_FIELDS = [
   'budgetOverageMinor',
 ] as const satisfies readonly PredicateField[];
 
-/**
- * VeloExpense (w4-01): also hidden on a report, for the same reason — the engine does not
- * populate them yet. `requiresApproval` reads false until category policies (w4-02), and
- * the budget pair reads "not over" until budget checks inside approvals (w4-04)
- * (packages/approvals/src/engine.ts). A condition on them would silently never match.
- */
-const VELOEXPENSE_NOT_YET: readonly PredicateField[] = [
-  'requiresApproval',
-  'overBudget',
-  'budgetOverageMinor',
-];
-
+// VeloExpense: w4-01 also hid `requiresApproval` and the budget pair on a report while the
+// engine stated them rather than computed them; since w4-04 it computes all three
+// (packages/approvals/src/engine.ts), so the list is ExpenseOS's again.
 const SUBJECT_HIDDEN_FIELDS: Record<string, readonly PredicateField[]> = {
-  EXPENSE_REPORT: ['interval', 'vendorId', ...VELOEXPENSE_NOT_YET],
+  EXPENSE_REPORT: ['interval', 'vendorId'],
   VIRTUAL_CARD_REQUEST: REPORT_ONLY_FIELDS,
 };
 
