@@ -23,7 +23,7 @@
  * regression test, and it is the one test here that could not have been written
  * without noticing the ownership check is somewhere else.
  */
-import { describe, it, expect, beforeAll, beforeEach, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, beforeEach, afterAll, afterEach } from 'vitest';
 import { Pool } from 'pg';
 // w4-00c: the lifecycle starts the approval engine, which needs the tenant's Prisma
 // transaction (test/support/tenant-tx.ts) — the same `QueryRunner`, under the same name.
@@ -698,9 +698,9 @@ describe('BUDGET_OVERAGE (BG-4)', () => {
 
   it('raises nothing on spend it cannot convert (w4-02d: v1’s separate INFO is not carried)', async () => {
     // v1 raised an INFO beside the overage saying the projection was a floor. ExpenseOS's
-    // BudgetImpact has no place for it (server/policy/budgetBridge.ts); budget checks in
-    // approvals (w4-04) decide how the ported engine reports it. Pinned so the gap is
-    // visible rather than assumed.
+    // BudgetImpact has no place for it (server/policy/budgetBridge.ts), and ExpenseOS's
+    // engine routes on the converted spend alone (it counts the rest, unreported) — w4-04
+    // does the same. Pinned so the gap is visible rather than assumed.
     const rule = await budgetRule();
     await makeBudget({ amountMinor: 100000, currencyCode: 'CAD' });
     const reportId = await draftIn('USD', 1800);
@@ -1508,5 +1508,133 @@ describe('the budgets admin service (VX4-5 part 3b)', () => {
       const left = await admin.query(`SELECT count(*)::int AS n FROM ${table}`);
       expect(left.rows[0].n, table).toBe(0);
     }
+  });
+});
+
+/* ═════════════════════════════════════════════════════════════════════════════
+ * w4-04 — the approval engine routes on the SAME budget number the submitter was shown.
+ *
+ * ExpenseOS's rule for `evaluateReportAgainstBudgets`: "Shared by the submit-time warning
+ * and the routing facts, so the number an approver is routed on is the same number the
+ * submitter was shown." Here both read server/policy/budgetBridge.ts. The trap this block
+ * pins is ORDER: submit recomputes the rollup (the report goes into pending) BEFORE it routes,
+ * so a projection that added the report on top of pending again would route on twice its
+ * weight. Each case publishes a workflow whose match condition reads a fact, submits, and
+ * asserts which version the report landed on.
+ * ═════════════════════════════════════════════════════════════════════════════ */
+
+describe('the approval engine routes on the budget and category facts (w4-04)', () => {
+  const published: string[] = [];
+
+  /** A published, active, non-default workflow at priority 10 with this match condition,
+   *  routing (like the default) to the manager. Returns its version id. */
+  async function workflowWhen(condition: unknown): Promise<string> {
+    const { defaultExpenseWorkflowGraph } = await import('@/lib/approvals/defaultWorkflow');
+    return withOrg(orgId, async (tx) => {
+      const wf = await tx.query(
+        `INSERT INTO approval_workflow (key, name, subject_type, is_default, priority, active)
+         VALUES ($1, $1, 'EXPENSE_REPORT', false, 10, true) RETURNING id`,
+        [`w404-${Math.random().toString(36).slice(2, 8)}`],
+      );
+      const v = await tx.query(
+        `INSERT INTO approval_workflow_version (workflow_id, version, match_condition, graph, status, published_at)
+         VALUES ($1, 1, $2::jsonb, $3::jsonb, 'PUBLISHED', now()) RETURNING id`,
+        [wf.rows[0].id, JSON.stringify(condition), JSON.stringify(defaultExpenseWorkflowGraph())],
+      );
+      await tx.query('UPDATE approval_workflow SET current_version_id = $1 WHERE id = $2', [
+        v.rows[0].id,
+        wf.rows[0].id,
+      ]);
+      published.push(wf.rows[0].id);
+      return v.rows[0].id as string;
+    });
+  }
+
+  async function routedVersion(reportId: string): Promise<string> {
+    await withOrg(orgId, (tx) => lifecycle.submitReport(tx, reportId, empId));
+    const r = await admin.query(
+      `SELECT i.workflow_version_id FROM expense_report r
+         JOIN approval_instance i ON i.id = r.approval_instance_id WHERE r.id = $1`,
+      [reportId],
+    );
+    return r.rows[0].workflow_version_id as string;
+  }
+
+  afterEach(async () => {
+    await admin.query('TRUNCATE expense_report CASCADE');
+    await admin.query('DELETE FROM expense_category_policy');
+    if (published.length) {
+      // The instances name the versions they ran (approval_instance_version_fkey), and a
+      // report's truncate does not reach them.
+      await admin.query(
+        `DELETE FROM approval_instance WHERE workflow_version_id IN
+           (SELECT id FROM approval_workflow_version WHERE workflow_id = ANY($1::uuid[]))`,
+        [published],
+      );
+      await admin.query('UPDATE approval_workflow SET current_version_id = NULL WHERE id = ANY($1::uuid[])', [published]);
+      await admin.query('DELETE FROM approval_workflow WHERE id = ANY($1::uuid[])', [published]);
+      published.length = 0;
+    }
+  });
+
+  it('routes an over-budget report on its overage, counting the report ONCE', async () => {
+    await makeBudget({ amountMinor: 1500 });
+    // 1800 against 1500 is 300 over. Counted twice (pending + this report again) it would
+    // read 2100 over, and this condition would not match.
+    const over = await workflowWhen({
+      all: [
+        { field: 'overBudget', op: 'eq', value: 'true' },
+        { field: 'budgetOverageMinor', op: 'eq', value: 300 },
+      ],
+    });
+    expect(await routedVersion(await draft(1800))).toBe(over);
+  });
+
+  it('agrees with the warning the submitter was shown', async () => {
+    // Same report, same budget: BUDGET_OVERAGE's impact (the submit-time warning) and the
+    // routing fact are one number.
+    const rule = await budgetRule();
+    await makeBudget({ amountMinor: 1500 });
+    const reportId = await draft(1800);
+    const finding = (await validate(reportId)).violations.find((v) => v.ruleCode === rule.id);
+    const [impact] = impactsOf(finding);
+    expect(BigInt(impact.usedMinor) - BigInt(impact.amountMinor)).toBe(300n);
+    // The warning has been shown; disarm it, and clear the finding validate stored, so the
+    // submit is not held for a justification.
+    await admin.query('DELETE FROM policy_violation WHERE report_id = $1', [reportId]);
+    await admin.query('DELETE FROM policy_rule WHERE id = $1', [rule.id]);
+    const over = await workflowWhen({ field: 'budgetOverageMinor', op: 'eq', value: 300 });
+    expect(await routedVersion(reportId)).toBe(over);
+  });
+
+  it('leaves a report that fits on the default flow', async () => {
+    await makeBudget({ amountMinor: 100000 });
+    const over = await workflowWhen({ field: 'overBudget', op: 'eq', value: 'true' });
+    expect(await routedVersion(await draft(1800))).not.toBe(over);
+  });
+
+  it('reads "not over" with no budget at all', async () => {
+    const notOver = await workflowWhen({ field: 'overBudget', op: 'eq', value: 'false' });
+    expect(await routedVersion(await draft(1800))).toBe(notOver);
+  });
+
+  it('routes a report in an approval-required category (requiresApproval)', async () => {
+    const lane = await workflowWhen({ field: 'requiresApproval', op: 'eq', value: 'true' });
+    expect(await routedVersion(await draft(1800))).not.toBe(lane);
+
+    await admin.query(
+      `INSERT INTO expense_category_policy (organization_id, category_id, approval_required) VALUES ($1, $2, true)`,
+      [orgId, categoryId],
+    );
+    expect(await routedVersion(await draft(1800))).toBe(lane);
+  });
+
+  it('does not count a category whose policy leaves approval off', async () => {
+    const lane = await workflowWhen({ field: 'requiresApproval', op: 'eq', value: 'true' });
+    await admin.query(
+      `INSERT INTO expense_category_policy (organization_id, category_id, approval_required) VALUES ($1, $2, false)`,
+      [orgId, categoryId],
+    );
+    expect(await routedVersion(await draft(1800))).not.toBe(lane);
   });
 });

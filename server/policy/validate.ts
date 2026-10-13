@@ -20,9 +20,9 @@
  * reports past N lines.
  */
 
-// VeloExpense: no `evaluateReportAgainstBudgets` (ExpenseOS's approvals budgets, w4-04) and no
-// budget-alert markers (VeloExpense's alerts are lib/budgets/alerts.ts); the budget impacts
-// come from VeloExpense's budgets through ./budgetBridge (d66). No `convertMoney`: it served
+// VeloExpense: no ExpenseOS `evaluateReportAgainstBudgets` and no budget-alert markers
+// (VeloExpense's alerts are lib/budgets/alerts.ts); the budget impacts come from VeloExpense's
+// budgets through ./budgetBridge (d66), which the approval engine reads too (w4-04). No `convertMoney`: it served
 // the travel budget only.
 import type { RuleScope } from '@expenseos/db';
 import { tipMinorOf } from '@expenseos/expense-lines';
@@ -370,7 +370,7 @@ export async function validateReport(opts: ValidateOpts): Promise<ValidateResult
   // budget rule should not pay for it on every validate.
   //
   // VeloExpense (d66): from VeloExpense's budgets (./budgetBridge), which v1's budget rule
-  // read, rather than ExpenseOS's approvals budgets (w4-04). No module check: a tenant with
+  // read and the approval engine's budget facts read (w4-04). No module check: a tenant with
   // no budgets has no periods, and the loader answers nothing. No alert markers here:
   // VeloExpense's budget alerts fire from its own rollup (lib/budgets/alerts.ts).
   let budgetImpacts: PolicyContext['budgetImpacts'] = null;

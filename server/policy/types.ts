@@ -72,10 +72,10 @@ import type { ExpensePolicy, RuleScope } from '@expenseos/db';
  * A budget-month this report pushes past a threshold.
  *
  * VeloExpense (w4-02a): ExpenseOS's `BudgetImpact` (`packages/approvals/src/budgets.ts`),
- * copied as a type. Its producer, `evaluateReportAgainstBudgets`, arrives with budget checks
- * inside approvals (w4-04); until then nothing hands the engine an impact, and
- * `BUDGET_OVERAGE` reads `budgetImpacts: null` as "nothing over budget", as it does in
- * ExpenseOS when the finance-reporting module is off.
+ * copied as a type. VeloExpense's producer is ./budgetBridge (d66), read by validate and,
+ * through `evaluateReportAgainstBudgets`, by the approval engine (w4-04). `BUDGET_OVERAGE`
+ * reads `budgetImpacts: null` as "nothing over budget", as it does in ExpenseOS when the
+ * finance-reporting module is off.
  */
 export interface BudgetImpact {
   budgetId: string;

@@ -387,7 +387,7 @@ export async function loadBudgetSnapshots(
   // Once stamped, the stamp wins, which is what makes this correct for a report
   // in any status.
   const dims = await tx.query(
-    `SELECT r.business_unit_id,
+    `SELECT r.business_unit_id, r.status::text AS status,
             COALESCE(r.department_id,
                      (SELECT u.department_id FROM app_user u WHERE u.id = r.submitter_id))
               AS department_id
@@ -396,6 +396,10 @@ export async function loadBudgetSnapshots(
   );
   const businessUnitId = (dims.rows[0]?.business_unit_id as string | null) ?? null;
   const departmentId = (dims.rows[0]?.department_id as string | null) ?? null;
+  // w4-04: past DRAFT, the report's own spend is already in the stored rollup.
+  const reportInRollup = (COUNTED_STATUSES as readonly string[]).includes(
+    (dims.rows[0]?.status as string | undefined) ?? 'DRAFT',
+  );
 
   const lines = await tx.query(
     `SELECT li.gl_account_id, li.amount_minor, ${ON_DATE}::text AS on_date, e.currency_code
@@ -448,6 +452,7 @@ export async function loadBudgetSnapshots(
       pendingMinor: BigInt(p.pending_minor),
       unconvertibleMinor: BigInt(p.unconvertible_minor),
       reportMinor: mine.minor,
+      reportInRollup,
       reportMissingRateFrom: [...mine.missing].sort(),
     });
   }

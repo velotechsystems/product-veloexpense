@@ -23,9 +23,9 @@
  *     REPORTS.
  *   · Policy currency is `organization.policy_currency_code` (0015), where ExpenseOS has
  *     the `policyCurrency` system flag; policy violations are `policy_violation` (0006).
- *   · The budget facts (`overBudget`, `budgetOverageMinor`) read "not over" until budget
- *     checks inside approvals (w4-04): ExpenseOS computes them from its own budget tables
- *     (`./budgets`), and VeloExpense's budgets are a different design (0024).
+ *   · The budget facts (`overBudget`, `budgetOverageMinor`) come from `./budgets`, which is
+ *     VeloExpense's (w4-04, d66): ExpenseOS's evaluation contract over VeloExpense's own
+ *     budgets (0024), the same numbers the submit-time budget rule reads.
  */
 import { Prisma, type PrismaClient } from '@expenseos/db';
 import { convertMoney, fxRateMapFrom } from '@expenseos/money';
@@ -40,6 +40,7 @@ import {
   createInitialState,
   type EngineState,
 } from './engine-core';
+import { evaluateReportAgainstBudgets } from './budgets';
 import { inlineCallWorkflows } from './inline';
 import { computePerDiemOverageMinor } from './perdiem-overage';
 import { evaluatePredicate, type SubjectFacts } from './predicate';
@@ -156,13 +157,13 @@ async function loadSubject(
     // A category flagged `approvalRequired` forces the report into an approval
     // lane (a hook the ExpensePolicy schema reserves for exactly this).
     //
-    // VeloExpense: v1's `expense_policy` (0006) had no `approvalRequired` column — a policy row
-    // here is a rule instance, not a per-category policy — so no category forced the lane.
-    // ExpenseOS's category policies arrived at w4-02c (`expense_category_policy`); reading
-    // their `approvalRequired` here is the approvals engine's port, not the policy cutover's,
-    // so this still reads false. VeloExpense never auto-approves, so nothing routes around
-    // approval on its account.
-    const requiresApproval: boolean = false;
+    // VeloExpense (w4-04): ExpenseOS's, now that its category policies exist here
+    // (`expense_category_policy`, w4-02c); RLS keeps the count to the tenant's own.
+    const requiresApproval =
+      categoryIds.length > 0 &&
+      (await db.expensePolicy.count({
+        where: { categoryId: { in: categoryIds }, approvalRequired: true },
+      })) > 0;
 
     // Per-diem overage (Phase 5c). Conservative: sum each (day + placeText)'s
     // spend and compare to the daily allowance of the most-specific per-diem
@@ -223,11 +224,10 @@ async function loadSubject(
     // Budget overage (Module 10). One cheap `count` short-circuits the whole
     // scan, which is the common case: no budgets configured, no work done.
     //
-    // VeloExpense: not yet — budget checks inside approvals are w4-04. ExpenseOS computes
-    // this from its own budget tables (`./budgets`, `evaluateReportAgainstBudgets`), and
-    // VeloExpense's budgets are a different design (0024: stored period totals). Until
-    // then a report reads "not over budget", stated rather than omitted.
-    const budgetOverage = 0n;
+    // VeloExpense (w4-04): no `budget` model to count; the evaluation's own first step (the
+    // budget periods this report's accounts and dates reach, `loadBudgetSnapshots`) is the
+    // short-circuit, and it returns nothing when no budget is configured.
+    const budgetOverage = (await evaluateReportAgainstBudgets(db, subjectId)).overageMinor;
 
     return {
       requesterId: r.submitterId,
@@ -1289,8 +1289,17 @@ async function applyTaskEffects(
 
 // ── Public API ──────────────────────────────────────────────────────────────
 
-// VeloExpense: ExpenseOS re-exports its budget actuals (`./budgets`) here. They arrive, or
-// are replaced by VeloExpense's own (0024), with budget checks inside approvals (w4-04).
+// Budget actuals. Re-exported from here rather than from index.ts because these
+// take a Prisma client, and index.ts is the browser-safe surface.
+//
+// VeloExpense (w4-04): `./budgets` is VeloExpense's bridge (see its header), so only the
+// evaluation and its impact type: ExpenseOS's `computeActuals`, `BudgetScope` and
+// `PeriodActuals` belong to ExpenseOS's budget tables, which VeloExpense does not have.
+export {
+  type BudgetImpact,
+  evaluateReportAgainstBudgets,
+  type ReportBudgetEvaluation,
+} from './budgets';
 
 export interface StartResult {
   instanceId: string | null;

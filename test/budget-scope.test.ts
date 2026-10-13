@@ -90,6 +90,7 @@ const snapshot = (over: Partial<BudgetSnapshot> = {}): BudgetSnapshot => ({
   pendingMinor: 0n,
   unconvertibleMinor: 0n,
   reportMinor: 0n,
+  reportInRollup: false,
   reportMissingRateFrom: [],
   ...over,
 });
@@ -99,6 +100,15 @@ describe('the projection counts what is committed AND what is in flight', () => 
     expect(
       projectedMinor(snapshot({ actualMinor: 1000n, pendingMinor: 2000n, reportMinor: 300n })),
     ).toBe(3300n);
+  });
+
+  it('counts this report once when the rollup already holds it (w4-04)', () => {
+    // Submit recomputes the rollup on the transition, and the approval engine builds its
+    // facts after that: the report is in `pendingMinor` already, and adding it again would
+    // route on a figure twice the report's real weight.
+    const s = { actualMinor: 1000n, pendingMinor: 2300n, reportMinor: 300n };
+    expect(projectedMinor(snapshot({ ...s, reportInRollup: true }))).toBe(3300n);
+    expect(projectedMinor(snapshot({ ...s, reportInRollup: false }))).toBe(3600n);
   });
 
   it('does NOT fold unconvertible spend into the projection', () => {
