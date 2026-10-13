@@ -148,7 +148,7 @@ beforeAll(async () => {
       // VX3-8: an in-flight authorisation attempt per tenant. `0020` gives this
       // table a SECOND policy gated on `app.platform_task`, because the OAuth
       // callback arrives with no session and has to find out which tenant it
-      // belongs to — so, like `notification_delivery` and `action_token`, it needs
+      // belongs to — so, like `notification_delivery`, it needs
       // both halves proven: that a tenant sees only its own, AND that the hatch is
       // as narrow as it claims. The row it holds is a credential's hash, which is
       // why it is worth more than a box-tick.
@@ -334,34 +334,20 @@ beforeAll(async () => {
          VALUES ($1, 'expense_management.report_approved', 'IN_APP', $2::jsonb)`,
         [org, JSON.stringify({ en: `Wording ${label}` })],
       );
-      // VX2-8: the outbox and the approve-link tokens from migration 0012.
-      // Both carry a SECOND policy gated on `app.platform_task`, so this block
-      // has to prove two things rather than one — that a tenant sees only its
-      // own, AND that the hatch is as narrow as it claims. See the
-      // `platform_task` cases below.
+      // VX2-8: the outbox from migration 0012. It carries a SECOND policy gated on
+      // `app.platform_task`, so this block has to prove two things rather than one —
+      // that a tenant sees only its own, AND that the hatch is as narrow as it
+      // claims. See the `platform_task` cases below. (Its sibling, the approve-link
+      // `action_token`, went with d62 in 0063.)
       const notif = await tx.query(
         `SELECT id FROM notification WHERE organization_id = $1 LIMIT 1`,
         [org],
       );
-      const delivery = await tx.query(
+      await tx.query(
         `INSERT INTO notification_delivery
            (organization_id, notification_id, channel, last_error)
-         VALUES ($1, $2, 'EMAIL', $3)
-         RETURNING id`,
+         VALUES ($1, $2, 'EMAIL', $3)`,
         [org, notif.rows[0].id, `Error ${label}`],
-      );
-      await tx.query(
-        `INSERT INTO action_token
-           (organization_id, token_hash, instance_task_id, action, recipient_id, expires_at, delivery_id)
-         SELECT $1, $2, t.id, 'APPROVE', $3, now() + interval '5 days', $4
-           FROM approval_instance_task t WHERE t.organization_id = $1 LIMIT 1`,
-        [
-          org,
-          // A 64-char lowercase-hex string, as action_token_hash_shape requires.
-          (label === 'A' ? 'c' : 'd').repeat(64),
-          approver.rows[0].id,
-          delivery.rows[0].id,
-        ],
       );
     });
   }
@@ -569,31 +555,25 @@ describe('RLS tenant isolation', () => {
     expect(none).toEqual({ activities: 0, notifications: 0, preferences: 0, wording: 0 });
   });
 
-  it('deliveries and approve-link tokens are tenant-isolated', async () => {
+  it('deliveries are tenant-isolated', async () => {
     const a = await withOrg(orgA, async (tx) => ({
       // The failure reason is the sensitive part: an SMTP rejection names an
       // address, and this table is the one place it is stored verbatim.
       deliveries: (await tx.query('SELECT last_error FROM notification_delivery')).rows.map(
         (r) => r.last_error,
       ),
-      // The most sensitive row in the schema after audit_entry: a live token hash
-      // is one half of a credential that decides money.
-      tokens: (await tx.query('SELECT token_hash FROM action_token')).rows.map((r) =>
-        (r.token_hash as string).slice(0, 1),
-      ),
     }));
-    expect(a).toEqual({ deliveries: ['Error A'], tokens: ['c'] });
+    expect(a).toEqual({ deliveries: ['Error A'] });
 
     const none = await withoutOrg(async (tx) => ({
       deliveries: (await tx.query('SELECT * FROM notification_delivery')).rows.length,
-      tokens: (await tx.query('SELECT * FROM action_token')).rows.length,
     }));
-    expect(none).toEqual({ deliveries: 0, tokens: 0 });
+    expect(none).toEqual({ deliveries: 0 });
   });
 
-  it('the platform_task hatch is narrow: due work and live tokens, read-only', async () => {
-    // `0012` gives these two tables a SECOND policy so a poller and an
-    // approve-link click can work without a tenant. A hatch that turned out to be
+  it('the platform_task hatch is narrow: due work only, read-only', async () => {
+    // `0012` gives the outbox a SECOND policy so a poller can work without a
+    // tenant. A hatch that turned out to be
     // a master key would be the worst defect in this schema, so it gets its own
     // test rather than riding on the block above.
     // `withPlatformRead` itself, not a hand-rolled equivalent — the helper is
@@ -629,17 +609,7 @@ describe('RLS tenant isolation', () => {
     );
     expect(wrote.rowCount).toBe(0);
 
-    // (4) It sees live tokens and not consumed ones — which is what makes
-    // "reject an expired or used token" a row that is absent rather than an `if`.
-    expect((await hatch((tx) => tx.query('SELECT id FROM action_token'))).rows).toHaveLength(2);
-    await admin.query('UPDATE action_token SET consumed_at = now() WHERE organization_id = $1', [
-      orgA,
-    ]);
-    expect((await hatch((tx) => tx.query('SELECT id FROM action_token'))).rows).toHaveLength(1);
-    await admin.query("UPDATE action_token SET expires_at = now() - interval '1 day'");
-    expect((await hatch((tx) => tx.query('SELECT id FROM action_token'))).rows).toHaveLength(0);
-
-    // (5) And the flag does NOTHING on any other tenant table. It is not a
+    // (4) And the flag does NOTHING on any other tenant table. It is not a
     // master key, and adding it to a third table has to be a migration somebody
     // writes on purpose.
     const elsewhere = await hatch(async (tx) => ({

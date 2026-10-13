@@ -163,13 +163,6 @@ export const EXPORTED: Readonly<Record<string, ExportedTable>> = {
   approval_workflow_version: { file: 'approval-workflow-versions.csv' },
   approval_instance: { file: 'approval-instances.csv' },
   approval_instance_task: { file: 'approval-instance-tasks.csv' },
-  action_token: {
-    file: 'action-tokens.csv',
-    redact: {
-      token_hash:
-        'a live capability — an approve-by-email link. Same reasoning as invites.',
-    },
-  },
 
   /* ── accounting ───────────────────────────────────────────────────────── */
   gl_account: { file: 'gl-accounts.csv' },

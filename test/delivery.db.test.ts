@@ -1,12 +1,14 @@
 /**
- * VX2-8 — the outbox, the transport and the approve-link, against a real Postgres.
+ * VX2-8 — the outbox, the transport and the approval email, against a real Postgres.
+ * (d62: the email links to the report; the approver decides there, signed in. The
+ * emailed approve/reject links and their tokens are gone.)
  *
  * Own org slug ('deliv-co') because the DB suites share one database and each
  * TRUNCATEs (vitest.config.ts, fileParallelism: false).
  *
  * ── The tests that matter ───────────────────────────────────────────────────
  *
- * The board's acceptance is "an approval email arrives with working actions; a
+ * The board's acceptance was "an approval email arrives with working actions; a
  * failed send retries and shows in the admin queue; every job sets
  * app.current_org". All three are here. The one worth reading first is
  * `withoutOrg sees nothing` — it asserts the property the whole platform-hatch
@@ -40,8 +42,6 @@ import {
   retryNow,
   MAX_ATTEMPTS,
 } from '@/lib/notifications/outbox';
-import { addBusinessDays, TOKEN_TTL_BUSINESS_DAYS } from '@/lib/notifications/action-tokens';
-import { decideFromToken, inspectToken } from '@/lib/notifications/approve';
 import { TEST_ACTOR } from './support/audit-actor';
 import { TODAY } from './support/dates';
 
@@ -108,15 +108,6 @@ async function deliveries() {
   }[];
 }
 
-/** The token values out of the most recent email. */
-function tokensFromLastEmail(): { approve: string; reject: string } | null {
-  const last = mail.sent[mail.sent.length - 1];
-  if (!last) return null;
-  const found = [...last.text.matchAll(/\/approve\?token=([\w-]+)/g)].map((m) => m[1]);
-  if (found.length < 2) return null;
-  return { approve: found[0], reject: found[1] };
-}
-
 beforeAll(async () => {
   await admin.query('TRUNCATE app_user, organization CASCADE');
   const o = await admin.query(
@@ -146,7 +137,6 @@ beforeEach(async () => {
     `BEGIN;
      SELECT set_config('app.audit_purge', 'on', true);
      DELETE FROM audit_entry;
-     DELETE FROM action_token;
      DELETE FROM notification_delivery;
      DELETE FROM notification;
      DELETE FROM activity;
@@ -215,9 +205,9 @@ describe('the platform read hatch', () => {
 
 /* ── the acceptance criteria ───────────────────────────────────────────────── */
 
-describe('an approval email arrives with working actions', () => {
-  it('queues on submit, sends on drain, and carries both links', async () => {
-    await submitted(250000, 'Munich');
+describe('an approval email arrives, and sends the approver to the report', () => {
+  it('queues on submit, sends on drain, and links to the report — nothing to decide in the mail', async () => {
+    const { reportId } = await submitted(250000, 'Munich');
 
     const queued = await deliveries();
     expect(queued).toHaveLength(1);
@@ -239,115 +229,32 @@ describe('an approval email arrives with working actions', () => {
     expect(msg.messageId).toContain('velo-n-');
     expect(msg.references).toContain('velo-thread-');
 
-    const tokens = tokensFromLastEmail();
-    expect(tokens).not.toBeNull();
-    expect(tokens!.approve).not.toBe(tokens!.reject);
+    // d62: the approver's one link is the report, worded for the decision, in both parts;
+    // the decision is made there, signed in. No approve or reject link at all.
+    const url = `https://velo.test/expenses/${reportId}`;
+    expect(msg.text).toContain(`Review and approve: ${url}`);
+    expect(msg.html).toContain(`href="${url}"`);
+    expect(msg.html).toContain('Review and approve');
+    expect(`${msg.text}${msg.html}`).not.toMatch(/\/approve\b|token=/);
 
     const after = await deliveries();
     expect(after[0]).toMatchObject({ status: 'SENT', destination: 'mgr@deliv.test' });
-  });
 
-  it('the approve link approves, once', async () => {
-    const { reportId } = await submitted();
-    await drainOutbox();
-    const tokens = tokensFromLastEmail()!;
-
-    // The GET-equivalent: reading the token must not decide anything.
-    const preview = await inspectToken(tokens.approve);
-    // w4-00c: the ladder's "step 1 of 1" is gone with it; the page says who and how much.
-    expect(preview).toMatchObject({ kind: 'READY', action: 'APPROVED', receiptCount: 0 });
-    const stillOpen = await admin.query('SELECT status FROM expense_report WHERE id = $1', [
-      reportId,
-    ]);
-    expect(stillOpen.rows[0].status).toBe('SUBMITTED');
-
-    const done = await decideFromToken(tokens.approve);
-    expect(done).toMatchObject({ kind: 'DONE', action: 'APPROVED' });
-    const settled = await admin.query('SELECT status FROM expense_report WHERE id = $1', [reportId]);
-    expect(settled.rows[0].status).toBe('APPROVED');
-
-    // Single use. The second attempt is INVALID, not a second approval.
-    expect(await decideFromToken(tokens.approve)).toEqual({ kind: 'INVALID' });
-  });
-
-  it('retires the other half of the pair once one is used', async () => {
-    await submitted();
-    await drainOutbox();
-    const tokens = tokensFromLastEmail()!;
-    await decideFromToken(tokens.approve);
-    // The REJECT link is now a credential with nothing to do. `decide` would
-    // refuse it anyway; consuming it means it is not a live credential at all.
-    expect(await inspectToken(tokens.reject)).toEqual({ kind: 'INVALID' });
-  });
-
-  it('the reject link rejects', async () => {
-    const { reportId } = await submitted();
-    await drainOutbox();
-    const tokens = tokensFromLastEmail()!;
-    expect(await decideFromToken(tokens.reject)).toMatchObject({
-      kind: 'DONE',
-      action: 'REJECTED',
-    });
+    // Sending the mail decided nothing.
     const r = await admin.query('SELECT status FROM expense_report WHERE id = $1', [reportId]);
-    expect(r.rows[0].status).toBe('REJECTED');
+    expect(r.rows[0].status).toBe('SUBMITTED');
   });
 
-  it('refuses a decision the guard would refuse — the token does not authorize', async () => {
-    // The property ExpenseOS's header states and this ticket depends on: "the
-    // caller still re-runs canDecide + the atomic claim, so it never bypasses
-    // authorization." Here the task is decided in the app first, so the emailed
-    // link points at something already settled.
+  it('sends a plain report link on a notification the recipient cannot act on', async () => {
+    // An APPROVED mail goes to the submitter, who has nothing to decide.
     const { reportId, taskId } = await submitted();
-    await drainOutbox();
-    const tokens = tokensFromLastEmail()!;
-    await decideAs(orgId, taskId, manager, 'APPROVED');
-    const outcome = await inspectToken(tokens.approve);
-    expect(outcome).toMatchObject({ kind: 'REFUSED', reportId });
-    // And using it changes nothing.
-    const used = await decideFromToken(tokens.approve);
-    expect(used.kind === 'DONE').toBe(false);
-  });
-
-  it('refuses an expired token, and the row is invisible to the hatch', async () => {
-    await submitted();
-    await drainOutbox();
-    const tokens = tokensFromLastEmail()!;
-    await admin.query("UPDATE action_token SET expires_at = now() - interval '1 day'");
-    // Two guards, and this asserts the STRUCTURAL one: `0012`'s platform policy
-    // excludes expired tokens, so the tenant cannot even be resolved.
-    expect(await withPlatformRead((tx) => tx.query('SELECT id FROM action_token'))).toMatchObject({
-      rowCount: 0,
-    });
-    expect(await inspectToken(tokens.approve)).toEqual({ kind: 'INVALID' });
-  });
-
-  it('mints tokens that expire five business days out', async () => {
-    await submitted();
-    await drainOutbox();
-    const r = await admin.query('SELECT expires_at FROM action_token LIMIT 1');
-    const expected = addBusinessDays(new Date(), TOKEN_TTL_BUSINESS_DAYS);
-    // Within a day: the fixture and the code call `new Date()` at different
-    // moments, and the point of the assertion is the WEEKEND SKIP, not the clock.
-    const diffDays =
-      Math.abs((r.rows[0].expires_at as Date).getTime() - expected.getTime()) / 86_400_000;
-    expect(diffDays).toBeLessThan(1);
-    // Five business days is never fewer than five calendar days and is seven
-    // across a weekend, so the constant cannot silently have become calendar days.
-    const calendarDays = (expected.getTime() - Date.now()) / 86_400_000;
-    expect(calendarDays).toBeGreaterThanOrEqual(4.9);
-  });
-
-  it('sends no action links on a notification the recipient cannot act on', async () => {
-    // An APPROVED mail goes to the submitter, who has nothing to decide. Buttons
-    // there would be a link that always fails.
-    const { taskId } = await submitted();
     await decideAs(orgId, taskId, manager, 'APPROVED');
     mail.reset();
     await drainOutbox();
     const toSubmitter = mail.sent.find((m) => m.to === SUBMITTER);
     expect(toSubmitter).toBeTruthy();
-    expect(toSubmitter!.text).not.toContain('/approve?token=');
-    expect(toSubmitter!.text).toContain('/expenses/');
+    expect(toSubmitter!.text).toContain(`Open the report: https://velo.test/expenses/${reportId}`);
+    expect(toSubmitter!.text).not.toContain('Review and approve');
   });
 });
 
@@ -561,29 +468,6 @@ describe('composition', () => {
     expect(mail.sent[0].text).toContain('needs your approval on Bergen');
   });
 
-  it('re-minting on a retry retires the previous email links', async () => {
-    // The links cannot be reused — only the hash is stored, so the raw value is
-    // unrecoverable by design. So a retry mints new ones, and the old ones are
-    // consumed rather than accumulating one live pair per attempt.
-    await submitted();
-    mail.failNext = new Error('transient');
-    await drainOutbox();
-    await admin.query('UPDATE notification_delivery SET next_attempt_at = now()');
-    // The first attempt composed a message but did not deliver it, so grab the
-    // tokens from the database instead of the transport.
-    const before = await admin.query('SELECT token_hash FROM action_token ORDER BY created_at');
-    await drainOutbox();
-    const live = await admin.query(
-      'SELECT token_hash FROM action_token WHERE consumed_at IS NULL ORDER BY created_at',
-    );
-    expect(before.rows).toHaveLength(2);
-    expect(live.rows).toHaveLength(2);
-    // Different tokens: the first pair was retired.
-    expect(live.rows.map((r) => r.token_hash)).not.toEqual(
-      before.rows.map((r) => r.token_hash),
-    );
-  });
-
   it('composes without links when no origin is configured', async () => {
     // NT-14's incident, inverted into a test: an empty origin produced mail with
     // no link and no buttons, "indistinguishable from 'this notification was never
@@ -598,11 +482,8 @@ describe('composition', () => {
     try {
       await submitted();
       expect(await drainOutbox()).toMatchObject({ sent: 1 });
-      expect(mail.sent[0].text).not.toContain('/approve?token=');
       expect(mail.sent[0].text).not.toContain('https://');
-      // And no tokens were minted for a link nobody can follow.
-      const t = await admin.query('SELECT count(*)::int AS n FROM action_token');
-      expect(t.rows[0].n).toBe(0);
+      expect(mail.sent[0].text).not.toContain('Review and approve');
     } finally {
       if (saved) process.env.APP_URL = saved;
       if (savedAuth) process.env.AUTH_URL = savedAuth;

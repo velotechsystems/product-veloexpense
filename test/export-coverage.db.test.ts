@@ -174,7 +174,6 @@ describe('every column is exported or withheld with a reason', () => {
       ['integration_installation', 'config'],
       ['integration_installation', 'oauth_access_token'],
       ['integration_installation', 'oauth_refresh_token'],
-      ['action_token', 'token_hash'],
       ['invite', 'token_hash'],
     ];
 

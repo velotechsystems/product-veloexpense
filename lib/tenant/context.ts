@@ -54,15 +54,16 @@ export async function withoutOrg<T>(fn: (tx: QueryRunner) => Promise<T>): Promis
 }
 
 /**
- * VX2-8 — a READ-ONLY, cross-tenant look at the two tables that grant it.
+ * VX2-8 — a READ-ONLY, cross-tenant look at the tables that grant it.
  *
  * Some work genuinely has no tenant to be in. A delivery poller has to find work
- * in ANY organization, and an approve-link click arrives with a bare token and no
- * session at all, so neither knows which organization to set before reading.
+ * in ANY organization, so it does not know which organization to set before
+ * reading. (VX2-8's other caller, the approve-link click, went with the emailed
+ * links themselves: d62, 0063.)
  * `withoutOrg` cannot help them (see above): under FORCE RLS an unset context
  * sees nothing.
  *
- * So `0012` gives `notification_delivery` and `action_token` a second policy
+ * So `0012` gave `notification_delivery` and `action_token` (dropped in 0063) a second policy
  * gated on `app.platform_task`, in the same spirit as `0010`'s single
  * `app.audit_purge` hatch. FOUR things keep this from being a hole, and all four
  * matter:
@@ -72,9 +73,8 @@ export async function withoutOrg<T>(fn: (tx: QueryRunner) => Promise<T>): Promis
  *      migration somebody has to write and review.
  *   2. `FOR SELECT` ONLY. Every write still needs a real `app.current_org`, so a
  *      platform task can FIND a row and never change one.
- *   3. THE POLICY BODIES ARE NARROWED. The poller sees only due work; the token
- *      handler sees only unconsumed, unexpired tokens. An expired token is not
- *      hidden by an `if` — it is a row that is not there.
+ *   3. THE POLICY BODIES ARE NARROWED. The poller sees only due work, and nothing
+ *      settled is hidden by an `if` — it is a row that is not there.
  *   4. TRANSACTION-LOCAL, like `withOrg`, so it cannot outlive the work or leak
  *      onto a pooled connection.
  *
@@ -124,7 +124,7 @@ export async function withSignupContext<T>(fn: (tx: QueryRunner) => Promise<T>):
  * about to write and NOTHING more useful than that. Set for one statement, in
  * `markConsumed`, and transaction-local like the rest.
  *
- * `action_token` needs no equivalent because it consumes under
+ * `action_token` (dropped in 0063) needed no equivalent because it consumed under
  * `tenant_isolation`, which does not narrow on `consumed_at`. This table has no
  * tenant policy to fall back on — that is the whole difference between a
  * credential inside a tenant and one that predates it.
@@ -151,8 +151,8 @@ export async function withSignupConsume<T>(fn: (tx: QueryRunner) => Promise<T>):
  * and Postgres has no objection.
  *
  * Not `app.platform_task`, though the policy has the same shape as
- * `action_token`'s. That flag is set by the delivery poller and the approve-link
- * handler, both long-running background paths; this one is set for a single
+ * `action_token`'s was (0012; dropped in 0063). That flag is set by the delivery poller,
+ * a long-running background path; this one is set for a single
  * statement inside a single sign-in. `0036`'s header has the argument.
  */
 export async function withInviteLookup<T>(fn: (tx: QueryRunner) => Promise<T>): Promise<T> {

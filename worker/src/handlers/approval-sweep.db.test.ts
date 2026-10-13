@@ -13,8 +13,7 @@ import { createTenantHarness, type TenantHarness } from '../../../server/__test-
  *   · migration 0062 will not drop the ladder under a report still waiting on it (d61);
  *   · a flow that decides on submit (no approval on its path) is recorded as the flow's
  *     decision, with the ledger post queued;
- *   · migrations 0061/0062: a history row names a person or says what made it, and an approve
- *     link names an engine task.
+ *   · migration 0061: a history row names a person or says what made it.
  *
  * Gated on DATABASE_URL; the hermetic CI run skips it.
  */
@@ -24,7 +23,6 @@ vi.mock('@/lib/tenant/request', () => ({ hostTenantSlug: async () => null }));
 
 describe.skipIf(!process.env.DATABASE_URL)('approval.sweepExpired (integration)', () => {
   let h: TenantHarness;
-  let founder: string;
   let manager: string;
   let employee: string;
   let categoryId: string;
@@ -75,7 +73,7 @@ describe.skipIf(!process.env.DATABASE_URL)('approval.sweepExpired (integration)'
         { email: 'employee@approval-sweep.example', name: 'Employee' },
       ],
     });
-    [founder, manager, employee] = h.people.map((p) => p.id);
+    [, manager, employee] = h.people.map((p) => p.id);
     await h.admin.query(`UPDATE app_user SET manager_id = $1 WHERE id = $2`, [manager, employee]);
     categoryId = (
       await h.admin.query(
@@ -237,7 +235,7 @@ describe.skipIf(!process.env.DATABASE_URL)('approval.sweepExpired (integration)'
     });
   });
 
-  describe('migrations 0061 and 0062', () => {
+  describe('migration 0061', () => {
     it('refuses a history row that names nobody and no system', async () => {
       const id = await draft('Nobody');
       await expect(
@@ -247,16 +245,6 @@ describe.skipIf(!process.env.DATABASE_URL)('approval.sweepExpired (integration)'
           [h.orgId, id],
         ),
       ).rejects.toThrow(/expense_report_event_actor_or_system/);
-    });
-
-    it('refuses an approve link that names no engine task (0062: the ladder column is gone)', async () => {
-      await expect(
-        h.admin.query(
-          `INSERT INTO action_token (organization_id, token_hash, instance_task_id, action, recipient_id, expires_at)
-           VALUES ($1, repeat('a', 64), NULL, 'APPROVE', $2, now() + interval '1 day')`,
-          [h.orgId, founder],
-        ),
-      ).rejects.toThrow(/instance_task_id/);
     });
   });
 });

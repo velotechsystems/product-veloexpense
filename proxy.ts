@@ -7,8 +7,10 @@ import { NextResponse, type NextRequest } from 'next/server';
 
 // `/approve` and the drain route are PUBLIC, and each carries its own credential
 // instead of a session (VX2-8):
-//   /approve                            a single-use, expiring action token in the
-//                                       query string. Nothing happens on the GET.
+//   /approve                            was a single-use, expiring action token in
+//                                       the query string. d62 (0063) retired those
+//                                       links; the page now only redirects an old
+//                                       one to /approvals, which asks for a session.
 //   /api/internal/notifications/drain   a shared secret in an Authorization
 //                                       header, fail-closed when unset.
 //
