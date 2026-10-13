@@ -420,7 +420,8 @@ export const ModelName = {
   ApprovalWorkflowVersion: 'ApprovalWorkflowVersion',
   ApprovalInstance: 'ApprovalInstance',
   ApprovalTask: 'ApprovalTask',
-  Delegation: 'Delegation'
+  Delegation: 'Delegation',
+  PolicyRule: 'PolicyRule'
 } as const
 
 export type ModelName = (typeof ModelName)[keyof typeof ModelName]
@@ -436,7 +437,7 @@ export type TypeMap<ExtArgs extends runtime.Types.Extensions.InternalArgs = runt
     omit: GlobalOmitOptions
   }
   meta: {
-    modelProps: "expenseCategory" | "glAccount" | "expenseReport" | "expense" | "expenseAllocation" | "expenseAttendee" | "expenseLineItem" | "receipt" | "documentExtraction" | "expenseDetermination" | "receiptExternalId" | "expenseExternalId" | "aiUsage" | "taxJurisdiction" | "user" | "businessUnit" | "externalIdSource" | "businessUnitExternalId" | "legalEntity" | "legalEntityExternalId" | "fxRate" | "mileageRate" | "mileageRateTier" | "mileageRateSubject" | "perDiemRate" | "currency" | "department" | "departmentExternalId" | "jobLevel" | "jobLevelExternalId" | "fiscalYear" | "fiscalYearExternalId" | "approvalWorkflow" | "approvalWorkflowVersion" | "approvalInstance" | "approvalTask" | "delegation"
+    modelProps: "expenseCategory" | "glAccount" | "expenseReport" | "expense" | "expenseAllocation" | "expenseAttendee" | "expenseLineItem" | "receipt" | "documentExtraction" | "expenseDetermination" | "receiptExternalId" | "expenseExternalId" | "aiUsage" | "taxJurisdiction" | "user" | "businessUnit" | "externalIdSource" | "businessUnitExternalId" | "legalEntity" | "legalEntityExternalId" | "fxRate" | "mileageRate" | "mileageRateTier" | "mileageRateSubject" | "perDiemRate" | "currency" | "department" | "departmentExternalId" | "jobLevel" | "jobLevelExternalId" | "fiscalYear" | "fiscalYearExternalId" | "approvalWorkflow" | "approvalWorkflowVersion" | "approvalInstance" | "approvalTask" | "delegation" | "policyRule"
     txIsolationLevel: TransactionIsolationLevel
   }
   model: {
@@ -3178,6 +3179,80 @@ export type TypeMap<ExtArgs extends runtime.Types.Extensions.InternalArgs = runt
         }
       }
     }
+    PolicyRule: {
+      payload: Prisma.$PolicyRulePayload<ExtArgs>
+      fields: Prisma.PolicyRuleFieldRefs
+      operations: {
+        findUnique: {
+          args: Prisma.PolicyRuleFindUniqueArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$PolicyRulePayload> | null
+        }
+        findUniqueOrThrow: {
+          args: Prisma.PolicyRuleFindUniqueOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$PolicyRulePayload>
+        }
+        findFirst: {
+          args: Prisma.PolicyRuleFindFirstArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$PolicyRulePayload> | null
+        }
+        findFirstOrThrow: {
+          args: Prisma.PolicyRuleFindFirstOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$PolicyRulePayload>
+        }
+        findMany: {
+          args: Prisma.PolicyRuleFindManyArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$PolicyRulePayload>[]
+        }
+        create: {
+          args: Prisma.PolicyRuleCreateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$PolicyRulePayload>
+        }
+        createMany: {
+          args: Prisma.PolicyRuleCreateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        createManyAndReturn: {
+          args: Prisma.PolicyRuleCreateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$PolicyRulePayload>[]
+        }
+        delete: {
+          args: Prisma.PolicyRuleDeleteArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$PolicyRulePayload>
+        }
+        update: {
+          args: Prisma.PolicyRuleUpdateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$PolicyRulePayload>
+        }
+        deleteMany: {
+          args: Prisma.PolicyRuleDeleteManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateMany: {
+          args: Prisma.PolicyRuleUpdateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateManyAndReturn: {
+          args: Prisma.PolicyRuleUpdateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$PolicyRulePayload>[]
+        }
+        upsert: {
+          args: Prisma.PolicyRuleUpsertArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$PolicyRulePayload>
+        }
+        aggregate: {
+          args: Prisma.PolicyRuleAggregateArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.AggregatePolicyRule>
+        }
+        groupBy: {
+          args: Prisma.PolicyRuleGroupByArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.PolicyRuleGroupByOutputType>[]
+        }
+        count: {
+          args: Prisma.PolicyRuleCountArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.PolicyRuleCountAggregateOutputType> | number
+        }
+      }
+    }
   }
 } & {
   other: {
@@ -3835,6 +3910,32 @@ export const DelegationScalarFieldEnum = {
 export type DelegationScalarFieldEnum = (typeof DelegationScalarFieldEnum)[keyof typeof DelegationScalarFieldEnum]
 
 
+export const PolicyRuleScalarFieldEnum = {
+  id: 'id',
+  organizationId: 'organizationId',
+  kindCode: 'kindCode',
+  scope: 'scope',
+  enabled: 'enabled',
+  severity: 'severity',
+  condition: 'condition',
+  params: 'params',
+  messageKey: 'messageKey',
+  departmentId: 'departmentId',
+  jobLevelId: 'jobLevelId',
+  legalEntityId: 'legalEntityId',
+  businessUnitId: 'businessUnitId',
+  roleId: 'roleId',
+  categoryId: 'categoryId',
+  effectiveFrom: 'effectiveFrom',
+  effectiveTo: 'effectiveTo',
+  createdAt: 'createdAt',
+  createdBy: 'createdBy',
+  updatedAt: 'updatedAt'
+} as const
+
+export type PolicyRuleScalarFieldEnum = (typeof PolicyRuleScalarFieldEnum)[keyof typeof PolicyRuleScalarFieldEnum]
+
+
 export const SortOrder = {
   asc: 'asc',
   desc: 'desc'
@@ -3991,6 +4092,20 @@ export type DecimalFieldRefInput<$PrismaModel> = FieldRefInputType<$PrismaModel,
  * Reference to a field of type 'Decimal[]'
  */
 export type ListDecimalFieldRefInput<$PrismaModel> = FieldRefInputType<$PrismaModel, 'Decimal[]'>
+    
+
+
+/**
+ * Reference to a field of type 'PolicyViolationSeverity'
+ */
+export type EnumPolicyViolationSeverityFieldRefInput<$PrismaModel> = FieldRefInputType<$PrismaModel, 'PolicyViolationSeverity'>
+    
+
+
+/**
+ * Reference to a field of type 'PolicyViolationSeverity[]'
+ */
+export type ListEnumPolicyViolationSeverityFieldRefInput<$PrismaModel> = FieldRefInputType<$PrismaModel, 'PolicyViolationSeverity[]'>
     
 
 
@@ -4154,6 +4269,7 @@ export type GlobalOmitConfig = {
   approvalInstance?: Prisma.ApprovalInstanceOmit
   approvalTask?: Prisma.ApprovalTaskOmit
   delegation?: Prisma.DelegationOmit
+  policyRule?: Prisma.PolicyRuleOmit
 }
 
 /* Types for Logging */

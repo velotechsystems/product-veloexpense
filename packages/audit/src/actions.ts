@@ -88,6 +88,8 @@ const adminAndOthers = {
 const CONFIG_ACTIONS = {
   fxRate: 'FX_RATE_ADDED',
   mileageRate: 'MILEAGE_RATE_CHANGED',
+  /** w4-02b: every rule-instance write, the operation in `details.op` (as ExpenseOS). */
+  policyRule: 'POLICY_RULE_CHANGED',
 } as const satisfies Record<string, AuditAction>;
 
 export const auditActions = {

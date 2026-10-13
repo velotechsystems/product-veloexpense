@@ -34,16 +34,21 @@
  * rates: the currency is the ISO code (VeloExpense keys a currency by it), every write is
  * audited (ExpenseOS's per-diem writes are not, though this header says they are), and a
  * refusal the table makes — another tenant's category or scope, an end before the
- * start, a negative cap — is a 4xx (`perDiemWrite`).
+ * start, a negative cap — is a 4xx (`perDiemWrite`). `policyRule` with the Rule Builder,
+ * /admin/policy-rules (w4-02b, d63): see its section below for what differs.
  */
 
 import { auditActions, withAudit } from '@expenseos/audit';
+import { PolicyViolationSeverity } from '@expenseos/db';
+import { PREDICATE_OPS } from '@expenseos/predicate';
 import { permissions as P } from '@expenseos/rbac';
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 import { Prisma, type TenantDb } from '@/lib/db/prisma';
 // VeloExpense: ExpenseOS's `Currency.symbol`, from the platform (shared with the expenses router).
 import { currencySymbol } from '@/server/lib/currencySymbol';
+import { LINE_FIELDS, REPORT_FIELDS } from '@/server/policy/facts';
+import { RULE_KIND_CODES, RULE_KINDS } from '@/server/policy/kinds';
 import { REFUSAL_KEYS, refusal } from '@/server/refusal';
 import { router, withPermission } from '@/server/trpc';
 
@@ -313,6 +318,153 @@ async function assertMileageReferencesKnown(
     }
   }
 }
+
+// ── PolicyRule (v2 — admin-authored rule instances) ──────────────────
+//
+// A rule INSTANCE binds a registry rule KIND (code) to a severity, an
+// optional `condition` (a Predicate over the kind's fact set), `params`,
+// a message key, and optional scoping dimensions + an effective window.
+// The KIND governs the shape: `scope` is denormalized from it (an admin
+// can't mismatch), the `condition` is validated against the kind's
+// conditionSchema, and `params` against its paramsSchema.
+//
+// VeloExpense (w4-02b): nothing reads these rows until the cutover (w4-02c); the engine
+// that enforces policy today is still lib/policy. Differences from ExpenseOS, marked:
+//   · the policy currency is the organization's `policy_currency_code` (0015), where
+//     ExpenseOS keeps a `policyCurrency` system flag;
+//   · there is no role table until the role builder (w4-10, d64): `scopeOptions` offers
+//     no roles and a rule cannot be scoped to one yet;
+//   · each write is audited in the same transaction as the row (ExpenseOS writes the row,
+//     then the audit in a second, empty transaction), and what the table refuses — another
+//     tenant's scope or category, an end before the start, a rule that is not the
+//     tenant's — is a 4xx rather than a 500 (`policyRuleWrite`);
+//   · `violations` and `resolveViolation` arrive with the violations register (w4-02d).
+
+const policyRuleInput = z.object({
+  kindCode: z.string().min(1),
+  severity: z.enum(PolicyViolationSeverity),
+  /** A `Predicate` for PREDICATE kinds; null for AGGREGATE kinds. */
+  condition: z.unknown().nullish(),
+  params: z.unknown().optional(),
+  messageKey: z.string().min(1).max(200),
+  enabled: z.boolean().optional(),
+  departmentId: z.string().uuid().nullish(),
+  jobLevelId: z.string().uuid().nullish(),
+  legalEntityId: z.string().uuid().nullish(),
+  businessUnitId: z.string().uuid().nullish(),
+  roleId: z.string().uuid().nullish(),
+  categoryId: z.string().uuid().nullish(),
+  effectiveFrom: z.coerce.date(),
+  effectiveTo: z.coerce.date().nullish(),
+});
+
+/** Validate an instance against its kind and shape it into the Prisma row.
+ *  Throws BAD_REQUEST when the kind is unknown or the condition/params
+ *  don't satisfy the kind's schemas — so a bad rule can never be persisted. */
+function coerceRuleData(input: z.infer<typeof policyRuleInput>) {
+  const kind = RULE_KINDS[input.kindCode];
+  if (!kind) {
+    throw new TRPCError({ code: 'BAD_REQUEST', message: `Unknown rule kind: ${input.kindCode}` });
+  }
+
+  let condition: Prisma.InputJsonValue | typeof Prisma.JsonNull = Prisma.JsonNull;
+  if (kind.conditionSchema) {
+    const parsed = kind.conditionSchema.safeParse(input.condition ?? undefined);
+    if (!parsed.success) {
+      throw new TRPCError({
+        code: 'BAD_REQUEST',
+        message: `Invalid condition: ${parsed.error.message}`,
+      });
+    }
+    condition = parsed.data as Prisma.InputJsonValue;
+  } else if (input.condition != null) {
+    throw new TRPCError({ code: 'BAD_REQUEST', message: `${kind.code} takes no condition` });
+  }
+
+  const params = kind.paramsSchema.safeParse(input.params ?? {});
+  if (!params.success) {
+    throw new TRPCError({
+      code: 'BAD_REQUEST',
+      message: `Invalid params: ${params.error.message}`,
+    });
+  }
+
+  // VeloExpense: no role table until w4-10 (d64), so `role_id` has no foreign key behind
+  // it. A role id accepted now could name nothing, and the rule would apply to nobody
+  // without saying so. Refused until roles exist; the Rule Builder offers none.
+  if (input.roleId != null) {
+    throw new TRPCError({
+      code: 'BAD_REQUEST',
+      message: 'Rules cannot be scoped to a role yet.',
+    });
+  }
+
+  return {
+    kindCode: kind.code,
+    scope: kind.scope, // denormalized from the kind — never client-supplied
+    severity: input.severity,
+    condition,
+    params: params.data as Prisma.InputJsonValue,
+    messageKey: input.messageKey,
+    enabled: input.enabled ?? true,
+    departmentId: input.departmentId ?? null,
+    jobLevelId: input.jobLevelId ?? null,
+    legalEntityId: input.legalEntityId ?? null,
+    businessUnitId: input.businessUnitId ?? null,
+    roleId: input.roleId ?? null,
+    categoryId: input.categoryId ?? null,
+    effectiveFrom: input.effectiveFrom,
+    effectiveTo: input.effectiveTo ?? null,
+  };
+}
+
+/**
+ * VeloExpense: what `policy_rule` refuses (0064), as a 4xx. A scope or category the tenant
+ * does not have fails a composite foreign key (P2003); a rule that is not the tenant's is
+ * missing (P2025); and the table holds an end after the start.
+ */
+function policyRuleRefusal(cause: unknown): TRPCError | null {
+  const err = cause as { code?: string; message?: string } | null;
+  if (err?.code === 'P2025') return new TRPCError({ code: 'NOT_FOUND', cause });
+  if (err?.code === 'P2003') {
+    return new TRPCError({
+      code: 'BAD_REQUEST',
+      message: 'The department, level, entity, unit or category is not one this organization has.',
+      cause,
+    });
+  }
+  if (err?.message?.includes('policy_rule_effective_range')) {
+    return new TRPCError({ code: 'BAD_REQUEST', message: 'A rule cannot end before it starts.', cause });
+  }
+  return null;
+}
+
+/** VeloExpense: `withPermission(P.config.policyUpdate)` with `policyRuleRefusal` applied. */
+function policyRuleWrite() {
+  return withPermission(P.config.policyUpdate).use(async ({ next }) => {
+    const result = await next();
+    if (!result.ok) {
+      const refused = policyRuleRefusal(result.error.cause);
+      if (refused) throw refused;
+    }
+    return result;
+  });
+}
+
+/**
+ * VeloExpense: the audit details for a rule write — ExpenseOS's `{ op, ...data }`, with the
+ * stored condition written as `null` where the row holds SQL NULL (`Prisma.JsonNull` is a
+ * sentinel object, not a value the audit chain should hash).
+ */
+function policyRuleDetails(op: string, data: Partial<ReturnType<typeof coerceRuleData>>) {
+  return {
+    op,
+    ...data,
+    ...('condition' in data ? { condition: data.condition === Prisma.JsonNull ? null : data.condition } : {}),
+  };
+}
+
+// ── Router ───────────────────────────────────────────────────────────
 
 export const policiesRouter = router({
   // ── FxRate (append-only — new fetchedAt per refresh) ───────────
@@ -761,4 +913,158 @@ export const policiesRouter = router({
         return { ok: true };
       }),
   }),
+
+  // ── PolicyRule (v2 — admin-authored policy rule instances) ─────
+  policyRule: router({
+    /** The rule-kind registry + the predicate vocabulary the Rule Builder
+     *  needs to render a condition editor. Static, but permission-gated so
+     *  the shape isn't exposed to unauthenticated callers. */
+    kinds: withPermission(P.config.policyRead).query(async ({ ctx }) => ({
+      /**
+       * The currency every money param is expressed in — the same
+       * `policyCurrency` flag the evaluator compares against, defaulting to CAD.
+       *
+       * Sent because a bare "threshold" box is a trap: the value is stored in MINOR
+       * units, so a well-meaning admin typing 1000 for "a thousand dollars" would
+       * create a rule that fires at ten. The drawer takes major units and labels the
+       * currency, and the conversion happens where the exponent is known.
+       *
+       * VeloExpense: the organization's `policy_currency_code` (0015, NOT NULL DEFAULT
+       * 'CAD'), read in the tenant's transaction, rather than a `policyCurrency` system flag.
+       */
+      policyCurrency:
+        (
+          await ctx.db.$queryRaw<Array<{ code: string }>>`
+            SELECT policy_currency_code AS code FROM organization
+             WHERE id = NULLIF(current_setting('app.current_org', true), '')::uuid`
+        )[0]?.code ?? 'CAD',
+      kinds: RULE_KIND_CODES.map((code) => {
+        const k = RULE_KINDS[code]!;
+        return {
+          code: k.code,
+          scope: k.scope,
+          defaultSeverity: k.defaultSeverity,
+          messageKey: k.messageKey,
+          requiresCondition: Boolean(k.conditionSchema),
+          // How to render this kind's editable params. Without it the drawer could
+          // only ever post `params: {}`, which saves a valid but inert rule.
+          paramsSpec: k.paramsSpec ?? [],
+          paramsAtLeastOneOf: k.paramsAtLeastOneOf ?? [],
+        };
+      }),
+      lineFields: LINE_FIELDS,
+      reportFields: REPORT_FIELDS,
+      ops: PREDICATE_OPS,
+    })),
+
+    /** Option lists for the Rule Builder's scoping pickers. */
+    scopeOptions: withPermission(P.config.policyRead).query(async ({ ctx }) => {
+      const [jobLevels, legalEntities, businessUnits, departments, categories] =
+        await Promise.all([
+          ctx.db.jobLevel.findMany({
+            where: { active: true },
+            select: { id: true, code: true, label: true },
+            orderBy: { sortOrder: 'asc' },
+          }),
+          ctx.db.legalEntity.findMany({
+            where: { active: true },
+            select: { id: true, label: true },
+            orderBy: { createdAt: 'asc' },
+          }),
+          ctx.db.businessUnit.findMany({
+            where: { active: true },
+            select: { id: true, label: true },
+            orderBy: { createdAt: 'asc' },
+          }),
+          ctx.db.department.findMany({
+            where: { active: true },
+            select: { id: true, label: true },
+            orderBy: { createdAt: 'asc' },
+          }),
+          ctx.db.expenseCategory.findMany({
+            where: { active: true },
+            select: { id: true, label: true },
+            orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }],
+          }),
+        ]);
+      // VeloExpense: no role table until the role builder (w4-10, d64), so no roles to
+      // offer. The shape keeps ExpenseOS's `roles` so the Rule Builder ports unchanged.
+      const roles: Array<{ id: string; label: string }> = [];
+      return { jobLevels, legalEntities, businessUnits, departments, roles, categories };
+    }),
+
+    list: withPermission(P.config.policyRead).query(async ({ ctx }) => {
+      const rows = await ctx.db.policyRule.findMany({
+        orderBy: [{ enabled: 'desc' }, { scope: 'asc' }, { createdAt: 'desc' }],
+      });
+      return rows.map((r) => ({
+        ...r,
+        effectiveFrom: r.effectiveFrom,
+        effectiveTo: r.effectiveTo,
+      }));
+    }),
+
+    create: policyRuleWrite()
+      .input(policyRuleInput)
+      .mutation(async ({ ctx, input }) => {
+        const data = coerceRuleData(input);
+        return withAudit(
+          ctx.db,
+          policyRuleAudit(ctx, policyRuleDetails('create', data)),
+          (tx) => tx.policyRule.create({ data: { ...data, createdBy: ctx.rbac.id } }),
+          (row) => row.id,
+        );
+      }),
+
+    update: policyRuleWrite()
+      .input(z.object({ id: z.string().uuid(), patch: policyRuleInput }))
+      .mutation(async ({ ctx, input }) => {
+        const data = coerceRuleData(input.patch);
+        return withAudit(
+          ctx.db,
+          policyRuleAudit(ctx, policyRuleDetails('update', data), input.id),
+          (tx) => tx.policyRule.update({ where: { id: input.id }, data }),
+        );
+      }),
+
+    delete: policyRuleWrite()
+      .input(z.object({ id: z.string().uuid() }))
+      .mutation(async ({ ctx, input }) => {
+        await withAudit(
+          ctx.db,
+          policyRuleAudit(ctx, policyRuleDetails('delete', {}), input.id),
+          (tx) => tx.policyRule.delete({ where: { id: input.id }, select: { id: true } }),
+        );
+        return { ok: true };
+      }),
+  }),
 });
+
+interface PolicyRuleAuditCtx {
+  rbac: { id: string; roleLabel: string };
+  session: { user: { name?: string | null; email: string } };
+}
+
+/**
+ * The audit envelope for a policy-rule write: one action for the whole registry
+ * (`config.policyRule`) with the operation in `details.op`.
+ *
+ * VeloExpense: ExpenseOS's `writePolicyRuleAudit` runs `withAudit` with an empty body
+ * AFTER the write, so a failed audit leaves an unaudited rule. Here the envelope is
+ * handed to `withAudit` around the write itself, in one transaction. The violation
+ * entity type arrives with `resolveViolation` (w4-02d).
+ */
+function policyRuleAudit(ctx: PolicyRuleAuditCtx, details: Record<string, unknown>, entityId?: string) {
+  return {
+    action: auditActions.config('policyRule'),
+    entityType: 'PolicyRule',
+    ...(entityId ? { entityId } : {}),
+    actor: {
+      kind: 'user' as const,
+      id: ctx.rbac.id,
+      name: ctx.session.user.name ?? ctx.session.user.email,
+      roleLabel: ctx.rbac.roleLabel,
+    },
+    details,
+  };
+}

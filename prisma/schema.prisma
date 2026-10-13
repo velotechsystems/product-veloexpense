@@ -992,3 +992,54 @@ model Delegation {
 
   @@map("delegation")
 }
+
+// ExpenseOS's `PolicyViolationSeverity`, on the `policy_severity` Postgres enum VeloExpense's
+// policy tables already use (0006). Same three values.
+enum PolicyViolationSeverity {
+  INFO
+  WARNING
+  BLOCK
+
+  @@map("policy_severity")
+}
+
+// ExpenseOS's `PolicyRule` (w4-02b, d63), on `policy_rule` (0064): one row per rule
+// instance of a kind from the registry (server/policy/kinds.ts). VeloExpense differences:
+//   · `scope` is text under a CHECK, LINE | REPORT | AGGREGATE (ExpenseOS's enum adds
+//     TRAVEL_REQUEST; travel is out of scope);
+//   · the six scope columns are scalars only. The database's keys are composite (0064),
+//     ON DELETE RESTRICT; ported code reads and writes the ids and never walks the
+//     relations. `roleId` has no table behind it until the role builder (w4-10, d64).
+model PolicyRule {
+  id             String                  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String                  @default(dbgenerated("(NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid")) @map("organization_id") @db.Uuid
+  /// FK-by-convention to a registered RuleKind in the policy engine.
+  kindCode       String                  @map("kind_code")
+  /// Denormalized from the kind for indexing/filtering. LINE | REPORT | AGGREGATE (a CHECK).
+  scope          String
+  enabled        Boolean                 @default(true)
+  /// Overrides the kind's default severity.
+  severity       PolicyViolationSeverity
+  /// Predicate AST (for the PREDICATE kind); null for code kinds.
+  condition      Json?
+  /// Kind-specific params, validated at write time by the kind's schema.
+  params         Json                    @default("{}")
+  /// i18n catalog key for the violation message (EN + FR-CA enforced).
+  messageKey     String                  @map("message_key")
+  departmentId   String?                 @map("department_id") @db.Uuid
+  jobLevelId     String?                 @map("job_level_id") @db.Uuid
+  legalEntityId  String?                 @map("legal_entity_id") @db.Uuid
+  businessUnitId String?                 @map("business_unit_id") @db.Uuid
+  roleId         String?                 @map("role_id") @db.Uuid
+  categoryId     String?                 @map("category_id") @db.Uuid
+  effectiveFrom  DateTime                @map("effective_from") @db.Timestamptz(6)
+  effectiveTo    DateTime?               @map("effective_to") @db.Timestamptz(6)
+  createdAt      DateTime                @default(now()) @map("created_at") @db.Timestamptz(6)
+  createdBy      String?                 @map("created_by") @db.Uuid
+  updatedAt      DateTime                @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@unique([organizationId, id])
+  @@index([organizationId, enabled, scope, effectiveFrom])
+  @@index([organizationId, categoryId])
+  @@map("policy_rule")
+}

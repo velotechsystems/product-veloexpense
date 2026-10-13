@@ -110,7 +110,6 @@ function makeDb(over: Record<string, unknown> = {}) {
     },
     systemFlag: {
       findMany: stubFn(async () => [] as unknown[]),
-      // `policyRule.kinds` resolves the policy currency to label its money limits.
       findUnique: stubFn(async () => ({ value: 'CAD' }) as unknown),
       upsert: stubFn(async () => ({ key: 'k', value: 'v' })),
     },
@@ -128,6 +127,8 @@ function makeDb(over: Record<string, unknown> = {}) {
       delete: stubFn(async () => ({ id: U('5') })),
     },
     policyViolation: { findMany: stubFn(async () => [] as unknown[]) },
+    // VeloExpense: `policyRule.kinds` reads the organization's policy currency (0015).
+    $queryRaw: stubFn(async () => [{ code: 'CAD' }] as unknown[]),
     ...over,
   };
 }
@@ -179,7 +180,8 @@ describe('permission gates', () => {
 });
 
 // VeloExpense: the `expensePolicy` tests arrive with that sub-router's port (the expense
-// policy screen); `systemFlag` and `policyRule.kinds` likewise, at the end of this file.
+// policy screen) and `systemFlag` with its own. `policyRule.kinds` is at the end of this
+// file, as in ExpenseOS; the rest of `policyRule` is in policies.rules.test.ts.
 
 describe('fxRate', () => {
   it('returns the newest row per pair only', async () => {
@@ -735,5 +737,16 @@ describe('mileageRate.list', () => {
       tiers: { orderBy: unknown };
     };
     expect(include.tiers.orderBy).toEqual({ fromDistance: 'asc' });
+  });
+});
+
+describe('policyRule.kinds', () => {
+  it('is readable with the read permission and lists the registry', async () => {
+    // The registry is code-owned, so this is the client's only way to know what rule
+    // types this build supports.
+    const db = makeDb();
+    const c = await callerFor(db, READ);
+    const out = (await c.policyRule.kinds()) as Record<string, unknown>;
+    expect(out).toBeTruthy();
   });
 });
