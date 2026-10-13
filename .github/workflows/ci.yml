@@ -46,10 +46,10 @@ jobs:
 
     services:
       postgres:
-        # ECR Public's mirror of the official image, not Docker Hub: the anonymous pull
-        # limit there is per IP, GitHub's runners share IPs, and this pull failed with 429
-        # on busy days (f15). Same image, same tag. See the note in the Dockerfile.
-        image: public.ecr.aws/docker/library/postgres:16
+        # The official image, mirrored unchanged to ghcr.io by mirror-base-images.yml
+        # (f33): anonymous pulls from Docker Hub (f15) and then ECR Public both ran out on
+        # GitHub's shared runner IPs. Same image, same tag. See the note in the Dockerfile.
+        image: ghcr.io/velotechsystems/base-postgres:16
         env:
           POSTGRES_PASSWORD: velo
           POSTGRES_DB: veloexpense
