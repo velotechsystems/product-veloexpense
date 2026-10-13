@@ -136,20 +136,13 @@ const rowTexts = () =>
  * pick the row. The row is the LAST match because when the target is already active the
  * trigger carries the same name, and the row is rendered after it.
  */
-/**
- * VeloExpense: ExpenseOS switches the queue through its saved-views dropdown (one system view
- * per queue). Saved views wait for their port (w4-08), so the queue is switched the way a
- * reader switches it without them: clear the bar, and add the `queue` clause the system view
- * would have set — the same clause the page reads its query off.
- */
 const toView = async (user: ReturnType<typeof userEvent.setup>, which: string) => {
-  const queue = which.replace(/^view/, '').toLowerCase();
-  await user.click(screen.getByText('table.misc.clearFilters'));
-  await user.click(screen.getByRole('button', { name: /(?:Add filter|filters\.addFilter)/ }));
-  await user.selectOptions(await screen.findByLabelText(/(?:^Field$|filters\.field)/), 'queue');
-  await user.selectOptions(screen.getByLabelText(/(?:^Operator$|filters\.operator)/), 'equals');
-  await user.selectOptions(screen.getByLabelText(/(?:^Value$|filters\.value$)/), queue);
-  await user.click(screen.getByRole('button', { name: /(?:^Add$|filters\.add$)/ }));
+  const trigger = screen.getAllByRole('button', {
+    name: /expenses\.approvals\.view(Pending|Decided|Team)/,
+  })[0];
+  await user.click(trigger);
+  const rows = await screen.findAllByRole('button', { name: `expenses.approvals.${which}` });
+  await user.click(rows[rows.length - 1]);
 };
 
 /** A second pending task, from a different submitter, for the filter tests. */

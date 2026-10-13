@@ -1,5 +1,9 @@
 {
   "common": {
+    "viewNamePrompt": "Name this view:",
+    "viewNameDefault": "My view",
+    "viewRenamePrompt": "Rename view:",
+    "viewDeleteConfirm": "Delete “{name}”? This cannot be undone.",
     "actions": "Actions",
     "activate": "Activate",
     "active": "Active",

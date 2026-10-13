@@ -223,3 +223,11 @@ export type ExpensePolicy = Prisma.ExpensePolicyModel
  * 
  */
 export type PolicyViolation = Prisma.PolicyViolationModel
+/**
+ * Model SavedView
+ * ExpenseOS's `SavedView` (w4-08, migration 0067): a person's saved filter / sort / column
+ * state for one list. VeloExpense: per tenant under RLS; the owner is a composite foreign
+ * key in SQL, not a Prisma relation (nothing reads through it); one pinned default per owner
+ * and list is also a partial unique index (`saved_view_one_default`).
+ */
+export type SavedView = Prisma.SavedViewModel

@@ -1106,3 +1106,29 @@ model PolicyViolation {
   @@index([reportId])
   @@map("policy_violation")
 }
+
+/// ExpenseOS's `SavedView` (w4-08, migration 0067): a person's saved filter / sort / column
+/// state for one list. VeloExpense: per tenant under RLS; the owner is a composite foreign
+/// key in SQL, not a Prisma relation (nothing reads through it); one pinned default per owner
+/// and list is also a partial unique index (`saved_view_one_default`).
+model SavedView {
+  id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String    @default(dbgenerated("(NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid")) @map("organization_id") @db.Uuid
+  ownerId        String    @map("owner_id") @db.Uuid
+  /// Discriminates which directory this view belongs to (e.g. "people",
+  /// "expenses", "cards"). Free-form string; validated in code rather than
+  /// as a Postgres enum so new directories don't burn a migration.
+  resource       String
+  name           String
+  /// Opaque view state — `{ scope, filters[], visibleColumns?, sort?, density?, groupBy? }`.
+  /// Zod-validated at the tRPC boundary.
+  state          Json
+  pinned         Boolean   @default(false)
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  deletedAt      DateTime? @map("deleted_at") @db.Timestamptz(6)
+
+  @@unique([organizationId, id])
+  @@index([organizationId, ownerId, resource, deletedAt], map: "saved_view_owner_resource_idx")
+  @@map("saved_view")
+}

@@ -1,5 +1,9 @@
 {
   "common": {
+    "viewNamePrompt": "Nommer cette vue :",
+    "viewNameDefault": "Ma vue",
+    "viewRenamePrompt": "Renommer la vue :",
+    "viewDeleteConfirm": "Supprimer « {name} »? Cette action est irréversible.",
     "actions": "Actions",
     "activate": "Activer",
     "active": "Actif",

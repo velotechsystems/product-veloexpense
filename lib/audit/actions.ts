@@ -195,6 +195,11 @@ export const AUDIT_ACTIONS = [
   'EXPENSE_POLICY_CHANGED',
   /* The organization's policy currency, set on /admin/policies (w4-02d, d68). */
   'POLICY_CURRENCY_SET',
+  /* A person's saved list view — the w4-08 port (ExpenseOS's `savedView.*`). A delete is a
+     soft delete, as ExpenseOS's. */
+  'SAVED_VIEW_CREATED',
+  'SAVED_VIEW_UPDATED',
+  'SAVED_VIEW_DELETED',
   'MODULE_ENABLED',
   'MODULE_DISABLED',
   'USER_LOCALE_CHANGED',

@@ -11,6 +11,7 @@ import { legalEntitiesRouter } from './legalEntities';
 import { mileageRouteRouter } from './mileageRoute';
 import { pickersRouter } from './pickers';
 import { policiesRouter } from './policies';
+import { savedViewsRouter } from './savedViews';
 
 /**
  * Root tRPC router — composes per-domain sub-routers. Add a new module's
@@ -31,13 +32,16 @@ export const appRouter = router({
   expenseCategories: expenseCategoriesRouter,
   // Wave 2: ExpenseOS's expenses router, in slices (w2-07 onwards).
   expenses: expensesRouter,
-  // VeloExpense stand-in until Wave 4: `myTasks` only, for the sidebar's Approvals count.
+  // ExpenseOS's approver surface, in slices (w2-02a, w2-06, w4-00c; the inbox's queries at
+  // w4-05/w4-07, d71).
   expenseApprovals: expenseApprovalsRouter,
   legalEntities: legalEntitiesRouter,
   // w2-10: address search and route distance for a mileage line.
   mileageRoute: mileageRouteRouter,
   pickers: pickersRouter,
   policies: policiesRouter,
+  // w4-08: a person's saved list views.
+  savedViews: savedViewsRouter,
 });
 
 /** Exported type used by the client to derive typed hooks. */

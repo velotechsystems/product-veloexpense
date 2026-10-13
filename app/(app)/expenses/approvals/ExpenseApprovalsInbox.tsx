@@ -9,9 +9,8 @@
  * queue's shape and the ExpenseReportsList table conventions.
  *
  * Ported from ExpenseOS (550b2945) in place of VeloExpense's own /approvals (w4-05/w4-07,
- * d71). VeloExpense, each marked below: no saved views until their port (w4-08) — the
- * queue still switches through its filter pill, which is what the views set; a report
- * from before numbering has no number; reimbursing stays on VeloExpense's own screen (d71,
+ * d71); its saved views since w4-08. VeloExpense, marked below: a report from before
+ * numbering has no number; reimbursing stays on VeloExpense's own screen (d71,
  * ApproverReportDrawer).
  */
 import {
@@ -39,7 +38,7 @@ import {
   newClauseId,
   SortSheet,
   sortSheetOptions,
-  // VeloExpense: no `useListViews` until the saved-views port (w4-08).
+  useListViews,
   useSortSheetLabels,
   useTableLabels,
   useToolbarLabels,
@@ -475,9 +474,30 @@ export function ExpenseApprovalsInbox({ canReimburse }: { canReimburse: boolean 
     })),
   };
 
-  // VeloExpense: ExpenseOS's saved views here (`useListViews`: one system view per queue, plus
-  // the reader's own) wait for the saved-views port (w4-08). The queue pill above switches the
-  // queue exactly as a system view does — both set the same `queue` clause.
+  const savedViews = useListViews<ColumnId>({
+    resource: 'approvals',
+    systemViews: useMemo(
+      () =>
+        QUEUES.map((q) => ({
+          kind: 'system' as const,
+          id: `sys:${q}`,
+          name: t(`approvals.view${q[0].toUpperCase()}${q.slice(1)}` as 'approvals.viewPending'),
+          filters: [
+            { id: `sv-${q}`, field: QUEUE_FIELD as ColumnId, op: 'equals' as const, value: q },
+          ],
+        })),
+      [t],
+    ),
+    columnIds: ALL_COLUMN_IDS,
+    tableState,
+    setTableState,
+    labels: {
+      namePrompt: t('approvals.viewNamePrompt'),
+      nameDefault: t('approvals.viewNameDefault'),
+      renamePrompt: t('approvals.viewRenamePrompt'),
+      deleteConfirm: (name) => t('approvals.viewDeleteConfirm', { name }),
+    },
+  });
 
   return (
     <div className="flex h-full min-h-0 flex-col gap-3">
@@ -502,6 +522,8 @@ export function ExpenseApprovalsInbox({ canReimburse }: { canReimburse: boolean 
           onAddClause={pillBar.addClause}
           onClearAll={pillBar.clearClauses}
           clearLabel={pillBar.clearLabel}
+          untitledViewLabel={t('approvals.viewUntitled')}
+          savedViews={savedViews}
         />
       </div>
 

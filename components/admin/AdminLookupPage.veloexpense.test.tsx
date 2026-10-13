@@ -15,8 +15,8 @@ import { AdminLookupPage, type AdminLookupPageConfig, type BaseLookupRow } from 
  *   · French is OFF (`ENABLED_LOCALES`, 7 Oct): no French name or description is asked
  *     for or shown, the English name alone saves, and a French name already on a row
  *     survives an edit untouched;
- *   · no saved views until Wave 4 (d15): the pill bar has no views dropdown, and nothing
- *     asks the server for saved views.
+ *   · saved views since w4-08 (left out until then, d15): the page asks the server for its
+ *     own list's views — ExpenseOS's own suite covers what the dropdown does with them.
  */
 
 const h = vi.hoisted(() => ({ trpc: undefined as unknown, topBarRight: null as ReactNode }));
@@ -161,8 +161,8 @@ describe('French switched off', () => {
   });
 });
 
-describe('no saved views until Wave 4', () => {
-  it('offers no views dropdown and asks the server for none', () => {
+describe('saved views (w4-08)', () => {
+  it("asks the server for this list's own saved views", () => {
     const savedViewsList = vi.fn();
     h.trpc = createTrpcMock({
       queries: {
@@ -171,7 +171,6 @@ describe('no saved views until Wave 4', () => {
       },
     });
     renderPage([unit('hq', { en: 'Head Office' })]);
-    expect(screen.queryByRole('button', { name: /views/i })).not.toBeInTheDocument();
-    expect(savedViewsList).not.toHaveBeenCalled();
+    expect(savedViewsList).toHaveBeenCalledWith({ resource: 'businessUnits' }, expect.anything());
   });
 });

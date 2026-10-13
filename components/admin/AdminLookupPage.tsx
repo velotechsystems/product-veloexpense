@@ -22,9 +22,8 @@
  *
  * Ported from ExpenseOS `apps/web/src/components/admin/AdminLookupPage.tsx` (550b2945)
  * with business units (Wave 1). VeloExpense differences, each marked below:
- *   · no saved views: the dropdown and `useSavedViews` arrive with the saved-views port
- *     in Wave 4 (decided 8 Oct, d15). The filter pills, columns, export and bulk actions
- *     are unchanged;
+ *   · saved views since w4-08 (until then they were left out, d15), their prompts in the
+ *     reader's language where ExpenseOS hard-codes them in English;
  *   · the French name and description are not asked for or shown while French is
  *     switched off (`ENABLED_LOCALES`, 7 Oct), as on the categories screen.
  */
@@ -63,8 +62,12 @@ import {
   type FacetOption,
   type FilterOp,
   newClauseId,
+  type PersistedViewState,
+  type SavedViewResource,
+  type SystemView,
   TableExportMenu,
   useFilterChromeLabels,
+  useSavedViews,
   useTableLabels,
   useToolbarLabels,
   VALUELESS_OPS,
@@ -89,10 +92,6 @@ import { type ExternalIdEntry, entriesFromMap, mapFromEntries } from './External
 
 /** VeloExpense: whether admins are asked for (and shown) French text (`ENABLED_LOCALES`). */
 const FRENCH_ON = ENABLED_LOCALES.includes('fr-CA');
-
-/** VeloExpense: ExpenseOS's `SavedViewResource` (a key of its saved-views router) arrives
- *  with saved views in Wave 4. Until then the config keeps the field, unused. */
-type SavedViewResource = string;
 
 // ── Lookup-row shape — every entity returns at least these fields ──
 
@@ -318,8 +317,28 @@ export function AdminLookupPage<Row extends BaseLookupRow, ColumnId extends stri
    */
   const [rowActionError, setRowActionError] = useState<string | null>(null);
   const formRef = useRef<SchemaFormHandle>(null);
-  // VeloExpense: ExpenseOS's saved views (the `activeViewId` state and `useSavedViews`)
-  // are not here until Wave 4 — see the header.
+  const [activeViewId, setActiveViewId] = useState<string>('sys:default');
+
+  // ── Saved views ────────────────────────────────────────────
+  // One "All" system view as the default landing state. User-saved
+  // views go into the same dropdown and persist per (user, resource)
+  // via the savedViews tRPC router.
+  const systemViews = useMemo<SystemView<ColumnId>[]>(
+    () => [{ kind: 'system', id: 'sys:default', name: t('pageTitle') }],
+    [t],
+  );
+  const {
+    allViews,
+    createView,
+    renameView,
+    deleteView: deleteSavedView,
+    togglePinnedView,
+  } = useSavedViews<ColumnId>({
+    resource: config.savedViewsResource,
+    systemViews,
+    onAfterCreate: (id) => setActiveViewId(id),
+    onAfterDelete: () => setActiveViewId('sys:default'),
+  });
 
   // ── Tree-mode expand/collapse state ─────────────────────────
   // Stores ids that are *collapsed*; everything else is expanded by
@@ -808,8 +827,55 @@ export function AdminLookupPage<Row extends BaseLookupRow, ColumnId extends stri
   };
   const clearClauses = () => setTableState((s) => ({ ...s, filters: [] }));
 
-  // VeloExpense: ExpenseOS's saved-view load / save / rename / delete handlers arrive with
-  // saved views in Wave 4 (see the header).
+  // ── Saved-view load / save handlers ──────────────────────────
+  const loadView = (id: string) => {
+    const target = allViews.find((v) => v.id === id);
+    if (!target) return;
+    setActiveViewId(id);
+    if (target.kind === 'system') {
+      setTableState((s) => ({
+        ...s,
+        filters: target.filters?.map((f) => ({ ...f, id: newClauseId() })) ?? [],
+        sort: null,
+      }));
+    } else {
+      const v = target.state;
+      const visible = v.visibleColumns;
+      setTableState((s) => ({
+        ...s,
+        filters: v.filters.map((f) => ({ ...f, id: newClauseId() })),
+        sort: v.sort ?? null,
+        density: v.density ?? s.density,
+        columnVisibility: visible
+          ? Object.fromEntries(columns.map((c) => [c.id, visible.includes(c.id)]))
+          : s.columnVisibility,
+      }));
+    }
+  };
+  const captureViewState = (): PersistedViewState<ColumnId> => ({
+    filters: tableState.filters,
+    visibleColumns: tableState.columnOrder.filter(
+      (id) => tableState.columnVisibility[id] !== false,
+    ),
+    sort: tableState.sort ?? undefined,
+    density: tableState.density,
+    groupBy: null,
+  });
+  const saveCurrentAsNew = () => {
+    // VeloExpense: the prompts in the reader's language — ExpenseOS hard-codes them in English.
+    const name = window.prompt(tc('viewNamePrompt'), tc('viewNameDefault'));
+    if (!name?.trim()) return;
+    createView(name.trim(), captureViewState(), false);
+  };
+  const renameUserView = (id: string, currentName: string) => {
+    const name = window.prompt(tc('viewRenamePrompt'), currentName);
+    if (!name?.trim() || name.trim() === currentName) return;
+    renameView(id, name.trim());
+  };
+  const deleteUserView = (id: string, name: string) => {
+    if (!window.confirm(tc('viewDeleteConfirm', { name }))) return;
+    deleteSavedView(id);
+  };
 
   // ── Bulk actions ─────────────────────────────────────────────
   // Multi-select drives a BulkActionsMenu in the toolbar. The action
@@ -913,7 +979,15 @@ export function AdminLookupPage<Row extends BaseLookupRow, ColumnId extends stri
           onAddClause={addClause}
           onClearAll={clearClauses}
           clearLabel={tTable('misc.clearFilters')}
-          // VeloExpense: no `savedViews` until Wave 4 (see the header).
+          savedViews={{
+            views: allViews,
+            activeViewId,
+            onSelectView: loadView,
+            onSaveAsNew: saveCurrentAsNew,
+            onRenameView: renameUserView,
+            onDeleteView: deleteUserView,
+            onTogglePinned: togglePinnedView,
+          }}
         />
       </div>
 
