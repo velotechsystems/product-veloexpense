@@ -2761,6 +2761,65 @@ describe('RLS tenant isolation', () => {
    * cannot hang off another tenant's workflow, a run off another tenant's version, a task
    * off another tenant's run or be assigned to another tenant's person (composite keys).
    */
+  /* ── policy rules (Wave 4, w4-02a, migration 0064) ──────────────────────────────
+   *
+   * ExpenseOS's rule instances. A rule is each tenant's own, and its category scope may not
+   * name another tenant's category (composite key).
+   */
+  it('policy rules are tenant-isolated, and a scope cannot name another tenant\'s row', async () => {
+    const seed = (org: string, label: string) =>
+      withOrg(org, async (tx) => {
+        const category = (
+          await tx.query('SELECT id FROM expense_category WHERE organization_id = $1 LIMIT 1', [org])
+        ).rows[0].id as string;
+        await tx.query(
+          `INSERT INTO policy_rule (organization_id, kind_code, scope, severity, message_key,
+                                    category_id, effective_from)
+           VALUES ($1, 'PREDICATE_LINE', 'LINE', 'WARNING', $2, $3, now())`,
+          [org, `Rule ${label}`, category],
+        );
+        return category;
+      });
+    const categoryA = await seed(orgA, 'A');
+    await seed(orgB, 'B');
+
+    for (const [org, label] of [
+      [orgA, 'A'],
+      [orgB, 'B'],
+    ] as const) {
+      const rules = await withOrg(org, (tx) => tx.query('SELECT message_key FROM policy_rule'));
+      expect(rules.rows).toEqual([{ message_key: `Rule ${label}` }]);
+    }
+    expect((await withoutOrg((tx) => tx.query('SELECT * FROM policy_rule'))).rows).toHaveLength(0);
+    expect(
+      (await withPlatformRead((tx) => tx.query('SELECT * FROM policy_rule'))).rows,
+    ).toHaveLength(0);
+
+    // WITH CHECK: naming the other tenant is refused outright.
+    await expect(
+      withOrg(orgB, (tx) =>
+        tx.query(
+          `INSERT INTO policy_rule (organization_id, kind_code, scope, severity, message_key, effective_from)
+           VALUES ($1, 'PREDICATE_LINE', 'LINE', 'WARNING', 'x', now())`,
+          [orgA],
+        ),
+      ),
+    ).rejects.toThrow(/row-level security|violates/i);
+    // Composite key: B's rule may not be scoped to A's category.
+    await expect(
+      withOrg(orgB, (tx) =>
+        tx.query(
+          `INSERT INTO policy_rule (organization_id, kind_code, scope, severity, message_key,
+                                    category_id, effective_from)
+           VALUES ($1, 'PREDICATE_LINE', 'LINE', 'WARNING', 'x', $2, now())`,
+          [orgB, categoryA],
+        ),
+      ),
+    ).rejects.toThrow(/foreign key/i);
+
+    await admin.query('DELETE FROM policy_rule');
+  });
+
   it('approval workflows, versions, runs and tasks are tenant-isolated, across every key', async () => {
     // w4-00d: each tenant's workflow, version, run and task are the suite's own seed (above),
     // which the dropped ladder's rows used to occupy; this reads their ids back.

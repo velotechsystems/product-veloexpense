@@ -8,6 +8,10 @@
  * (`./enums`). Each helper arrives with the slice whose code calls it.
  */
 export { Prisma, type PrismaClient } from '@/lib/generated/prisma/client';
+// w4-02a: the policy engine's model types. `FxRate` is VeloExpense's own table; `ExpensePolicy`
+// is ExpenseOS's shape until its table arrives (w4-02d) — see ./expensePolicy.
+export type { FxRate } from '@/lib/generated/prisma/client';
+export type { ExpensePolicy } from './expensePolicy';
 export {
   DocExtractStatus,
   DocScanStatus,
@@ -17,7 +21,9 @@ export {
   ExpenseTaxSource,
   FxRateSource,
   MileageUnit,
+  PolicyViolationSeverity,
   ReceiptKind,
+  RuleScope,
 } from './enums';
 // Which business unit column wins, and what a new expense is coded to — VeloExpense has
 // only ExpenseOS's EXPENSEOS position (see the module).
