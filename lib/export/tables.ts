@@ -154,7 +154,6 @@ export const EXPORTED: Readonly<Record<string, ExportedTable>> = {
   },
 
   /* ── policy, approvals, delegation ────────────────────────────────────── */
-  expense_policy: { file: 'expense-policies.csv' },
   // w4-02a: ExpenseOS's rule instances (0064) — the tenant's own policy configuration.
   policy_rule: { file: 'policy-rules.csv' },
   expense_category_policy: { file: 'expense-category-policies.csv' },

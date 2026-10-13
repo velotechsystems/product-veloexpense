@@ -42,8 +42,8 @@
  *     transaction (`assertExpenseAllowance` through `queryRunnerOf`);
  *   · submit and recall keep ExpenseOS's checks and hand the transition to VeloExpense's
  *     lifecycle (d23, `server/lib/reportLifecycle.ts`), which starts and cancels ExpenseOS's
- *     approval engine in the same transaction (w4-00c), and the policy pass is VeloExpense's
- *     (`runPolicy`) with ExpenseOS's justification rule (d34);
+ *     approval engine in the same transaction (w4-00c); the policy pass is ExpenseOS's
+ *     (`server/policy/validate.ts`) since the cutover (w4-02d);
  *   · corrections are recorded against the current determination, awaited inside the
  *     request rather than fire-and-forget (w3-02a); a traveller's country is `app_user.country` (0055,
  *     w2-10), backfilled from their legal entity.
@@ -92,13 +92,8 @@ import { queryRunnerOf } from '@/lib/db/prisma-pg-bridge';
 import { getStorage } from '@/lib/storage';
 import { receiptKey, receiptPrefix } from '@/lib/storage/keys';
 import { RECEIPT_CAP_BYTES } from '@/lib/storage/limits';
-import {
-  acknowledgeViolation,
-  clearAcknowledgement,
-  type ValidationSummary,
-  validateReport as validateReportPolicy,
-} from '@/lib/policy/service';
 import { currencySymbol } from '@/server/lib/currencySymbol';
+import { validateReport } from '@/server/policy/validate';
 import { explainExpenseTax, resolveExpenseTax } from '@/server/lib/expenseTax';
 import {
   extractionInFlightMessage,
@@ -125,8 +120,6 @@ import { recallThroughLifecycle, submitThroughLifecycle } from '@/server/lib/rep
 import { notifyReportRecalled, notifyReportSubmitted } from '@/server/lib/reportNotify';
 import { executeWorkflowEffects } from '@/server/lib/workflowEffects';
 import { REFUSAL_KEYS, type RefusalKey, refusal } from '@/server/refusal';
-import { renderViolation } from '@/lib/i18n/catalog/policy-messages';
-import { loadReaderPrefs } from '@/lib/i18n/service';
 import { protectedProcedure, router, withPermission } from '@/server/trpc';
 
 /** 10 MiB cap per receipt/invoice — the shared cap the worker also reads against. */
@@ -978,91 +971,38 @@ async function serializeExpense(e: ExpenseWithDetail) {
 
 /**
  * VeloExpense: the report's policy violations, in ExpenseOS's `PolicyViolation` shape —
- * what ExpenseOS loads with `include: { violations: true }`.
+ * what ExpenseOS loads with `include: { violations: true }`. A query of its own because
+ * VeloExpense's `ExpenseReport` model carries no relation to them.
  *
- * VeloExpense's `policy_violation` is its own engine's table until the policy port: it
- * anchors a finding to the report or to a line, not to an expense, so `expenseId` is the
- * line's expense (null for a report-level finding) — what the workbench groups by.
- * `resolvedBy` is VeloExpense's `resolved_by_id`. Parameterised; under the caller's RLS.
+ * Since the cutover (w4-02d) a row's `message` is the label KEY the workbench renders in
+ * the reader's locale (`policy.labels.<key>`). A row written by VeloExpense's v1 engine,
+ * before the cutover, carries the sentence it wrote instead, which the workbench shows as
+ * written when no label matches it.
  */
-async function reportViolations(db: TenantDb, reportId: string, userId?: string) {
-  const rows = await db.$queryRaw<
-    Array<{
-      id: string;
-      reportId: string;
-      expenseId: string | null;
-      lineItemId: string | null;
-      ruleCode: string;
-      severity: 'INFO' | 'WARNING' | 'BLOCK';
-      message: string;
-      messageCode: string | null;
-      data: unknown;
-      resolvedAt: Date | null;
-      resolvedBy: string | null;
-      resolveNote: string | null;
-      createdAt: Date;
-    }>
-  >`
-    SELECT v.id, v.report_id AS "reportId", COALESCE(li.expense_id, ex.id) AS "expenseId",
-           v.line_item_id AS "lineItemId", v.rule_code AS "ruleCode",
-           v.severity::text AS severity, v.message, v.message_code AS "messageCode", v.data,
-           v.resolved_at AS "resolvedAt", v.resolved_by_id AS "resolvedBy",
-           v.resolve_note AS "resolveNote", v.created_at AS "createdAt"
-      FROM policy_violation v
-      LEFT JOIN expense_line_item li ON li.id = v.line_item_id
-      -- w2-02b: a finding about one EXPENSE (a missing receipt) has no line; the engine names
-      -- its expense in "data.expenseId" (and "finding_key"). Without this it read as a
-      -- finding about the whole report, and the workbench showed it on no expense.
-      LEFT JOIN expense ex
-             ON v.line_item_id IS NULL AND ex.report_id = v.report_id
-            AND ex.id::text = v.data->>'expenseId'
-     WHERE v.report_id = ${reportId}::uuid
-     ORDER BY v.created_at, v.id`;
-  // w2-02b: the sentence is the READER's (VX4-7 part 2b), as the report page before the
-  // workbench rendered it — from the finding's code and numbers, in the reader's locale, and
-  // the frozen English only for a row without a code. The workbench shows `message` as the
-  // label when ExpenseOS's catalogue has none for it, which is every VeloExpense finding.
-  const locale = userId ? (await loadReaderPrefs(queryRunnerOf(db), userId)).locale : null;
-  return rows.map(({ messageCode, ...v }) => ({
-    ...v,
-    message: locale
-      ? renderViolation(
-          { message_code: messageCode, message: v.message, data: (v.data ?? {}) as never },
-          locale,
-        )
-      : v.message,
-  }));
-}
-
-/**
- * VeloExpense: ExpenseOS's `validateReport` result — `{ violations, counts }`, with its
- * `unjustifiedWarning` — from VeloExpense's policy pass (`lib/policy/service.ts`), which
- * stays VeloExpense's until the policy engine is ported. Each finding in ExpenseOS's
- * `Violation` shape.
- */
-function validationResultOf(summary: ValidationSummary) {
-  return {
-    violations: summary.violations.map((v) => ({
-      ruleCode: v.rule_code as string,
-      severity: v.severity,
-      message: v.message,
-      lineItemId: v.line_item_id,
-      data: v.data,
-    })),
-    counts: {
-      info: summary.counts.INFO,
-      warning: summary.counts.WARNING,
-      block: summary.counts.BLOCK,
-      unjustifiedWarning: summary.unjustifiedWarning,
+async function reportViolations(db: TenantDb, reportId: string) {
+  return db.policyViolation.findMany({
+    where: { reportId },
+    orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+    select: {
+      id: true,
+      reportId: true,
+      expenseId: true,
+      lineItemId: true,
+      ruleCode: true,
+      severity: true,
+      message: true,
+      data: true,
+      resolvedAt: true,
+      resolvedBy: true,
+      resolveNote: true,
+      createdAt: true,
     },
-  };
+  });
 }
 
-/** VeloExpense: ExpenseOS's `validateReport({ db, reportId, … })`, on VeloExpense's policy
- *  pass in the procedure's own transaction. */
-async function runPolicy(db: TenantDb, reportId: string) {
-  return validationResultOf(await validateReportPolicy(queryRunnerOf(db), reportId));
-}
+/** Ported from ExpenseOS: the engine's message renderer at the tRPC boundary. The engine
+ *  stores the KEY; the sentence is assembled at render in the reader's locale. */
+const fallbackTranslator = (key: string) => key;
 
 /**
  * VeloExpense: the report's ledger-posting state — what ExpenseOS's `netsuiteState`
@@ -1654,10 +1594,7 @@ export const expensesRouter = router({
   /** Run the policy engine for the given report. Idempotent —
    *  rewrites the `PolicyViolation` rows for the report wholesale
    *  on each call. Front-end calls this on debounced edits to
-   *  power the inline warnings panel.
-   *
-   *  VeloExpense: VeloExpense's policy pass (`runPolicy`), which reconciles the stored
-   *  findings rather than rewriting them, until the policy engine is ported. */
+   *  power the inline warnings panel. */
   validate: withPermission(P.expense.report.readOwn)
     .input(z.object({ reportId: z.string().uuid() }))
     .mutation(async ({ ctx, input }) => {
@@ -1670,37 +1607,36 @@ export const expensesRouter = router({
       if (!report || report.submitterId !== ctx.session.user.id) {
         throw new TRPCError({ code: 'NOT_FOUND' });
       }
-      return runPolicy(ctx.db, input.reportId);
+      return validateReport({
+        db: ctx.db,
+        reportId: input.reportId,
+        t: fallbackTranslator,
+        actorId: ctx.session.user.id,
+      });
     }),
 
   /** Attach a justification comment to a WARNING/INFO policy violation on the
    *  submitter's own report — the "exception comment" that unblocks submit. A
    *  BLOCK is never justifiable (it must be fixed); a blank note clears the
-   *  justification. Owner-gated (the submitter, mirroring `validate`).
-   *
-   *  VeloExpense: written through VeloExpense's acknowledgement (`acknowledgeViolation` /
-   *  `clearAcknowledgement`), which records who and when as ExpenseOS's update does; the
-   *  row comes back in the shape `report` lists violations in. */
+   *  justification. Owner-gated (the submitter, mirroring `validate`). */
   justifyViolation: withPermission(P.expense.report.updateOwn)
     .input(
       z.object({ violationId: z.string().uuid(), note: z.string().trim().max(2000).nullish() }),
     )
     .mutation(async ({ ctx, input }) => {
-      // VeloExpense: no Prisma model for `policy_violation`; read with SQL.
-      const rows = await ctx.db.$queryRaw<
-        Array<{ id: string; severity: string; reportId: string | null; submitterId: string | null }>
-      >`
-        SELECT v.id, v.severity::text AS severity, v.report_id AS "reportId",
-               r.submitter_id AS "submitterId"
-          FROM policy_violation v
-          LEFT JOIN expense_report r ON r.id = v.report_id
-         WHERE v.id = ${input.violationId}::uuid`;
-      const v = rows[0];
+      const v = await ctx.db.policyViolation.findUnique({
+        where: { id: input.violationId },
+        select: { id: true, severity: true, reportId: true },
+      });
+      // VeloExpense: no `report` relation on the model; the submitter is read beside it.
+      const report = v
+        ? await ctx.db.expenseReport.findUnique({ where: { id: v.reportId }, select: { submitterId: true } })
+        : null;
       // `report` is null on a TRAVEL violation — those go through
       // `travelRequests.justifyViolation`, which gates on the travel submitter. Reading
       // it as not-found rather than crashing is what keeps the two subjects from
       // reaching into each other's justification flow.
-      if (!v?.reportId || v.submitterId !== ctx.session.user.id) {
+      if (!v || !report || report.submitterId !== ctx.session.user.id) {
         throw new TRPCError({ code: 'NOT_FOUND' });
       }
       if (v.severity === 'BLOCK') {
@@ -1710,11 +1646,12 @@ export const expensesRouter = router({
         });
       }
       const note = input.note?.trim() ? input.note.trim() : null;
-      const tx = queryRunnerOf(ctx.db);
-      if (note) await acknowledgeViolation(tx, input.violationId, ctx.session.user.id, note);
-      else await clearAcknowledgement(tx, input.violationId);
-      const after = await reportViolations(ctx.db, v.reportId);
-      return after.find((row) => row.id === input.violationId) ?? null;
+      return ctx.db.policyViolation.update({
+        where: { id: input.violationId },
+        data: note
+          ? { resolveNote: note, resolvedAt: new Date(), resolvedBy: ctx.session.user.id }
+          : { resolveNote: null, resolvedAt: null, resolvedBy: null },
+      });
     }),
 
   /** Sign off on a low-confidence receipt extraction — the reviewer confirms the
@@ -1897,20 +1834,39 @@ export const expensesRouter = router({
       // (`reportMissingCoding`, only when NetSuite is installed). VeloExpense's equivalent is
       // the lifecycle's own coding gate (UD-2): only when a ledger is connected, it refuses a
       // category with no GL account, before its policy pass.
-      const result = await runPolicy(ctx.db, input.reportId);
-      if (result.counts.block > 0 || result.counts.unjustifiedWarning > 0) {
-        // Blocked by either a hard BLOCK or a WARNING the submitter hasn't
-        // justified yet. Surface the violation list + counts so the FE can
-        // render the specific blockers / warnings-needing-a-comment — the
-        // TRPCError carries it via `cause`.
-        throw new TRPCError({
-          code: 'PRECONDITION_FAILED',
-          message: 'Report has unresolved policy violations.',
-          cause: result,
+      // VeloExpense (w4-02d): ExpenseOS's policy pass and refusal, below, run INSIDE the
+      // lifecycle's transition — after it has locked the report and passed its factual gates
+      // (status, lines, dates, coding) — as `policyPass`, not here before it. Run here, an
+      // edit committing between this pass and the lifecycle's lock would be submitted
+      // unchecked, and a coding problem would be reported after a policy one (UD-2). The
+      // pass, the refusal and its `cause` are ExpenseOS's.
+      let result: Awaited<ReturnType<typeof validateReport>> | null = null;
+      const policyPass = async () => {
+        result = await validateReport({
+          db: ctx.db,
+          reportId: input.reportId,
+          t: fallbackTranslator,
+          actorId: ctx.session.user.id,
         });
-      }
+        if (result.counts.block > 0 || result.counts.unjustifiedWarning > 0) {
+          // Blocked by either a hard BLOCK or a WARNING the submitter hasn't
+          // justified yet. Surface the violation list + counts so the FE can
+          // render the specific blockers / warnings-needing-a-comment — the
+          // TRPCError carries it via `cause`.
+          throw new TRPCError({
+            code: 'PRECONDITION_FAILED',
+            message: 'Report has unresolved policy violations.',
+            cause: result,
+          });
+        }
+      };
       // VeloExpense: the transition, on VeloExpense's lifecycle (d23) — see the doc comment.
-      const { approval: start } = await submitThroughLifecycle(ctx.db, input.reportId, ctx.rbac.id);
+      const { approval: start } = await submitThroughLifecycle(
+        ctx.db,
+        input.reportId,
+        ctx.rbac.id,
+        policyPass,
+      );
       // A workflow parked tasks (RUNNING) → notify the first approvers.
       await notifyReportSubmitted(ctx.db, input.reportId, ctx.rbac.id, start.createdTaskIds);
       // Any Notify / Action nodes the run passed through fire now.
@@ -1921,10 +1877,12 @@ export const expensesRouter = router({
         actorId: ctx.rbac.id,
       });
       const row = await ctx.db.expenseReport.findUniqueOrThrow({ where: { id: input.reportId } });
+      // The lifecycle ran the pass before it could submit, so `result` is set here.
+      const passed = result as unknown as Awaited<ReturnType<typeof validateReport>>;
       return {
         report: { ...row, totalMinor: row.totalMinor.toString() },
-        violations: result.violations,
-        counts: result.counts,
+        violations: passed.violations,
+        counts: passed.counts,
       };
     }),
 
@@ -3164,7 +3122,7 @@ export const expensesRouter = router({
         ctx.db.fxRate.findMany({ orderBy: { fetchedAt: 'desc' } }),
         // Folded into the same Promise.all so reading it costs no extra round trip.
         readerCurrencyCode(ctx.db, ctx.session.user.id),
-        reportViolations(ctx.db, report.id, ctx.session.user.id),
+        reportViolations(ctx.db, report.id),
         postingStateOf(ctx.db, report.id),
       ]);
       const extractionReviewThreshold = 0.7;

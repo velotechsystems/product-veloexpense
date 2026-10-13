@@ -30,7 +30,15 @@ const { appRouter } = await import('@/server/routers/_app');
 const { db } = await import('@/lib/db/prisma');
 const { withOrg } = await import('@/lib/tenant/context');
 const { verifyChain } = await import('@/lib/audit/verify');
-const { getPolicyCurrency } = await import('@/lib/policy/service');
+// w4-02d: v1's `getPolicyCurrency` went with its engine; the tenant's convertible pairs are
+// read here the way budgets and analytics read them (lib/fx/rates.ts).
+const { buildRateLookup } = await import('@/lib/fx/rates');
+const convertibleFor = (org: string) =>
+  withOrg(org, async (tx) =>
+    buildRateLookup(
+      (await tx.query('SELECT base, quote, rate, as_of FROM fx_rate ORDER BY as_of DESC, fetched_at DESC')).rows,
+    ).pairs(),
+  );
 
 const MIGRATION = readFileSync('prisma/migrations/0051_fx_rate_port/migration.sql', 'utf8');
 /** Just the copy loop: the rest of 0051 has already run on this database. */
@@ -105,7 +113,7 @@ describe('append-only history', () => {
     ).rows;
     for (const r of rows) expect(r.as_of).toBe((r.fetched_at as Date).toISOString().slice(0, 10));
 
-    // The same query lib/policy, lib/budgets and lib/analytics run: the first USD->CAD
+    // The same query lib/budgets and lib/analytics run (and v1's lib/policy did): the first USD->CAD
     // row is the one buildRateLookup keeps, and it is the newer of the day's two.
     const read = await withOrg(A, (tx) =>
       tx.query('SELECT base, quote, rate, as_of FROM fx_rate ORDER BY as_of DESC, fetched_at DESC'),
@@ -170,7 +178,7 @@ describe('the bounds', () => {
 
 describe('VeloExpense: per tenant (d18)', () => {
   it('keeps one tenant’s rates from another, and another tenant’s conversions do not move', async () => {
-    const before = await withOrg(B, (tx) => getPolicyCurrency(tx));
+    const before = { convertible: await convertibleFor(B) };
     await as('boss@beta.test', B).policies.fxRate.add({ base: 'CHF', quote: 'CAD', rate: '1.5500' });
 
     const alpha = await boss().policies.fxRate.latest();
@@ -179,7 +187,7 @@ describe('VeloExpense: per tenant (d18)', () => {
     expect(beta.map((r) => `${r.base}->${r.quote}`)).toEqual(['CHF->CAD']);
 
     // Alpha's many USD and EUR adds above never reached Beta's conversions.
-    const after = await withOrg(B, (tx) => getPolicyCurrency(tx));
+    const after = { convertible: await convertibleFor(B) };
     expect(after.convertible).toEqual([...before.convertible, 'CHF->CAD'].sort());
     expect(after.convertible).not.toContain('EUR->CAD');
   });

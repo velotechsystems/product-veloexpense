@@ -42,7 +42,7 @@
  */
 import type { QueryRunner } from '@/lib/db/client';
 import { convertMinor } from '@/lib/money';
-import { buildRateLookup, type RateLookup, type RateRow } from '@/lib/policy/rates';
+import { buildRateLookup, type RateLookup, type RateRow } from '@/lib/fx/rates';
 import { resolveBudget, type BudgetScope, type BudgetSnapshot } from '@/lib/budgets/scope';
 import { COMMITTED_STATUSES, COUNTED_STATUSES } from '@/lib/spend/statuses';
 import { fireThresholdAlerts, type AlertOutcome } from '@/lib/budgets/alerts';
@@ -99,7 +99,7 @@ function dateOnly(value: string | Date): string {
  * Rate lookups bounded by each expense's OWN date, memoized per date.
  *
  * Not one lookup for the whole rollup: a budget compared against re-converted
- * history moves every time a new rate row arrives, and `lib/policy/rates.ts`'s
+ * history moves every time a new rate row arrives, and `lib/fx/rates.ts`'s
  * first property — latest on or before — is what stops that. ExpenseOS reaches
  * the same place from the other side, preferring the rate snapshot the expense
  * carried when it was filed; we have no per-expense snapshot column, so bounding

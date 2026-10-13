@@ -1,7 +1,7 @@
 /**
  * VX3-2 — currency conversion and the rate lookup. No database.
  *
- * `lib/money.ts` and `lib/policy/rates.ts` are pure, which is what lets this run
+ * `lib/money.ts` and `lib/fx/rates.ts` are pure, which is what lets this run
  * without Postgres. The arithmetic is the part of this ticket most likely to be
  * quietly wrong: a threshold comparison that is off by a factor of ten still
  * returns a boolean, and nothing about the result looks unusual.
@@ -14,7 +14,7 @@ import {
   scaledRateToString,
   AmountError,
 } from '@/lib/money';
-import { buildRateLookup, noRates } from '@/lib/policy/rates';
+import { buildRateLookup, noRates } from '@/lib/fx/rates';
 
 describe('rateToScaled', () => {
   it('scales to 8 decimal places', () => {

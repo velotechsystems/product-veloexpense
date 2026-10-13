@@ -27,7 +27,8 @@
  *
  * ── HOW THE RACE IS FORCED ─────────────────────────────────────────────────
  *
- * Same technique as `test/policy-concurrent-validate.db.test.ts` (#129): the FIRST
+ * Same technique as the concurrent-validate test (#129, now
+ * `server/policy/validate.db.test.ts`): the FIRST
  * transaction does its whole job and stays open; the SECOND is started and not
  * awaited; `waitUntilBlocked` asks Postgres — not the promise — whether the
  * second is actually waiting on a lock before the first commits. A run in which
@@ -56,7 +57,8 @@ import { Pool } from 'pg';
 import { seedDefaultFlow, withTenantTx as withOrg } from './support/tenant-tx';
 import * as expenses from '@/lib/expenses/service';
 import * as lifecycle from '@/lib/expenses/lifecycle';
-import * as policy from '@/lib/policy/service';
+// w4-02d: the policy pass is ExpenseOS's engine, which the lifecycle runs under its lock.
+import { validateReport } from '@/server/policy/validate';
 import { decideThroughEngine } from '@/server/lib/reportLifecycle';
 import type { QueryRunner } from '@/lib/db/client';
 import type { TenantDb } from '@/lib/db/prisma';
@@ -223,7 +225,7 @@ beforeAll(async () => {
 });
 
 beforeEach(async () => {
-  await admin.query('DELETE FROM expense_policy WHERE organization_id = $1', [orgId]);
+  await admin.query('DELETE FROM policy_rule WHERE organization_id = $1', [orgId]);
 });
 
 afterAll(async () => {
@@ -254,13 +256,13 @@ describe('a submit and an edit of the same report, overlapping', () => {
   });
 
   it("a submit that waits behind an edit validates the report WITH that edit's line", async () => {
-    // A BLOCK rule the existing line is under and the incoming line is over.
-    await withOrg(orgId, (tx) =>
-      policy.createPolicy(tx, {
-        kind: 'PER_TRANSACTION_LIMIT',
-        severity: 'BLOCK',
-        params: { thresholdMinor: 50_00 },
-      }),
+    // A BLOCK rule the existing line is under and the incoming line is over (w4-02d: a
+    // per-transaction limit as the cutover converts v1's, a line predicate).
+    await admin.query(
+      `INSERT INTO policy_rule (organization_id, kind_code, scope, severity, condition, params, message_key, effective_from)
+       VALUES ($1, 'PREDICATE_LINE', 'LINE', 'BLOCK',
+               '{"all":[{"field":"lineAmount","op":"gt","value":5000}]}', '{}', 'perTransactionLimit', '2000-01-01')`,
+      [orgId],
     );
     const { reportId, expenseId } = await draft(10_00);
 
@@ -268,7 +270,13 @@ describe('a submit and an edit of the same report, overlapping', () => {
       expenses.addLineItem(tx, TEST_ACTOR, expenseId, { categoryId, amountMinor: 75_00 }),
     );
     await a.done;
-    const b = contend((tx) => lifecycle.submitReport(tx, reportId, submitterId));
+    // As the submit procedure makes it: the policy pass handed to the lifecycle, which runs it
+    // under the report lock it has just waited for.
+    const b = contend((tx, db) =>
+      lifecycle.submitReport(tx, reportId, submitterId, {
+        policyPass: () => validateReport({ db, reportId, t: (k) => k }),
+      }),
+    );
     const waitedOn = await waitUntilBlocked(await b.pid, b.result, 'submit behind edit');
     // At the CHECK, on the report row — not at the end, on the audit chain.
     expect(waitedOn, 'the second transaction did not wait at its status check').not.toBe('advisory');

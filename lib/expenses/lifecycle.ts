@@ -23,7 +23,6 @@
 import type { QueryRunner } from '@/lib/db/client';
 import { DomainError, type UserMessage } from '@/lib/errors/domain';
 import type { UserMessageCode } from '@/lib/i18n/catalog/errors';
-import * as policy from '@/lib/policy/service';
 import { startInstance, type StartResult } from '@expenseos/approvals/engine';
 import { writeAudit } from '@expenseos/audit';
 import { recomputeForReport } from '@/lib/budgets/service';
@@ -41,6 +40,54 @@ import { assertTenantMayWrite } from '@/lib/billing/gate';
 
 
 export type TransitionAction = 'SUBMIT' | 'RECALL' | 'APPROVE' | 'REJECT' | 'RETURN' | 'REIMBURSE';
+
+/**
+ * A stored policy finding, as the submit gate reads it.
+ *
+ * w4-02d: since the cutover the policy pass is ExpenseOS's (`server/policy/validate.ts`),
+ * which the submit procedure runs first, in this same transaction, and which writes the
+ * report's findings. This lifecycle no longer runs an engine of its own; it reads what that
+ * pass just wrote, so the gate below and the event's record of "what the gate saw" stand.
+ */
+export interface StoredFinding {
+  id: string;
+  rule_code: string;
+  severity: 'INFO' | 'WARNING' | 'BLOCK';
+  message: string;
+  line_item_id: string | null;
+  resolved_at: Date | null;
+  resolved_by_id: string | null;
+  resolve_note: string | null;
+}
+
+export interface StoredFindings {
+  violations: StoredFinding[];
+  counts: { INFO: number; WARNING: number; BLOCK: number };
+  /** An open BLOCK: one nobody may talk past (`resolved_at` is never set on a BLOCK). */
+  blocking: boolean;
+  /** WARNINGs with no justification yet (w2-11, d34). */
+  unjustifiedWarning: number;
+}
+
+/** The report's stored findings (w4-02d), as the gate and the record read them. */
+export async function storedFindings(tx: QueryRunner, reportId: string): Promise<StoredFindings> {
+  const r = await tx.query(
+    `SELECT id, rule_code, severity::text AS severity, message, line_item_id, resolved_at,
+            resolved_by_id, resolve_note
+       FROM policy_violation WHERE report_id = $1
+      ORDER BY created_at, id`,
+    [reportId],
+  );
+  const violations = r.rows as StoredFinding[];
+  const counts = { INFO: 0, WARNING: 0, BLOCK: 0 };
+  for (const v of violations) counts[v.severity] += 1;
+  return {
+    violations,
+    counts,
+    blocking: violations.some((v) => v.severity === 'BLOCK' && v.resolved_at === null),
+    unjustifiedWarning: violations.filter((v) => v.severity === 'WARNING' && v.resolved_at === null).length,
+  };
+}
 
 export type LifecycleErrorCode =
   | 'NOT_FOUND'
@@ -64,7 +111,7 @@ export class LifecycleError extends DomainError {
     message: string,
     readonly code: LifecycleErrorCode,
     /** The findings that refused a submit, so the UI can list them. */
-    readonly violations: policy.ViolationRow[] = [],
+    readonly violations: StoredFinding[] = [],
     /**
      * A bare code, or a code WITH parameters. `DomainError` has accepted both
      * since VX4-7 part 2c; this class narrowed it to a bare code, which UD-2's
@@ -173,7 +220,8 @@ async function recordEvent(
 
 export interface SubmitResult {
   report: { id: string; number: string | null; status: ReportStatus; submitted_at: Date };
-  validation: policy.ValidationSummary;
+  /** w4-02d: the findings the gate read (`storedFindings`). */
+  validation: StoredFindings;
   /**
    * The approval instance started for this submission — ExpenseOS's `startInstance` result
    * (w4-00c). Never NO_WORKFLOW (d58 refuses that), so a SUBMITTED report always has a
@@ -183,11 +231,28 @@ export interface SubmitResult {
   approval: StartResult & { instanceId: string };
 }
 
+export interface SubmitOptions {
+  /**
+   * w4-02d: the policy pass, run by this function at the point v1's ran — after the report
+   * is locked and the factual gates (status, lines, dates, coding) have passed, in the same
+   * transaction. The submit procedure hands in ExpenseOS's (`server/policy/validate.ts`),
+   * which writes the report's findings and may refuse on its own; the gate below then reads
+   * what it wrote.
+   *
+   * Here rather than before this function, for the two things v1's placement bought: the
+   * report row is locked FIRST, so an edit that lands while the pass runs is waited for
+   * rather than missed (test/report-lock.db.test.ts); and a coding problem is reported
+   * before a policy one (UD-2).
+   */
+  policyPass?: () => Promise<unknown>;
+}
+
 /** DRAFT → SUBMITTED. Throws LifecycleError with the blocking findings attached. */
 export async function submitReport(
   tx: QueryRunner,
   reportId: string,
   actorId: string,
+  options: SubmitOptions = {},
 ): Promise<SubmitResult> {
   // VX5-11. BEFORE the status check and before the policy pass, because a tenant
   // whose subscription has lapsed should be told THAT rather than being walked
@@ -290,8 +355,11 @@ export async function submitReport(
     }
   }
 
-  // Re-run rather than read: the stored findings could predate a rule change.
-  const validation = await policy.validateReport(tx, reportId);
+  // w4-02d: the caller's policy pass (ExpenseOS's engine, `SubmitOptions.policyPass`), then
+  // the gate on what it wrote — so no path reaches SUBMITTED past an open BLOCK or an
+  // unexplained WARNING, whether or not the caller ran a pass.
+  if (options.policyPass) await options.policyPass();
+  const validation = await storedFindings(tx, reportId);
   if (validation.blocking) {
     const blocking = validation.violations.filter(
       (v) => v.severity === 'BLOCK' && v.resolved_at === null,
@@ -377,9 +445,9 @@ export async function submitReport(
   // transition cannot be forgotten by a new caller, and it commits with the
   // submission or not at all.
   //
-  // Note the ordering against `validateReport` above, which is deliberate: the
-  // rule warns using the baseline WITHOUT this report plus this report's own
-  // contribution, then the report becomes part of the baseline. Recomputing
+  // Note the ordering against the policy pass (run by the submit procedure before this),
+  // which is deliberate: the rule warns using the baseline WITHOUT this report plus this
+  // report's own contribution, then the report becomes part of the baseline. Recomputing
   // first would double-count it.
   await recomputeForReport(tx, reportId, actorId);
 
@@ -1026,7 +1094,7 @@ export async function getSubmitReadiness(tx: QueryRunner, reportId: string) {
       WHERE e.report_id = $1`,
     [reportId],
   );
-  const validation = await policy.getValidation(tx, reportId);
+  const validation = await storedFindings(tx, reportId);
   const reasons: string[] = [];
   if (!SUBMITTABLE.includes(report.status)) reasons.push(`the report is ${report.status}`);
   if (lines.rows[0].count === 0) reasons.push('it has no line items');

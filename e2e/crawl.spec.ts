@@ -59,7 +59,6 @@ const PAGES = [
   '/admin/modules',
   '/admin/employees',
   '/admin/employees/invite',
-  '/admin/expense-policies',
   '/admin/budgets',
   '/admin/chart-of-accounts',
   '/admin/compliance',

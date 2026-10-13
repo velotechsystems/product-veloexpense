@@ -13,7 +13,9 @@ import { Pool } from 'pg';
 // transaction (test/support/tenant-tx.ts) — the same `QueryRunner`, under the same name.
 import { seedDefaultFlow, withTenantTx as withOrg } from './support/tenant-tx';
 import * as expenses from '@/lib/expenses/service';
-import * as policy from '@/lib/policy/service';
+// w4-02d: the policy pass is ExpenseOS's engine (server/policy/validate.ts), which the submit
+// procedure runs before the lifecycle; the lifecycle's gate reads what it wrote.
+import { validateReport } from '@/server/policy/validate';
 import * as lifecycle from '@/lib/expenses/lifecycle';
 import { TEST_ACTOR } from './support/audit-actor';
 import { errorParam, userMessageOf } from '@/lib/errors/domain';
@@ -27,6 +29,30 @@ const admin = new Pool({
 let orgId: string;
 let userId: string;
 let categoryId: string;
+
+const t = (k: string) => k;
+type Tx = Parameters<Parameters<typeof withOrg>[1]>[0];
+
+/** w4-02d: arm a per-transaction limit, as the cutover converts v1's (a line predicate). */
+const limitRule = (tx: Tx, severity: 'WARNING' | 'BLOCK', thresholdMinor = 50_00) =>
+  tx
+    .query(
+      `INSERT INTO policy_rule (kind_code, scope, severity, condition, params, message_key, effective_from)
+       VALUES ('PREDICATE_LINE', 'LINE', $1::policy_severity,
+               jsonb_build_object('all', jsonb_build_array(jsonb_build_object('field','lineAmount','op','gt','value',$2::int))),
+               '{}', 'perTransactionLimit', '2000-01-01') RETURNING id`,
+      [severity, thresholdMinor],
+    )
+    .then((r) => r.rows[0].id as string);
+
+/** w4-02d: a submit as the submit procedure makes it — ExpenseOS's policy pass handed to the
+ *  lifecycle, which runs it under its lock (server/routers/expenses.ts `submit`). */
+const policyThenSubmit = (reportId: string) =>
+  withOrg(orgId, (tx, db) =>
+    lifecycle.submitReport(tx, reportId, userId, {
+      policyPass: () => validateReport({ db, reportId, t }),
+    }),
+  );
 
 /** A DRAFT with one coded line, ready to submit unless a rule says otherwise. */
 async function draft(amountMinor = 1000) {
@@ -87,7 +113,7 @@ describe('submit', () => {
   it('moves a clean draft to SUBMITTED and stamps submitted_at', async () => {
     const { reportId } = await draft();
     const result = await withOrg(orgId, async (tx) => {
-      await tx.query('DELETE FROM expense_policy');
+      await tx.query('DELETE FROM policy_rule');
       return lifecycle.submitReport(tx, reportId, userId);
     });
     expect(result.report.status).toBe('SUBMITTED');
@@ -108,7 +134,7 @@ describe('submit', () => {
   it('REFUSES a submit while an expense has no date', async () => {
     const { reportId, expenseId } = await draft();
     await withOrg(orgId, async (tx) => {
-      await tx.query('DELETE FROM expense_policy');
+      await tx.query('DELETE FROM policy_rule');
       await tx.query('UPDATE expense SET txn_date = NULL WHERE id = $1', [expenseId]);
     });
     const err = await withOrg(orgId, (tx) => lifecycle.submitReport(tx, reportId, userId)).catch(
@@ -124,7 +150,7 @@ describe('submit', () => {
   it('counts them, and the plural is a different sentence', async () => {
     const { reportId, expenseId } = await draft();
     await withOrg(orgId, async (tx) => {
-      await tx.query('DELETE FROM expense_policy');
+      await tx.query('DELETE FROM policy_rule');
       await tx.query('UPDATE expense SET txn_date = NULL WHERE id = $1', [expenseId]);
       // A second undated expense, with a line so the report stays submittable on
       // every other count.
@@ -145,7 +171,7 @@ describe('submit', () => {
   it('lets a dated report through — the gate is the date, not the submit', async () => {
     const { reportId } = await draft();
     const result = await withOrg(orgId, async (tx) => {
-      await tx.query('DELETE FROM expense_policy');
+      await tx.query('DELETE FROM policy_rule');
       return lifecycle.submitReport(tx, reportId, userId);
     });
     expect(result.report.status).toBe('SUBMITTED');
@@ -154,7 +180,7 @@ describe('submit', () => {
   it('writes one audit row recording what the gate saw', async () => {
     const { reportId } = await draft(4200);
     const events = await withOrg(orgId, async (tx) => {
-      await tx.query('DELETE FROM expense_policy');
+      await tx.query('DELETE FROM policy_rule');
       await lifecycle.submitReport(tx, reportId, userId);
       return lifecycle.listEvents(tx, reportId);
     });
@@ -184,39 +210,29 @@ describe('submit', () => {
   it('refuses while a BLOCK violation is open, and allows it once fixed', async () => {
     const { reportId, lineId } = await draft(75_00);
     await withOrg(orgId, async (tx) => {
-      await tx.query('DELETE FROM expense_policy');
-      await policy.createPolicy(tx, {
-        kind: 'PER_TRANSACTION_LIMIT',
-        severity: 'BLOCK',
-        params: { thresholdMinor: 50_00 },
-      });
-      await expect(lifecycle.submitReport(tx, reportId, userId)).rejects.toThrow(/blocking policy/);
+      await tx.query('DELETE FROM policy_rule');
+      await limitRule(tx, 'BLOCK');
     });
+    await expect(policyThenSubmit(reportId)).rejects.toThrow(/blocking policy/);
 
-    const after = await withOrg(orgId, async (tx) => {
-      await expenses.updateLineItem(tx, TEST_ACTOR, lineId, { amountMinor: 1000 });
-      return lifecycle.submitReport(tx, reportId, userId);
-    });
+    await withOrg(orgId, (tx) => expenses.updateLineItem(tx, TEST_ACTOR, lineId, { amountMinor: 1000 }));
+    const after = await policyThenSubmit(reportId);
     expect(after.report.status).toBe('SUBMITTED');
   });
 
   it('carries the blocking findings on the error so the UI can list them', async () => {
     const { reportId } = await draft(75_00);
-    await withOrg(orgId, async (tx) => {
-      await tx.query('DELETE FROM expense_policy');
-      await policy.createPolicy(tx, {
-        kind: 'PER_TRANSACTION_LIMIT',
-        severity: 'BLOCK',
-        params: { thresholdMinor: 50_00 },
-      });
-      const error = await lifecycle
-        .submitReport(tx, reportId, userId)
-        .then(() => null)
-        .catch((err: lifecycle.LifecycleError) => err);
-      expect(error?.code).toBe('BLOCKED_BY_POLICY');
-      expect(error?.violations).toHaveLength(1);
-      expect(error?.violations[0].rule_code).toBe('PER_TRANSACTION_LIMIT');
+    const ruleId = await withOrg(orgId, async (tx) => {
+      await tx.query('DELETE FROM policy_rule');
+      return limitRule(tx, 'BLOCK');
     });
+    const error = await policyThenSubmit(reportId)
+      .then(() => null)
+      .catch((err: lifecycle.LifecycleError) => err);
+    expect(error?.code).toBe('BLOCKED_BY_POLICY');
+    expect(error?.violations).toHaveLength(1);
+    // w4-02d: ExpenseOS's rule code is the firing instance's id.
+    expect(error?.violations[0].rule_code).toBe(ruleId);
   });
 
   /**
@@ -226,20 +242,15 @@ describe('submit', () => {
    * warning is submittable only once the submitter attaches a comment over the exception".
    * The three cases below are that rule's three answers.
    */
-  const warnAbove50 = (tx: Parameters<Parameters<typeof withOrg>[1]>[0]) =>
-    policy.createPolicy(tx, {
-      kind: 'PER_TRANSACTION_LIMIT',
-      severity: 'WARNING',
-      params: { thresholdMinor: 50_00 },
-    });
+  const warnAbove50 = (tx: Tx) => limitRule(tx, 'WARNING');
 
   it('REFUSES a submit over a WARNING nobody has justified', async () => {
     const { reportId } = await draft(75_00);
-    const err = await withOrg(orgId, async (tx) => {
-      await tx.query('DELETE FROM expense_policy');
+    await withOrg(orgId, async (tx) => {
+      await tx.query('DELETE FROM policy_rule');
       await warnAbove50(tx);
-      return lifecycle.submitReport(tx, reportId, userId).catch((e: unknown) => e);
     });
+    const err = await policyThenSubmit(reportId).catch((e: unknown) => e);
     expect(err).toBeInstanceOf(lifecycle.LifecycleError);
     expect((err as lifecycle.LifecycleError).code).toBe('UNJUSTIFIED_WARNING');
     expect((err as lifecycle.LifecycleError).violations).toHaveLength(1);
@@ -250,13 +261,19 @@ describe('submit', () => {
 
   it('allows submit over a WARNING once it is acknowledged with a note', async () => {
     const { reportId } = await draft(75_00);
-    const result = await withOrg(orgId, async (tx) => {
-      await tx.query('DELETE FROM expense_policy');
+    await withOrg(orgId, async (tx, db) => {
+      await tx.query('DELETE FROM policy_rule');
       await warnAbove50(tx);
-      const v = await policy.validateReport(tx, reportId);
-      await policy.acknowledgeViolation(tx, v.violations[0].id, userId, 'Client dinner, approved');
-      return lifecycle.submitReport(tx, reportId, userId);
+      const v = await validateReport({ db, reportId, t });
+      // What `expenses.justifyViolation` writes.
+      await db.policyViolation.update({
+        where: { id: (await db.policyViolation.findFirstOrThrow({ where: { reportId } })).id },
+        data: { resolveNote: 'Client dinner, approved', resolvedAt: new Date(), resolvedBy: userId },
+      });
+      expect(v.counts.unjustifiedWarning).toBe(1);
     });
+    // The submit's own pass carries the note forward onto the same finding.
+    const result = await policyThenSubmit(reportId);
     expect(result.report.status).toBe('SUBMITTED');
     expect(result.validation.counts.WARNING).toBe(1);
     expect(result.validation.unjustifiedWarning).toBe(0);
@@ -266,36 +283,39 @@ describe('submit', () => {
     // ExpenseOS's `explanationJustifies`: the explanation on the expense stands in for the
     // note, recorded as the submitter's.
     const { reportId, expenseId } = await draft(75_00);
-    const result = await withOrg(orgId, async (tx) => {
-      await tx.query('DELETE FROM expense_policy');
+    await withOrg(orgId, async (tx) => {
+      await tx.query('DELETE FROM policy_rule');
       await warnAbove50(tx);
       await tx.query(`UPDATE expense SET explanation = '  Team offsite  ' WHERE id = $1`, [
         expenseId,
       ]);
-      return lifecycle.submitReport(tx, reportId, userId);
     });
+    const result = await policyThenSubmit(reportId);
     expect(result.report.status).toBe('SUBMITTED');
     const v = result.validation.violations[0];
     expect(v.resolve_note).toBe('Team offsite');
+    // w4-02d: ExpenseOS records the submitter (the report's), who files the explanation.
     expect(v.resolved_by_id).toBe(userId);
   });
 
-  it("takes the explanation for a warning about the expense itself, not one line (w2-02b)", async () => {
-    // A missing receipt is a finding about the EXPENSE: it has no line, and names the expense
-    // in its data. The workbench shows it on that expense, beside the explanation field — so
-    // the explanation answers it as it answers a line's.
+  it('takes the explanation for a missing receipt too (w2-02b)', async () => {
+    // A missing receipt is a finding about the expense's spend. w4-02d: ExpenseOS anchors it to
+    // the LINE (v1 anchored it to the expense with no line); either way the explanation on the
+    // expense answers it, which is what the workbench shows beside it.
     const { reportId, expenseId } = await draft(75_00);
-    const result = await withOrg(orgId, async (tx) => {
-      await tx.query('DELETE FROM expense_policy');
-      await policy.createPolicy(tx, { kind: 'RECEIPT_REQUIRED', severity: 'WARNING', params: {} });
+    await withOrg(orgId, async (tx) => {
+      await tx.query('DELETE FROM policy_rule');
+      await tx.query(
+        `INSERT INTO policy_rule (kind_code, scope, severity, params, message_key, effective_from)
+         VALUES ('RECEIPT_THRESHOLD', 'AGGREGATE', 'WARNING', '{"thresholdMinor":"0"}', 'receiptThreshold', '2000-01-01')`,
+      );
       await tx.query(`UPDATE expense SET explanation = 'Taxi, no receipt offered' WHERE id = $1`, [
         expenseId,
       ]);
-      return lifecycle.submitReport(tx, reportId, userId);
     });
+    const result = await policyThenSubmit(reportId);
     expect(result.report.status).toBe('SUBMITTED');
-    const v = result.validation.violations.find((x) => x.rule_code === 'RECEIPT_REQUIRED');
-    expect(v?.line_item_id).toBeNull();
+    const v = result.validation.violations.find((x) => x.message === 'receiptThreshold');
     expect(v?.resolve_note).toBe('Taxi, no receipt offered');
   });
 
@@ -303,7 +323,7 @@ describe('submit', () => {
     // ExpenseOS's rule: an approver sending a report back is an invitation to edit and
     // resubmit, not to recall it first.
     const { reportId } = await draft();
-    await withOrg(orgId, (tx) => tx.query('DELETE FROM expense_policy'));
+    await withOrg(orgId, (tx) => tx.query('DELETE FROM policy_rule'));
     await admin.query(`UPDATE expense_report SET status = 'RETURNED' WHERE id = $1`, [reportId]);
     const result = await withOrg(orgId, (tx) => lifecycle.submitReport(tx, reportId, userId));
     expect(result.report.status).toBe('SUBMITTED');
@@ -316,25 +336,22 @@ describe('submit', () => {
 
   it('re-runs the rules at submit rather than trusting the last save', async () => {
     // The report saves clean, THEN an admin adds a blocking rule. The stored
-    // findings say "fine"; the submit must not.
+    // findings say "fine"; the submit must not. w4-02d: the submit procedure's own pass is
+    // what re-runs them (the lifecycle reads what it wrote).
     const { reportId } = await draft(75_00);
-    await withOrg(orgId, async (tx) => {
-      await tx.query('DELETE FROM expense_policy');
-      const clean = await policy.getValidation(tx, reportId);
+    await withOrg(orgId, async (tx, db) => {
+      await tx.query('DELETE FROM policy_rule');
+      const clean = await validateReport({ db, reportId, t });
       expect(clean.violations).toHaveLength(0);
-      await policy.createPolicy(tx, {
-        kind: 'PER_TRANSACTION_LIMIT',
-        severity: 'BLOCK',
-        params: { thresholdMinor: 50_00 },
-      });
-      await expect(lifecycle.submitReport(tx, reportId, userId)).rejects.toThrow(/blocking policy/);
+      await limitRule(tx, 'BLOCK');
     });
+    await expect(policyThenSubmit(reportId)).rejects.toThrow(/blocking policy/);
   });
 
   it('cannot be submitted twice', async () => {
     const { reportId } = await draft();
     await withOrg(orgId, async (tx) => {
-      await tx.query('DELETE FROM expense_policy');
+      await tx.query('DELETE FROM policy_rule');
       await lifecycle.submitReport(tx, reportId, userId);
       await expect(lifecycle.submitReport(tx, reportId, userId)).rejects.toThrow(/only a DRAFT/);
     });
@@ -343,7 +360,7 @@ describe('submit', () => {
   it('freezes the report — edits are refused once submitted', async () => {
     const { reportId, expenseId, lineId } = await draft();
     await withOrg(orgId, async (tx) => {
-      await tx.query('DELETE FROM expense_policy');
+      await tx.query('DELETE FROM policy_rule');
       await lifecycle.submitReport(tx, reportId, userId);
       await expect(expenses.updateReport(tx, TEST_ACTOR, reportId, { title: 'Nope' })).rejects.toThrow(/only DRAFT/);
       await expect(expenses.addLineItem(tx, TEST_ACTOR, expenseId, { categoryId, amountMinor: 1 })).rejects.toThrow(/only DRAFT/);
@@ -357,7 +374,7 @@ describe('recall', () => {
   it('returns a submitted report to DRAFT, clears submitted_at, and logs it', async () => {
     const { reportId } = await draft();
     const result = await withOrg(orgId, async (tx) => {
-      await tx.query('DELETE FROM expense_policy');
+      await tx.query('DELETE FROM policy_rule');
       await lifecycle.submitReport(tx, reportId, userId);
       await lifecycle.recallReport(tx, reportId, userId, 'Wrong month');
       const report = await expenses.getReport(tx, reportId);
@@ -373,7 +390,7 @@ describe('recall', () => {
   it('makes the report editable again and lets it be resubmitted', async () => {
     const { reportId, lineId } = await draft();
     const result = await withOrg(orgId, async (tx) => {
-      await tx.query('DELETE FROM expense_policy');
+      await tx.query('DELETE FROM policy_rule');
       await lifecycle.submitReport(tx, reportId, userId);
       await lifecycle.recallReport(tx, reportId, userId);
       await expenses.updateLineItem(tx, TEST_ACTOR, lineId, { amountMinor: 2200 });
@@ -419,8 +436,7 @@ describe('submit readiness', () => {
   it('is ready for a clean draft with a line', async () => {
     const { reportId } = await draft();
     const readiness = await withOrg(orgId, async (tx) => {
-      await tx.query('DELETE FROM expense_policy');
-      await policy.validateReport(tx, reportId);
+      await tx.query('DELETE FROM policy_rule');
       return lifecycle.getSubmitReadiness(tx, reportId);
     });
     expect(readiness).toEqual({ canSubmit: true, canRecall: false, reasons: [] });

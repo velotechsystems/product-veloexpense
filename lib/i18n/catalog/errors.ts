@@ -37,14 +37,7 @@
  * exception's own text in a URL.
  */
 import { DEFAULT_LOCALE, localizedFrom, type Locale } from '../locales';
-import {
-  enumLabel,
-  missingCopyMarker,
-  RULE_KIND_COPY,
-  RULE_PARAM_COPY,
-  SEVERITY_COPY,
-  type Copy,
-} from './enums';
+import { enumLabel, missingCopyMarker, type Copy } from './enums';
 import { decodeUserMessage, type MessageParams } from '@/lib/errors/domain';
 
 export const USER_MESSAGE_CODES = [
@@ -181,19 +174,6 @@ export const USER_MESSAGE_CODES = [
   'LOGO_EMPTY',
   'LOGO_TOO_LARGE',
   'TAGLINE_TOO_LONG',
-
-  /* expense policies (lib/policy/service.ts) ───────────────────────────── */
-  'POLICY_PARAM_REQUIRED',
-  'POLICY_PARAM_NOT_WHOLE',
-  'POLICY_PARAM_NEGATIVE',
-  'POLICY_RULE_KIND_UNKNOWN',
-  'POLICY_SEVERITY_UNKNOWN',
-  'POLICY_SEVERITY_ABOVE_MAX',
-  'POLICY_NOT_CATEGORY_SCOPED',
-  'POLICY_DUPLICATE_SCOPE',
-  'POLICY_CURRENCY_REQUIRED',
-  'VIOLATION_BLOCK_NOT_ACKNOWLEDGEABLE',
-  'VIOLATION_NOTE_REQUIRED',
 
   /* approvals and analytics ─────────────────────────────────────────────── */
   'TASK_WITHDRAWN',
@@ -825,46 +805,6 @@ export const ERROR_COPY: Record<UserMessageCode, Copy> = {
     'en-CA': 'The tagline is {length} characters and the limit is {limit}.',
   },
 
-  /* ── expense policies ──────────────────────────────────────────────────── */
-  // These interpolate a rule's LABEL and a param's LABEL — both product copy
-  // from RULE_DEFINITIONS, not identifiers, and both are what makes the sentence
-  // point at the right field on a screen with several rules on it.
-  POLICY_PARAM_REQUIRED: {
-    'en-CA': '{rule} needs {field}.',
-  },
-  POLICY_PARAM_NOT_WHOLE: {
-    'en-CA': '{field} must be a whole number of minor units.',
-  },
-  POLICY_PARAM_NEGATIVE: {
-    'en-CA': '{field} cannot be negative.',
-  },
-  POLICY_RULE_KIND_UNKNOWN: {
-    'en-CA': 'That is not a rule this product has.',
-  },
-  POLICY_SEVERITY_UNKNOWN: {
-    'en-CA': 'That is not a severity this product has.',
-  },
-  POLICY_SEVERITY_ABOVE_MAX: {
-    // BG-4's mechanism, explained to the person hitting it: the rule kind has a
-    // ceiling and the write refuses rather than silently clamping.
-    'en-CA': '{rule} cannot be set above {maximum} — this rule never goes higher.',
-  },
-  POLICY_NOT_CATEGORY_SCOPED: {
-    'en-CA': '{rule} applies to the whole report and cannot be scoped to a category.',
-  },
-  POLICY_DUPLICATE_SCOPE: {
-    'en-CA': 'A {rule} rule already exists for that scope — edit it instead.',
-  },
-  POLICY_CURRENCY_REQUIRED: {
-    'en-CA': 'A policy currency is required.',
-  },
-  VIOLATION_BLOCK_NOT_ACKNOWLEDGEABLE: {
-    'en-CA': 'A blocking violation cannot be acknowledged — it has to be fixed.',
-  },
-  VIOLATION_NOTE_REQUIRED: {
-    'en-CA': 'An acknowledgement needs a note explaining the exception.',
-  },
-
   /* ── approvals and analytics ──────────────────────────────────────────── */
   ANALYTICS_RANGE_REQUIRED: {
     'en-CA': 'Analytics needs a start and an end date — there is deliberately no default range.',
@@ -1160,11 +1100,10 @@ export const ERROR_COPY: Record<UserMessageCode, Copy> = {
  * A param not in this table is still filled verbatim, which is right — `{count}`
  * and `{name}` are data.
  */
-const PARAM_CATALOGUES: Record<string, Record<string, Copy>> = {
-  rule: RULE_KIND_COPY,
-  field: RULE_PARAM_COPY,
-  maximum: SEVERITY_COPY,
-};
+// w4-02d: empty since VeloExpense's v1 policy refusals (`POLICY_*`, whose `{rule}`,
+// `{field}` and `{maximum}` params were keys) went with its engine. The mechanism stays for
+// the next refusal whose parameter is a key rather than text.
+const PARAM_CATALOGUES: Record<string, Record<string, Copy>> = {};
 
 function fill(template: string, params: MessageParams, locale: Locale | string): string | null {
   let missing = false;

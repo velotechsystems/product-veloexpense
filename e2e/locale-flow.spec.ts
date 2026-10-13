@@ -440,11 +440,10 @@ test.describe('the locale chain, end to end', () => {
  *
  * ── WHY THIS EXISTS WHEN 50 UNIT TESTS ALREADY COVER THE RENDER ─────────────
  *
- * They cover `renderPolicyMessage`. They cannot cover the two joins between it
- * and a reader: that `listViolations` actually SELECTs `message_code` (a column
- * missing from the query renders every row from the frozen English and every
- * unit test still passes), and that the panel threads the resolved locale down
- * rather than a constant. Part 1 shipped `revalidatePath` only because an e2e
+ * They cover the render. They cannot cover the joins between it and a reader: that the
+ * report's violations come back with their message key and data (w4-02d: ExpenseOS's
+ * engine stores both, and renders nothing itself), and that the panel threads the
+ * resolved locale down rather than a constant. Part 1 shipped `revalidatePath` only because an e2e
  * found the layout going stale; this is the same class of gap.
  */
 test.describe('a violation is written for the reader, not for whoever saved it', () => {
@@ -460,44 +459,40 @@ test.describe('a violation is written for the reader, not for whoever saved it',
     await clearMine();
   });
 
-  test('the same stored finding reads in en-CA and in en-US money', async ({ page }) => {
+  test('the same stored finding names its currency to an en-CA and an en-US reader', async ({ page }) => {
     violationReportId = await makeViolatingReport(page);
 
     // w2-02b: the workbench lists an expense's findings under "Policy warnings".
-    const warning = page.getByRole('listitem').filter({ hasText: /per-transaction limit/ });
+    // w4-02d: ExpenseOS's engine stores the message KEY and the amounts as data, and the
+    // workbench renders the sentence when it is read — the money-bearing one is the receipt
+    // threshold ("Receipt required over {threshold}"), which the $600 line without a receipt
+    // trips. (ExpenseOS's per-transaction label carries no amount.)
+    //
+    // VeloExpense: the threshold carries its ISO code (violationValues) — no label names the
+    // currency, and the narrow `$` is CAD's and USD's alike. Before the cutover this asserted
+    // `$25.00` to en-CA and `CA$25.00` to en-US; with the code, both English readers see the
+    // same `CAD 25.00` (fr-CA would see `25,00 CAD`, but no reader can pick it yet —
+    // SUPPORTED_LOCALES). What this still proves end to end is the join: the row comes back
+    // with its key and data, and the sentence is assembled for whoever is reading.
+    const warning = page.getByRole('listitem').filter({ hasText: /Receipt required over/ });
     await expect(warning).toHaveCount(1);
+    await expect(warning.first()).toContainText('Receipt required over CAD\u00A025.00');
 
-    // en-CA: a Canadian reader looking at Canadian dollars gets a bare symbol.
-    // w2-02b: the workbench's line has no description, so the sentence names the line by its
-    // category where the old form's "Client dinner" was.
-    await expect(warning.first()).toContainText(
-      'Meals & Entertainment is $600.00, over the $500.00 per-transaction limit.',
-    );
-
-    // Now the SAME ROW, to a different reader. Nothing about the report changes
-    // — no save, no re-validation — which is what makes this a render test and
-    // not a write test.
+    // The SAME ROW, to a different reader. Nothing about the report changes — no save, no
+    // re-validation — which is what makes this a render test and not a write test.
     await page.goto('/preferences');
     await page.getByTestId('my-locale').selectOption('en-US');
     await page.getByRole('button', { name: 'Save' }).click();
     await expect(page.getByText('Saved.')).toBeVisible();
 
     await page.goto(`/expenses/${violationReportId}`);
-    await expect(warning.first()).toContainText(
-      'Meals & Entertainment is CA$600.00, over the CA$500.00 per-transaction limit.',
-    );
-    // And explicitly NOT the other one, because `toContainText` on a sentence
-    // that is a prefix of the other would pass either way round.
-    await expect(warning.first()).not.toContainText('is $600.00,');
+    await expect(warning.first()).toContainText('Receipt required over CAD\u00A025.00');
 
-    // Back, so the assertion is about the reader and not about a one-way door.
+    // Back, so the next test starts from the reader it expects.
     await page.goto('/preferences');
     await page.getByTestId('my-locale').selectOption('en-CA');
     await page.getByRole('button', { name: 'Save' }).click();
     await expect(page.getByText('Saved.')).toBeVisible();
-
-    await page.goto(`/expenses/${violationReportId}`);
-    await expect(warning.first()).toContainText('over the $500.00 per-transaction limit.');
   });
 
   // w2-02b: "the acknowledge field describes what the reader can see" is retired with the

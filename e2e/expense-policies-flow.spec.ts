@@ -5,8 +5,7 @@
  * What only this proves is the WIRING: the menu entry and title; a row click opening the
  * drawer; the limit typed in major units reaching the TENANT's own
  * `expense_category_policy` in minor units; the audit row; the drawer's checkboxes having
- * accessible names (f10); and the refusal an employee meets. Nothing enforces these limits
- * until the cutover (w4-02d).
+ * accessible names (f10); and the refusal an employee meets.
  */
 import { test, expect } from '@playwright/test';
 import { Pool } from 'pg';

@@ -362,3 +362,36 @@ describe('a tenant whose policy currency is not CAD (VeloExpense)', () => {
     expect(dollarsToMinorString(2500, 'en', 'JPY')).toBe('2500');
   });
 });
+
+// ── VeloExpense (d68): the control that sets the policy currency ──────────────
+describe('the policy currency control (VeloExpense)', () => {
+  /**
+   * VeloExpense's v1 policy screen was the only place to change the policy currency; it
+   * went at the cutover (w4-02d), so the control sits here, beside the limits stated in it.
+   */
+  const withCurrency = (calls: unknown[] = []) =>
+    setTrpc({
+      queries: {
+        'policies.expensePolicy.byCategory': { data: ROWS },
+        'policies.expensePolicy.currency': { data: { code: 'CAD', options: ['CAD', 'USD'] } },
+      },
+      mutations: { 'policies.expensePolicy.setCurrency': { onCall: (i: unknown) => calls.push(i) } },
+    });
+
+  it('shows the currency, read-only, to someone who cannot change it', () => {
+    withCurrency();
+    render(<ExpensePoliciesAdmin canWrite={false} />);
+    expect(screen.getByText('currency.label')).toBeInTheDocument();
+    expect(screen.getByText('CAD', { selector: '#policy-currency' })).toBeInTheDocument();
+    expect(screen.queryByRole('combobox', { name: 'currency.label' })).not.toBeInTheDocument();
+  });
+
+  it('offers the picker to someone who can, and says limits are not converted', () => {
+    withCurrency();
+    render(<ExpensePoliciesAdmin canWrite />);
+    expect(screen.getByRole('combobox', { name: 'currency.label' })).toBeInTheDocument();
+    expect(screen.getByText('currency.note')).toBeInTheDocument();
+    // Nothing to save until a different currency is picked.
+    expect(screen.queryByRole('button', { name: 'save' })).not.toBeInTheDocument();
+  });
+});

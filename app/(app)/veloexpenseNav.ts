@@ -113,8 +113,8 @@ export const VELOEXPENSE_ITEMS: Readonly<Record<string, readonly VeloExpenseNavI
   expenseManagement: [
     { key: 'reimbursements', icon: IconBuildingBank, to: '/admin/reimbursements', requires: VELOEXPENSE_ADMIN },
     // w4-02c: VeloExpense's own `expensePolicies` item (/admin/expense-policies) went when
-    // ExpenseOS's screen of that name was ported (/admin/policies). The old editor is still
-    // what lib/policy enforces until the cutover (w4-02d) and stays reachable at its URL.
+    // ExpenseOS's screen of that name was ported (/admin/policies); the screen itself went
+    // with VeloExpense's v1 engine at the cutover (w4-02d).
   ],
   financeReporting: [
     {

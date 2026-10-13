@@ -151,6 +151,7 @@
     "TIP_PERCENTAGE": "Tip percentage",
     "TRAVEL_CABIN_CLASS": "Cabin class",
     "TRAVEL_LINE_DETAIL_REQUIRED": "Travel line detail required",
-    "TRAVEL_OVERRUN": "Travel budget overrun"
+    "TRAVEL_OVERRUN": "Travel budget overrun",
+    "CATEGORY_ACTIVE": "Category in use"
   }
 }

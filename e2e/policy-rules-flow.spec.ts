@@ -5,8 +5,8 @@
  * What only this proves is the WIRING: the menu entry and title; the drawer's kind picker
  * and money param reaching the TENANT's own `policy_rule`, the threshold typed in major
  * units and stored in minor units of the policy currency; the row's delete reaching the
- * server; the audit rows; and the refusal an employee meets. Nothing enforces these rules
- * until the cutover (w4-02c).
+ * server; the audit rows; and the refusal an employee meets. What a rule then does to a
+ * submit is expense-flow.spec.ts's.
  */
 import { test, expect } from '@playwright/test';
 import { Pool } from 'pg';

@@ -15,6 +15,7 @@
  * Storage is scripts/e2e-storage.mjs. Both are started by playwright.config.ts.
  */
 import { test, expect, type Page } from '@playwright/test';
+import { Pool } from 'pg';
 import { DEFAULT_LOCALE } from '@/lib/i18n/locales';
 import { enumLabel, REPORT_STATUS_COPY } from '@/lib/i18n/catalog/enums';
 import { addExpenseLine, createDraftReport, expectReportStatus } from './helpers';
@@ -82,18 +83,31 @@ async function uploadReceipt(page: Page) {
 /** The workbench's Submit, whose disabled state is the submit gate on the screen. */
 const submitButton = (page: Page) => page.getByRole('button', { name: 'Submit report' });
 
-test.beforeAll(async ({ browser }) => {
-  // Rule instances are per tenant and seeded by nobody — scripts/seed.mjs
-  // deliberately creates none. Restoring them here also covers the admin page.
-  const page = await browser.newPage();
-  await page.goto('/admin/expense-policies');
-  await page.getByRole('button', { name: 'Restore starter rules' }).click();
-  // Assert on the table, not on the label text: every rule name also appears as
-  // an <option> in the "Add a rule" picker below, so a bare text match is
-  // ambiguous. Header row + the four starter rules.
-  await expect(page.getByRole('table').getByRole('row')).toHaveCount(5);
-  await expect(page.getByText(/^4 rules/)).toBeVisible();
-  await page.close();
+test.beforeAll(async () => {
+  // Rule instances are per tenant and seeded by nobody — scripts/seed.mjs deliberately
+  // creates none. w4-02d: v1's "Restore starter rules" button went with its screen at the
+  // policy cutover, so the same starter set is written here as ExpenseOS rule instances —
+  // what migration 0066 converts v1's into: receipts above $25 BLOCK, a $500 per-transaction
+  // limit WARNING, and a line on a retired category BLOCK. Replaced, not added to, so a rerun
+  // starts from the same set. The Rule Builder's own screen has its spec
+  // (policy-rules-flow.spec.ts). ap-queue and ledger-flow keep their amounts under $25
+  // because of these rules.
+  const admin = new Pool({ connectionString: process.env.ADMIN_DATABASE_URL ?? process.env.DATABASE_URL });
+  try {
+    const org = (await admin.query(`SELECT organization_id FROM app_user WHERE email = 'admin@demo.test'`)).rows[0]
+      .organization_id as string;
+    await admin.query('DELETE FROM policy_rule WHERE organization_id = $1', [org]);
+    await admin.query(
+      `INSERT INTO policy_rule (organization_id, kind_code, scope, severity, condition, params, message_key, effective_from) VALUES
+         ($1, 'RECEIPT_THRESHOLD', 'AGGREGATE', 'BLOCK', NULL, '{"thresholdMinor":"2500"}', 'receiptThreshold', '2000-01-01'),
+         ($1, 'PREDICATE_LINE', 'LINE', 'WARNING', '{"all":[{"field":"lineAmount","op":"gt","value":50000}]}', '{}',
+              'perTransactionLimit', '2000-01-01'),
+         ($1, 'CATEGORY_ACTIVE', 'AGGREGATE', 'BLOCK', NULL, '{}', 'categoryInactive', '2000-01-01')`,
+      [org],
+    );
+  } finally {
+    await admin.end();
+  }
 });
 
 test('a blocking violation stops the submit until the receipt is attached', async ({ page }) => {

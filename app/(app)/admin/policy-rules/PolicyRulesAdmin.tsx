@@ -13,7 +13,7 @@
  * Ported from ExpenseOS (550b2945) with the `policyRule` router (w4-02b, d63). VeloExpense:
  * the shell's path; the Enabled checkbox's accessible name (f10); and the role picker,
  * which shows only once there are roles to pick (the role builder, w4-10, d64). Nothing
- * enforces these rules until the cutover (w4-02c).
+ * enforced these rules until the cutover (w4-02d); since then they are what submit checks.
  */
 import {
   Button,

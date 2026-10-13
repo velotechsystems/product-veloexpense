@@ -151,6 +151,7 @@
     "TIP_PERCENTAGE": "Pourcentage de pourboire",
     "TRAVEL_CABIN_CLASS": "Classe de cabine",
     "TRAVEL_LINE_DETAIL_REQUIRED": "Détail de ligne de voyage requis",
-    "TRAVEL_OVERRUN": "Dépassement du budget de voyage"
+    "TRAVEL_OVERRUN": "Dépassement du budget de voyage",
+    "CATEGORY_ACTIVE": "Catégorie en usage"
   }
 }

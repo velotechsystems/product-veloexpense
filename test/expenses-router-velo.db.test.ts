@@ -406,10 +406,11 @@ describe('report — VeloExpense\'s tables, in ExpenseOS\'s shape', () => {
 
   it("carries a line's violation under its expense, and a report-level one under none", async () => {
     await h.admin.query(
-      `INSERT INTO policy_violation (organization_id, report_id, line_item_id, rule_code, severity, message, finding_key)
-       VALUES ($1, $2, $3, 'perTransactionLimit', 'WARNING', 'Over the limit', 'a'),
-              ($1, $2, NULL, 'receiptMissing', 'BLOCK', 'No receipt', 'b')`,
-      [h.orgId, reportId, lineId],
+      // w4-02d: ExpenseOS's row — the line's expense is a column the engine writes.
+      `INSERT INTO policy_violation (organization_id, report_id, line_item_id, expense_id, rule_code, severity, message)
+       VALUES ($1, $2, $3, $4, 'perTransactionLimit', 'WARNING', 'Over the limit'),
+              ($1, $2, NULL, NULL, 'receiptMissing', 'BLOCK', 'No receipt')`,
+      [h.orgId, reportId, lineId, expenseId],
     );
     const out = await h.makeCaller(RW, ownerId).report({ reportId });
     const byRule = Object.fromEntries(out.violations.map((v: { ruleCode: string }) => [v.ruleCode, v]));
@@ -424,20 +425,18 @@ describe('report — VeloExpense\'s tables, in ExpenseOS\'s shape', () => {
     expect(byRule.receiptMissing).toMatchObject({ expenseId: null, severity: 'BLOCK' });
   });
 
-  it('carries a finding about one expense — no line, its expense in the data — under that expense (w2-02b)', async () => {
-    // The engine's missing-receipt finding has no line and names its expense in
-    // `data.expenseId`; read as report-level, the workbench showed it on no expense.
+  it('carries a finding about one expense — no line — under that expense (w2-02b)', async () => {
+    // w4-02d: ExpenseOS anchors an entry-level finding to its expense in a column
+    // (`expense_id`, 0066, which also moved v1's `data.expenseId` there). Read as report-level,
+    // the workbench showed it on no expense.
     await h.admin.query(
-      `INSERT INTO policy_violation (organization_id, report_id, line_item_id, rule_code, severity, message, finding_key, data)
-       VALUES ($1, $2, NULL, 'expenseScoped', 'BLOCK', 'No receipt', $3, jsonb_build_object('expenseId', $3::text)),
-              ($1, $2, NULL, 'strayExpense', 'WARNING', 'Not here', 'c', jsonb_build_object('expenseId', gen_random_uuid()::text))`,
+      `INSERT INTO policy_violation (organization_id, report_id, line_item_id, expense_id, rule_code, severity, message)
+       VALUES ($1, $2, NULL, $3, 'expenseScoped', 'BLOCK', 'No receipt')`,
       [h.orgId, reportId, expenseId],
     );
     const out = await h.makeCaller(RW, ownerId).report({ reportId });
     const byRule = Object.fromEntries(out.violations.map((v: { ruleCode: string }) => [v.ruleCode, v]));
     expect(byRule.expenseScoped).toMatchObject({ expenseId, lineItemId: null });
-    // An id that is not an expense on this report is not trusted — it stays report-level.
-    expect(byRule.strayExpense).toMatchObject({ expenseId: null });
   });
 
   it('reports no posting until one is queued, then its state — a claimed PENDING as PROCESSING', async () => {

@@ -339,7 +339,8 @@
       },
       "travelCabinClass": "This trip requests {cabin} class, which your job level is not permitted to book.",
       "travelOverrun": "{categoryCount, plural, one {One travel category is} other {# travel categories are}} over the approved budget — the worst by {overrunPercent}%, past the {tolerancePercent}% tolerance.",
-      "travelLineDetailRequired": "This line needs a short explanation of why it is necessary."
+      "travelLineDetailRequired": "This line needs a short explanation of why it is necessary.",
+      "categoryInactive": "Category no longer in use — choose another"
     },
     "onNLines": "on {count} lines"
   },

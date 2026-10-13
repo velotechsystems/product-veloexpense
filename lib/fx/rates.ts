@@ -1,10 +1,13 @@
 /**
- * VX3-2 — the FX rate lookup the policy engine compares through.
+ * VX3-2 — the FX rate lookup VeloExpense's budgets and analytics convert through.
  *
- * PURE. No `pg` import, by the house rule for registry modules: `rules.ts` is
- * synchronous and pure, so rates have to arrive ON the context rather than be
- * fetched during evaluation. `lib/policy/service.ts` loads the rows and builds
- * this; `test/policy-rates.test.ts` exercises it without a database.
+ * Written for VeloExpense's v1 policy engine (lib/policy); moved here when that engine was
+ * replaced by ExpenseOS's at the cutover (w4-02d), which converts through `@expenseos/money`
+ * instead. Budgets (lib/budgets/service.ts) and analytics (lib/analytics/service.ts) still
+ * read it.
+ *
+ * PURE. No `pg` import: callers load the rows and build this;
+ * `test/fx-rate-lookup.test.ts` exercises it without a database.
  *
  * ── Three properties, and the second is the one PE-7 is about ───────────────
  *

@@ -18,7 +18,7 @@ describe('violationValues', () => {
     expect(
       violationValues(violation({ thresholdMinor: '7500', policyCurrency: 'USD' }), 'en'),
     ).toEqual({
-      threshold: '75.00',
+      threshold: 'USD\u00A075.00',
     });
   });
 
@@ -27,7 +27,7 @@ describe('violationValues', () => {
     expect(
       violationValues(violation({ thresholdMinor: '7500', policyCurrency: 'JPY' }), 'en'),
     ).toEqual({
-      threshold: '7,500',
+      threshold: 'JPY\u00A07,500',
     });
   });
 
@@ -35,7 +35,7 @@ describe('violationValues', () => {
     expect(
       violationValues(violation({ thresholdMinor: 2500, policyCurrency: 'CAD' }), 'en'),
     ).toEqual({
-      threshold: '25.00',
+      threshold: 'CAD\u00A025.00',
     });
   });
 
@@ -58,11 +58,11 @@ describe('violationValues', () => {
     // A violation is read by the submitter AND by approvers who need not share a
     // language, so the amount inside the sentence has to follow the reader the
     // way the sentence around it already does.
-    // No symbol: the payload carries the policy currency code, which the label
-    // itself names. The DIGITS are still the reader's — group and decimal both.
+    // VeloExpense: with the ISO code, on the side the reader's locale puts it — no label
+    // names the currency (see violationValues). The DIGITS are the reader's too.
     const v = violation({ thresholdMinor: '1079900', policyCurrency: 'CAD' });
-    expect(violationValues(v, 'en')?.threshold).toBe('10,799.00');
-    expect(violationValues(v, 'fr-CA')?.threshold).toBe('10\u00A0799,00');
+    expect(violationValues(v, 'en')?.threshold).toBe('CAD\u00A010,799.00');
+    expect(violationValues(v, 'fr-CA')?.threshold).toBe('10\u00A0799,00\u00A0CAD');
     expect(violationValues(v, 'fr-CA')?.threshold).not.toBe(violationValues(v, 'en')?.threshold);
   });
 });

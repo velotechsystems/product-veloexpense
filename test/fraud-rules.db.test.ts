@@ -309,19 +309,17 @@ describe('amount outliers', () => {
 
 describe('violation density', () => {
   /**
-   * `key` is `policy_violation.finding_key`, and it is required here rather than
-   * optional: 0006 added that column precisely so one rule can emit several
-   * findings at one scope, and `policy_violation_identity_idx` refuses a second
-   * one without it. The first version of this fixture inserted four violations
-   * against one line with the same key and failed on the constraint — which is
-   * the schema being right and the fixture being lazy.
+   * w4-02d: a violation row as ExpenseOS's engine writes it — keyed by rule instance and
+   * line, with no `finding_key` or `message_code` (0066 dropped both, and the unique
+   * identity built on them). `key` still varies the rule code, so several findings at one
+   * scope read as the separate findings they are.
    */
   async function violate(reportId: string, lineItemId: string | null, key = '') {
     await withOrg(orgId, (tx) =>
       tx.query(
         `INSERT INTO policy_violation (organization_id, report_id, line_item_id, rule_code,
-                                       severity, message, message_code, finding_key)
-         VALUES ($1, $2, $3, 'RECEIPT_REQUIRED', 'WARNING', '', 'RECEIPT_REQUIRED', $4)`,
+                                       severity, message)
+         VALUES ($1, $2, $3, 'RECEIPT_REQUIRED' || $4, 'WARNING', 'receiptThreshold')`,
         [orgId, reportId, lineItemId, key],
       ),
     );
@@ -605,8 +603,8 @@ describe('every finding can actually be said', () => {
       await withOrg(orgId, (tx) =>
         tx.query(
           `INSERT INTO policy_violation (organization_id, report_id, line_item_id, rule_code,
-                                         severity, message, message_code)
-           VALUES ($1, $2, $3, 'RECEIPT_REQUIRED', 'WARNING', '', 'RECEIPT_REQUIRED')`,
+                                         severity, message)
+           VALUES ($1, $2, $3, 'RECEIPT_REQUIRED', 'WARNING', 'receiptThreshold')`,
           [orgId, rep, row.id],
         ),
       );

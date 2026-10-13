@@ -193,17 +193,12 @@ beforeAll(async () => {
     [orgB, reportB.rows[0].id, 'B'],
   ] as const) {
     await withOrg(org, async (tx) => {
-      const rule = await tx.query(
-        `INSERT INTO expense_policy (organization_id, kind, severity, params)
-         VALUES ($1, 'PER_TRANSACTION_LIMIT', 'WARNING', '{"thresholdMinor": 5000}'::jsonb)
-         RETURNING id`,
-        [org],
-      );
+      // w4-02d: v1's expense_policy is gone; a violation names its rule by code only.
       await tx.query(
         `INSERT INTO policy_violation
-           (organization_id, report_id, policy_id, rule_code, severity, message)
-         VALUES ($1, $2, $3, 'PER_TRANSACTION_LIMIT', 'WARNING', $4)`,
-        [org, report, rule.rows[0].id, `Violation ${label}`],
+           (organization_id, report_id, rule_code, severity, message)
+         VALUES ($1, $2, 'PER_TRANSACTION_LIMIT', 'WARNING', $3)`,
+        [org, report, `Violation ${label}`],
       );
       // VX1-8: a transition event (migration 0007). An audit trail that leaked
       // across tenants would expose who submitted what, and when.
@@ -399,15 +394,8 @@ describe('RLS tenant isolation', () => {
     expect(none.rows).toHaveLength(0);
   });
 
-  it('policy rules are tenant-isolated (expense_policy)', async () => {
-    const a = await withOrg(orgA, (tx) => tx.query('SELECT id FROM expense_policy'));
-    expect(a.rows).toHaveLength(1);
-    const b = await withOrg(orgB, (tx) => tx.query('SELECT id FROM expense_policy'));
-    expect(b.rows).toHaveLength(1);
-    expect(a.rows[0].id).not.toBe(b.rows[0].id);
-    const none = await withoutOrg((tx) => tx.query('SELECT * FROM expense_policy'));
-    expect(none.rows).toHaveLength(0);
-  });
+  // w4-02d: v1's `expense_policy` case went with the table (0066). ExpenseOS's rule
+  // instances (`policy_rule`) have their own case below.
 
   it('policy violations are tenant-isolated (policy_violation)', async () => {
     const a = await withOrg(orgA, (tx) => tx.query('SELECT message FROM policy_violation'));

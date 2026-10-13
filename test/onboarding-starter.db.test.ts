@@ -227,8 +227,9 @@ describe('the setup checklist', () => {
         [orgId],
       );
       await tx.query(
-        `INSERT INTO expense_policy (organization_id, kind, severity, params)
-         VALUES ($1, 'RECEIPT_REQUIRED', 'BLOCK', '{"thresholdMinor":5000}'::jsonb)`,
+        // w4-02d: an ExpenseOS rule instance (v1's expense_policy is gone).
+        `INSERT INTO policy_rule (organization_id, kind_code, scope, severity, params, message_key, effective_from)
+         VALUES ($1, 'RECEIPT_THRESHOLD', 'AGGREGATE', 'BLOCK', '{"thresholdMinor":"5000"}'::jsonb, 'receiptThreshold', now())`,
         [orgId],
       );
       await tx.query(

@@ -300,8 +300,10 @@ async function errorMessageParams() {
   return problems;
 }
 
-const POLICY_MESSAGES_FILE = join(repoRoot, 'lib', 'i18n', 'catalog', 'policy-messages.ts');
-const POLICY_RULES_FILE = join(repoRoot, 'lib', 'policy', 'rules.ts');
+// w4-02d: the `policy` catalogue (lib/i18n/catalog/policy-messages.ts against
+// lib/policy/rules.ts) went with VeloExpense's v1 engine. ExpenseOS's rule messages are
+// next-intl copy, keyed by each kind's `messageKey`; server/policy/messageKeys.test.ts holds
+// them to the registry in both locales.
 const FRAUD_MESSAGES_FILE = join(repoRoot, 'lib', 'i18n', 'catalog', 'fraud-messages.ts');
 const FRAUD_RULES_FILE = join(repoRoot, 'lib', 'fraud', 'rules.ts');
 const CONTROL_MESSAGES_FILE = join(repoRoot, 'lib', 'i18n', 'catalog', 'control-messages.ts');
@@ -546,13 +548,6 @@ const COPY_FILES = new Set([
   // enum member resolves in every shipped locale, enumerating the enums rather
   // than the catalogue's own keys.
   'lib/i18n/catalog/enums.ts',
-  // VX4-7 part 2b. Same case again — authored SENTENCES keyed by the locale they
-  // are written in. Coverage is not a text property here either, and this file's
-  // guarantee is stronger than a scan could give: the type demands the default
-  // locale, `test/i18n-policy-messages.test.ts` renders every code in every
-  // shipped locale from the rules' own output, and `policyMessageCodes()` above
-  // asserts the code set matches lib/policy/rules.ts in both directions.
-  'lib/i18n/catalog/policy-messages.ts',
   // VX4-7 part 2c. Authored refusals, keyed by the locale they are written in —
   // third instance of the same case. Coverage here is the plainest of the three:
   // `Record<UserMessageCode, Copy>` demands an entry per code, `Copy` demands the
@@ -738,12 +733,6 @@ async function main() {
   }
 
   const codeSets = [
-    await messageCodesFor({
-      label: 'policy',
-      catalogueFile: POLICY_MESSAGES_FILE,
-      arrayName: 'POLICY_MESSAGE_CODES',
-      rulesFile: POLICY_RULES_FILE,
-    }),
     await messageCodesFor({
       label: 'fraud',
       catalogueFile: FRAUD_MESSAGES_FILE,

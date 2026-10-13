@@ -147,6 +147,10 @@
       "monthlyLimit": "Limite mensuelle",
       "annualLimit": "Limite annuelle",
       "notes": "Notes internes"
+    },
+    "currency": {
+      "label": "Les plafonds sont en",
+      "note": "Changer la devise ne convertit pas les plafonds déjà définis."
     }
   },
   "jobLevels": {

@@ -107,7 +107,7 @@ describe('report access', () => {
   it('stops editing once the report leaves DRAFT, for the admin too', async () => {
     const { reportId } = await draftWithReceipt();
     await withOrg(orgId, async (tx) => {
-      await tx.query('DELETE FROM expense_policy');
+      await tx.query('DELETE FROM policy_rule');
       await lifecycle.submitReport(tx, reportId, owner.id);
     });
     const access = (await withOrg(orgId, (tx) => expenses.getReportAccess(tx, reportId)))!;
@@ -195,7 +195,7 @@ describe('receipt ownership', () => {
   it('freezes a receipt when its report is submitted', async () => {
     const { reportId, receiptId } = await draftWithReceipt();
     await withOrg(orgId, async (tx) => {
-      await tx.query('DELETE FROM expense_policy');
+      await tx.query('DELETE FROM policy_rule');
       await lifecycle.submitReport(tx, reportId, owner.id);
     });
     const ownership = (await withOrg(orgId, (tx) => receipts.getReceiptOwnership(tx, receiptId)))!;
@@ -212,7 +212,7 @@ describe('receipt ownership', () => {
   it('lets it be changed again after a recall', async () => {
     const { reportId, receiptId } = await draftWithReceipt();
     await withOrg(orgId, async (tx) => {
-      await tx.query('DELETE FROM expense_policy');
+      await tx.query('DELETE FROM policy_rule');
       await lifecycle.submitReport(tx, reportId, owner.id);
       await lifecycle.recallReport(tx, reportId, owner.id, 'fixing a receipt');
     });

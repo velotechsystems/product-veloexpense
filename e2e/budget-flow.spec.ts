@@ -74,22 +74,20 @@ test.beforeAll(async () => {
     `DELETE FROM budget WHERE organization_id IN (SELECT id FROM organization WHERE slug = 'demo')`,
   );
   await admin.query(
-    `DELETE FROM expense_policy
-      WHERE kind = 'BUDGET_OVERAGE'
+    `DELETE FROM policy_rule
+      WHERE kind_code = 'BUDGET_OVERAGE'
         AND organization_id IN (SELECT id FROM organization WHERE slug = 'demo')`,
   );
 });
 
 test.afterAll(async ({ request }) => {
   // THE RULE HAS TO GO, and this is the second half of §4's "anything a run
-  // leaves behind is the next run's input". This file sorts before
-  // `expense-flow`, whose `beforeAll` restores the starter set and then asserts
-  // the table holds exactly four rules — a BUDGET_OVERAGE row left here makes it
-  // five, and that spec fails somewhere unrelated to anything it is testing.
-  // It happened on the first run of this file.
+  // leaves behind is the next run's input": a BUDGET_OVERAGE rule left here would
+  // warn on every later spec's report that lands in a budgeted period. (It once broke
+  // `expense-flow`, whose v1 setup counted the starter rules.)
   await admin.query(
-    `DELETE FROM expense_policy
-      WHERE kind = 'BUDGET_OVERAGE'
+    `DELETE FROM policy_rule
+      WHERE kind_code = 'BUDGET_OVERAGE'
         AND organization_id IN (SELECT id FROM organization WHERE slug = 'demo')`,
   );
   await admin.query(
@@ -185,11 +183,17 @@ test('an over-budget report warns without blocking, and the alert reaches the ow
   page,
 }) => {
   // The rule instance, added through the same picker an admin would use — which
-  // is also what proves BUDGET_OVERAGE reached `RULE_KINDS` and the screen.
-  await page.goto('/admin/expense-policies');
-  await page.getByLabel('Rule').selectOption({ label: 'Over budget' });
-  await page.getByRole('button', { name: 'Add rule' }).click();
-  await expect(page.getByRole('table')).toContainText('Over budget');
+  // is also what proves BUDGET_OVERAGE reached `RULE_KINDS` and the screen. w4-02d: the
+  // Rule Builder (ExpenseOS's), since v1's /admin/expense-policies went at the cutover.
+  await page.goto('/admin/policy-rules');
+  await page.getByRole('button', { name: 'New Rule' }).click();
+  const drawer = page.getByRole('dialog');
+  await drawer.getByRole('combobox').first().click();
+  await page.keyboard.type('BUDGET_OV');
+  await page.getByRole('option', { name: 'BUDGET_OVERAGE' }).click();
+  await drawer.getByRole('button', { name: 'Save' }).click();
+  await expect(drawer).toBeHidden();
+  await expect(page.getByRole('row', { name: /Over budget/ }).first()).toBeVisible();
 
   // $18 of a $20 period is 90%: over the threshold, under the budget. Under $25
   // too, so the starter receipt rule cannot interfere whether or not it exists
@@ -218,9 +222,10 @@ test('an over-budget report warns without blocking, and the alert reaches the ow
 
   // The overage is a finding about the REPORT, so it is answered in the report-wide
   // banner (d39) rather than on an expense — and it is a WARNING: nothing blocks.
-  const overage = findings.getByRole('listitem').filter({ hasText: BUDGET });
+  // w4-02d: ExpenseOS's sentence, which names no budget (the crossed budgets are in the
+  // finding's data); v1's named the budget and said "over by".
+  const overage = findings.getByRole('listitem').filter({ hasText: /pushes a budget past/ });
   await expect(overage).toHaveCount(1);
-  await expect(overage).toContainText('over by');
 
   // w2-11 (d34): a WARNING goes to the approver once the submitter has said why —
   // ExpenseOS's rule. So the overage is justified here, as a submitter would, before the
