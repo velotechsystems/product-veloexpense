@@ -22,19 +22,23 @@
 # of perl or util-linux, and every stage is Alpine so npm installs the musl builds of
 # native packages (sharp) that the runner can load.
 #
-# PULLED FROM ECR PUBLIC, not Docker Hub (f15). `public.ecr.aws/docker/library/*` is
-# AWS's mirror of Docker's official images, the same images by the same tags. Docker
-# Hub's anonymous pull limit is per IP and GitHub's runners share IPs, so CI's image
-# build failed with 429 Too Many Requests on busy days (#174). The mirror's anonymous
-# limit is far higher and needs no credential, and the deploy build pulls from the
-# same place, so CI and dev build from one source.
+# PULLED FROM GHCR, a mirror of the official image (f33). `ghcr.io/velotechsystems/base-node`
+# is `public.ecr.aws/docker/library/node:24-alpine` copied unchanged — every platform, the
+# same digests — by .github/workflows/mirror-base-images.yml, weekly. History: Docker Hub's
+# anonymous pull limit is per IP and GitHub's runners share IPs, so CI's image build failed
+# with 429 (f15, #174); we moved to ECR Public, whose anonymous limit then ran out the same
+# way on 12-13 Oct 2026 ("Data limit exceeded"). ghcr.io is GitHub's own registry, next to
+# the runners; GitHub publishes no anonymous pull quota for it of the kind those two have,
+# and if one ever bites, the pulls can sign in with the job's GITHUB_TOKEN. The package is
+# public, so the dev deploy pulls it with no login, and CI, the Security scan and dev still
+# build from one source.
 
-FROM public.ecr.aws/docker/library/node:24-alpine AS deps
+FROM ghcr.io/velotechsystems/base-node:24-alpine AS deps
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci --no-audit --no-fund
 
-FROM public.ecr.aws/docker/library/node:24-alpine AS builder
+FROM ghcr.io/velotechsystems/base-node:24-alpine AS builder
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
@@ -43,7 +47,7 @@ ENV NODE_ENV=production
 RUN npm run build
 RUN npm run worker:build
 
-FROM public.ecr.aws/docker/library/node:24-alpine AS runner
+FROM ghcr.io/velotechsystems/base-node:24-alpine AS runner
 WORKDIR /app
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
