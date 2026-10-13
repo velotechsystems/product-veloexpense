@@ -68,3 +68,17 @@ export const DocExtractStatus = {
   FAILED: 'FAILED',
 } as const;
 export type DocExtractStatus = (typeof DocExtractStatus)[keyof typeof DocExtractStatus];
+
+/**
+ * w4-02a: the policy engine's two enums (ExpenseOS's `PolicyViolationSeverity` and
+ * `RuleScope`). VeloExpense: severity is the `policy_severity` Postgres enum (0006) that
+ * the policy tables already use; the scope is text with a CHECK on `policy_rule` (0064).
+ * ExpenseOS's fourth scope, `TRAVEL_REQUEST`, is not here: travel is out of VeloExpense's
+ * scope, and so are the rule kinds that use it.
+ */
+export const PolicyViolationSeverity = { INFO: 'INFO', WARNING: 'WARNING', BLOCK: 'BLOCK' } as const;
+export type PolicyViolationSeverity =
+  (typeof PolicyViolationSeverity)[keyof typeof PolicyViolationSeverity];
+
+export const RuleScope = { LINE: 'LINE', REPORT: 'REPORT', AGGREGATE: 'AGGREGATE' } as const;
+export type RuleScope = (typeof RuleScope)[keyof typeof RuleScope];
