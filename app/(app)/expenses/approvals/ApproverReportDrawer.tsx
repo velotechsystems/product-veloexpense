@@ -34,6 +34,8 @@ import { type CurrencyLike, displayName, formatMinor } from '@/lib/format';
 import { trpc } from '@/lib/trpc/client';
 import type { AppRouter } from '@/server/routers/_app';
 import { localeLabel, SEVERITY_KEY, statusBadgeProps } from '../_shared';
+import { AllocationLinesReadOnly } from '../AllocationLinesReadOnly';
+import { MileageLineDetail } from './MileageLineDetail';
 
 type ReportDetail = inferRouterOutputs<AppRouter>['expenseApprovals']['report'];
 type ExpenseDetail = ReportDetail['expenses'][number];
@@ -348,7 +350,8 @@ export function ApproverReportDrawer({
   );
 }
 
-/** One read-only expense card: header + line items + receipts. */
+/** One read-only expense card: header + attendees + allocation + line items (with a
+ *  mileage line's claim under it) + receipts. */
 function ExpenseCard({
   expense,
   currency,
@@ -416,6 +419,29 @@ function ExpenseCard({
         </div>
       )}
 
+      {/*
+       * The coding the approver signs off on: BU · Department · Class per row, with its
+       * share and what that share is in money. Allocation is per EXPENSE, not per line, so
+       * it sits above the lines rather than inside them. Always rendered: an uncoded
+       * expense says "Not coded" — blank coding is refused when the report posts to NetSuite
+       * (department and class are required by default), and the approver is the last person
+       * who can catch it before it posts.
+       *
+       * `expense.currency`, not the report's: `amountMinor` is in the expense's own
+       * currency, which is also what the workbench splits it in.
+       */}
+      <div className="mt-3">
+        <div className="mb-1 text-muted-foreground text-xs uppercase tracking-wide">
+          {t('allocation.heading')}
+        </div>
+        <AllocationLinesReadOnly
+          allocations={expense.allocations}
+          amountMinor={expense.amountMinor}
+          currency={expense.currency}
+          locale={locale}
+        />
+      </div>
+
       <div className="mt-3">
         <div className="mb-1 text-muted-foreground text-xs uppercase tracking-wide">
           {t('drawer.lineItems')}
@@ -425,13 +451,21 @@ function ExpenseCard({
         ) : (
           <div className="flex flex-col gap-1">
             {expense.lineItems.map((li) => (
-              <div key={li.id} className="flex items-center gap-2 text-sm">
-                <span className="min-w-0 flex-1 truncate text-foreground">
-                  {localeLabel(li.category.label, locale)}
-                </span>
-                <span className="text-foreground tabular-nums">
-                  {formatMinor(Number(li.amountMinor), currency, locale)}
-                </span>
+              <div key={li.id}>
+                <div className="flex items-center gap-2 text-sm">
+                  <span className="min-w-0 flex-1 truncate text-foreground">
+                    {localeLabel(li.category.label, locale)}
+                  </span>
+                  <span className="text-foreground tabular-nums">
+                    {formatMinor(Number(li.amountMinor), currency, locale)}
+                  </span>
+                </div>
+                {/* The claim behind a mileage amount: distance, route, rate or band
+                    split. Rates and band amounts are in the expense's own currency,
+                    the one the pricing engine billed in. */}
+                {li.kind === 'MILEAGE' && (
+                  <MileageLineDetail line={li} currency={expense.currency} locale={locale} />
+                )}
               </div>
             ))}
           </div>

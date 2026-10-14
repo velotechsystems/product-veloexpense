@@ -45,6 +45,11 @@ const COPY = {
   drawerFallback: 'Expense report',
   /** `common.notFound.recordTitle` — the face `/expenses/<id>` paints for an id it cannot resolve. */
   recordNotFound: 'This record no longer exists',
+  /** Next's own not-found page — what `/expenses/<id>` answers a reader `canViewReport`
+   *  refuses (eos-573). VeloExpense has no `not-found.tsx` of its own. */
+  appNotFound: 'This page could not be found.',
+  /** `approvals.emptyTitle` — the queue settled with nothing in it. */
+  approvalsQueueEmpty: 'Nothing awaiting your approval',
 } as const;
 
 /**
@@ -230,7 +235,7 @@ test.describe('dashboard', () => {
   test.describe('as the admin', () => {
     test.use({ storageState: ADMIN_STATE });
 
-    test('every approvals row links to the report in the inbox', async ({ page }) => {
+    test('every approvals row links to the report, which opens on its page at this width', async ({ page }) => {
       // VeloExpense: `e2e/crawl-fixture.ts` keeps pending tasks in this reader's queue, but
       // the admin may have decided them by now, so the rows are checked when there are any.
       await page.goto('/dashboard');
@@ -241,47 +246,68 @@ test.describe('dashboard', () => {
       for (const row of rows) expect(row.name.length, `${row.href} has no name`).toBeGreaterThan(0);
       if (rows.length === 0) return;
 
+      // eos-573 (ExpenseOS #573): the link still names the queue, and at a desktop width the
+      // queue hands a UUID-shaped `?report=` on to the report page, `/expenses/<id>`.
+      const id = new URL(rows[0].href, page.url()).searchParams.get('report');
       await page.goto(rows[0].href);
-      const drawer = page.getByRole('dialog');
-      await expect(drawer, 'the deep link landed on the inbox instead of opening the report').toBeVisible({
+      await page.waitForURL((url) => url.pathname === `/expenses/${id}`, { timeout: 30_000 });
+      await expect(page.getByRole('banner').getByRole('button', { name: 'Approve', exact: true })).toBeVisible({
         timeout: 20_000,
       });
-      await expect(page.getByText(COPY.reportLoading)).toHaveCount(0, { timeout: 20_000 });
-      await expect(drawer).not.toContainText(COPY.drawerFallback);
+      await expect(page.locator('body')).not.toContainText(COPY.recordNotFound);
+      await expect(page.locator('body')).not.toContainText(COPY.appNotFound);
+      await expect(page.locator('body')).not.toContainText(COPY.errorBoundary);
     });
   });
 
   test.describe('as the manager', () => {
     test.use({ storageState: MANAGER_STATE });
 
+    /**
+     * eos-573 (ExpenseOS #573): the two cases no longer reach the same page. The queue reads
+     * `?report=` through `useDeepLink('report', { uuid: true })`, and at a desktop width it
+     * hands a UUID-shaped id on to the report page rather than opening a drawer:
+     *
+     *   · MALFORMED reads as no link at all — the queue neither navigates nor opens a drawer;
+     *   · NOBODY'S is well formed, so the queue redirects without asking, and the REPORT PAGE
+     *     refuses it with the same not-found as any id it cannot show.
+     *
+     * In both the id is not rendered anywhere, nothing is disclosed, and the page does not
+     * go down. Each case waits for a positive before its negatives.
+     *
+     * VeloExpense: ExpenseOS's second needle is a real report the reader may not read, from
+     * its fixed seed; VeloExpense has none, so it is a well-formed id that is nobody's.
+     */
     test('a bad ?report= discloses neither the id nor the report', async ({ page }) => {
-      // VeloExpense: ExpenseOS's second needle is a real report the reader may not read,
-      // from its fixed seed; VeloExpense has none, so it is a well-formed id that is nobody's —
-      // the same refusal from `expenseApprovals.report`, which must look like the line above.
-      for (const [label, needle] of [
-        ['malformed', MALFORMED],
-        ['nobody’s', NOBODYS],
-      ] as const) {
-        await page.goto(`/expenses/approvals?report=${needle}`);
+      // ── Malformed: stays on the queue, opens nothing. ────────────────────────────────
+      await page.goto(`/expenses/approvals?report=${MALFORMED}`);
+      await expect(
+        page.getByRole('heading', { level: 1, name: COPY.approvalsPageTitle, includeHidden: true }),
+        'the malformed case did not render the approvals page',
+      ).toBeVisible({ timeout: 20_000 });
+      await expect(
+        page.getByText(COPY.approvalsQueueEmpty).or(page.locator('[data-dt-row-key]')).first(),
+        'the malformed case never settled its queue',
+      ).toBeVisible({ timeout: 20_000 });
+      await expect(page.getByRole('dialog'), 'a drawer opened on a malformed id').toHaveCount(0);
+      expect(
+        new URL(page.url()).pathname,
+        'a malformed id navigated away from the queue — the redirect must be UUID-only',
+      ).toBe('/expenses/approvals');
+      let shown = await page.locator('body').innerText();
+      expect(shown, 'the malformed report id was reflected into the page').not.toContain(MALFORMED);
+      expect(shown).not.toContain(COPY.errorBoundary);
 
-        await expect(
-          page.getByRole('heading', { level: 1, name: COPY.approvalsPageTitle, includeHidden: true }),
-          `the ${label} case did not render the approvals page`,
-        ).toBeVisible({ timeout: 20_000 });
-
-        const drawer = page.getByRole('dialog');
-        await expect(drawer, `the ${label} case never opened its drawer`).toBeVisible({ timeout: 20_000 });
-        await expect(drawer, `the ${label} drawer is titled something other than the fallback`).toContainText(
-          COPY.drawerFallback,
-        );
-        await expect(page.getByText(COPY.reportLoading), `the ${label} report query never settled`).toHaveCount(0, {
-          timeout: 20_000,
-        });
-
-        const shown = await page.locator('body').innerText();
-        expect(shown, `the ${label} report id was reflected into the page`).not.toContain(needle);
-        expect(shown).not.toContain(COPY.errorBoundary);
-      }
+      // ── Nobody's: redirected to the report page, which answers not-found. ────────────
+      await page.goto(`/expenses/approvals?report=${NOBODYS}`);
+      await page.waitForURL((url) => url.pathname === `/expenses/${NOBODYS}`, { timeout: 30_000 });
+      await expect(
+        page.getByRole('heading', { name: COPY.appNotFound }),
+        'the report page did not answer an id this reader may not see with the not-found face',
+      ).toBeVisible({ timeout: 20_000 });
+      shown = await page.locator('body').innerText();
+      expect(shown, 'the nobody’s report id was reflected into the page').not.toContain(NOBODYS);
+      expect(shown).not.toContain(COPY.errorBoundary);
     });
   });
 });

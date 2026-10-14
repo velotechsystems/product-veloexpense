@@ -890,4 +890,173 @@ describe.skipIf(!process.env.DATABASE_URL)('expense reports (integration)', () =
       expect(await lastAudit('ExpenseReport', report.id)).toEqual({ action: 'REPORT_DELETED' });
     });
   });
+
+  // ── who reads a report, and what each reader is sent ───────────────────────────
+
+  describe('reading somebody else’s report', () => {
+    /**
+     * `expenses.report`, `explainTax` and `explainPerDiem` admit exactly the drawer's
+     * audience (`canViewReport`): the submitter, their direct manager, anyone a task on
+     * the report touched, and AP / readers of all. Widening the report page to that
+     * audience is only safe because a reader who cannot WRITE the line is sent what the
+     * drawer sends them — the route as stop names, and no year-to-date basis.
+     *
+     * The people are picked by relationship, not position: an arbitrary "stranger" can be
+     * the submitter's manager, and the refusal would then fail for a legitimate reason.
+     * Everyone but the submitter carries an ordinary employee's permissions, so the only
+     * way in is the relationship under test.
+     */
+    let submitter: string;
+    let manager: string;
+    let decider: string;
+    let outsider: string;
+    let reportId: string;
+    let expenseId: string;
+    let lineId: string;
+
+    const STORED_ROUTE = {
+      stops: [
+        { description: 'Head office', placeId: 'place-office' },
+        { description: 'Client site', placeId: 'place-client' },
+      ],
+      legs: [{ fromPlaceId: 'place-office', toPlaceId: 'place-client', meters: 20000 }],
+    };
+
+    /*
+     * VeloExpense: the people are made here, in the suite's tenant, rather than picked from
+     * ExpenseOS's shared seed — the relationship each one has is then the only one. The decided
+     * task is written beside `makeInstance`'s (which writes no decider).
+     */
+    beforeAll(async () => {
+      const person = async (email: string, managerId: string | null = null) =>
+        (
+          await admin.query(
+            `INSERT INTO app_user (organization_id, email, display_name, role_id, manager_id)
+             VALUES ($1, $2, $2, '019e3000-0000-7000-8000-000000000004', $3) RETURNING id`,
+            [orgId, email, managerId],
+          )
+        ).rows[0].id as string;
+      manager = await person('reader-manager@reports.test');
+      submitter = await person('reader-submitter@reports.test', manager);
+      decider = await person('reader-decider@reports.test');
+      outsider = await person('reader-outsider@reports.test');
+
+      const { id: categoryId } = await inOrg(() =>
+        db.expenseCategory.create({
+          data: { label: { en: `QA mileage ${Date.now()}` } },
+          select: { id: true },
+        }),
+      );
+
+      const report = await inOrg(() =>
+        db.expenseReport.create({
+          data: {
+            title: 'report under test',
+            currencyId,
+            submitterId: submitter,
+            status: 'SUBMITTED',
+            expenses: {
+              create: {
+                ownerId: submitter,
+                currencyId,
+                date: new Date('2026-07-01T12:00:00Z'),
+                amountMinor: 1500n,
+                merchant: 'Drive to the client',
+                lineItems: {
+                  create: {
+                    kind: 'MILEAGE',
+                    categoryId,
+                    amountMinor: 1500n,
+                    mileageDistance: '25.00',
+                    mileageUnit: 'KM',
+                    mileageYtdBefore: '1200.50',
+                    mileageRoute: STORED_ROUTE,
+                  },
+                },
+              },
+            },
+          },
+          select: {
+            id: true,
+            expenses: { select: { id: true, lineItems: { select: { id: true } } } },
+          },
+        }),
+      );
+      reportId = report.id;
+      expenseId = report.expenses[0].id;
+      lineId = report.expenses[0].lineItems[0].id;
+
+      // A decided task only: nobody is eligible to decide now, so the decider is admitted
+      // by having decided, and the outsider by nothing at all.
+      const instanceId = await makeInstance(reportId, []);
+      await admin.query(
+        `INSERT INTO approval_instance_task (organization_id, instance_id, node_id, status, decided_by_id, decided_at)
+         VALUES ($1, $2, 'n-decided', 'APPROVED', $3, now())`,
+        [orgId, instanceId, decider],
+      );
+    });
+
+    const lineOf = (screen: any) =>
+      screen.expenses
+        .flatMap((e: { lineItems: unknown[] }) => e.lineItems)
+        .find((li: { id: string }) => li.id === lineId);
+
+    it('admits the submitter’s direct manager and somebody who decided a task', async () => {
+      for (const reader of [manager, decider]) {
+        const screen = await inOrg(() => makeCaller(RW, reader).report({ reportId }));
+        expect(screen.id).toBe(reportId);
+      }
+    });
+
+    it('hides it from somebody with no relationship to it, as NOT_FOUND', async () => {
+      await expect(inOrg(() => makeCaller(RW, outsider).report({ reportId }))).rejects.toMatchObject({
+        code: 'NOT_FOUND',
+      });
+    });
+
+    it('sends a reader who cannot write the line stop names only, and no year-to-date basis', async () => {
+      for (const reader of [manager, decider]) {
+        const screen = await inOrg(() => makeCaller(RW, reader).report({ reportId }));
+        const wire = JSON.stringify(screen);
+        expect(wire).not.toContain('placeId');
+        expect(wire).not.toContain('legs');
+        expect(wire).not.toContain('meters');
+
+        const line = lineOf(screen);
+        expect(line.mileageRoute).toEqual({
+          stops: [{ description: 'Head office' }, { description: 'Client site' }],
+        });
+        expect(line.mileageYtdBefore).toBeNull();
+        // The drawer's reading of the route travels too: 20 km filed, 25 km claimed.
+        expect(line.routeDistance).toBe('20.00');
+        expect(line.mileageRouteUnavailable).toBe(false);
+      }
+    });
+
+    it('sends the submitter their route exactly as stored, legs and place ids intact', async () => {
+      /** The editor re-saves the route it is handed, so a trimmed route reaching the
+       *  submitter would erase their place ids and legs on the next save. */
+      const stored = await inOrg(() =>
+        db.expenseLineItem.findUniqueOrThrow({
+          where: { id: lineId },
+          select: { mileageYtdBefore: true },
+        }),
+      );
+      const line = lineOf(await inOrg(() => makeCaller(RW, submitter).report({ reportId })));
+      expect(line.mileageRoute).toEqual(STORED_ROUTE);
+      expect(line.mileageYtdBefore).toBe(stored.mileageYtdBefore.toString());
+      expect(line.routeDistance).toBe('20.00');
+      expect(line.mileageRouteUnavailable).toBe(false);
+    });
+
+    it('lets the manager ask why the tax is what it is, and refuses the outsider', async () => {
+      await expect(inOrg(() => makeCaller(RW, manager).explainTax({ expenseId }))).resolves.toBeDefined();
+      await expect(inOrg(() => makeCaller(RW, outsider).explainTax({ expenseId }))).rejects.toMatchObject({
+        code: 'NOT_FOUND',
+      });
+    });
+
+    // VeloExpense: ExpenseOS's `explainPerDiem` case is not carried — that procedure is not
+    // ported yet (see the router's header).
+  });
 });

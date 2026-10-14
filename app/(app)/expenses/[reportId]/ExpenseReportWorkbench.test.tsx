@@ -33,6 +33,9 @@ const h = vi.hoisted(() => ({
   report: undefined as unknown,
   loading: false,
   grouping: [] as unknown[],
+  /** The options each query hook was last called with, by procedure name — how a test
+   *  sees whether a query would fire at all (`enabled`). */
+  queryOpts: {} as Record<string, { enabled?: boolean } | undefined>,
   /** Mutation arguments, keyed by procedure name. */
   calls: {} as Record<string, unknown[]>,
   /** Procedures whose mutate/mutateAsync should fail — with a message, or with a whole
@@ -42,6 +45,12 @@ const h = vi.hoisted(() => ({
   pending: {} as Record<string, boolean>,
   params: new URLSearchParams(),
   pushed: [] as string[],
+  /** `router.replace` targets — how an approver leaves a decided report for the queue. */
+  replaced: [] as string[],
+  /** Every `utils.…` call the page made, as a dotted path (`expenseApprovals.myTasks.invalidate`). */
+  utilsCalls: [] as string[],
+  /** What a procedure's mutation resolves with, when the test cares (default `{ id: 'exp-new' }`). */
+  results: {} as Record<string, unknown>,
   topBar: {} as { left?: ReactNode; center?: ReactNode; right?: ReactNode },
   /** The reader's locale, as next-intl would report it. Mutable so one test can
    *  render the same report to an `en` reader and a `fr-CA` one. */
@@ -84,7 +93,10 @@ vi.mock('@/i18n/navigation', () => ({
   // the mock below instead, `h.pushed` still fills, and every case here still passes while
   // the locale bug is back. Mocking it in the module the component must import from is what
   // makes that regression visible — `ExpenseReportsList.test.tsx` carries the same note.
-  useRouter: () => ({ push: (path: string) => h.pushed.push(path) }),
+  useRouter: () => ({
+    push: (path: string) => h.pushed.push(path),
+    replace: (path: string) => h.replaced.push(path),
+  }),
 }));
 vi.mock('next-intl', () => ({
   useLocale: () => h.locale,
@@ -175,7 +187,8 @@ vi.mock('@/lib/trpc/client', () => {
     return Object.assign(new Error(spec.message), { data: spec.data });
   };
   const procedure = (name: string) => ({
-    useQuery: () => {
+    useQuery: (_input?: unknown, opts?: { enabled?: boolean }) => {
+      h.queryOpts[name] = opts;
       if (name === 'report') return { data: h.report, isLoading: h.loading };
       if (name === 'receiptGroupingSuggestions')
         return { data: { items: h.grouping }, isLoading: false, refetch: vi.fn() };
@@ -201,8 +214,9 @@ vi.mock('@/lib/trpc/client', () => {
           opts?.onError?.(err);
           perCall?.onError?.(err);
         } else {
-          opts?.onSuccess?.({ id: 'exp-new' });
-          perCall?.onSuccess?.({ id: 'exp-new' });
+          const result = h.results[name] ?? { id: 'exp-new' };
+          opts?.onSuccess?.(result);
+          perCall?.onSuccess?.(result);
         }
       },
       mutateAsync: async (vars: unknown) => {
@@ -232,10 +246,18 @@ vi.mock('@/lib/trpc/client', () => {
   });
   return {
     trpc: {
+      // Records the path of every call (`expenses.list.invalidate`), so a test can tell
+      // which caches an action marked stale.
       useUtils: () => {
-        const deep = (): unknown =>
-          new Proxy(() => Promise.resolve(), { get: () => deep(), apply: () => Promise.resolve() });
-        return deep();
+        const deep = (path: string[]): unknown =>
+          new Proxy(() => Promise.resolve(), {
+            get: (_t, key) => deep([...path, String(key)]),
+            apply: () => {
+              h.utilsCalls.push(path.join('.'));
+              return Promise.resolve();
+            },
+          });
+        return deep([]);
       },
       expenses: router,
       expenseApprovals: router,
@@ -342,10 +364,14 @@ const SUGGESTION = {
 
 const PROPS = {
   reportId: 'rep-1',
+  isSubmitter: true,
   canEdit: true,
   canDelete: true,
   canSubmit: true,
   canApprove: false,
+  isAcknowledge: false,
+  canReimburse: false,
+  canChase: false,
   canFxOverride: false,
   // VeloExpense (d38): ExpenseOS's `canPushNetsuite`.
   canOpenLedgerQueue: false,
@@ -390,6 +416,8 @@ function show(over: Record<string, unknown> = {}, props: Partial<WorkbenchProps>
 
 const sent = (name: string) => (h.calls[name] ?? []) as Record<string, unknown>[];
 const topbar = () => screen.getByTestId('topbar');
+/** The body-level row that holds Request receipts and Mark reimbursed at `lg` and up. */
+const strip = () => screen.getByTestId('desktop-action-strip');
 
 /** Intl groups fr-CA with a NO-BREAK space. Escaped rather than literal: a
  *  literal one is indistinguishable from an ASCII space in a diff. */
@@ -407,11 +435,15 @@ beforeEach(() => {
   h.report = undefined;
   h.loading = false;
   h.grouping = [];
+  h.queryOpts = {};
   h.calls = {};
   h.errors = {};
   h.pending = {};
   h.params = new URLSearchParams();
   h.pushed = [];
+  h.replaced = [];
+  h.utilsCalls = [];
+  h.results = {};
   h.topBar = {};
   // Reset the implementation, not just the call history: `vi.clearAllMocks()`
   // leaves a locale set by a previous test in place, and every money assertion
@@ -1605,6 +1637,412 @@ describe('deciding as the approver', () => {
   });
 });
 
+// ── What the drawer could do, on the workbench ───────────────────────────────
+
+/**
+ * Request receipts, Mark reimbursed and Acknowledge — the three actions the approvals
+ * drawer had and this page did not. Each sits in the one `actions` list, so the desktop
+ * placements (the TopBar row, or the strip above the panes) and the phone bar all get it; each is shown by its own condition, which the page
+ * resolves from the same checks the procedures run (see `page.test.tsx`).
+ *
+ * And what happens after: every action that finishes the approver's part — a decision, a
+ * return, a reassignment, an acknowledgement, a payment — refreshes the queue's reads and
+ * goes back to it with `replace`. Asking for receipts does not; it comes before deciding.
+ */
+describe('the drawer’s actions on the workbench', () => {
+  const approver = { isSubmitter: false, canApprove: true, canSubmit: false, taskId: 'task-1' };
+  const apClerk = {
+    isSubmitter: false,
+    canEdit: false,
+    canDelete: false,
+    canSubmit: false,
+    canApprove: false,
+    canReimburse: true,
+  };
+  const RECEIPT = {
+    id: 'r1',
+    filename: 'bill.pdf',
+    url: 'https://files.example/bill.pdf',
+    mimeType: 'application/pdf',
+    extraction: null,
+  };
+  /** The queue reads the approvals inbox refreshes after a decision, plus the list. */
+  const QUEUE_READS = [
+    'expenseApprovals.myTasks.invalidate',
+    'expenseApprovals.myDecided.invalidate',
+    'expenseApprovals.myTeam.invalidate',
+    'expenses.list.invalidate',
+  ];
+  const expectBackToQueue = () => {
+    expect(h.replaced).toEqual(['/expenses/approvals']);
+    expect(h.utilsCalls).toEqual(expect.arrayContaining(QUEUE_READS));
+    // `replace`, never `push`: Back from the queue must not reopen a decided report.
+    expect(h.pushed).toEqual([]);
+  };
+
+  describe('Request receipts', () => {
+    it('sits in the strip above the panes at a desktop width, beside the bar’s decisions', () => {
+      // The decisions stay in the bar; the request that comes before them does not.
+      show({ status: 'SUBMITTED' }, { ...approver, canChase: true });
+      expect(
+        within(strip()).getByRole('button', { name: 'drawer.requestReceipts:1' }),
+      ).toBeEnabled();
+      expect(within(topbar()).queryByRole('button', { name: /drawer.requestReceipts/ })).toBeNull();
+      expect(within(topbar()).getByRole('button', { name: 'approvals.approve' })).toBeEnabled();
+      expect(within(strip()).queryByRole('button', { name: 'approvals.approve' })).toBeNull();
+    });
+
+    it('is offered to a chaser when an expense has no receipt, and asks for all of them', async () => {
+      const user = userEvent.setup();
+      show(
+        {
+          status: 'SUBMITTED',
+          expenses: [expense(), expense({ id: 'exp-2', merchant: 'Taxi' })],
+        },
+        { ...approver, canChase: true },
+      );
+      await user.click(within(strip()).getByRole('button', { name: 'drawer.requestReceipts:2' }));
+      expect(sent('chaseReceipts')[0]).toEqual({ expenseIds: ['exp-1', 'exp-2'] });
+    });
+
+    it('asks only for the expenses with no receipt', async () => {
+      const user = userEvent.setup();
+      show(
+        {
+          status: 'SUBMITTED',
+          expenses: [expense({ receipts: [RECEIPT] }), expense({ id: 'exp-2', merchant: 'Taxi' })],
+        },
+        { ...approver, canChase: true },
+      );
+      await user.click(within(strip()).getByRole('button', { name: 'drawer.requestReceipts:1' }));
+      expect(sent('chaseReceipts')[0]).toEqual({ expenseIds: ['exp-2'] });
+    });
+
+    it('is not offered when every expense has a receipt', () => {
+      show(
+        { status: 'SUBMITTED', expenses: [expense({ receipts: [RECEIPT] })] },
+        { ...approver, canChase: true },
+      );
+      expect(screen.queryByRole('button', { name: /drawer.requestReceipts/ })).toBeNull();
+    });
+
+    it('is not offered to somebody the page says may not chase — the submitter included', () => {
+      // The page folds `!isSubmitter` into `canChase`; the workbench reads only the flag.
+      show({ status: 'SUBMITTED' }, { canChase: false });
+      expect(screen.queryByRole('button', { name: /drawer.requestReceipts/ })).toBeNull();
+    });
+
+    it('stays on the page and says the receipts were asked for', async () => {
+      h.results.chaseReceipts = { reports: 1, expenses: 1, skipped: [] };
+      const user = userEvent.setup();
+      show({ status: 'SUBMITTED' }, { ...approver, canChase: true });
+      await user.click(within(strip()).getByRole('button', { name: 'drawer.requestReceipts:1' }));
+      expect(await within(topbar()).findByRole('status')).toHaveTextContent('drawer.chaseSent:1');
+      expect(h.replaced).toEqual([]);
+      expect(h.pushed).toEqual([]);
+      // Still deciding: the approver's buttons are all still there.
+      expect(within(topbar()).getByRole('button', { name: 'approvals.approve' })).toBeEnabled();
+    });
+
+    it('says so when there was nothing it could ask for', async () => {
+      h.results.chaseReceipts = { reports: 0, expenses: 0, skipped: [] };
+      const user = userEvent.setup();
+      show({ status: 'SUBMITTED' }, { ...approver, canChase: true });
+      await user.click(within(strip()).getByRole('button', { name: 'drawer.requestReceipts:1' }));
+      expect(await within(topbar()).findByRole('status')).toHaveTextContent('drawer.chaseNone');
+      expect(h.replaced).toEqual([]);
+    });
+  });
+
+  /*
+   * VeloExpense (d71): no Mark reimbursed on the workbench. ExpenseOS's seven cases offer it
+   * to an AP clerk on an APPROVED report; VeloExpense's reimbursement screen stays the one
+   * place AP pays, as the approver drawer says. What holds here is that it is never offered.
+   */
+  describe('Mark reimbursed (VeloExpense, d71)', () => {
+    it('is not offered, even to an AP clerk on an approved report', () => {
+      show({ status: 'APPROVED' }, apClerk);
+      expect(screen.queryByRole('button', { name: 'approvals.markReimbursed' })).toBeNull();
+    });
+  });
+
+  describe('Acknowledge', () => {
+    const acknowledger = { ...approver, isAcknowledge: true };
+
+    it('is the only thing an acknowledge task offers', () => {
+      // The engine refuses a reject on such a task; the drawer shows Acknowledge alone.
+      show({ status: 'SUBMITTED' }, acknowledger);
+      const bar = within(topbar());
+      expect(bar.getByRole('button', { name: 'approvals.acknowledge' })).toBeEnabled();
+      for (const name of [
+        'approvals.approve',
+        'approvals.reject',
+        'approvals.return',
+        'approvals.reassign',
+      ]) {
+        expect(bar.queryByRole('button', { name })).toBeNull();
+      }
+    });
+
+    it('is never offered on an ordinary approval task', () => {
+      show({ status: 'SUBMITTED' }, approver);
+      expect(within(topbar()).queryByRole('button', { name: 'approvals.acknowledge' })).toBeNull();
+    });
+
+    it('is not offered without a task, whatever the flag says', () => {
+      show({ status: 'SUBMITTED' }, { ...acknowledger, canApprove: false, taskId: undefined });
+      expect(within(topbar()).queryByRole('button', { name: 'approvals.acknowledge' })).toBeNull();
+    });
+
+    it('acknowledges as an approve of the task, and goes back to the queue', async () => {
+      const user = userEvent.setup();
+      show({ status: 'SUBMITTED' }, acknowledger);
+      await user.click(within(topbar()).getByRole('button', { name: 'approvals.acknowledge' }));
+      expect(sent('decide')[0]).toEqual({ taskId: 'task-1', approve: true });
+      expectBackToQueue();
+    });
+  });
+
+  describe('back to the queue', () => {
+    const showApprover = () => show({ status: 'SUBMITTED' }, approver);
+
+    it('after an approval', async () => {
+      const user = userEvent.setup();
+      showApprover();
+      await user.click(within(topbar()).getByRole('button', { name: 'approvals.approve' }));
+      expectBackToQueue();
+    });
+
+    it('after a rejection', async () => {
+      const user = userEvent.setup();
+      showApprover();
+      await user.click(within(topbar()).getByRole('button', { name: 'approvals.reject' }));
+      await user.type(screen.getByPlaceholderText('approvals.rejectNotePlaceholder'), 'No');
+      await user.click(screen.getByRole('button', { name: 'approvals.confirmReject' }));
+      expectBackToQueue();
+    });
+
+    it('after a return', async () => {
+      const user = userEvent.setup();
+      showApprover();
+      await user.click(within(topbar()).getByRole('button', { name: 'approvals.return' }));
+      await user.click(await screen.findByRole('button', { name: 'approvals.confirmReturn' }));
+      expectBackToQueue();
+    });
+
+    it('after a reassignment', async () => {
+      const user = userEvent.setup();
+      showApprover();
+      await user.click(within(topbar()).getByRole('button', { name: 'approvals.reassign' }));
+      await user.click(await screen.findByText('approvals.reassignPlaceholder'));
+      // VeloExpense (d37): the reason is required, and travels with the reassignment.
+      await user.type(
+        screen.getByPlaceholderText('approvals.reassignNotePlaceholder'),
+        'On leave until Monday',
+      );
+      await user.click(screen.getByRole('button', { name: 'approvals.confirmReassign' }));
+      expectBackToQueue();
+    });
+
+    it('not after a refused decision — the reason stays on screen', async () => {
+      // Two approvers on one pooled task: the second press is refused, and leaving would
+      // hide why.
+      h.errors.decide = 'Task already decided';
+      const user = userEvent.setup();
+      showApprover();
+      await user.click(within(topbar()).getByRole('button', { name: 'approvals.approve' }));
+      expect(await within(topbar()).findByText('Task already decided')).toBeInTheDocument();
+      expect(h.replaced).toEqual([]);
+      expect(h.utilsCalls).not.toContain('expenseApprovals.myTasks.invalidate');
+    });
+
+    it('not after a refused return or reassignment', async () => {
+      h.errors.returnForEdit = 'Task already decided';
+      h.errors.reassign = 'Task already decided';
+      const user = userEvent.setup();
+      showApprover();
+      await user.click(within(topbar()).getByRole('button', { name: 'approvals.return' }));
+      await user.click(await screen.findByRole('button', { name: 'approvals.confirmReturn' }));
+      await user.click(within(topbar()).getByRole('button', { name: 'approvals.reassign' }));
+      await user.click(await screen.findByText('approvals.reassignPlaceholder'));
+      // VeloExpense (d37): the reason is required, and travels with the reassignment.
+      await user.type(
+        screen.getByPlaceholderText('approvals.reassignNotePlaceholder'),
+        'On leave until Monday',
+      );
+      await user.click(screen.getByRole('button', { name: 'approvals.confirmReassign' }));
+      expect(sent('returnForEdit')).toHaveLength(1);
+      expect(sent('reassign')).toHaveLength(1);
+      expect(h.replaced).toEqual([]);
+    });
+
+    it('not after the submitter recalls their own report', async () => {
+      // Recall is the submitter's: it refreshes the report in place and goes nowhere.
+      const user = userEvent.setup();
+      show({ status: 'SUBMITTED' });
+      await user.click(within(topbar()).getByRole('button', { name: 'drawer.recall' }));
+      expect(sent('recall')[0]).toEqual({ reportId: 'rep-1' });
+      expect(h.replaced).toEqual([]);
+      expect(h.pushed).toEqual([]);
+      expect(h.utilsCalls).not.toContain('expenseApprovals.myTasks.invalidate');
+    });
+  });
+});
+
+// ── A reader who did not file the report ─────────────────────────────────────
+
+/**
+ * The page admits everyone `canViewReport` admits — a direct manager (drafts included), an
+ * approver, AP, an admin — and offers the write controls to the submitter only. The page
+ * folds that into the props (`isSubmitter && <permission>`, see `page.test.tsx`); what is
+ * pinned here is that the workbench, handed those props, shows such a reader nothing they
+ * would be refused, and fires no query that would 403 for them.
+ */
+describe('a reader who did not file the report', () => {
+  const reader = {
+    isSubmitter: false,
+    canEdit: false,
+    canDelete: false,
+    canSubmit: false,
+    canApprove: false,
+  };
+
+  it('is offered no Recall on a submitted report', () => {
+    show({ status: 'SUBMITTED' }, reader);
+    expect(within(topbar()).queryByRole('button', { name: 'drawer.recall' })).toBeNull();
+    expect(within(topbar()).queryByRole('button', { name: 'drawer.submit' })).toBeNull();
+  });
+
+  it('is offered no Submit and no Delete on a draft', () => {
+    // A direct manager may open a subordinate's draft by URL; reading it is all they may do.
+    show({}, reader);
+    expect(within(topbar()).queryByRole('button', { name: 'drawer.submit' })).toBeNull();
+    expect(within(topbar()).queryByRole('button', { name: /drawer.deleteReport/ })).toBeNull();
+    expect(within(topbar()).queryByRole('button', { name: 'drawer.recall' })).toBeNull();
+  });
+
+  it('never asks for the grouping suggestions, which only the submitter may read', () => {
+    /**
+     * `receiptGroupingSuggestions` FORBIDS anyone but the submitter or a read-all holder.
+     * It is gated on `canEdit`, so a manager who happened to hold `updateOwn` used to fire
+     * a 403 on every open; with `canEdit` folded to the submitter, the query is off.
+     */
+    show({ status: 'SUBMITTED' }, reader);
+    expect(h.queryOpts.receiptGroupingSuggestions?.enabled).toBe(false);
+
+    cleanup();
+    show({}, reader);
+    expect(h.queryOpts.receiptGroupingSuggestions?.enabled).toBe(false);
+  });
+
+  it('still lets the submitter’s own draft ask for them', () => {
+    // The other side of the line above: the gate moved to the submitter, not to nobody.
+    show();
+    expect(h.queryOpts.receiptGroupingSuggestions?.enabled).toBe(true);
+  });
+});
+
+// ── Mileage on a read-only line ───────────────────────────────────────────────
+
+/**
+ * A submitted mileage line shows the claim behind its amount — distance, route, rate —
+ * through the drawer's own `MileageLineDetail`. Before, the read-only row drew category and
+ * amount only, so a desktop approver landing here saw LESS than the phone drawer showed.
+ * One rendering rule for every read-only line: the submitter's own included.
+ */
+describe('a mileage line on a submitted report', () => {
+  const mileageLine = (over: Record<string, unknown> = {}) => ({
+    id: 'li-m',
+    categoryId: 'c-mileage',
+    kind: 'MILEAGE',
+    payload: null,
+    amountMinor: '8640',
+    category: { id: 'c-mileage', label: { en: 'Mileage' }, icon: null },
+    mileageDistance: '120.00',
+    mileageUnit: 'KM',
+    mileageYtdBefore: '400.00',
+    mileageBreakdown: [
+      { fromDistance: '0', rateMinor: '72', distance: '120.00', amountMinor: '8640' },
+    ],
+    // What a writer of the line is sent: the stored route as is, place ids and legs too.
+    mileageRoute: {
+      stops: [
+        { description: 'Montréal', placeId: 'p-mtl' },
+        { description: 'Québec', placeId: 'p-qc' },
+      ],
+      legs: [{ fromPlaceId: 'p-mtl', toPlaceId: 'p-qc', meters: 120000 }],
+    },
+    routeDistance: null,
+    mileageRouteUnavailable: false,
+    notes: null,
+    ...over,
+  });
+  const submittedWith = (line: Record<string, unknown>) => ({
+    status: 'SUBMITTED',
+    expenses: [expense({ merchant: null, amountMinor: '8640', lineItems: [line] })],
+  });
+
+  it('shows the submitter their own line’s distance, route and rate', () => {
+    show(submittedWith(mileageLine()));
+    expect(screen.getByText('line.distanceValue:120.00,line.km')).toBeInTheDocument();
+    expect(screen.getByText('Montréal → Québec')).toBeInTheDocument();
+    expect(screen.getByText(/^line\.mileageRate:/)).toBeInTheDocument();
+  });
+
+  it('shows another reader the stops-only route and the claimed-vs-filed pair', () => {
+    // What `expenses.report` sends a reader who cannot write the line.
+    show(
+      submittedWith(
+        mileageLine({
+          mileageYtdBefore: null,
+          mileageRoute: { stops: [{ description: 'Montréal' }, { description: 'Québec' }] },
+          routeDistance: '131.20',
+        }),
+      ),
+      { isSubmitter: false, canEdit: false, canDelete: false, canSubmit: false },
+    );
+    expect(screen.getByText('line.mileageClaimed:120.00,line.km,131.20')).toBeInTheDocument();
+    expect(screen.getByText('Montréal → Québec')).toBeInTheDocument();
+    expect(screen.getByText(/^line\.mileageRate:/)).toBeInTheDocument();
+  });
+
+  it('says a route the server could not read is unavailable', () => {
+    show(submittedWith(mileageLine({ mileageRoute: null, mileageRouteUnavailable: true })), {
+      isSubmitter: false,
+      canEdit: false,
+      canDelete: false,
+      canSubmit: false,
+    });
+    expect(screen.getByText('line.routeUnavailable')).toBeInTheDocument();
+  });
+
+  it('adds nothing to a line that is not mileage', () => {
+    show({
+      status: 'SUBMITTED',
+      expenses: [
+        expense({
+          lineItems: [
+            {
+              id: 'li-1',
+              categoryId: 'c-meals',
+              kind: 'STANDARD',
+              amountMinor: '11500',
+              category: { id: 'c-meals', label: { en: 'Meals' }, icon: null },
+              mileageDistance: null,
+              mileageUnit: null,
+              mileageBreakdown: null,
+              mileageRoute: null,
+              routeDistance: null,
+              mileageRouteUnavailable: false,
+            },
+          ],
+        }),
+      ],
+    });
+    expect(screen.queryByText(/^line\.(distanceValue|mileageRate)/)).toBeNull();
+  });
+});
+
 // ── The AP-only FX override ───────────────────────────────────────────────────
 
 describe('the FX override', () => {
@@ -1642,6 +2080,24 @@ describe('the FX override', () => {
     cleanup();
     show({}, { canFxOverride: true });
     expect(screen.queryByRole('button', { name: 'workbench.fxOverride' })).toBeNull();
+  });
+
+  it('is offered to a holder who neither filed the report nor holds a task on it', () => {
+    /**
+     * The finance admin who pins the rate is a READER of somebody else's report: not the
+     * submitter (so none of the write controls), and with no decidable task (so no approver
+     * mode). The page now admits that reader through `canViewReport` and folds
+     * `isSubmitter` into the write flags — the override must not be folded in with them.
+     */
+    show(multi, {
+      isSubmitter: false,
+      canEdit: false,
+      canDelete: false,
+      canSubmit: false,
+      canApprove: false,
+      canFxOverride: true,
+    });
+    expect(screen.getByRole('button', { name: 'workbench.fxOverride' })).toBeInTheDocument();
   });
 
   it('is withdrawn once the report has been decided', () => {
@@ -2349,6 +2805,45 @@ describe('the report chrome below lg', () => {
         approve: false,
         note: 'Missing receipts',
       });
+    });
+
+    it('gets Request receipts in the bar, and stays after asking', async () => {
+      stubDevice('phone');
+      h.results.chaseReceipts = { reports: 1, expenses: 1, skipped: [] };
+      const user = userEvent.setup();
+      show({ status: 'SUBMITTED' }, { ...approver, canChase: true });
+      await user.click(
+        within(phoneBar()).getByRole('button', { name: 'drawer.requestReceipts:1' }),
+      );
+      expect(sent('chaseReceipts')[0]).toEqual({ expenseIds: ['exp-1'] });
+      expect(await screen.findByRole('status')).toHaveTextContent('drawer.chaseSent:1');
+      expect(h.replaced).toEqual([]);
+      // Relocated, not duplicated.
+      expect(within(topbar()).queryByRole('button', { name: /drawer.requestReceipts/ })).toBeNull();
+    });
+
+    it('gets Acknowledge alone, as the primary, on an acknowledge task', async () => {
+      stubDevice('phone');
+      const user = userEvent.setup();
+      show({ status: 'SUBMITTED' }, { ...approver, isAcknowledge: true });
+      const bar = within(phoneBar());
+      expect(bar.getAllByRole('button').map((b) => b.textContent)).toEqual([
+        'approvals.acknowledge',
+      ]);
+      await user.click(bar.getByRole('button', { name: 'approvals.acknowledge' }));
+      expect(sent('decide')[0]).toEqual({ taskId: 'task-1', approve: true });
+      expect(h.replaced).toEqual(['/expenses/approvals']);
+    });
+
+    // VeloExpense (d71): ExpenseOS's phone case for Mark reimbursed is not carried — see the
+    // 'Mark reimbursed' block above.
+
+    it('goes back to the queue after a decision made from the bar', async () => {
+      stubDevice('phone');
+      const user = userEvent.setup();
+      showApprover();
+      await user.click(within(phoneBar()).getByRole('button', { name: 'approvals.approve' }));
+      expect(h.replaced).toEqual(['/expenses/approvals']);
     });
   });
 

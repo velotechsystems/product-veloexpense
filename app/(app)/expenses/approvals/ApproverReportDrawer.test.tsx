@@ -69,12 +69,24 @@ const expense = (over: Record<string, unknown> = {}) => ({
   date: '2026-07-28T12:00:00.000Z',
   placeText: 'Toronto',
   amountMinor: '12500',
+  currency: { code: 'CAD', symbol: '$' },
   explanation: 'Dinner with the Acme team',
   attendees: [{ id: 'a-1', name: 'Jo Chan', company: 'Acme', isExternal: true }],
   lineItems: [
     { id: 'li-1', amountMinor: '12500', category: { id: 'c-1', label: { en: 'Meals' } } },
   ],
+  allocations: [],
   receipts: [receipt()],
+  ...over,
+});
+
+const allocation = (over: Record<string, unknown> = {}) => ({
+  id: 'al-1',
+  percentBp: 10000,
+  nsBusinessUnitLabel: null,
+  businessUnit: { label: { en: 'Atlantic' } },
+  department: { label: { en: 'Engineering' } },
+  class: { name: 'Internal' },
   ...over,
 });
 
@@ -192,6 +204,77 @@ describe('the report', () => {
     );
   });
 
+  it('shows each allocation row: its share, that share in money, and its coding', () => {
+    /**
+     * The coding is what the approver signs off on, and NetSuite posts it as split. The
+     * money column is the expense's own total split to the cent, so 60/40 of $125.00 is
+     * $75.00 + $50.00 — the rows add up to the expense.
+     */
+    setTrpc(
+      report({
+        expenses: [
+          expense({
+            allocations: [
+              allocation({ id: 'al-1', percentBp: 6000 }),
+              allocation({
+                id: 'al-2',
+                percentBp: 4000,
+                businessUnit: { label: { en: 'Pacific' } },
+                department: { label: { en: 'Sales' } },
+                class: { name: 'Client' },
+              }),
+            ],
+          }),
+        ],
+      }),
+    );
+    show();
+    expect(screen.getByText('expenses.allocation.heading')).toBeInTheDocument();
+    expect(screen.getByText('60%')).toBeInTheDocument();
+    expect(screen.getByText('40%')).toBeInTheDocument();
+    expect(screen.getByText('$75.00 CAD')).toBeInTheDocument();
+    expect(screen.getByText('$50.00 CAD')).toBeInTheDocument();
+    expect(screen.getByText('Atlantic · Engineering · Internal')).toBeInTheDocument();
+    expect(screen.getByText('Pacific · Sales · Client')).toBeInTheDocument();
+    expect(screen.queryByText('expenses.allocation.none')).not.toBeInTheDocument();
+  });
+
+  it('says an uncoded expense is not coded, rather than leaving the block out', () => {
+    // Blank coding is refused when the report posts to NetSuite (department and class are
+    // required by default); the approver is the last one able to catch it.
+    setTrpc(report({ expenses: [expense({ allocations: [] })] }));
+    show();
+    expect(screen.getByText('expenses.allocation.heading')).toBeInTheDocument();
+    expect(screen.getByText('expenses.allocation.none')).toBeInTheDocument();
+  });
+
+  it('places the allocation after the attendees and before the line items', () => {
+    setTrpc(report({ expenses: [expense({ allocations: [allocation()] })] }));
+    show();
+    const attendees = screen.getByText('expenses.drawer.attendees');
+    const heading = screen.getByText('expenses.allocation.heading');
+    const lines = screen.getByText('expenses.drawer.lineItems');
+    expect(attendees.compareDocumentPosition(heading)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+    expect(heading.compareDocumentPosition(lines)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+  });
+
+  it('splits a foreign expense in its own currency, not the report’s', () => {
+    // `amountMinor` is in the expense's currency; labelling it with the report's would
+    // misstate every row.
+    setTrpc(
+      report({
+        expenses: [
+          expense({
+            currency: { code: 'USD', symbol: '$' },
+            allocations: [allocation({ percentBp: 10000 })],
+          }),
+        ],
+      }),
+    );
+    show();
+    expect(screen.getByText('$125.00 USD')).toBeInTheDocument();
+  });
+
   it('names an expense with no merchant rather than leaving it blank', () => {
     setTrpc(report({ expenses: [expense({ merchant: null, placeText: null })] }));
     show();
@@ -265,6 +348,158 @@ describe('the report', () => {
     show();
     expect(screen.queryByText('expenses.extraction.reviewPromptApprover')).not.toBeInTheDocument();
     expect(screen.getByText('expenses.extraction.done')).toBeInTheDocument();
+  });
+});
+
+// ── A mileage line ────────────────────────────────────────────────────────────
+
+/**
+ * Under a MILEAGE line's "category · amount" row the card shows what was claimed: the
+ * distance, the route as filed, and the rate (or one line per band when the trip crossed
+ * a rate boundary). The copy itself is pinned against the real catalogs in
+ * `MileageLineDetail.test.tsx`; this block pins placement and which state shows what,
+ * through the identity mock (`<ns>.<key>:<values>`).
+ */
+const mileageLine = (over: Record<string, unknown> = {}) => ({
+  id: 'li-m',
+  amountMinor: '8400',
+  category: { id: 'c-m', label: { en: 'Mileage' } },
+  kind: 'MILEAGE',
+  mileageDistance: '120.00',
+  mileageUnit: 'KM',
+  mileageBreakdown: [
+    { fromDistance: '0.00', rateMinor: '70', distance: '120.00', amountMinor: '8400' },
+  ],
+  mileageRoute: null,
+  routeDistance: null,
+  mileageRouteUnavailable: false,
+  ...over,
+});
+
+const twoBands = [
+  { fromDistance: '0.00', rateMinor: '70', distance: '100.00', amountMinor: '7000' },
+  { fromDistance: '5000.00', rateMinor: '64', distance: '50.00', amountMinor: '3200' },
+];
+
+const withLines = (...lineItems: unknown[]) =>
+  setTrpc(report({ expenses: [expense({ lineItems })] }));
+
+describe('a mileage line', () => {
+  it('shows a single-band claim as its distance and flat rate, with no pair', () => {
+    withLines(mileageLine());
+    show();
+    expect(
+      screen.getByText('expenses.line.distanceValue:120.00,expenses.line.km'),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText('expenses.line.mileageRate:$0.70,expenses.line.km'),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/expenses\.line\.mileageClaimed/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/expenses\.line\.mileageTier/)).not.toBeInTheDocument();
+  });
+
+  it('pairs claimed with the route as filed when they differ, and lists both bands', () => {
+    withLines(
+      mileageLine({
+        mileageDistance: '150.00',
+        routeDistance: '120.00',
+        mileageBreakdown: twoBands,
+      }),
+    );
+    show();
+    expect(
+      screen.getByText('expenses.line.mileageClaimed:150.00,expenses.line.km,120.00'),
+    ).toBeInTheDocument();
+    // The pair replaces the bare distance.
+    expect(screen.queryByText(/expenses\.line\.distanceValue/)).not.toBeInTheDocument();
+    expect(
+      screen.getByText('expenses.line.mileageTier:0,expenses.line.km,100.00,$0.70,$70.00,5,000'),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText('expenses.line.mileageTierOpen:5,000,expenses.line.km,50.00,$0.64,$32.00'),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/expenses\.line\.mileageRate/)).not.toBeInTheDocument();
+  });
+
+  it('lists both bands without a pair when the route does not differ', () => {
+    withLines(mileageLine({ mileageBreakdown: twoBands }));
+    show();
+    expect(
+      screen.getByText('expenses.line.distanceValue:120.00,expenses.line.km'),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/expenses\.line\.mileageClaimed/)).not.toBeInTheDocument();
+    expect(screen.getAllByText(/expenses\.line\.mileageTier/)).toHaveLength(2);
+  });
+
+  it('draws the filed stops joined with arrows', () => {
+    withLines(
+      mileageLine({
+        mileageRoute: {
+          stops: [
+            { description: 'Montréal' },
+            { description: 'Laval' },
+            { description: 'Montréal' },
+          ],
+        },
+      }),
+    );
+    show();
+    expect(screen.getByText('Montréal → Laval → Montréal')).toBeInTheDocument();
+    expect(screen.queryByText('expenses.line.routeUnavailable')).not.toBeInTheDocument();
+  });
+
+  it('says the route is unavailable when the server could not read it', () => {
+    withLines(mileageLine({ mileageRouteUnavailable: true }));
+    show();
+    expect(screen.getByText('expenses.line.routeUnavailable')).toBeInTheDocument();
+  });
+
+  it('says nothing about a route when none was filed', () => {
+    withLines(mileageLine());
+    show();
+    expect(screen.queryByText('expenses.line.routeUnavailable')).not.toBeInTheDocument();
+    expect(screen.queryByText(/→/)).not.toBeInTheDocument();
+  });
+
+  it('sits under its own line, after the category and amount', () => {
+    withLines(mileageLine());
+    show();
+    const category = screen.getByText('Mileage');
+    const detail = screen.getByText('expenses.line.distanceValue:120.00,expenses.line.km');
+    expect(category.compareDocumentPosition(detail)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+    // Same line wrapper: the row and the detail are siblings under one element.
+    const lineWrapper = category.parentElement?.parentElement as HTMLElement;
+    expect(lineWrapper).toContainElement(detail);
+  });
+
+  it('rates in the expense’s own currency, the one it was priced in', () => {
+    setTrpc(
+      report({
+        expenses: [expense({ currency: { code: 'EUR', symbol: '€' }, lineItems: [mileageLine()] })],
+      }),
+    );
+    show();
+    expect(screen.getByText(/expenses\.line\.mileageRate:€0\.70/)).toBeInTheDocument();
+  });
+
+  it('leaves a non-mileage line exactly as it was', () => {
+    withLines({
+      id: 'li-s',
+      amountMinor: '12500',
+      category: { id: 'c-1', label: { en: 'Meals' } },
+      kind: 'STANDARD',
+      mileageDistance: null,
+      mileageUnit: null,
+      mileageBreakdown: null,
+      mileageRoute: null,
+      routeDistance: null,
+      mileageRouteUnavailable: false,
+    });
+    show();
+    expect(screen.getByText('Meals')).toBeInTheDocument();
+    expect(
+      screen.queryByText(/expenses\.line\.(distanceValue|mileage|routeUnavailable)/),
+    ).toBeNull();
   });
 });
 

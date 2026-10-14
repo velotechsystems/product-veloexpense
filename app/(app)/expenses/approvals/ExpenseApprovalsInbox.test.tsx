@@ -1,7 +1,10 @@
 import '@testing-library/jest-dom/vitest';
-import { COMPACT_QUERY } from '@expenseos/design-system';
-import { render, screen, within } from '@testing-library/react';
+import { COMPACT_QUERY, useIsCompact } from '@expenseos/design-system';
+import { act, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { type ReactElement, useEffect } from 'react';
+import { hydrateRoot, type Root } from 'react-dom/client';
+import { renderToString } from 'react-dom/server';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createTrpcMock, type TrpcMockConfig } from '@/test-utils/trpc';
 
@@ -23,12 +26,21 @@ import { createTrpcMock, type TrpcMockConfig } from '@/test-utils/trpc';
  * drawer has to open on that id whether or not the row is in the loaded queue. Opening
  * only on a match makes the newest notification — the one about the thing you were
  * just looking at — the one that appears to do nothing.
+ *
+ * Where a report OPENS depends on the screen. At 768px or wider a row click pushes the
+ * full report page (`/expenses/<id>`) and a deep link replaces the queue with it; below
+ * that, the drawer opens over the queue as it always has. jsdom answers every
+ * `matchMedia` query `false` (`tests/setup.ts`), which this page reads as a desktop —
+ * so every drawer test runs under `stubCompact(true)`.
  */
 
 const h = vi.hoisted(() => ({
   trpc: undefined as unknown,
   params: new URLSearchParams(),
   drawer: null as Record<string, unknown> | null,
+  /** `router.push` / `router.replace` targets, in call order. */
+  pushes: [] as string[],
+  replaces: [] as string[],
 }));
 
 /** One stable `t` per namespace — the column memo lists it as a dep. */
@@ -57,6 +69,21 @@ vi.mock('@/lib/trpc/client', () => ({
   },
 }));
 vi.mock('next/navigation', () => ({ useSearchParams: () => h.params }));
+/**
+ * `@/i18n/navigation` destructures next-intl's `createNavigation`, which imports
+ * `next/navigation` as a bare specifier from inside node_modules — where `vi.mock`
+ * does not reach. One router object for the whole file, so the deep-link effect's
+ * dependency on it is stable the way the real one is.
+ */
+const router = {
+  push: (href: string) => {
+    h.pushes.push(href);
+  },
+  replace: (href: string) => {
+    h.replaces.push(href);
+  },
+};
+vi.mock('@/i18n/navigation', () => ({ useRouter: () => router }));
 /** The drawer has its own suite; here only the props it is handed matter. */
 vi.mock('./ApproverReportDrawer', () => ({
   ApproverReportDrawer: (props: Record<string, unknown>) => {
@@ -80,6 +107,14 @@ const report = (over: Record<string, unknown> = {}) => ({
   submitter: { id: 'u-1', firstName: 'Dana', lastName: 'Patel', email: 'dana@e.inc' },
   ...over,
 });
+
+/**
+ * Deep links are UUID-checked (`useDeepLink('report', { uuid: true })`), so a deep-link
+ * test needs a real-shaped id; the row fixtures keep their readable ones.
+ */
+const LINKED = '0199c3a0-1b2c-7d4e-8f00-000000000001';
+const UNLOADED = '0199c3a0-1b2c-7d4e-8f00-000000000999';
+const linkedPending = () => pending({ report: report({ id: LINKED }) });
 
 const pending = (over: Record<string, unknown> = {}) => ({
   taskId: 'task-1',
@@ -120,6 +155,21 @@ function setTrpc(
 
 const show = (canReimburse = false) =>
   render(<ExpenseApprovalsInbox canReimburse={canReimburse} />);
+
+/** Answer `matchMedia` as a phone (`true`) or a desktop (`false`). Only `COMPACT_QUERY`
+ *  flips, so no unrelated probe inside the design system is accidentally answered. */
+function stubCompact(compact: boolean) {
+  vi.stubGlobal('matchMedia', (query: string) => ({
+    matches: query === COMPACT_QUERY ? compact : false,
+    media: query,
+    onchange: null,
+    addListener: () => {},
+    removeListener: () => {},
+    addEventListener: () => {},
+    removeEventListener: () => {},
+    dispatchEvent: () => false,
+  }));
+}
 
 const rowTexts = () =>
   screen
@@ -173,10 +223,13 @@ async function filterColumn(
 beforeEach(() => {
   h.params = new URLSearchParams();
   h.drawer = null;
+  h.pushes = [];
+  h.replaces = [];
 });
 afterEach(() => {
   h.trpc = undefined;
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
 });
 
 // ── The pending queue ─────────────────────────────────────────────────────────
@@ -413,13 +466,103 @@ describe('bulk approve', () => {
 
 // ── Opening a report ──────────────────────────────────────────────────────────
 
-describe('opening a report', () => {
+/**
+ * On a desktop the report opens as its own page.
+ *
+ * The workbench has the room the drawer does not — the lines, their coding and the
+ * receipts side by side — so a row is a link to it in every view. It resolves the
+ * caller's task on the report itself, which is why no task id travels in the URL and
+ * why a team row cannot smuggle one in.
+ */
+describe('opening a report on a desktop', () => {
+  beforeEach(() => stubCompact(false));
+
+  it('pushes the report page from the pending queue, and mounts no drawer', async () => {
+    const user = userEvent.setup();
+    setTrpc();
+    show();
+    await user.click(screen.getByText('Toronto client visit'));
+    // PUSH, so Back returns to the queue.
+    expect(h.pushes).toEqual(['/expenses/rep-1']);
+    expect(h.replaces).toEqual([]);
+    expect(h.drawer).toBeNull();
+    expect(screen.queryByTestId('drawer')).not.toBeInTheDocument();
+  });
+
+  it('pushes the report page from the decided view', async () => {
+    const user = userEvent.setup();
+    setTrpc();
+    show();
+    await toView(user, 'viewDecided');
+    await user.click(screen.getByText('Toronto client visit'));
+    expect(h.pushes).toEqual(['/expenses/rep-1']);
+    expect(screen.queryByTestId('drawer')).not.toBeInTheDocument();
+  });
+
+  it('pushes the report page from the team view, by report id', async () => {
+    const user = userEvent.setup();
+    setTrpc();
+    show();
+    await toView(user, 'viewTeam');
+    await user.click(screen.getByText('Yul trip'));
+    expect(h.pushes).toEqual(['/expenses/rep-7']);
+    expect(screen.queryByTestId('drawer')).not.toBeInTheDocument();
+  });
+
+  it('replaces the queue with a deep-linked report, once, and never pushes', () => {
+    /**
+     * REPLACE, so Back leaves for wherever the reader came from instead of landing on
+     * a queue they never asked for and bouncing straight back into the report. Once,
+     * because the effect re-runs on every render and the guard is what stops it.
+     */
+    h.params = new URLSearchParams(`report=${LINKED}&n=1`);
+    setTrpc({ pending: [linkedPending()] });
+    const { rerender } = show();
+    rerender(<ExpenseApprovalsInbox canReimburse={false} />);
+    expect(h.replaces).toEqual([`/expenses/${LINKED}`]);
+    expect(h.pushes).toEqual([]);
+    expect(screen.queryByTestId('drawer')).not.toBeInTheDocument();
+  });
+
+  it('replaces for a deep-linked report that is not in the loaded queue too', () => {
+    // The page resolves access itself; the queue's cache is no gate.
+    h.params = new URLSearchParams(`report=${UNLOADED}&n=1`);
+    setTrpc();
+    show();
+    expect(h.replaces).toEqual([`/expenses/${UNLOADED}`]);
+  });
+
+  it('does not navigate on a malformed id', () => {
+    /**
+     * A value that is not a UUID reads as no link at all. Navigating on it would send
+     * the reader to a page whose lookup on a uuid column fails, for a URL nobody meant
+     * to type.
+     */
+    h.params = new URLSearchParams('report=rep-1&n=1');
+    setTrpc();
+    show();
+    expect(h.replaces).toEqual([]);
+    expect(h.pushes).toEqual([]);
+    expect(screen.queryByTestId('drawer')).not.toBeInTheDocument();
+  });
+});
+
+/**
+ * On a phone the drawer opens over the queue, as it always has — the workbench has no
+ * room beside a list at that width, and the drawer is the whole review in one column.
+ */
+describe('opening a report on a phone', () => {
+  beforeEach(() => stubCompact(true));
+
   it('hands the drawer the report and the caller’s task on it', async () => {
     const user = userEvent.setup();
     setTrpc();
     show();
     await user.click(screen.getByText('Toronto client visit'));
     expect(h.drawer).toMatchObject({ reportId: 'rep-1', taskId: 'task-1', isAcknowledge: false });
+    // The tap opened the drawer and went nowhere.
+    expect(h.pushes).toEqual([]);
+    expect(h.replaces).toEqual([]);
   });
 
   it('opens a team report WITHOUT a task, so Approve does not light up', async () => {
@@ -434,6 +577,7 @@ describe('opening a report', () => {
     await toView(user, 'viewTeam');
     await user.click(screen.getByText('Yul trip'));
     expect(h.drawer).toMatchObject({ reportId: 'rep-7', taskId: undefined });
+    expect(h.pushes).toEqual([]);
   });
 
   it('tells the drawer when the task is an acknowledgement, not a decision', async () => {
@@ -454,10 +598,12 @@ describe('opening a report', () => {
   });
 
   it('opens a deep-linked report straight away', () => {
-    h.params = new URLSearchParams('report=rep-1&n=1');
-    setTrpc();
+    h.params = new URLSearchParams(`report=${LINKED}&n=1`);
+    setTrpc({ pending: [linkedPending()] });
     show();
-    expect(h.drawer).toMatchObject({ reportId: 'rep-1', taskId: 'task-1' });
+    expect(h.drawer).toMatchObject({ reportId: LINKED, taskId: 'task-1' });
+    expect(h.replaces).toEqual([]);
+    expect(h.pushes).toEqual([]);
   });
 
   it('opens a deep-linked report that is not in the loaded queue', () => {
@@ -466,16 +612,23 @@ describe('opening a report', () => {
      * looking at, which the cached list has not caught up with — is the one that
      * appears to do nothing.
      */
-    h.params = new URLSearchParams('report=rep-999&n=1');
+    h.params = new URLSearchParams(`report=${UNLOADED}&n=1`);
     setTrpc();
     show();
-    expect(h.drawer).toMatchObject({ reportId: 'rep-999', taskId: undefined });
+    expect(h.drawer).toMatchObject({ reportId: UNLOADED, taskId: undefined });
+  });
+
+  it('opens nothing on a malformed id', () => {
+    h.params = new URLSearchParams('report=rep-1&n=1');
+    setTrpc();
+    show();
+    expect(screen.queryByTestId('drawer')).not.toBeInTheDocument();
   });
 
   it('closes without leaving the deep link to re-open it', async () => {
     const user = userEvent.setup();
-    h.params = new URLSearchParams('report=rep-1&n=1');
-    setTrpc();
+    h.params = new URLSearchParams(`report=${LINKED}&n=1`);
+    setTrpc({ pending: [linkedPending()] });
     show();
     expect(screen.getByTestId('drawer')).toBeInTheDocument();
     (h.drawer?.onClose as () => void)();
@@ -484,6 +637,77 @@ describe('opening a report', () => {
     // first rather than asserting there is only one.
     await user.click(screen.getAllByRole('button', { name: 'expenses.approvals.viewPending' })[0]);
     expect(screen.queryByTestId('drawer')).not.toBeInTheDocument();
+  });
+});
+
+/**
+ * The hydration trap, on the real path: server HTML, then `hydrateRoot`.
+ *
+ * `useIsCompact`'s server snapshot is `false` (desktop), and React renders the
+ * hydration pass with the SERVER snapshot (react-dom 19.2 `mountSyncExternalStore`,
+ * `isHydrating` branch), correcting it only from a passive effect that runs after
+ * the hydration commit. So on a phone, an effect that runs right after hydration
+ * and reads the hook value sees "desktop". The deep-link effect fires once and
+ * never retries — if it trusted the hook, a phone following an email link would be
+ * sent to the full report page. The first test proves the trap is real; the second
+ * proves the inbox does not fall into it.
+ */
+describe('a deep link through hydration on a phone', () => {
+  let root: Root | null = null;
+  let host: HTMLDivElement | null = null;
+  /**
+   * A failed hydration falls back to a CLIENT render, which reads the real snapshot and
+   * would make both tests below pass without ever exercising the trap — so a recoverable
+   * error is a failure here, not noise.
+   */
+  let recovered: unknown[] = [];
+
+  async function hydrate(node: ReactElement) {
+    host = document.createElement('div');
+    host.innerHTML = renderToString(node);
+    document.body.appendChild(host);
+    stubCompact(true);
+    await act(async () => {
+      root = hydrateRoot(host as HTMLDivElement, node, {
+        onRecoverableError: (err) => {
+          recovered.push(err);
+        },
+      });
+    });
+    expect(recovered).toEqual([]);
+  }
+
+  afterEach(() => {
+    act(() => root?.unmount());
+    host?.remove();
+    root = null;
+    host = null;
+    recovered = [];
+  });
+
+  it('the hook value an effect sees on the hydration commit is the desktop one', async () => {
+    // The control: what an effect that trusted `useIsCompact` would have acted on.
+    const seen: boolean[] = [];
+    function Probe() {
+      const compact = useIsCompact();
+      useEffect(() => {
+        seen.push(compact);
+      }, [compact]);
+      return null;
+    }
+    await hydrate(<Probe />);
+    expect(seen[0]).toBe(false);
+    // …and only the re-render after it learns the truth.
+    expect(seen.at(-1)).toBe(true);
+  });
+
+  it('opens the drawer and never replaces', async () => {
+    h.params = new URLSearchParams(`report=${LINKED}&n=1`);
+    setTrpc({ pending: [linkedPending()] });
+    await hydrate(<ExpenseApprovalsInbox canReimburse={false} />);
+    expect(h.replaces).toEqual([]);
+    expect(h.pushes).toEqual([]);
+    expect(h.drawer).toMatchObject({ reportId: LINKED, taskId: 'task-1' });
   });
 });
 
@@ -520,21 +744,6 @@ describe('opening a report', () => {
  * `/expenses` suite asserts. Copying those assertions across fails.
  */
 describe('<ExpenseApprovalsInbox> on a phone', () => {
-  /** Answer `matchMedia` as a phone. Only `COMPACT_QUERY` flips, so no
-   *  unrelated probe inside the design system is accidentally answered. */
-  function stubCompact(compact: boolean) {
-    vi.stubGlobal('matchMedia', (query: string) => ({
-      matches: query === COMPACT_QUERY ? compact : false,
-      media: query,
-      onchange: null,
-      addListener: () => {},
-      removeListener: () => {},
-      addEventListener: () => {},
-      removeEventListener: () => {},
-      dispatchEvent: () => false,
-    }));
-  }
-
   function renderCompact(data: Parameters<typeof setTrpc>[0] = {}) {
     stubCompact(true);
     setTrpc(data);
@@ -567,10 +776,6 @@ describe('<ExpenseApprovalsInbox> on a phone', () => {
       within(screen.getByRole('dialog')).getByRole('button', { name: 'table.mobile.done' }),
     );
   };
-
-  afterEach(() => {
-    vi.unstubAllGlobals();
-  });
 
   it('renders cards, not a table', () => {
     renderCompact({ pending: [pending(), other()] });
@@ -650,6 +855,7 @@ describe('<ExpenseApprovalsInbox> on a phone', () => {
     renderCompact();
     await user.click(screen.getByText('Toronto client visit'));
     expect(h.drawer).toMatchObject({ reportId: 'rep-1', taskId: 'task-1', isAcknowledge: false });
+    expect(h.pushes).toEqual([]);
   });
 
   it('offers no per-card checkbox — bulk approve stays a desktop affordance', () => {

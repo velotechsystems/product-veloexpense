@@ -107,6 +107,7 @@ import {
   resolveMileageRule,
   ytdDistanceScaled,
 } from '@/server/lib/mileage';
+import { deriveRouteView } from '@/server/lib/mileageRouteView';
 import {
   buildHomeRollup,
   type CurrencyGroup,
@@ -114,7 +115,7 @@ import {
   readerCurrencyCode,
   readerTotalsFor,
 } from '@/server/lib/readerCurrency';
-import { callerCanDecideReport } from '@/server/lib/reportApproval';
+import { canViewReport } from '@/server/lib/reportApproval';
 import { reportUrl } from '@/server/lib/reportLinks';
 import { recallThroughLifecycle, submitThroughLifecycle } from '@/server/lib/reportLifecycle';
 import { notifyReportRecalled, notifyReportSubmitted } from '@/server/lib/reportNotify';
@@ -864,10 +865,19 @@ type ExpenseWithDetail = Prisma.ExpenseGetPayload<{ include: typeof EXPENSE_DETA
  *  `pickerNsBusinessUnits` is `pickerNsBusinessUnitIds`' answer for the batch;
  *  `businessUnitSource` is the switch position the caller already read for the request.
  *
- *  VeloExpense: there is no NetSuite position, so neither argument exists — the
- *  NetSuite-only fields go out as ExpenseOS sends them under EXPENSEOS (null), as do the
- *  class fields VeloExpense does not have, so the workbench reads the same shape. */
-async function serializeExpense(e: ExpenseWithDetail) {
+ *  VeloExpense: there is no NetSuite position, so ExpenseOS's two NetSuite arguments do not
+ *  exist — the NetSuite-only fields go out as ExpenseOS sends them under EXPENSEOS (null), as
+ *  do the class fields VeloExpense does not have, so the workbench reads the same shape.
+ *
+ *  `rawFor` is true when the reader may WRITE this expense's lines: the report's
+ *  submitter or the expense's owner, the two identities `assertExpenseWritable` admits.
+ *  Every other reader `canViewReport` lets in — a direct manager, an approver, AP —
+ *  gets the stored route reduced to stop names by `deriveRouteView` (no place ids, legs
+ *  or metres) and no year-to-date basis: the two fields the approvals drawer holds back
+ *  from the same audience. The editor's route field re-saves what it is given, so the
+ *  trimmed shape must never reach a writer; it is keyed on the writer identities for
+ *  that reason. */
+async function serializeExpense(e: ExpenseWithDetail, rawFor: boolean) {
   return {
     id: e.id,
     merchant: e.merchant,
@@ -902,21 +912,32 @@ async function serializeExpense(e: ExpenseWithDetail) {
     // a tip is stored in the payload of a STANDARD_WITH_TIP line, and `tipMinorOf` reads both.
     // Dropping them here is what left the tip field blank on a line the extractor had correctly
     // filled in — the value was in the database and simply never reached the browser.
-    lineItems: e.lineItems.map((li) => ({
-      id: li.id,
-      categoryId: li.categoryId,
-      category: li.category,
-      kind: li.kind,
-      payload: li.payload,
-      amountMinor: li.amountMinor.toString(),
-      mileageDistance: li.mileageDistance?.toString() ?? null,
-      // VeloExpense: `mileage_unit` is text under a CHECK (KM, MI); ExpenseOS's is an enum.
-      mileageUnit: li.mileageUnit as 'KM' | 'MI' | null,
-      mileageYtdBefore: li.mileageYtdBefore?.toString() ?? null,
-      mileageBreakdown: li.mileageBreakdown,
-      mileageRoute: li.mileageRoute,
-      notes: li.notes,
-    })),
+    lineItems: e.lineItems.map((li) => {
+      const mileageDistance = li.mileageDistance?.toString() ?? null;
+      // The drawer's reading of the route, for every reader: the route's own distance
+      // when it disagrees with the claim, and whether a stored route was unreadable.
+      const route =
+        li.kind === 'MILEAGE'
+          ? deriveRouteView(li.mileageRoute, li.mileageUnit as 'KM' | 'MI' | null, mileageDistance)
+          : null;
+      return {
+        id: li.id,
+        categoryId: li.categoryId,
+        category: li.category,
+        kind: li.kind,
+        payload: li.payload,
+        amountMinor: li.amountMinor.toString(),
+        mileageDistance,
+        // VeloExpense: `mileage_unit` is text under a CHECK (KM, MI); ExpenseOS's is an enum.
+        mileageUnit: li.mileageUnit as 'KM' | 'MI' | null,
+        mileageYtdBefore: rawFor ? (li.mileageYtdBefore?.toString() ?? null) : null,
+        mileageBreakdown: li.mileageBreakdown,
+        mileageRoute: rawFor ? li.mileageRoute : (route?.mileageRoute ?? null),
+        routeDistance: route?.routeDistance ?? null,
+        mileageRouteUnavailable: route?.mileageRouteUnavailable ?? false,
+        notes: li.notes,
+      };
+    }),
     // Cost allocation across BU/Department/Class (0 = unallocated, 1 = single,
     // N = split). Labels resolved for display.
     allocations: e.allocations.map((a) => ({
@@ -1107,32 +1128,6 @@ async function filerCodingOf(
   const businessUnitSource: BusinessUnitSource = 'EXPENSEOS';
   return { coding: await codingDefaultsFor(db, filer, businessUnitSource), businessUnitSource };
 }
-
-/**
- * May this caller read this report?
- *
- * The submitter (their own report), an admin, an AP reimburser, or an eligible approver with
- * a PENDING task — mirroring `expenseApprovals.report` so the workbench serves the approver
- * too. One definition, used by every read that hangs off a report: a second one would
- * eventually disagree with this one, and the disagreement would be a disclosure.
- */
-async function callerCanReadReport(
-  ctx: {
-    db: import('@expenseos/db').PrismaClient;
-    rbac: { id: string; permissions: readonly string[] };
-  },
-  report: { id: string; submitterId: string },
-): Promise<boolean> {
-  const perms = ctx.rbac.permissions;
-  const isAdmin = perms.includes(P.expense.report.readAll);
-  return (
-    (report.submitterId === ctx.rbac.id && perms.includes(P.expense.report.readOwn)) ||
-    isAdmin ||
-    perms.includes(P.expense.report.reimburse) ||
-    (await callerCanDecideReport(ctx.db, report.id, ctx.rbac.id, isAdmin))
-  );
-}
-
 
 /**
  * VeloExpense: the next report number (`EXP-000042`), from the organization's sequence.
@@ -2993,7 +2988,7 @@ export const expensesRouter = router({
           amountMinor: true,
           taxSource: true,
           currency: { select: { code: true } },
-          report: { select: { id: true, submitterId: true } },
+          report: { select: { id: true, submitterId: true, approvalInstanceId: true } },
           taxJurisdictionId: true,
           taxJurisdiction: {
             select: { countryCode: true, code: true, label: true, taxType: true },
@@ -3015,7 +3010,12 @@ export const expensesRouter = router({
           },
         },
       });
-      if (!expense || !(await callerCanReadReport(ctx, expense.report))) {
+      // Whoever may read the report may read why its tax is what it is; anyone else
+      // sees NOT_FOUND, as if the expense did not exist.
+      if (
+        !expense ||
+        !(await canViewReport(ctx.db, expense.report, ctx.rbac.id, ctx.rbac.permissions))
+      ) {
         throw new TRPCError({ code: 'NOT_FOUND' });
       }
 
@@ -3110,8 +3110,10 @@ export const expensesRouter = router({
           expenses: { orderBy: { createdAt: 'asc' }, include: EXPENSE_DETAIL_INCLUDE },
         },
       });
-      // A non-owner without one of the four ways in sees NOT_FOUND.
-      if (!report || !(await callerCanReadReport(ctx, report))) {
+      // The drawer's audience, by the drawer's rule (`canViewReport`); anyone else sees
+      // NOT_FOUND, never FORBIDDEN, so the call cannot confirm which report ids exist.
+      // What each admitted reader is SENT is narrowed per expense (see `serializeExpense`).
+      if (!report || !(await canViewReport(ctx.db, report, ctx.rbac.id, ctx.rbac.permissions))) {
         throw new TRPCError({ code: 'NOT_FOUND' });
       }
 
@@ -3220,7 +3222,16 @@ export const expensesRouter = router({
 
       // VeloExpense: no NetSuite position, so no business unit source to read and no picker
       // pre-select to resolve (see `serializeExpense`).
-      const expenses = await Promise.all(report.expenses.map((e) => serializeExpense(e)));
+      const readerId = ctx.session.user.id;
+      const expenses = await Promise.all(
+        report.expenses.map((e) =>
+          serializeExpense(
+            e,
+            // Who may write the line (`assertExpenseWritable`): the submitter or its owner.
+            readerId === report.submitterId || readerId === e.ownerId,
+          ),
+        ),
+      );
 
       /**
        * Which expenses NetSuite would refuse, told to the screen BEFORE the press.

@@ -1,3 +1,4 @@
+import { permissions as P } from '@expenseos/rbac';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 /**
@@ -28,9 +29,14 @@ vi.mock('@expenseos/approvals/engine', () => ({
   },
 }));
 
-import { callerCanDecideReport, resolveDecidableTask } from './reportApproval';
+import {
+  callerCanDecideReport,
+  canViewReport,
+  resolveDecidableTask,
+  resolveDecidableTaskWithLabel,
+} from './reportApproval';
 
-function makeDb(report: unknown, tasks: Array<{ id: string }> = []) {
+function makeDb(report: unknown, tasks: Array<{ id: string; label?: string | null }> = []) {
   // eslint-disable-next-line @typescript-eslint/no-unused-vars -- VeloExpense: ExpenseOS's typed mock (Biome allows it).
   const findMany = vi.fn(async (_args: unknown) => tasks);
   return {
@@ -106,9 +112,9 @@ describe('callerCanDecideReport', () => {
     /**
      * This asserted the opposite until the self-approval block landed, on the reasoning
      * that "an admin viewing a DRAFT report has no task to find, and a lookup-based
-     * answer would deny them". The premise was already false: `callerCanReadReport`
-     * short-circuits on `isAdmin` on its own line before it ever calls this, so admin
-     * READ access never depended on the short-circuit here.
+     * answer would deny them". The premise was already false: the read rule
+     * (`canViewReport`) admits `readAll` on its own line before it ever calls this, so
+     * admin READ access never depended on the short-circuit here.
      *
      * What the short-circuit did do was make this function disagree with the mutation it
      * guards. `expenseApprovals.decide` asks the engine, and the engine now refuses a
@@ -143,5 +149,151 @@ describe('callerCanDecideReport', () => {
   it('says no on a report with no running instance', async () => {
     const { db } = makeDb({ approvalInstanceId: null });
     expect(await callerCanDecideReport(db, 'r-1', 'mgr-1', false)).toBe(false);
+  });
+});
+
+describe('resolveDecidableTaskWithLabel', () => {
+  it('returns the decidable task with its label', async () => {
+    /** The page chooses its actions from the label (an acknowledge step offers no
+     *  Reject), so it has to be the label of the task the caller will actually decide. */
+    h.decidable = new Set(['t-2']);
+    const { db } = makeDb({ approvalInstanceId: 'inst-1' }, [
+      { id: 't-1', label: 'approve' },
+      { id: 't-2', label: 'acknowledge' },
+    ]);
+    expect(await resolveDecidableTaskWithLabel(db, 'r-1', 'u-1', false)).toEqual({
+      id: 't-2',
+      label: 'acknowledge',
+    });
+  });
+
+  it('passes a missing label through as null', async () => {
+    h.decidable = new Set(['t-1']);
+    const { db } = makeDb({ approvalInstanceId: 'inst-1' }, [{ id: 't-1', label: null }]);
+    expect(await resolveDecidableTaskWithLabel(db, 'r-1', 'u-1', false)).toEqual({
+      id: 't-1',
+      label: null,
+    });
+  });
+
+  it('returns nothing when the caller has no decidable task', async () => {
+    const { db } = makeDb({ approvalInstanceId: 'inst-1' }, [{ id: 't-1', label: 'approve' }]);
+    expect(await resolveDecidableTaskWithLabel(db, 'r-1', 'stranger', false)).toBeNull();
+  });
+
+  it('agrees with resolveDecidableTask on the id', async () => {
+    // The old function is a wrapper over this one; the two must never pick different tasks.
+    h.decidable = new Set(['t-2', 't-3']);
+    const tasks = [{ id: 't-1' }, { id: 't-2' }, { id: 't-3' }];
+    const a = await resolveDecidableTaskWithLabel(
+      makeDb({ approvalInstanceId: 'i' }, tasks).db,
+      'r-1',
+      'u-1',
+      false,
+    );
+    const b = await resolveDecidableTask(
+      makeDb({ approvalInstanceId: 'i' }, tasks).db,
+      'r-1',
+      'u-1',
+      false,
+    );
+    expect(a?.id).toBe(b);
+  });
+});
+
+/**
+ * THE read rule for an expense report — the drawer, the report page, `expenses.report`,
+ * `explainTax`, `explainPerDiem` and the report's comment thread all ask it. A yes here
+ * is a person reading somebody else's expenses, so each way in is pinned, and so is the
+ * refusal of everybody else.
+ */
+describe('canViewReport', () => {
+  const REPORT = { id: 'r-1', submitterId: 'sub-1', approvalInstanceId: 'inst-1' };
+
+  function readerDb(opts: {
+    managerId?: string | null;
+    involved?: boolean;
+    pending?: Array<{ id: string }>;
+  }) {
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars -- VeloExpense: ExpenseOS's typed mock (Biome allows it).
+    const findFirst = vi.fn(async (_args: unknown) => (opts.involved ? { id: 't-old' } : null));
+    const userFindUnique = vi.fn(async () => ({ managerId: opts.managerId ?? null }));
+    return {
+      db: {
+        user: { findUnique: userFindUnique },
+        expenseReport: { findUnique: vi.fn(async () => ({ approvalInstanceId: 'inst-1' })) },
+        approvalTask: { findFirst, findMany: vi.fn(async () => opts.pending ?? []) },
+      } as never,
+      findFirst,
+      userFindUnique,
+    };
+  }
+
+  it('admits a reader of all reports', async () => {
+    const { db } = readerDb({});
+    expect(await canViewReport(db, REPORT, 'x', [P.expense.report.readAll])).toBe(true);
+  });
+
+  it('admits AP, who have to pay it', async () => {
+    const { db } = readerDb({});
+    expect(await canViewReport(db, REPORT, 'x', [P.expense.report.reimburse])).toBe(true);
+  });
+
+  it('admits the submitter, with no permission at all', async () => {
+    /** The report is theirs. This is the drawer's and the comment thread's rule, and the
+     *  report page now follows it rather than also asking for `readOwn`. */
+    const { db } = readerDb({});
+    expect(await canViewReport(db, REPORT, 'sub-1', [])).toBe(true);
+  });
+
+  it('admits the submitter’s direct manager', async () => {
+    const { db, userFindUnique } = readerDb({ managerId: 'mgr-1' });
+    expect(await canViewReport(db, REPORT, 'mgr-1', [])).toBe(true);
+    expect(userFindUnique).toHaveBeenCalledWith({
+      where: { id: 'sub-1' },
+      select: { managerId: true },
+    });
+  });
+
+  it('admits anyone a task on the instance was assigned to, or who decided one', async () => {
+    const { db, findFirst } = readerDb({ involved: true });
+    expect(await canViewReport(db, REPORT, 'past-1', [])).toBe(true);
+    // VeloExpense: every approval of the report, not `approvalInstanceId`'s alone — see
+    // `canViewReport`.
+    expect((findFirst.mock.calls[0][0] as { where: unknown }).where).toEqual({
+      instance: { subjectType: 'EXPENSE_REPORT', subjectId: 'r-1' },
+      OR: [{ assigneeUserId: 'past-1' }, { decidedById: 'past-1' }],
+    });
+  });
+
+  it('admits someone eligible to decide a pending task, asked without the override', async () => {
+    h.decidable = new Set(['t-1']);
+    const { db } = readerDb({ pending: [{ id: 't-1' }] });
+    expect(await canViewReport(db, REPORT, 'pool-1', [])).toBe(true);
+    expect(h.canDecideCalls[0]).toMatchObject({ userId: 'pool-1', isAdmin: false });
+  });
+
+  it('refuses everybody else, including someone who only holds readOwn', async () => {
+    const { db } = readerDb({ managerId: 'mgr-1', pending: [{ id: 't-1' }] });
+    expect(await canViewReport(db, REPORT, 'stranger', [P.expense.report.readOwn])).toBe(false);
+  });
+
+  it('does not let decide.any alone make a reader', async () => {
+    // The override answers "may decide", never "may read": an override holder reads
+    // through readAll or not at all.
+    const { db } = readerDb({ pending: [{ id: 't-1' }] });
+    expect(await canViewReport(db, REPORT, 'stranger', [P.expense.report.decideAny])).toBe(false);
+    expect(h.canDecideCalls.every((c) => c.isAdmin === false)).toBe(true);
+  });
+
+  // VeloExpense: ExpenseOS skips the task lookup when the report has no running approval.
+  // VeloExpense looks across every approval of the report (see `canViewReport`), so a report
+  // whose current pointer is clear can still have past approvers; the lookup always runs.
+  it('still asks after past approvals on a report with no running one', async () => {
+    const { db, findFirst } = readerDb({ involved: true });
+    expect(await canViewReport(db, { ...REPORT, approvalInstanceId: null }, 'past-1', [])).toBe(
+      true,
+    );
+    expect(findFirst).toHaveBeenCalledTimes(1);
   });
 });

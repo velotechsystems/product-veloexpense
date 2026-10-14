@@ -33,9 +33,10 @@ import { z } from 'zod';
 import type { TenantDb } from '@/lib/db/prisma';
 import { queryRunnerOf } from '@/lib/db/prisma-pg-bridge';
 import { notifyRecipients, recordActivity, reportPayload } from '@/lib/notifications/service';
+// VeloExpense (eos-573): the report read rule lives in server/lib/reportApproval.ts now, as in ExpenseOS.
+import { canViewReport } from '../lib/reportApproval';
 import { threadParticipants } from '../lib/threadParticipants';
 import { protectedProcedure, router } from '../trpc';
-import { canViewReport } from './expenseApprovals';
 
 /** Subjects this router serves. Card requests keep their own endpoint (see above). */
 const COMMENTABLE = ['EXPENSE_REPORT'] as const;
@@ -60,7 +61,7 @@ const CAN_VIEW: Record<Commentable, (ctx: Ctx, subjectId: string) => Promise<boo
   EXPENSE_REPORT: async (ctx, subjectId) => {
     const report = await ctx.db.expenseReport.findUnique({
       where: { id: subjectId },
-      select: { id: true, submitterId: true },
+      select: { id: true, submitterId: true, approvalInstanceId: true },
     });
     if (!report) return false;
     return canViewReport(ctx.db, report, ctx.rbac.id, ctx.rbac.permissions);

@@ -49,7 +49,8 @@ import { currencySymbol } from '@/server/lib/currencySymbol';
 import { homeConverterFor, readerCurrencyCode } from '@/server/lib/readerCurrency';
 import { getStorage } from '@/lib/storage';
 import { resolveDecideAccess } from '@/server/lib/decideAccess';
-import { callerCanDecideReport } from '@/server/lib/reportApproval';
+import { deriveRouteView } from '@/server/lib/mileageRouteView';
+import { callerCanDecideReport, canViewReport } from '@/server/lib/reportApproval';
 import {
   decideThroughEngine,
   reassignThroughEngine,
@@ -126,8 +127,15 @@ function personShape(u: { id: string; name: string | null; email: string } | nul
   return u ? { id: u.id, firstName: u.name, lastName: null as string | null, email: u.email } : null;
 }
 
-/** Full report detail for the approver review view (expenses + line items +
- *  attendees + receipts), same shape the submitter's `report` query returns.
+/** Report detail for the approver review view: expenses with their line items,
+ *  attendees, cost allocations and receipts.
+ *
+ *  NOT the submitter's `expenses.report` shape: that one is `expenses.ts`'
+ *  EXPENSE_DETAIL_INCLUDE and serves the editor. This one is read by a wider
+ *  audience — every caller `canViewReport` admits, which includes, while a task is
+ *  pending, anyone eligible to decide it, including every member of a filter-approver
+ *  or fallback pool — so a field is added here only when the approver drawer renders
+ *  it, and the mapping in `report` names each one.
  *
  *  VeloExpense: a currency is keyed by its code; the submitter's entity carries its home
  *  currency's CODE; only STORED receipts (w2-09); violations are read on their own
@@ -151,10 +159,23 @@ const REPORT_DETAIL_INCLUDE = {
       lineItems: {
         orderBy: { createdAt: 'asc' },
         include: { category: { select: { id: true, label: true, icon: true } } },
+        // The traveller's year-to-date distance is not rendered on the drawer.
+        omit: { mileageYtdBefore: true },
       },
       attendees: {
         orderBy: { createdAt: 'asc' },
         select: { id: true, name: true, company: true, isExternal: true },
+      },
+      // The coding the approver signs off on. Same include as `expenses.ts`'
+      // EXPENSE_DETAIL_INCLUDE, so both screens name a line's business unit alike.
+      // VeloExpense: an allocation has a business unit and a department only — no class and
+      // no NetSuite business unit (VeloExpense posts to no NetSuite), as in `expenses.ts`.
+      allocations: {
+        orderBy: { createdAt: 'asc' },
+        include: {
+          businessUnit: { select: { id: true, label: true } },
+          department: { select: { id: true, label: true } },
+        },
       },
       receipts: {
         where: STORED,
@@ -176,42 +197,49 @@ const REPORT_DETAIL_INCLUDE = {
   },
 } as const;
 
-/**
- * Can this user see this report? ExpenseOS's `canViewReport`, which the discussion thread
- * (`comments.ts`) delegates to so a thread is visible exactly when the report is: read-all
- * or reimburse, the submitter, their direct manager, anyone an approval task touched, or
- * anyone eligible to decide it.
- *
- * VeloExpense: the manager is `app_user.manager_id`, and the tasks are those of EVERY
- * approval of the report rather than only the current instance's (ExpenseOS reads
- * `approvalInstanceId`, which a resubmission repoints), so an approver who returned it can
- * still follow the conversation after it is resubmitted. (The approval ladder's runs from
- * before the cutover went with its tables, w4-00d, d61.)
- */
-export async function canViewReport(
-  db: import('@/lib/db/prisma').TenantDb,
-  report: { id: string; submitterId: string },
-  userId: string,
-  perms: readonly string[],
-): Promise<boolean> {
-  if (perms.includes(P.expense.report.readAll) || perms.includes(P.expense.report.reimburse)) {
-    return true;
-  }
-  if (report.submitterId === userId) return true;
-  const related = await db.$queryRaw<Array<{ ok: number }>>`
-    SELECT 1 AS ok
-      FROM app_user s
-     WHERE s.id = ${report.submitterId}::uuid AND s.manager_id = ${userId}::uuid
-    UNION ALL
-    SELECT 1 AS ok
-      FROM approval_instance_task t
-      JOIN approval_instance i ON i.id = t.instance_id
-     WHERE i.subject_type = 'EXPENSE_REPORT' AND i.subject_id = ${report.id}::uuid
-       AND (t.assignee_user_id = ${userId}::uuid OR t.decided_by_id = ${userId}::uuid)
-     LIMIT 1`;
-  if (related.length > 0) return true;
-  return callerCanDecideReport(db, report.id, userId, false);
+/** One band of a mileage line's stored breakdown, as the approver drawer reads it. */
+interface MileageBreakdownEntry {
+  fromDistance: string | number;
+  rateMinor: string | number;
+  distance: string | number;
+  amountMinor: string | number;
 }
+
+/** A stored primitive the drawer's `mileageTiers` accepts: a string or a finite number. */
+function breakdownField(v: unknown): string | number | null {
+  if (typeof v === 'string') return v;
+  if (typeof v === 'number' && Number.isFinite(v)) return v;
+  return null;
+}
+
+/**
+ * `ExpenseLineItem.mileageBreakdown` rebuilt by name: the four fields of each band,
+ * in their stored primitive form, and nothing else. All-or-nothing — not an array,
+ * or any entry that is not an object carrying all four as a string or finite number,
+ * yields null for the whole field (never a throw), so the drawer shows no rate rather
+ * than a partial split. The drawer validates the values themselves (`mileageTiers`).
+ */
+function breakdownView(stored: unknown): MileageBreakdownEntry[] | null {
+  if (!Array.isArray(stored)) return null;
+  const out: MileageBreakdownEntry[] = [];
+  for (const entry of stored) {
+    if (entry === null || typeof entry !== 'object' || Array.isArray(entry)) return null;
+    const e = entry as Record<string, unknown>;
+    const fromDistance = breakdownField(e.fromDistance);
+    const rateMinor = breakdownField(e.rateMinor);
+    const distance = breakdownField(e.distance);
+    const amountMinor = breakdownField(e.amountMinor);
+    if (fromDistance == null || rateMinor == null || distance == null || amountMinor == null) {
+      return null;
+    }
+    out.push({ fromDistance, rateMinor, distance, amountMinor });
+  }
+  return out;
+}
+
+// VeloExpense (eos-573): `canViewReport` moved to server/lib/reportApproval.ts, as in
+// ExpenseOS (#573). ExpenseOS's private `canDecideReport` is VeloExpense's
+// `callerCanDecideReport` there (w4-00c).
 
 /**
  * The approver's pending expense-report inbox, as a plain function.
@@ -585,8 +613,9 @@ export const expenseApprovalsRouter = router({
 
   /** Approver-visible report detail. Readable by an eligible approver, an
    *  AP reimburser, a chain/all reader, the submitter's direct manager, or the
-   *  submitter themselves (see `canViewReport`). Mirrors the submitter's
-   *  `expenses.report` mapping: bigints stringified, receipts presigned.
+   *  submitter themselves (see `canViewReport`). Its own, narrower shape than the
+   *  submitter's `expenses.report` (see `REPORT_DETAIL_INCLUDE`), because its audience
+   *  is wider: each field named, bigints stringified, receipts presigned.
    *
    *  VeloExpense (w4-05/w4-07, d71): ported with the inbox. No Platform Settings, so the
    *  extraction review threshold is ExpenseOS's default as a constant (as `expenses.report`
@@ -616,6 +645,9 @@ export const expenseApprovalsRouter = router({
       const storage = getStorage();
       const withSymbol = (code: string) => ({ code, symbol: currencySymbol(code) });
 
+      // VeloExpense: no business-unit source to read — the admin business unit is the only
+      // one (see `nsBusinessUnitLabel` below).
+
       const expenses = await Promise.all(
         report.expenses.map(async (e) => ({
           id: e.id,
@@ -635,10 +667,48 @@ export const expenseApprovalsRouter = router({
           fxRateSource: e.fxRateSource,
           homeCurrency: e.homeCurrency,
           homeAmountMinor: e.homeAmountMinor?.toString() ?? null,
-          lineItems: e.lineItems.map((li) => ({
-            id: li.id,
-            category: li.category,
-            amountMinor: li.amountMinor.toString(),
+          // Each field named (never the Prisma row spread): `mileageRateId` and
+          // `mileageDistanceOverride` stay off, and the stored route leaves only as
+          // stop names plus a server-derived route distance (see `deriveRouteView`).
+          // Mileage fields are read on MILEAGE lines only; every other kind sends null.
+          lineItems: e.lineItems.map((li) => {
+            const mileage = li.kind === 'MILEAGE';
+            const mileageDistance = mileage ? (li.mileageDistance?.toString() ?? null) : null;
+            // VeloExpense: `mileage_unit` is text under a CHECK (KM, MI); ExpenseOS's is an enum.
+            const mileageUnit = mileage ? (li.mileageUnit as 'KM' | 'MI' | null) : null;
+            const route = mileage
+              ? deriveRouteView(li.mileageRoute, mileageUnit, mileageDistance)
+              : null;
+            return {
+              id: li.id,
+              category: li.category,
+              kind: li.kind,
+              amountMinor: li.amountMinor.toString(),
+              mileageDistance,
+              mileageUnit,
+              // Written by the pricing engine: what each band billed, rebuilt by name.
+              mileageBreakdown: mileage ? breakdownView(li.mileageBreakdown) : null,
+              mileageRoute: route?.mileageRoute ?? null,
+              routeDistance: route?.routeDistance ?? null,
+              mileageRouteUnavailable: route?.mileageRouteUnavailable ?? false,
+            };
+          }),
+          // Cost allocation across BU / Department / Class (0 = uncoded, 1 = single,
+          // N = split), each field named — never the Prisma row spread onto the wire.
+          // `pickerNsBusinessUnitId` is the submitter's editing state and stays off.
+          allocations: e.allocations.map((a) => ({
+            id: a.id,
+            percentBp: a.percentBp,
+            businessUnitId: a.businessUnitId,
+            businessUnit: a.businessUnit,
+            // VeloExpense: always null, as `expenses.report` sends it — ExpenseOS's answer
+            // under its EXPENSEOS source; the client names the admin `businessUnit`.
+            nsBusinessUnitLabel: null,
+            departmentId: a.departmentId,
+            department: a.department,
+            // VeloExpense: no class (typed as ExpenseOS's `{ id, name }`, which the lines read).
+            classId: null,
+            class: null as { id: string; name: string } | null,
           })),
           receipts: await Promise.all(
             e.receipts.map(async (r) => ({

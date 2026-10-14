@@ -3,18 +3,26 @@
 /**
  * /expenses/approvals — the approver's expense-report inbox, wired to
  * `expenseApprovals.myTasks` (pending tasks assigned to, or claimable by, the
- * caller). Clicking a row opens the read-only ApproverReportDrawer where the
- * report is reviewed and Approved / Rejected / Returned. AP reimbursers also
- * reach a report from here to mark it reimbursed. Mirrors the VCC request
- * queue's shape and the ExpenseReportsList table conventions.
+ * caller). Where a row goes depends on the width of the screen:
+ *
+ *   · at 768px or wider (the queue's own table breakpoint) a row click — and a
+ *     `?report=<id>` deep link — opens the full report page `/expenses/<id>`,
+ *     the workbench, where the report is reviewed and decided;
+ *   · below that, the read-only ApproverReportDrawer opens over the queue, as
+ *     it always has, because a phone has no room for the workbench beside a
+ *     list and the drawer is the whole review in one column.
+ *
+ * AP reimbursers also reach a report from here to mark it reimbursed. Mirrors
+ * the VCC request queue's shape and the ExpenseReportsList table conventions.
  *
  * Ported from ExpenseOS (550b2945) in place of VeloExpense's own /approvals (w4-05/w4-07,
- * d71); its saved views since w4-08. VeloExpense, marked below: a report from before
- * numbering has no number; reimbursing stays on VeloExpense's own screen (d71,
- * ApproverReportDrawer).
+ * d71); its saved views since w4-08; the width rule above with ExpenseOS #573 (1e682dd6).
+ * VeloExpense, marked below: a report from before numbering has no number; reimbursing
+ * stays on VeloExpense's own screen (d71, ApproverReportDrawer).
  */
 import {
   CARDS_ONLY,
+  COMPACT_QUERY,
   cls,
   DataTableToolbar,
   FilterPillBar,
@@ -43,6 +51,7 @@ import {
   useTableLabels,
   useToolbarLabels,
 } from '@/components/data-view';
+import { useRouter } from '@/i18n/navigation';
 import { displayName, formatMinor } from '@/lib/format';
 import { trpc } from '@/lib/trpc/client';
 import { useDeepLink } from '@/lib/useDeepLink';
@@ -104,6 +113,22 @@ type InboxView = 'pending' | 'decided' | 'team';
 const QUEUE_FIELD: ColumnId = 'queue';
 const QUEUES: InboxView[] = ['pending', 'decided', 'team'];
 
+/**
+ * Is the screen phone-width RIGHT NOW — asked of the browser, not of React.
+ *
+ * `useIsCompact` cannot answer this inside the deep-link effect. Its server
+ * snapshot is `false` (desktop), and on a phone the hydration render uses that
+ * server snapshot, so the effect that runs straight after hydration closes over
+ * `compact === false` and would send a phone to the workbench. The effect's
+ * once-only guard then never lets it run again with the corrected value. An
+ * effect only ever runs in the browser, after hydration, so asking `matchMedia`
+ * directly there is both safe and current. No `matchMedia` at all reads as
+ * desktop — the same answer `useIsCompact` gives.
+ */
+function isCompactNow(): boolean {
+  return typeof window.matchMedia === 'function' && window.matchMedia(COMPACT_QUERY).matches;
+}
+
 export function ExpenseApprovalsInbox({ canReimburse }: { canReimburse: boolean }) {
   const toolbarLabels = useToolbarLabels();
   const t = useTranslations('expenses');
@@ -126,6 +151,12 @@ export function ExpenseApprovalsInbox({ canReimburse }: { canReimburse: boolean 
    *  and filter affordances, so they are mounted on the same answer rather
    *  than on a second, possibly-disagreeing media query. */
   const compact = useIsCompact();
+  /**
+   * The LOCALE-AWARE router (`@/i18n/navigation`), so a French reader who opens
+   * a report lands on `/fr-CA/expenses/<id>` rather than the default locale —
+   * see the same note in `ExpenseReportsList`.
+   */
+  const router = useRouter();
   const utils = trpc.useUtils();
 
   const [tableState, setTableState] = useState<DataTableState<ColumnId>>(() =>
@@ -193,13 +224,34 @@ export function ExpenseApprovalsInbox({ canReimburse }: { canReimburse: boolean 
     utils.expenses.list.invalidate();
   };
 
-  // Deep-open: a notification links here with `?report=<id>`. Open the report's
-  // review drawer, attaching the viewer's pending task on it (if any) so the
-  // decide actions light up; then strip the param so closing doesn't re-open it.
-  const reportLink = useDeepLink('report');
+  /**
+   * Deep-open: a notification (bell, email, Slack) links here with `?report=<id>`.
+   *
+   * The link itself does not change with the screen — the worker builds it for
+   * an email with no idea how wide the reader's screen is — so the routing
+   * happens here, on arrival:
+   *
+   *   · desktop: `router.replace` to the workbench. REPLACE, not push, so Back
+   *     leaves the queue the reader never asked to see instead of bouncing them
+   *     straight back into the report;
+   *   · phone: open the report's drawer, attaching the viewer's pending task on
+   *     it (if any) so the decide actions light up, then strip the param so
+   *     closing doesn't re-open it.
+   *
+   * The width is read with `isCompactNow()`, NEVER the `compact` hook value —
+   * see that function for the hydration trap. `{ uuid: true }`: a malformed id
+   * reads as no link at all, so it neither navigates to a page that would fail
+   * on it nor opens a drawer on it.
+   */
+  const reportLink = useDeepLink('report', { uuid: true });
   useEffect(() => {
     if (!reportLink.id || !reportLink.key || reportLink.wasSeen(reportLink.key)) return;
     reportLink.markSeen(reportLink.key);
+    if (!isCompactNow()) {
+      // The navigation replaces this URL, params and all — no `clear()` needed.
+      router.replace(`/expenses/${reportLink.id}`);
+      return;
+    }
     // The drawer opens on the id whether or not the row is in the loaded queue —
     // only the task (and so the decide buttons) comes from the match. A report
     // newer than the cached list still opens; its actions light up on the next
@@ -211,7 +263,7 @@ export function ExpenseApprovalsInbox({ canReimburse }: { canReimburse: boolean 
       isAck: match?.label === 'acknowledge',
     });
     reportLink.clear();
-  }, [reportLink, items]);
+  }, [reportLink, items, router]);
 
   const columns = useMemo<ColumnDef<TaskItem, ColumnId>[]>(
     () => [
@@ -654,16 +706,23 @@ export function ExpenseApprovalsInbox({ canReimburse }: { canReimburse: boolean 
           totalCount={filteredRows.length}
           state={tableState}
           onStateChange={setTableState}
+          /* Desktop: the workbench, in every view — it resolves the caller's
+             task on the report itself, so no task id travels. PUSH, so Back
+             returns to the queue. Phone: the drawer. Reading the hook here is
+             safe — a click only ever happens after hydration. */
           onRowClick={(row) =>
-            setOpenTask({
-              reportId: row.report.id,
-              // Team rows are keyed by report id, not by a task the caller owns
-              // — passing it through would light up the decide actions on a
-              // report that isn't theirs to decide.
-              taskId: view === 'team' ? undefined : row.taskId,
-              isAck: row.label === 'acknowledge',
-            })
+            compact
+              ? setOpenTask({
+                  reportId: row.report.id,
+                  // Team rows are keyed by report id, not by a task the caller owns
+                  // — passing it through would light up the decide actions on a
+                  // report that isn't theirs to decide.
+                  taskId: view === 'team' ? undefined : row.taskId,
+                  isAck: row.label === 'acknowledge',
+                })
+              : router.push(`/expenses/${row.report.id}`)
           }
+          /* Only ever set on a phone — the drawer is what marks a row active. */
           activeRowId={openTask?.taskId ?? null}
           loading={activeQuery.isLoading}
           labels={tableLabels}

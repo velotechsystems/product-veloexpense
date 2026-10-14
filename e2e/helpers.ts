@@ -429,15 +429,20 @@ export async function expectReportStatus(page: Page, member: string) {
   await expect(page.getByRole('banner').getByText(status(member), { exact: true })).toBeVisible();
 }
 
+/** `/expenses/<uuid>` — the workbench, nothing after it. */
+const WORKBENCH_URL = /\/expenses\/[0-9a-f-]{36}$/;
+/** `/expenses/approvals`, with or without a query. */
+const QUEUE_URL = /\/expenses\/approvals(\?|$)/;
+
 /**
  * Approve a report in another person's session, from their approvals inbox.
  *
- * w4-05/w4-07 (d71): the inbox is ExpenseOS's (/expenses/approvals). A row opens the
- * approver's drawer — the report's lines and receipts, read-only — and Approve there decides
- * it. Then the report has left the pending queue, and the Decided queue lists it as approved,
- * which is the approver's own record that it happened. (Before d71 the inbox linked to the
- * report and the decision was made on the workbench — `decideOnWorkbench`, still used by the
- * specs that decide there.)
+ * eos-573 (ExpenseOS #573): at a desktop width — every Playwright project here is Desktop
+ * Chrome — a queue row no longer opens the drawer; it opens the report page, the workbench in
+ * approver mode, and a decision there returns the approver to the queue. So: open the row,
+ * wait for the report page, Approve in its top bar, wait to be back on the queue, and the row
+ * is gone. ExpenseOS's `e2e/support/approver.ts` `decideOnWorkbench` is the same flow; its
+ * three waits (the report URL before pressing, the queue URL after, the row gone) are kept.
  */
 export async function approveAs(browser: Browser, storageState: string, title: string) {
   const ctx = await browser.newContext({ storageState });
@@ -445,9 +450,12 @@ export async function approveAs(browser: Browser, storageState: string, title: s
   try {
     await approverPage.goto('/expenses/approvals');
     await approverPage.getByRole('row', { name: new RegExp(escapeRegExp(title)) }).first().click();
-    const drawer = approverPage.getByRole('dialog');
-    await drawer.getByRole('button', { name: 'Approve', exact: true }).click();
-    await expect(drawer).toBeHidden();
+    await expect(
+      approverPage,
+      `clicking ${title} in the queue should open its report page at a desktop width`,
+    ).toHaveURL(WORKBENCH_URL, { timeout: 30_000 });
+    await decideOnWorkbench(approverPage, 'Approve');
+    await approverPage.reload();
     await expect(approverPage.getByRole('row', { name: new RegExp(escapeRegExp(title)) })).toHaveCount(0);
   } finally {
     await ctx.close();
@@ -459,11 +467,15 @@ function escapeRegExp(s: string): string {
 }
 
 /**
- * Decide the open report from the workbench's top bar.
+ * Decide the open report from the workbench's top bar, and wait to be back on the queue.
  *
- * Approve answers the receipt acknowledgement when the step asks for it. Reject and Return
- * open a note and a second, differently-labelled button — and a rejection REQUIRES the note,
- * so its confirm stays disabled until one is typed (ExpenseOS's `decide`).
+ * Reject and Return open a note and a second, differently-labelled button — and a rejection
+ * REQUIRES the note, so its confirm stays disabled until one is typed (ExpenseOS's `decide`).
+ *
+ * eos-573: a successful decision returns the approver to `/expenses/approvals` (ExpenseOS
+ * #573's `returnToQueue`); a refusal stays on the report with its reason in the top bar. So
+ * arriving on the queue is the acknowledgement, as in ExpenseOS's `decideOnWorkbench`. (The
+ * receipt acknowledgement panel went with the ladder, w4-00c.)
  */
 export async function decideOnWorkbench(
   page: Page,
@@ -474,18 +486,15 @@ export async function decideOnWorkbench(
   const button = bar.getByRole('button', { name: action, exact: true });
   await expect(button).toBeVisible();
   await button.click();
-  if (action === 'Approve') {
-    const confirm = page.getByRole('button', { name: 'Confirm approval' });
-    // Either the decision went on the press, or the acknowledgement panel opened.
-    await expect(confirm.or(bar.getByText(status('APPROVED'), { exact: true }))).toBeVisible();
-    if (await confirm.isVisible()) {
-      await page.getByRole('checkbox', { name: /I reviewed the/ }).check();
-      await confirm.click();
-    }
-    return;
+  if (action !== 'Approve') {
+    await page.getByPlaceholder(/Reason for rejection|What needs to change/).fill(note);
+    await page
+      .getByRole('button', { name: action === 'Reject' ? 'Confirm reject' : 'Confirm return' })
+      .click();
   }
-  await page.getByPlaceholder(/Reason for rejection|What needs to change/).fill(note);
-  await page
-    .getByRole('button', { name: action === 'Reject' ? 'Confirm reject' : 'Confirm return' })
-    .click();
+  await expect(
+    page,
+    `after "${action}" the approver should be back on the queue — still on the report means the ` +
+      'server refused it (its reason is in the top bar)',
+  ).toHaveURL(QUEUE_URL, { timeout: 30_000 });
 }
