@@ -515,6 +515,66 @@ describe.skipIf(!process.env.DATABASE_URL)('approval engine (integration)', () =
     });
   });
 
+  describe('previewStart — who a submit would route to, without submitting', () => {
+    /**
+     * The emailed-receipts summary names the approver before the report is submitted. A
+     * preview that resolved people by its own rule would name somebody the real submit
+     * then does not, so each case here compares the preview against what `startInstance`
+     * actually assigns on the same report — and checks the preview wrote nothing first.
+     */
+    const instancesFor = (subjectId: string) =>
+      db.approvalInstance.count({ where: { subjectType: 'EXPENSE_REPORT', subjectId } });
+
+    const assigneeAfterStart = async (reportId: string) => {
+      const started = await engine.startInstance(db, 'EXPENSE_REPORT', reportId);
+      if (started.instanceId) instanceIds.push(started.instanceId);
+      const task = await db.approvalTask.findFirstOrThrow({
+        where: { instanceId: started.instanceId },
+        select: { assigneeUserId: true },
+      });
+      return task.assigneeUserId;
+    };
+
+    it('names the direct manager, as the submit then assigns, and writes nothing', async () => {
+      await clearWorkflows();
+      await makeWorkflow({ key: 'pv-mgr', isDefault: true });
+      const manager = await makeUser();
+      const submitter = await makeUser({ managerId: manager });
+      const reportId = await makeReport(submitter);
+
+      const preview = await engine.previewStart(db, 'EXPENSE_REPORT', reportId);
+
+      expect(preview).toEqual({ status: 'RUNNING', assigneeIds: [manager] });
+      expect(await instancesFor(reportId)).toBe(0);
+      expect(await assigneeAfterStart(reportId)).toBe(manager);
+    });
+
+    it('skips a manager on leave exactly as the submit does', async () => {
+      await clearWorkflows();
+      await makeWorkflow({ key: 'pv-leave', isDefault: true });
+      const director = await makeUser();
+      const manager = await makeUser({ managerId: director, employeeStatus: 'ON_LEAVE' });
+      const submitter = await makeUser({ managerId: manager });
+      const reportId = await makeReport(submitter);
+
+      const preview = await engine.previewStart(db, 'EXPENSE_REPORT', reportId);
+
+      expect(preview.assigneeIds).toEqual([director]);
+      expect(await assigneeAfterStart(reportId)).toBe(director);
+    });
+
+    it('says NO_WORKFLOW when nothing governs the report, which auto-approves on submit', async () => {
+      await clearWorkflows();
+      const submitter = await makeUser();
+      const reportId = await makeReport(submitter);
+
+      expect(await engine.previewStart(db, 'EXPENSE_REPORT', reportId)).toEqual({
+        status: 'NO_WORKFLOW',
+        assigneeIds: [],
+      });
+    });
+  });
+
   describe('claiming an unassigned relative-approver task', () => {
     /**
      * A subject id that resolves to no report, so `loadRequesterId` returns null and the

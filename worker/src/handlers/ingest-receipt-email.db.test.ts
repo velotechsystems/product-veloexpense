@@ -136,7 +136,7 @@ describe.skipIf(!process.env.DATABASE_URL)('email.ingestReceipts (integration)',
 
     const expenses = (
       await h.admin.query(
-        `SELECT id, organization_id, owner_id, purpose FROM expense WHERE report_id = $1`,
+        `SELECT id, organization_id, owner_id, purpose, explanation FROM expense WHERE report_id = $1`,
         [report.id],
       )
     ).rows as any[];
@@ -146,6 +146,8 @@ describe.skipIf(!process.env.DATABASE_URL)('email.ingestReceipts (integration)',
         organization_id: h.orgId,
         owner_id: filer.id,
         purpose: 'Team lunch after the planning session.',
+        // #567: and the "Explain this charge" field the workbench shows.
+        explanation: 'Team lunch after the planning session.',
       });
     }
 
@@ -183,15 +185,50 @@ describe.skipIf(!process.env.DATABASE_URL)('email.ingestReceipts (integration)',
     expect(audits[0].details).toMatchObject({ via: 'email', receipts: 2 });
 
     // One extraction job per receipt, each naming the tenant.
-    expect(enqueue).toHaveBeenCalledTimes(2);
-    for (const call of enqueue.mock.calls) {
-      expect(call[0]).toBe('expense.extractReceipt');
+    const extraction = enqueue.mock.calls.filter((c) => c[0] === 'expense.extractReceipt');
+    expect(extraction).toHaveLength(2);
+    for (const call of extraction) {
       expect(call[1]).toMatchObject({ organizationId: h.orgId });
     }
 
-    // And one acknowledgement, to the sender, naming the report.
+    // #567: and the acknowledgement is the summary job — queued for later, as the tenant,
+    // naming this email's two receipts — rather than a mail sent before anything is read.
+    const summaries = enqueue.mock.calls.filter((c) => c[0] === 'email.receiptsSummary');
+    expect(summaries).toHaveLength(1);
+    const receiptIds = (
+      await h.admin.query(
+        `SELECT r.id FROM receipt r JOIN expense e ON e.id = r.expense_id WHERE e.report_id = $1`,
+        [report.id],
+      )
+    ).rows.map((r: any) => r.id as string);
+    expect(summaries[0][1]).toMatchObject({
+      organizationId: h.orgId,
+      reportId: report.id,
+      userId: filer.id,
+      to: filer.email,
+      attempt: 0,
+    });
+    expect([...summaries[0][1].receiptIds].sort()).toEqual([...receiptIds].sort());
+    expect(mail.sent).toHaveLength(0);
+
+    // Run that job once its wait is over (nothing reads the receipts here, so they are still
+    // unread): it sends ONE summary, to the sender, naming the report — through RLS, on
+    // VeloExpense's schema, with the approval preview run against the tenant's workflow.
+    const { handleReceiptsSummaryEmail } = await import('./receipts-summary-email');
+    const { withTenantStatements } = await import('@/lib/db/prisma');
+    await withTenantStatements(h.orgId, () =>
+      handleReceiptsSummaryEmail({ ...summaries[0][1], waitUntil: Date.now() - 1 }),
+    );
     expect(mail.sent).toHaveLength(1);
-    expect(mail.sent[0]).toMatchObject({ to: filer.email, subject: `${report.number}: Planning lunch` });
+    expect(mail.sent[0]).toMatchObject({
+      to: filer.email,
+      subject: `${report.number}: Planning lunch`,
+      headers: { 'Auto-Submitted': 'auto-replied' },
+    });
+    expect(mail.sent[0].text).toContain(`${report.number} — Planning lunch`);
+    expect(mail.sent[0].text).toContain('2 filed · 0 read');
+    expect(mail.sent[0].text).toContain('Team lunch after the planning session.');
+    expect(mail.sent[0].html).toContain('Receipt Mail');
   });
 
   it('files nothing for a sender who belongs to another tenant, and says so to them once', async () => {

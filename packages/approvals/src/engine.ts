@@ -1363,6 +1363,57 @@ export async function startInstance(
   };
 }
 
+export interface StartPreview {
+  /** What `startInstance` would return as its status, were the subject submitted now. */
+  status: StartResult['status'];
+  /**
+   * Who the first parked tasks would be assigned to — one entry per task, in node order.
+   * `null` is an unassigned task: a `filter` or `role` pool that any eligible member claims
+   * at decide time. Empty unless `status` is RUNNING.
+   */
+  assigneeIds: (string | null)[];
+}
+
+/**
+ * Who would approve this subject if it were submitted now — `startInstance` without the
+ * writes.
+ *
+ * The same four steps in the same order: load the subject's facts, select the workflow,
+ * inline its called sub-flows, advance to the first parked tasks; then each task's approver
+ * resolved by `resolveApprover` and redirected by `resolveAssignment` (leave, delegation),
+ * exactly as `createTasksForNodes` assigns them. A preview that resolved approvers by its
+ * own rule would name somebody the real submit then does not — and the one thing a preview
+ * must not do is disagree with the event it previews.
+ *
+ * It is a prediction about NOW. The facts it routes on (the total above all) can change
+ * before the submit, and so can the people; callers say so to whoever reads it.
+ */
+export async function previewStart(
+  db: Db,
+  subjectType: ApprovalSubjectType,
+  subjectId: string,
+): Promise<StartPreview> {
+  const ctx = await loadSubject(db, subjectType, subjectId);
+  const selected = await selectWorkflowVersion(db, subjectType, ctx.facts);
+  if (!selected) return { status: 'NO_WORKFLOW', assigneeIds: [] };
+
+  const callables = await publishedGraphsByKey(db, subjectType);
+  const graph = inlineCallWorkflows(selected.graph, callables);
+  const result = advance(graph, createInitialState(graph), ctx.facts, new Set());
+  if (result.status !== 'RUNNING') return { status: result.status, assigneeIds: [] };
+
+  const byId = new Map(graph.nodes.map((n) => [n.id, n]));
+  const assigneeIds: (string | null)[] = [];
+  for (const nodeId of result.createTasks) {
+    const node = byId.get(nodeId);
+    if (!node) continue;
+    assigneeIds.push(
+      await resolveAssignment(db, await resolveApprover(db, node, ctx), ctx.subjectType),
+    );
+  }
+  return { status: 'RUNNING', assigneeIds };
+}
+
 export interface DecideResult {
   status: 'RUNNING' | 'APPROVED' | 'REJECTED';
   createdTaskIds: string[];

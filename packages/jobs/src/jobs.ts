@@ -109,6 +109,40 @@ export interface JobMap {
     organizationId: string;
   };
 
+  /** The acknowledgement for one receipts email, sent once its receipts have been read.
+   *
+   *  Enqueued (delayed) by `email.ingestReceipts` in place of an immediate "filed" reply,
+   *  because the two things the reader most wants — the total and who approves it — do not
+   *  exist until the receipts are read: the total is 0.00 and the approval route depends on
+   *  it. The handler checks the email's receipts, re-enqueues itself while any is still
+   *  being read, and sends anyway once `waitUntil` passes, saying which receipts were not
+   *  read in time. The job id is derived from the SES message id plus `attempt`, so one
+   *  email yields one summary however the ingest job is retried. */
+  'email.receiptsSummary': {
+    reportId: string;
+    /** The receipts THIS email filed — not every receipt on the report, which a reply to an
+     *  earlier summary may have added to. */
+    receiptIds: string[];
+    /** The person who emailed them; the summary goes to their address, in their locale. */
+    userId: string;
+    /** The authenticated From, lowercased — where the summary is sent. */
+    to: string;
+    /** The token-scoped receipts address replies should land on, when one exists. */
+    replyAddress?: string;
+    /** Threading headers, so the summary sits under the email it answers. */
+    inReplyTo?: string;
+    references?: string;
+    /** SES message id of the email, the stem of every job id in this chain. */
+    sesMessageId: string;
+    /** 0 on the first run; each re-check while receipts are still being read adds 1. */
+    attempt: number;
+    /** Epoch ms after which the summary goes out whether or not every receipt is read. */
+    waitUntil: number;
+    /** VeloExpense: the tenant the receipts were filed in; the job runs as it, as
+     *  `email.ingestReceipts` does (d47). */
+    organizationId: string;
+  };
+
   // VeloExpense: ExpenseOS's other jobs are not here. Each arrives with its handler, as the
   // boot check in worker/src/main.ts requires, and most never will: VeloExpense's
   // notifications, ledger posts and compliance passes run as `/api/internal/*` routes on a
@@ -126,4 +160,5 @@ export const JOB_QUEUES: Record<JobName, QueueName> = {
   'approval.sweepExpired': 'housekeeping',
   'expense.receiptChase': 'housekeeping',
   'email.ingestReceipts': 'integrations',
+  'email.receiptsSummary': 'notifications',
 };
