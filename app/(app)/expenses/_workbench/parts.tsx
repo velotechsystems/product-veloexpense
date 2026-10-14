@@ -21,6 +21,7 @@ import {
   Textarea,
 } from '@expenseos/design-system';
 import { tipMinorOf } from '@expenseos/expense-lines';
+import { splitExact } from '@expenseos/money';
 import {
   IconAlertTriangle,
   IconCamera,
@@ -1338,8 +1339,14 @@ function AllocationEditor({
  *
  * The money column is what the read-only arm did not have. A percentage alone is not what
  * a reader is checking — "60 % of what" is the question, and every other figure on this
- * pane is already money. It is derived, never stored: the server allocates by basis point,
- * so this is the expense's own total split by the same arithmetic and rounded once.
+ * pane is already money. It is derived, never stored: the expense's own total split by
+ * `splitExact`, the same largest-remainder split the NetSuite poster allocates with, so
+ * the rows always add up to the expense to the cent. Rounding each row on its own did
+ * not: 0.05 split 50/50 read 0.03 + 0.03.
+ *
+ * VeloExpense: there is no NetSuite poster here, and the VeloLedger post does not split an
+ * expense by its allocations; `splitExact` is still the split ExpenseOS posts with, and the
+ * rows add up to the expense either way.
  */
 function AllocationLinesReadOnly({
   expense,
@@ -1364,19 +1371,19 @@ function AllocationLinesReadOnly({
   if (expense.allocations.length === 0) {
     return <p className={`text-sm text-warning ${className ?? ''}`}>{t('allocation.none')}</p>;
   }
+  const shares = splitExact(
+    BigInt(expense.amountMinor),
+    expense.allocations.map((a) => BigInt(a.percentBp)),
+  );
   return (
     <ul className={`flex flex-col gap-1 text-sm ${className ?? ''}`}>
-      {expense.allocations.map((a) => (
+      {expense.allocations.map((a, i) => (
         /* `flex-wrap`: at 360 the dimension string is the long part, and it takes its own
            line under the two figures rather than squeezing them. */
         <li key={a.id} className="flex flex-wrap items-baseline gap-x-2">
           <span className="w-12 shrink-0 text-foreground tabular-nums">{a.percentBp / 100}%</span>
           <span className="shrink-0 text-foreground tabular-nums">
-            {money(
-              Math.round((Number(expense.amountMinor) * a.percentBp) / 10000),
-              expense.currency,
-              locale,
-            )}
+            {money(Number(shares[i]), expense.currency, locale)}
           </span>
           <span className="min-w-0 text-muted-foreground text-xs">
             {[

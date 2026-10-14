@@ -417,6 +417,27 @@ describe('the cost-allocation twin', () => {
     expect((bothRows[1].closest('li') as HTMLElement).textContent).toContain('40%');
   });
 
+  it('splits the money so the rows add up to the expense to the cent', () => {
+    /**
+     * Rounding each row on its own read 33.33 + 33.33 + 33.34 = 100.00 against a 100.01
+     * expense. The leftover cent goes where the NetSuite poster puts it — `splitExact`,
+     * largest share first — so what the reader sees is what posts. (VeloExpense: ExpenseOS's
+     * poster; VeloExpense's ledger post does not split by allocation.)
+     */
+    const third = (id: string, percentBp: number) => ({ ...allocations[0], id, percentBp });
+    renderEditor({
+      amountMinor: '10001',
+      allocations: [third('a', 3333), third('b', 3333), third('c', 3334)],
+    });
+
+    const rows = screen
+      .getAllByText('Atlantic · Engineering · Internal')
+      .map((el) => (el.closest('li') as HTMLElement).textContent);
+    expect(rows[0]).toContain('33.33');
+    expect(rows[1]).toContain('33.33');
+    expect(rows[2]).toContain('33.35');
+  });
+
   it('shows it below `lg` and hands the width above it to the editor', () => {
     /**
      * `lg:hidden` on the twin, `hidden lg:contents` on the row set — the same pair as
