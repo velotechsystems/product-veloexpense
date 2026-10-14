@@ -18,6 +18,7 @@ import { withOrg } from '@/lib/tenant/context';
 import * as employees from '@/lib/employees/service';
 import * as expenses from '@/lib/expenses/service';
 import { issueInvite } from '@/lib/invites/service';
+import { ALL_PERMISSIONS } from '@expenseos/rbac';
 import { resolveSsoUser } from '@/lib/auth/resolve-sso-user';
 import type { SsoIdentity } from '@/src/auth-kit';
 
@@ -219,6 +220,8 @@ describe('the seat cap at SIGN-IN, where the invitation is actually accepted', (
         tx,
         { id: founderId, name: 'Founder', role: 'System Administrator' },
         { email: 'late@caps.test', roleId: '019e3000-0000-7000-8000-000000000004' },
+        // w4-10d: the founder, System Administrator, holds every permission.
+        { permissions: ALL_PERMISSIONS },
       ),
     );
 

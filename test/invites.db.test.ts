@@ -25,6 +25,7 @@ import {
 } from '@/lib/invites/service';
 import { resolveSsoUser, onSsoDenied } from '@/lib/auth/resolve-sso-user';
 import type { AuditActor } from '@/lib/audit/service';
+import { ALL_PERMISSIONS } from '@expenseos/rbac';
 import type { ResolvedUser, SsoDenied, SsoIdentity } from '@/src/auth-kit';
 
 // AUTHKITSYNC-VE-1 (auth-kit v0.3): the resolver takes an identity. Google is the
@@ -68,8 +69,11 @@ afterAll(async () => {
 
 const issue = (overrides: Partial<Parameters<typeof issueInvite>[2]> = {}) =>
   withOrg(orgId, (tx) =>
-    issueInvite(tx, ACTOR, { email: INVITEE, roleId: EMPLOYEE, ...overrides }),
+    issueInvite(tx, ACTOR, { email: INVITEE, roleId: EMPLOYEE, ...overrides }, GRANTOR),
   );
+
+/** w4-10d: the founder is System Administrator, which holds every permission. */
+const GRANTOR = { permissions: ALL_PERMISSIONS };
 
 /** w4-10b: the tenant's system roles the cases hand out (0068). */
 const EMPLOYEE = '019e3000-0000-7000-8000-000000000004';
@@ -88,6 +92,16 @@ describe('issuing an invitation', () => {
 
     const members = await admin.query('SELECT email FROM app_user');
     expect(members.rows.map((r) => r.email)).toEqual(['founder@acme.test']);
+  });
+
+  // w4-10d: ExpenseOS's grant ceiling (users.setRole), on the role an invitation promises.
+  it('will not promise a role granting more than the inviter holds', async () => {
+    const narrow = { permissions: ['admin.appSettings.update'] };
+    await expect(
+      withOrg(orgId, (tx) => issueInvite(tx, ACTOR, { email: INVITEE, roleId: EXECUTIVE }, narrow)),
+    ).rejects.toMatchObject({ code: 'ROLE_ABOVE_GRANTOR' });
+    expect((await admin.query('SELECT count(*)::int AS n FROM invite')).rows[0].n).toBe(0);
+    await expect(issue({ roleId: EXECUTIVE })).resolves.toBeTruthy();
   });
 
   it('expires within the stated window', async () => {
@@ -167,7 +181,7 @@ describe('the invitation email', () => {
       sent.push(msg as (typeof sent)[number]);
     });
     try {
-      await withOrg(orgId, (tx) => sendInvite(tx, ACTOR, { email: INVITEE, roleId: EMPLOYEE }));
+      await withOrg(orgId, (tx) => sendInvite(tx, ACTOR, { email: INVITEE, roleId: EMPLOYEE }, GRANTOR));
     } finally {
       spy.mockRestore();
     }

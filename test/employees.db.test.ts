@@ -216,7 +216,9 @@ describe('the role a person is given (w4-10b)', () => {
     const person = await withOrg(orgA, (tx) => svc.createEmployee(tx, { email: 'role-default@acme.test' }));
     expect(person.role_label).toBe('Employee');
 
-    const exec = await withOrg(orgA, (tx) => svc.updateEmployee(tx, person.id, { roleId: EXECUTIVE }));
+    const exec = await withOrg(orgA, (tx) =>
+      svc.updateEmployee(tx, person.id, { roleId: EXECUTIVE }, { actor: ceo }),
+    );
     expect(exec.role_label).toBe('Executive');
 
     await withOrg(orgA, (tx) => tx.query(`UPDATE role SET active = false WHERE id = $1`, [EXECUTIVE]));
@@ -229,6 +231,96 @@ describe('the role a person is given (w4-10b)', () => {
       expect(saved.role_permissions).toEqual([]);
     } finally {
       await withOrg(orgA, (tx) => tx.query(`UPDATE role SET active = true WHERE id = $1`, [EXECUTIVE]));
+    }
+  });
+});
+
+/**
+ * w4-10d — ExpenseOS's role-change guards (`users.setRole`), on the employee form's update,
+ * and the last-admin count on deactivation (VeloExpense). The CEO is the tenant's only
+ * System Administrator here.
+ */
+describe('changing a role (w4-10d)', () => {
+  const ADMIN = '019e3000-0000-7000-8000-000000000001';
+  const EXECUTIVE = '019e3000-0000-7000-8000-000000000007';
+  const refusal = (p: Promise<unknown>) =>
+    p.then(
+      () => 'OK',
+      (e: { code?: string }) => e.code ?? String(e),
+    );
+  /** The person as they are now, with their role's permissions (the acting side of a change). */
+  const fresh = (email: string) => withOrg(orgA, (tx) => svc.getEmployeeByEmail(tx, email));
+
+  it('names the employee form’s permission as the admin screens do (lib/auth/actor.ts)', async () => {
+    const { VELOEXPENSE_ADMIN_PERMISSION } = await import('@/lib/auth/actor');
+    expect(svc.EMPLOYEE_FORM_PERMISSION).toBe(VELOEXPENSE_ADMIN_PERMISSION);
+  });
+
+  it('needs to know who is changing it', async () => {
+    await expect(withOrg(orgA, (tx) => svc.updateEmployee(tx, report.id, { roleId: EXECUTIVE }))).rejects.toThrow(
+      /acting employee/,
+    );
+  });
+
+  it('will not demote the last active System Administrator, nor deactivate them', async () => {
+    const boss = (await fresh('ceo@acme.test'))!;
+    const deputy = await withOrg(orgA, (tx) => svc.createEmployee(tx, { email: 'deputy@acme.test', roleId: ADMIN }));
+    const deputyRow = (await fresh('deputy@acme.test'))!;
+    // With a second admin, the deputy can step down…
+    expect(await refusal(withOrg(orgA, (tx) => svc.updateEmployee(tx, deputy.id, { roleId: EXECUTIVE }, { actor: boss })))).toBe('OK');
+    // …but now the CEO is the last one: no demotion, by anyone, themselves included.
+    expect(
+      await refusal(withOrg(orgA, (tx) => svc.updateEmployee(tx, boss.id, { roleId: EXECUTIVE }, { actor: boss }))),
+    ).toBe('LAST_ADMIN');
+    // Nor deactivation through the form's status, or through deactivate.
+    expect(
+      await refusal(withOrg(orgA, (tx) => svc.updateEmployee(tx, boss.id, { employeeStatus: 'DEACTIVATED' }, { actor: deputyRow }))),
+    ).toBe('LAST_ADMIN');
+    expect(
+      await refusal(withOrg(orgA, (tx) => svc.deactivateEmployee(tx, boss.id, { actingEmployeeId: deputy.id, reassignReportsTo: null }))),
+    ).toBe('LAST_ADMIN');
+    expect((await fresh('ceo@acme.test'))!.role_id).toBe(ADMIN);
+    await admin.query(`DELETE FROM app_user WHERE email = 'deputy@acme.test'`);
+  });
+
+  it('will not let somebody give themselves a role without the employee form’s permission', async () => {
+    const boss = (await fresh('ceo@acme.test'))!;
+    await withOrg(orgA, (tx) => svc.createEmployee(tx, { email: 'second-admin@acme.test', roleId: ADMIN }));
+    try {
+      expect(
+        await refusal(withOrg(orgA, (tx) => svc.updateEmployee(tx, boss.id, { roleId: EXECUTIVE }, { actor: boss }))),
+      ).toBe('ROLE_SELF_LOCKOUT');
+    } finally {
+      await admin.query(`DELETE FROM app_user WHERE email = 'second-admin@acme.test'`);
+    }
+  });
+
+  it('will not hand out a role granting more than the giver holds', async () => {
+    // A custom role that opens the admin screens but holds little else.
+    const narrow = (
+      await withOrg(orgA, (tx) =>
+        tx.query(`INSERT INTO role (label, permissions) VALUES ('{"en":"People admin"}', $1) RETURNING id`, [
+          [svc.EMPLOYEE_FORM_PERMISSION],
+        ]),
+      )
+    ).rows[0].id as string;
+    const boss = (await fresh('ceo@acme.test'))!;
+    await withOrg(orgA, (tx) => svc.updateEmployee(tx, manager.id, { roleId: narrow }, { actor: boss }));
+    const peopleAdmin = (await fresh('manager@acme.test'))!;
+    try {
+      expect(
+        await refusal(withOrg(orgA, (tx) => svc.updateEmployee(tx, report.id, { roleId: ADMIN }, { actor: peopleAdmin }))),
+      ).toBe('ROLE_ABOVE_GRANTOR');
+      // Their own role, or one within it, is fine.
+      expect(
+        await refusal(withOrg(orgA, (tx) => svc.updateEmployee(tx, report.id, { roleId: narrow }, { actor: peopleAdmin }))),
+      ).toBe('OK');
+      expect((await fresh('employee@acme.test'))!.role_id).toBe(narrow);
+    } finally {
+      await admin.query(`UPDATE app_user SET role_id = '019e3000-0000-7000-8000-000000000004' WHERE id = ANY($1::uuid[])`, [
+        [manager.id, report.id],
+      ]);
+      await admin.query(`DELETE FROM role WHERE id = $1`, [narrow]);
     }
   });
 });

@@ -151,6 +151,10 @@ export const USER_MESSAGE_CODES = [
   'DEACTIVATE_SELF',
   'EMPLOYEE_HAS_REPORTS',
   'REASSIGNMENT_CYCLE',
+  /* w4-10d: ExpenseOS's role-change guards (users.setRole). */
+  'LAST_ADMIN',
+  'ROLE_SELF_LOCKOUT',
+  'ROLE_ABOVE_GRANTOR',
 
   /* budgets (lib/budgets/admin.ts) ─────────────────────────────────────── */
   'BUDGET_NAME_REQUIRED',
@@ -715,6 +719,17 @@ export const ERROR_COPY: Record<UserMessageCode, Copy> = {
   },
   REASSIGNMENT_CYCLE: {
     'en-CA': 'That reassignment would create a reporting cycle.',
+  },
+  LAST_ADMIN: {
+    'en-CA':
+      'This is the last active System Administrator. Give another person that role before changing or deactivating this one.',
+  },
+  ROLE_SELF_LOCKOUT: {
+    'en-CA': 'You cannot give yourself a role without the permission to manage employees.',
+  },
+  ROLE_ABOVE_GRANTOR: {
+    // The permissions are named: the admin needs to know which ones their own role lacks.
+    'en-CA': 'You cannot give a role with permissions you do not hold yourself: {permissions}.',
   },
 
   /* ── budgets ───────────────────────────────────────────────────────────── */
