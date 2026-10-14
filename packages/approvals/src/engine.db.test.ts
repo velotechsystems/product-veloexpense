@@ -9,11 +9,7 @@ import { createTenantHarness, type TenantHarness } from '../../../server/__test-
  *     shared test database, and every engine call runs inside that tenant's transaction —
  *     as every caller will (w4-00c). The `engine` below is ExpenseOS's module with the
  *     suite's `db` swapped for that transaction; each test reads as ExpenseOS wrote it.
- *   · People carry VeloExpense's text role. `approverRoleId` is EMPLOYEE, which maps to
- *     ExpenseOS's Employee and holds the approve permission, as there. VeloExpense has no
- *     role WITHOUT it (both of its system roles grant it), so the one case that needs such a
- *     role is skipped, marked; elsewhere `noPermRoleId` only ever names an incidental
- *     subordinate.
+ *   · Roles are the tenant's rows (0068, w4-10a), found as ExpenseOS finds them.
  *   · Job levels are seeded here: the harness tenant has none, and ExpenseOS's cases read
  *     its seeded levels (a guard that returns early would make them pass vacuously).
  *   · The virtual-card and travel adapters are out of scope or not built yet (d50); their
@@ -84,15 +80,14 @@ describe.skipIf(!process.env.DATABASE_URL)('approval engine (integration)', () =
       unknown
     > = {},
   ): Promise<string> => {
-    // VeloExpense: one display name, and the text role (`roleId` carries it, see above).
-    const { roleId, ...rest } = over;
+    // VeloExpense: one display name.
     const u = await db.user.create({
       data: {
         email: `${TAG}-${userIds.length}@example.test`,
         name: 'QA Engine',
-        role: roleId ?? approverRoleId,
+        roleId: over.roleId ?? approverRoleId,
         employeeStatus: 'ACTIVE',
-        ...rest,
+        ...over,
       },
       select: { id: true },
     });
@@ -185,9 +180,18 @@ describe.skipIf(!process.env.DATABASE_URL)('approval engine (integration)', () =
     }) as typeof raw;
     // VeloExpense: a currency's id is its code.
     currencyId = 'CAD';
-    // VeloExpense: text roles (see the note at the top).
-    approverRoleId = 'EMPLOYEE';
-    noPermRoleId = 'EMPLOYEE';
+    approverRoleId = (
+      await db.role.findFirstOrThrow({
+        where: { permissions: { has: 'expense.report.approve' }, active: true },
+        select: { id: true },
+      })
+    ).id;
+    noPermRoleId = (
+      await db.role.findFirstOrThrow({
+        where: { NOT: { permissions: { has: 'expense.report.approve' } }, active: true },
+        select: { id: true },
+      })
+    ).id;
     // VeloExpense: two job levels, as ExpenseOS's seed provides.
     for (const [code, track, sortOrder] of [
       ['IC1', 'INDIVIDUAL_CONTRIBUTOR', 10],
@@ -545,8 +549,7 @@ describe.skipIf(!process.env.DATABASE_URL)('approval engine (integration)', () =
       ).toBe(true);
     });
 
-    // VeloExpense: no role here lacks the approve permission (see the note at the top).
-    it.skip('refuses somebody whose role does not grant it', async () => {
+    it('refuses somebody whose role does not grant it', async () => {
       const node = { id: 'a', type: 'approval', approver: { kind: 'manager' } };
       const actor = await makeUser({ roleId: noPermRoleId });
       expect(

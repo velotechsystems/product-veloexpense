@@ -478,10 +478,17 @@ model User {
   /// w4-00b: the approval engine reads the level's sortOrder. The database's key is
   /// composite (0050); the relation is on the id alone, as the approval task's.
   jobLevel       JobLevel? @relation("UserJobLevel", fields: [jobLevelId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  /// VeloExpense's role (EMPLOYEE | MANAGER | ADMIN, 0004), where ExpenseOS has `roleId`.
-  /// The approval engine maps it to an ExpenseOS system role (`systemRoleFor`) until the
-  /// role builder (w4-10).
-  role           String    @default("EMPLOYEE")
+  /// VeloExpense's text role (EMPLOYEE | MANAGER | ADMIN, 0004), the column `role`. Kept one
+  /// release beside `roleId` (d73): a trigger keeps `roleId` in step when something still
+  /// writes it, and VeloExpense's own admin checks read it until w4-10c retires both. Named
+  /// `legacyRole` here so `role` is ExpenseOS's relation below.
+  legacyRole     String    @default("EMPLOYEE") @map("role")
+  /// ExpenseOS's `roleId` / `role` (0068). VeloExpense: the role is the TENANT's — the key is
+  /// (organization, id), and system roles carry ExpenseOS's fixed ids in every tenant.
+  /// Filled by the database from the text role on insert until w4-10c (no Prisma create
+  /// writes a person).
+  roleId         String    @map("role_id") @db.Uuid
+  role           Role      @relation("UserRole", fields: [organizationId, roleId], references: [organizationId, id], onDelete: NoAction, onUpdate: NoAction)
   deletedAt      DateTime? @map("deleted_at") @db.Timestamptz(6)
   createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt      DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
@@ -498,6 +505,33 @@ model User {
   delegationsTo         Delegation[]   @relation("DelegationTo")
 
   @@map("app_user")
+}
+
+// ExpenseOS's `Role` (0068, w4-10a, d73): a named set of permission codes, one per person.
+// VeloExpense: per tenant, keyed (organization, id); every tenant holds the six system roles
+// under ExpenseOS's fixed ids (`SYSTEM_ROLE_IDS`), seeded by the database for every new
+// organization. No `RoleExternalId` / `PolicyRule` back-relations until w4-10b / w4-10c.
+model Role {
+  organizationId String   @default(dbgenerated("(NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid")) @map("organization_id") @db.Uuid
+  id             String   @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  /// Display name, locale-keyed JSON map.
+  label          Json
+  /// Optional description, locale-keyed JSON map.
+  description    Json?
+  /// System roles cannot be deleted; their permission lists can change.
+  isSystem       Boolean  @default(false) @map("is_system")
+  active         Boolean  @default(true)
+  permissions    String[]
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  createdBy      String?  @map("created_by") @db.Uuid
+  updatedBy      String?  @map("updated_by") @db.Uuid
+
+  users User[] @relation("UserRole")
+
+  @@id([organizationId, id])
+  @@index([organizationId, active])
+  @@map("role")
 }
 
 // ExpenseOS's `BusinessUnit` (Wave 1). Migration 0047 brought `business_unit` to this

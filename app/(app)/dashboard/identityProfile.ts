@@ -1,6 +1,4 @@
 import 'server-only';
-import { SYSTEM_ROLE_LABELS } from '@expenseos/rbac';
-import { systemRoleFor, type VeloExpenseRole } from '@expenseos/rbac/server';
 import { withTenantDb } from '@/lib/db/prisma';
 
 /**
@@ -12,9 +10,8 @@ import { withTenantDb } from '@/lib/db/prisma';
  * consult. The shape is the slice of ExpenseOS's `users.get` result that the chips use, so
  * `IdentityChips` reads it unchanged.
  *
- * The role label is VeloExpense's system-role label (`SYSTEM_ROLE_LABELS`, both locales) —
- * what the session's English `roleLabel` is drawn from — until the role builder (w4-10)
- * gives roles their own labels.
+ * The role label is the reader's role row's own (0068), in both locales — ExpenseOS's
+ * `users.get` reads the same relation.
  */
 export interface IdentityProfile {
   role: { label: Record<string, string> };
@@ -28,13 +25,13 @@ export async function getIdentityProfile(input: {
   return withTenantDb(input.organizationId, async (tx) => {
     const me = await tx.user.findUniqueOrThrow({
       where: { id: input.id },
-      select: { role: true, departmentId: true },
+      select: { role: { select: { label: true } }, departmentId: true },
     });
     const department = me.departmentId
       ? await tx.department.findUnique({ where: { id: me.departmentId }, select: { id: true, label: true } })
       : null;
     return {
-      role: { label: SYSTEM_ROLE_LABELS[systemRoleFor(me.role as VeloExpenseRole)] },
+      role: { label: me.role.label as Record<string, string> },
       department: department ? { id: department.id, label: department.label as Record<string, string> } : null,
     };
   });

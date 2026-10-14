@@ -18,8 +18,6 @@
  *     to it and is logged, so it never undoes the decision it follows;
  *   · notifications are VeloExpense's (`lib/notifications/service.ts`): a NOTIFY activity
  *     with the report's placeholders, on the same transaction (`queryRunnerOf`);
- *   · a `role` target is the people whose VeloExpense role stands for that ExpenseOS system
- *     role (`systemRoleFor`), until the role builder (w4-10);
  *   · the subject is an expense report; the virtual-card branch is out of scope (d50).
  */
 
@@ -28,7 +26,6 @@ import { graphSchema } from '@expenseos/approvals';
 import { type ApprovalSubjectType, loadRequesterId } from '@expenseos/approvals/engine';
 import { auditActions, withAudit } from '@expenseos/audit';
 import type { Prisma } from '@expenseos/db';
-import { rolesStandingFor } from '@/lib/approvals/systemRoleHolders';
 import type { TenantDb } from '@/lib/db/prisma';
 import { queryRunnerOf } from '@/lib/db/prisma-pg-bridge';
 import { notifyRecipients, recordActivity, reportPayload } from '@/lib/notifications/service';
@@ -78,12 +75,8 @@ async function resolveNotifyTarget(
     case 'user':
       return [target.userId];
     case 'role': {
-      // VeloExpense: the text roles that stand for the named system role (`systemRoleFor`:
-      // ADMIN → admin, EMPLOYEE and MANAGER → employee). Any other id names nobody yet.
-      const roles = rolesStandingFor(target.roleId);
-      if (roles.length === 0) return [];
       const users = await db.user.findMany({
-        where: { role: { in: roles }, deletedAt: null },
+        where: { roleId: target.roleId, deletedAt: null },
         select: { id: true },
       });
       return users.map((u) => u.id);

@@ -16,9 +16,7 @@ import { taskRecipientIds } from './notify';
  * making the file serial.
  */
 
-// VeloExpense: a system role VeloExpense's roles stand for (ExpenseOS's test uses the retired
-// Manager role's id, which no VeloExpense role maps to).
-const ROLE = '019e3000-0000-7000-8000-000000000001';
+const ROLE = '019e3000-0000-7000-8000-000000000003';
 
 function dbWith(node: unknown, assigneeUserId: string | null = null) {
   // Typed with its argument so the assertions below can read the `where` it was built
@@ -63,8 +61,7 @@ describe('approval task recipients', () => {
     });
     expect(await taskRecipientIds(db, ['t1'])).toEqual(['holder-1', 'holder-2']);
     expect(findMany.mock.calls[0]?.[0]?.where).toMatchObject({
-      // VeloExpense: the text role standing for the system role (admin → ADMIN).
-      role: { in: ['ADMIN'] },
+      roleId: ROLE,
       deletedAt: null,
       employeeStatus: 'ACTIVE',
     });

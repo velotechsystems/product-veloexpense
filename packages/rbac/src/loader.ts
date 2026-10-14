@@ -1,54 +1,51 @@
-import { SYSTEM_ROLE_IDS, SYSTEM_ROLE_PERMISSIONS, type SystemRoleKind } from './systemRoles';
+import type { Prisma, PrismaClient } from '@expenseos/db';
+import { getRolePermissions } from './cache';
 import { isPermission, type Permission } from './permissions';
 import type { RbacUser } from './types';
 
 /**
- * VeloExpense's `resolveRbacUser` — same signature as ExpenseOS's, different source.
+ * Resolve the RbacUser for a given session. Reads the Role row through
+ * the Redis cache layer in @expenseos/rbac/cache so the hot path is
+ * one Redis GET per request.
  *
- * ExpenseOS reads `Role.permissions` from its `Role` table through a Redis cache. VeloExpense
- * has neither yet: its people carry one of three fixed roles on `app_user.role`, and the role
- * builder that brings editable roles arrives with Wave 4. Until then a `roleId` here is always
- * one of ExpenseOS's SYSTEM role ids, and its permissions are that system role's
- * `SYSTEM_ROLE_PERMISSIONS` — the seed values an ExpenseOS tenant starts with.
+ * `roleLabel` is the locale-resolved Role.label snapshot — populated
+ * once at sign-in, reused on every request. We don't re-resolve per
+ * request because the label rarely changes; admins who edit a role
+ * label can trigger a session refresh by signing out + back in.
  *
- * Which system role a VeloExpense role maps to is `systemRoleFor` below, and the tRPC context
- * (server/trpc.ts) is the one caller that applies it, after reading the role from the
- * DATABASE (VeloExpense's rule: never from the session token).
- *
- * The `db` argument is kept so ported call sites — `resolveRbacUser(db, {...})` — compile
- * unchanged. It is unused until roles are rows.
+ * VeloExpense (w4-10a, d73): ExpenseOS's loader. The role is the TENANT's row (0068), so the
+ * session names its organization, the row is read by (organization, id), and the cache is
+ * keyed by both (see cache.ts). `db` is the caller's tenant transaction, whose RLS confines
+ * the read to that organization anyway. VeloExpense reads the role id from the database on
+ * every request rather than the token (server/trpc.ts), and so its label too.
  */
 export async function resolveRbacUser(
-  _db: unknown,
-  session: { userId: string; roleId: string; roleLabel: string },
+  db: PrismaClient | Prisma.TransactionClient,
+  session: { userId: string; roleId: string; roleLabel: string; organizationId: string },
 ): Promise<RbacUser> {
-  const kind = (Object.keys(SYSTEM_ROLE_IDS) as SystemRoleKind[]).find(
-    (k) => SYSTEM_ROLE_IDS[k] === session.roleId,
-  );
-  // An id that is not a system role grants nothing, as ExpenseOS's loader does for a role
-  // that was deleted or deactivated between sign-in and request.
-  const raw: readonly string[] = kind ? SYSTEM_ROLE_PERMISSIONS[kind] : [];
+  const raw = await getRolePermissions(session.organizationId, session.roleId, async () => {
+    const role = await db.role.findUnique({
+      where: { organizationId_id: { organizationId: session.organizationId, id: session.roleId } },
+      select: { permissions: true, active: true },
+    });
+    if (!role?.active) {
+      // Role was deleted or deactivated between sign-in and request.
+      // Return an empty list — the caller's permission checks will
+      // fail and the session will be effectively read-only until the
+      // user signs back in.
+      return [];
+    }
+    return role.permissions;
+  });
+
+  // Filter out any non-registered permission strings (in case Role
+  // rows hold stale codes after a registry rename).
   const permissions = raw.filter(isPermission) as Permission[];
+
   return {
     id: session.userId,
     roleId: session.roleId,
     roleLabel: session.roleLabel,
     permissions,
   };
-}
-
-/** VeloExpense's three roles (`app_user.role`). */
-export type VeloExpenseRole = 'EMPLOYEE' | 'MANAGER' | 'ADMIN';
-
-/**
- * The ExpenseOS system role a VeloExpense role stands in for, until Wave 4's role builder.
- *
- *   ADMIN    -> admin     (System Administrator)
- *   MANAGER  -> employee  ExpenseOS folded Manager into Employee: Employee grants a strict
- *                         superset of what Manager did (RETIRED_ROLE_IDS.manager), and
- *                         approving is decided by the workflow, not by the role.
- *   EMPLOYEE -> employee
- */
-export function systemRoleFor(role: VeloExpenseRole): SystemRoleKind {
-  return role === 'ADMIN' ? 'admin' : 'employee';
 }

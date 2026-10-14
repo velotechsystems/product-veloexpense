@@ -144,13 +144,14 @@ export async function recallThroughLifecycle(db: TenantDb, reportId: string, act
 async function auditActorOf(db: TenantDb, actorId: string) {
   const u = await db.user.findUnique({
     where: { id: actorId },
-    select: { name: true, email: true, role: true },
+    // VeloExpense: the text role, as every VeloExpense audit row has named it, until w4-10c.
+    select: { name: true, email: true, legacyRole: true },
   });
   return {
     kind: 'user' as const,
     id: actorId,
     name: u?.name || u?.email || actorId,
-    roleLabel: u?.role ?? '',
+    roleLabel: u?.legacyRole ?? '',
   };
 }
 

@@ -1,9 +1,16 @@
 /**
- * @expenseos/rbac/server — server-only surface.
+ * @expenseos/rbac/server — server-only surface. Re-exports the cache
+ * + loader primitives that depend on ioredis and the Prisma client.
+ * Importing this from a client component will pull node:net, node:fs,
+ * and the BullMQ-compatible Redis driver into the browser bundle —
+ * use the bare `@expenseos/rbac` entry point for client components.
  *
- * VeloExpense: ExpenseOS re-exports its Redis cache and Role-table loader here. VeloExpense
- * has no Role table yet (Wave 4), so this exports the loader that maps its three fixed roles
- * onto ExpenseOS's system roles instead (see loader.ts). The import path and the
- * `resolveRbacUser` signature are ExpenseOS's, so ported pages and procedures are unchanged.
+ * VeloExpense (w4-10a): ExpenseOS's, now that roles are rows (0068).
  */
-export { resolveRbacUser, systemRoleFor, type VeloExpenseRole } from './loader';
+export {
+  getRbacRedis,
+  getRolePermissions,
+  invalidateAllRoles,
+  invalidateRolePermissions,
+} from './cache';
+export { resolveRbacUser } from './loader';

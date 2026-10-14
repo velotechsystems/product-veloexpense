@@ -1,5 +1,6 @@
 // @vitest-environment node
 /* eslint-disable @typescript-eslint/no-explicit-any -- the harness reads rows untyped. */
+import { SYSTEM_ROLE_IDS } from '@expenseos/rbac';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createTenantHarness, type TenantHarness } from '../../../server/__test-helpers__/tenantHarness';
 
@@ -45,7 +46,8 @@ describe.skipIf(!process.env.DATABASE_URL)('approval engine on VeloExpense table
   const makeUser = async (over: Record<string, unknown> = {}): Promise<string> =>
     (
       await h.db.user.create({
-        data: { email: `velo-${++n}@engine.example`, name: `Person ${n}`, ...over },
+        // w4-10a: a person names their role (0068); Employee unless the case says otherwise.
+        data: { email: `velo-${++n}@engine.example`, name: `Person ${n}`, roleId: SYSTEM_ROLE_IDS.employee, ...over },
         select: { id: true },
       })
     ).id;

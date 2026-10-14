@@ -7,13 +7,11 @@
  * in-app rows and enqueues notification.dispatch for email/Slack (gated on the
  * relevant integration + per-user prefs). This module no longer sends email.
  *
- * VeloExpense (w4-00c): ExpenseOS's module. A role fallback's holders are the people whose
- * text role stands for that system role (`rolesStandingFor`), until the role builder (w4-10).
+ * VeloExpense (w4-00c): ExpenseOS's module.
  */
 
 import { graphSchema, type Predicate, type PredicateField } from '@expenseos/approvals';
 import type { Prisma, PrismaClient } from '@expenseos/db';
-import { rolesStandingFor } from '@/lib/approvals/systemRoleHolders';
 
 type Db = PrismaClient | Prisma.TransactionClient;
 
@@ -87,9 +85,8 @@ async function recipientsForTask(
   if (node.approver.kind === 'manager' || node.approver.kind === 'managerChain') {
     const fb = node.approver.fallback;
     if (fb?.kind !== 'role') return [];
-    // VeloExpense: the text roles that stand for the named system role.
     const holders = await db.user.findMany({
-      where: { deletedAt: null, employeeStatus: 'ACTIVE', role: { in: rolesStandingFor(fb.roleId) } },
+      where: { deletedAt: null, employeeStatus: 'ACTIVE', roleId: fb.roleId },
       select: { id: true },
       take: 50,
     });
