@@ -185,6 +185,8 @@ export const UI_COPY = {
   // Composed with the tenant's name by `title.template` in `app/layout.tsx`, so
   // these are the page's half only.
   'title.home': { 'en-CA': 'Home' },
+  // w4-09: ExpenseOS's dashboard, which replaced Home (d72); named as ExpenseOS's menu names it.
+  'title.dashboard': { 'en-CA': 'Dashboard' },
   'title.expenses': { 'en-CA': 'Expense reports' },
   // The fallback when a report cannot be named — see `dataTitle`. A report's own
   // title is the CUSTOMER's words and is never catalogued.

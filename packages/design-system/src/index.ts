@@ -108,6 +108,16 @@ export { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 export { Textarea } from '@/components/ui/textarea';
 export { Badge, badgeVariants } from '@/components/ui/badge';
 export { Button, buttonVariants } from '@/components/ui/button';
+// w4-09: the kit's Card, as StatCard and SectionCard are drawn on (the kit's own shadcn card;
+// ExpenseOS's is a plain bordered box with the same part names).
+export {
+  Card,
+  CardContent,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card';
 export { Checkbox } from '@/components/ui/checkbox';
 // VeloExpense: the kit's Radix dialog, where ExpenseOS's is Base UI. The same parts and the
 // same corner close button; `onOpenChange` takes the next open state in both.
@@ -144,6 +154,21 @@ export {
   DrawerTrigger,
 } from '@/components/ui/drawer';
 export { EmojiPicker, type EmojiPickerProps } from '@/components/ui/emoji-picker';
+// w4-09: the dashboard's band and card shell — ExpenseOS's `ui/identity-banner` and
+// `ui/section-card`, vendored from the kit's data-display item.
+export {
+  IdentityBanner,
+  IdentityBannerChip,
+  type IdentityBannerChipProps,
+  type IdentityBannerProps,
+} from '@/components/data-display/IdentityBanner';
+export {
+  SectionCard,
+  type SectionCardError,
+  type SectionCardProps,
+  SectionEmpty,
+  type SectionEmptyProps,
+} from '@/components/data-display/SectionCard';
 export { Input } from '@/components/ui/input';
 export { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 export { ResizablePanels, type ResizablePanelsProps } from '@/components/ui/resizable-panels';

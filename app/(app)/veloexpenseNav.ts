@@ -40,8 +40,8 @@ import {
  * yet". A route not listed is at the same path in both.
  */
 export const VELOEXPENSE_ROUTES: Readonly<Record<string, string | null>> = {
-  // Same screen, different path.
-  '/dashboard': '/',
+  // Same screen, different path. (`/dashboard` left this map in w4-09: ExpenseOS's
+  // dashboard is ported at its own path, and `/` redirects there.)
   '/delegations': '/approvals/delegations',
 
   // Not ported yet. Each leaves with the wave that ports its screen (parity doc).
@@ -177,6 +177,8 @@ export const PORTED_SCREENS: readonly string[] = [
   '/admin/policy-violations',
   // w4-05/w4-07 (d71): the approvals inbox, in place of VeloExpense's /approvals.
   '/expenses/approvals',
+  // w4-09 (d72): the dashboard, in place of VeloExpense's home page at `/`.
+  '/dashboard',
 ];
 
 /** Whether the top bar should title this path: it is a ported ExpenseOS screen. */

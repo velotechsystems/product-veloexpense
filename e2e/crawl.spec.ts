@@ -47,7 +47,8 @@ import { ADMIN_STATE, EMPLOYEE_STATE, MANAGER_STATE } from './helpers';
  * is written down as a list.
  */
 const PAGES = [
-  '/',
+  // w4-09 (d72): ExpenseOS's dashboard, in place of VeloExpense's `/` (which redirects here).
+  '/dashboard',
   '/expenses',
   // w2-06: ExpenseOS's cross-report view, AP / admin only (see ADMIN_ONLY).
   '/expenses/all',
@@ -97,6 +98,8 @@ const PAGES = [
  * Excluded, each for a reason rather than because it failed:
  *   `/login`      — the only page with no session, and `auth.setup.ts` is the
  *                   spec that owns it.
+ *   `/`           — renders nothing: since w4-09 it only redirects to /dashboard,
+ *                   which the crawl visits.
  *   `/approve`     — renders nothing: since d62 it only redirects an old emailed
  *                   link to /approvals, which the crawl visits.
  *   `/signup`, `/signup/verify`, `/invite/accept` — same reason: reached with no
