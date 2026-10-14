@@ -1,6 +1,18 @@
 /**
  * Invite-only SSO resolver. Given the org slug (from the pre-redirect cookie)
- * and the verified email, return the user or null (null = denied).
+ * and the provider's identity, return the user or a denial.
+ *
+ * AUTHKITSYNC-VE-1 (auth-kit v0.3): the kit now hands over an SsoIdentity, not
+ * a bare email, and refuses a Google address Google has not verified before
+ * this file is reached. Everything below acts on a VERIFIED email — invitation
+ * acceptance is bound to it — so this resolver also refuses any identity whose
+ * email is not verified. That is every Microsoft identity: an Entra `email`
+ * claim is chosen by whoever runs the signing-in user's directory, so accepting
+ * an invitation on it would let anyone with their own directory join a tenant
+ * as the invited person. The kit does not offer Microsoft to this product
+ * (auth.ts does not declare `microsoftDirectoryBinding`); the check here is the
+ * second lock, so that turning Microsoft on later means building the directory
+ * binding (see lib-auth-kit's README), not flipping a flag.
  *
  * Phase 0 returns role='member'/subjectId=null; authorization reads
  * the person's role from the DATABASE (`lib/auth/actor.ts`), never from the session
@@ -64,7 +76,7 @@
  *    work. `onSsoDenied` now writes `SIGN_IN_DENIED` to the tenant's audit log.
  */
 import { withoutOrg, withOrg } from '@/lib/tenant/context';
-import type { ResolvedUser } from '@/src/auth-kit';
+import type { ResolvedUser, SsoDenied, SsoDeniedEvent, SsoIdentity } from '@/src/auth-kit';
 import { acceptForVerifiedEmail } from '@/lib/invites/service';
 import { pushSeatCountInBackground } from '@/lib/billing/seats';
 import { append as auditAppend } from '@/lib/audit/service';
@@ -85,9 +97,12 @@ async function activeOrgIdForSlug(orgSlug: string): Promise<string | null> {
   });
 }
 
-export async function resolveSsoUser(orgSlug: string, email: string): Promise<ResolvedUser | null> {
+export async function resolveSsoUser(orgSlug: string, identity: SsoIdentity): Promise<ResolvedUser | SsoDenied> {
+  // See the header: everything below trusts the address. Microsoft's is not verified.
+  if (identity.emailVerified !== true) return { denied: 'email_unverified' };
+  const email = identity.email;
   const orgId = await activeOrgIdForSlug(orgSlug);
-  if (orgId === null) return null;
+  if (orgId === null) return { denied: 'unknown_org' };
 
   const existing = await withOrg(orgId, async (tx) => {
     const r = await tx.query(
@@ -133,9 +148,11 @@ export async function resolveSsoUser(orgSlug: string, email: string): Promise<Re
     } catch (auditErr) {
       console.error('[auth] could not audit a refused invitation:', auditErr);
     }
-    return null;
+    return { denied: 'unknown_user' };
   }
-  if (accepted === null) return null;
+  // No member and no live invitation (or a deactivated member, whose row the
+  // lookup above skips): not somebody this tenant knows.
+  if (accepted === null) return { denied: 'unknown_user' };
 
   /*
    * VX5-20. A NEW MEMBER IS A NEW SEAT, and this is the only place in the product
@@ -180,18 +197,30 @@ export async function resolveSsoUser(orgSlug: string, email: string): Promise<Re
  * An unknown slug writes nothing, and cannot: there is no tenant to write it to.
  * That case is the console line alone, which is the honest floor rather than a
  * gap — an audit log belongs to an organization, and a probe against a name that
- * is not one has no organization to belong to.
+ * is not one has no organization to belong to. The same holds for a missing or
+ * expired org cookie (auth-kit v0.3 reports it with `orgSlug: null`).
+ *
+ * AUTHKITSYNC-VE-1: the kit passes an address only when the provider verified
+ * it (`verifiedEmail`, Google). `audit_entry` needs a user id or an email for
+ * its actor, and this resolver never names a user in a denial, so a refusal
+ * without a verified address — an unverified or missing one, which the kit or
+ * the check above refuses before any tenant lookup — is the console line
+ * alone, like an unknown slug. The kit's `reason` is now recorded too: "my invitee
+ * can't get in" reads differently as `unknown_user` than as `email_unverified`.
  */
-export async function onSsoDenied(orgSlug: string, email: string, provider: string): Promise<void> {
-  console.warn('[auth] SSO denied', { orgSlug, email, provider });
+export async function onSsoDenied(event: SsoDeniedEvent): Promise<void> {
+  const { orgSlug, provider, reason, verifiedEmail } = event;
+  console.warn('[auth] SSO denied', { orgSlug, provider, reason, email: verifiedEmail ?? null });
   try {
+    if (orgSlug === null) return;
+    if (!verifiedEmail) return;
     const orgId = await activeOrgIdForSlug(orgSlug);
     if (orgId === null) return;
     await withOrg(orgId, (tx) =>
       auditAppend(
         tx,
-        { id: null, email, name: email, role: 'anonymous' },
-        { action: 'SIGN_IN_DENIED', details: { provider } },
+        { id: null, email: verifiedEmail, name: verifiedEmail, role: 'anonymous' },
+        { action: 'SIGN_IN_DENIED', details: { provider, reason } },
       ),
     );
   } catch (err) {

@@ -19,6 +19,12 @@ import * as employees from '@/lib/employees/service';
 import * as expenses from '@/lib/expenses/service';
 import { issueInvite } from '@/lib/invites/service';
 import { resolveSsoUser } from '@/lib/auth/resolve-sso-user';
+import type { SsoIdentity } from '@/src/auth-kit';
+
+// auth-kit v0.3: the resolver takes an identity (Google, verified by the kit).
+const google = (email: string): SsoIdentity => ({
+  provider: 'google', email, emailVerified: true, tenantId: null, objectId: null,
+});
 import { TEST_ACTOR } from './support/audit-actor';
 import { TODAY } from './support/dates';
 
@@ -216,7 +222,7 @@ describe('the seat cap at SIGN-IN, where the invitation is actually accepted', (
       ),
     );
 
-    expect(await resolveSsoUser('caps-co', 'late@caps.test')).toBeNull();
+    expect(await resolveSsoUser('caps-co', google('late@caps.test'))).toEqual({ denied: 'unknown_user' });
 
     const live = await admin.query(
       `SELECT accepted_at FROM invite WHERE organization_id = $1 AND email = 'late@caps.test'`,
@@ -231,8 +237,8 @@ describe('the seat cap at SIGN-IN, where the invitation is actually accepted', (
     expect(refused.rows[0]?.details).toMatchObject({ reason: 'SEAT_LIMIT_REACHED', limit: 1 });
 
     await setLimits({ maxUsers: 2 }); // the admin buys a seat
-    const joined = await resolveSsoUser('caps-co', 'late@caps.test');
-    expect(joined?.email).toBe('late@caps.test');
+    const joined = await resolveSsoUser('caps-co', google('late@caps.test'));
+    expect('denied' in joined ? joined.denied : joined.email).toBe('late@caps.test');
   });
 });
 

@@ -72,6 +72,12 @@ const secureCookies = /^https:/i.test(
 const base = createAuthKitConfig({
   productKey: 'veloexpense', // namespaces the org-slug SSO cookie
   providers: { google: googleReady, microsoft: microsoftReady },
+  // AUTHKITSYNC-VE-1: NO `microsoftDirectoryBinding`. auth-kit v0.3 therefore
+  // registers no Microsoft provider here even when the suite-wide Entra env
+  // vars are present (microsoftReady), and refuses any Microsoft callback.
+  // resolveSsoUser accepts invitations on the email, which Microsoft does not
+  // verify; offering Microsoft first needs the directory + object-id binding
+  // described in lib-auth-kit's README (VeloPulse SSOTENANT-1 is the reference).
   resolveSsoUser,
   onSsoDenied,
 });
