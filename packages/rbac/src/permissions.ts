@@ -127,6 +127,12 @@ export const permissions = {
      *  exactly those three. */
     cardReadAll: 'vcc.card.read.all',
     cardIssue: 'vcc.card.issue',
+    /** Edit what identifies a card and who holds it: move it to another cardholder, change
+     *  the card number, the expiry or the CVV. Everything else (the name on the card included)
+     *  on a card stays editable with `vcc.card.issue`. Admin-only among the system roles —
+     *  `systemRoles.test.ts` pins that: a card administrator who could both issue cards and
+     *  rewrite a live card's number or holder could move spend onto any card unseen. */
+    cardEditSensitive: 'vcc.card.edit.sensitive',
     cardClose: 'vcc.card.close',
     cardReassign: 'vcc.card.reassign',
     limitRequestIncrease: 'vcc.limit.requestIncrease',

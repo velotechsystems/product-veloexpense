@@ -236,6 +236,7 @@ export const UI_COPY = {
   'title.admin.notification.delivery': { 'en-CA': 'Email delivery' },
   'title.admin.notification.templates': { 'en-CA': 'Notification wording' },
   'title.admin.reimbursements': { 'en-CA': 'Reimbursements' },
+  'title.admin.roles': { 'en-CA': 'Roles' },
 
   /* ── shared navigation, on more than one screen ─────────────────────────── */
   //

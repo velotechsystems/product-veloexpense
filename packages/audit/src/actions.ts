@@ -35,6 +35,11 @@ const adminAndOthers = {
     fiscalYearUpdate: 'FISCAL_YEAR_UPDATED',
     fiscalYearSetCurrent: 'FISCAL_YEAR_SET_CURRENT',
     fiscalYearDelete: 'FISCAL_YEAR_DELETED',
+    /** w4-10c: the Role Builder (`server/routers/roles.ts`). A role is really deleted, and
+     *  only when nobody holds it and nothing names it. */
+    roleCreate: 'ROLE_CREATED',
+    roleUpdate: 'ROLE_UPDATED',
+    roleDelete: 'ROLE_DELETED',
   },
   /** ExpenseOS's `approvalWorkflow.*` keys (w4-01, the workflow builder). */
   approvalWorkflow: {

@@ -127,6 +127,11 @@ export type User = Prisma.UserModel
  */
 export type Role = Prisma.RoleModel
 /**
+ * Model RoleExternalId
+ * 
+ */
+export type RoleExternalId = Prisma.RoleExternalIdModel
+/**
  * Model BusinessUnit
  * 
  */

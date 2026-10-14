@@ -11,6 +11,7 @@ import { legalEntitiesRouter } from './legalEntities';
 import { mileageRouteRouter } from './mileageRoute';
 import { pickersRouter } from './pickers';
 import { policiesRouter } from './policies';
+import { rolesRouter } from './roles';
 import { savedViewsRouter } from './savedViews';
 
 /**
@@ -40,6 +41,8 @@ export const appRouter = router({
   mileageRoute: mileageRouteRouter,
   pickers: pickersRouter,
   policies: policiesRouter,
+  // w4-10c: ExpenseOS's Role Builder (d74).
+  roles: rolesRouter,
   // w4-08: a person's saved list views.
   savedViews: savedViewsRouter,
 });

@@ -205,11 +205,13 @@ function collectCardAdmin(): readonly Permission[] {
     // Issuing a card and reassigning one both name another employee. A directory READ:
     // it no longer doubles as the card-approval override, which is `vcc.request.decide.any`.
     P.user.readAll,
-    // Everything card-side EXCEPT the override. The card administrator issues what gets
-    // approved; letting the same role approve any request — including a limit increase,
-    // which raises a live card's ceiling on approval — would put authorising and issuing
-    // in one pair of hands. They still approve where the workflow names them.
-    ...flatten(P.vcc).filter((p) => p !== P.vcc.requestDecideAny),
+    // Everything card-side EXCEPT the override and the sensitive edit. The card
+    // administrator issues what gets approved; letting the same role approve any request —
+    // including a limit increase, which raises a live card's ceiling on approval — would put
+    // authorising and issuing in one pair of hands. They still approve where the workflow
+    // names them. And they edit a card's name on card, limit, window and coding, but not its
+    // number, expiry, CVV or holder: that is `vcc.card.edit.sensitive`, admin-only.
+    ...flatten(P.vcc).filter((p) => p !== P.vcc.requestDecideAny && p !== P.vcc.cardEditSensitive),
     P.ledger.referenceView,
     P.ledger.syncPush,
     P.ledger.syncRetry,

@@ -899,9 +899,6 @@ async function requesterIdFor(
  * disable the fallback here — so `systemRoles.test.ts` asserts these exact strings
  * still exist, and a rename breaks that test instead of quietly re-stranding
  * everyone with no manager.
- *
- * VeloExpense: this package does read rbac, for the role mapping only (`loadActorAuth`),
- * until roles are rows (w4-10). The literals are kept as ExpenseOS has them.
  */
 const APPROVE_PERMISSION: Record<ApprovalSubjectType, string> = {
   EXPENSE_REPORT: 'expense.report.approve',

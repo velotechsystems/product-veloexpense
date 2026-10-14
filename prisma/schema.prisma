@@ -505,7 +505,8 @@ model User {
 // ExpenseOS's `Role` (0068, w4-10a, d73): a named set of permission codes, one per person.
 // VeloExpense: per tenant, keyed (organization, id); every tenant holds the six system roles
 // under ExpenseOS's fixed ids (`SYSTEM_ROLE_IDS`), seeded by the database for every new
-// organization. No `RoleExternalId` / `PolicyRule` back-relations until w4-10b / w4-10c.
+// organization. Its aliases are `RoleExternalId` (0070, w4-10c); `PolicyRule.roleId` names it
+// as a scalar, as that model's other scope columns do.
 model Role {
   organizationId String   @default(dbgenerated("(NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid")) @map("organization_id") @db.Uuid
   id             String   @default(dbgenerated("gen_random_uuid()")) @db.Uuid
@@ -522,11 +523,31 @@ model Role {
   createdBy      String?  @map("created_by") @db.Uuid
   updatedBy      String?  @map("updated_by") @db.Uuid
 
-  users User[] @relation("UserRole")
+  users       User[]           @relation("UserRole")
+  externalIds RoleExternalId[]
 
   @@id([organizationId, id])
   @@index([organizationId, active])
   @@map("role")
+}
+
+// ExpenseOS's `RoleExternalId` (0070, w4-10c): a role's id in an outside system, one row per
+// source. VeloExpense: per tenant, with composite keys, as the other lookups' aliases (0047).
+model RoleExternalId {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String   @default(dbgenerated("(NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid")) @map("organization_id") @db.Uuid
+  sourceId       String   @map("source_id") @db.Uuid
+  sourceValue    String   @map("source_value")
+  roleId         String   @map("role_id") @db.Uuid
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  source ExternalIdSource @relation(fields: [organizationId, sourceId], references: [organizationId, id], onDelete: Cascade)
+  role   Role             @relation(fields: [organizationId, roleId], references: [organizationId, id], onDelete: Cascade)
+
+  @@unique([sourceId, sourceValue])
+  @@index([organizationId, roleId])
+  @@map("role_external_id")
 }
 
 // ExpenseOS's `BusinessUnit` (Wave 1). Migration 0047 brought `business_unit` to this
@@ -570,6 +591,8 @@ model ExternalIdSource {
   fiscalYearAliases   FiscalYearExternalId[]
   receiptAliases      ReceiptExternalId[]
   expenseAliases      ExpenseExternalId[]
+  /// w4-10c: ExpenseOS's `RoleExternalId` (0070).
+  roleAliases         RoleExternalId[]
 
   @@unique([organizationId, code])
   @@unique([organizationId, id])
@@ -1040,7 +1063,7 @@ enum PolicyViolationSeverity {
 //     TRAVEL_REQUEST; travel is out of scope);
 //   · the six scope columns are scalars only. The database's keys are composite (0064),
 //     ON DELETE RESTRICT; ported code reads and writes the ids and never walks the
-//     relations. `roleId` has no table behind it until the role builder (w4-10, d64).
+//     relations. `roleId` names a role of the tenant since 0070 (w4-10c, d64).
 model PolicyRule {
   id             String                  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   organizationId String                  @default(dbgenerated("(NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid")) @map("organization_id") @db.Uuid

@@ -61,7 +61,7 @@ export const labelSchema = z
     message: 'Required',
   });
 
-const descriptionSchema = z
+export const descriptionSchema = z
   .object({
     en: z.preprocess(blankToUndefined, localizedText.optional()),
     'fr-CA': z.preprocess(blankToUndefined, localizedText.optional()),

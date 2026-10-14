@@ -756,8 +756,7 @@ describe('the dashboard', () => {
 
     it('renders for an admin, who loses most of the menu below lg', async () => {
       signedIn();
-      // VeloExpense: business units, not roles — `/admin/roles` is not here until w4-10.
-      h.permissions = [P.admin.businessUnit.list];
+      h.permissions = [P.admin.role.list];
       const notice = noticeRender(await DashboardPage(noParams));
       expect(notice).not.toBeNull();
       expect(textOf(notice)).toContain('nav.smallScreenNotice');
@@ -803,8 +802,7 @@ describe('the dashboard', () => {
        * the attribute going missing; only review catches it being assembled.
        */
       signedIn();
-      // VeloExpense: business units, not roles — `/admin/roles` is not here until w4-10.
-      h.permissions = [P.admin.businessUnit.list];
+      h.permissions = [P.admin.role.list];
       expect(noticeRender(await DashboardPage(noParams))?.props.className).toContain('lg:hidden');
     });
 
@@ -815,8 +813,7 @@ describe('the dashboard', () => {
        * per-section controls are where a reader goes to find them.
        */
       signedIn();
-      // VeloExpense: business units, not roles — `/admin/roles` is not here until w4-10.
-      h.permissions = [P.admin.businessUnit.list];
+      h.permissions = [P.admin.role.list];
       const notice = noticeRender(await DashboardPage(noParams));
       expect(hrefsIn(notice)).toEqual([]);
       expect(textOf(notice)).not.toContain('/');
@@ -829,8 +826,7 @@ describe('the dashboard', () => {
        * Nothing else pins the order of this page's children.
        */
       signedIn();
-      // VeloExpense: business units, not roles — `/admin/roles` is not here until w4-10.
-      h.permissions = [P.admin.businessUnit.list];
+      h.permissions = [P.admin.role.list];
       const page = await DashboardPage(noParams);
       const children = (page as { props: { children: unknown[] } }).props.children.flat();
       const noticeAt = children.findIndex(

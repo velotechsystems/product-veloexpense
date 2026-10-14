@@ -92,14 +92,14 @@ export async function validateReport(opts: ValidateOpts): Promise<ValidateResult
           id: true,
           // VeloExpense: the person's home currency is their legal entity's (`legal_entity.
           // currency_code`); ExpenseOS keeps one on the user. No `localePref` (VeloExpense
-          // keeps a person's locale elsewhere, and no kind reads it) and no `roleId` (no
-          // role table until w4-10, d64).
+          // keeps a person's locale elsewhere, and no kind reads it).
           entity: { select: { homeCurrency: { select: { code: true } } } },
           // Submitter tier — matches per-diem rates + rule scoping.
           jobLevelId: true,
           departmentId: true,
           legalEntityId: true,
           businessUnitId: true,
+          roleId: true,
         },
       },
       expenses: {
@@ -262,9 +262,7 @@ export async function validateReport(opts: ValidateOpts): Promise<ValidateResult
         { OR: [{ jobLevelId: null }, { jobLevelId: sub.jobLevelId }] },
         { OR: [{ legalEntityId: null }, { legalEntityId: sub.legalEntityId }] },
         { OR: [{ businessUnitId: null }, { businessUnitId: sub.businessUnitId }] },
-        // VeloExpense: no roles until w4-10 (d64), so only an unscoped rule applies.
-        // (`{ roleId: undefined }` would be no filter at all in Prisma, not "no role".)
-        { roleId: null },
+        { OR: [{ roleId: null }, { roleId: sub.roleId }] },
       ],
     },
   });

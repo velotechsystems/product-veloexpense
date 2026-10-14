@@ -109,8 +109,8 @@ const report = (over: Record<string, unknown> = {}) => ({
   submittedAt: null,
   totalMinor: 5000n,
   currency: { code: 'CAD' },
-  // VeloExpense: no travel request; the home currency is the legal entity's; no locale or
-  // role on the person.
+  // VeloExpense: no travel request; the home currency is the legal entity's; no locale on
+  // the person.
   submitter: {
     id: 'u-1',
     entity: { homeCurrency: { code: 'USD' } },
@@ -118,6 +118,7 @@ const report = (over: Record<string, unknown> = {}) => ({
     departmentId: 'dep-1',
     legalEntityId: 'le-1',
     businessUnitId: 'bu-1',
+    roleId: 'role-1',
   },
   expenses: [expense()],
   ...over,

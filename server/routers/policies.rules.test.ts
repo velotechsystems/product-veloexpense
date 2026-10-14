@@ -345,10 +345,9 @@ describe('policyRule', () => {
   it('offers only active lookups for scoping', async () => {
     const db = makeDb();
     const c = await callerFor(db, READ);
-    const out = await c.policyRule.scopeOptions();
+    await c.policyRule.scopeOptions();
     // Roles are listed without an active filter — a rule scoped to a deactivated role
     // still has to be editable, or it becomes unreachable data.
-    // VeloExpense: there is no role table until w4-10 (d64), so there are no roles to list.
     for (const model of [
       'jobLevel',
       'legalEntity',
@@ -361,19 +360,7 @@ describe('policyRule', () => {
         model,
       ).toMatchObject({ active: true });
     }
-    expect(db.role.findMany).not.toHaveBeenCalled();
-    expect(out.roles).toEqual([]);
-  });
-
-  it('refuses a role scope until roles exist (VeloExpense, d64)', async () => {
-    // `role_id` has no foreign key yet: an id accepted now could name nothing, and the
-    // rule would quietly apply to nobody.
-    const db = makeDb();
-    const c = await callerFor(db, POLICY);
-    await expect(c.policyRule.create(rule({ roleId: U('6') }) as never)).rejects.toMatchObject({
-      code: 'BAD_REQUEST',
-    });
-    expect(db.policyRule.create).not.toHaveBeenCalled();
+    expect(db.role.findMany).toHaveBeenCalled();
   });
 
   it('refuses a budget rule more severe than WARNING (VeloExpense, BG-4)', async () => {

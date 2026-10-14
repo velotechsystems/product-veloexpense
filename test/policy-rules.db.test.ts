@@ -7,9 +7,10 @@
  *     (`POLICY_RULE_CHANGED`, the operation in `details.op`) into a chain that verifies;
  *   · `kinds` labels money in the organization's own policy currency (0015);
  *   · VeloExpense: what the table refuses — another tenant's scope or category, an end
- *     before the start — is BAD_REQUEST, another tenant's rule is NOT_FOUND, a role scope
- *     is refused until roles exist (d64), and a job level a rule is scoped to cannot be
- *     deleted out from under it;
+ *     before the start, another tenant's role — is BAD_REQUEST, another tenant's rule is
+ *     NOT_FOUND, and a job level a rule is scoped to cannot be deleted out from under it;
+ *   · VeloExpense (w4-10c, d64): a rule scoped to a role is checked on the reports of the
+ *     people who hold that role, and on nobody else's;
  *   · tenancy and permissions.
  */
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
@@ -32,10 +33,14 @@ let A: string;
 let B: string;
 let meals: string;
 let betaMeals: string;
+let betaRole: string;
 
 const as = (email: string, organizationId: string) =>
   createCallerFactory(appRouter)({ session: null, db, rbac: null, caller: { email, organizationId } });
 const boss = () => as('boss@alpha.test', A);
+
+const EMPLOYEE = '019e3000-0000-7000-8000-000000000004';
+const EXECUTIVE = '019e3000-0000-7000-8000-000000000007';
 
 const codeOf = (p: Promise<unknown>) =>
   p.then(
@@ -72,6 +77,12 @@ beforeAll(async () => {
     ).rows[0].id as string;
   meals = await cat(A, 'pr-meals', 'Meals');
   betaMeals = await cat(B, 'pr-meals', 'Beta meals');
+  betaRole = (
+    await admin.query(
+      `INSERT INTO role (organization_id, label, permissions) VALUES ($1, '{"en":"Beta auditor"}', '{}') RETURNING id`,
+      [B],
+    )
+  ).rows[0].id;
 });
 
 afterAll(async () => {
@@ -140,16 +151,19 @@ describe('a rule', () => {
     }
   });
 
-  it('offers the tenant’s own scopes, and no roles yet', async () => {
+  it('offers the tenant’s own scopes, its roles among them', async () => {
     const o = await boss().policies.policyRule.scopeOptions();
     expect(o.categories.map((c) => c.id)).toContain(meals);
     expect(o.categories.map((c) => c.id)).not.toContain(betaMeals);
-    expect(o.roles).toEqual([]);
+    // VeloExpense (w4-10c): the tenant's six system roles, and not another tenant's.
+    expect(o.roles.map((r) => r.id)).toContain(EMPLOYEE);
+    expect(o.roles).toHaveLength(6);
+    expect(o.roles.map((r) => r.id)).not.toContain(betaRole);
   });
 });
 
 describe('VeloExpense: what the table refuses is a 4xx', () => {
-  it('refuses another tenant’s category, an end before the start, and a role scope', async () => {
+  it('refuses another tenant’s category, an end before the start, and another tenant’s role', async () => {
     const c = boss();
     const before = (await admin.query('SELECT count(*)::int AS n FROM policy_rule WHERE organization_id = $1', [A])).rows[0].n;
     expect(await codeOf(c.policies.policyRule.create(rule({ categoryId: betaMeals })))).toBe('BAD_REQUEST');
@@ -157,7 +171,7 @@ describe('VeloExpense: what the table refuses is a 4xx', () => {
       await codeOf(c.policies.policyRule.create(rule({ effectiveTo: new Date('2025-01-01T00:00:00Z') }))),
     ).toBe('BAD_REQUEST');
     expect(
-      await codeOf(c.policies.policyRule.create(rule({ roleId: '00000000-0000-7000-8000-000000000001' }))),
+      await codeOf(c.policies.policyRule.create(rule({ roleId: betaRole }))),
     ).toBe('BAD_REQUEST');
     expect((await admin.query('SELECT count(*)::int AS n FROM policy_rule WHERE organization_id = $1', [A])).rows[0].n).toBe(
       before,
@@ -189,5 +203,38 @@ describe('tenancy and permissions', () => {
     const emp = as('emp@alpha.test', A);
     expect(await codeOf(emp.policies.policyRule.list())).toBe('FORBIDDEN');
     expect(await codeOf(emp.policies.policyRule.create(rule()))).toBe('FORBIDDEN');
+  });
+});
+
+describe('VeloExpense: a rule scoped to a role (w4-10c, d64)', () => {
+  /** An employee's report with one receiptless $60 meal, validated: the rules it broke (a v2
+   *  finding's `rule_code` is the rule instance's id). */
+  const employeeFindings = async () => {
+    const expenses = as('emp@alpha.test', A).expenses;
+    const report = await expenses.create({ title: 'role scope', currency: 'CAD' });
+    const created = await expenses.createExpense({ reportId: report.id });
+    await expenses.lineItemCreate({ expenseId: created.id, categoryId: meals, amountMinor: '6000' });
+    await expenses.validate({ reportId: report.id });
+    return (await admin.query(`SELECT rule_code FROM policy_violation WHERE report_id = $1`, [report.id])).rows.map(
+      (r) => r.rule_code as string,
+    );
+  };
+
+  it('is checked on the reports of the role’s holders, and nobody else’s', async () => {
+    const c = boss();
+    const executives = await c.policies.policyRule.create(rule({ roleId: EXECUTIVE }));
+    expect(executives).toMatchObject({ roleId: EXECUTIVE });
+    try {
+      expect(await employeeFindings()).not.toContain(executives.id);
+    } finally {
+      await c.policies.policyRule.delete({ id: executives.id });
+    }
+
+    const employees = await c.policies.policyRule.create(rule({ roleId: EMPLOYEE }));
+    try {
+      expect(await employeeFindings()).toContain(employees.id);
+    } finally {
+      await c.policies.policyRule.delete({ id: employees.id });
+    }
   });
 });
