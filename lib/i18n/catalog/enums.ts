@@ -42,7 +42,7 @@
  * page. "This report is REIMBURSED and can no longer be edited" was on a screen
  * an employee reads.
  */
-import type { EmployeeRole, EmployeeStatus } from '@/lib/employees/service';
+import type { EmployeeStatus } from '@/lib/employees/service';
 import type { ReportStatus } from '@/lib/expenses/service';
 import type { PostStatus } from '@/lib/integrations/post-outbox';
 import type { FraudSeverity } from '@/lib/fraud/rules';
@@ -98,11 +98,7 @@ export const DELEGATION_SCOPE_COPY: EnumCopy<DelegationScope> = {
 
 /* ── people ───────────────────────────────────────────────────────────────── */
 
-export const EMPLOYEE_ROLE_COPY: EnumCopy<EmployeeRole> = {
-  EMPLOYEE: { 'en-CA': 'Employee' },
-  MANAGER: { 'en-CA': 'Manager' },
-  ADMIN: { 'en-CA': 'Administrator' },
-};
+// w4-10b: no role copy here any more — a role is a row with its own label (0068).
 
 export const EMPLOYEE_STATUS_COPY: EnumCopy<EmployeeStatus> = {
   ACTIVE: { 'en-CA': 'Active' },

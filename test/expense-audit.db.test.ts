@@ -114,8 +114,8 @@ beforeAll(async () => {
   );
   await withOrg(orgId, async (tx) => {
     const u = await tx.query(
-      `INSERT INTO app_user (organization_id, email, display_name, role)
-       VALUES ($1, $2, 'Ada Owner', 'EMPLOYEE') RETURNING id, email, display_name, role`,
+      `INSERT INTO app_user (organization_id, email, display_name, role_id)
+       VALUES ($1, $2, 'Ada Owner', '019e3000-0000-7000-8000-000000000004') RETURNING id, email, display_name, 'Employee' AS role_label`, // w4-10b (d74): the role's label
       [orgId, ownerEmail],
     );
     owner = auditActorOf(u.rows[0]);
@@ -173,7 +173,7 @@ describe('an edit records what changed, and from what', () => {
     // The actor is frozen into the row: a later rename cannot rewrite history.
     expect(e.actor_id).toBe(owner.id);
     expect(e.actor_name).toBe('Ada Owner');
-    expect(e.actor_role).toBe('EMPLOYEE');
+    expect(e.actor_role).toBe('Employee'); // w4-10b (d74): the role's label
     // `amount_minor` only — `description` was re-sent unchanged, and re-sending a
     // value is not an edit. This is the assertion the old detail shape
     // (`fields: Object.keys(input)`) could not have passed.

@@ -78,8 +78,8 @@ beforeAll(async () => {
   await seedDefaultFlow(orgId);
   await withOrg(orgId, async (tx) => {
     const f = await tx.query(
-      `INSERT INTO app_user (organization_id, email, display_name, role)
-       VALUES ($1,$2,'Founder','ADMIN') RETURNING id`,
+      `INSERT INTO app_user (organization_id, email, display_name, role_id)
+       VALUES ($1,$2,'Founder','019e3000-0000-7000-8000-000000000001') RETURNING id`,
       [orgId, FOUNDER],
     );
     founderId = f.rows[0].id;
@@ -123,8 +123,8 @@ describe('a founder alone in their tenant', () => {
   it('can submit the moment somebody else can approve', async () => {
     const reportId = await draft();
     await admin.query(
-      `INSERT INTO app_user (organization_id, email, display_name, role)
-       VALUES ($1,'second@solo.test','Second','ADMIN')`,
+      `INSERT INTO app_user (organization_id, email, display_name, role_id)
+       VALUES ($1,'second@solo.test','Second','019e3000-0000-7000-8000-000000000001')`,
       [orgId],
     );
     await withOrg(orgId, (tx) => lifecycle.submitReport(tx, reportId, founderId));
@@ -137,8 +137,8 @@ describe('the other refusals the flow can give at submit (w4-00c)', () => {
     // A second admin exists, so the default flow would reach somebody — but a more specific
     // workflow names the founder as the approver of their own report.
     await admin.query(
-      `INSERT INTO app_user (organization_id, email, display_name, role)
-       VALUES ($1,'second@solo.test','Second','ADMIN')`,
+      `INSERT INTO app_user (organization_id, email, display_name, role_id)
+       VALUES ($1,'second@solo.test','Second','019e3000-0000-7000-8000-000000000001')`,
       [orgId],
     );
     const wf = (

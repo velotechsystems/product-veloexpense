@@ -61,7 +61,7 @@ beforeAll(async () => {
   B = (await createOrganization({ name: 'Beta PD', slug: 'beta-pd', adminEmail: 'boss@beta.test', adminName: 'Other' }))
     .organizationId;
   await admin.query(
-    `INSERT INTO app_user (organization_id, email, display_name, role) VALUES ($1, 'emp@alpha.test', 'Emp', 'EMPLOYEE')`,
+    `INSERT INTO app_user (organization_id, email, display_name, role_id) VALUES ($1, 'emp@alpha.test', 'Emp', '019e3000-0000-7000-8000-000000000004')`,
     [A],
   );
   const cat = async (org: string, code: string, label: string) =>

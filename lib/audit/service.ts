@@ -40,7 +40,8 @@ export interface AuditActor {
   /** Display name at the time. For a system actor, name it — 'system' reads
    *  badly in an auditor's export; say which system. */
   name: string;
-  /** Role at the time, or 'SYSTEM'. In the hash — see chain.ts. */
+  /** Role at the time — its label since w4-10b (d74), the text role before — or 'SYSTEM'.
+   *  In the hash — see chain.ts. */
   role: string;
 }
 
@@ -58,9 +59,10 @@ export function auditActorOf(row: {
   id: string;
   email: string;
   display_name: string | null;
-  role: string;
+  /** w4-10b (d74): the role's label, as ExpenseOS's audit rows name it. */
+  role_label: string;
 }): AuditActor {
-  return { id: row.id, name: row.display_name ?? row.email, role: row.role };
+  return { id: row.id, name: row.display_name ?? row.email, role: row.role_label };
 }
 
 export interface AuditInput {

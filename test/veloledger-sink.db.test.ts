@@ -105,7 +105,7 @@ beforeAll(async () => {
     [orgId],
   );
   await withOrg(orgId, async (tx) => {
-    const u = await tx.query("INSERT INTO app_user (organization_id,email,role) VALUES ($1,'a@r.test','ADMIN') RETURNING id", [orgId]);
+    const u = await tx.query("INSERT INTO app_user (organization_id,email,role_id) VALUES ($1,'a@r.test','019e3000-0000-7000-8000-000000000001') RETURNING id", [orgId]);
     actorId = u.rows[0].id;
     const a = await tx.query(
       `INSERT INTO gl_account (organization_id,number,name,type,is_postable,source)

@@ -94,8 +94,18 @@ export async function setupStatus(tx: QueryRunner): Promise<SetupStatus> {
   const r = await tx.query(
     `SELECT
        (SELECT count(*) FROM app_user WHERE deleted_at IS NULL)                       AS members,
-       (SELECT count(*) FROM app_user
-         WHERE deleted_at IS NULL AND role IN ('ADMIN', 'MANAGER'))                   AS approvers,
+       -- w4-10b: who a report can actually be routed to — where the text roles ADMIN and
+       -- MANAGER stood for it before 0069. Somebody whose role may approve (ExpenseOS's
+       -- permission, which Employee holds too) AND who is either an administrator (the
+       -- default flow's no-manager fallback, d59) or somebody's manager (the default flow's
+       -- approver). A second plain employee is neither, so they do not count, as before.
+       (SELECT count(*) FROM app_user u
+          JOIN role r ON r.organization_id = u.organization_id AND r.id = u.role_id
+         WHERE u.deleted_at IS NULL AND r.active
+           AND 'expense.report.approve' = ANY (r.permissions)
+           AND ('admin.appSettings.update' = ANY (r.permissions)
+                OR EXISTS (SELECT 1 FROM app_user d
+                            WHERE d.manager_id = u.id AND d.deleted_at IS NULL)))       AS approvers,
        (SELECT count(*) FROM expense_category WHERE active)                           AS categories,
        (SELECT count(*) FROM approval_workflow w
           JOIN approval_workflow_version v ON v.id = w.current_version_id

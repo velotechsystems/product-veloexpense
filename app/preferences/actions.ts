@@ -116,7 +116,7 @@ export async function savePreferencesFromForm(form: FormData): Promise<never> {
       await setUserPrefs(
         tx,
         actor.id,
-        { id: actor.id, name: actor.display_name ?? actor.email, role: actor.role },
+        { id: actor.id, name: actor.display_name ?? actor.email, role: actor.role_label },
         { locale, timeZone },
       );
     });

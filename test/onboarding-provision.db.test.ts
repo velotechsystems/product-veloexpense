@@ -61,7 +61,8 @@ describe('createOrganization', () => {
     expect(users.rows[0].display_name).toBe('Ada Admin');
     // ADMIN by construction, not by argument: an organization whose first user is
     // an EMPLOYEE is one nobody can administer, invite into or configure.
-    expect(users.rows[0].role).toBe('ADMIN');
+    // w4-10b: System Administrator, the tenant's own row (0068).
+    expect(users.rows[0].role_id).toBe('019e3000-0000-7000-8000-000000000001');
     expect(result.adminUserId).toBe(users.rows[0].id);
   });
 
@@ -183,7 +184,7 @@ describe('the slug shape is enforced by the database, not only by the form', () 
 describe('the tenant that was just created behaves like any other', () => {
   it('is reachable through withOrg, and its user is inside it', async () => {
     const { organizationId, adminUserId } = await createOrganization(NEW);
-    const seen = await withOrg(organizationId, (tx) => tx.query('SELECT id, role FROM app_user'));
+    const seen = await withOrg(organizationId, (tx) => tx.query('SELECT id, role_id FROM app_user'));
     expect(seen.rows).toHaveLength(1);
     expect(seen.rows[0].id).toBe(adminUserId);
   });
@@ -219,7 +220,7 @@ describe('the tenant that was just created behaves like any other', () => {
     expect(genesis.action).toBe('ORGANIZATION_CREATED');
     expect(genesis.prev_hash).toBeNull();
     expect(genesis.actor_id).toBe(adminUserId);
-    expect(genesis.actor_role).toBe('ADMIN');
+    expect(genesis.actor_role).toBe('System Administrator'); // w4-10b (d74)
     expect(genesis.entity_id).toBe(organizationId);
     expect(genesis.details).toMatchObject({ slug: 'prov-co', name: 'Provision Co' });
 

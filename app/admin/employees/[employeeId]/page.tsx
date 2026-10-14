@@ -58,7 +58,7 @@ export default async function EmployeeDetailPage({
         <BackLink href="/admin/employees">Employees</BackLink>
         <PageHeader
           title={employee.display_name ?? employee.email}
-          description={`${employee.title ? `${employee.title} · ` : ''}${employee.email} · ${employee.role} · ${employee.employee_status}`}
+          description={`${employee.title ? `${employee.title} · ` : ''}${employee.email} · ${employee.role_label} · ${employee.employee_status}`}
         />
       </div>
 

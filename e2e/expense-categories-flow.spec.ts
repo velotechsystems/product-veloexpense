@@ -63,7 +63,7 @@ test.describe('as an admin', () => {
       `SELECT actor_role FROM audit_entry WHERE action = 'EXPENSE_CATEGORY_CREATED' AND entity_id = $1`,
       [db.rows[0].id],
     );
-    expect(audit.rows).toEqual([{ actor_role: 'ADMIN' }]);
+    expect(audit.rows).toEqual([{ actor_role: 'System Administrator' }]);
   });
 });
 

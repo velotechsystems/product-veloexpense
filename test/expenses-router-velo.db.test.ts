@@ -559,8 +559,8 @@ describe('attendeeDirectory — the attendee picker\'s search', () => {
   beforeAll(async () => {
     const add = (email: string, name: string | null, deleted = false) =>
       h.admin.query(
-        `INSERT INTO app_user (organization_id, email, display_name, role, deleted_at)
-         VALUES ($1, $2, $3, 'EMPLOYEE', $4)`,
+        `INSERT INTO app_user (organization_id, email, display_name, role_id, deleted_at)
+         VALUES ($1, $2, $3, '019e3000-0000-7000-8000-000000000004', $4)`,
         [h.orgId, email, name, deleted ? new Date() : null],
       );
     await add('ada.lovelace@expenses-velo.test', 'Ada Lovelace');
@@ -571,7 +571,7 @@ describe('attendeeDirectory — the attendee picker\'s search', () => {
       await h.admin.query(`INSERT INTO organization (slug, name) VALUES ('attendee-other', 'Other') RETURNING id`)
     ).rows[0].id;
     await h.admin.query(
-      `INSERT INTO app_user (organization_id, email, display_name, role) VALUES ($1, 'ada@attendee-other.test', 'Ada Elsewhere', 'EMPLOYEE')`,
+      `INSERT INTO app_user (organization_id, email, display_name, role_id) VALUES ($1, 'ada@attendee-other.test', 'Ada Elsewhere', '019e3000-0000-7000-8000-000000000004')`,
       [other],
     );
   });
@@ -600,7 +600,7 @@ describe('attendeeDirectory — the attendee picker\'s search', () => {
   it('returns at most ten', async () => {
     for (let i = 0; i < 12; i++) {
       await h.admin.query(
-        `INSERT INTO app_user (organization_id, email, display_name, role) VALUES ($1, $2, $3, 'EMPLOYEE')`,
+        `INSERT INTO app_user (organization_id, email, display_name, role_id) VALUES ($1, $2, $3, '019e3000-0000-7000-8000-000000000004')`,
         [h.orgId, `bulk${i}@expenses-velo.test`, `Bulk ${i}`],
       );
     }

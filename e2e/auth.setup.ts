@@ -65,7 +65,7 @@ const E2E_ORG_SLUG = 'demo';
  * VX4-7 part 3 — the two roles nothing has ever signed in as.
  *
  * Every session this file minted before now was an ADMIN: `admin@demo.test`,
- * `owner@demo.test` and `admin@second.test` all have `role = 'ADMIN'` in the
+ * `owner@demo.test` and `admin@second.test` all hold System Administrator in the
  * seed. So thirteen specs, ninety-odd assertions and four phases of work have
  * never once loaded a page as a MANAGER or as an EMPLOYEE — which is UD-3's
  * finding restated as a fact about our own suite rather than upstream's.

@@ -26,7 +26,7 @@ import type { QueryRunner } from '@/lib/db/client';
 import type { Storage } from '@/lib/storage';
 import { getStorage } from '@/lib/storage';
 import * as expenses from '@/lib/expenses/service';
-import type { Actor } from '@/lib/auth/actor';
+import { holdsAdminPermission, type Actor } from '@/lib/auth/actor';
 // Shared with the browser via lib/receipts/constants (this module imports pg).
 import { ALLOWED_CONTENT_TYPES, MAX_RECEIPT_BYTES } from './constants';
 import type { AuditActor } from '@/lib/audit/service';
@@ -157,7 +157,7 @@ export async function getReceiptOwnership(
  * canViewReport / canEditReport.
  */
 export function canViewReceipt(actor: Actor, ownership: ReceiptOwnership): boolean {
-  if (actor.role === 'ADMIN') return true;
+  if (holdsAdminPermission(actor)) return true;
   if (actor.id === ownership.uploaderId) return true;
   return ownership.reportSubmitterId !== null && actor.id === ownership.reportSubmitterId;
 }

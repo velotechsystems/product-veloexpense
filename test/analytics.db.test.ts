@@ -68,14 +68,14 @@ beforeAll(async () => {
     salesId = d.rows.find((r) => r.name === 'Sales').id;
 
     const m = await tx.query(
-      `INSERT INTO app_user (organization_id, email, display_name, role)
-       VALUES ($1,'mgr@ana.test','Ana Manager','MANAGER') RETURNING id`,
+      `INSERT INTO app_user (organization_id, email, display_name, role_id)
+       VALUES ($1,'mgr@ana.test','Ana Manager','019e3000-0000-7000-8000-000000000004') RETURNING id`,
       [orgId],
     );
     mgrId = m.rows[0].id;
     const e = await tx.query(
-      `INSERT INTO app_user (organization_id, email, display_name, role, manager_id, department_id)
-       VALUES ($1,'emp@ana.test','Ana Employee','EMPLOYEE',$2,$3) RETURNING id`,
+      `INSERT INTO app_user (organization_id, email, display_name, role_id, manager_id, department_id)
+       VALUES ($1,'emp@ana.test','Ana Employee','019e3000-0000-7000-8000-000000000004',$2,$3) RETURNING id`,
       [orgId, mgrId, engineeringId],
     );
     empId = e.rows[0].id;

@@ -74,8 +74,8 @@ beforeAll(async () => {
   );
   orgId = o.rows[0].id;
   const f = await admin.query(
-    `INSERT INTO app_user (organization_id, email, display_name, role)
-     VALUES ($1,'founder@caps.test','Founder','ADMIN') RETURNING id`,
+    `INSERT INTO app_user (organization_id, email, display_name, role_id)
+     VALUES ($1,'founder@caps.test','Founder','019e3000-0000-7000-8000-000000000001') RETURNING id`,
     [orgId],
   );
   founderId = f.rows[0].id;
@@ -211,8 +211,8 @@ describe('the seat cap at SIGN-IN, where the invitation is actually accepted', (
     await withOrg(orgId, (tx) =>
       issueInvite(
         tx,
-        { id: founderId, name: 'Founder', role: 'ADMIN' },
-        { email: 'late@caps.test', role: 'EMPLOYEE' },
+        { id: founderId, name: 'Founder', role: 'System Administrator' },
+        { email: 'late@caps.test', roleId: '019e3000-0000-7000-8000-000000000004' },
       ),
     );
 

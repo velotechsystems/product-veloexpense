@@ -85,12 +85,12 @@ describe('provisionTenant', () => {
     const { tenantId } = await provisionTenant(payload());
 
     const rows = await withOrg(tenantId, async (tx) => {
-      const admins = await tx.query(`SELECT email, role FROM app_user`);
+      const admins = await tx.query(`SELECT email, role_id AS role FROM app_user`);
       const cats = await tx.query(`SELECT count(*)::int AS n FROM expense_category`);
       return { admins: admins.rows, categories: cats.rows[0].n as number };
     });
 
-    expect(rows.admins).toEqual([{ email: 'ada@plat.test', role: 'ADMIN' }]);
+    expect(rows.admins).toEqual([{ email: 'ada@plat.test', role: '019e3000-0000-7000-8000-000000000001' }]); // w4-10b: System Administrator
     expect(rows.categories).toBeGreaterThan(0);
   });
 

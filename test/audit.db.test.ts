@@ -122,16 +122,16 @@ beforeAll(async () => {
   otherOrgId = o.rows.find((r) => r.slug === 'audit-co-2').id;
   await withOrg(orgId, async (tx) => {
     const u = await tx.query(
-      `INSERT INTO app_user (organization_id, email, display_name, role)
-       VALUES ($1,'ada@audit.test','Ada Admin','ADMIN') RETURNING id`,
+      `INSERT INTO app_user (organization_id, email, display_name, role_id)
+       VALUES ($1,'ada@audit.test','Ada Admin','019e3000-0000-7000-8000-000000000001') RETURNING id`,
       [orgId],
     );
     actorId = u.rows[0].id;
   });
   await withOrg(otherOrgId, async (tx) => {
     const u = await tx.query(
-      `INSERT INTO app_user (organization_id, email, display_name, role)
-       VALUES ($1,'bob@audit2.test','Bob Admin','ADMIN') RETURNING id`,
+      `INSERT INTO app_user (organization_id, email, display_name, role_id)
+       VALUES ($1,'bob@audit2.test','Bob Admin','019e3000-0000-7000-8000-000000000001') RETURNING id`,
       [otherOrgId],
     );
     otherActorId = u.rows[0].id;

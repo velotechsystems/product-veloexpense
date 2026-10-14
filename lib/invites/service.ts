@@ -48,12 +48,8 @@ import { append as auditAppend, type AuditActor } from '@/lib/audit/service';
 import { getBranding } from '@/lib/branding/service';
 import { sendEmail, originForTenant } from '@/lib/notifications/email';
 import { emailShell } from '@/lib/notifications/email-shell';
-import {
-  EMPLOYEE_ROLES,
-  EmployeeError,
-  createEmployee,
-  type EmployeeRole,
-} from '@/lib/employees/service';
+import { EmployeeError, createEmployee } from '@/lib/employees/service';
+import { assignableRole, DEFAULT_ROLE_ID } from '@/lib/roles/service';
 import { ORG } from '@/lib/tenant/sql';
 
 /** How long an invitation lives. Days, not minutes: unlike a signup confirmation,
@@ -103,7 +99,8 @@ const EMAIL_SHAPE = /^[^\s@]+@[^\s@.]+\.[^\s@]+$/;
  *  and all of it is what the `app_user` row will be made from at acceptance. */
 export interface NewInvite {
   email: string;
-  role: EmployeeRole;
+  /** w4-10b: the role row the invitation grants (0068) — this tenant's, and active. */
+  roleId: string;
   displayName?: string | null;
   title?: string | null;
   managerId?: string | null;
@@ -124,7 +121,9 @@ export interface IssuedInvite {
 export interface InviteRow {
   id: string;
   email: string;
-  role: EmployeeRole;
+  roleId: string;
+  /** The role's English label, for the pending list. */
+  roleName: string;
   displayName: string | null;
   invitedByName: string | null;
   expiresAt: Date;
@@ -157,8 +156,9 @@ export async function issueInvite(
   if (!EMAIL_SHAPE.test(email)) {
     throw new InviteError(`${email} is not an email address`, 'EMAIL_SHAPE', 'INVITE_EMAIL');
   }
-  if (!(EMPLOYEE_ROLES as readonly string[]).includes(input.role)) {
-    throw new InviteError(`unknown role ${input.role}`, 'ROLE_UNKNOWN', 'ROLE_UNKNOWN');
+  const role = await assignableRole(tx, input.roleId);
+  if (!role) {
+    throw new InviteError(`unknown role ${input.roleId}`, 'ROLE_UNKNOWN', 'ROLE_UNKNOWN');
   }
 
   const member = await tx.query(
@@ -175,7 +175,7 @@ export async function issueInvite(
 
   const token = randomBytes(32).toString('base64url');
   const r = await tx.query(
-    `INSERT INTO invite (organization_id, email, token_hash, role, display_name, title,
+    `INSERT INTO invite (organization_id, email, token_hash, role_id, display_name, title,
                          manager_id, department_id, business_unit_id, legal_entity_id,
                          invited_by_id, expires_at)
      VALUES (${ORG}, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
@@ -183,7 +183,7 @@ export async function issueInvite(
      ON CONFLICT (organization_id, lower(email)) WHERE accepted_at IS NULL AND revoked_at IS NULL
      DO UPDATE SET token_hash       = EXCLUDED.token_hash,
                    expires_at       = EXCLUDED.expires_at,
-                   role             = EXCLUDED.role,
+                   role_id          = EXCLUDED.role_id,
                    display_name     = EXCLUDED.display_name,
                    title            = EXCLUDED.title,
                    manager_id       = EXCLUDED.manager_id,
@@ -196,7 +196,7 @@ export async function issueInvite(
     [
       email,
       hashToken(token),
-      input.role,
+      role.id,
       input.displayName?.trim() || null,
       input.title?.trim() || null,
       input.managerId ?? null,
@@ -213,7 +213,8 @@ export async function issueInvite(
     action: row.resent ? 'INVITE_RESENT' : 'INVITE_SENT',
     entityType: 'invite',
     entityId: row.id,
-    details: { email, role: input.role },
+    // w4-10b (d74): the role by id and by its label at the time.
+    details: { email, roleId: role.id, role: role.name },
   });
 
   return { inviteId: row.id, token, expiresAt: row.expires_at, resent: row.resent };
@@ -275,9 +276,11 @@ function escapeHtml(s: string): string {
  *  and revoked ones are a decision already taken. */
 export async function listLiveInvites(tx: QueryRunner): Promise<InviteRow[]> {
   const r = await tx.query(
-    `SELECT i.id, i.email, i.role, i.display_name, i.expires_at, i.created_at,
+    `SELECT i.id, i.email, i.role_id, r.label ->> 'en' AS role_name, i.display_name,
+            i.expires_at, i.created_at,
             COALESCE(u.display_name, u.email) AS invited_by_name
        FROM invite i
+       JOIN role r ON r.organization_id = i.organization_id AND r.id = i.role_id
        LEFT JOIN app_user u ON u.id = i.invited_by_id
       WHERE i.accepted_at IS NULL AND i.revoked_at IS NULL
         AND i.expires_at > clock_timestamp()
@@ -286,7 +289,8 @@ export async function listLiveInvites(tx: QueryRunner): Promise<InviteRow[]> {
   return r.rows.map((row) => ({
     id: row.id as string,
     email: row.email as string,
-    role: row.role as EmployeeRole,
+    roleId: row.role_id as string,
+    roleName: row.role_name as string,
     displayName: (row.display_name as string | null) ?? null,
     invitedByName: (row.invited_by_name as string | null) ?? null,
     expiresAt: row.expires_at as Date,
@@ -368,7 +372,8 @@ export interface PendingInvite {
   organizationSlug: string;
   /** Masked — see `maskEmail`. */
   emailHint: string;
-  role: EmployeeRole;
+  /** w4-10b: the role's English label. */
+  roleName: string;
   /**
    * VX5-6 — the tenant's colour, and a URL for its logo, on a page nobody has
    * signed in to.
@@ -411,8 +416,10 @@ export async function readPendingInvite(rawToken: string): Promise<PendingInvite
   const tokenHash = hashToken(rawToken.trim());
   return withOrg(tenant.organizationId, async (tx) => {
     const r = await tx.query(
-      `SELECT i.email, i.role, o.name, o.brand_color, o.logo_mime, o.logo_updated_at
+      `SELECT i.email, r.label ->> 'en' AS role_name, o.name, o.brand_color, o.logo_mime,
+              o.logo_updated_at
          FROM invite i JOIN organization o ON o.id = i.organization_id
+         JOIN role r ON r.organization_id = i.organization_id AND r.id = i.role_id
         WHERE i.token_hash = $1
           AND i.accepted_at IS NULL AND i.revoked_at IS NULL
           AND i.expires_at > clock_timestamp()`,
@@ -425,7 +432,7 @@ export async function readPendingInvite(rawToken: string): Promise<PendingInvite
       organizationName: row.name as string,
       organizationSlug: tenant.organizationSlug,
       emailHint: maskEmail(row.email as string),
-      role: row.role as EmployeeRole,
+      roleName: row.role_name as string,
       brandColor: (row.brand_color as string | null) ?? null,
       // The token again, and a `?v=` stamp for the same reason the session route
       // has one: a new logo is a new URL rather than a staleness window to guess
@@ -534,7 +541,8 @@ export interface AcceptedInvite {
   userId: string;
   organizationId: string;
   email: string;
-  role: EmployeeRole;
+  /** w4-10b: the role the member holds (0068). */
+  roleId: string;
 }
 
 /**
@@ -644,19 +652,19 @@ async function existingMember(
 ): Promise<AcceptedInvite | null> {
   const r = await withOrg(organizationId, (tx) =>
     tx.query(
-      `SELECT id, email, role FROM app_user
+      `SELECT id, email, role_id FROM app_user
         WHERE lower(email) = lower($1) AND deleted_at IS NULL`,
       [email],
     ),
   );
   if (r.rows.length === 0) return null;
-  const row = r.rows[0] as { id: string; email: string; role: string };
+  const row = r.rows[0] as { id: string; email: string; role_id: string };
   return {
     kind: 'ALREADY_A_MEMBER',
     userId: row.id,
     organizationId,
     email: row.email,
-    role: row.role as EmployeeRole,
+    roleId: row.role_id,
   };
 }
 
@@ -677,7 +685,7 @@ async function acceptOnce(
 ): Promise<AcceptedInvite | null> {
   return withOrg(organizationId, async (tx) => {
     const found = await tx.query(
-      `SELECT id, email, role, display_name, title, manager_id, department_id,
+      `SELECT id, email, role_id, display_name, title, manager_id, department_id,
               business_unit_id, legal_entity_id
          FROM invite
         WHERE lower(email) = lower($1)
@@ -687,6 +695,13 @@ async function acceptOnce(
     );
     if (found.rows.length === 0) return null;
     const invite = found.rows[0] as Record<string, unknown>;
+
+    // w4-10b: the role the invitation promised, if it can still be given. A role an admin
+    // deactivated after inviting grants nothing (ExpenseOS's loader), so the person joins
+    // as an Employee instead — never more than was promised — and the audit row says so.
+    const invited = await assignableRole(tx, invite.role_id as string);
+    const role = invited ?? (await assignableRole(tx, DEFAULT_ROLE_ID));
+    if (!role) throw new InviteError('no role can be given', 'ROLE_UNKNOWN', 'ROLE_UNKNOWN');
 
     // `createEmployee`, not a second INSERT of my own. It is the one place that
     // knows how to make a member — the role and status CHECKs, the
@@ -701,7 +716,7 @@ async function acceptOnce(
       email: invite.email as string,
       displayName: (invite.display_name as string | null) ?? null,
       title: (invite.title as string | null) ?? null,
-      role: invite.role as EmployeeRole,
+      roleId: role.id,
       managerId: (invite.manager_id as string | null) ?? null,
       departmentId: (invite.department_id as string | null) ?? null,
       businessUnitId: (invite.business_unit_id as string | null) ?? null,
@@ -748,13 +763,19 @@ async function acceptOnce(
       {
         id: userId,
         name: (invite.display_name as string | null) ?? (invite.email as string),
-        role: invite.role as string,
+        // w4-10b (d74): the role's label.
+        role: role.name,
       },
       {
         action: 'INVITE_ACCEPTED',
         entityType: 'invite',
         entityId: invite.id as string,
-        details: { email: invite.email as string, role: invite.role as string },
+        details: {
+          email: invite.email as string,
+          roleId: role.id,
+          role: role.name,
+          ...(invited ? {} : { invitedRoleId: invite.role_id as string, roleUnavailable: true }),
+        },
       },
     );
 
@@ -763,7 +784,7 @@ async function acceptOnce(
       userId,
       organizationId,
       email: invite.email as string,
-      role: invite.role as EmployeeRole,
+      roleId: role.id,
     };
   });
 }

@@ -73,7 +73,7 @@ export async function setTemplateFromForm(form: FormData) {
       // otherwise unanswerable.
       await auditAppend(
         tx,
-        { id: actor.id, name: actor.display_name ?? actor.email, role: actor.role },
+        { id: actor.id, name: actor.display_name ?? actor.email, role: actor.role_label },
         {
           action: body === null ? 'NOTIFICATION_TEMPLATE_RESET' : 'NOTIFICATION_TEMPLATE_SAVED',
           // NO entityType/entityId, and the reason is structural: `0010` types

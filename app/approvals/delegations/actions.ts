@@ -21,7 +21,7 @@ import { revalidatePath } from 'next/cache';
 import { auth } from '@/auth';
 import { withCurrentOrg } from '@/lib/tenant/request';
 import type { QueryRunner } from '@/lib/db/client';
-import { requireActor } from '@/lib/auth/actor';
+import { holdsAdminPermission, requireActor } from '@/lib/auth/actor';
 import type { EmployeeRow } from '@/lib/employees/service';
 import type { DelegationScope } from '@/lib/approvals/delegations';
 import {
@@ -68,7 +68,7 @@ interface Person {
 
 export async function getDelegationsPage() {
   return asActor(async (tx, actor) => {
-    const isAdmin = actor.role === 'ADMIN';
+    const isAdmin = holdsAdminPermission(actor);
     const rows = await listDelegations(tx, {
       // An admin sees the whole tenant, because they are the person who fixes a
       // delegation nobody else can reach — the delegator is away, which is the
@@ -106,7 +106,7 @@ export async function getDelegationsPage() {
       // Only an admin may name a different delegator, so only an admin gets the
       // select. Non-admins get a hidden "me".
       delegators: isAdmin ? (people.rows as Person[]) : [],
-      actor: { id: actor.id, name: actor.display_name ?? actor.email, role: actor.role, isAdmin },
+      actor: { id: actor.id, name: actor.display_name ?? actor.email, role: actor.role_label, isAdmin },
     };
   });
 }

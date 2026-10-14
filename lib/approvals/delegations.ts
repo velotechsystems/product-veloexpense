@@ -30,6 +30,7 @@ import type { QueryRunner } from '@/lib/db/client';
 import { DomainError } from '@/lib/errors/domain';
 import type { UserMessageCode } from '@/lib/i18n/catalog/errors';
 import { append as auditAppend } from '@/lib/audit/service';
+import { holdsAdminPermission } from '@/lib/auth/actor';
 import type { EmployeeRow } from '@/lib/employees/service';
 import { ORG } from '@/lib/tenant/sql';
 
@@ -198,7 +199,7 @@ export async function createDelegation(
   // Delegating somebody ELSE's approvals is an admin act. `created_by_id` exists
   // so that difference is visible afterwards (0008), which only means anything
   // if the two can differ.
-  if (fromUserId !== actor.id && actor.role !== 'ADMIN') {
+  if (fromUserId !== actor.id && !holdsAdminPermission(actor)) {
     throw new DelegationError(
       'only an administrator can delegate somebody else’s approvals',
       'FORBIDDEN',
@@ -278,7 +279,7 @@ export async function createDelegation(
   // belongs in the hash-chained trail, not only in the row's own created_by.
   await auditAppend(
     tx,
-    { id: actor.id, name: actor.display_name ?? actor.email, role: actor.role },
+    { id: actor.id, name: actor.display_name ?? actor.email, role: actor.role_label },
     {
       action: 'DELEGATION_CREATED',
       entityType: 'delegation',
@@ -330,7 +331,7 @@ export async function revokeDelegation(
     );
   }
   const mine = current.from_user_id === actor.id || current.created_by_id === actor.id;
-  if (!mine && actor.role !== 'ADMIN') {
+  if (!mine && !holdsAdminPermission(actor)) {
     throw new DelegationError(
       'that delegation is not yours to revoke',
       'FORBIDDEN',
@@ -347,7 +348,7 @@ export async function revokeDelegation(
 
   await auditAppend(
     tx,
-    { id: actor.id, name: actor.display_name ?? actor.email, role: actor.role },
+    { id: actor.id, name: actor.display_name ?? actor.email, role: actor.role_label },
     {
       action: 'DELEGATION_REVOKED',
       entityType: 'delegation',

@@ -53,14 +53,17 @@ export async function writeAudit(tx: TenantDb, input: AuditInput): Promise<void>
     throw new Error('audit: no tenant context — write inside withTenantDb()');
   }
 
-  // VeloExpense's actor_role is the member's VeloExpense role, read from the row rather
-  // than trusted from the session (ExpenseOS's roleLabel is a display string).
+  // VeloExpense's actor_role is the member's role, read from the row rather than trusted
+  // from the session. w4-10b (d74): the role's English label, as ExpenseOS records it —
+  // VeloExpense's text role before 0069.
   let member: { role: string } | undefined;
   if (input.actor.kind === 'system') {
     member = { role: 'SYSTEM' };
   } else {
     [member] = await tx.$queryRaw<{ role: string }[]>`
-      SELECT role FROM app_user WHERE id = ${actorId}::uuid`;
+      SELECT r.label ->> 'en' AS role
+        FROM app_user u JOIN role r ON r.organization_id = u.organization_id AND r.id = u.role_id
+       WHERE u.id = ${actorId}::uuid`;
   }
   if (!member) throw new Error('audit: the actor is not a member of this organization');
 

@@ -18,6 +18,7 @@ import type { UserMessageCode } from '@/lib/i18n/catalog/errors';
 import { DomainError } from '@/lib/errors/domain';
 import { ORG } from '@/lib/tenant/sql';
 import { assertSeatAvailable } from '@/lib/billing/caps';
+import { assignableRole, DEFAULT_ROLE_ID, listRoleOptions } from '@/lib/roles/service';
 
 
 /** Max levels walked when resolving a manager chain (also the cycle backstop). */
@@ -28,10 +29,8 @@ import { assertSeatAvailable } from '@/lib/billing/caps';
  */
 export const MAX_CHAIN_DEPTH = 20;
 
-export type EmployeeRole = 'EMPLOYEE' | 'MANAGER' | 'ADMIN';
 export type EmployeeStatus = 'ACTIVE' | 'ON_LEAVE' | 'DEACTIVATED';
 
-export const EMPLOYEE_ROLES: EmployeeRole[] = ['EMPLOYEE', 'MANAGER', 'ADMIN'];
 export const EMPLOYEE_STATUSES: EmployeeStatus[] = ['ACTIVE', 'ON_LEAVE', 'DEACTIVATED'];
 
 export interface EmployeeRow {
@@ -39,7 +38,14 @@ export interface EmployeeRow {
   email: string;
   display_name: string | null;
   title: string | null;
-  role: EmployeeRole;
+  /**
+   * w4-10b (d73, d74): the person's role — the tenant's `role` row (0068) — with its English
+   * label and, for the access predicates (`lib/auth/actor.ts`), its permissions: none while
+   * the role is deactivated, as ExpenseOS's loader answers. Replaces the text role (0069).
+   */
+  role_id: string;
+  role_label: string;
+  role_permissions: string[];
   employee_status: EmployeeStatus;
   manager_id: string | null;
   manager_name: string | null;
@@ -73,7 +79,8 @@ export interface NewEmployee {
   email: string;
   displayName?: string | null;
   title?: string | null;
-  role?: EmployeeRole;
+  /** The tenant's role (0068). Absent on a new person means the database default, Employee. */
+  roleId?: string;
   managerId?: string | null;
   departmentId?: string | null;
   businessUnitId?: string | null;
@@ -113,7 +120,10 @@ export class EmployeeError extends DomainError {
 // Split into columns / FROM so listEmployees can inject its COUNT(*) OVER()
 // window column without splicing text after the JOINs.
 const EMPLOYEE_COLUMNS = `
-  u.id, u.email, u.display_name, u.title, u.role, u.employee_status,
+  u.id, u.email, u.display_name, u.title,
+  u.role_id, r.label ->> 'en' AS role_label,
+  CASE WHEN r.active THEN r.permissions ELSE ARRAY[]::text[] END AS role_permissions,
+  u.employee_status,
   u.manager_id, m.display_name AS manager_name, m.email AS manager_email,
   u.department_id, d.label ->> 'en' AS department_name,
   u.business_unit_id, bu.label ->> 'en' AS business_unit_name,
@@ -123,6 +133,7 @@ const EMPLOYEE_COLUMNS = `
 
 const EMPLOYEE_FROM = `
   FROM app_user u
+  JOIN      role          r  ON r.organization_id = u.organization_id AND r.id = u.role_id
   LEFT JOIN app_user      m  ON m.id  = u.manager_id
   LEFT JOIN department    d  ON d.id  = u.department_id
   LEFT JOIN business_unit bu ON bu.id = u.business_unit_id
@@ -222,7 +233,7 @@ export async function getManagerChain(
   tx: QueryRunner,
   employeeId: string,
   maxDepth: number = MAX_CHAIN_DEPTH,
-): Promise<Array<Pick<EmployeeRow, 'id' | 'email' | 'display_name' | 'title' | 'role'> & { depth: number }>> {
+): Promise<Array<Pick<EmployeeRow, 'id' | 'email' | 'display_name' | 'title' | 'role_id'> & { depth: number }>> {
   const r = await tx.query(
     `WITH RECURSIVE chain AS (
          SELECT u.id, u.manager_id, 0 AS depth, ARRAY[u.id] AS path
@@ -234,7 +245,7 @@ export async function getManagerChain(
            JOIN app_user m ON m.id = c.manager_id
           WHERE c.depth < $2 AND NOT (m.id = ANY(c.path))
      )
-     SELECT u.id, u.email, u.display_name, u.title, u.role, c.depth
+     SELECT u.id, u.email, u.display_name, u.title, u.role_id, c.depth
        FROM chain c JOIN app_user u ON u.id = c.id
       WHERE c.depth > 0
       ORDER BY c.depth`,
@@ -245,11 +256,11 @@ export async function getManagerChain(
 
 /* ── writes ────────────────────────────────────────────────────────────────── */
 
-function assertRole(role: string | null | undefined) {
-  if (role != null && !EMPLOYEE_ROLES.includes(role as EmployeeRole)) {
-    throw new EmployeeError(`invalid role: ${role}`, 'INVALID_ROLE',
-      'ROLE_UNKNOWN',
-    );
+/** w4-10b: a role somebody can be given — this tenant's, and active (`lib/roles/service.ts`). */
+async function assertRole(tx: QueryRunner, roleId: string | null | undefined) {
+  if (roleId == null) return;
+  if (!(await assignableRole(tx, roleId))) {
+    throw new EmployeeError(`invalid role: ${roleId}`, 'INVALID_ROLE', 'ROLE_UNKNOWN');
   }
 }
 
@@ -291,7 +302,7 @@ async function wouldCycle(tx: QueryRunner, employeeId: string, managerId: string
 }
 
 export async function createEmployee(tx: QueryRunner, input: NewEmployee): Promise<EmployeeRow> {
-  assertRole(input.role);
+  await assertRole(tx, input.roleId);
   assertStatus(input.employeeStatus);
   if (input.managerId) await assertManagerInOrg(tx, input.managerId);
 
@@ -310,9 +321,12 @@ export async function createEmployee(tx: QueryRunner, input: NewEmployee): Promi
   assertCountry(input.country);
   const r = await tx.query(
     `INSERT INTO app_user
-       (organization_id, email, display_name, title, role, employee_status,
+       (organization_id, email, display_name, title, role_id, employee_status,
         manager_id, department_id, business_unit_id, legal_entity_id, country)
-     VALUES (${ORG}, $1, $2, $3, $4, $5, $6, $7, $8, $9,
+     VALUES (${ORG}, $1, $2, $3,
+             -- w4-10b: absent = the column's default, the tenant's Employee role (0069).
+             COALESCE($4::uuid, '${DEFAULT_ROLE_ID}'::uuid),
+             $5, $6, $7, $8, $9,
              -- w2-10: absent = the legal entity's country (see NewEmployee.country).
              CASE WHEN $10::boolean THEN $11::text
                   ELSE (SELECT country FROM legal_entity WHERE id = $9::uuid) END)
@@ -321,7 +335,7 @@ export async function createEmployee(tx: QueryRunner, input: NewEmployee): Promi
       input.email,
       input.displayName ?? null,
       input.title ?? null,
-      input.role ?? 'EMPLOYEE',
+      input.roleId ?? null,
       input.employeeStatus ?? 'ACTIVE',
       input.managerId ?? null,
       input.departmentId ?? null,
@@ -347,7 +361,9 @@ export async function updateEmployee(
   const current = await getEmployee(tx, employeeId);
   if (!current) throw new EmployeeError('employee not found', 'NOT_FOUND');
 
-  assertRole(patch.role);
+  // An unchanged role is not re-checked: a person may still hold a role that has since been
+  // deactivated, and saving their record should not be refused for it.
+  if (patch.roleId !== current.role_id) await assertRole(tx, patch.roleId);
   assertStatus(patch.employeeStatus);
   assertCountry(patch.country);
 
@@ -382,7 +398,7 @@ export async function updateEmployee(
   if ('email' in patch) put('email', patch.email);
   if ('displayName' in patch) put('display_name', patch.displayName ?? null);
   if ('title' in patch) put('title', patch.title ?? null);
-  if ('role' in patch) put('role', patch.role);
+  if (patch.roleId !== undefined) put('role_id', patch.roleId);
   if ('managerId' in patch) put('manager_id', patch.managerId ?? null);
   if ('departmentId' in patch) put('department_id', patch.departmentId ?? null);
   if ('businessUnitId' in patch) put('business_unit_id', patch.businessUnitId ?? null);
@@ -527,10 +543,13 @@ export async function getDirectoryOptions(tx: QueryRunner) {
     `SELECT id, email, display_name FROM app_user
       WHERE deleted_at IS NULL ORDER BY COALESCE(display_name, email)`,
   );
+  // w4-10b: the roles a person can be given (the tenant's role rows, 0068).
+  const roles = await listRoleOptions(tx);
   return {
     departments,
     businessUnits,
     legalEntities,
     managers: managers.rows as Array<{ id: string; email: string; display_name: string | null }>,
+    roles,
   };
 }

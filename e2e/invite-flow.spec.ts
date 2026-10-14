@@ -138,7 +138,8 @@ test.describe('inviting somebody', () => {
 
     await page.getByLabel('Email').fill(INVITEE);
     await page.getByLabel('Name').fill(`Newcomer ${RUN}`);
-    await page.getByLabel('Role').selectOption('MANAGER');
+    // w4-10b: the tenant's roles, by name (0068); Executive is one of the system roles.
+    await page.getByLabel('Role').selectOption({ label: 'Executive' });
     await page.getByRole('button', { name: 'Send the invitation' }).click();
 
     await expect(page.getByText('Invitation sent.')).toBeVisible();
@@ -151,7 +152,7 @@ test.describe('inviting somebody', () => {
     // And they are visible as pending, so an admin's invitation has not vanished.
     const pending = page.getByRole('row', { name: new RegExp(INVITEE) });
     await expect(pending).toBeVisible();
-    await expect(pending).toContainText('Manager');
+    await expect(pending).toContainText('Executive');
 
     /* ── the link ───────────────────────────────────────────────────────────*/
     const link = await waitForInviteLink(request, INVITEE);

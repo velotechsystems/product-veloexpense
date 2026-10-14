@@ -73,8 +73,8 @@ beforeAll(async () => {
   ] as const) {
     const u = await withOrg(org, (tx) =>
       tx.query(
-        `INSERT INTO app_user (organization_id, email, display_name, role)
-         VALUES ($1, $2, 'Admin', 'ADMIN') RETURNING id`,
+        `INSERT INTO app_user (organization_id, email, display_name, role_id)
+         VALUES ($1, $2, 'Admin', '019e3000-0000-7000-8000-000000000001') RETURNING id`,
         [org, email],
       ),
     );

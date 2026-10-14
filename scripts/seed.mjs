@@ -204,18 +204,27 @@ async function upsertOrg(client, slug, name) {
   return r.rows[0].id;
 }
 
+/** ExpenseOS's system role ids (@expenseos/rbac SYSTEM_ROLE_IDS), held by every tenant (0068). */
+const ROLE_IDS = {
+  admin: '019e3000-0000-7000-8000-000000000001',
+  employee: '019e3000-0000-7000-8000-000000000004',
+};
+
 async function seedUser(orgId, email, displayName, employee = {}) {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
     await client.query("SELECT set_config('app.current_org', $1, true)", [orgId]);
     await client.query(
-      `INSERT INTO app_user (organization_id, email, display_name, title, role)
+      // w4-10b: the role is the tenant's role row (0068). `role: 'ADMIN'` below is System
+      // Administrator; anything else Employee (ExpenseOS's system role ids — this `.mjs`
+      // cannot import @expenseos/rbac).
+      `INSERT INTO app_user (organization_id, email, display_name, title, role_id)
          VALUES ($1, $2, $3, $4, $5)
          ON CONFLICT (organization_id, email)
          DO UPDATE SET display_name = EXCLUDED.display_name,
                        title        = EXCLUDED.title,
-                       role         = EXCLUDED.role,
+                       role_id      = EXCLUDED.role_id,
                        -- REACTIVATE. Without this the seed is not idempotent
                        -- in the one direction that matters: the seat-push spec
                        -- DEACTIVATES the demo employee as part of its subject,
@@ -230,7 +239,13 @@ async function seedUser(orgId, email, displayName, employee = {}) {
                        -- exactly what that spec does.
                        deleted_at   = NULL,
                        updated_at   = now()`,
-      [orgId, email, displayName, employee.title ?? null, employee.role ?? 'EMPLOYEE'],
+      [
+        orgId,
+        email,
+        displayName,
+        employee.title ?? null,
+        employee.role === 'ADMIN' ? ROLE_IDS.admin : ROLE_IDS.employee,
+      ],
     );
     await client.query('COMMIT');
   } catch (err) {
@@ -258,7 +273,7 @@ async function seedDefaultApprovalWorkflow(orgId) {
       const admin = (
         await client.query(
           `SELECT id FROM app_user
-            WHERE role = 'ADMIN' AND deleted_at IS NULL AND employee_status = 'ACTIVE'
+            WHERE role_id = '${ROLE_IDS.admin}' AND deleted_at IS NULL AND employee_status = 'ACTIVE'
             ORDER BY created_at, id LIMIT 1`,
         )
       ).rows[0]?.id ?? null;

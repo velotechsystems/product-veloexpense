@@ -74,14 +74,14 @@ beforeAll(async () => {
   adminId = (await admin.query("SELECT id FROM app_user WHERE email = 'boss@alpha.test'")).rows[0].id;
   employeeId = (
     await admin.query(
-      `INSERT INTO app_user (organization_id, email, display_name, role)
-       VALUES ($1, 'emp@alpha.test', 'Emp', 'EMPLOYEE') RETURNING id`,
+      `INSERT INTO app_user (organization_id, email, display_name, role_id)
+       VALUES ($1, 'emp@alpha.test', 'Emp', '019e3000-0000-7000-8000-000000000004') RETURNING id`,
       [A],
     )
   ).rows[0].id;
   await admin.query(
-    `INSERT INTO app_user (organization_id, email, display_name, role, deleted_at)
-     VALUES ($1, 'gone@alpha.test', 'Gone', 'EMPLOYEE', now())`,
+    `INSERT INTO app_user (organization_id, email, display_name, role_id, deleted_at)
+     VALUES ($1, 'gone@alpha.test', 'Gone', '019e3000-0000-7000-8000-000000000004', now())`,
     [A],
   );
 });
@@ -106,11 +106,11 @@ describe('who is asking', () => {
   });
 
   it('follows a demotion on the next request, whatever the session token says', async () => {
-    await admin.query("UPDATE app_user SET role = 'EMPLOYEE' WHERE id = $1", [adminId]);
+    await admin.query("UPDATE app_user SET role_id = '019e3000-0000-7000-8000-000000000004' WHERE id = $1", [adminId]);
     try {
       expect((await call('boss@alpha.test', A).whoami()).canListCategories).toBe(false);
     } finally {
-      await admin.query("UPDATE app_user SET role = 'ADMIN' WHERE id = $1", [adminId]);
+      await admin.query("UPDATE app_user SET role_id = '019e3000-0000-7000-8000-000000000001' WHERE id = $1", [adminId]);
     }
   });
 

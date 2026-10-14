@@ -62,7 +62,7 @@ test.describe('as an admin', () => {
       `SELECT action, actor_role FROM audit_entry WHERE entity_id = $1 ORDER BY sequence DESC LIMIT 1`,
       [category.id],
     );
-    expect(audit.rows).toEqual([{ action: 'EXPENSE_POLICY_CHANGED', actor_role: 'ADMIN' }]);
+    expect(audit.rows).toEqual([{ action: 'EXPENSE_POLICY_CHANGED', actor_role: 'System Administrator' }]);
   });
 });
 

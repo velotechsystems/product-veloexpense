@@ -45,8 +45,8 @@ async function newOrg(slug: string): Promise<string> {
 async function addUser(orgId: string, email: string): Promise<string> {
   const r = await withOrg(orgId, (tx) =>
     tx.query(
-      `INSERT INTO app_user (organization_id, email, display_name, role)
-       VALUES ($1, $2, $2, 'EMPLOYEE') RETURNING id`,
+      `INSERT INTO app_user (organization_id, email, display_name, role_id)
+       VALUES ($1, $2, $2, '019e3000-0000-7000-8000-000000000004') RETURNING id`,
       [orgId, email],
     ),
   );
@@ -105,8 +105,8 @@ describe('a seat is anybody who can sign in', () => {
 
     await withOrg(org, (tx) =>
       tx.query(
-        `INSERT INTO invite (organization_id, email, token_hash, role, invited_by_id, expires_at)
-         VALUES ($1, 'pending@meter-invites.test', $2, 'EMPLOYEE', $3,
+        `INSERT INTO invite (organization_id, email, token_hash, invited_by_id, expires_at)
+         VALUES ($1, 'pending@meter-invites.test', $2, $3,
                  clock_timestamp() + interval '7 days')`,
         [org, 'f'.repeat(64), inviter],
       ),

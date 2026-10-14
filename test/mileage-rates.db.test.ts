@@ -75,8 +75,8 @@ beforeAll(async () => {
   const ins = async (org: string, email: string, name: string, role = 'EMPLOYEE') =>
     (
       await admin.query(
-        `INSERT INTO app_user (organization_id, email, display_name, role) VALUES ($1, $2, $3, $4) RETURNING id`,
-        [org, email, name, role],
+        `INSERT INTO app_user (organization_id, email, display_name, role_id) VALUES ($1, $2, $3, $4) RETURNING id`,
+        [org, email, name, (role === 'ADMIN' ? '019e3000-0000-7000-8000-000000000001' : '019e3000-0000-7000-8000-000000000004')],
       )
     ).rows[0].id as string;
   driver = await ins(A, 'driver@alpha.test', 'Dana Driver');

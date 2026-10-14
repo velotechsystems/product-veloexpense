@@ -3,7 +3,7 @@
  * and the verified email, return the user or null (null = denied).
  *
  * Phase 0 returns role='member'/subjectId=null; authorization reads
- * `app_user.role` from the DATABASE (`lib/auth/actor.ts`), never from the session
+ * the person's role from the DATABASE (`lib/auth/actor.ts`), never from the session
  * token, so the placeholder is not load-bearing.
  *
  * ── A BUG THIS TICKET FOUND, WHICH PREDATES IT: SSO COULD NOT SIGN ANYBODY IN ─

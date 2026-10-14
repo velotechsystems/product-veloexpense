@@ -100,20 +100,20 @@ beforeAll(async () => {
     // A MANAGER above the submitter: submit opens an approval run (VX2-3) and a
     // tenant with nobody able to approve is refused, correctly.
     const m = await tx.query(
-      `INSERT INTO app_user (organization_id, email, display_name, role)
-       VALUES ($1,'mgr@bud.test','Mgr','MANAGER') RETURNING id`,
+      `INSERT INTO app_user (organization_id, email, display_name, role_id)
+       VALUES ($1,'mgr@bud.test','Mgr','019e3000-0000-7000-8000-000000000004') RETURNING id`,
       [orgId],
     );
     mgrId = m.rows[0].id;
     const e = await tx.query(
-      `INSERT INTO app_user (organization_id, email, display_name, role, manager_id, department_id)
-       VALUES ($1,'emp@bud.test','Emp','EMPLOYEE',$2,$3) RETURNING id`,
+      `INSERT INTO app_user (organization_id, email, display_name, role_id, manager_id, department_id)
+       VALUES ($1,'emp@bud.test','Emp','019e3000-0000-7000-8000-000000000004',$2,$3) RETURNING id`,
       [orgId, m.rows[0].id, engineeringId],
     );
     empId = e.rows[0].id;
     const a = await tx.query(
-      `INSERT INTO app_user (organization_id, email, display_name, role, department_id)
-       VALUES ($1,'adm@bud.test','Adm','ADMIN',$2) RETURNING id`,
+      `INSERT INTO app_user (organization_id, email, display_name, role_id, department_id)
+       VALUES ($1,'adm@bud.test','Adm','019e3000-0000-7000-8000-000000000001',$2) RETURNING id`,
       [orgId, salesId],
     );
     admId = a.rows[0].id;

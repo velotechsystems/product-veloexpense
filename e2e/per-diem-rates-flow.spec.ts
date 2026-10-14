@@ -67,8 +67,8 @@ test.describe('as an admin', () => {
 
     const audit = await admin.query(`SELECT action, actor_role FROM audit_entry WHERE entity_id = $1 ORDER BY sequence`, [id]);
     expect(audit.rows).toEqual([
-      { action: 'PER_DIEM_RATE_CREATED', actor_role: 'ADMIN' },
-      { action: 'PER_DIEM_RATE_DELETED', actor_role: 'ADMIN' },
+      { action: 'PER_DIEM_RATE_CREATED', actor_role: 'System Administrator' },
+      { action: 'PER_DIEM_RATE_DELETED', actor_role: 'System Administrator' },
     ]);
   });
 });

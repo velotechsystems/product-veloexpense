@@ -35,11 +35,17 @@ let categoryId: string;
 
 async function seedUser(tx: Parameters<Parameters<typeof withOrg>[1]>[0], email: string, role: string) {
   const r = await tx.query(
-    `INSERT INTO app_user (organization_id, email, display_name, role)
+    `INSERT INTO app_user (organization_id, email, display_name, role_id)
      VALUES ($1, $2, $3, $4) RETURNING id`,
-    [orgId, email, email.split('@')[0], role],
+    [orgId, email, email.split('@')[0], role === 'ADMIN' ? '019e3000-0000-7000-8000-000000000001' : '019e3000-0000-7000-8000-000000000004'],
   );
-  return { id: r.rows[0].id as string, role } as Actor;
+  // w4-10b: an Actor carries its role's permissions (lib/auth/actor.ts), read from the row.
+  const perms = await tx.query(
+    `SELECT r.permissions FROM app_user u JOIN role r ON r.organization_id = u.organization_id AND r.id = u.role_id
+      WHERE u.id = $1`,
+    [r.rows[0].id],
+  );
+  return { id: r.rows[0].id as string, role_permissions: perms.rows[0].permissions as string[] } as Actor;
 }
 
 /** A draft owned by `owner`, with one line and one attached receipt. */

@@ -75,7 +75,7 @@ async function auditPostAction(
   if (row.rows.length === 0) throw new Error('no such queued post');
   await auditAppend(
     tx,
-    { id: actor.id, name: actor.display_name ?? actor.email, role: actor.role },
+    { id: actor.id, name: actor.display_name ?? actor.email, role: actor.role_label },
     {
       action,
       entityType: 'expense_report',
@@ -257,7 +257,7 @@ export async function savePostingTriggerFromForm(form: FormData) {
       // the note on `setPostingTrigger`. A no-op resubmit audits nothing.
       await setPostingTrigger(
         tx,
-        { id: actor.id, name: actor.display_name ?? actor.email, role: actor.role },
+        { id: actor.id, name: actor.display_name ?? actor.email, role: actor.role_label },
         value,
       );
     });

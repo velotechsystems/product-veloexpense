@@ -168,13 +168,16 @@ test.describe('self-serve signup', () => {
     const admins = await db(async (pool) =>
       (
         await pool.query(
-          `SELECT u.role FROM app_user u JOIN organization o ON o.id = u.organization_id
+          // w4-10b: the role's label (0068), where the text role ADMIN was.
+          `SELECT r.label ->> 'en' AS role
+             FROM app_user u JOIN organization o ON o.id = u.organization_id
+             JOIN role r ON r.organization_id = u.organization_id AND r.id = u.role_id
             WHERE o.slug = $1`,
           [SLUG],
         )
       ).rows.map((r) => r.role as string),
     );
-    expect(admins, 'the founder is the tenant’s first administrator').toEqual(['ADMIN']);
+    expect(admins, 'the founder is the tenant’s first administrator').toEqual(['System Administrator']);
 
     /* ── and the seam this ticket exists to close ───────────────────────────
      * Sign-in asks for the web address. The button carries it, so nobody has to

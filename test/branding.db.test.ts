@@ -68,8 +68,8 @@ beforeAll(async () => {
   otherOrgId = o.rows.find((r) => r.slug === 'brand-co-2').id;
   const u = await withOrg(orgId, (tx) =>
     tx.query(
-      `INSERT INTO app_user (organization_id, email, display_name, role)
-       VALUES ($1, 'admin@brand.test', 'Brand Admin', 'ADMIN') RETURNING id`,
+      `INSERT INTO app_user (organization_id, email, display_name, role_id)
+       VALUES ($1, 'admin@brand.test', 'Brand Admin', '019e3000-0000-7000-8000-000000000001') RETURNING id`,
       [orgId],
     ),
   );

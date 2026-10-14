@@ -76,8 +76,8 @@ test.describe('as an admin', () => {
       [id],
     );
     expect(audit.rows).toEqual([
-      { action: 'BUSINESS_UNIT_CREATED', actor_role: 'ADMIN' },
-      { action: 'BUSINESS_UNIT_DEACTIVATED', actor_role: 'ADMIN' },
+      { action: 'BUSINESS_UNIT_CREATED', actor_role: 'System Administrator' },
+      { action: 'BUSINESS_UNIT_DEACTIVATED', actor_role: 'System Administrator' },
     ]);
   });
 });

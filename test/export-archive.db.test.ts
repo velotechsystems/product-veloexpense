@@ -404,7 +404,7 @@ describe('the ledger', () => {
 /** The admin of a tenant, for the tests that did not create it. */
 async function adminOf(orgId: string): Promise<string | null> {
   const r = await withOrg(orgId, (tx) =>
-    tx.query(`SELECT id FROM app_user WHERE role = 'ADMIN' ORDER BY created_at LIMIT 1`),
+    tx.query(`SELECT id FROM app_user WHERE role_id = '019e3000-0000-7000-8000-000000000001' ORDER BY created_at LIMIT 1`),
   );
   return (r.rows[0]?.id as string) ?? null;
 }

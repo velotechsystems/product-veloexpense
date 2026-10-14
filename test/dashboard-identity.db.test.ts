@@ -4,7 +4,7 @@
  * ExpenseOS's `users.get`. The chips' own suite mocks that read; this proves the read
  * against a real database:
  *
- *   · the role label is VeloExpense's system-role label, in both locales, from `app_user.role`;
+ *   · the role label is the reader's role row's, in both locales (0068);
  *   · the department is the reader's own, with its label, or `null` without one;
  *   · it reads only the reader's tenant: another tenant's id is NOT FOUND there (RLS), and
  *     the chips catch that throw and fall back to the session.
@@ -41,8 +41,8 @@ beforeAll(async () => {
   ).rows[0].id;
   empId = (
     await admin.query(
-      `INSERT INTO app_user (organization_id, email, display_name, role, department_id)
-       VALUES ($1, 'emp@id-a.test', 'Emp', 'EMPLOYEE', $2) RETURNING id`,
+      `INSERT INTO app_user (organization_id, email, display_name, role_id, department_id)
+       VALUES ($1, 'emp@id-a.test', 'Emp', '019e3000-0000-7000-8000-000000000004', $2) RETURNING id`,
       [A, dept],
     )
   ).rows[0].id;
