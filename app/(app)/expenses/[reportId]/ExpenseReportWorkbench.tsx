@@ -54,7 +54,15 @@ import {
 } from '@tabler/icons-react';
 import { useSearchParams } from 'next/navigation';
 import { useLocale, useTranslations } from 'next-intl';
-import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { useTopBarSlots } from '../../TopBar';
 import { ReceiptFileInput } from '@/components/attachments/ReceiptFileInput';
 import { CommentThread } from '@/components/comments/CommentThread';
@@ -801,14 +809,6 @@ export function ExpenseReportWorkbench({
   const editable = canEdit && canEditStatus;
 
   const updateReport = trpc.expenses.updateReport.useMutation({ onSuccess: invalidate });
-  const createExpense = trpc.expenses.createExpense.useMutation({
-    onSuccess: (created) => {
-      if (created && typeof created === 'object' && 'id' in created) {
-        setSelectedId((created as { id: string }).id);
-      }
-      invalidate();
-    },
-  });
   const validate = trpc.expenses.validate.useMutation({ onSuccess: invalidate });
   // On-the-fly policy check: an edit recomputes violations server-side then
   // refetches. Falls back to a plain refetch once the report is not editable.
@@ -1120,14 +1120,104 @@ export function ExpenseReportWorkbench({
    *
    * Every list-row tap goes through here rather than through `setSelectedId`
    * directly, so the collapse cannot be forgotten at one of the two row
-   * affordances. Unconditional: above `lg` `expensesListOpen` is not read at
-   * all, and a phone reader arriving from a desktop resize finds the list in
-   * its default state rather than in a stale one.
+   * affordances — and so does a created expense (`createExpense` below), since
+   * a reader who opened the list and then tapped "+" wants the new row's editor,
+   * not the list they were done with. Unconditional: above `lg`
+   * `expensesListOpen` is not read at all, and a phone reader arriving from a
+   * desktop resize finds the list in its default state rather than in a stale one.
    */
   const selectFromList = useCallback((id: string) => {
     setSelectedId(id);
     setExpensesListOpen(false);
   }, []);
+  /**
+   * Declared after `selectFromList` so that what it calls already exists when a
+   * reader gets here. `onSuccess` fires for the receipt-upload path too (it creates
+   * through `mutateAsync`, once per file); closing the list there is harmless and
+   * the scroll below is NOT wired here, for exactly that reason.
+   */
+  const createExpense = trpc.expenses.createExpense.useMutation({
+    onSuccess: (created) => {
+      if (created && typeof created === 'object' && 'id' in created) {
+        selectFromList((created as { id: string }).id);
+      }
+      invalidate();
+    },
+  });
+
+  /**
+   * "Add expense" on a phone lands the reader ON the new row's editor.
+   *
+   * Below `lg` the panes stack, and closing the list is not enough: the editor still
+   * starts under the summary, the action bar and the blockers, so on a 664px screen
+   * the thing the reader just created can be below the fold. After a successful add,
+   * on a phone only, the centre pane is scrolled to the top of the viewport —
+   * instantly, because a smooth scroll on a tap that already waited a round trip reads
+   * as lag — and the focus moves to the pane itself (`preventScroll`, so the focus does
+   * not scroll it a second time). NOT to the Vendor input: a programmatic focus after
+   * an async response does not open the iOS keyboard, and a focused field that shows no
+   * keyboard reads as broken.
+   *
+   * WHY A PENDING ID AND NOT A FLAG ON SELECTION. The new row is not in `expenses`
+   * until the `invalidate()` refetch lands, so `selected` is `null` for a beat after
+   * the select. The effect waits — returns early, keeps the id — until the row the add
+   * returned is the one rendered, scrolls once, and clears it. No retry, no timer. If a
+   * DIFFERENT expense ends up selected first (a reader tap, or an unrelated refetch that
+   * reset the selection), the id is dropped instead: otherwise it would lie in wait and
+   * scroll on some later tap of that row, which is not an add.
+   *
+   * WHY `scrollTick`. `createExpense` reuses a blank expense already on the report
+   * (`expenses.ts`, "Don't pile up blank entries"), so a second "+" can return the id
+   * that is ALREADY selected. Neither `selected?.id` nor the refetched list need change,
+   * and an effect keyed on those alone would never fire. The tick is a state set, so
+   * the effect runs on every successful add.
+   *
+   * WHY A REF FOR THE DEVICE. `isBelowLgRef` mirrors `isBelowLg` for the callbacks and
+   * the effect to read — the returned tree reads nothing from it, so this is not a
+   * render branch, and desktop renders exactly the boxes it always did. A ref rather
+   * than the render-time value because the add's `onSuccess` runs a round trip after
+   * the tap: a window widened in between should not be scrolled as a phone.
+   *
+   * Set at the button's own call site, never in the hook's `onSuccess`: the receipt
+   * upload creates through the same mutation, and a reader who just filed a photo is
+   * not asking to be moved.
+   */
+  const editorPaneRef = useRef<HTMLElement>(null);
+  const pendingScrollId = useRef<string | null>(null);
+  const isBelowLgRef = useRef(isBelowLg);
+  const [scrollTick, setScrollTick] = useState(0);
+  useLayoutEffect(() => {
+    isBelowLgRef.current = isBelowLg;
+  }, [isBelowLg]);
+  const selectedIdForScroll = selected?.id ?? null;
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `scrollTick` is the trigger, not a value read — see "WHY `scrollTick`" above.
+  useLayoutEffect(() => {
+    const id = pendingScrollId.current;
+    if (!id) return;
+    if (selectedIdForScroll !== id) {
+      // `null` is "the refetch has not landed yet" — keep waiting. Anything else wins.
+      if (selectedIdForScroll !== null) pendingScrollId.current = null;
+      return;
+    }
+    pendingScrollId.current = null;
+    if (!isBelowLgRef.current) return;
+    const pane = editorPaneRef.current;
+    if (!pane) return;
+    pane.scrollIntoView({ block: 'start', behavior: 'auto' });
+    pane.focus({ preventScroll: true });
+  }, [selectedIdForScroll, scrollTick]);
+  const addExpense = () =>
+    createExpense.mutate(
+      { reportId },
+      {
+        onSuccess: (created) => {
+          if (!isBelowLgRef.current) return;
+          if (!created || typeof created !== 'object' || !('id' in created)) return;
+          pendingScrollId.current = (created as { id: string }).id;
+          setScrollTick((n) => n + 1);
+        },
+      },
+    );
 
   /**
    * An upload is running AND there are two controls to silence.
@@ -2880,53 +2970,49 @@ export function ExpenseReportWorkbench({
                     {pickerChildren(t('inbox.uploadReceipt'))}
                   </ReceiptFileInput>
                   {/*
-                   * "Add expense", suppressed below `lg` — the only add-expense entry
-                   * point on this route, and the last editing control in this header.
+                   * "Add expense", at every width — the only add-expense entry point on
+                   * this route, and the last editing control in this header.
                    *
-                   * What it creates is an EMPTY expense: `createExpense` writes a row with
-                   * no vendor, no date, no amount and no document, and the page then
-                   * selects it. Every field that would make it a real expense is cloaked
-                   * on a phone, so the "+" put a reader one tap from a blank row they
-                   * could not fill in and — at the top of an expense list — could not
-                   * easily tell from the one they meant to open. The receipt controls
-                   * beside it are NOT this: they create an expense from a document and
-                   * the extraction fills it, which is the phone capture path P04 built and
-                   * the reason both stay at every width.
+                   * It used to be cloaked below `lg`: it creates an EMPTY expense, and
+                   * every field that would fill it in was cloaked on a phone too. The
+                   * expense's own fields are editable on a phone now, so the "+" leads
+                   * somewhere, and it is a plain flex item of this row again. A second
+                   * tap does not pile up blank rows: `createExpense` hands back the blank
+                   * expense the report already has (`expenses.ts`, "Don't pile up blank
+                   * entries").
                    *
-                   * `hidden lg:contents`, so the desktop row is byte-identical: the wrapper
-                   * generates no box, the Button stays the flex item it is today, and the
-                   * two receipt controls' spacing does not move at either width.
+                   * `addExpense`, not a bare `mutate`, because the scroll-and-focus onto
+                   * the new row's editor belongs to THIS call site only — see
+                   * `pendingScrollId`. The input is the same at every width (SEC-1).
                    */}
-                  <div className="hidden lg:contents">
-                    <Button
-                      size="sm"
-                      /* Icon-only on a phone, AT THIS CALL SITE ONLY — the label
-                         goes into an `sr-only` span, so the accessible name (and
-                         the E2E locators that read it) is untouched.
+                  <Button
+                    size="sm"
+                    /* Icon-only on a phone, AT THIS CALL SITE ONLY — the label
+                       goes into an `sr-only` span, so the accessible name (and
+                       the E2E locators that read it) is untouched.
 
-                         CSS rather than a `coarsePointer` branch: the button then
-                         needs no pointer read, it does not reflow a beat after the
-                         first paint, and nothing in `packages/design-system`
-                         changes for the other pages using `Button`.
+                       CSS rather than a `coarsePointer` branch: the button then
+                       needs no pointer read, it does not reflow a beat after the
+                       first paint, and nothing in `packages/design-system`
+                       changes for the other pages using `Button`.
 
-                         The square is the arithmetic: `size="sm"` is `h-9` (36px),
-                         which loses to `min-h-11` because a min-height beats a
-                         height, and `px-3` around a glyph is 12 + 18 + 12 = 42px
-                         wide, so `min-w-11` is what makes the last 2px. `mr-1`
-                         comes off because an `sr-only` span is out of flow and the
-                         margin would push the glyph 4px off centre. */
-                      className="pointer-coarse:min-h-11 pointer-coarse:min-w-11"
-                      disabled={createExpense.isPending || uploadBusy}
-                      onClick={() => createExpense.mutate({ reportId })}
-                    >
-                      <IconPlus
-                        size={13}
-                        aria-hidden="true"
-                        className="mr-1 pointer-coarse:mr-0 pointer-coarse:size-[18px]"
-                      />
-                      <span className="pointer-coarse:sr-only">{t('drawer.addExpense')}</span>
-                    </Button>
-                  </div>
+                       The square is the arithmetic: `size="sm"` is `h-9` (36px),
+                       which loses to `min-h-11` because a min-height beats a
+                       height, and `px-3` around a glyph is 12 + 18 + 12 = 42px
+                       wide, so `min-w-11` is what makes the last 2px. `mr-1`
+                       comes off because an `sr-only` span is out of flow and the
+                       margin would push the glyph 4px off centre. */
+                    className="pointer-coarse:min-h-11 pointer-coarse:min-w-11"
+                    disabled={createExpense.isPending || uploadBusy}
+                    onClick={addExpense}
+                  >
+                    <IconPlus
+                      size={13}
+                      aria-hidden="true"
+                      className="mr-1 pointer-coarse:mr-0 pointer-coarse:size-[18px]"
+                    />
+                    <span className="pointer-coarse:sr-only">{t('drawer.addExpense')}</span>
+                  </Button>
                 </div>
               )}
             </div>
@@ -2949,11 +3035,8 @@ export function ExpenseReportWorkbench({
              * camera control P04 put there is the reason the ordinals in
              * `e2e/support/workbench.ts` are written the way they are.
              *
-             * "Add expense" itself no longer does — see its own comment above. It creates an
-             * empty row, and every field that would make that row an expense is cloaked on a
-             * phone, so the operator round took the control down to the capability it can
-             * actually deliver there. `docs/design/pwa.md` § "What P06 assessed" names it in
-             * the `limited` row with the rest.
+             * "Add expense" stays beside them at every width too — see its own comment above.
+             * It was cloaked below `lg` while the fields it feeds were, and came back with them.
              */}
             {/* Group actions — the design-system toolbar pattern (BulkActionsMenu
               + SelectionCounter), same as the admin lists. Editable reports only. */}
@@ -3055,8 +3138,27 @@ export function ExpenseReportWorkbench({
           </div>
         </div>
 
-        {/* CENTER — selected expense editor */}
-        <div className="flex min-h-0 flex-col overflow-hidden rounded-md border border-border bg-card">
+        {/* CENTER — selected expense editor.
+
+            A named region you can focus but never tab to (a `<section>` with a name IS a
+            region, so no `role` is spelled out), because "Add expense" on a phone lands
+            the reader here: it scrolls this pane to the top and focuses it (see
+            `pendingScrollId`). The PANE rather than the editor inside it, because
+            the pane is mounted on every render — the editor is keyed on the expense and
+            remounts, and the empty prompt replaces it outright — so the target never
+            disappears from under a ref. "Expense details", not "New expense": the same
+            pane shows every expense, and a landmark named for the add would be wrong
+            the rest of the time. Desktop gains these attributes and no box.
+            `focus:outline-none` because the ring would outline the whole card for a
+            focus nobody tabbed to; the reader is told by where they are, not by a ring.
+            No `scroll-mt`: nothing sticky sits above it inside the scroller — the top
+            bar is outside `main`, which is what scrolls. */}
+        <section
+          ref={editorPaneRef}
+          aria-label={t('workbench.editorRegionLabel')}
+          tabIndex={-1}
+          className="flex min-h-0 flex-col overflow-hidden rounded-md border border-border bg-card focus:outline-none"
+        >
           {selected ? (
             <ExpenseEditor
               key={selected.id}
@@ -3077,7 +3179,7 @@ export function ExpenseReportWorkbench({
               {t('workbench.selectPrompt')}
             </div>
           )}
-        </div>
+        </section>
 
         {/* RIGHT — receipts for the selected expense */}
         <ReceiptPane

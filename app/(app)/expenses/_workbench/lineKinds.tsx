@@ -114,7 +114,7 @@ function TipFields({
       <input
         aria-label={labels.tip}
         inputMode="decimal"
-        className="w-20 rounded border border-border bg-background px-2 py-1 text-foreground text-sm"
+        className="w-full rounded border border-border bg-background px-2 py-1 text-foreground text-sm lg:w-20"
         placeholder="0.00"
         value={draft.tip}
         disabled={disabled}

@@ -2261,10 +2261,10 @@ describe('the receipt controls on a phone', () => {
   /**
    * The expenses-card header's control row.
    *
-   * `closest` rather than `parentElement`: "Add expense" now sits inside its own
-   * `hidden lg:contents` cloak, so its parent is that wrapper and not the row the
-   * receipt controls share with it. `.flex` matches the row and not the `Button`
-   * itself, whose own base class is `inline-flex`.
+   * `closest` rather than `parentElement`, so the helper does not care whether
+   * "Add expense" sits directly in the row or inside a wrapper (it sat in a
+   * `hidden lg:contents` cloak for a while). `.flex` matches the row and not the
+   * `Button` itself, whose own base class is `inline-flex`.
    */
   const headerRow = () =>
     screen
@@ -3204,35 +3204,36 @@ describe('the expense list below lg', () => {
 });
 
 /**
- * "Add expense" below `lg` — the operator round's third request.
+ * "Add expense" below `lg`.
  *
- * The mechanism is CSS and jsdom applies no CSS, so every assertion here is about the
- * DOM and the CLASSES on it, exactly as `parts.limitedRegions.test.tsx` documents for
- * the per-region cloaks. `stubDevice` changes nothing about this control: it is not on
- * the `useIsBelowLg` branch and must not become so, because a JS branch would unmount
- * it on a desktop resize across 1024px. The device stub is here only to say plainly
- * that the answer does not depend on it.
+ * It was cloaked there while the fields it feeds were, and came back with them. The
+ * suppression was CSS and jsdom applies no CSS, so the assertions about it are about the
+ * DOM and the CLASSES on it, exactly as `parts.limitedRegions.test.tsx` documents for the
+ * per-region cloaks. `stubDevice` changes nothing about the control itself: it is not on
+ * the `useIsBelowLg` branch and must not become so, because a JS branch would unmount it
+ * on a desktop resize across 1024px. The device stub is there only to say plainly that
+ * the answer does not depend on it.
  */
 describe('the add-expense control below lg', () => {
   const addExpense = () => screen.getByRole('button', { name: /drawer.addExpense/ });
   /** The cloak wrapping a control, if it is inside one. */
   const cloak = (el: HTMLElement) => el.closest('[class*="lg:contents"]');
 
-  it('cloaks "Add expense" with `hidden lg:contents`, at either device', () => {
+  it('shows "Add expense" uncloaked, as a plain item of the header row, at either device', () => {
     /**
-     * The control creates an EMPTY expense, and every field that would make it a real
-     * one is itself cloaked on a phone — so below `lg` the "+" was one tap to a blank
-     * row a reader could not fill in. `hidden lg:contents` rather than `lg:block`: the
-     * header's control row is a flex container, and a `block` wrapper would become its
-     * flex item and take the button's own sizing out of the row's arithmetic.
+     * The control creates an EMPTY expense, and it was cloaked below `lg` because every
+     * field that would fill one in was cloaked there too. Those fields are editable on a
+     * phone now, so the "+" is back: no `lg:contents` or `lg:hidden` wrapper, and its
+     * parent is the control row itself — which is also what keeps the desktop row the
+     * same boxes it was, since a `contents` wrapper made no box there.
      */
     for (const device of ['phone', 'desktop'] as const) {
       stubDevice(device);
       const view = show();
-      const wrapper = cloak(addExpense());
-      expect(wrapper).not.toBeNull();
-      expect((wrapper as HTMLElement).className).toContain('hidden lg:contents');
-      expect((wrapper as HTMLElement).className).not.toContain('lg:block');
+      const button = addExpense();
+      expect(cloak(button)).toBeNull();
+      expect(button.closest('[class*="lg:hidden"]')).toBeNull();
+      expect(button.parentElement).toBe(button.closest('.flex.items-center.gap-2'));
       view.unmount();
     }
   });
@@ -3273,5 +3274,189 @@ describe('the add-expense control below lg', () => {
     show();
     await user.click(addExpense());
     expect(sent('createExpense')[0]).toEqual({ reportId: 'rep-1' });
+  });
+});
+
+/**
+ * Where "Add expense" leaves a phone reader: on the new row's editor.
+ *
+ * Below `lg` the panes stack, so the editor starts under the summary, the action bar,
+ * the blockers and the list. After a successful add — and only then, only on a phone —
+ * the page closes the list, scrolls the centre pane to the top of the viewport and
+ * focuses that pane (NOT the Vendor input: a programmatic focus after a round trip
+ * opens no iOS keyboard). jsdom does no layout, so what is pinned here is the WIRING:
+ * which element is scrolled, with what options, on which paths. Whether the pane really
+ * reaches the top of a 664px screen is the phone e2e's question.
+ *
+ * `scrollIntoView` is a no-op polyfill in `tests/setup.ts` (jsdom has none), so it is
+ * spied on the prototype; `mock.contexts` says which element it was called on.
+ */
+describe('adding an expense on a phone lands on its editor', () => {
+  const twoExpenses = [
+    expense({ id: 'exp-1', merchant: 'First' }),
+    expense({ id: 'exp-2', merchant: 'Second' }),
+  ];
+  const addExpense = () => screen.getByRole('button', { name: /drawer.addExpense/ });
+  const listToggle = () => screen.getByRole('button', { name: /workbench\.expensesToggle/ });
+  const listPane = (container: HTMLElement) =>
+    container.querySelector('#workbench-expense-list') as HTMLElement;
+  const editorRegion = () => screen.getByRole('region', { name: 'workbench.editorRegionLabel' });
+  const spyScroll = () => vi.spyOn(Element.prototype, 'scrollIntoView');
+
+  it('closes the list, scrolls the editor pane to the top and focuses it — not the Vendor field', async () => {
+    const user = userEvent.setup();
+    stubDevice('phone');
+    const scroll = spyScroll();
+    // The server answers with the row it created (or reused) — here, the second one.
+    h.results.createExpense = { id: 'exp-2' };
+    const { container } = show({ expenses: twoExpenses });
+
+    await user.click(listToggle());
+    expect(listPane(container).className).not.toContain('hidden');
+    await user.click(addExpense());
+
+    // Selected and revealed: the list is out of the way …
+    expect(listToggle()).toHaveAttribute('aria-expanded', 'false');
+    expect(listPane(container).className).toContain('hidden');
+    expect(screen.getAllByText('Second').length).toBeGreaterThan(1);
+    // … the pane is scrolled to the top, once, instantly …
+    const region = editorRegion();
+    expect(scroll).toHaveBeenCalledTimes(1);
+    expect(scroll).toHaveBeenCalledWith({ block: 'start', behavior: 'auto' });
+    expect(scroll.mock.contexts[0]).toBe(region);
+    // … and holds the focus, out of the tab order, with the Vendor field left alone.
+    expect(region).toHaveAttribute('tabindex', '-1');
+    expect(document.activeElement).toBe(region);
+    expect(screen.getByPlaceholderText('addLine.merchantPlaceholder')).not.toHaveFocus();
+  });
+
+  it('does not scroll when a reader taps a row — that path only closes the list', async () => {
+    const user = userEvent.setup();
+    stubDevice('phone');
+    const scroll = spyScroll();
+    const { container } = show({ expenses: twoExpenses });
+
+    await user.click(listToggle());
+    await user.click(within(listPane(container)).getByRole('button', { name: /Second/ }));
+
+    expect(screen.getAllByText('Second').length).toBeGreaterThan(1);
+    expect(scroll).not.toHaveBeenCalled();
+    expect(editorRegion()).not.toHaveFocus();
+  });
+
+  it('does not scroll or move focus on a desktop', async () => {
+    const user = userEvent.setup();
+    stubDevice('desktop');
+    const scroll = spyScroll();
+    h.results.createExpense = { id: 'exp-2' };
+    show({ expenses: twoExpenses });
+
+    await user.click(addExpense());
+
+    // Still selected — a desktop's add is exactly what it was.
+    expect(screen.getAllByText('Second').length).toBeGreaterThan(1);
+    expect(scroll).not.toHaveBeenCalled();
+    expect(editorRegion()).not.toHaveFocus();
+  });
+
+  it('changes nothing when the create fails', async () => {
+    const user = userEvent.setup();
+    stubDevice('phone');
+    const scroll = spyScroll();
+    h.errors.createExpense = 'refused';
+    const { container } = show({ expenses: twoExpenses });
+
+    await user.click(listToggle());
+    await user.click(addExpense());
+
+    expect(sent('createExpense')).toHaveLength(1);
+    expect(scroll).not.toHaveBeenCalled();
+    expect(editorRegion()).not.toHaveFocus();
+    // The list the reader opened stays open, and the selection stays where it was.
+    expect(listToggle()).toHaveAttribute('aria-expanded', 'true');
+    expect(listPane(container).className).not.toContain('hidden');
+    expect(screen.getAllByText('First').length).toBeGreaterThan(1);
+    expect(screen.getAllByText('Second')).toHaveLength(1);
+  });
+
+  it('does not scroll after a receipt upload, which creates through the same mutation', async () => {
+    /**
+     * The upload creates an expense per file and then selects the last one. A reader who
+     * just filed a photo is not asking to be moved, which is why the scroll is set at the
+     * "+" button's own call site and never in the mutation's shared `onSuccess`.
+     */
+    stubDevice('phone');
+    const scroll = spyScroll();
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => Promise.resolve(new Response(null, { status: 200 }))),
+    );
+    show({
+      expenses: [
+        expense({ id: 'exp-1', merchant: 'First' }),
+        expense({ id: 'exp-new', merchant: 'Filed' }),
+      ],
+    });
+
+    const row = addExpense().closest('.flex.items-center.gap-2') as HTMLElement;
+    const input = row.querySelector<HTMLInputElement>('input[type="file"]') as HTMLInputElement;
+    await userEvent.upload(input, new File(['pixels'], 'receipt.png', { type: 'image/png' }));
+
+    // The upload ran to the end and selected what it created …
+    await waitFor(() => expect(sent('startExtraction')).toHaveLength(1));
+    await waitFor(() => expect(screen.getAllByText('Filed').length).toBeGreaterThan(1));
+    // … and nothing scrolled or took the focus.
+    expect(scroll).not.toHaveBeenCalled();
+    expect(editorRegion()).not.toHaveFocus();
+  });
+
+  it('forgets a pending scroll once another expense is selected, so a later row tap never scrolls', async () => {
+    /**
+     * The new row is not in the list until the refetch lands, so the scroll waits for it.
+     * If the reader picks a different expense in that window, the add's reveal is over:
+     * a pending id left behind would otherwise fire on some later tap of that row.
+     */
+    const user = userEvent.setup();
+    stubDevice('phone');
+    const scroll = spyScroll();
+    // An id the current list does not hold yet — the refetch has not landed.
+    h.results.createExpense = { id: 'exp-3' };
+    const { container, rerender } = show({ expenses: twoExpenses });
+
+    await user.click(addExpense());
+    expect(screen.getAllByText('workbench.selectPrompt').length).toBeGreaterThan(0);
+    await user.click(listToggle());
+    await user.click(within(listPane(container)).getByRole('button', { name: /First/ }));
+
+    // The refetch lands with the new row; the reader then taps it from the list.
+    h.report = report({
+      expenses: [...twoExpenses, expense({ id: 'exp-3', merchant: 'Third' })],
+    });
+    rerender(<Harness />);
+    await user.click(listToggle());
+    await user.click(within(listPane(container)).getByRole('button', { name: /Third/ }));
+
+    expect(screen.getAllByText('Third').length).toBeGreaterThan(1);
+    expect(scroll).not.toHaveBeenCalled();
+  });
+
+  it('scrolls again when the server hands back the blank row that is already selected', async () => {
+    /**
+     * `createExpense` reuses a blank expense already on the report rather than adding
+     * another, so the id it returns can be the one already open: the selection does not
+     * change and the list need not either. The scroll must still happen, every time.
+     */
+    const user = userEvent.setup();
+    stubDevice('phone');
+    const scroll = spyScroll();
+    h.results.createExpense = { id: 'exp-1' };
+    show({ expenses: twoExpenses });
+
+    await user.click(addExpense());
+    expect(scroll).toHaveBeenCalledTimes(1);
+    expect(document.activeElement).toBe(editorRegion());
+
+    await user.click(addExpense());
+    expect(scroll).toHaveBeenCalledTimes(2);
   });
 });
