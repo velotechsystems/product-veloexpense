@@ -50,5 +50,19 @@ gate that did not exist when `0023` was merged, applied nowhere, and surfaced as
 `app_user` in `0001_init` is the copy-me pattern: every future tenant table
 repeats organization_id + index + ENABLE/FORCE RLS + `tenant_isolation` policy.
 
+## Deploying to dev
+
+From the repo root, signed in to the Velotech AWS account:
+
+    scripts/deploy-dev.sh                     # origin/main
+    scripts/deploy-dev.sh 7d48c73             # a given commit
+    scripts/deploy-dev.sh --restart-worker    # also restart the worker after migrating
+
+It builds the image from a clean checkout of the commit, pushes it, runs `cdk deploy`,
+then runs the migrations and stops if they fail. Behind a network that re-signs TLS to
+the Alpine mirror, prefix it with `APK_REPO_SCHEME=http` (the Dockerfile says why that is
+safe). The script's header has the detail; `test/deploy-dev-script.test.ts` runs it
+against stand-ins.
+
 ## Status
 Phase 0 (foundation & tenancy spine) — see the VeloExpense planning docs.
