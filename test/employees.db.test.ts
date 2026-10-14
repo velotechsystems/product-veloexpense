@@ -324,3 +324,68 @@ describe('changing a role (w4-10d)', () => {
     }
   });
 });
+
+/**
+ * w4-10f — "Deactivated" on the employee form is a deactivation. It used to change the label
+ * only: `deleted_at` stayed null, and sign-in, `requireActor` and the seat meter all read
+ * `deleted_at`, so the person kept signing in. 0071 stamps the rows written before the fix.
+ */
+describe('setting the status on the form (w4-10f)', () => {
+  const fresh = (email: string) => withOrg(orgA, (tx) => svc.getEmployeeByEmail(tx, email));
+
+  it('deactivates for real: stamped, and refused at the door', async () => {
+    const boss = (await fresh('ceo@acme.test'))!;
+    const p = await withOrg(orgA, (tx) => svc.createEmployee(tx, { email: 'leaver@acme.test' }));
+    const after = await withOrg(orgA, (tx) =>
+      svc.updateEmployee(tx, p.id, { employeeStatus: 'DEACTIVATED' }, { actor: boss }),
+    );
+    expect(after.employee_status).toBe('DEACTIVATED');
+    expect(after.deleted_at).not.toBeNull();
+    const { requireActor } = await import('@/lib/auth/actor');
+    await expect(withOrg(orgA, (tx) => requireActor(tx, 'leaver@acme.test'))).rejects.toMatchObject({
+      code: 'DEACTIVATED',
+    });
+
+    // ON LEAVE brings them back as much as ACTIVE does: a member again, with a seat.
+    const back = await withOrg(orgA, (tx) =>
+      svc.updateEmployee(tx, p.id, { employeeStatus: 'ON_LEAVE' }, { actor: boss }),
+    );
+    expect(back).toMatchObject({ employee_status: 'ON_LEAVE', deleted_at: null });
+  });
+
+  it('takes the Deactivate button’s guards: not yourself, and nobody still reporting to them', async () => {
+    const boss = (await fresh('ceo@acme.test'))!;
+    const self = (await fresh('employee@acme.test'))!;
+    await expect(
+      withOrg(orgA, (tx) => svc.updateEmployee(tx, self.id, { employeeStatus: 'DEACTIVATED' }, { actor: self })),
+    ).rejects.toMatchObject({ code: 'SELF_DEACTIVATE' });
+    // A lead with somebody reporting to them: the form cannot say where that person goes.
+    const lead = await withOrg(orgA, (tx) => svc.createEmployee(tx, { email: 'lead@acme.test' }));
+    await withOrg(orgA, (tx) => svc.createEmployee(tx, { email: 'led@acme.test', managerId: lead.id }));
+    await expect(
+      withOrg(orgA, (tx) => svc.updateEmployee(tx, lead.id, { employeeStatus: 'DEACTIVATED' }, { actor: boss })),
+    ).rejects.toMatchObject({ code: 'HAS_DIRECT_REPORTS' });
+    expect((await fresh('lead@acme.test'))!.deleted_at).toBeNull();
+  });
+
+  it('0071 stamps the people the form "deactivated" before this fix, and only them', async () => {
+    const { readFileSync } = await import('node:fs');
+    const sql = readFileSync('prisma/migrations/0071_employee_status_deleted_at/migration.sql', 'utf8');
+    const stuck = await withOrg(orgA, (tx) => svc.createEmployee(tx, { email: 'stuck@acme.test' }));
+    await admin.query(
+      `UPDATE app_user SET employee_status = 'DEACTIVATED', updated_at = '2026-10-01T12:00:00Z' WHERE id = $1`,
+      [stuck.id],
+    );
+    await admin.query(sql);
+    const rows = (
+      await admin.query(
+        `SELECT email, deleted_at FROM app_user WHERE email IN ('stuck@acme.test', 'employee@acme.test') ORDER BY email`,
+      )
+    ).rows;
+    expect(rows).toEqual([
+      { email: 'employee@acme.test', deleted_at: null },
+      { email: 'stuck@acme.test', deleted_at: new Date('2026-10-01T12:00:00Z') },
+    ]);
+  });
+});
+
