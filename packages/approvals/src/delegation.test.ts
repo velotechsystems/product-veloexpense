@@ -26,6 +26,10 @@ interface FakeDelegation {
 function fakeDb(users: FakeUser[], delegations: FakeDelegation[] = []) {
   const byId = new Map(users.map((u) => [u.id, u]));
   return {
+    // VeloExpense: the engine reads today in the tenant's working timezone with one raw
+    // query (`tenantToday`); a UTC tenant's today is enough for these cases, whose fixture
+    // ranges sit days either side of now.
+    $queryRaw: async () => [{ d: new Date().toISOString().slice(0, 10) }],
     user: {
       findUnique: async ({ where }: any) => byId.get(where.id) ?? null,
     },

@@ -256,14 +256,52 @@ describe.skipIf(!process.env.DATABASE_URL)('approval engine on VeloExpense table
       expect((await startAndRead(submitter)).assigneeUserId).toBe(manager);
     });
 
+    /** VeloExpense: today in the tenant's working timezone — the day the engine compares. */
+    const tenantToday = async () =>
+      (
+        await h.admin.query(
+          `SELECT (now() AT TIME ZONE default_timezone)::date::text AS d FROM organization WHERE id = $1`,
+          [h.orgId],
+        )
+      ).rows[0].d as string;
+
     it('counts the last day as covered (inclusive), and not the day after', async () => {
       const { manager, standIn, submitter } = await assigneeFor();
-      const today = (await h.admin.query(`SELECT current_date::text AS d`)).rows[0].d as string;
+      // VeloExpense: the tenant's today, not the test database's `current_date` — which is
+      // the server's zone, and was a day behind UTC every evening on a Toronto machine.
+      const today = await tenantToday();
       await delegate(manager, standIn, { endsOn: today });
       expect((await startAndRead(submitter)).assigneeUserId).toBe(standIn);
 
-      await h.admin.query(`UPDATE delegation SET ends_on = current_date - 1 WHERE organization_id = $1`, [h.orgId]);
+      await h.admin.query(`UPDATE delegation SET ends_on = $2::date - 1 WHERE organization_id = $1`, [
+        h.orgId,
+        today,
+      ]);
       expect((await startAndRead(submitter)).assigneeUserId).toBe(manager);
+    });
+
+    it("reads today in the tenant's working timezone, not UTC or the server's", async () => {
+      /**
+       * VeloExpense. Two zones 26 hours apart are ALWAYS on different calendar days, so this
+       * holds at any hour: a delegation ending on today's date in UTC−12 covers a tenant
+       * working in UTC−12, and has already ended for one working in UTC+14.
+       */
+      const { manager, standIn, submitter } = await assigneeFor();
+      const original = (
+        await h.admin.query(`SELECT default_timezone FROM organization WHERE id = $1`, [h.orgId])
+      ).rows[0].default_timezone as string;
+      try {
+        await h.admin.query(`UPDATE organization SET default_timezone = 'Etc/GMT+12' WHERE id = $1`, [h.orgId]);
+        await delegate(manager, standIn, { endsOn: await tenantToday() });
+        expect((await startAndRead(submitter)).assigneeUserId).toBe(standIn);
+
+        await h.admin.query(`UPDATE organization SET default_timezone = 'Pacific/Kiritimati' WHERE id = $1`, [
+          h.orgId,
+        ]);
+        expect((await startAndRead(submitter)).assigneeUserId).toBe(manager);
+      } finally {
+        await h.admin.query(`UPDATE organization SET default_timezone = $2 WHERE id = $1`, [h.orgId, original]);
+      }
     });
 
     it('lets the stand-in decide a task still assigned to the person they cover', async () => {
