@@ -2920,6 +2920,67 @@ describe('RLS tenant isolation', () => {
     await admin.query('DELETE FROM saved_view');
   });
 
+  /* ── roles (Wave 4, w4-10a, migration 0068) ──────────────────────────────────────
+   *
+   * ExpenseOS's Role, per tenant (d73): every tenant holds the system roles under the SAME
+   * ids, so the key is (organization, id) and RLS is what keeps one tenant's "Employee" from
+   * being another's. A person may only hold their own tenant's role (composite key).
+   */
+  it('roles are tenant-isolated even under shared system ids, and cannot be held across tenants', async () => {
+    const EMPLOYEE = '019e3000-0000-7000-8000-000000000004';
+    // Each tenant edits its own Employee; neither sees the other's edit.
+    for (const [org, perm] of [
+      [orgA, 'a.only'],
+      [orgB, 'b.only'],
+    ] as const) {
+      await withOrg(org, (tx) =>
+        tx.query(`UPDATE role SET permissions = array_append(permissions, $2) WHERE id = $1`, [EMPLOYEE, perm]),
+      );
+    }
+    for (const [org, mine, theirs] of [
+      [orgA, 'a.only', 'b.only'],
+      [orgB, 'b.only', 'a.only'],
+    ] as const) {
+      const { rows } = await withOrg(org, (tx) =>
+        tx.query(`SELECT organization_id, permissions FROM role WHERE id = $1`, [EMPLOYEE]),
+      );
+      expect(rows).toHaveLength(1);
+      expect(rows[0].organization_id).toBe(org);
+      expect(rows[0].permissions).toContain(mine);
+      expect(rows[0].permissions).not.toContain(theirs);
+    }
+    expect((await withoutOrg((tx) => tx.query('SELECT * FROM role'))).rows).toHaveLength(0);
+    expect((await withPlatformRead((tx) => tx.query('SELECT * FROM role'))).rows).toHaveLength(0);
+
+    // WITH CHECK: a role cannot be written into the other tenant.
+    await expect(
+      withOrg(orgB, (tx) =>
+        tx.query(`INSERT INTO role (organization_id, label) VALUES ($1, '{"en":"x"}')`, [orgA]),
+      ),
+    ).rejects.toThrow(/row-level security|violates/i);
+    // Composite key: B's person cannot hold a role only A has.
+    const onlyA = (
+      await withOrg(orgA, (tx) =>
+        tx.query(`INSERT INTO role (label) VALUES ('{"en":"A only"}') RETURNING id`),
+      )
+    ).rows[0].id as string;
+    await expect(
+      withOrg(orgB, (tx) =>
+        tx.query(`UPDATE app_user SET role_id = $1 WHERE organization_id = $2`, [onlyA, orgB]),
+      ),
+    ).rejects.toThrow(/foreign key/i);
+
+    for (const [org, perm] of [
+      [orgA, 'a.only'],
+      [orgB, 'b.only'],
+    ] as const) {
+      await withOrg(org, (tx) =>
+        tx.query(`UPDATE role SET permissions = array_remove(permissions, $2) WHERE id = $1`, [EMPLOYEE, perm]),
+      );
+    }
+    await admin.query('DELETE FROM role WHERE id = $1', [onlyA]);
+  });
+
   it('approval workflows, versions, runs and tasks are tenant-isolated, across every key', async () => {
     // w4-00d: each tenant's workflow, version, run and task are the suite's own seed (above),
     // which the dropped ladder's rows used to occupy; this reads their ids back.

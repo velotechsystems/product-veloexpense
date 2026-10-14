@@ -1,6 +1,6 @@
 import { isModuleActive } from '@expenseos/platform';
-import { ForbiddenError, type Permission, SYSTEM_ROLE_IDS, SYSTEM_ROLE_LABELS } from '@expenseos/rbac';
-import { resolveRbacUser, systemRoleFor, type VeloExpenseRole } from '@expenseos/rbac/server';
+import { ForbiddenError, type Permission } from '@expenseos/rbac';
+import { resolveRbacUser } from '@expenseos/rbac/server';
 import { initTRPC, TRPCError } from '@trpc/server';
 import superjson from 'superjson';
 import { ZodError } from 'zod';
@@ -240,19 +240,23 @@ export async function resolveTenantMember(
   }
   // The role comes from the DATABASE on every request, never from the session token:
   // a token outlives a demotion or a deactivation (lib/auth/actor.ts).
+  // VeloExpense (w4-10a, d73): the person's role is their tenant's `role` row (0068).
   const [member] = await tx.$queryRaw<
-    { id: string; display_name: string | null; role: VeloExpenseRole; deleted_at: Date | null }[]
-  >`SELECT id, display_name, role, deleted_at FROM app_user WHERE lower(email) = lower(${caller.email}) LIMIT 1`;
+    { id: string; display_name: string | null; role_id: string; role_label: Record<string, string>; deleted_at: Date | null }[]
+  >`SELECT u.id, u.display_name, u.role_id, r.label AS role_label, u.deleted_at
+      FROM app_user u
+      JOIN role r ON r.organization_id = u.organization_id AND r.id = u.role_id
+     WHERE lower(u.email) = lower(${caller.email}) LIMIT 1`;
   if (!member) {
     throw new TRPCError({ code: 'FORBIDDEN', message: 'You are not a member of this organization.' });
   }
   if (member.deleted_at !== null) {
     throw new TRPCError({ code: 'FORBIDDEN', message: 'This account has been deactivated.' });
   }
-  const kind = systemRoleFor(member.role);
-  const roleId = SYSTEM_ROLE_IDS[kind];
-  // VeloExpense: English until the reader's locale reaches the tRPC context with next-intl.
-  const roleLabel = SYSTEM_ROLE_LABELS[kind].en ?? kind;
+  const roleId = member.role_id;
+  // VeloExpense: English until the reader's locale reaches the tRPC context with next-intl —
+  // ExpenseOS's session snapshot is `label.en` too (its auth.ts `resolveRoleLabel`).
+  const roleLabel = member.role_label.en ?? '';
   const session: Session = {
     user: {
       id: member.id,
@@ -263,7 +267,12 @@ export async function resolveTenantMember(
       organizationId: caller.organizationId,
     },
   };
-  const rbac = await resolveRbacUser(tx, { userId: member.id, roleId, roleLabel });
+  const rbac = await resolveRbacUser(tx, {
+    userId: member.id,
+    roleId,
+    roleLabel,
+    organizationId: caller.organizationId,
+  });
   return { session, rbac };
 }
 

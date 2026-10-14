@@ -26,7 +26,6 @@ import type { UserMessageCode } from '@/lib/i18n/catalog/errors';
 import { startInstance, type StartResult } from '@expenseos/approvals/engine';
 import { writeAudit } from '@expenseos/audit';
 import { recomputeForReport } from '@/lib/budgets/service';
-import { rolesStandingFor } from '@/lib/approvals/systemRoleHolders';
 import { tenantDbOf } from '@/lib/db/prisma-pg-bridge';
 import type { TenantDb } from '@/lib/db/prisma';
 import { enqueuePost } from '@/lib/integrations/post-outbox';
@@ -582,7 +581,7 @@ async function assertSomeoneElseCanDecide(
     }
     const others = await db.user.count({
       where: {
-        role: { in: rolesStandingFor(fallback.roleId) },
+        roleId: fallback.roleId,
         id: { not: report.submitterId },
         deletedAt: null,
         employeeStatus: 'ACTIVE',

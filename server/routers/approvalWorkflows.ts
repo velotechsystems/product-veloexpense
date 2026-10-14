@@ -10,9 +10,7 @@
  * plumbing, each marked below:
  *   · a workflow's `key` is unique within the tenant (0058), and RLS scopes every read;
  *   · a currency is keyed by its ISO code, and its symbol comes from the platform;
- *   · there is no vendor table (the `vendorId` field is a virtual-card fact anyway) and no
- *     role table: the roles offered are the ExpenseOS system roles VeloExpense's roles
- *     stand for (`systemRoleFor`), until the role builder (w4-10);
+ *   · there is no vendor table (the `vendorId` field is a virtual-card fact anyway);
  *   · a person has one display name, carried in `firstName`;
  *   · subjects are VeloExpense's (`@/lib/approvalSubjects`).
  */
@@ -20,7 +18,7 @@
 import { graphSchema, matchConditionSchema, validateGraph } from '@expenseos/approvals';
 import { simulateWorkflow } from '@expenseos/approvals/engine';
 import { auditActions, withAudit } from '@expenseos/audit';
-import { permissions as P, SYSTEM_ROLE_IDS, SYSTEM_ROLE_LABELS } from '@expenseos/rbac';
+import { permissions as P } from '@expenseos/rbac';
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 import { APPROVAL_SUBJECT_TYPES } from '@/lib/approvalSubjects';
@@ -127,11 +125,10 @@ export const approvalWorkflowsRouter = router({
         orderBy: { name: 'asc' },
       }),
       // Roles a Notify node can target ("notify the AP team").
-      // VeloExpense: no role table yet — the ExpenseOS system roles VeloExpense's roles stand
-      // for (ADMIN → admin, EMPLOYEE and MANAGER → employee), until the role builder (w4-10).
-      Promise.resolve(
-        (['admin', 'employee'] as const).map((k) => ({ id: SYSTEM_ROLE_IDS[k], label: SYSTEM_ROLE_LABELS[k] })),
-      ),
+      ctx.db.role.findMany({
+        where: { active: true },
+        select: { id: true, label: true },
+      }),
       // Categories an expense-report `categoryIds` condition selects from.
       ctx.db.expenseCategory.findMany({
         where: { active: true },

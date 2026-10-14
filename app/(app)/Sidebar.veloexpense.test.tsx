@@ -14,8 +14,8 @@ import { describe, expect, it, vi } from 'vitest';
  *     so porting the shell took nothing away from an admin, and gave an employee nothing
  *     they cannot open.
  *
- * The roles are the two VeloExpense hands out (`systemRoleFor`): ADMIN → System
- * Administrator, MANAGER and EMPLOYEE → Employee.
+ * The roles are the two VeloExpense hands out (0068, d73): ADMIN holds System
+ * Administrator, MANAGER and EMPLOYEE hold Employee.
  */
 
 vi.mock('@/lib/trpc/client', () => ({

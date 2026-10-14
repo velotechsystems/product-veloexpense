@@ -1,4 +1,3 @@
-import { SYSTEM_ROLE_IDS } from '@expenseos/rbac';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 /*
@@ -8,7 +7,6 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
  *     marked, and `settle()` still drains whatever is left;
  *   · notifications are VeloExpense's service: an activity is `{ eventType }`, and its id
  *     comes back as a string;
- *   · a `role` target names an ExpenseOS system role (`SYSTEM_ROLE_IDS`);
  *   · the card-request case is skipped (d50).
  */
 
@@ -242,7 +240,7 @@ describe('notify targets', () => {
     /** A departed employee's row survives (audit pins it), so a role fan-out that ignored
      *  `deletedAt` would mail people who have left. */
     h.users = [{ id: 'u-1' }, { id: 'u-2' }];
-    await fire({ kind: 'role', roleId: SYSTEM_ROLE_IDS.admin });
+    await fire({ kind: 'role', roleId: 'role-ap' });
     expect(h.notified[0].recipients).toEqual(['u-1', 'u-2']);
   });
 
@@ -284,7 +282,7 @@ describe('notify targets', () => {
     /** They pressed the button. An email telling them what they just did reads as a bug,
      *  and it is the fastest way to get a channel muted. */
     h.users = [{ id: 'u-1' }, { id: 'actor' }];
-    await fire({ kind: 'role', roleId: SYSTEM_ROLE_IDS.admin }, 'actor');
+    await fire({ kind: 'role', roleId: 'role-ap' }, 'actor');
     expect(h.notified[0].recipients).toEqual(['u-1']);
   });
 
@@ -292,7 +290,7 @@ describe('notify targets', () => {
     /** An activity row with nobody to tell is a timeline entry saying a notification was
      *  sent when none was. */
     h.users = [{ id: 'actor' }];
-    await fire({ kind: 'role', roleId: SYSTEM_ROLE_IDS.admin }, 'actor');
+    await fire({ kind: 'role', roleId: 'role-ap' }, 'actor');
     expect(h.activities).toHaveLength(0);
   });
 

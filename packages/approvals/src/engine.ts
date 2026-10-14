@@ -16,9 +16,8 @@
  *     Nothing here names an organization; the sweep is called once per tenant (w4-00c).
  *   · Subjects: EXPENSE_REPORT, and TRAVEL_REQUEST reserved (no travel table yet, d50).
  *     The two virtual-card subjects and their adapters are out of scope and removed.
- *   · People: `app_user` has a text `role` where ExpenseOS has a `Role` row; it is read
- *     through `systemRoleFor`, as the tRPC context does, until the role builder (w4-10).
- *     Its offboarded status is DEACTIVATED (ExpenseOS: TERMINATED).
+ *   · People: a person's `Role` is their tenant's row (0068, w4-10a), as in ExpenseOS. Its
+ *     offboarded status is DEACTIVATED (ExpenseOS: TERMINATED).
  *   · Delegation is VeloExpense's table (0008): inclusive dates, `revoked_at`, scope ALL |
  *     REPORTS.
  *   · Policy currency is `organization.policy_currency_code` (0015), where ExpenseOS has
@@ -29,8 +28,6 @@
  */
 import { Prisma, type PrismaClient } from '@expenseos/db';
 import { convertMoney, fxRateMapFrom } from '@expenseos/money';
-import { SYSTEM_ROLE_IDS, SYSTEM_ROLE_PERMISSIONS } from '@expenseos/rbac';
-import { systemRoleFor, type VeloExpenseRole } from '@expenseos/rbac/server';
 import { addBusinessDays, DEFAULT_TTL_BUSINESS_DAYS } from './businessDays';
 import {
   type AdvanceResult,
@@ -744,23 +741,19 @@ async function loadActorAuth(
       select: {
         deletedAt: true,
         employeeStatus: true,
-        // VeloExpense: the text role (0004) where ExpenseOS has `roleId` and a `Role` row.
-        role: true,
+        roleId: true,
+        role: { select: { active: true, permissions: true } },
         // Bounds the no-fallback pool — see canClaimUnresolvedFor.
         _count: { select: { directReports: true } },
       },
     });
     if (!u) return null;
-    // VeloExpense: a role is the ExpenseOS system role it stands in for (`systemRoleFor`,
-    // as the tRPC context applies it), with that role's seeded permissions. System roles
-    // are always active. Until the role builder (w4-10).
-    const kind = systemRoleFor(u.role as VeloExpenseRole);
     return {
       deleted: u.deletedAt !== null,
       active: u.employeeStatus === 'ACTIVE',
-      roleId: SYSTEM_ROLE_IDS[kind],
-      roleActive: true,
-      permissions: SYSTEM_ROLE_PERMISSIONS[kind],
+      roleId: u.roleId,
+      roleActive: u.role?.active === true,
+      permissions: u.role?.permissions ?? [],
       directReports: u._count.directReports,
     };
   };

@@ -1,23 +1,14 @@
 // @vitest-environment node
 /* eslint-disable @typescript-eslint/no-explicit-any -- ported suite: the harness reads rows untyped. */
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { SYSTEM_ROLE_IDS } from '@expenseos/rbac';
 import { createTenantHarness, type TenantHarness } from '../../../server/__test-helpers__/tenantHarness';
 
 /*
  * VeloExpense (w4-00b): ExpenseOS's suite (550b2945), run against one tenant, as
  * engine.db.test.ts is (see its note: the harness tenant, the engine inside its transaction).
  *
- * Roles. ExpenseOS's suite needs two roles that differ, and it uses them two ways: as the
- * role a `role` fallback names, and as "holds the approve permission" vs "does not".
- * VeloExpense's people carry a text role that stands for an ExpenseOS SYSTEM role
- * (`systemRoleFor`): EMPLOYEE → Employee, ADMIN → System Administrator. So here the two ids
- * are those two system roles' ids, and a person is made with the matching text role.
- *   · As two DIFFERENT roles they work exactly as ExpenseOS's do — a role fallback naming
- *     one admits its holders and refuses the other's.
- *   · As "lacks the approve permission" they cannot: both grant it. The one case that turns
- *     on that alone is skipped, marked. Elsewhere `noPermRoleId` names a submitter or an
- *     incidental report, where the permission plays no part.
+ * Roles are the tenant's rows (0068, w4-10a), as in ExpenseOS: the suite finds one that grants
+ * the approve permission and one that does not among the tenant's system roles.
  * Offboarding is VeloExpense's DEACTIVATED (ExpenseOS: TERMINATED).
  */
 vi.mock('@/auth', () => ({ auth: vi.fn(async () => null) }));
@@ -74,12 +65,12 @@ describe.skipIf(!process.env.DATABASE_URL)('no-manager approval fallback (integr
   let noPermRoleId: string;
 
   const makeUser = async (tag: string, roleId: string, managerId: string | null) => {
-    // VeloExpense: one display name, and the text role that stands for `roleId`.
+    // VeloExpense: one display name.
     const u = await db.user.create({
       data: {
         email: `nomgr-${tag}-${userIds.length}-${process.pid}@example.test`,
         name: `QA ${tag}`,
-        role: roleId === SYSTEM_ROLE_IDS.admin ? 'ADMIN' : 'EMPLOYEE',
+        roleId,
         managerId,
         employeeStatus: 'ACTIVE',
       },
@@ -190,9 +181,18 @@ describe.skipIf(!process.env.DATABASE_URL)('no-manager approval fallback (integr
     currencyId = 'CAD';
     // A role that grants expense.report.approve, and one that does not — the
     // fallback must distinguish them.
-    // VeloExpense: two different system roles, both of which grant it (see the note above).
-    approverRoleId = SYSTEM_ROLE_IDS.employee;
-    noPermRoleId = SYSTEM_ROLE_IDS.admin;
+    approverRoleId = (
+      await db.role.findFirstOrThrow({
+        where: { permissions: { has: 'expense.report.approve' }, active: true },
+        select: { id: true },
+      })
+    ).id;
+    noPermRoleId = (
+      await db.role.findFirstOrThrow({
+        where: { NOT: { permissions: { has: 'expense.report.approve' } }, active: true },
+        select: { id: true },
+      })
+    ).id;
 
     // Workflow selection is global by subject type, so the seeded expense workflow
     // would win every test here — including the ones that exist to describe a node
@@ -307,8 +307,7 @@ describe.skipIf(!process.env.DATABASE_URL)('no-manager approval fallback (integr
     expect(await engine.canDecide(db, createdTaskIds[0], approver, false)).toBe(true);
   });
 
-  // VeloExpense: every VeloExpense role grants the approve permission (see the note above).
-  it.skip('does not let somebody without the approve permission decide it', async () => {
+  it('does not let somebody without the approve permission decide it', async () => {
     // "Claimable by a pool" has to mean a pool, not everybody.
     const submitter = await makeUser('submitter3', noPermRoleId, null);
     const bystander = await makeUser('bystander', noPermRoleId, null);

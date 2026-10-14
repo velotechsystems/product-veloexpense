@@ -98,6 +98,11 @@ export type TaxJurisdiction = Prisma.TaxJurisdictionModel
  */
 export type User = Prisma.UserModel
 /**
+ * Model Role
+ * 
+ */
+export type Role = Prisma.RoleModel
+/**
  * Model BusinessUnit
  * 
  */
