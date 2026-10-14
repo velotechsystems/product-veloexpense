@@ -107,6 +107,29 @@ async function activeSeatsInDemo(): Promise<number> {
   });
 }
 
+/**
+ * Wait until the Deactivate press has landed in the database.
+ *
+ * The press is a server action; the page re-renders when it returns, but a test that
+ * navigates away first can leave before the action commits — and then reads the
+ * directory, or the platform, before the change exists. Polling the row is the one signal
+ * that cannot be early. (`seat-push` failed about one run in five without it.)
+ */
+async function employeeDeactivated() {
+  await expect
+    .poll(
+      () =>
+        withAdminPool(async (pool) => {
+          const r = await pool.query(
+            `SELECT deleted_at IS NOT NULL AS gone FROM app_user WHERE email = 'employee@demo.test'`,
+          );
+          return r.rows[0]?.gone as boolean;
+        }),
+      { timeout: 15_000 },
+    )
+    .toBe(true);
+}
+
 async function employeeIsActive() {
   await withAdminPool((pool) =>
     pool.query(
@@ -189,6 +212,7 @@ test.describe('the seat count reaches the platform', () => {
     await page.goto('/admin/employees');
     await page.getByRole('link', { name: /Demo Employee/i }).click();
     await page.getByRole('button', { name: /Deactivate/i }).click();
+    await employeeDeactivated();
 
     // The product succeeded. No error banner, and the person is gone from the
     // directory — which is what deactivation means here, since `listEmployees`
