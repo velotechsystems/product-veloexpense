@@ -74,7 +74,10 @@ export async function getDirectoryOptions() {
  * the path from an admin form to it.
  */
 export async function inviteEmployee(input: invites.NewInvite) {
-  return asAdmin((tx, actor) => invites.sendInvite(tx, auditActorOf(actor), input));
+  // w4-10d: the role offered may not grant more than the inviter holds.
+  return asAdmin((tx, actor) =>
+    invites.sendInvite(tx, auditActorOf(actor), input, { permissions: actor.role_permissions }),
+  );
 }
 
 export async function revokeInvite(inviteId: string) {
@@ -113,7 +116,8 @@ export async function listLiveInvites() {
  * disagreeing in the one case that matters.
  */
 export async function updateEmployee(employeeId: string, patch: svc.EmployeePatch) {
-  const result = await asAdmin((tx) => svc.updateEmployee(tx, employeeId, patch));
+  // w4-10d: the acting admin, for ExpenseOS's role-change guards.
+  const result = await asAdmin((tx, actor) => svc.updateEmployee(tx, employeeId, patch, { actor }));
   // Only when the patch could have moved the count. Reactivating clears
   // `deleted_at` (see `svc.updateEmployee`); a title or a manager change does not
   // touch it, and pushing an unchanged number on every edit is noise the platform

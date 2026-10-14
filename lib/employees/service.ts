@@ -18,7 +18,14 @@ import type { UserMessageCode } from '@/lib/i18n/catalog/errors';
 import { DomainError } from '@/lib/errors/domain';
 import { ORG } from '@/lib/tenant/sql';
 import { assertSeatAvailable } from '@/lib/billing/caps';
-import { assignableRole, DEFAULT_ROLE_ID, listRoleOptions } from '@/lib/roles/service';
+import { permissions as P, SYSTEM_ROLE_IDS } from '@expenseos/rbac';
+import {
+  aboveGrantorSample,
+  assignableRole,
+  DEFAULT_ROLE_ID,
+  listRoleOptions,
+  permissionsAboveGrantor,
+} from '@/lib/roles/service';
 
 
 /** Max levels walked when resolving a manager chain (also the cycle backstop). */
@@ -109,7 +116,11 @@ export class EmployeeError extends DomainError {
       | 'HAS_DIRECT_REPORTS'
       | 'INVALID_ROLE'
       | 'INVALID_STATUS'
-      | 'INVALID_COUNTRY',
+      | 'INVALID_COUNTRY'
+      // w4-10d: ExpenseOS's three role-change guards (`users.setRole`).
+      | 'LAST_ADMIN'
+      | 'ROLE_SELF_LOCKOUT'
+      | 'ROLE_ABOVE_GRANTOR',
     userMessage: UserMessageCode | UserMessage | null = null,
   ) {
     super(message, userMessage);
@@ -264,6 +275,74 @@ async function assertRole(tx: QueryRunner, roleId: string | null | undefined) {
   }
 }
 
+/**
+ * w4-10d — the permission that opens VeloExpense's admin screens, the employee form among
+ * them: `VELOEXPENSE_ADMIN_PERMISSION` in lib/auth/actor.ts (d74), named here from the
+ * registry because actor.ts imports this module. test/employees.db.test.ts pins the two equal.
+ */
+export const EMPLOYEE_FORM_PERMISSION: string = P.admin.appSettings.update;
+
+/**
+ * w4-10d — how many OTHER people hold System Administrator and are active: ExpenseOS's
+ * last-admin count (`users.setRole`), over VeloExpense's columns.
+ */
+async function otherActiveAdmins(tx: QueryRunner, employeeId: string): Promise<number> {
+  const r = await tx.query(
+    `SELECT count(*)::int AS n FROM app_user
+      WHERE role_id = $1::uuid AND employee_status = 'ACTIVE' AND deleted_at IS NULL AND id <> $2`,
+    [SYSTEM_ROLE_IDS.admin, employeeId],
+  );
+  return r.rows[0].n as number;
+}
+
+/** w4-10d: refuse when this person is the tenant's last active System Administrator. */
+async function assertNotLastAdmin(tx: QueryRunner, employee: EmployeeRow) {
+  if (employee.role_id !== SYSTEM_ROLE_IDS.admin) return;
+  if ((await otherActiveAdmins(tx, employee.id)) < 1) {
+    throw new EmployeeError('Cannot demote the last active admin', 'LAST_ADMIN', 'LAST_ADMIN');
+  }
+}
+
+/**
+ * w4-10d — ExpenseOS's three guards on a role change (`users.setRole`, 1e682dd6), in its
+ * order. VeloExpense has no users router yet (the People screen is not ported), so they sit
+ * where VeloExpense changes a role: the employee form's update.
+ *
+ *   · last admin: "if demoting from the admin system role … refuse if the org would be left
+ *     with zero active users" holding it;
+ *   · self-lockout: the caller cannot change their own role to one without the permission
+ *     that let them make the change — ExpenseOS's `user.setRole`; VeloExpense: the employee
+ *     form's permission, `EMPLOYEE_FORM_PERMISSION`;
+ *   · grant ceiling: no role carrying permissions the caller does not hold
+ *     (`permissionsAboveGrantor`, lib/roles/service.ts).
+ */
+async function assertRoleChange(
+  tx: QueryRunner,
+  current: EmployeeRow,
+  role: { id: string; permissions: readonly string[] },
+  actor: EmployeeRow,
+) {
+  if (current.role_id === SYSTEM_ROLE_IDS.admin && role.id !== SYSTEM_ROLE_IDS.admin) {
+    await assertNotLastAdmin(tx, current);
+  }
+  if (current.id === actor.id && !role.permissions.includes(EMPLOYEE_FORM_PERMISSION)) {
+    throw new EmployeeError(
+      'Cannot change your own role to one without the permission to manage employees',
+      'ROLE_SELF_LOCKOUT',
+      'ROLE_SELF_LOCKOUT',
+    );
+  }
+  const escalating = permissionsAboveGrantor(role, actor.role_permissions);
+  if (escalating.length > 0) {
+    const sample = aboveGrantorSample(escalating);
+    throw new EmployeeError(
+      `Cannot assign a role with permissions you do not hold: ${sample}`,
+      'ROLE_ABOVE_GRANTOR',
+      { code: 'ROLE_ABOVE_GRANTOR', params: { permissions: sample } },
+    );
+  }
+}
+
 /** w2-10: an assigned ISO-3166-1 alpha-2 code, or nothing. The table's CHECK holds the
  *  shape; this holds the list, and says so in a sentence rather than as a 500. */
 function assertCountry(country: string | null | undefined) {
@@ -357,13 +436,28 @@ export async function updateEmployee(
   tx: QueryRunner,
   employeeId: string,
   patch: EmployeePatch,
+  /** w4-10d: who makes the change — required to change a role (ExpenseOS's guards read it). */
+  opts: { actor?: EmployeeRow } = {},
 ): Promise<EmployeeRow> {
   const current = await getEmployee(tx, employeeId);
   if (!current) throw new EmployeeError('employee not found', 'NOT_FOUND');
 
   // An unchanged role is not re-checked: a person may still hold a role that has since been
   // deactivated, and saving their record should not be refused for it.
-  if (patch.roleId !== current.role_id) await assertRole(tx, patch.roleId);
+  if (patch.roleId != null && patch.roleId !== current.role_id) {
+    await assertRole(tx, patch.roleId);
+    // w4-10d: a role change names who makes it, so ExpenseOS's guards always run — a caller
+    // that cannot say is a bug, not a change to let through.
+    if (!opts.actor) throw new Error('updateEmployee: a role change needs the acting employee');
+    const role = await assignableRole(tx, patch.roleId);
+    await assertRoleChange(tx, current, role!, opts.actor);
+  }
+  // w4-10d (VeloExpense): deactivating through the form ends the last admin as surely as a
+  // demotion does, so the same count applies. Not in ExpenseOS, whose `deactivate` checks
+  // only the caller themselves.
+  if (patch.employeeStatus === 'DEACTIVATED' && current.employee_status !== 'DEACTIVATED') {
+    await assertNotLastAdmin(tx, current);
+  }
   assertStatus(patch.employeeStatus);
   assertCountry(patch.country);
 
@@ -442,6 +536,8 @@ export async function deactivateEmployee(
       'DEACTIVATE_SELF',
     );
   }
+  // w4-10d (VeloExpense): nor the tenant's last active System Administrator — see updateEmployee.
+  if (employee.deleted_at === null) await assertNotLastAdmin(tx, employee);
 
   const reports = await getDirectReports(tx, employeeId);
   if (reports.length > 0) {

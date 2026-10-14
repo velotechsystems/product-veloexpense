@@ -42,14 +42,14 @@
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import { withInviteLookup, withOrg } from '@/lib/tenant/context';
 import type { QueryRunner } from '@/lib/db/client';
-import { DomainError } from '@/lib/errors/domain';
+import { DomainError, type UserMessage } from '@/lib/errors/domain';
 import type { UserMessageCode } from '@/lib/i18n/catalog/errors';
 import { append as auditAppend, type AuditActor } from '@/lib/audit/service';
 import { getBranding } from '@/lib/branding/service';
 import { sendEmail, originForTenant } from '@/lib/notifications/email';
 import { emailShell } from '@/lib/notifications/email-shell';
 import { EmployeeError, createEmployee } from '@/lib/employees/service';
-import { assignableRole, DEFAULT_ROLE_ID } from '@/lib/roles/service';
+import { aboveGrantorSample, assignableRole, DEFAULT_ROLE_ID, permissionsAboveGrantor } from '@/lib/roles/service';
 import { ORG } from '@/lib/tenant/sql';
 
 /** How long an invitation lives. Days, not minutes: unlike a signup confirmation,
@@ -60,6 +60,7 @@ export type InviteErrorCode =
   | 'EMAIL_REQUIRED'
   | 'EMAIL_SHAPE'
   | 'ROLE_UNKNOWN'
+  | 'ROLE_ABOVE_GRANTOR'
   | 'ALREADY_A_MEMBER'
   | 'ALREADY_INVITED'
   | 'NOT_FOUND'
@@ -69,7 +70,7 @@ export class InviteError extends DomainError {
   constructor(
     message: string,
     readonly code: InviteErrorCode,
-    userMessage: UserMessageCode | null = null,
+    userMessage: UserMessageCode | UserMessage | null = null,
   ) {
     super(message, userMessage);
     this.name = 'InviteError';
@@ -148,6 +149,8 @@ export async function issueInvite(
   tx: QueryRunner,
   actor: AuditActor,
   input: NewInvite,
+  /** w4-10d: what the inviter holds — the role offered may not grant more (see below). */
+  grantor: { permissions: readonly string[] },
 ): Promise<IssuedInvite> {
   const email = input.email.trim();
   if (email === '') {
@@ -159,6 +162,19 @@ export async function issueInvite(
   const role = await assignableRole(tx, input.roleId);
   if (!role) {
     throw new InviteError(`unknown role ${input.roleId}`, 'ROLE_UNKNOWN', 'ROLE_UNKNOWN');
+  }
+  // w4-10d (VeloExpense): ExpenseOS's grant ceiling (`users.setRole`), applied to the role an
+  // invitation promises too — otherwise an admin whose role lacks a permission could invite
+  // a second address of their own into a role that has it. ExpenseOS's invite path does not
+  // check this.
+  const escalating = permissionsAboveGrantor(role, grantor.permissions);
+  if (escalating.length > 0) {
+    const sample = aboveGrantorSample(escalating);
+    throw new InviteError(
+      `Cannot assign a role with permissions you do not hold: ${sample}`,
+      'ROLE_ABOVE_GRANTOR',
+      { code: 'ROLE_ABOVE_GRANTOR', params: { permissions: sample } },
+    );
   }
 
   const member = await tx.query(
@@ -225,8 +241,9 @@ export async function sendInvite(
   tx: QueryRunner,
   actor: AuditActor,
   input: NewInvite,
+  grantor: { permissions: readonly string[] },
 ): Promise<IssuedInvite> {
-  const issued = await issueInvite(tx, actor, input);
+  const issued = await issueInvite(tx, actor, input, grantor);
   const branding = await getBranding(tx);
   // VX5-5: the TENANT's origin. An invitation to join Acme should land on Acme's
   // address, where the host and the session they are about to create agree.
