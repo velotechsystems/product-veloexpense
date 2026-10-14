@@ -419,6 +419,30 @@ describe('listDelegations', () => {
     );
     expect(inSeptember[0].active).toBe(true);
   });
+
+  it("reads the day in the tenant's working timezone, not the database server's", async () => {
+    /**
+     * 0008's rule: inclusive calendar dates in the tenant's working timezone
+     * (`organization.default_timezone`). 02:00 UTC on 16 June is still the 15th in Toronto,
+     * so a delegation ending on the 15th still covers a Toronto tenant then, and has ended
+     * for a UTC one. The answer used to follow the database server's own zone.
+     */
+    await create(alice, { toUserId: bob.id, startsOn: '2026-06-10', endsOn: '2026-06-15' });
+    const lateEvening = new Date('2026-06-16T02:00:00Z');
+    const activeIn = async (zone: string) => {
+      await admin.query(`UPDATE organization SET default_timezone = $2 WHERE id = $1`, [orgId, zone]);
+      return (await withOrg(orgId, (tx) => listDelegations(tx, { onDate: lateEvening })))[0].active;
+    };
+    try {
+      expect(await activeIn('America/Toronto')).toBe(true);
+      expect(await activeIn('UTC')).toBe(false);
+      expect(await withOrg(orgId, (tx) => onwardDelegation(tx, alice.id, lateEvening))).toBeNull();
+      await activeIn('America/Toronto');
+      expect(await withOrg(orgId, (tx) => onwardDelegation(tx, alice.id, lateEvening))).not.toBeNull();
+    } finally {
+      await admin.query(`UPDATE organization SET default_timezone = 'UTC' WHERE id = $1`, [orgId]);
+    }
+  });
 });
 
 /* ── revoking ──────────────────────────────────────────────────────────────── */

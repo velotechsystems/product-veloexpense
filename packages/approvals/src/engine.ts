@@ -481,6 +481,20 @@ async function skipOnLeave(db: Db, userId: string): Promise<string> {
   return cursor;
 }
 
+/**
+ * VeloExpense: today in the tenant's working timezone, as the UTC midnight Prisma sends for a
+ * `date` column — so a comparison against `delegation.starts_on` / `ends_on` is a comparison
+ * of calendar days. Read inside the caller's tenant transaction (`app.current_org`).
+ */
+async function tenantToday(db: Db): Promise<Date> {
+  const rows = await db.$queryRaw<{ d: string }[]>`
+    SELECT (now() AT TIME ZONE COALESCE(
+             (SELECT o.default_timezone FROM organization o
+               WHERE o.id = NULLIF(current_setting('app.current_org', true), '')::uuid),
+             'UTC'))::date::text AS d`;
+  return new Date(`${rows[0].d}T00:00:00Z`);
+}
+
 /** The active in-scope delegatee for a delegator right now, or null. Picks the
  *  most recently created when several overlap. */
 async function activeDelegateeFor(
@@ -488,13 +502,16 @@ async function activeDelegateeFor(
   delegatorId: string,
   subjectType: ApprovalSubjectType,
 ): Promise<string | null> {
-  const now = new Date();
   const scopes: ('ALL' | 'REPORTS')[] = ['ALL'];
   const specific = scopeForSubject(subjectType);
   if (specific) scopes.push(specific);
   // VeloExpense: the table's names (0008). `revokedAt: null` is ExpenseOS's `active`, and
-  // the range is inclusive calendar dates; `now` is compared as today's date (a delegation
-  // is "away these days", lib/approvals/delegations.ts).
+  // the range is inclusive calendar dates (a delegation is "away these days",
+  // lib/approvals/delegations.ts), compared against TODAY IN THE TENANT'S WORKING TIMEZONE
+  // (`organization.default_timezone`, 0027), as that file does. Not `new Date()`: Prisma
+  // sends a Date for a `date` column as its UTC day, so for a Toronto tenant a delegation
+  // ending today stopped covering at 20:00, and one starting tomorrow began then.
+  const now = await tenantToday(db);
   const d = await db.delegation.findFirst({
     where: {
       fromUserId: delegatorId,

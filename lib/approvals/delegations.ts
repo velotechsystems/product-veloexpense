@@ -79,6 +79,19 @@ export interface DelegationRow {
 }
 
 /**
+ * The tenant's calendar day that contains the instant `$n` (a timestamptz parameter), in the
+ * organization's working timezone (`organization.default_timezone`, 0027) — rule 4 above.
+ *
+ * Not `$n::date`, which casts in the SESSION's zone: the database server's, whatever that
+ * is (UTC on RDS, America/Toronto on a developer's machine), so a delegation ending today
+ * stopped covering at 20:00 for a Toronto tenant on one and at midnight on the other. And
+ * not `current_date`, for the same reason. Nothing here depends on the session's zone.
+ */
+const tenantDayOf = (param: string) =>
+  `((${param}::timestamptz) AT TIME ZONE COALESCE(
+      (SELECT o.default_timezone FROM organization o WHERE o.id = ${ORG}), 'UTC'))::date`;
+
+/**
  * `starts_on::text`, deliberately.
  *
  * `node-postgres` maps a `date` column to a JS `Date` at local midnight, so a
@@ -103,8 +116,8 @@ const SELECT_DELEGATION = `
          d.note,
          d.created_at,
          (d.revoked_at IS NULL
-          AND d.starts_on <= $1::date
-          AND (d.ends_on IS NULL OR d.ends_on >= $1::date)) AS active
+          AND d.starts_on <= ${tenantDayOf('$1')}
+          AND (d.ends_on IS NULL OR d.ends_on >= ${tenantDayOf('$1')})) AS active
     FROM delegation d
     JOIN app_user f ON f.id = d.from_user_id
     JOIN app_user t ON t.id = d.to_user_id
@@ -116,6 +129,7 @@ export interface DelegationFilter {
    *  screens only — RLS still scopes to the org). */
   forUserId?: string;
   includeRevoked?: boolean;
+  /** An instant; a delegation is active on the tenant's calendar day containing it. */
   onDate?: Date;
 }
 
@@ -164,8 +178,8 @@ export async function onwardDelegation(
        JOIN app_user t ON t.id = d.to_user_id
       WHERE d.from_user_id = $1
         AND d.revoked_at IS NULL
-        AND d.starts_on <= $2::date
-        AND (d.ends_on IS NULL OR d.ends_on >= $2::date)
+        AND d.starts_on <= ${tenantDayOf('$2')}
+        AND (d.ends_on IS NULL OR d.ends_on >= ${tenantDayOf('$2')})
       ORDER BY d.created_at DESC
       LIMIT 1`,
     [toUserId, onDate],
