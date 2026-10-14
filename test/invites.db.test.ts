@@ -25,6 +25,17 @@ import {
 } from '@/lib/invites/service';
 import { resolveSsoUser, onSsoDenied } from '@/lib/auth/resolve-sso-user';
 import type { AuditActor } from '@/lib/audit/service';
+import type { ResolvedUser, SsoDenied, SsoIdentity } from '@/src/auth-kit';
+
+// AUTHKITSYNC-VE-1 (auth-kit v0.3): the resolver takes an identity. Google is the
+// only provider this product offers, and the kit has verified the address.
+const google = (email: string): SsoIdentity => ({
+  provider: 'google', email, emailVerified: true, tenantId: null, objectId: null,
+});
+const signedIn = (r: ResolvedUser | SsoDenied): ResolvedUser => {
+  if ('denied' in r) throw new Error(`denied: ${r.denied}`);
+  return r;
+};
 
 const admin = new Pool({
   connectionString: process.env.ADMIN_DATABASE_URL ?? process.env.DATABASE_URL,
@@ -570,11 +581,10 @@ describe('accepting after the invited role was deactivated (w4-10b)', () => {
 describe('signing in — the door itself', () => {
   it('provisions from a live invitation, once', async () => {
     await issue({ roleId: EXECUTIVE });
-    const first = await resolveSsoUser(orgSlug, INVITEE);
-    expect(first).not.toBeNull();
-    const second = await resolveSsoUser(orgSlug, INVITEE);
+    const first = signedIn(await resolveSsoUser(orgSlug, google(INVITEE)));
+    const second = signedIn(await resolveSsoUser(orgSlug, google(INVITEE)));
     // Second sign-in finds the member, not the invitation.
-    expect(second!.userId).toBe(first!.userId);
+    expect(second.userId).toBe(first.userId);
     const members = await admin.query('SELECT count(*)::int AS n FROM app_user');
     expect(members.rows[0].n).toBe(2);
   });
@@ -588,17 +598,16 @@ describe('signing in — the door itself', () => {
    * caught it because `e2e/auth.setup.ts` mints session cookies directly and the
    * browser suite has never been through `signIn`. */
   it('signs in a member who already exists — which it could not do before', async () => {
-    const founder = await resolveSsoUser(orgSlug, 'founder@acme.test');
-    expect(founder).not.toBeNull();
-    expect(founder!.userId).toBe(adminUserId);
-    expect(founder!.orgId).toBe(orgId);
+    const founder = signedIn(await resolveSsoUser(orgSlug, google('founder@acme.test')));
+    expect(founder.userId).toBe(adminUserId);
+    expect(founder.orgId).toBe(orgId);
     // And made nobody: an existing member is found, not provisioned again.
     const members = await admin.query('SELECT count(*)::int AS n FROM app_user');
     expect(members.rows[0].n).toBe(1);
   });
 
   it('refuses somebody with no invitation and no membership', async () => {
-    expect(await resolveSsoUser(orgSlug, 'stranger@acme.test')).toBeNull();
+    expect(await resolveSsoUser(orgSlug, google('stranger@acme.test'))).toEqual({ denied: 'unknown_user' });
     expect(await admin.query('SELECT count(*)::int AS n FROM app_user')).toMatchObject({
       rows: [{ n: 1 }],
     });
@@ -613,7 +622,7 @@ describe('signing in — the door itself', () => {
     });
     // Invited to Acme, signing in at Globex. Refused, and no member is made in
     // either tenant.
-    expect(await resolveSsoUser(other.slug, INVITEE)).toBeNull();
+    expect(await resolveSsoUser(other.slug, google(INVITEE))).toEqual({ denied: 'unknown_user' });
     const acme = await withOrg(orgId, (tx) =>
       tx.query('SELECT count(*)::int AS n FROM app_user'),
     );
@@ -629,19 +638,18 @@ describe('signing in — the door itself', () => {
    * belongs at the door. */
   it('refuses a DEACTIVATED member at the door, not one room further in', async () => {
     await issue();
-    const joined = await resolveSsoUser(orgSlug, INVITEE);
-    expect(joined).not.toBeNull();
+    const joined = signedIn(await resolveSsoUser(orgSlug, google(INVITEE)));
     await admin.query('UPDATE app_user SET deleted_at = clock_timestamp() WHERE id = $1', [
-      joined!.userId,
+      joined.userId,
     ]);
-    expect(await resolveSsoUser(orgSlug, INVITEE)).toBeNull();
+    expect(await resolveSsoUser(orgSlug, google(INVITEE))).toEqual({ denied: 'unknown_user' });
   });
 
   it('does not resurrect a deactivated member through a new invitation', async () => {
     await issue();
-    const joined = await resolveSsoUser(orgSlug, INVITEE);
+    const joined = signedIn(await resolveSsoUser(orgSlug, google(INVITEE)));
     await admin.query('UPDATE app_user SET deleted_at = clock_timestamp() WHERE id = $1', [
-      joined!.userId,
+      joined.userId,
     ]);
     // An admin may invite the address again — `issueInvite`'s member check
     // ignores deactivated rows on purpose, because re-hiring is a real thing.
@@ -657,18 +665,54 @@ describe('signing in — the door itself', () => {
   });
 
   it('audits a denied sign-in against the tenant it was aimed at', async () => {
-    await onSsoDenied(orgSlug, 'stranger@acme.test', 'google');
+    await onSsoDenied({ orgSlug, provider: 'google', reason: 'unknown_user', verifiedEmail: 'stranger@acme.test' });
     const entries = await admin.query(
       "SELECT actor_id, actor_email, action, details FROM audit_entry WHERE action = 'SIGN_IN_DENIED'",
     );
     expect(entries.rows).toHaveLength(1);
     expect(entries.rows[0].actor_id).toBeNull();
     expect(entries.rows[0].actor_email).toBe('stranger@acme.test');
-    expect(entries.rows[0].details).toMatchObject({ provider: 'google' });
+    expect(entries.rows[0].details).toMatchObject({ provider: 'google', reason: 'unknown_user' });
+  });
+
+  /* AUTHKITSYNC-VE-1: the kit passes an address only when the provider verified
+   * it, and audit_entry needs one (or a user id) for its actor. */
+  it('writes nothing, and does not throw, for a refusal with no verified address or no org', async () => {
+    await expect(onSsoDenied({ orgSlug, provider: 'google', reason: 'email_unverified' })).resolves.toBeUndefined();
+    await expect(onSsoDenied({ orgSlug: null, provider: 'google', reason: 'org_cookie_missing' })).resolves.toBeUndefined();
+    const entries = await admin.query(
+      "SELECT count(*)::int AS n FROM audit_entry WHERE action = 'SIGN_IN_DENIED'",
+    );
+    expect(entries.rows[0].n).toBe(0);
+  });
+
+  /* AUTHKITSYNC-VE-1: every path below acts on a VERIFIED address (invitations
+   * are bound to it). A Microsoft email claim is set by the signing-in user's
+   * own directory, so it must never reach them — even with an invitation live
+   * for that exact address. */
+  it('refuses an identity whose email is not verified (Microsoft), and consumes no invitation', async () => {
+    await issue();
+    const entra: SsoIdentity = {
+      provider: 'microsoft-entra-id',
+      email: INVITEE,
+      emailVerified: null,
+      tenantId: '11111111-1111-4111-8111-111111111111',
+      objectId: '22222222-2222-4222-8222-222222222222',
+    };
+    expect(await resolveSsoUser(orgSlug, entra)).toEqual({ denied: 'email_unverified' });
+    const members = await admin.query('SELECT count(*)::int AS n FROM app_user');
+    expect(members.rows[0].n).toBe(1);
+    expect((await inviteRow()).accepted_at).toBeNull();
+  });
+
+  it('refuses a slug that is not an organization', async () => {
+    expect(await resolveSsoUser('no-such-tenant', google(INVITEE))).toEqual({ denied: 'unknown_org' });
   });
 
   it('writes nothing for a slug that is not an organization, and does not throw', async () => {
-    await expect(onSsoDenied('no-such-tenant', 'x@y.test', 'google')).resolves.toBeUndefined();
+    await expect(
+      onSsoDenied({ orgSlug: 'no-such-tenant', provider: 'google', reason: 'unknown_org', verifiedEmail: 'x@y.test' }),
+    ).resolves.toBeUndefined();
     const entries = await admin.query(
       "SELECT count(*)::int AS n FROM audit_entry WHERE action = 'SIGN_IN_DENIED'",
     );

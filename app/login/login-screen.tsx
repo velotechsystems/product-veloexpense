@@ -29,7 +29,7 @@ export function LoginScreen({ initialOrgSlug, redirectTo }: { initialOrgSlug: st
         productName: 'VeloExpense',
         headline: 'Expense management, simplified.',
         subtitle: 'Submit, approve, and reconcile expenses across your organization.',
-        bullets: ['Google & Microsoft SSO', 'Multi-currency & tax built in', 'Connects to your accounting system'],
+        bullets: ['Sign in with Google', 'Multi-currency & tax built in', 'Connects to your accounting system'],
         panelStyle: 'gradient',
         footer: '© 2026 Velotech Systems',
       }}
@@ -47,7 +47,11 @@ export function LoginScreen({ initialOrgSlug, redirectTo }: { initialOrgSlug: st
         inviteNote: 'Access is invite-only. Ask your admin for an invite.',
       }}
       showCredentials={false}
-      providers={{ google: true, microsoft: true }}
+      // AUTHKITSYNC-VE-1: no Microsoft button. auth-kit v0.3 does not offer
+      // Microsoft to a product that has not bound it to each organization's
+      // Entra directory (auth.ts; lib/auth/resolve-sso-user.ts says why), so the
+      // button could only lead to an error page.
+      providers={{ google: true, microsoft: false }}
       orgSlug={orgSlug}
       onOrgSlugChange={setOrgSlug}
       onSso={async (provider, slug) => {

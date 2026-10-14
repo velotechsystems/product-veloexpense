@@ -11,8 +11,13 @@
  *  1. Login page stores the org slug cookie (org-cookie.ts) and calls
  *     signIn('google' | 'microsoft-entra-id').
  *  2. Provider round-trips; `signIn` callback fires with the verified profile.
- *  3. The app's resolveSsoUser(orgSlug, email) is consulted — INVITE-ONLY:
- *     null → denied (and onSsoDenied fires for the audit trail).
+ *  3. The kit builds an SsoIdentity from the validated ID-token claims
+ *     (sso-identity.ts) and refuses what cannot be one; then the app's
+ *     resolveSsoUser(orgSlug, identity) is consulted — INVITE-ONLY: a denial →
+ *     refused, and onSsoDenied fires with the reason for the audit trail.
+ *
+ * v0.3 (upstreamed from VeloPulse SSOTENANT-1 / SSOAUDIT-1): Microsoft is off
+ * unless the app declares `microsoftDirectoryBinding` (types.ts says why).
  *  4. jwt/session callbacks stamp the standardized VeloTech claims
  *     { orgId, role, subjectId } so SSO and credentials sessions look identical.
  */
@@ -22,29 +27,38 @@ import MicrosoftEntraID from 'next-auth/providers/microsoft-entra-id';
 import type { NextAuthConfig } from 'next-auth';
 import type { AuthKitOptions, ResolvedUser } from './types';
 import { readOrgSlug } from './org-cookie';
+import { GOOGLE_ID, MICROSOFT_ID, ssoIdentityFrom } from './sso-identity';
 
-export const MICROSOFT_PROVIDER_ID = 'microsoft-entra-id';
-export const GOOGLE_PROVIDER_ID = 'google';
+export const MICROSOFT_PROVIDER_ID = MICROSOFT_ID;
+export const GOOGLE_PROVIDER_ID = GOOGLE_ID;
+
+/** Whether Microsoft is actually offered: asked for AND the app binds the directory. */
+export function microsoftEnabled(options: Pick<AuthKitOptions, 'providers' | 'microsoftDirectoryBinding'>): boolean {
+  return options.providers.microsoft && options.microsoftDirectoryBinding === true;
+}
 
 export function createAuthKitConfig(options: AuthKitOptions): NextAuthConfig {
   const providers: NextAuthConfig['providers'] = [];
   if (options.providers.google) {
     providers.push(Google({ allowDangerousEmailAccountLinking: false }));
   }
-  if (options.providers.microsoft) {
+  if (microsoftEnabled(options)) {
     providers.push(MicrosoftEntraID({ allowDangerousEmailAccountLinking: false }));
+  } else if (options.providers.microsoft) {
+    console.warn(
+      `[auth-kit] ${options.productKey}: Microsoft sign-in is configured but not offered — ` +
+        'set microsoftDirectoryBinding once resolveSsoUser binds the Entra directory and object id.',
+    );
   }
 
   return {
     providers,
     session: { strategy: 'jwt' },
     callbacks: {
-      async signIn({ user, account }) {
+      async signIn({ user, account, profile }) {
         // Credentials flow is validated app-side in authorize(); pass through.
         if (!account || account.provider === 'credentials') return true;
-
-        const email = user.email?.trim().toLowerCase();
-        if (!email) return false;
+        const provider = account.provider;
 
         // Org slug from the pre-redirect cookie (10-min TTL).
         const { cookies } = await import('next/headers');
@@ -54,11 +68,39 @@ export function createAuthKitConfig(options: AuthKitOptions): NextAuthConfig {
           .map((c) => `${c.name}=${encodeURIComponent(c.value)}`)
           .join('; ');
         const orgSlug = readOrgSlug(options.productKey, cookieHeader);
-        if (!orgSlug) return false;
+        if (!orgSlug) {
+          // The cookie expired (the round trip took longer than its TTL) or
+          // never existed. Audited on no org so it can be correlated with the
+          // login page's timeout message. Expired and missing look the same.
+          await options.onSsoDenied?.({ orgSlug: null, provider, reason: 'org_cookie_missing' });
+          return false;
+        }
 
-        const resolved = await options.resolveSsoUser(orgSlug, email);
-        if (!resolved) {
-          await options.onSsoDenied?.(orgSlug, email, account.provider);
+        // Belt and braces: the provider is not registered without the binding,
+        // so this only fires if an app registers Entra itself.
+        if (provider === MICROSOFT_ID && options.microsoftDirectoryBinding !== true) {
+          await options.onSsoDenied?.({ orgSlug, provider, reason: 'entra_not_configured' });
+          return false;
+        }
+
+        // An identity, not just an email (see sso-identity.ts).
+        const built = ssoIdentityFrom(provider, profile as Record<string, unknown> | undefined, user.email);
+        if (!built.ok) {
+          await options.onSsoDenied?.({ orgSlug, provider, reason: built.reason });
+          return false;
+        }
+
+        const resolved = await options.resolveSsoUser(orgSlug, built.identity);
+        if ('denied' in resolved) {
+          const id = built.identity;
+          await options.onSsoDenied?.({
+            orgSlug,
+            provider,
+            reason: resolved.denied,
+            ...(resolved.userId ? { userId: resolved.userId } : {}),
+            // Only an address the provider verified; never Microsoft's claim.
+            ...(id.emailVerified === true ? { verifiedEmail: id.email } : {}),
+          });
           return false;
         }
 
