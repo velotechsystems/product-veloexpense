@@ -42,6 +42,26 @@ import { router, withPermission } from '@/server/trpc';
 // in one language only is kept rather than refused (ExpenseOS's `labelSchema.partial()` takes
 // the other, empty language as invalid).
 import { descriptionSchema, labelSchema } from './adminLookup';
+import { aboveGrantorSample, permissionsAboveGrantor } from '@/lib/roles/service';
+
+/**
+ * VeloExpense (w4-10e): the grant ceiling, on the Role Builder. Not in ExpenseOS, whose roles
+ * router lets a holder of `admin.role.create` / `admin.role.update` put ANY permission in a
+ * role — their own included — so the permission to edit roles is the permission to become
+ * an administrator. The rule is ExpenseOS's own, from `users.setRole` (and the employee form
+ * since w4-10d): you cannot grant permissions you do not hold. System Administrator holds
+ * every permission, so it is unaffected; removing a permission is never refused here (the
+ * last-grant guard below decides that).
+ */
+function assertWithinGrant(granted: readonly string[], editorPermissions: readonly string[]) {
+  const escalating = permissionsAboveGrantor({ permissions: granted }, editorPermissions);
+  if (escalating.length > 0) {
+    throw new TRPCError({
+      code: 'FORBIDDEN',
+      message: `Cannot grant permissions you do not hold: ${aboveGrantorSample(escalating)}`,
+    });
+  }
+}
 
 const externalIdsSchema = z.record(z.string().min(1).max(100), z.string().min(1).max(200));
 
@@ -168,6 +188,9 @@ export const rolesRouter = router({
       }),
     )
     .mutation(async ({ ctx, input }) => {
+      // VeloExpense (w4-10e): a new role grants nothing its creator does not hold — active or
+      // not, since switching it on later is an update that checks only what it adds.
+      assertWithinGrant(input.permissions, ctx.rbac.permissions);
       return withAudit(
         ctx.db,
         {
@@ -229,9 +252,22 @@ export const rolesRouter = router({
       // VeloExpense: by id within the tenant scope (RLS) — the key is (organization, id).
       const target = await ctx.db.role.findFirst({
         where: { id: input.id },
-        select: { id: true, isSystem: true, permissions: true },
+        // VeloExpense (w4-10e): `active` too, for the grant ceiling below.
+        select: { id: true, isSystem: true, permissions: true, active: true },
       });
       if (!target) throw new TRPCError({ code: 'NOT_FOUND' });
+
+      // VeloExpense (w4-10e): what this update newly grants to the role's holders — the
+      // permissions it adds, or all of them when it switches an inactive role on — may not go
+      // beyond the editor's own. Unchanged grants are not re-checked, so somebody who may
+      // edit a role but not hold all it grants can still rename it or narrow it.
+      {
+        const nextActive = input.patch.active ?? target.active;
+        const nextPermissions = input.patch.permissions ?? target.permissions;
+        const before = new Set(target.active ? target.permissions : []);
+        const added = nextActive ? nextPermissions.filter((p) => !before.has(p)) : [];
+        assertWithinGrant(added, ctx.rbac.permissions);
+      }
 
       if (target.isSystem && input.patch.active === false) {
         throw new TRPCError({

@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { permissions as P } from '@expenseos/rbac';
+import { ALL_PERMISSIONS, permissions as P } from '@expenseos/rbac';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { stubFn } from '@/test-utils/stubFn';
 import { makeContext } from '../__test-helpers__/trpcCaller';
@@ -204,7 +204,8 @@ describe('permissionCatalog', () => {
 describe('create', () => {
   it('creates an active custom role', async () => {
     const db = makeDb();
-    const c = await callerFor(db, CREATE);
+    // VeloExpense (w4-10e): the creator holds what the role grants — the grant ceiling.
+    const c = await callerFor(db, [...CREATE, P.expense.report.readOwn]);
     await expect(
       c.create({
         label: { en: 'Reviewer', 'fr-CA': 'Réviseur' },
@@ -447,5 +448,77 @@ describe('delete', () => {
     expect(db.role.delete).toHaveBeenCalledWith({
       where: { organizationId_id: { organizationId: ORG, id: ROLE } },
     });
+  });
+});
+
+// ── VeloExpense (w4-10e): the grant ceiling ────────────────────────────────────
+
+describe('the grant ceiling (VeloExpense, w4-10e)', () => {
+  /**
+   * Not in ExpenseOS: there, whoever may edit roles may put any permission in one, their
+   * own role included, so `admin.role.update` amounts to System Administrator. The rule is
+   * ExpenseOS's own from `users.setRole`: you cannot grant what you do not hold.
+   */
+  const MINE = [P.admin.role.list, P.admin.role.create, P.admin.role.update, P.expense.report.readOwn];
+
+  it('refuses a new role granting something its creator does not hold, and names it', async () => {
+    const db = makeDb();
+    const c = await callerFor(db, MINE);
+    await expect(
+      c.create({ label: { en: 'X', 'fr-CA': 'X' }, permissions: [P.expense.report.readAll] } as never),
+    ).rejects.toMatchObject({ code: 'FORBIDDEN', message: expect.stringContaining(P.expense.report.readAll) });
+    // Inactive is no way round it: switching it on later would be an update.
+    await expect(
+      c.create({
+        label: { en: 'X', 'fr-CA': 'X' },
+        permissions: [P.expense.report.readAll],
+        active: false,
+      } as never),
+    ).rejects.toMatchObject({ code: 'FORBIDDEN' });
+    expect(db.role.create).not.toHaveBeenCalled();
+  });
+
+  it('refuses adding a permission the editor does not hold — to their own role or any other', async () => {
+    const db = makeDb();
+    const c = await callerFor(db, MINE);
+    await expect(
+      c.update({
+        id: ROLE,
+        patch: { permissions: [P.expense.report.readOwn, P.admin.appSettings.update] },
+      } as never),
+    ).rejects.toMatchObject({ code: 'FORBIDDEN' });
+    expect(db.role.update).not.toHaveBeenCalled();
+  });
+
+  it('refuses switching on a role that grants more than the editor holds', async () => {
+    const db = makeDb();
+    db.role.findFirst.mockResolvedValue(roleRow({ active: false, permissions: [P.expense.report.readAll] }));
+    const c = await callerFor(db, MINE);
+    await expect(c.update({ id: ROLE, patch: { active: true } } as never)).rejects.toMatchObject({
+      code: 'FORBIDDEN',
+    });
+  });
+
+  it('lets an editor rename or narrow a role that grants more than they hold', async () => {
+    const db = makeDb();
+    db.role.findFirst.mockResolvedValue(
+      roleRow({ permissions: [P.expense.report.readOwn, P.expense.report.readAll] }),
+    );
+    db.role.count.mockResolvedValue(1); // another role still grants what is removed
+    const c = await callerFor(db, MINE);
+    await expect(
+      c.update({ id: ROLE, patch: { label: { en: 'Renamed', 'fr-CA': 'Renommé' } } } as never),
+    ).resolves.toBeTruthy();
+    await expect(
+      c.update({ id: ROLE, patch: { permissions: [P.expense.report.readOwn] } } as never),
+    ).resolves.toBeTruthy();
+  });
+
+  it('leaves somebody who holds everything unaffected', async () => {
+    const db = makeDb();
+    const c = await callerFor(db, ALL_PERMISSIONS);
+    await expect(
+      c.create({ label: { en: 'Everything', 'fr-CA': 'Tout' }, permissions: [...ALL_PERMISSIONS] } as never),
+    ).resolves.toBeTruthy();
   });
 });
