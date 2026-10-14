@@ -11,7 +11,17 @@ const buttonVariants = cva(
       variant: {
         // 2026 brand: soft-strong primary — stop 200 fill + stop 800 ink (6.6-6.9:1),
         // hover stop 300; dark = stop 400 + dark ink. Never white on a light fill.
-        default: "bg-brand-button text-brand-on-button font-semibold hover:bg-brand-button-hover",
+        //
+        // KITBTN-1: on a light card the soft fill at the base `disabled:opacity-50`
+        // read the same as the enabled button (VeloPulse UI review, 2026-10-13:
+        // Create cycle, Start, Compute, Approve). So, for this variant only:
+        //   - enabled gets a stop-300 edge, so it holds its shape on white;
+        //   - disabled drops the brand: a neutral muted fill and ink, still at the
+        //     base 50% opacity. A faint grey button vs. a tinted one, rather than
+        //     a faint tint vs. a tint. (Full-opacity grey was tried and read as an
+        //     enabled secondary button.)
+        default:
+          "border-brand-300 bg-brand-button text-brand-on-button font-semibold hover:bg-brand-button-hover disabled:border-transparent disabled:bg-muted disabled:text-muted-foreground",
         outline:
           "border-border bg-background hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:border-input dark:bg-input/30 dark:hover:bg-input/50",
         secondary:
