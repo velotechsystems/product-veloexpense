@@ -1,6 +1,12 @@
 /**
  * VX5-4 — `/`, and what it says to whom.
  *
+ * w4-09 (d72): ExpenseOS's dashboard replaced this page, at `/dashboard`, and `/` redirects
+ * there. The setup checklist moved with it as a VeloExpense card above ExpenseOS's, so the
+ * checklist cases below run on `/dashboard`; the page's own cases (its heading, its cards,
+ * the redirect) are `e2e/dashboard.spec.ts`'s. The two cases that asserted the old page's
+ * tenant heading and link row went with that page.
+ *
  * This page was the unmodified `create-next-app` scaffold for four phases —
  * "To get started, edit the page.tsx file", served to every signed-in customer.
  * `e2e/crawl.spec.ts` has had `/` in its list the whole time and never noticed,
@@ -54,19 +60,8 @@ test.describe('the home page', () => {
   test.describe('as an admin', () => {
     test.use({ storageState: ADMIN_STATE });
 
-    test('names the tenant and offers the way in — and is not a Next.js template', async ({
-      page,
-    }) => {
-      await page.goto('/');
-      await expect(page.getByRole('heading', { name: 'Demo Co', level: 1 })).toBeVisible();
-      // Scoped to the card row. Unscoped, `name: 'Approvals'` also matches the
-      // checklist's "Set up approvals" button — role-name matching is a
-      // case-insensitive substring, which is easy to forget and produces a
-      // strict-mode violation rather than a wrong pass.
-      const links = page.getByTestId('home-links');
-      await expect(links.getByRole('link', { name: 'Expense reports' })).toBeVisible();
-      await expect(links.getByRole('link', { name: 'Approvals' })).toBeVisible();
-
+    test('is not a Next.js template', async ({ page }) => {
+      await page.goto('/dashboard');
       // The scaffold, gone. Pinned by name because "it renders" was true of the
       // scaffold too, and a future regression would look exactly like that.
       await expect(page.getByText('edit the')).toBeHidden();
@@ -99,7 +94,7 @@ test.describe('the home page', () => {
        * independently in `test/onboarding-starter.db.test.ts`, so neither test
        * is checking itself against itself. */
       const status = await withOrg(await demoOrgId(), (tx) => setupStatus(tx));
-      await page.goto('/');
+      await page.goto('/dashboard');
 
       if (status.complete) {
         await expect(page.getByRole('heading', { name: 'Finish setting up' })).toBeHidden();
@@ -137,7 +132,7 @@ test.describe('the home page', () => {
       // destination is a page that loads fine, so only naming the destination catches it.
       const status = await withOrg(await demoOrgId(), (tx) => setupStatus(tx));
       test.skip(status.complete, 'nothing outstanding in the demo tenant: no checklist to follow');
-      await page.goto('/');
+      await page.goto('/dashboard');
       for (const item of SETUP_ITEMS) {
         if (status.items.find((i) => i.item === item)!.done) continue;
         const link = page.getByRole('link', { name: ACTION[item].cta }).first();
@@ -155,7 +150,7 @@ test.describe('the home page', () => {
       const status = await withOrg(await demoOrgId(), (tx) => setupStatus(tx));
       test.skip(status.complete, 'nothing outstanding in the demo tenant: no checklist to hide');
 
-      await page.goto('/');
+      await page.goto('/dashboard');
       await page.getByRole('button', { name: 'Hide' }).click();
       const line = page.getByTestId('setup-collapsed');
       await expect(line).toBeVisible();
@@ -176,15 +171,15 @@ test.describe('the home page', () => {
   test.describe('as an employee', () => {
     test.use({ storageState: EMPLOYEE_STATE });
 
-    test('sees the way in and no admin checklist', async ({ page }) => {
-      await page.goto('/');
-      await expect(
-        page.getByTestId('home-links').getByRole('link', { name: 'Expense reports' }),
-      ).toBeVisible();
+    test('sees no admin checklist', async ({ page }) => {
+      await page.goto('/dashboard');
+      // The dashboard rendered — so the absences below are the checklist's decision, not an
+      // empty page.
+      await expect(page.getByRole('heading', { name: 'My expense reports' })).toBeVisible();
       // The checklist is admin work. An employee is not shown a list of things
-      // they cannot do — and, more to the point, `/` never asks for it on their
+      // they cannot do — and, more to the point, the page never asks for it on their
       // behalf, so they never get a refusal page for something that was never
-      // theirs. `app/actions.ts` has the split.
+      // theirs. `app/(app)/dashboard/actions.ts` has the split.
       await expect(page.getByRole('heading', { name: 'Finish setting up' })).toBeHidden();
       await expect(page.getByRole('link', { name: 'Invite someone' })).toBeHidden();
     });

@@ -81,7 +81,8 @@ describe("an admin's menu", () => {
     show('admin');
     expect(hrefs()).toEqual(
       [
-        '/',
+        // w4-09 (d72): ExpenseOS's dashboard, at its own path, in place of VeloExpense's `/`.
+        '/dashboard',
         '/notifications',
         '/expenses',
         '/admin/reimbursements',
@@ -153,7 +154,13 @@ describe("an admin's menu", () => {
 describe("an employee's menu", () => {
   it('has their own screens and no admin screen', () => {
     show('employee');
-    expect(hrefs()).toEqual(['/', '/approvals/delegations', '/expenses', '/expenses/approvals', '/notifications']);
+    expect(hrefs()).toEqual([
+      '/approvals/delegations',
+      '/dashboard',
+      '/expenses',
+      '/expenses/approvals',
+      '/notifications',
+    ]);
   });
 });
 
@@ -195,6 +202,7 @@ describe('isPortedScreen', () => {
       '/admin/policies',
       '/admin/policy-violations',
       '/expenses/approvals',
+      '/dashboard',
     ]);
   });
 });
