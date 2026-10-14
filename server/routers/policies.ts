@@ -448,8 +448,8 @@ async function assertMileageReferencesKnown(
 // (server/policy/validate.ts). Differences from ExpenseOS, marked:
 //   · the policy currency is the organization's `policy_currency_code` (0015), where
 //     ExpenseOS keeps a `policyCurrency` system flag;
-//   · there is no role table until the role builder (w4-10, d64): `scopeOptions` offers
-//     no roles and a rule cannot be scoped to one yet;
+//   · roles are the tenant's own (0068); a rule's role is held by a composite foreign key
+//     (0070, d64), so another tenant's role is refused like any other scope (a 4xx below);
 //   · each write is audited in the same transaction as the row (ExpenseOS writes the row,
 //     then the audit in a second, empty transaction), and what the table refuses — another
 //     tenant's scope or category, an end before the start, a rule that is not the
@@ -514,16 +514,6 @@ function coerceRuleData(input: z.infer<typeof policyRuleInput>) {
     });
   }
 
-  // VeloExpense: no role table until w4-10 (d64), so `role_id` has no foreign key behind
-  // it. A role id accepted now could name nothing, and the rule would apply to nobody
-  // without saying so. Refused until roles exist; the Rule Builder offers none.
-  if (input.roleId != null) {
-    throw new TRPCError({
-      code: 'BAD_REQUEST',
-      message: 'Rules cannot be scoped to a role yet.',
-    });
-  }
-
   return {
     kindCode: kind.code,
     scope: kind.scope, // denormalized from the kind — never client-supplied
@@ -554,7 +544,7 @@ function policyRuleRefusal(cause: unknown): TRPCError | null {
   if (err?.code === 'P2003') {
     return new TRPCError({
       code: 'BAD_REQUEST',
-      message: 'The department, level, entity, unit or category is not one this organization has.',
+      message: 'The department, level, entity, unit, role or category is not one this organization has.',
       cause,
     });
   }
@@ -1203,7 +1193,7 @@ export const policiesRouter = router({
 
     /** Option lists for the Rule Builder's scoping pickers. */
     scopeOptions: withPermission(P.config.policyRead).query(async ({ ctx }) => {
-      const [jobLevels, legalEntities, businessUnits, departments, categories] =
+      const [jobLevels, legalEntities, businessUnits, departments, roles, categories] =
         await Promise.all([
           ctx.db.jobLevel.findMany({
             where: { active: true },
@@ -1225,15 +1215,13 @@ export const policiesRouter = router({
             select: { id: true, label: true },
             orderBy: { createdAt: 'asc' },
           }),
+          ctx.db.role.findMany({ select: { id: true, label: true }, orderBy: { label: 'asc' } }),
           ctx.db.expenseCategory.findMany({
             where: { active: true },
             select: { id: true, label: true },
             orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }],
           }),
         ]);
-      // VeloExpense: no role table until the role builder (w4-10, d64), so no roles to
-      // offer. The shape keeps ExpenseOS's `roles` so the Rule Builder ports unchanged.
-      const roles: Array<{ id: string; label: string }> = [];
       return { jobLevels, legalEntities, businessUnits, departments, roles, categories };
     }),
 

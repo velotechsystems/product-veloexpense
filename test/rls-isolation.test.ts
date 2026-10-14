@@ -1757,6 +1757,7 @@ describe('RLS tenant isolation', () => {
    * business unit.
    */
   it("external-id sources and business-unit aliases are tenant-isolated, and cannot name another tenant's rows", async () => {
+    await admin.query('DELETE FROM role_external_id');
     await admin.query('DELETE FROM department_external_id');
     await admin.query('DELETE FROM legal_entity_external_id');
     await admin.query('DELETE FROM business_unit_external_id');
@@ -2979,6 +2980,78 @@ describe('RLS tenant isolation', () => {
       );
     }
     await admin.query('DELETE FROM role WHERE id = $1', [onlyA]);
+  });
+
+  /* ── role aliases (w4-10c, migration 0070) ────────────────────────────────────────
+   *
+   * ExpenseOS's `RoleExternalId`, per tenant: a role's id in an outside system. The ordinary
+   * claim, no hatch, and composite FKs to the source and the role — so B cannot alias A's
+   * role, even though the system roles share ids (B's Employee is B's row, never A's).
+   */
+  it('role aliases are tenant-isolated, and cannot name another tenant’s source or role', async () => {
+    const EMPLOYEE = '019e3000-0000-7000-8000-000000000004';
+    await admin.query('DELETE FROM role_external_id');
+    const seed = async (org: string, value: string) =>
+      withOrg(org, async (tx) => {
+        const src = (
+          await tx.query(
+            `INSERT INTO external_id_source (organization_id, code, label)
+             VALUES ($1, 'hris-roles', '{"en":"HRIS"}') RETURNING id`,
+            [org],
+          )
+        ).rows[0].id as string;
+        await tx.query(
+          `INSERT INTO role_external_id (organization_id, source_id, source_value, role_id) VALUES ($1, $2, $3, $4)`,
+          [org, src, value, EMPLOYEE],
+        );
+        return src;
+      });
+    const aSrc = await seed(orgA, 'A-EMP');
+    const bSrc = await seed(orgB, 'B-EMP');
+
+    for (const [org, expected] of [
+      [orgA, 'A-EMP'],
+      [orgB, 'B-EMP'],
+    ] as const) {
+      const { rows } = await withOrg(org, (tx) => tx.query('SELECT organization_id, source_value FROM role_external_id'));
+      expect(rows).toEqual([{ organization_id: org, source_value: expected }]);
+    }
+    expect((await withoutOrg((tx) => tx.query('SELECT * FROM role_external_id'))).rows).toHaveLength(0);
+    expect((await withPlatformRead((tx) => tx.query('SELECT * FROM role_external_id'))).rows).toHaveLength(0);
+
+    // WITH CHECK, and the composite FKs: B cannot write into A, nor use A's source, nor a
+    // role only A has.
+    await expect(
+      withOrg(orgB, (tx) =>
+        tx.query(
+          `INSERT INTO role_external_id (organization_id, source_id, source_value, role_id) VALUES ($1, $2, 'x', $3)`,
+          [orgA, aSrc, EMPLOYEE],
+        ),
+      ),
+    ).rejects.toThrow(/row-level security|violates/i);
+    await expect(
+      withOrg(orgB, (tx) =>
+        tx.query(
+          `INSERT INTO role_external_id (organization_id, source_id, source_value, role_id) VALUES ($1, $2, 'B-2', $3)`,
+          [orgB, aSrc, EMPLOYEE],
+        ),
+      ),
+    ).rejects.toThrow(/foreign key/i);
+    const onlyA = (
+      await withOrg(orgA, (tx) => tx.query(`INSERT INTO role (label) VALUES ('{"en":"A only"}') RETURNING id`))
+    ).rows[0].id as string;
+    await expect(
+      withOrg(orgB, (tx) =>
+        tx.query(
+          `INSERT INTO role_external_id (organization_id, source_id, source_value, role_id) VALUES ($1, $2, 'B-3', $3)`,
+          [orgB, bSrc, onlyA],
+        ),
+      ),
+    ).rejects.toThrow(/foreign key/i);
+
+    await admin.query('DELETE FROM role_external_id');
+    await admin.query('DELETE FROM role WHERE id = $1', [onlyA]);
+    await admin.query(`DELETE FROM external_id_source WHERE code = 'hris-roles'`);
   });
 
   it('approval workflows, versions, runs and tasks are tenant-isolated, across every key', async () => {

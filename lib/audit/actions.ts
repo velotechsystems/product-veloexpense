@@ -200,6 +200,12 @@ export const AUDIT_ACTIONS = [
   'SAVED_VIEW_CREATED',
   'SAVED_VIEW_UPDATED',
   'SAVED_VIEW_DELETED',
+  /* A role — the w4-10c port of ExpenseOS's Role Builder (`admin.role.*`). Its permission
+     list changes who may do what, so every write is audited; a delete is real (ExpenseOS's
+     only hard-deleted lookup), refused while anybody or anything still names the role. */
+  'ROLE_CREATED',
+  'ROLE_UPDATED',
+  'ROLE_DELETED',
   'MODULE_ENABLED',
   'MODULE_DISABLED',
   'USER_LOCALE_CHANGED',

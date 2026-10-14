@@ -1054,31 +1054,3 @@ describe('enum and lookup-id params', () => {
     expect(await jobLevelTriggerAsync()).toHaveTextContent(/L3/);
   });
 });
-
-// ── VeloExpense: the role scope (d64) ─────────────────────────────────────────
-
-describe('the role scope before roles exist (VeloExpense)', () => {
-  /**
-   * VeloExpense has no role table until the role builder (w4-10, d64), so `scopeOptions`
-   * lists no roles and the router refuses a role scope. An empty "Role" picker would
-   * offer a choice that does not exist; the picker appears once there are roles in it.
-   */
-  it('shows no role picker when there are no roles', async () => {
-    const user = userEvent.setup();
-    setTrpc([rule()], {
-      queries: { 'policies.policyRule.scopeOptions': { data: { ...SCOPE_OPTIONS, roles: [] } } },
-    });
-    show();
-    await openNew(user, 'AMOUNT_LIMIT');
-    expect(screen.queryByLabelText(/policyRules\.field\.role/)).not.toBeInTheDocument();
-    expect(screen.getByLabelText(/policyRules\.field\.department/)).toBeInTheDocument();
-  });
-
-  it('shows it once there are', async () => {
-    const user = userEvent.setup();
-    setTrpc();
-    show();
-    await openNew(user, 'AMOUNT_LIMIT');
-    expect(screen.getByLabelText(/policyRules\.field\.role/)).toBeInTheDocument();
-  });
-});

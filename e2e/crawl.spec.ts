@@ -92,6 +92,8 @@ const PAGES = [
   '/admin/policies',
   // w4-02e: ExpenseOS's policy-violation register.
   '/admin/policy-violations',
+  // w4-10c: ExpenseOS's Role Builder.
+  '/admin/roles',
 ] as const;
 
 /**

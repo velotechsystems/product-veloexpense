@@ -280,7 +280,7 @@ export async function listLiveInvites(tx: QueryRunner): Promise<InviteRow[]> {
             i.expires_at, i.created_at,
             COALESCE(u.display_name, u.email) AS invited_by_name
        FROM invite i
-       JOIN role r ON r.organization_id = i.organization_id AND r.id = i.role_id
+       LEFT JOIN role r ON r.organization_id = i.organization_id AND r.id = i.role_id
        LEFT JOIN app_user u ON u.id = i.invited_by_id
       WHERE i.accepted_at IS NULL AND i.revoked_at IS NULL
         AND i.expires_at > clock_timestamp()
@@ -289,8 +289,10 @@ export async function listLiveInvites(tx: QueryRunner): Promise<InviteRow[]> {
   return r.rows.map((row) => ({
     id: row.id as string,
     email: row.email as string,
-    roleId: row.role_id as string,
-    roleName: row.role_name as string,
+    roleId: (row.role_id as string | null) ?? '',
+    // LEFT JOIN: a live invitation always names a role (the Role Builder refuses to delete
+    // one that does), so '' is only ever the moment of a race with that delete.
+    roleName: (row.role_name as string | null) ?? '',
     displayName: (row.display_name as string | null) ?? null,
     invitedByName: (row.invited_by_name as string | null) ?? null,
     expiresAt: row.expires_at as Date,
@@ -419,7 +421,7 @@ export async function readPendingInvite(rawToken: string): Promise<PendingInvite
       `SELECT i.email, r.label ->> 'en' AS role_name, o.name, o.brand_color, o.logo_mime,
               o.logo_updated_at
          FROM invite i JOIN organization o ON o.id = i.organization_id
-         JOIN role r ON r.organization_id = i.organization_id AND r.id = i.role_id
+         LEFT JOIN role r ON r.organization_id = i.organization_id AND r.id = i.role_id
         WHERE i.token_hash = $1
           AND i.accepted_at IS NULL AND i.revoked_at IS NULL
           AND i.expires_at > clock_timestamp()`,
@@ -432,7 +434,7 @@ export async function readPendingInvite(rawToken: string): Promise<PendingInvite
       organizationName: row.name as string,
       organizationSlug: tenant.organizationSlug,
       emailHint: maskEmail(row.email as string),
-      roleName: row.role_name as string,
+      roleName: (row.role_name as string | null) ?? '',
       brandColor: (row.brand_color as string | null) ?? null,
       // The token again, and a `?v=` stamp for the same reason the session route
       // has one: a new logo is a new URL rather than a staleness window to guess

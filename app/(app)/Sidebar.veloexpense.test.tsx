@@ -119,6 +119,8 @@ describe("an admin's menu", () => {
         '/admin/policy-rules',
         '/admin/policies',
         '/admin/policy-violations',
+        // w4-10c (d74).
+        '/admin/roles',
         // Ported in Wave 2 (w2-06).
         '/expenses/all',
       ].sort(),
@@ -127,8 +129,8 @@ describe("an admin's menu", () => {
 
   it('offers no ExpenseOS screen that is not ported yet', () => {
     show('admin');
-    // `/expenses/all` left this list with w2-06, which ported it.
-    for (const unported of ['/admin/roles', '/users', '/travel']) {
+    // `/expenses/all` left this list with w2-06, which ported it; `/admin/roles` with w4-10c.
+    for (const unported of ['/users', '/travel']) {
       expect(hrefs()).not.toContain(unported);
     }
   });
@@ -203,6 +205,7 @@ describe('isPortedScreen', () => {
       '/admin/policy-violations',
       '/expenses/approvals',
       '/dashboard',
+      '/admin/roles',
     ]);
   });
 });

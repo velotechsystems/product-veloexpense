@@ -59,7 +59,6 @@ export const VELOEXPENSE_ROUTES: Readonly<Record<string, string | null>> = {
   '/admin/audit-trail': null,
   '/admin/fraud-detection': null,
   '/admin/control-evaluation': null,
-  '/admin/roles': null,
   '/admin/api-keys': null,
   '/admin/assistant-feedback': null,
   '/admin/authentication': null,
@@ -179,6 +178,8 @@ export const PORTED_SCREENS: readonly string[] = [
   '/expenses/approvals',
   // w4-09 (d72): the dashboard, in place of VeloExpense's home page at `/`.
   '/dashboard',
+  // w4-10c (d74): the Role Builder.
+  '/admin/roles',
 ];
 
 /** Whether the top bar should title this path: it is a ported ExpenseOS screen. */

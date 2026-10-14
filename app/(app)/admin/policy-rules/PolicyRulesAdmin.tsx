@@ -11,8 +11,8 @@
  * FilterPillBar + DataTable + create/edit drawer, per the listing UX standard.
  *
  * Ported from ExpenseOS (550b2945) with the `policyRule` router (w4-02b, d63). VeloExpense:
- * the shell's path; the Enabled checkbox's accessible name (f10); and the role picker,
- * which shows only once there are roles to pick (the role builder, w4-10, d64). Nothing
+ * the shell's path; and the Enabled checkbox's accessible name (f10). The role picker is
+ * ExpenseOS's again since the role builder (w4-10c, d64): every tenant has roles. Nothing
  * enforced these rules until the cutover (w4-02d); since then they are what submit checks.
  */
 import {
@@ -933,20 +933,15 @@ function RuleDrawer({
                   placeholder={t('scope.any')}
                 />
               </FormField>
-              {/* VeloExpense: no roles until the role builder (w4-10, d64), and the router
-                  refuses a role scope until then; an empty picker would offer a choice
-                  that does not exist. */}
-              {roleItems.length > 0 && (
-                <FormField htmlFor="pr-role" label={t('field.role')} optional>
-                  <Combobox
-                    id="pr-role"
-                    items={roleItems}
-                    value={form.roleId}
-                    onValueChange={(v) => set('roleId', v)}
-                    placeholder={t('scope.any')}
-                  />
-                </FormField>
-              )}
+              <FormField htmlFor="pr-role" label={t('field.role')} optional>
+                <Combobox
+                  id="pr-role"
+                  items={roleItems}
+                  value={form.roleId}
+                  onValueChange={(v) => set('roleId', v)}
+                  placeholder={t('scope.any')}
+                />
+              </FormField>
             </div>
           </div>
         </DrawerBody>

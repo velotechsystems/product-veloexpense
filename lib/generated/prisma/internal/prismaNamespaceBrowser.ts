@@ -67,6 +67,7 @@ export const ModelName = {
   TaxJurisdiction: 'TaxJurisdiction',
   User: 'User',
   Role: 'Role',
+  RoleExternalId: 'RoleExternalId',
   BusinessUnit: 'BusinessUnit',
   ExternalIdSource: 'ExternalIdSource',
   BusinessUnitExternalId: 'BusinessUnitExternalId',
@@ -418,6 +419,19 @@ export const RoleScalarFieldEnum = {
 } as const
 
 export type RoleScalarFieldEnum = (typeof RoleScalarFieldEnum)[keyof typeof RoleScalarFieldEnum]
+
+
+export const RoleExternalIdScalarFieldEnum = {
+  id: 'id',
+  organizationId: 'organizationId',
+  sourceId: 'sourceId',
+  sourceValue: 'sourceValue',
+  roleId: 'roleId',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+} as const
+
+export type RoleExternalIdScalarFieldEnum = (typeof RoleExternalIdScalarFieldEnum)[keyof typeof RoleExternalIdScalarFieldEnum]
 
 
 export const BusinessUnitScalarFieldEnum = {

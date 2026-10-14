@@ -286,6 +286,16 @@ describe('capability coverage', () => {
     }
   });
 
+  it('keeps the sensitive card edit with the System Administrator alone', () => {
+    /**
+     * Moving a card to another holder, or rewriting its number, expiry or CVV, is admin-only. Card Administrator still edits everything else on a card through
+     * `vcc.card.issue`; the migration that writes the code to existing rows names the admin
+     * id alone.
+     */
+    expect(holders('vcc.card.edit.sensitive')).toEqual(['admin']);
+    expect(SYSTEM_ROLE_PERMISSIONS['card-administrator']).toContain('vcc.card.issue');
+  });
+
   it('keeps restating FX apart from the role that pays and posts', () => {
     /**
      * `expense.report.fxOverride` re-stamps every foreign line's home amount and the
