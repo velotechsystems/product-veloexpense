@@ -249,8 +249,8 @@ test('the approver is mailed a link to the report, and decides there, signed in'
     await expect(approverPage).toHaveURL(new RegExp(`/expenses/${reportId}$`));
     // Opening it decided nothing.
     expect(await statusOf(TITLE)).toBe('SUBMITTED');
+    // eos-573: the decision returns the approver to the queue (see `decideOnWorkbench`).
     await decideOnWorkbench(approverPage, 'Approve');
-    await expectReportStatus(approverPage, 'APPROVED');
   } finally {
     await approver.close();
   }

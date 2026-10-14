@@ -21,7 +21,6 @@ import {
   Textarea,
 } from '@expenseos/design-system';
 import { tipMinorOf } from '@expenseos/expense-lines';
-import { splitExact } from '@expenseos/money';
 import {
   IconAlertTriangle,
   IconCamera,
@@ -58,6 +57,8 @@ import { useIsBelowLg } from '@/lib/useIsBelowLg';
 import type { AppRouter } from '@/server/routers/_app';
 import { SectionNotice } from '../../SectionNotice';
 import { localeLabel, SEVERITY_KEY } from '../_shared';
+import { AllocationLinesReadOnly } from '../AllocationLinesReadOnly';
+import { MileageLineDetail, type MileageLineFields } from '../approvals/MileageLineDetail';
 import { fieldsToClear, strategyFor } from './lineKinds';
 import { convertDistance, isValidDistance, MileageFields, useSettled } from './MileageFields';
 import { EMPTY_ROUTE, type RouteValue } from './RouteEditor';
@@ -1172,7 +1173,12 @@ function AllocationEditor({
         <div className="mb-2 text-muted-foreground text-xs uppercase tracking-wide">
           {t('allocation.heading')}
         </div>
-        <AllocationLinesReadOnly expense={expense} locale={locale} />
+        <AllocationLinesReadOnly
+          allocations={expense.allocations}
+          amountMinor={expense.amountMinor}
+          currency={expense.currency}
+          locale={locale}
+        />
       </div>
     );
   }
@@ -1210,7 +1216,13 @@ function AllocationEditor({
        * Below `lg` the two cannot differ, because the only thing that edits `rows` is the
        * control set cloaked immediately below. Above `lg` this face has no box at all.
        */}
-      <AllocationLinesReadOnly expense={expense} locale={locale} className="lg:hidden" />
+      <AllocationLinesReadOnly
+        allocations={expense.allocations}
+        amountMinor={expense.amountMinor}
+        currency={expense.currency}
+        locale={locale}
+        className="lg:hidden"
+      />
       {/*
        * PLACEMENT 1 of 5 — cost-allocation editing.
        *
@@ -1321,85 +1333,6 @@ function AllocationEditor({
         </Button>
       </div>
     </div>
-  );
-}
-
-/**
- * The saved allocation as prose — one line per row: its share, what that share is in
- * money, and the dimensions it codes to.
- *
- * Lifted out of `AllocationEditor`'s `!editable` arm so that the same markup can be
- * rendered in two conditions: alone on a submitted report (as before), and beside the
- * editable row set as its below-`lg` face on a draft one.
- *
- * NO `<Field>`, NO `<input>`, NO `aria-label` — the same contract `ExpenseFieldsReadOnly`
- * and `TaxFiguresReadOnly` carry, and here it rules out `Percent` specifically: on a draft
- * report this renders at the same time as the `allocation.percent`-labelled input the
- * cloak merely hides, and Playwright's label engine has no visibility filter.
- *
- * The money column is what the read-only arm did not have. A percentage alone is not what
- * a reader is checking — "60 % of what" is the question, and every other figure on this
- * pane is already money. It is derived, never stored: the expense's own total split by
- * `splitExact`, the same largest-remainder split the NetSuite poster allocates with, so
- * the rows always add up to the expense to the cent. Rounding each row on its own did
- * not: 0.05 split 50/50 read 0.03 + 0.03.
- *
- * VeloExpense: there is no NetSuite poster here, and the VeloLedger post does not split an
- * expense by its allocations; `splitExact` is still the split ExpenseOS posts with, and the
- * rows add up to the expense either way.
- */
-function AllocationLinesReadOnly({
-  expense,
-  locale,
-  className,
-}: {
-  expense: ExpenseDetail;
-  locale: string;
-  className?: string;
-}) {
-  const t = useTranslations('expenses');
-  /**
-   * An UNCODED expense says so, rather than rendering nothing.
-   *
-   * `return null` hid the whole block the moment a report stopped being editable — so
-   * the approver, who is the last person able to catch it, could not see that BU /
-   * department / class were blank. It reads as "no allocation section on this expense"
-   * rather than "this expense is not coded", and blank coding is exactly what NetSuite
-   * rejects downstream (GA readiness report F17, alongside F18 / F21 / F22). Below `lg`
-   * on a draft it says the same thing to the submitter, who can still fix it.
-   */
-  if (expense.allocations.length === 0) {
-    return <p className={`text-sm text-warning ${className ?? ''}`}>{t('allocation.none')}</p>;
-  }
-  const shares = splitExact(
-    BigInt(expense.amountMinor),
-    expense.allocations.map((a) => BigInt(a.percentBp)),
-  );
-  return (
-    <ul className={`flex flex-col gap-1 text-sm ${className ?? ''}`}>
-      {expense.allocations.map((a, i) => (
-        /* `flex-wrap`: at 360 the dimension string is the long part, and it takes its own
-           line under the two figures rather than squeezing them. */
-        <li key={a.id} className="flex flex-wrap items-baseline gap-x-2">
-          <span className="w-12 shrink-0 text-foreground tabular-nums">{a.percentBp / 100}%</span>
-          <span className="shrink-0 text-foreground tabular-nums">
-            {money(Number(shares[i]), expense.currency, locale)}
-          </span>
-          <span className="min-w-0 text-muted-foreground text-xs">
-            {[
-              // The server names the NetSuite business unit when the switch makes it the
-              // line's business unit (`nsBusinessUnitLabel`); otherwise the admin one, as ever.
-              a.nsBusinessUnitLabel ??
-                (a.businessUnit ? localeLabel(a.businessUnit.label, locale) : null),
-              a.department ? localeLabel(a.department.label, locale) : null,
-              a.class?.name ?? null,
-            ]
-              .filter(Boolean)
-              .join(' · ') || '—'}
-          </span>
-        </li>
-      ))}
-    </ul>
   );
 }
 
@@ -3240,11 +3173,41 @@ function LineItemRow({
 }
 
 /**
- * One saved line as prose — icon · category · amount.
+ * A line's route as stop names only, whichever shape `expenses.report` sent it in.
  *
- * The `!editable` arm of `LineItemRow`, unchanged and given a name so it can also be the
- * below-`lg` face of an EDITABLE row. It holds no state and fires no mutation, which is
- * exactly why it can be rendered twice over: there is nothing in it to lose.
+ * A writer of the line (the submitter, the expense's owner) gets the stored route as is —
+ * the editor re-saves what it is given — and every other reader gets the server's
+ * stops-only trim. Display needs the names and nothing else, so both are rebuilt by name
+ * here rather than cast: a stored route is whatever the write path accepted, and anything
+ * not shaped like stops reads as no route. (A route the server could not parse at all is
+ * already flagged `mileageRouteUnavailable`, which `MileageLineDetail` says out loud.)
+ */
+function routeStopsOf(route: unknown): MileageLineFields['mileageRoute'] {
+  if (route == null || typeof route !== 'object') return null;
+  const stops = (route as { stops?: unknown }).stops;
+  if (!Array.isArray(stops)) return null;
+  const named: { description: string }[] = [];
+  for (const stop of stops) {
+    const description = (stop as { description?: unknown } | null)?.description;
+    if (typeof description !== 'string') return null;
+    named.push({ description });
+  }
+  return { stops: named };
+}
+
+/**
+ * One saved line as prose — icon · category · amount, and for a mileage line the claim
+ * behind the amount.
+ *
+ * The `!editable` arm of `LineItemRow`, given a name so it can also be the below-`lg` face
+ * of an EDITABLE row. It holds no state and fires no mutation, which is exactly why it can
+ * be rendered twice over: there is nothing in it to lose.
+ *
+ * A `MILEAGE` line carries `MileageLineDetail` — distance, route, rate or band split — the
+ * same component the approvals drawer draws, for every reader including the submitter on
+ * their own submitted report: one rendering rule for a read-only mileage line, so the page
+ * never shows an approver less than the drawer did. What a reader who is not the line's
+ * writer is sent (stop names, no year-to-date basis) is decided on the server.
  *
  * No `aria-label` and no labelled control, so it adds no second match to any `getByLabel`
  * in `e2e/support/workbench.ts` — in particular `Amount`, which `addExpense` fills and
@@ -3263,17 +3226,32 @@ function LineItemReadOnlyRow({
   locale: string;
   className?: string;
 }) {
+  const currency = { code: currencyCode, symbol: currencySymbol };
   return (
-    <div
-      className={`flex items-center gap-2 rounded-md border border-border p-2.5 text-sm ${className ?? ''}`}
-    >
-      {line.category.icon && <span className="shrink-0">{line.category.icon}</span>}
-      <span className="min-w-0 flex-1 truncate text-foreground">
-        {localeLabel(line.category.label, locale)}
-      </span>
-      <span className="text-foreground tabular-nums">
-        {money(Number(line.amountMinor), { code: currencyCode, symbol: currencySymbol }, locale)}
-      </span>
+    <div className={`rounded-md border border-border p-2.5 text-sm ${className ?? ''}`}>
+      <div className="flex items-center gap-2">
+        {line.category.icon && <span className="shrink-0">{line.category.icon}</span>}
+        <span className="min-w-0 flex-1 truncate text-foreground">
+          {localeLabel(line.category.label, locale)}
+        </span>
+        <span className="text-foreground tabular-nums">
+          {money(Number(line.amountMinor), currency, locale)}
+        </span>
+      </div>
+      {line.kind === 'MILEAGE' && (
+        <MileageLineDetail
+          line={{
+            mileageDistance: line.mileageDistance,
+            mileageUnit: line.mileageUnit,
+            mileageBreakdown: line.mileageBreakdown,
+            mileageRoute: routeStopsOf(line.mileageRoute),
+            routeDistance: line.routeDistance,
+            mileageRouteUnavailable: line.mileageRouteUnavailable,
+          }}
+          currency={currency}
+          locale={locale}
+        />
+      )}
     </div>
   );
 }

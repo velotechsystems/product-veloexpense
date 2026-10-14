@@ -51,8 +51,10 @@ vi.mock('@expenseos/audit', async () => {
 vi.mock('@/auth', () => ({ auth: stubFn(async () => null) }));
 vi.mock('@/lib/tenant/request', () => ({ hostTenantSlug: async () => null }));
 
-const callerCanDecideReport = stubFn(async () => false);
-vi.mock('@/server/lib/reportApproval', () => ({ callerCanDecideReport }));
+/** The read rule itself is pinned in `reportApproval.test.ts`; here it is a stub, so these
+ *  cases check what the router does with its answer. */
+const canViewReport = stubFn(async (..._args: unknown[]) => false);
+vi.mock('@/server/lib/reportApproval', () => ({ canViewReport }));
 
 /**
  * The step `submit` takes before the policy pass. Stubbed as ExpenseOS stubs it: the rollup
@@ -253,7 +255,7 @@ const READ = [P.expense.report.readOwn] as const;
 beforeEach(() => {
   vi.clearAllMocks();
   withAuditCalls.length = 0;
-  callerCanDecideReport.mockResolvedValue(false);
+  canViewReport.mockResolvedValue(false);
 });
 
 describe('permission gates', () => {
@@ -945,45 +947,44 @@ describe('manual tax bound', () => {
 });
 
 describe('report read access', () => {
+  /**
+   * `expenses.report` admits exactly whom `canViewReport` admits — the drawer's audience,
+   * by the drawer's rule. Who that is (the submitter, readAll, AP, the direct manager,
+   * past and present approvers) is pinned in `reportApproval.test.ts`; what a reader who
+   * cannot write the line is sent is pinned in `expenses.reports.db.test.ts`.
+   */
   const reportRow = (submitterId: string) => ({
     id: REPORT,
     submitterId,
+    approvalInstanceId: 'inst-1',
     status: 'SUBMITTED',
     expenses: [],
     currency: { code: 'CAD' },
   });
 
-  it('lets the submitter read their own', async () => {
-    const db = makeDb();
-    db.expenseReport.findUnique.mockResolvedValue(reportRow(ME));
-    const c = await callerFor(db, READ);
-    await passesGuard(c.report({ reportId: REPORT }));
-  });
-
-  it('lets a reader-of-all read anybody’s', async () => {
-    const db = makeDb();
-    db.expenseReport.findUnique.mockResolvedValue(reportRow(U('3')));
-    const c = await callerFor(db, [P.expense.report.readAll]);
-    await passesGuard(c.report({ reportId: REPORT }));
-  });
-
-  it('lets AP read anybody’s, because they have to pay it', async () => {
-    const db = makeDb();
-    db.expenseReport.findUnique.mockResolvedValue(reportRow(U('3')));
-    const c = await callerFor(db, [P.expense.report.reimburse]);
-    await passesGuard(c.report({ reportId: REPORT }));
-  });
-
-  it('lets an approver on the report read it', async () => {
-    // Eligibility is the approvals engine's question, including delegation.
-    callerCanDecideReport.mockResolvedValue(true);
+  it('lets in whoever the read rule admits', async () => {
+    canViewReport.mockResolvedValue(true);
     const db = makeDb();
     db.expenseReport.findUnique.mockResolvedValue(reportRow(U('3')));
     const c = await callerFor(db, []);
     await passesGuard(c.report({ reportId: REPORT }));
   });
 
-  it('hides a stranger’s report behind NOT_FOUND, not FORBIDDEN', async () => {
+  it('asks the rule about this report, this caller and their permissions', async () => {
+    canViewReport.mockResolvedValue(true);
+    const db = makeDb();
+    db.expenseReport.findUnique.mockResolvedValue(reportRow(U('3')));
+    const c = await callerFor(db, READ);
+    await passesGuard(c.report({ reportId: REPORT }));
+    expect(canViewReport).toHaveBeenCalledWith(
+      db,
+      expect.objectContaining({ id: REPORT, submitterId: U('3'), approvalInstanceId: 'inst-1' }),
+      ME,
+      READ,
+    );
+  });
+
+  it('hides a report the rule refuses behind NOT_FOUND, not FORBIDDEN', async () => {
     /**
      * The same non-enumeration choice the expense guards make: a 403 would confirm the
      * report id exists, and report ids are sequential-ish numbers somebody could walk.
@@ -994,19 +995,12 @@ describe('report read access', () => {
     await expect(c.report({ reportId: REPORT })).rejects.toMatchObject({ code: 'NOT_FOUND' });
   });
 
-  it('refuses the submitter when they lack even readOwn', async () => {
-    // Being the submitter is not itself a permission.
-    const db = makeDb();
-    db.expenseReport.findUnique.mockResolvedValue(reportRow(ME));
-    const c = await callerFor(db, []);
-    await expect(c.report({ reportId: REPORT })).rejects.toMatchObject({ code: 'NOT_FOUND' });
-  });
-
-  it('404s a report that does not exist', async () => {
+  it('404s a report that does not exist, without asking the rule', async () => {
     const db = makeDb();
     db.expenseReport.findUnique.mockResolvedValue(null);
     const c = await callerFor(db, [P.expense.report.readAll]);
     await expect(c.report({ reportId: REPORT })).rejects.toMatchObject({ code: 'NOT_FOUND' });
+    expect(canViewReport).not.toHaveBeenCalled();
   });
 });
 

@@ -320,7 +320,14 @@ const receiptChip = (treatment: string, busy: boolean) =>
 type DecidePanel = 'return' | 'reject' | 'reassign';
 
 /** Every action this report offers, to whoever is looking at it. */
-type WorkbenchActionId = DecidePanel | 'approve' | 'recall' | 'submit' | 'delete';
+type WorkbenchActionId =
+  | DecidePanel
+  | 'approve'
+  | 'acknowledge'
+  | 'requestReceipts'
+  | 'recall'
+  | 'submit'
+  | 'delete';
 
 /**
  * The `Button` variants the action set uses, named rather than widened to the
@@ -372,6 +379,24 @@ type WorkbenchAction = {
    * mis-tap approves a claim. It costs one row of height.
    */
   emphasis: 'primary' | 'secondary';
+  /**
+   * Where this action lives at `lg` and up. Absent is the TopBar row; `'strip'` is the
+   * body-level `DesktopActionStrip` above the panes. Below `lg` it is ignored — the phone
+   * bar holds every action.
+   *
+   * The strip exists because the TopBar has no width left for anything that is not a
+   * decision. `e2e/topbar-overlap.spec.ts` measures the right zone at 853px of
+   * unshrinkable content in fr-CA against a 720px header at 1024 pinned, and with the
+   * NetSuite failure row Mark reimbursed pushed the title row 68px out of its zone at
+   * 1280 collapsed; on the approver's page Request receipts squeezed the report title to zero
+   * width at 1280 pinned in fr-CA. Whether a given row fits depends on the locale, the
+   * sidebar, the NetSuite state and the title, so a breakpoint cannot say; and moving a
+   * button between the bar and the body as the window resizes would put a different
+   * control under the pointer. So the two actions that are not a decision on the task —
+   * Request receipts and Mark reimbursed — have one fixed desktop home, in the body,
+   * and the bar keeps exactly the row it had before they existed.
+   */
+  desktopPlacement?: 'strip';
   /** Pressing this opens a decide panel instead of firing. */
   needsNote?: DecidePanel;
   /** Destroys or refuses something; rendered in the destructive colour. */
@@ -460,6 +485,30 @@ function TopBarActions({ actions, openPanel, onOpenPanel, renderPanel }: ActionR
         ),
       )}
     </>
+  );
+}
+
+/**
+ * The desktop home of the actions whose `desktopPlacement` is `'strip'` — a right-aligned
+ * row above the panes, at `lg` and up only. See `WorkbenchAction.desktopPlacement` for why
+ * these are not in the TopBar.
+ *
+ * Rendered by `TopBarActions`, so a control here is the same `size="sm"` button with the
+ * same variant, confirm and disabled reason as it would be in the bar — only the box differs.
+ * Labelled with the phone bar's name: the two never mount together (one is `isBelowLg`, the
+ * other is not), so the page never has two landmarks called "Report actions".
+ */
+function DesktopActionStrip(props: ActionRendererProps) {
+  const t = useTranslations('expenses');
+  if (props.actions.length === 0) return null;
+  return (
+    <section
+      aria-label={t('workbench.actionsLabel')}
+      data-testid="desktop-action-strip"
+      className="flex shrink-0 items-center justify-end gap-2 pb-3 max-lg:hidden"
+    >
+      <TopBarActions {...props} />
+    </section>
   );
 }
 
@@ -631,20 +680,49 @@ function ReportSummary({ report }: { report: ReportDetail }) {
 
 export function ExpenseReportWorkbench({
   reportId,
+  isSubmitter,
   canEdit,
   canDelete,
   canSubmit,
   canApprove,
+  isAcknowledge,
+  canReimburse,
+  canChase,
   canFxOverride,
   canOpenLedgerQueue,
   taskId,
 }: {
   reportId: string;
+  /**
+   * The viewer filed this report. `expenses.report` does not send `submitterId`, so the
+   * page resolves it. Every reader `canViewReport` admits can open this page — a direct
+   * manager, an approver, AP — and only the submitter is offered the write controls: the
+   * page already folds this into `canEdit` / `canDelete` / `canSubmit`.
+   */
+  isSubmitter: boolean;
+  /** `updateOwn`, for the submitter only (see `isSubmitter`). Cosmetic; the server re-checks. */
   canEdit: boolean;
+  /** `deleteDraft`, for the submitter only. */
   canDelete: boolean;
+  /** `submitOwn`, for the submitter only — also what offers Recall. */
   canSubmit: boolean;
   /** The caller is an eligible approver of this report (has a decidable task). */
   canApprove: boolean;
+  /**
+   * The caller's task is an Acknowledge node — one outcome, no reject / return / reassign.
+   * The engine refuses anything but an approve on such a task, so offering the other three
+   * would be four buttons, three of which fail. Read only in approver mode.
+   */
+  isAcknowledge: boolean;
+  /** `expense.report.reimburse` — the AP clerk's Mark reimbursed. Held without any task on
+   *  the report. Cosmetic; `markReimbursed` re-checks the permission and the status. */
+  canReimburse: boolean;
+  /**
+   * The caller may ask the submitter for the missing receipts: not the submitter, and
+   * `readAll`, `reimburse` or a decidable task — the check `chaseReceipts` runs, which
+   * SKIPS (rather than refuses) a report the caller may not chase. Resolved by the page.
+   */
+  canChase: boolean;
   /** `expense.report.fxOverride` — gates the per-report FX override (A4). Held by the
    *  finance admins, not by AP: the role that pays and posts a report must not also
    *  restate its amounts. Cosmetic; the mutation re-checks. */
@@ -786,14 +864,38 @@ export function ExpenseReportWorkbench({
     [receiptMove, revalidate, refusalText],
   );
 
+  /**
+   * After an approver's action has landed: back to the queue it came from.
+   *
+   * The report has nothing left for this person to do — the task is decided, handed on,
+   * or the report is paid — so staying would leave them on an actionless page. The four
+   * queue reads are the ones the approvals inbox refreshes after a drawer decision; the
+   * report itself is marked stale too, so coming back to it reads the new status.
+   *
+   * `replace`, not `push`: Back from the queue must not land on the decided workbench.
+   * The locale-aware router (see the import), so a fr-CA approver stays in fr-CA.
+   *
+   * Only ever wired to `onSuccess`. A refusal — the classic one is a pooled task another
+   * approver decided first — leaves the person here with the reason on screen.
+   */
+  const returnToQueue = useCallback(() => {
+    void utils.expenseApprovals.myTasks.invalidate();
+    void utils.expenseApprovals.myDecided.invalidate();
+    void utils.expenseApprovals.myTeam.invalidate();
+    void utils.expenses.list.invalidate();
+    void utils.expenses.report.invalidate({ reportId });
+    router.replace('/expenses/approvals');
+  }, [utils, reportId, router]);
+
   const submit = trpc.expenses.submit.useMutation();
+  // Recall is the SUBMITTER's, and they stay on their own report: it refreshes in place.
   const recall = trpc.expenses.recall.useMutation({ onSuccess: invalidate });
   const decide = trpc.expenseApprovals.decide.useMutation({
-    onSuccess: invalidate,
+    onSuccess: returnToQueue,
     onError: (e) => setSubmitError(refusalText(e, e.message)),
   });
   const returnForEdit = trpc.expenseApprovals.returnForEdit.useMutation({
-    onSuccess: invalidate,
+    onSuccess: returnToQueue,
     onError: (e) => setSubmitError(refusalText(e, e.message)),
   });
   const reassign = trpc.expenseApprovals.reassign.useMutation({
@@ -803,9 +905,31 @@ export function ExpenseReportWorkbench({
       setReassignItem(null);
       // VeloExpense (d37): and the reason that went with it.
       setDecideNote('');
-      invalidate();
+      returnToQueue();
     },
     onError: (e) => setSubmitError(refusalText(e, e.message)),
+  });
+  // VeloExpense: no `markReimbursed` (d71) — reimbursing is VeloExpense's reimbursement
+  // screen's, as on the approver drawer.
+  /**
+   * Request receipts — the one approver action that does NOT leave the page. Asking for
+   * the receipts is what an approver does BEFORE deciding, so they stay, and the outcome
+   * is said where the errors are said (the top bar's centre). Same copy as the drawer:
+   * `chaseNone` when the server chased nothing (every expense already had a receipt, or
+   * the report was not one this caller may chase), `chaseSent` otherwise.
+   */
+  const [chaseNote, setChaseNote] = useState<string | null>(null);
+  const chase = trpc.expenseApprovals.chaseReceipts.useMutation({
+    onSuccess: (r) => {
+      setSubmitError(null);
+      setChaseNote(
+        r.reports === 0 ? t('drawer.chaseNone') : t('drawer.chaseSent', { count: r.expenses }),
+      );
+    },
+    onError: (e) => {
+      setChaseNote(null);
+      setSubmitError(refusalText(e, e.message));
+    },
   });
   const remove = trpc.expenses.deleteReport.useMutation({
     onSuccess: () => {
@@ -1405,6 +1529,9 @@ export function ExpenseReportWorkbench({
 
   const approverMode = isSubmitted && canApprove && Boolean(taskId);
   const decidePending = decide.isPending || returnForEdit.isPending;
+  /** The expenses with no receipt at all — what Request receipts asks for, all at once,
+   *  exactly as the drawer does. */
+  const receiptlessIds = expenses.filter((e) => e.receipts.length === 0).map((e) => e.id);
 
   // Deduped unresolved-violation count per expense — drives the list-row badge.
   const violationCountByExpense = useMemo(() => {
@@ -1590,10 +1717,48 @@ export function ExpenseReportWorkbench({
    *
    * Order is the order the TopBar row has always painted, so a reader comparing
    * the two destinations sees one list in one sequence.
+   *
+   * The three the drawer had and this list did not — Request receipts, Mark
+   * reimbursed, Acknowledge — are here so the workbench can do everything the
+   * drawer does. Each matches the drawer's own condition and copy, narrowed only
+   * where the drawer offered a control the server would refuse or skip.
    */
   const actions: WorkbenchAction[] = [];
   if (report) {
-    if (approverMode) {
+    // First, because it is asked BEFORE deciding: approving a report whose
+    // receipts are missing is the thing it prevents. No status gate — the
+    // procedure has none, and neither does the drawer.
+    if (canChase && receiptlessIds.length > 0) {
+      actions.push({
+        id: 'requestReceipts',
+        label: t('drawer.requestReceipts', { count: receiptlessIds.length }),
+        onPress: () => {
+          setSubmitError(null);
+          setChaseNote(null);
+          chase.mutate({ expenseIds: receiptlessIds });
+        },
+        variant: 'ghost',
+        disabled: chase.isPending,
+        emphasis: 'secondary',
+        desktopPlacement: 'strip',
+      });
+    }
+    if (approverMode && isAcknowledge) {
+      // One outcome. The drawer shows only Acknowledge on such a task, and the
+      // engine refuses a reject on one — so Return / Reject / Reassign / Approve
+      // would be three controls that fail and one that says the wrong thing.
+      actions.push({
+        id: 'acknowledge',
+        label: t('approvals.acknowledge'),
+        onPress: () => {
+          setSubmitError(null);
+          if (taskId) decide.mutate({ taskId, approve: true });
+        },
+        variant: 'default',
+        disabled: decidePending,
+        emphasis: 'primary',
+      });
+    } else if (approverMode) {
       actions.push(
         {
           id: 'return',
@@ -1682,7 +1847,13 @@ export function ExpenseReportWorkbench({
         });
       }
     }
+    // VeloExpense: no Mark reimbursed (d71). ExpenseOS offers it here to an AP clerk on an
+    // APPROVED report; VeloExpense's reimbursement screen stays the one place AP pays, as the
+    // approver drawer says. `canReimburse` still decides who may Request receipts.
   }
+  /** At `lg` and up, the one list split by `desktopPlacement` — the phone bar takes it whole. */
+  const barActions = actions.filter((a) => a.desktopPlacement !== 'strip');
+  const stripActions = actions.filter((a) => a.desktopPlacement === 'strip');
 
   // ── Project report chrome into the app-shell top bar ────────────
   useTopBarSlots(() => {
@@ -1930,39 +2101,55 @@ export function ExpenseReportWorkbench({
         // `submitRefusal` — rather than this slot being repurposed and taking those
         // with it.
         <span className="truncate text-destructive text-xs">{submitError}</span>
-      ) : unresolved.length > 0 ? (
-        <div className="group relative">
-          <span className="inline-flex cursor-default items-center gap-1 rounded-md bg-warning/15 px-2 py-1 font-medium text-warning text-xs">
-            <IconAlertTriangle size={14} />
-            {t('workbench.violationsDetected', { count: unresolved.length })}
-          </span>
-          <div className="absolute top-full left-1/2 z-50 mt-1 hidden w-96 -translate-x-1/2 group-hover:block">
-            <div className="rounded-md border border-border bg-popover text-left shadow-md">
-              <div className="border-border border-b px-3 py-2 font-medium text-foreground text-xs uppercase tracking-wide">
-                {t('drawer.policyWarnings')}
+      ) : chaseNote || unresolved.length > 0 ? (
+        <div className="flex min-w-0 items-center gap-2">
+          {/* What Request receipts did. Beside the violations badge rather than in
+              place of it: the missing-receipt warning is still true until the
+              submitter attaches one. A live region, because the press that caused
+              it is in another part of the bar (or, on a phone, of the page). */}
+          {chaseNote && (
+            <span role="status" className="truncate text-muted-foreground text-xs">
+              {chaseNote}
+            </span>
+          )}
+          {unresolved.length > 0 && (
+            <div className="group relative">
+              <span className="inline-flex cursor-default items-center gap-1 rounded-md bg-warning/15 px-2 py-1 font-medium text-warning text-xs">
+                <IconAlertTriangle size={14} />
+                {t('workbench.violationsDetected', { count: unresolved.length })}
+              </span>
+              <div className="absolute top-full left-1/2 z-50 mt-1 hidden w-96 -translate-x-1/2 group-hover:block">
+                <div className="rounded-md border border-border bg-popover text-left shadow-md">
+                  <div className="border-border border-b px-3 py-2 font-medium text-foreground text-xs uppercase tracking-wide">
+                    {t('drawer.policyWarnings')}
+                  </div>
+                  <ul className="max-h-80 divide-y divide-border overflow-y-auto">
+                    {violationGroups.map((g) => (
+                      <li key={g.expenseId ?? 'report'} className="flex flex-col gap-1 px-3 py-2">
+                        <span className="truncate font-medium text-foreground text-sm">
+                          {g.merchant}
+                        </span>
+                        <ul className="flex flex-col gap-0.5">
+                          {g.labels.map((label) => (
+                            <li
+                              key={label}
+                              className="flex items-start gap-1.5 text-muted-foreground text-xs"
+                            >
+                              <IconAlertTriangle
+                                size={12}
+                                className="mt-0.5 shrink-0 text-warning"
+                              />
+                              <span>{label}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
               </div>
-              <ul className="max-h-80 divide-y divide-border overflow-y-auto">
-                {violationGroups.map((g) => (
-                  <li key={g.expenseId ?? 'report'} className="flex flex-col gap-1 px-3 py-2">
-                    <span className="truncate font-medium text-foreground text-sm">
-                      {g.merchant}
-                    </span>
-                    <ul className="flex flex-col gap-0.5">
-                      {g.labels.map((label) => (
-                        <li
-                          key={label}
-                          className="flex items-start gap-1.5 text-muted-foreground text-xs"
-                        >
-                          <IconAlertTriangle size={12} className="mt-0.5 shrink-0 text-warning" />
-                          <span>{label}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  </li>
-                ))}
-              </ul>
             </div>
-          </div>
+          )}
         </div>
       ) : null,
       right: (
@@ -2023,7 +2210,7 @@ export function ExpenseReportWorkbench({
            */}
           {isBelowLg ? null : (
             <TopBarActions
-              actions={actions}
+              actions={barActions}
               openPanel={decideMode}
               onOpenPanel={openDecidePanel}
               renderPanel={decidePanel}
@@ -2041,6 +2228,7 @@ export function ExpenseReportWorkbench({
     decideMode,
     decideNote,
     submitError,
+    chaseNote,
     submitBlocked,
     submitReason,
     hasNoExpenses,
@@ -2070,6 +2258,12 @@ export function ExpenseReportWorkbench({
     reassign.isPending,
     reassignTo,
     reassignItem,
+    // VeloExpense: no markReimbursed (d71).
+    chase.isPending,
+    isSubmitter,
+    isAcknowledge,
+    canReimburse,
+    canChase,
     unresolved.length,
     violationGroups,
     t,
@@ -2178,6 +2372,14 @@ export function ExpenseReportWorkbench({
             renderPanel={decidePanel}
           />
         </div>
+      )}
+      {!isBelowLg && (
+        <DesktopActionStrip
+          actions={stripActions}
+          openPanel={decideMode}
+          onOpenPanel={openDecidePanel}
+          renderPanel={decidePanel}
+        />
       )}
       {/* Above the panes, because it blocks submission and is about the report as a
           whole rather than any one expense. `shrink-0` so it never gets squeezed to

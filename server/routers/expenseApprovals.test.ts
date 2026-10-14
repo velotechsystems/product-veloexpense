@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { permissions as P } from '@expenseos/rbac';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { REFUSAL_KEYS, refusalData } from '@/server/refusal';
 import { stubFn } from '@/test-utils/stubFn';
 import { makeContext } from '../__test-helpers__/trpcCaller';
@@ -135,7 +135,13 @@ vi.mock('@/lib/expenses/lifecycle', () => ({
 vi.mock('@/lib/billing/gate', () => ({ assertTenantMayWrite: stubFn(async () => {}) }));
 
 const callerCanDecideReport = stubFn(async () => false);
-vi.mock('@/server/lib/reportApproval', () => ({ callerCanDecideReport }));
+// VeloExpense (eos-573): `canViewReport` lives in this module now, as in ExpenseOS; it is the
+// real one (AP and readers of all short-circuit before any query), and only the decide
+// lookup is stubbed.
+vi.mock('@/server/lib/reportApproval', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/server/lib/reportApproval')>()),
+  callerCanDecideReport,
+}));
 
 const notifyReportDecision = vi.fn();
 const notifyReportReassigned = vi.fn();
@@ -148,6 +154,7 @@ vi.mock('@/server/lib/reportNotify', () => ({
 
 const executeWorkflowEffects = vi.fn();
 vi.mock('@/server/lib/workflowEffects', () => ({ executeWorkflowEffects }));
+
 
 const U = (n: string) => `00000000-0000-7000-8000-00000000000${n}`;
 const ME = U('9');
@@ -910,6 +917,339 @@ describe('the report-total guard, seen from the router', () => {
       code: 'PRECONDITION_FAILED',
       // VeloExpense: the tenant's ledger rather than NetSuite (`ReportTotalFrozenError`).
       message: expect.stringMatching(/ledger posting is PROCESSING/),
+    });
+  });
+});
+
+/** One CAD expense on a SUBMITTED report, read through `report`. */
+const expense = (allocations: unknown[], lineItems: unknown[] = []) => ({
+  id: U('e'),
+  merchant: 'Cafe',
+  placeText: null,
+  date: new Date('2026-10-01T00:00:00Z'),
+  explanation: null,
+  attendees: [],
+  amountMinor: 1000n,
+  taxGstHstMinor: null,
+  taxQstMinor: null,
+  currency: { code: 'CAD', symbol: '$' },
+  fxRate: null,
+  fxRateSource: null,
+  homeCurrency: null,
+  homeAmountMinor: null,
+  lineItems,
+  allocations,
+  receipts: [],
+});
+
+function reportDb(expenses: unknown[]) {
+  const findUnique = stubFn(
+    async () =>
+      ({
+        id: REPORT,
+        number: 'R-1',
+        title: 'Trip',
+        purpose: null,
+        status: 'SUBMITTED',
+        totalMinor: 1000n,
+        currency: { code: 'CAD', symbol: '$' },
+        submittedAt: new Date('2026-10-02T00:00:00Z'),
+        submitterId: U('3'),
+        approvalInstanceId: null,
+        // VeloExpense: the submitter's one display name, and violations read on their own.
+        submitter: {
+          id: U('3'),
+          name: 'Ann Lee',
+          email: 'ann@example.com',
+          entity: null,
+        },
+        expenses,
+      }) as unknown,
+  );
+  const db = makeDb({
+    expenseReport: { findUnique },
+    policyViolation: { findMany: stubFn(async () => [] as unknown[]) },
+  });
+  return { db, findUnique };
+}
+
+// VeloExpense: receipts are presigned through VeloExpense's storage; in memory here.
+beforeAll(async () => {
+  const { MemoryStorage, setStorage } = await import('@/lib/storage');
+  setStorage(new MemoryStorage());
+});
+
+/** AP reads every report (`canViewReport`), which keeps these cases off the auth path. */
+const readReport = async (expenses: unknown[]) => {
+  const { db, findUnique } = reportDb(expenses);
+  const out = await (await callerFor(db, AP)).report({ reportId: REPORT });
+  return { findUnique, out };
+};
+
+/*
+ * VeloExpense (eos-573): ExpenseOS's cases, less NetSuite. VeloExpense posts to no NetSuite and
+ * has no class (see `expenses.ts`), so there is no business-unit source to read: a line names
+ * the admin business unit and its department, as `expenses.report` sends it. ExpenseOS's two
+ * NETSUITE-source cases are not carried; the rest keep their assertions with the NetSuite and
+ * class fields at the null `expenses.report` sends.
+ */
+describe('report: the coding the approver signs off on', () => {
+  /** A coded line: an admin business unit and a department. */
+  const allocation = (over: Record<string, unknown> = {}) => ({
+    id: U('a'),
+    expenseId: U('e'),
+    percentBp: 10000,
+    businessUnitId: U('b'),
+    businessUnit: { id: U('b'), label: 'Admin BU' },
+    departmentId: U('d'),
+    department: { id: U('d'), label: 'Finance' },
+    createdAt: new Date('2026-10-01T00:00:00Z'),
+    ...over,
+  });
+
+  it('sends the coding: the admin business unit and department, no NetSuite label, no class', async () => {
+    const { out } = await readReport([expense([allocation()])]);
+    expect(out.expenses[0]?.allocations).toEqual([
+      {
+        id: U('a'),
+        percentBp: 10000,
+        businessUnitId: U('b'),
+        businessUnit: { id: U('b'), label: 'Admin BU' },
+        nsBusinessUnitLabel: null,
+        departmentId: U('d'),
+        department: { id: U('d'), label: 'Finance' },
+        classId: null,
+        class: null,
+      },
+    ]);
+  });
+
+  it('returns no lines for an uncoded expense', async () => {
+    const { out } = await readReport([expense([])]);
+    expect(out.expenses[0]?.allocations).toEqual([]);
+  });
+
+  it('sends only the named fields — no foreign keys, no picker state', async () => {
+    const { out } = await readReport([expense([allocation()])]);
+    const [line] = out.expenses[0]?.allocations ?? [];
+    expect(line).toBeDefined();
+    expect(line).not.toHaveProperty('pickerNsBusinessUnitId');
+    expect(line).not.toHaveProperty('nsBusinessUnitId');
+    expect(line).not.toHaveProperty('expenseId');
+    expect(line).not.toHaveProperty('createdAt');
+  });
+
+  it('loads the report once, with the allocations include', async () => {
+    const { findUnique } = await readReport([expense([allocation()])]);
+    expect(findUnique).toHaveBeenCalledTimes(1);
+    const [args] = findUnique.mock.calls[0] ?? [];
+    expect(args?.include.expenses.include.allocations).toEqual({
+      orderBy: { createdAt: 'asc' },
+      include: {
+        businessUnit: { select: { id: true, label: true } },
+        department: { select: { id: true, label: true } },
+      },
+    });
+  });
+});
+
+describe('report: the mileage claim the approver signs off on', () => {
+  /** What Prisma hands back for a `Decimal` column, as far as the mapping reads it. */
+  const dec = (v: string) => ({ toString: () => v });
+
+  /** A filed MILEAGE line: A → B → C, 12 km + 8 km by the lookup, 15 km claimed. */
+  const mileageLine = (over: Record<string, unknown> = {}) => ({
+    id: U('l'),
+    expenseId: U('e'),
+    kind: 'MILEAGE',
+    payload: null,
+    categoryId: U('k'),
+    category: { id: U('k'), label: 'Mileage', icon: 'car' },
+    glAccountId: U('g'),
+    amountMinor: 1050n,
+    notes: 'Client visit',
+    mileageDistance: dec('15.00'),
+    mileageUnit: 'KM',
+    mileageRateId: U('r'),
+    mileageYtdBefore: dec('120.00'),
+    mileageBreakdown: [
+      { fromDistance: '120.00', rateMinor: 70, distance: '15.00', amountMinor: 1050 },
+    ],
+    mileageRoute: {
+      stops: [
+        { placeId: 'place-A', description: 'Office' },
+        { placeId: 'place-B', description: 'Client' },
+        { placeId: 'place-C', description: 'Home' },
+      ],
+      legs: [
+        { fromPlaceId: 'place-A', toPlaceId: 'place-B', meters: 12_000 },
+        { fromPlaceId: 'place-B', toPlaceId: 'place-C', meters: 8_000 },
+      ],
+    },
+    mileageDistanceOverride: dec('15.00'),
+    createdAt: new Date('2026-10-01T00:00:00Z'),
+    updatedAt: new Date('2026-10-01T00:00:00Z'),
+    ...over,
+  });
+
+  /** A meal whose mileage columns still hold values: stale columns on a non-mileage
+   *  line must not reach the wire either. */
+  const STANDARD_LINE = {
+    ...mileageLine(),
+    kind: 'STANDARD',
+    category: { id: U('m'), label: 'Meals', icon: 'tools-kitchen' },
+    notes: 'Lunch',
+  };
+
+  const readLines = async (lineItems: unknown[]) => {
+    const { out } = await readReport([expense([], lineItems)]);
+    return out.expenses[0]?.lineItems ?? [];
+  };
+
+  it('maps a MILEAGE line by name, with the trimmed route and the route distance', async () => {
+    const [line] = await readLines([mileageLine()]);
+    expect(line).toEqual({
+      id: U('l'),
+      category: { id: U('k'), label: 'Mileage', icon: 'car' },
+      kind: 'MILEAGE',
+      amountMinor: '1050',
+      mileageDistance: '15.00',
+      mileageUnit: 'KM',
+      mileageBreakdown: [
+        { fromDistance: '120.00', rateMinor: 70, distance: '15.00', amountMinor: 1050 },
+      ],
+      mileageRoute: {
+        stops: [{ description: 'Office' }, { description: 'Client' }, { description: 'Home' }],
+      },
+      routeDistance: '20.00',
+      mileageRouteUnavailable: false,
+    });
+  });
+
+  it('never sends legs, place ids, the rate id, the override, notes or the YTD', async () => {
+    // A route the write path accepted with keys nobody asked for, at both levels.
+    const extraKeyRoute = {
+      stops: [
+        { placeId: 'place-A', description: 'Office', lat: 45.5, lng: -73.6, extra: 'x' },
+        { placeId: 'place-B', description: 'Client', lat: 45.6, lng: -73.7, extra: 'x' },
+      ],
+      legs: [{ fromPlaceId: 'place-A', toPlaceId: 'place-B', meters: 12_000 }],
+      lat: 45.5,
+      lng: -73.6,
+      extra: { anything: true },
+    };
+    const { out } = await readReport([
+      expense(
+        [],
+        [mileageLine(), mileageLine({ id: U('n'), mileageRoute: extraKeyRoute }), STANDARD_LINE],
+      ),
+    ]);
+    // The extra-key route was read, not refused: its stop names are on the wire.
+    expect(out.expenses[0]?.lineItems[1]?.mileageRoute?.stops).toEqual([
+      { description: 'Office' },
+      { description: 'Client' },
+    ]);
+    const wire = JSON.stringify(out);
+    for (const key of [
+      'legs',
+      'placeId',
+      'mileageRateId',
+      'mileageDistanceOverride',
+      'notes',
+      'mileageYtdBefore',
+    ]) {
+      expect(wire).not.toContain(key);
+    }
+    // As JSON keys: the bare letters occur inside ordinary words on the wire.
+    for (const key of ['lat', 'lng', 'extra']) {
+      expect(wire).not.toContain(`"${key}"`);
+    }
+    expect(wire).not.toContain('place-A');
+    expect(wire).not.toContain('Client visit');
+  });
+
+  it('rebuilds the breakdown by name, dropping keys the engine never writes', async () => {
+    const [line] = await readLines([
+      mileageLine({
+        mileageBreakdown: [
+          {
+            fromDistance: '0.00',
+            rateMinor: '70',
+            distance: '5.00',
+            amountMinor: '350',
+            extra: 'x',
+          },
+          { fromDistance: '5.00', rateMinor: 64, distance: 10, amountMinor: 640, ytd: '120.00' },
+        ],
+      }),
+    ]);
+    expect(line?.mileageBreakdown).toEqual([
+      { fromDistance: '0.00', rateMinor: '70', distance: '5.00', amountMinor: '350' },
+      { fromDistance: '5.00', rateMinor: 64, distance: 10, amountMinor: 640 },
+    ]);
+    expect(line?.mileageBreakdown?.[0]).not.toHaveProperty('extra');
+    expect(line?.mileageBreakdown?.[1]).not.toHaveProperty('ytd');
+  });
+
+  it.each([
+    ['not an array', { fromDistance: '0.00' }],
+    ['an entry that is not an object', ['0.00']],
+    ['an entry missing a field', [{ fromDistance: '0.00', rateMinor: 70, distance: '1.00' }]],
+    [
+      'an entry with a non-primitive field',
+      [{ fromDistance: '0.00', rateMinor: { n: 70 }, distance: '1.00', amountMinor: 70 }],
+    ],
+    [
+      'an entry with a non-finite number',
+      [{ fromDistance: '0.00', rateMinor: Number.NaN, distance: '1.00', amountMinor: 70 }],
+    ],
+  ])('sends a null breakdown, and still answers, for %s', async (_case, mileageBreakdown) => {
+    const [line] = await readLines([mileageLine({ mileageBreakdown })]);
+    expect(line?.mileageBreakdown).toBeNull();
+    expect(line?.mileageDistance).toBe('15.00');
+  });
+
+  it('gives the route distance in miles on a mile-denominated line', async () => {
+    const [line] = await readLines([
+      mileageLine({ mileageUnit: 'MI', mileageDistance: dec('9.00') }),
+    ]);
+    expect(line?.routeDistance).toBe('12.43');
+  });
+
+  it('hides the route distance when the claim is the route', async () => {
+    const [line] = await readLines([mileageLine({ mileageDistance: dec('20.00') })]);
+    expect(line?.routeDistance).toBeNull();
+    expect(line?.mileageRoute?.stops).toHaveLength(3);
+  });
+
+  it('says an unreadable route is unavailable, and still answers', async () => {
+    const [line] = await readLines([mileageLine({ mileageRoute: '{"stops": [' })]);
+    expect(line).toMatchObject({
+      mileageRoute: null,
+      routeDistance: null,
+      mileageRouteUnavailable: true,
+      mileageDistance: '15.00',
+    });
+  });
+
+  it('tells a line with no route from one with an unreadable route', async () => {
+    const [line] = await readLines([mileageLine({ mileageRoute: null })]);
+    expect(line).toMatchObject({ mileageRoute: null, mileageRouteUnavailable: false });
+  });
+
+  it('sends null for every mileage field on a STANDARD line, whatever its columns hold', async () => {
+    const [line] = await readLines([STANDARD_LINE]);
+    expect(line).toEqual({
+      id: U('l'),
+      category: { id: U('m'), label: 'Meals', icon: 'tools-kitchen' },
+      kind: 'STANDARD',
+      amountMinor: '1050',
+      mileageDistance: null,
+      mileageUnit: null,
+      mileageBreakdown: null,
+      mileageRoute: null,
+      routeDistance: null,
+      mileageRouteUnavailable: false,
     });
   });
 });
