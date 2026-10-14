@@ -194,4 +194,46 @@ describe.skipIf(!process.env.DATABASE_URL)('roles.delete guards (integration)', 
     );
     expect(audit.rows).toEqual([{ organization_id: A, action: 'ROLE_CREATED', actor_role: 'System Administrator' }]);
   });
+
+  // VeloExpense (w4-10e): the grant ceiling. A custom role that may edit roles cannot make
+  // itself (or anything else) an administrator.
+  it('refuses a role editor adding what they do not hold, to their own role included', async () => {
+    const { createCallerFactory } = await import('@/server/trpc');
+    const { appRouter } = await import('@/server/routers/_app');
+    const { db } = await import('@/lib/db/prisma');
+    const editorRole = await makeRole(`QA role editor ${Date.now()}`);
+    await admin.query(`UPDATE role SET permissions = $2 WHERE id = $1`, [
+      editorRole,
+      [P.admin.role.list, P.admin.role.update, P.expense.report.readOwn],
+    ]);
+    const editor = (
+      await admin.query(
+        `INSERT INTO app_user (organization_id, email, display_name, role_id)
+         VALUES ($1, 'editor@roledel-a.test', 'Editor', $2) RETURNING id`,
+        [A, editorRole],
+      )
+    ).rows[0].id as string;
+    try {
+      const roles = createCallerFactory(appRouter)({
+        session: null,
+        db,
+        rbac: null,
+        caller: { email: 'editor@roledel-a.test', organizationId: A },
+      }).roles;
+      await expect(
+        roles.update({
+          id: editorRole,
+          patch: { permissions: [P.admin.role.list, P.admin.role.update, P.expense.report.readOwn, P.admin.appSettings.update] },
+        }),
+      ).rejects.toMatchObject({ code: 'FORBIDDEN' });
+      const row = (await admin.query(`SELECT permissions FROM role WHERE id = $1`, [editorRole])).rows[0];
+      expect(row.permissions).not.toContain(P.admin.appSettings.update);
+      // Renaming their own role is fine.
+      await roles.update({ id: editorRole, patch: { label: { en: 'QA renamed editor' } } });
+    } finally {
+      // The rename is audited with the editor as actor, so they stay; back to Employee, so
+      // their role can be cleaned up with the others.
+      await admin.query(`UPDATE app_user SET role_id = '019e3000-0000-7000-8000-000000000004' WHERE id = $1`, [editor]);
+    }
+  });
 });
