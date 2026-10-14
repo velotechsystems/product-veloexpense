@@ -33,7 +33,7 @@ export async function toggleFromForm(form: FormData) {
       setEntitlement(tx, code, enable, {
         id: actor.id,
         name: actor.display_name ?? actor.email,
-        role: actor.role,
+        role: actor.role_label,
       }),
     );
   } catch (err) {

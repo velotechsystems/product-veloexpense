@@ -69,7 +69,7 @@ test.describe('as an admin', () => {
         WHERE organization_id = $1 AND action = 'FX_RATE_ADDED' ORDER BY sequence DESC LIMIT 1`,
       [org],
     );
-    expect(audit.rows[0]).toEqual({ actor_role: 'ADMIN', base: 'CAD' });
+    expect(audit.rows[0]).toEqual({ actor_role: 'System Administrator', base: 'CAD' });
 
     await page.getByRole('row', { name: /CAD.*USD/ }).click();
     await expect(page.getByRole('dialog').getByText('CAD → USD history')).toBeVisible();

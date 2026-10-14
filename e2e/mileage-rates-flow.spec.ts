@@ -88,9 +88,9 @@ test.describe('as an admin', () => {
       [org, id],
     );
     expect(audit.rows).toEqual([
-      { action: 'MILEAGE_RATE_CHANGED', actor_role: 'ADMIN' },
-      { action: 'MILEAGE_RATE_CHANGED', actor_role: 'ADMIN' },
-      { action: 'MILEAGE_RATE_DELETED', actor_role: 'ADMIN' },
+      { action: 'MILEAGE_RATE_CHANGED', actor_role: 'System Administrator' },
+      { action: 'MILEAGE_RATE_CHANGED', actor_role: 'System Administrator' },
+      { action: 'MILEAGE_RATE_DELETED', actor_role: 'System Administrator' },
     ]);
   });
 });

@@ -238,8 +238,8 @@ beforeAll(async () => {
       // own isolation test below expects.
       const owner = label === 'A' ? 'a@x.com' : 'b@x.com';
       const approver = await tx.query(
-        `INSERT INTO app_user (organization_id, email, display_name, role)
-         VALUES ($1, $2, $3, 'MANAGER') RETURNING id`,
+        `INSERT INTO app_user (organization_id, email, display_name, role_id)
+         VALUES ($1, $2, $3, '019e3000-0000-7000-8000-000000000004') RETURNING id`,
         [org, `approver-${label.toLowerCase()}@x.com`, `Approver ${label}`],
       );
       const workflow = await tx.query(
@@ -1513,8 +1513,8 @@ describe('RLS tenant isolation', () => {
     const mint = async (org: string, inviter: string, email: string, hash: string) =>
       withOrg(org, (tx) =>
         tx.query(
-          `INSERT INTO invite (organization_id, email, token_hash, role, invited_by_id, expires_at)
-           VALUES ($1, $2, $3, 'EMPLOYEE', $4, clock_timestamp() + interval '7 days')
+          `INSERT INTO invite (organization_id, email, token_hash, role_id, invited_by_id, expires_at)
+           VALUES ($1, $2, $3, '019e3000-0000-7000-8000-000000000004', $4, clock_timestamp() + interval '7 days')
            RETURNING id`,
           [org, email, hash, inviter],
         ),
@@ -1541,8 +1541,8 @@ describe('RLS tenant isolation', () => {
     await expect(
       withOrg(orgA, (tx) =>
         tx.query(
-          `INSERT INTO invite (organization_id, email, token_hash, role, invited_by_id, expires_at)
-           VALUES ($1, 'smuggled@b.test', $2, 'ADMIN', $3, clock_timestamp() + interval '7 days')`,
+          `INSERT INTO invite (organization_id, email, token_hash, role_id, invited_by_id, expires_at)
+           VALUES ($1, 'smuggled@b.test', $2, '019e3000-0000-7000-8000-000000000001', $3, clock_timestamp() + interval '7 days')`,
           [orgB, 'c'.repeat(64), inviterB],
         ),
       ),
@@ -1554,8 +1554,8 @@ describe('RLS tenant isolation', () => {
     await expect(
       withOrg(orgA, (tx) =>
         tx.query(
-          `INSERT INTO invite (organization_id, email, token_hash, role, invited_by_id, expires_at)
-           VALUES ($1, 'crossed@a.test', $2, 'EMPLOYEE', $3, clock_timestamp() + interval '7 days')`,
+          `INSERT INTO invite (organization_id, email, token_hash, role_id, invited_by_id, expires_at)
+           VALUES ($1, 'crossed@a.test', $2, '019e3000-0000-7000-8000-000000000004', $3, clock_timestamp() + interval '7 days')`,
           [orgA, 'd'.repeat(64), inviterB],
         ),
       ),
@@ -1584,7 +1584,7 @@ describe('RLS tenant isolation', () => {
     // silent no-op rather than an error, which is why `rowCount` is the
     // assertion and a thrown exception is not.
     const attempted = await withInviteLookup((tx) =>
-      tx.query("UPDATE invite SET role = 'ADMIN' WHERE organization_id = $1", [orgB]),
+      tx.query("UPDATE invite SET role_id = '019e3000-0000-7000-8000-000000000001' WHERE organization_id = $1", [orgB]),
     );
     expect(attempted.rowCount).toBe(0);
 

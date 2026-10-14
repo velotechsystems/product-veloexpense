@@ -11,7 +11,8 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { ErrorBanner } from '@/app/expenses/ui';
 import { listEmployees, listLiveInvites, revokeInviteFromForm } from './actions';
-import { enumLabel, EMPLOYEE_ROLE_COPY, EMPLOYEE_STATUS_COPY } from '@/lib/i18n/catalog/enums';
+import { enumLabel, EMPLOYEE_STATUS_COPY } from '@/lib/i18n/catalog/enums';
+import { holdsAdminPermission } from '@/lib/auth/actor';
 import { readerPrefs } from '@/lib/i18n/request';
 import { EMPLOYEE_STATUSES, type EmployeeStatus } from '@/lib/employees/service';
 
@@ -135,7 +136,7 @@ export default async function EmployeeDirectoryPage({
                   <TableRow key={invite.id}>
                     <TableCell>{invite.email}</TableCell>
                     <TableCell>
-                      {enumLabel(EMPLOYEE_ROLE_COPY, invite.role, locale)}
+                      {invite.roleName}
                     </TableCell>
                     <TableCell className="text-muted-foreground">
                       {invite.invitedByName ?? '—'}
@@ -227,7 +228,8 @@ export default async function EmployeeDirectoryPage({
                   <TableCell>{e.department_name ?? '—'}</TableCell>
                   <TableCell>{e.manager_name ?? e.manager_email ?? '—'}</TableCell>
                   <TableCell>
-                    <Badge variant={e.role === 'ADMIN' ? 'default' : 'muted'}>{e.role}</Badge>
+                    {/* w4-10b: the role's own name; emphasised when it opens the admin screens. */}
+                    <Badge variant={holdsAdminPermission(e) ? 'default' : 'muted'}>{e.role_label}</Badge>
                   </TableCell>
                   <TableCell>
                     <Badge variant={e.employee_status === 'ACTIVE' ? 'success' : 'muted'}>{e.employee_status}</Badge>

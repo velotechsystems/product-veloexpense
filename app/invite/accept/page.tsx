@@ -39,8 +39,6 @@
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { ErrorBanner } from '@/app/expenses/ui';
-import { enumLabel, EMPLOYEE_ROLE_COPY } from '@/lib/i18n/catalog/enums';
-import { readerPrefs } from '@/lib/i18n/request';
 import { readPendingInvite } from '@/lib/invites/service';
 import { Card, Lede, Shell, Title } from '@/app/pre-auth';
 
@@ -96,7 +94,6 @@ export default async function AcceptInvitePage({
     );
   }
 
-  const { locale } = await readerPrefs();
   return (
     /* VX5-6 — the tenant's own colours and mark, on the one pre-auth screen that
      * requires a credential to reach. `PendingInvite.brandColor` carries the
@@ -114,7 +111,7 @@ export default async function AcceptInvitePage({
         <Title>You have been invited to {pending.organizationName}</Title>
         <Lede>
           Sign in with your work account to join as{' '}
-          <strong>{enumLabel(EMPLOYEE_ROLE_COPY, pending.role, locale)}</strong>. The invitation
+          <strong>{pending.roleName}</strong>. The invitation
           was sent to <strong>{pending.emailHint}</strong> and only works for that address.
         </Lede>
         <Button asChild>

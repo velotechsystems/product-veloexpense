@@ -168,7 +168,13 @@ describe.skipIf(!process.env.DATABASE_URL)('the default approval workflow (integ
     /** One migration's per-tenant block, run again as it ran at deploy. */
     const runBlock = async (dir: string) => {
       const sql = readFileSync(join(process.cwd(), 'prisma/migrations', dir, 'migration.sql'), 'utf8');
-      await h.admin.query(sql.slice(sql.indexOf('DO $$')));
+      // w4-10b: these migrations ran when people still had a text role; 0069 dropped it. The
+      // one predicate on it ("the first ADMIN") is read as the role it became (0068: ADMIN →
+      // System Administrator), so the block runs as it ran at deploy, on today's schema.
+      const block = sql
+        .slice(sql.indexOf('DO $$'))
+        .replaceAll("u.role = 'ADMIN'", "u.role_id = '019e3000-0000-7000-8000-000000000001'");
+      await h.admin.query(block);
     };
     /** Both, in deploy order: 0059 writes the flow, 0060 gives it the d59 fallback. */
     const runBackfill = async () => {

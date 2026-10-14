@@ -29,8 +29,8 @@ test.beforeAll(async () => {
     .organization_id as string;
   userId = (
     await admin.query(
-      `INSERT INTO app_user (organization_id, email, display_name, role)
-       VALUES ($1, $2, 'Register Submitter', 'EMPLOYEE') RETURNING id`,
+      `INSERT INTO app_user (organization_id, email, display_name, role_id)
+       VALUES ($1, $2, 'Register Submitter', '019e3000-0000-7000-8000-000000000004') RETURNING id`,
       [org, `register-${Date.now()}@demo.test`],
     )
   ).rows[0].id;
@@ -99,7 +99,7 @@ test.describe('as an admin', () => {
       `SELECT action, entity_type, actor_role FROM audit_entry WHERE entity_id = $1 ORDER BY sequence DESC LIMIT 1`,
       [warningId],
     );
-    expect(audit.rows).toEqual([{ action: 'POLICY_RULE_CHANGED', entity_type: 'PolicyViolation', actor_role: 'ADMIN' }]);
+    expect(audit.rows).toEqual([{ action: 'POLICY_RULE_CHANGED', entity_type: 'PolicyViolation', actor_role: 'System Administrator' }]);
   });
 
   test('offers nothing to acknowledge on a BLOCK', async ({ page }) => {

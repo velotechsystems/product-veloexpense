@@ -85,10 +85,9 @@ export function veloExpenseRoute(to: string): string | null {
 }
 
 /**
- * VeloExpense's admin screens gate on the `ADMIN` text role (`asAdminPage`), which holds
- * ExpenseOS's System Administrator role (0068) — the only role VeloExpense hands out that
- * holds this permission. So "requires this" reads as "is an admin" here, until w4-10c turns
- * those gates into permission checks (d73).
+ * VeloExpense's admin screens gate on this permission (`asAdminPage`, w4-10b, d74 —
+ * `VELOEXPENSE_ADMIN_PERMISSION` in lib/auth/actor.ts), so the menu and the screens ask the
+ * same question. System Administrator is the system role that holds it.
  */
 const VELOEXPENSE_ADMIN: Permission = P.admin.appSettings.update;
 

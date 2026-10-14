@@ -394,7 +394,6 @@ export const UserScalarFieldEnum = {
   businessUnitId: 'businessUnitId',
   legalEntityId: 'legalEntityId',
   jobLevelId: 'jobLevelId',
-  legacyRole: 'legacyRole',
   roleId: 'roleId',
   deletedAt: 'deletedAt',
   createdAt: 'createdAt',

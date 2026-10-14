@@ -165,7 +165,7 @@ export async function setPreferenceFromForm(form: FormData) {
       await setPreference(tx, actor.id, eventType, channel, enabled);
       await auditAppend(
         tx,
-        { id: actor.id, name: actor.display_name ?? actor.email, role: actor.role },
+        { id: actor.id, name: actor.display_name ?? actor.email, role: actor.role_label },
         {
           action: 'NOTIFICATION_PREFERENCE_CHANGED',
           entityType: 'app_user',

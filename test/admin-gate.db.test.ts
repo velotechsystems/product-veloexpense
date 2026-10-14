@@ -27,7 +27,7 @@ import { withOrg } from '@/lib/tenant/context';
 import { ForbiddenError, isActiveAdmin, requireActor } from '@/lib/auth/actor';
 import { errorParam, userMessageOf } from '@/lib/errors/domain';
 import { renderUserMessage } from '@/lib/i18n/catalog/errors';
-import type { EmployeeRow } from '@/lib/employees/service';
+import { getEmployeeByEmail, type EmployeeRow } from '@/lib/employees/service';
 
 const admin = new Pool({
   connectionString: process.env.ADMIN_DATABASE_URL ?? process.env.DATABASE_URL,
@@ -44,8 +44,8 @@ const EMAILS = {
 
 const rowFor = (email: string) =>
   withOrg(orgId, async (tx) => {
-    const r = await tx.query('SELECT * FROM app_user WHERE email = $1', [email]);
-    return r.rows[0] as EmployeeRow;
+    // w4-10b: the row as the gate reads it — with its role's permissions (lib/employees/service).
+    return (await getEmployeeByEmail(tx, email)) as EmployeeRow;
   });
 
 beforeAll(async () => {
@@ -62,9 +62,9 @@ beforeAll(async () => {
       [EMAILS.employee, 'EMPLOYEE'],
     ] as const) {
       await tx.query(
-        `INSERT INTO app_user (organization_id, email, display_name, role)
+        `INSERT INTO app_user (organization_id, email, display_name, role_id)
          VALUES ($1, $2, $3, $4)`,
-        [orgId, email, email.split('@')[0], role],
+        [orgId, email, email.split('@')[0], role === 'ADMIN' ? '019e3000-0000-7000-8000-000000000001' : '019e3000-0000-7000-8000-000000000004'],
       );
     }
     // Soft-deleted, which is how this product deactivates somebody (VX1-2): the
@@ -93,11 +93,66 @@ describe('the admin predicate', () => {
    * rather than a hand-built object precisely because `deleted_at` is a column
    * a hand-built object is free to forget.
    */
-  it('refuses a DEACTIVATED admin, whose row still says ADMIN', async () => {
+  it('refuses a DEACTIVATED admin, whose row still holds System Administrator', async () => {
     const row = await rowFor(EMAILS.deletedAdmin);
-    expect(row.role).toBe('ADMIN');
+    // w4-10b: the role still grants the admin permission; only `deleted_at` refuses.
+    expect(row.role_label).toBe('System Administrator');
+    expect(row.role_permissions).toContain('admin.appSettings.update');
     expect(row.deleted_at).not.toBeNull();
     expect(isActiveAdmin(row)).toBe(false);
+  });
+});
+
+describe('the admin predicate is a permission, not a role name (w4-10b, d74)', () => {
+  /**
+   * VeloExpense's own admin screens ask for `admin.appSettings.update` — the permission the
+   * menu already showed them for. So the predicate follows the ROLE ROW: a custom role given
+   * the permission opens them, and System Administrator without it does not.
+   */
+  it('admits a custom role that carries the admin permission', async () => {
+    const custom = (
+      await withOrg(orgId, (tx) =>
+        tx.query(
+          `INSERT INTO role (label, permissions) VALUES ('{"en":"Office Manager"}', ARRAY['admin.appSettings.update'])
+           RETURNING id`,
+        ),
+      )
+    ).rows[0].id as string;
+    await withOrg(orgId, (tx) =>
+      tx.query(`UPDATE app_user SET role_id = $1 WHERE email = $2`, [custom, EMAILS.employee]),
+    );
+    try {
+      expect(isActiveAdmin(await rowFor(EMAILS.employee))).toBe(true);
+      // And not while the role is deactivated: a deactivated role grants nothing.
+      await withOrg(orgId, (tx) => tx.query(`UPDATE role SET active = false WHERE id = $1`, [custom]));
+      expect(isActiveAdmin(await rowFor(EMAILS.employee))).toBe(false);
+    } finally {
+      await withOrg(orgId, async (tx) => {
+        await tx.query(`UPDATE app_user SET role_id = '019e3000-0000-7000-8000-000000000004' WHERE email = $1`, [
+          EMAILS.employee,
+        ]);
+        await tx.query(`DELETE FROM role WHERE id = $1`, [custom]);
+      });
+    }
+  });
+
+  it('refuses System Administrator once the permission is taken off it', async () => {
+    const ADMIN_ID = '019e3000-0000-7000-8000-000000000001';
+    await withOrg(orgId, (tx) =>
+      tx.query(`UPDATE role SET permissions = array_remove(permissions, 'admin.appSettings.update') WHERE id = $1`, [
+        ADMIN_ID,
+      ]),
+    );
+    try {
+      expect(isActiveAdmin(await rowFor(EMAILS.admin))).toBe(false);
+    } finally {
+      await withOrg(orgId, (tx) =>
+        tx.query(`UPDATE role SET permissions = array_append(permissions, 'admin.appSettings.update') WHERE id = $1`, [
+          ADMIN_ID,
+        ]),
+      );
+    }
+    expect(isActiveAdmin(await rowFor(EMAILS.admin))).toBe(true);
   });
 });
 
@@ -105,7 +160,8 @@ describe('requireActor — the membership half', () => {
   it('returns the row for a member', async () => {
     const actor = await withOrg(orgId, (tx) => requireActor(tx, EMAILS.manager));
     expect(actor.email).toBe(EMAILS.manager);
-    expect(actor.role).toBe('MANAGER');
+    // w4-10b: MANAGER was Employee's stand-in; the role is the row now.
+    expect(actor.role_label).toBe('Employee');
   });
 
   it('refuses somebody with no row in this tenant, and says so readably', async () => {

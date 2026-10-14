@@ -692,7 +692,10 @@ async function auditTransition(
   details: Record<string, unknown>,
 ): Promise<void> {
   const actor = await tx.query(
-    `SELECT COALESCE(display_name, email) AS name, email, role FROM app_user WHERE id = $1`,
+    // w4-10b (d74): the role's label for the audit row.
+    `SELECT COALESCE(u.display_name, u.email) AS name, u.email, r.label ->> 'en' AS role
+       FROM app_user u JOIN role r ON r.organization_id = u.organization_id AND r.id = u.role_id
+      WHERE u.id = $1`,
     [actorId],
   );
   if (actor.rows.length === 0) {
@@ -980,7 +983,10 @@ export async function reimburseReport(
   // `details: {}` here (RB-1) while passing real details from its neighbouring
   // mutations, which is what made the emptiness worth diverging from.
   const actor = await tx.query(
-    `SELECT COALESCE(display_name, email) AS name, email, role FROM app_user WHERE id = $1`,
+    // w4-10b (d74): the role's label for the audit row.
+    `SELECT COALESCE(u.display_name, u.email) AS name, u.email, r.label ->> 'en' AS role
+       FROM app_user u JOIN role r ON r.organization_id = u.organization_id AND r.id = u.role_id
+      WHERE u.id = $1`,
     [actorId],
   );
   if (actor.rows.length === 0) {

@@ -71,16 +71,16 @@ beforeAll(async () => {
 
   await withOrg(orgId, async (tx) => {
     const u = await tx.query(
-      `INSERT INTO app_user (organization_id, email, display_name, role)
-       VALUES ($1,'reader@loc.test','Reader','EMPLOYEE') RETURNING id`,
+      `INSERT INTO app_user (organization_id, email, display_name, role_id)
+       VALUES ($1,'reader@loc.test','Reader','019e3000-0000-7000-8000-000000000004') RETURNING id`,
       [orgId],
     );
     readerId = u.rows[0].id;
   });
   await withOrg(otherOrgId, async (tx) => {
     const u = await tx.query(
-      `INSERT INTO app_user (organization_id, email, display_name, role)
-       VALUES ($1,'reader@loc2.test','Reader Two','EMPLOYEE') RETURNING id`,
+      `INSERT INTO app_user (organization_id, email, display_name, role_id)
+       VALUES ($1,'reader@loc2.test','Reader Two','019e3000-0000-7000-8000-000000000004') RETURNING id`,
       [otherOrgId],
     );
     otherTenantUserId = u.rows[0].id;

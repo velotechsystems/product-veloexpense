@@ -83,8 +83,8 @@ beforeAll(async () => {
   await seedDefaultFlow(orgId);
   await withOrg(orgId, async (tx) => {
     const m = await tx.query(
-      `INSERT INTO app_user (organization_id, email, display_name, role)
-       VALUES ($1,'mgr@audtr.test','Mgr','MANAGER') RETURNING id`,
+      `INSERT INTO app_user (organization_id, email, display_name, role_id)
+       VALUES ($1,'mgr@audtr.test','Mgr','019e3000-0000-7000-8000-000000000004') RETURNING id`,
       [orgId],
     );
     managerId = m.rows[0].id;
@@ -95,8 +95,8 @@ beforeAll(async () => {
     );
     submitterId = s.rows[0].id;
     const a = await tx.query(
-      `INSERT INTO app_user (organization_id, email, display_name, role)
-       VALUES ($1,'admin@audtr.test','Admin','ADMIN') RETURNING id`,
+      `INSERT INTO app_user (organization_id, email, display_name, role_id)
+       VALUES ($1,'admin@audtr.test','Admin','019e3000-0000-7000-8000-000000000001') RETURNING id`,
       [orgId],
     );
     adminId = a.rows[0].id;

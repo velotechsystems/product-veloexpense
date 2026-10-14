@@ -1,12 +1,10 @@
 /**
- * w4-10a (d73) — roles are rows (0068), and permissions come from them.
+ * w4-10a/b (d73, d74) — roles are rows (0068), and permissions come from them.
  *
- * Until now a person's text role (`app_user.role`) was mapped to an ExpenseOS system role in
- * memory. This proves, against a real database, the three things that replaced that:
+ * A person's text role (`app_user.role`) used to be mapped to an ExpenseOS system role in
+ * memory; 0069 dropped it. This proves, against a real database, what replaced it:
  *
- *   · the staged cutover: a write that still sets the text role sets the role it stands for
- *     (ADMIN → System Administrator; MANAGER, EMPLOYEE → Employee), and a write that names
- *     the role itself keeps it;
+ *   · a person's role is the role row named, or the tenant's Employee role by default;
  *   · a request's permissions and role label are the tenant's role ROW (`resolveTenantMember`,
  *     the function the tRPC middleware and the shell share): an edit to the row is what the
  *     next request sees, and a deactivated role grants nothing — ExpenseOS's loader;
@@ -50,35 +48,27 @@ afterAll(async () => {
   await admin.end();
 });
 
-describe('the staged cutover from the text role', () => {
-  it('gives the founding admin the System Administrator role', async () => {
+describe('a person’s role', () => {
+  it('is System Administrator for the founding admin', async () => {
     expect(await roleIdOf('boss@roles-a.test')).toBe(SYSTEM_ROLE_IDS.admin);
   });
 
-  it('maps each text role on insert, and follows a change to it', async () => {
-    for (const [email, text, expected] of [
-      ['m@roles-a.test', 'MANAGER', SYSTEM_ROLE_IDS.employee],
-      ['e@roles-a.test', 'EMPLOYEE', SYSTEM_ROLE_IDS.employee],
-      ['a@roles-a.test', 'ADMIN', SYSTEM_ROLE_IDS.admin],
-    ] as const) {
-      await admin.query(
-        `INSERT INTO app_user (organization_id, email, display_name, role) VALUES ($1, $2, 'P', $3)`,
-        [A, email, text],
-      );
-      expect(await roleIdOf(email)).toBe(expected);
-    }
-    await admin.query(`UPDATE app_user SET role = 'ADMIN' WHERE email = 'e@roles-a.test'`);
-    expect(await roleIdOf('e@roles-a.test')).toBe(SYSTEM_ROLE_IDS.admin);
-    await admin.query(`UPDATE app_user SET role = 'EMPLOYEE' WHERE email = 'e@roles-a.test'`);
+  it('defaults to the tenant’s Employee role, and is whatever role is named (0069)', async () => {
+    await admin.query(`INSERT INTO app_user (organization_id, email, display_name) VALUES ($1, 'e@roles-a.test', 'E')`, [A]);
     expect(await roleIdOf('e@roles-a.test')).toBe(SYSTEM_ROLE_IDS.employee);
+    await admin.query(
+      `INSERT INTO app_user (organization_id, email, display_name, role_id) VALUES ($1, 'm@roles-a.test', 'M', $2)`,
+      [A, SYSTEM_ROLE_IDS.executive],
+    );
+    expect(await roleIdOf('m@roles-a.test')).toBe(SYSTEM_ROLE_IDS.executive);
   });
 
-  it('keeps a role named directly, and only follows the text role when it changes', async () => {
-    await admin.query(`UPDATE app_user SET role_id = $1 WHERE email = 'm@roles-a.test'`, [SYSTEM_ROLE_IDS.executive]);
-    expect(await roleIdOf('m@roles-a.test')).toBe(SYSTEM_ROLE_IDS.executive);
-    // A write that touches other columns leaves it alone.
-    await admin.query(`UPDATE app_user SET display_name = 'Renamed' WHERE email = 'm@roles-a.test'`);
-    expect(await roleIdOf('m@roles-a.test')).toBe(SYSTEM_ROLE_IDS.executive);
+  it('has no text role left beside it (0069)', async () => {
+    const cols = await admin.query(
+      `SELECT column_name FROM information_schema.columns
+        WHERE table_name IN ('app_user', 'invite') AND column_name = 'role'`,
+    );
+    expect(cols.rows).toEqual([]);
   });
 });
 

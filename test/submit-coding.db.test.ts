@@ -116,13 +116,13 @@ beforeAll(async () => {
     // submit-SUCCEEDS cases here all failed on that before this fixture existed,
     // which is the resolver being right and my fixture being a one-person company.
     const m = await tx.query(
-      `INSERT INTO app_user (organization_id, email, display_name, role)
-       VALUES ($1,'mgr@coding.test','Mgr','MANAGER') RETURNING id`,
+      `INSERT INTO app_user (organization_id, email, display_name, role_id)
+       VALUES ($1,'mgr@coding.test','Mgr','019e3000-0000-7000-8000-000000000004') RETURNING id`,
       [orgId],
     );
     const u = await tx.query(
-      `INSERT INTO app_user (organization_id, email, display_name, role, manager_id)
-       VALUES ($1, $2, 'Ada', 'EMPLOYEE', $3) RETURNING id`,
+      `INSERT INTO app_user (organization_id, email, display_name, role_id, manager_id)
+       VALUES ($1, $2, 'Ada', '019e3000-0000-7000-8000-000000000004', $3) RETURNING id`,
       [orgId, userEmail, m.rows[0].id],
     );
     userId = u.rows[0].id;

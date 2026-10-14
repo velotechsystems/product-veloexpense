@@ -87,8 +87,8 @@ beforeAll(async () => {
     // tenant was never a realistic fixture; it just went unnoticed while submit
     // did not care who would approve.
     const m = await tx.query(
-      `INSERT INTO app_user (organization_id, email, display_name, role)
-       VALUES ($1,'mgr@lifecycle.test','Mgr','MANAGER') RETURNING id`,
+      `INSERT INTO app_user (organization_id, email, display_name, role_id)
+       VALUES ($1,'mgr@lifecycle.test','Mgr','019e3000-0000-7000-8000-000000000004') RETURNING id`,
       [orgId],
     );
     const u = await tx.query(

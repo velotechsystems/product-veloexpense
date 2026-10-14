@@ -185,7 +185,11 @@ describe('the setup checklist', () => {
 
     await withOrg(orgId, (tx) =>
       tx.query(
-        `INSERT INTO app_user (organization_id, email, role) VALUES ($1, 'boss@fresh.test', 'MANAGER')`,
+        // w4-10b: a MANAGER before 0069 — now an Employee whom somebody reports to.
+        `WITH boss AS (
+           INSERT INTO app_user (organization_id, email, role_id)
+           VALUES ($1, 'boss@fresh.test', '019e3000-0000-7000-8000-000000000004') RETURNING id)
+         UPDATE app_user SET manager_id = (SELECT id FROM boss) WHERE email <> 'boss@fresh.test'`,
         [orgId],
       ),
     );
@@ -196,7 +200,7 @@ describe('the setup checklist', () => {
   it('does not count somebody who has been deactivated', async () => {
     const boss = await withOrg(orgId, (tx) =>
       tx.query(
-        `INSERT INTO app_user (organization_id, email, role) VALUES ($1, 'boss@fresh.test', 'ADMIN')
+        `INSERT INTO app_user (organization_id, email, role_id) VALUES ($1, 'boss@fresh.test', '019e3000-0000-7000-8000-000000000001')
          RETURNING id`,
         [orgId],
       ),
@@ -211,7 +215,7 @@ describe('the setup checklist', () => {
   it('an EMPLOYEE does not make the tenant able to approve anything', async () => {
     await withOrg(orgId, (tx) =>
       tx.query(
-        `INSERT INTO app_user (organization_id, email, role) VALUES ($1, 'staff@fresh.test', 'EMPLOYEE')`,
+        `INSERT INTO app_user (organization_id, email, role_id) VALUES ($1, 'staff@fresh.test', '019e3000-0000-7000-8000-000000000004')`,
         [orgId],
       ),
     );
@@ -223,7 +227,11 @@ describe('the setup checklist', () => {
   it('completes when every item is satisfied, and only then', async () => {
     await withOrg(orgId, async (tx) => {
       await tx.query(
-        `INSERT INTO app_user (organization_id, email, role) VALUES ($1, 'boss@fresh.test', 'MANAGER')`,
+        // w4-10b: a MANAGER before 0069 — now an Employee whom somebody reports to.
+        `WITH boss AS (
+           INSERT INTO app_user (organization_id, email, role_id)
+           VALUES ($1, 'boss@fresh.test', '019e3000-0000-7000-8000-000000000004') RETURNING id)
+         UPDATE app_user SET manager_id = (SELECT id FROM boss) WHERE email <> 'boss@fresh.test'`,
         [orgId],
       );
       await tx.query(
@@ -257,7 +265,7 @@ describe('the setup checklist', () => {
     });
     await withOrg(other.organizationId, (tx) =>
       tx.query(
-        `INSERT INTO app_user (organization_id, email, role) VALUES ($1, 'boss@globex.test', 'ADMIN')`,
+        `INSERT INTO app_user (organization_id, email, role_id) VALUES ($1, 'boss@globex.test', '019e3000-0000-7000-8000-000000000001')`,
         [other.organizationId],
       ),
     );

@@ -175,8 +175,10 @@ export async function createOrganization(
 
     // ── 3. the first administrator ────────────────────────────────────────
     const user = await tx.query(
-      `INSERT INTO app_user (organization_id, email, display_name, role)
-       VALUES ($1, $2, $3, 'ADMIN')
+      // w4-10b: System Administrator (SYSTEM_ROLE_IDS.admin) — the tenant's own row, which
+      // the trigger on organization created with it (0068).
+      `INSERT INTO app_user (organization_id, email, display_name, role_id)
+       VALUES ($1, $2, $3, '019e3000-0000-7000-8000-000000000001'::uuid)
        RETURNING id`,
       [organizationId, adminEmail, input.adminName?.trim() || null],
     );
@@ -222,7 +224,8 @@ export async function createOrganization(
 
     await auditAppend(
       tx,
-      { id: adminUserId, name: input.adminName?.trim() || adminEmail, role: 'ADMIN' },
+      // w4-10b (d74): the role's label.
+      { id: adminUserId, name: input.adminName?.trim() || adminEmail, role: 'System Administrator' },
       {
         action: 'ORGANIZATION_CREATED',
         entityType: 'organization',

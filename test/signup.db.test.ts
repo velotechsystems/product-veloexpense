@@ -122,9 +122,9 @@ describe('verifying', () => {
     expect(verified.email).toBe('ada@signup.test');
 
     const users = await withOrg(verified.organizationId, (tx) =>
-      tx.query('SELECT email, role FROM app_user'),
+      tx.query('SELECT email, role_id AS role FROM app_user'),
     );
-    expect(users.rows).toEqual([{ email: 'ada@signup.test', role: 'ADMIN' }]);
+    expect(users.rows).toEqual([{ email: 'ada@signup.test', role: '019e3000-0000-7000-8000-000000000001' }]); // w4-10b: System Administrator
 
     const row = await signupRow(REQUEST.email);
     expect(row.consumed_at).not.toBeNull();

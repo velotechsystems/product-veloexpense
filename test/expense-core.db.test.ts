@@ -57,13 +57,13 @@ beforeAll(async () => {
   await withOrg(orgId, async (tx) => {
     submitterId = (
       await tx.query(
-        `INSERT INTO app_user (organization_id, email, display_name, role) VALUES ($1, $2, 'Sub', 'EMPLOYEE') RETURNING id`,
+        `INSERT INTO app_user (organization_id, email, display_name, role_id) VALUES ($1, $2, 'Sub', '019e3000-0000-7000-8000-000000000004') RETURNING id`,
         [orgId, SUBMITTER],
       )
     ).rows[0].id;
     otherId = (
       await tx.query(
-        `INSERT INTO app_user (organization_id, email, display_name, role) VALUES ($1, 'other@core.test', 'Other', 'EMPLOYEE') RETURNING id`,
+        `INSERT INTO app_user (organization_id, email, display_name, role_id) VALUES ($1, 'other@core.test', 'Other', '019e3000-0000-7000-8000-000000000004') RETURNING id`,
         [orgId],
       )
     ).rows[0].id;

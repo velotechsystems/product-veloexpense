@@ -449,7 +449,7 @@ model TaxJurisdiction {
 // (canSeeOthers) and the user picker read, and the ones whose names already match
 // ExpenseOS's. VeloExpense differences:
 //   · the name is one column (`display_name`, here `name`), not firstName/lastName;
-//   · the role is a text column (`role`), not a roleId into a roles table;
+//   · the role is the tenant's role row (0068/0069), keyed (organization, id);
 //   · employeeStatus is text with a CHECK, not a Prisma enum.
 model User {
   id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
@@ -478,16 +478,11 @@ model User {
   /// w4-00b: the approval engine reads the level's sortOrder. The database's key is
   /// composite (0050); the relation is on the id alone, as the approval task's.
   jobLevel       JobLevel? @relation("UserJobLevel", fields: [jobLevelId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  /// VeloExpense's text role (EMPLOYEE | MANAGER | ADMIN, 0004), the column `role`. Kept one
-  /// release beside `roleId` (d73): a trigger keeps `roleId` in step when something still
-  /// writes it, and VeloExpense's own admin checks read it until w4-10c retires both. Named
-  /// `legacyRole` here so `role` is ExpenseOS's relation below.
-  legacyRole     String    @default("EMPLOYEE") @map("role")
   /// ExpenseOS's `roleId` / `role` (0068). VeloExpense: the role is the TENANT's — the key is
-  /// (organization, id), and system roles carry ExpenseOS's fixed ids in every tenant.
-  /// Filled by the database from the text role on insert until w4-10c (no Prisma create
-  /// writes a person).
-  roleId         String    @map("role_id") @db.Uuid
+  /// (organization, id), and system roles carry ExpenseOS's fixed ids in every tenant. The
+  /// database defaults it to the tenant's Employee role (0069), as VeloExpense's text role
+  /// defaulted to EMPLOYEE before it was dropped.
+  roleId         String    @default(dbgenerated("'019e3000-0000-7000-8000-000000000004'::uuid")) @map("role_id") @db.Uuid
   role           Role      @relation("UserRole", fields: [organizationId, roleId], references: [organizationId, id], onDelete: NoAction, onUpdate: NoAction)
   deletedAt      DateTime? @map("deleted_at") @db.Timestamptz(6)
   createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)

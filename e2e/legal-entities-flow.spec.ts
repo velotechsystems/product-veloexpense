@@ -69,7 +69,7 @@ test.describe('as an admin', () => {
       `SELECT action, actor_role FROM audit_entry WHERE entity_id = $1 ORDER BY sequence`,
       [db.rows[0].id],
     );
-    expect(audit.rows).toEqual([{ action: 'LEGAL_ENTITY_CREATED', actor_role: 'ADMIN' }]);
+    expect(audit.rows).toEqual([{ action: 'LEGAL_ENTITY_CREATED', actor_role: 'System Administrator' }]);
   });
 });
 

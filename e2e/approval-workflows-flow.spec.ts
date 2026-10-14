@@ -54,7 +54,7 @@ test.describe('as an admin', () => {
       `SELECT actor_role FROM audit_entry WHERE action = 'APPROVAL_WORKFLOW_CREATED' AND details->>'key' = $1`,
       [wf.rows[0].key],
     );
-    expect(created.rows).toEqual([{ actor_role: 'ADMIN' }]);
+    expect(created.rows).toEqual([{ actor_role: 'System Administrator' }]);
 
     // The editor draws the seeded draft: a start wired to an approved terminal.
     await page.goto(`/admin/approval-workflows/${wf.rows[0].id}`);

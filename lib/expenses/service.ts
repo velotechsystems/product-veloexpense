@@ -23,7 +23,7 @@
 import type { QueryRunner } from '@/lib/db/client';
 import { DomainError } from '@/lib/errors/domain';
 import type { UserMessageCode } from '@/lib/i18n/catalog/errors';
-import type { Actor } from '@/lib/auth/actor';
+import { holdsAdminPermission, type Actor } from '@/lib/auth/actor';
 import { accountForCategory } from '@/lib/accounts/service';
 import { append as auditAppend, type AuditActor } from '@/lib/audit/service';
 import { auditDiff, auditSnapshot } from '@/lib/audit/diff';
@@ -410,7 +410,7 @@ export async function getReportAccess(
  * early would mean guessing at rules that ticket will actually specify.
  */
 export function canViewReport(actor: Actor, access: ReportAccess): boolean {
-  return actor.role === 'ADMIN' || actor.id === access.submitter_id;
+  return holdsAdminPermission(actor) || actor.id === access.submitter_id;
 }
 
 /** Editing additionally requires the report to still be a draft. */

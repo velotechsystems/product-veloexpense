@@ -70,8 +70,8 @@ test.describe('as an admin', () => {
       [id],
     );
     expect(audit.rows).toEqual([
-      { action: 'POLICY_RULE_CHANGED', actor_role: 'ADMIN', op: 'create' },
-      { action: 'POLICY_RULE_CHANGED', actor_role: 'ADMIN', op: 'delete' },
+      { action: 'POLICY_RULE_CHANGED', actor_role: 'System Administrator', op: 'create' },
+      { action: 'POLICY_RULE_CHANGED', actor_role: 'System Administrator', op: 'delete' },
     ]);
   });
 });

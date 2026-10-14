@@ -40,13 +40,12 @@ beforeAll(async () => {
       email: 'ceo@acme.test',
       displayName: 'Casey CEO',
       title: 'Chief Executive',
-      role: 'ADMIN',
+      roleId: '019e3000-0000-7000-8000-000000000001', // w4-10b: System Administrator
     });
     manager = await svc.createEmployee(tx, {
       email: 'manager@acme.test',
       displayName: 'Morgan Manager',
       title: 'Finance Manager',
-      role: 'MANAGER',
       managerId: ceo.id,
       departmentId: deptId,
     });
@@ -81,7 +80,7 @@ describe('employee directory', () => {
     const robin = employees.find((e) => e.email === 'employee@acme.test')!;
     expect(robin.manager_name).toBe('Morgan Manager');
     expect(robin.department_name).toBe('Finance');
-    expect(robin.role).toBe('EMPLOYEE');
+    expect(robin.role_label).toBe('Employee');
   });
 
   it('searches by name, email and title', async () => {
@@ -188,5 +187,48 @@ describe('deactivation', () => {
     );
     expect(reactivated.employee_status).toBe('ACTIVE');
     expect(reactivated.deleted_at).toBeNull();
+  });
+});
+
+describe('the role a person is given (w4-10b)', () => {
+  const EXECUTIVE = '019e3000-0000-7000-8000-000000000007';
+
+  it('is one of this tenant’s active roles, or nothing at all', async () => {
+    const onlyB = (
+      await withOrg(orgB, (tx) => tx.query(`INSERT INTO role (label) VALUES ('{"en":"B only"}') RETURNING id`))
+    ).rows[0].id as string;
+    for (const roleId of ['not-a-role', '019e3000-0000-7000-8000-0000000000ff', onlyB]) {
+      await expect(
+        withOrg(orgA, (tx) => svc.createEmployee(tx, { email: `x-${roleId}@acme.test`, roleId })),
+      ).rejects.toMatchObject({ code: 'INVALID_ROLE' });
+    }
+    await withOrg(orgA, (tx) => tx.query(`UPDATE role SET active = false WHERE id = $1`, [EXECUTIVE]));
+    try {
+      await expect(
+        withOrg(orgA, (tx) => svc.createEmployee(tx, { email: 'exec@acme.test', roleId: EXECUTIVE })),
+      ).rejects.toMatchObject({ code: 'INVALID_ROLE' });
+    } finally {
+      await withOrg(orgA, (tx) => tx.query(`UPDATE role SET active = true WHERE id = $1`, [EXECUTIVE]));
+    }
+  });
+
+  it('defaults to Employee, and an unchanged role is kept on save even once deactivated', async () => {
+    const person = await withOrg(orgA, (tx) => svc.createEmployee(tx, { email: 'role-default@acme.test' }));
+    expect(person.role_label).toBe('Employee');
+
+    const exec = await withOrg(orgA, (tx) => svc.updateEmployee(tx, person.id, { roleId: EXECUTIVE }));
+    expect(exec.role_label).toBe('Executive');
+
+    await withOrg(orgA, (tx) => tx.query(`UPDATE role SET active = false WHERE id = $1`, [EXECUTIVE]));
+    try {
+      const saved = await withOrg(orgA, (tx) =>
+        svc.updateEmployee(tx, person.id, { roleId: EXECUTIVE, title: 'Chief of Staff' }),
+      );
+      expect(saved.role_id).toBe(EXECUTIVE);
+      // …and a deactivated role grants nothing.
+      expect(saved.role_permissions).toEqual([]);
+    } finally {
+      await withOrg(orgA, (tx) => tx.query(`UPDATE role SET active = true WHERE id = $1`, [EXECUTIVE]));
+    }
   });
 });

@@ -6,17 +6,10 @@
  * keep in sync. Button/Input come from the vendored lib-ui-kit registry.
  */
 import { Button } from '@/components/ui/button';
-import {
-  enumLabel,
-  EMPLOYEE_ROLE_COPY,
-  EMPLOYEE_STATUS_COPY,
-} from '@/lib/i18n/catalog/enums';
+import { enumLabel, EMPLOYEE_STATUS_COPY } from '@/lib/i18n/catalog/enums';
 import { Input } from '@/components/ui/input';
-import {
-  EMPLOYEE_ROLES,
-  EMPLOYEE_STATUSES,
-  type EmployeeRow,
-} from '@/lib/employees/service';
+import { EMPLOYEE_STATUSES, type EmployeeRow } from '@/lib/employees/service';
+import { DEFAULT_ROLE_ID } from '@/lib/roles/service';
 import { NativeSelect } from '@/components/ui/native-select';
 import { activeChoices } from '@/lib/employees/active-choices';
 import { countryItems } from '@/lib/countries';
@@ -26,6 +19,8 @@ type Options = {
   businessUnits: Array<{ id: string; name: string; active: boolean }>;
   legalEntities: Array<{ id: string; name: string; active: boolean }>;
   managers: Array<{ id: string; email: string; display_name: string | null }>;
+  /** w4-10b: the tenant's roles (0068), by their own names. */
+  roles: Array<{ id: string; name: string; active: boolean }>;
 };
 
 const fieldClass = 'flex flex-col gap-1.5';
@@ -82,17 +77,15 @@ export function EmployeeForm({
         </div>
 
         <div className={fieldClass}>
-          <label className={labelClass} htmlFor="role">
+          <label className={labelClass} htmlFor="roleId">
             Role
           </label>
-          <NativeSelect
-            id="role"
-            name="role"
-            defaultValue={employee?.role ?? 'EMPLOYEE'}
-          >
-            {EMPLOYEE_ROLES.map((role) => (
-              <option key={role} value={role}>
-                {enumLabel(EMPLOYEE_ROLE_COPY, role, locale)}
+          {/* w4-10b: the tenant's roles. An inactive role is offered only to the person who
+              already holds it, as the lookups below do (`activeChoices`). */}
+          <NativeSelect id="roleId" name="roleId" defaultValue={employee?.role_id ?? DEFAULT_ROLE_ID}>
+            {activeChoices(options.roles, employee?.role_id ?? null).map((role) => (
+              <option key={role.id} value={role.id}>
+                {role.name}
               </option>
             ))}
           </NativeSelect>

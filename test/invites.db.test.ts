@@ -48,7 +48,7 @@ beforeEach(async () => {
   orgId = org.organizationId;
   orgSlug = org.slug;
   adminUserId = org.adminUserId;
-  ACTOR = { id: adminUserId, name: 'Founder', role: 'ADMIN' };
+  ACTOR = { id: adminUserId, name: 'Founder', role: 'System Administrator' };
 });
 
 afterAll(async () => {
@@ -57,8 +57,12 @@ afterAll(async () => {
 
 const issue = (overrides: Partial<Parameters<typeof issueInvite>[2]> = {}) =>
   withOrg(orgId, (tx) =>
-    issueInvite(tx, ACTOR, { email: INVITEE, role: 'EMPLOYEE', ...overrides }),
+    issueInvite(tx, ACTOR, { email: INVITEE, roleId: EMPLOYEE, ...overrides }),
   );
+
+/** w4-10b: the tenant's system roles the cases hand out (0068). */
+const EMPLOYEE = '019e3000-0000-7000-8000-000000000004';
+const EXECUTIVE = '019e3000-0000-7000-8000-000000000007';
 
 const inviteRow = async () =>
   (await admin.query('SELECT * FROM invite ORDER BY created_at DESC LIMIT 1')).rows[0];
@@ -84,7 +88,7 @@ describe('issuing an invitation', () => {
 
   it('asking again resends: one row, and the first token is dead', async () => {
     const first = await issue();
-    const second = await issue({ role: 'MANAGER' });
+    const second = await issue({ roleId: EXECUTIVE });
     expect(second.resent).toBe(true);
 
     const rows = await admin.query('SELECT count(*)::int AS n FROM invite');
@@ -92,7 +96,7 @@ describe('issuing an invitation', () => {
     expect(await resolveInviteTenant(first.token)).toBeNull();
     expect(await resolveInviteTenant(second.token)).not.toBeNull();
     // And the resend carries the NEW terms, not the old ones.
-    expect((await inviteRow()).role).toBe('MANAGER');
+    expect((await inviteRow()).role_id).toBe(EXECUTIVE);
   });
 
   it('treats the address case-insensitively, or the limit would not be one', async () => {
@@ -115,8 +119,18 @@ describe('issuing an invitation', () => {
   it('refuses a malformed address and an unknown role before writing anything', async () => {
     await expect(issue({ email: 'not-an-address' })).rejects.toBeInstanceOf(InviteError);
     await expect(
-      issue({ role: 'SUPERUSER' as unknown as 'ADMIN' }),
+      issue({ roleId: 'SUPERUSER' }),
     ).rejects.toMatchObject({ code: 'ROLE_UNKNOWN' });
+    // w4-10b: a well-formed id that is no role here, and a role that is deactivated.
+    await expect(issue({ roleId: '019e3000-0000-7000-8000-0000000000ff' })).rejects.toMatchObject({
+      code: 'ROLE_UNKNOWN',
+    });
+    await withOrg(orgId, (tx) => tx.query(`UPDATE role SET active = false WHERE id = $1`, [EXECUTIVE]));
+    try {
+      await expect(issue({ roleId: EXECUTIVE })).rejects.toMatchObject({ code: 'ROLE_UNKNOWN' });
+    } finally {
+      await withOrg(orgId, (tx) => tx.query(`UPDATE role SET active = true WHERE id = $1`, [EXECUTIVE]));
+    }
     const rows = await admin.query('SELECT count(*)::int AS n FROM invite');
     expect(rows.rows[0].n).toBe(0);
   });
@@ -142,7 +156,7 @@ describe('the invitation email', () => {
       sent.push(msg as (typeof sent)[number]);
     });
     try {
-      await withOrg(orgId, (tx) => sendInvite(tx, ACTOR, { email: INVITEE, role: 'EMPLOYEE' }));
+      await withOrg(orgId, (tx) => sendInvite(tx, ACTOR, { email: INVITEE, roleId: EMPLOYEE }));
     } finally {
       spy.mockRestore();
     }
@@ -172,7 +186,7 @@ describe('the hatch, and what the acceptance page may read', () => {
       organizationName: 'Acme',
       organizationSlug: 'acme',
       emailHint: 'n••••@acme.test',
-      role: 'EMPLOYEE',
+      roleName: 'Employee',
       // VX5-6 — branding, for a page a live token is required to reach.
       brandColor: null,
       logoSrc: null,
@@ -284,14 +298,14 @@ function await1<T>(v: T): T {
 
 describe('accepting — and what the token does NOT do', () => {
   it('creates the member with everything the admin filled in', async () => {
-    await issue({ role: 'MANAGER', displayName: 'New Comer', title: 'Controller' });
+    await issue({ roleId: EXECUTIVE, displayName: 'New Comer', title: 'Controller' });
     const accepted = await acceptForVerifiedEmail(orgId, INVITEE);
-    expect(accepted).toMatchObject({ email: INVITEE, role: 'MANAGER' });
+    expect(accepted).toMatchObject({ email: INVITEE, roleId: EXECUTIVE });
 
     const row = (
       await admin.query('SELECT * FROM app_user WHERE lower(email) = lower($1)', [INVITEE])
     ).rows[0];
-    expect(row.role).toBe('MANAGER');
+    expect(row.role_id).toBe(EXECUTIVE);
     expect(row.display_name).toBe('New Comer');
     expect(row.title).toBe('Controller');
     expect(row.employee_status).toBe('ACTIVE');
@@ -443,7 +457,7 @@ describe('accepting — and what the token does NOT do', () => {
     // in this tenant.
     const manager = await withOrg(orgId, (tx) =>
       tx.query(
-        `INSERT INTO app_user (organization_id, email, role) VALUES ($1, 'boss@acme.test', 'MANAGER')
+        `INSERT INTO app_user (organization_id, email, role_id) VALUES ($1, 'boss@acme.test', '019e3000-0000-7000-8000-000000000004')
          RETURNING id`,
         [orgId],
       ),
@@ -531,9 +545,31 @@ describe('withdrawing', () => {
   });
 });
 
+describe('accepting after the invited role was deactivated (w4-10b)', () => {
+  it('joins as an Employee — never more than was promised — and the audit row says so', async () => {
+    await issue({ roleId: EXECUTIVE });
+    await withOrg(orgId, (tx) => tx.query(`UPDATE role SET active = false WHERE id = $1`, [EXECUTIVE]));
+    try {
+      const accepted = await acceptForVerifiedEmail(orgId, INVITEE);
+      expect(accepted).toMatchObject({ email: INVITEE, roleId: EMPLOYEE });
+      const audit = await admin.query(
+        `SELECT details FROM audit_entry WHERE action = 'INVITE_ACCEPTED' ORDER BY sequence DESC LIMIT 1`,
+      );
+      expect(audit.rows[0].details).toMatchObject({
+        roleId: EMPLOYEE,
+        role: 'Employee',
+        invitedRoleId: EXECUTIVE,
+        roleUnavailable: true,
+      });
+    } finally {
+      await withOrg(orgId, (tx) => tx.query(`UPDATE role SET active = true WHERE id = $1`, [EXECUTIVE]));
+    }
+  });
+});
+
 describe('signing in — the door itself', () => {
   it('provisions from a live invitation, once', async () => {
-    await issue({ role: 'MANAGER' });
+    await issue({ roleId: EXECUTIVE });
     const first = await resolveSsoUser(orgSlug, INVITEE);
     expect(first).not.toBeNull();
     const second = await resolveSsoUser(orgSlug, INVITEE);

@@ -54,7 +54,7 @@ beforeAll(async () => {
     .organizationId;
   bossId = (await admin.query(`SELECT id FROM app_user WHERE email = 'boss@sv-a.test'`)).rows[0].id;
   await admin.query(
-    `INSERT INTO app_user (organization_id, email, display_name, role) VALUES ($1, 'emp@sv-a.test', 'Emp', 'EMPLOYEE')`,
+    `INSERT INTO app_user (organization_id, email, display_name, role_id) VALUES ($1, 'emp@sv-a.test', 'Emp', '019e3000-0000-7000-8000-000000000004')`,
     [A],
   );
 });

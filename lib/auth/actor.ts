@@ -2,7 +2,7 @@
  * VX1-10 — who is asking.
  *
  * One place to resolve the acting employee inside a tenant transaction. The
- * house rule is that authorization reads `app_user.role` from the DATABASE, not
+ * house rule is that authorization reads the person's role from the DATABASE, not
  * from the session token: a token is minted at sign-in and outlives any change
  * to the user's role or status, so trusting it means a demoted or deactivated
  * account keeps its old powers until it signs out.
@@ -10,12 +10,28 @@
 import type { QueryRunner } from '@/lib/db/client';
 import { DomainError } from '@/lib/errors/domain';
 import type { UserMessageCode } from '@/lib/i18n/catalog/errors';
-import { getEmployeeByEmail, type EmployeeRole, type EmployeeRow } from '@/lib/employees/service';
+import { permissions as P } from '@expenseos/rbac';
+import { getEmployeeByEmail, type EmployeeRow } from '@/lib/employees/service';
 
 /** The minimum an access predicate needs. EmployeeRow satisfies it. */
 export interface Actor {
   id: string;
-  role: EmployeeRole;
+  /** w4-10b: the person's role's permissions (none while it is deactivated). */
+  role_permissions: readonly string[];
+}
+
+/**
+ * w4-10b (d74): what VeloExpense's own admin screens — and the "an admin sees everything"
+ * clauses beside them — require, now that the text role ADMIN is gone (0069). The one
+ * permission the menu already shows those screens for (`app/(app)/veloexpenseNav.ts`), so
+ * the menu and the screens cannot disagree. System Administrator is the role that holds it,
+ * as ADMIN was; a custom role that is given it gets them too.
+ */
+export const VELOEXPENSE_ADMIN_PERMISSION: string = P.admin.appSettings.update;
+
+/** Whether the actor's role carries VeloExpense's admin permission. */
+export function holdsAdminPermission(actor: Actor): boolean {
+  return actor.role_permissions.includes(VELOEXPENSE_ADMIN_PERMISSION);
 }
 
 /**
@@ -77,7 +93,7 @@ export class ForbiddenError extends DomainError {
  * `test/admin-gate.db.test.ts`, against a real soft-deleted row.
  */
 export function isActiveAdmin(actor: EmployeeRow): boolean {
-  return actor.role === 'ADMIN' && actor.deleted_at === null;
+  return holdsAdminPermission(actor) && actor.deleted_at === null;
 }
 
 export async function requireActor(tx: QueryRunner, email: string): Promise<EmployeeRow> {

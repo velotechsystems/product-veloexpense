@@ -27,6 +27,7 @@ import { currentOrgId } from '@/lib/tenant/request';
 import { errorParam } from '@/lib/errors/domain';
 import { asAdmin, asAdminPage } from '@/lib/auth/admin-guard';
 import { auditActorOf } from '@/lib/audit/service';
+import { DEFAULT_ROLE_ID } from '@/lib/roles/service';
 
 /* ── reads ─────────────────────────────────────────────────────────────────── */
 
@@ -149,7 +150,8 @@ function employeeFromForm(form: FormData): svc.EmployeePatch {
     email: text(form, 'email') ?? undefined,
     displayName: text(form, 'displayName'),
     title: text(form, 'title'),
-    role: (text(form, 'role') as svc.EmployeeRole | null) ?? undefined,
+    // w4-10b: the role row picked (0068); absent leaves it as it is.
+    roleId: text(form, 'roleId') ?? undefined,
     employeeStatus: (text(form, 'employeeStatus') as svc.EmployeeStatus | null) ?? undefined,
     managerId: text(form, 'managerId'),
     departmentId: text(form, 'departmentId'),
@@ -183,7 +185,7 @@ export async function inviteEmployeeFromForm(form: FormData): Promise<never> {
   try {
     const issued = await inviteEmployee({
       email: text(form, 'email') ?? '',
-      role: fields.role ?? 'EMPLOYEE',
+      roleId: fields.roleId ?? DEFAULT_ROLE_ID,
       displayName: fields.displayName,
       title: fields.title,
       managerId: fields.managerId,
