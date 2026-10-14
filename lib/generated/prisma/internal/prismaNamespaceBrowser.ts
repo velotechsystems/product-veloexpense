@@ -90,7 +90,8 @@ export const ModelName = {
   Delegation: 'Delegation',
   PolicyRule: 'PolicyRule',
   ExpensePolicy: 'ExpensePolicy',
-  PolicyViolation: 'PolicyViolation'
+  PolicyViolation: 'PolicyViolation',
+  SavedView: 'SavedView'
 } as const
 
 export type ModelName = (typeof ModelName)[keyof typeof ModelName]
@@ -787,6 +788,22 @@ export const PolicyViolationScalarFieldEnum = {
 } as const
 
 export type PolicyViolationScalarFieldEnum = (typeof PolicyViolationScalarFieldEnum)[keyof typeof PolicyViolationScalarFieldEnum]
+
+
+export const SavedViewScalarFieldEnum = {
+  id: 'id',
+  organizationId: 'organizationId',
+  ownerId: 'ownerId',
+  resource: 'resource',
+  name: 'name',
+  state: 'state',
+  pinned: 'pinned',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt',
+  deletedAt: 'deletedAt'
+} as const
+
+export type SavedViewScalarFieldEnum = (typeof SavedViewScalarFieldEnum)[keyof typeof SavedViewScalarFieldEnum]
 
 
 export const SortOrder = {

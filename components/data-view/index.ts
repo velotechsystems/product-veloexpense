@@ -66,9 +66,9 @@ export {
   VALUELESS_OPS,
 } from './types';
 export { useDebouncedValue } from './useDebouncedValue';
-// VeloExpense: ExpenseOS's `useListViews` / `useSavedViews` (saved views, persisted through
-// its `savedViews` router) arrive with the saved-views port in Wave 4. No screen ported before
-// then uses them; the filter and table chrome above work without.
+// w4-08: ExpenseOS's saved views, persisted through its `savedViews` router.
+export { type ListViewsLabels, useListViews } from './useListViews';
+export { type SavedViewResource, useSavedViews } from './useSavedViews';
 
 export {
   type TableLabels,

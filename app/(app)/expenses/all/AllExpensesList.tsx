@@ -45,12 +45,9 @@
  *
  * ── VeloExpense ─────────────────────────────────────────────────────────────
  *
- * Ported from ExpenseOS (550b2945). Differences, each marked `VeloExpense:` below:
- *   · no saved views: the dropdown and `useSavedViews` arrive with the saved-views port in
- *     Wave 4 (d15, kept for this screen on 10 Oct). The opening default is unchanged — the
- *     ninety-day window and the three in-flight statuses are pills on the bar — and
- *     `Missing receipt` is the receipt pill rather than a system view;
- *   · an expense may have no date, and a report from before numbering has no number.
+ * Ported from ExpenseOS (550b2945); its saved views since w4-08. Differences, each marked
+ * `VeloExpense:` below: an expense may have no date, and a report from before numbering has
+ * no number.
  */
 
 import {
@@ -62,7 +59,7 @@ import {
 } from '@expenseos/design-system';
 import type { inferRouterOutputs } from '@trpc/server';
 import { useLocale, useTranslations } from 'next-intl';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useFilterPillBarWiring } from '@/components/admin/useFilterPillBarWiring';
 import {
   type ColumnDef,
@@ -72,10 +69,11 @@ import {
   type FieldKind,
   type FilterClause,
   newClauseId,
+  type PersistedViewState,
+  type SystemView,
   TableExportMenu,
   useDebouncedValue,
-  // VeloExpense: no `useSavedViews` (or its `SystemView` / `PersistedViewState`) until
-  // Wave 4 — see the header.
+  useSavedViews,
   useTableLabels,
   useToolbarLabels,
 } from '@/components/data-view';
@@ -86,6 +84,7 @@ import type { AppRouter } from '@/server/routers/_app';
 import { REPORT_STATUSES, statusBadgeProps } from '../_shared';
 
 type Row = inferRouterOutputs<AppRouter>['expenseApprovals']['expenses']['items'][number];
+
 /** VeloExpense: when an expense happened, for sorting — an undated one as the oldest. */
 const dateMs = (r: Row): number => (r.date ? new Date(r.date).getTime() : 0);
 /** The two answers the `receipt` filter can carry. Values, not labels: they survive a
@@ -128,9 +127,6 @@ const DEFAULT_STATUSES = ['SUBMITTED', 'APPROVED', 'RETURNED'] as const;
  * frozen array. `defaultFilters` mints fresh ids with `newClauseId()`; the system view uses
  * stable literals alongside `sv-all-date`, matching how every other system view here is
  * written. One shared array would have to lie about one of them.
- *
- * VeloExpense: only `defaultFilters` uses it until the system views arrive (Wave 4); kept
- * as ExpenseOS's so `sys:default` has its seam when they do.
  */
 const statusClauses = (idFor: (status: string) => string): FilterClause<ColumnId>[] =>
   DEFAULT_STATUSES.map((status) => ({
@@ -150,7 +146,7 @@ export function AllExpensesList() {
 
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  // VeloExpense: no `activeViewId` until saved views (Wave 4).
+  const [activeViewId, setActiveViewId] = useState<string>('sys:default');
   const label = useCallback((l: unknown) => pickText(l, locale) || '—', [locale]);
 
   /**
@@ -191,8 +187,8 @@ export function AllExpensesList() {
         label: t('columns.date'),
         defaultWidth: 110,
         sortable: true,
-        // VeloExpense: an expense may have no date yet — a dash, and an empty cell exported.
         cell: (r) => (
+          // VeloExpense: an expense may have no date yet — a dash, and an empty cell exported.
           <span className="tabular-nums">
             {r.date ? new Date(r.date).toLocaleDateString(locale) : '—'}
           </span>
@@ -556,10 +552,131 @@ export function AllExpensesList() {
   );
 
   // ─── Saved views ──────────────────────────────────────────────
-  // VeloExpense: ExpenseOS's system views (`sys:default`, `sys:missing-receipt`,
-  // `sys:all-time`), its user views and the pinned-view default arrive with saved views in
-  // Wave 4 (see the header). The opening default above is unchanged, and the receipt pill
-  // answers what `Missing receipt` did.
+  /**
+   * `Missing receipt` is a VIEW now, not a button.
+   *
+   * It was a toggle beside the filter bar, which meant the page's most-used filter was the
+   * one thing on it that could not be saved, renamed, pinned as somebody's default, or
+   * combined with anything else and kept. Both dated views carry a window, because a chase
+   * list of receipts missing since 2023 is not a work queue — but not the SAME window, and
+   * not the same status clauses:
+   *
+   *   · `sys:default` is the opening default written out as a view, and is kept identical
+   *     to `defaultFilters` through `statusClauses`. Clicking the view the list already
+   *     opens on must not quietly widen it.
+   *   · `sys:missing-receipt` keeps the TWELVE-month window and takes no status clause at
+   *     all. A receipt chase is the one job here where the oldest offenders matter most, so
+   *     ninety days would drop precisely the rows worth chasing; and a receipt is owed on a
+   *     reimbursed charge exactly as much as on a submitted one — arguably more.
+   */
+  const systemViews = useMemo<SystemView<ColumnId>[]>(
+    () => [
+      {
+        kind: 'system',
+        id: 'sys:default',
+        name: t('allExpenses.viewDefault'),
+        filters: [
+          { id: 'sv-all-date', field: 'date', op: 'within', value: 'last90' },
+          ...statusClauses((status) => `sv-all-status-${status.toLowerCase()}`),
+        ],
+      },
+      {
+        kind: 'system',
+        id: 'sys:missing-receipt',
+        name: t('allExpenses.viewMissingReceipt'),
+        filters: [
+          { id: 'sv-mr-date', field: 'date', op: 'within', value: 'last12mo' },
+          { id: 'sv-mr-receipt', field: 'receipt', op: 'equals', value: RECEIPT_MISSING },
+        ],
+      },
+      {
+        kind: 'system',
+        id: 'sys:all-time',
+        name: t('allExpenses.viewAllTime'),
+      },
+    ],
+    [t],
+  );
+  const {
+    allViews,
+    createView,
+    renameView,
+    deleteView: deleteSavedView,
+    togglePinnedView,
+  } = useSavedViews<ColumnId>({
+    resource: 'expenses',
+    systemViews,
+    onAfterCreate: (id) => setActiveViewId(id),
+    onAfterDelete: () => setActiveViewId('sys:default'),
+  });
+
+  const loadView = (id: string) => {
+    const target = allViews.find((v) => v.id === id);
+    if (!target) return;
+    setActiveViewId(id);
+    if (target.kind === 'system') {
+      setTableState((s) => ({
+        ...s,
+        filters: target.filters?.map((f) => ({ ...f, id: newClauseId() })) ?? [],
+        sort: null,
+      }));
+      return;
+    }
+    const v = target.state;
+    const visible = v.visibleColumns;
+    setTableState((s) => ({
+      ...s,
+      filters: v.filters.map((f) => ({ ...f, id: newClauseId() })),
+      sort: v.sort ?? null,
+      density: v.density ?? s.density,
+      columnVisibility: visible
+        ? Object.fromEntries(columns.map((c) => [c.id, visible.includes(c.id)]))
+        : s.columnVisibility,
+    }));
+  };
+
+  const captureViewState = (): PersistedViewState<ColumnId> => ({
+    filters: tableState.filters,
+    visibleColumns: tableState.columnOrder.filter(
+      (id) => tableState.columnVisibility[id] !== false,
+    ),
+    sort: tableState.sort ?? undefined,
+    density: tableState.density,
+    groupBy: null,
+  });
+  const saveCurrentAsNew = () => {
+    const name = window.prompt(t('allExpenses.viewNamePrompt'), t('allExpenses.viewNameDefault'));
+    if (!name?.trim()) return;
+    createView(name.trim(), captureViewState(), false);
+  };
+  const renameUserView = (id: string, currentName: string) => {
+    const name = window.prompt(t('allExpenses.viewRenamePrompt'), currentName);
+    if (!name?.trim() || name.trim() === currentName) return;
+    renameView(id, name.trim());
+  };
+  const deleteUserView = (id: string, name: string) => {
+    if (!window.confirm(t('allExpenses.viewDeleteConfirm', { name }))) return;
+    deleteSavedView(id);
+  };
+
+  /**
+   * A pinned saved view REPLACES the opening default, once, on first load.
+   *
+   * "Unless there's a change in the saved filter" is the whole rule: the pre-filled window
+   * and status clauses are what the page does when nobody has said otherwise, and somebody
+   * who has pinned a view has said otherwise. It replaces BOTH — a pinned view with no
+   * status clause is a reader who wants every status, not a reader who forgot. Guarded by a ref so a later `savedViews` refetch cannot yank
+   * the reader back to their default mid-session.
+   */
+  const didApplyDefaultRef = useRef(false);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: one-shot — see comment above
+  useEffect(() => {
+    if (didApplyDefaultRef.current || allViews.length === 0) return;
+    const pinned = allViews.find((v) => v.kind === 'user' && v.pinned);
+    didApplyDefaultRef.current = true;
+    if (pinned) loadView(pinned.id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- VeloExpense: the same one-shot exemption, for ESLint.
+  }, [allViews]);
 
   return (
     <div className="flex flex-col gap-3">
@@ -584,7 +701,16 @@ export function AllExpensesList() {
           onAddClause={pillBar.addClause}
           onClearAll={pillBar.clearClauses}
           clearLabel={pillBar.clearLabel}
-          // VeloExpense: no `untitledViewLabel` / `savedViews` until Wave 4 (see the header).
+          untitledViewLabel={t('allExpenses.viewUntitled')}
+          savedViews={{
+            views: allViews,
+            activeViewId,
+            onSelectView: loadView,
+            onSaveAsNew: saveCurrentAsNew,
+            onRenameView: renameUserView,
+            onDeleteView: deleteUserView,
+            onTogglePinned: togglePinnedView,
+          }}
         />
       </div>
 

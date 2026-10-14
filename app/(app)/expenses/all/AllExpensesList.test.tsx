@@ -23,14 +23,6 @@ import { createTrpcMock, type TrpcMockConfig } from '@/test-utils/trpc';
  *     within it — carries `?expense=` so the workbench lands on the charge that was
  *     clicked; on a twelve-expense claim the report's first line is almost never the
  *     one being asked about.
- *
- * VeloExpense: ported from ExpenseOS (550b2945) without saved views, which arrive in Wave 4
- * (d15). The cases are ExpenseOS's; where one set its filters through a saved view — a pinned
- * one replacing the opening default, or a system view picked from the dropdown — it sets the
- * same clauses through the bar instead (`Clear`, then `addPill`), the way a reader does
- * without views. The cases about the views themselves (save, rename, delete, pin, and the
- * default view restoring the default) wait for Wave 4; one VeloExpense case pins that no
- * views dropdown is drawn meanwhile. Each adaptation is marked.
  */
 
 const h = vi.hoisted(() => ({
@@ -148,8 +140,6 @@ function setTrpc(items: unknown[] = [expense()], over: TrpcMockConfig = {}) {
   });
 }
 
-const show = () => render(<AllExpensesList />);
-
 /**
  * A mount with NOTHING on the filter bar.
  *
@@ -159,49 +149,22 @@ const show = () => render(<AllExpensesList />);
  * weaken the test into asserting the default; clearing the bar leaves it asserting what it
  * was written to assert.
  *
- * VeloExpense: ExpenseOS clears it with a pinned view that has no clauses. Without saved
- * views (Wave 4) the bar is cleared the way a reader clears it — `Clear`.
+ * A pinned view with no clauses is a real user state — clear the bar, save it, pin it — and
+ * a pinned view replaces the opening default outright.
  */
-async function showUnfiltered() {
-  show();
-  await userEvent.setup().click(screen.getByText('table.misc.clearFilters'));
+function setTrpcUnfiltered(items: unknown[] = [expense()], over: TrpcMockConfig = {}) {
+  setTrpc(items, {
+    ...over,
+    queries: {
+      'savedViews.list': {
+        data: [{ id: 'uv-clear', name: 'Everything', pinned: true, state: { filters: [] } }],
+      },
+      ...over.queries,
+    },
+  });
 }
 
-/**
- * Add one clause through the bar's `Add filter` form.
- *
- * ExpenseOS's, from "narrowing by exclusion", hoisted so every describe can use it.
- * VeloExpense: an ENUM field's value is picked from its select rather than typed — the form
- * draws a select for `equals` / `doesNotEqual` on an enum — so the cases that set a status or
- * receipt clause through a saved view can set it here instead.
- */
-const addPill = async (
-  user: ReturnType<typeof userEvent.setup>,
-  field: string,
-  op: string,
-  value: string,
-) => {
-  await user.click(screen.getByRole('button', { name: /(?:Add filter|filters\.addFilter)/ }));
-  await user.selectOptions(await screen.findByLabelText(/(?:^Field$|filters\.field)/), field);
-  await user.selectOptions(screen.getByLabelText(/(?:^Operator$|filters\.operator)/), op);
-  const input = screen.getByLabelText(/(?:^Value$|filters\.value$)/);
-  if (input.tagName === 'SELECT') await user.selectOptions(input, value);
-  else await user.type(input, value);
-  await user.click(screen.getByRole('button', { name: /(?:^Add$|filters\.add$)/ }));
-};
-
-/**
- * VeloExpense: exactly these clauses on the bar, and nothing else — what ExpenseOS's pinned
- * view did (it REPLACES the opening default).
- */
-async function withFilters(
-  user: ReturnType<typeof userEvent.setup>,
-  clauses: readonly (readonly [field: string, op: string, value: string])[],
-) {
-  await user.click(screen.getByText('table.misc.clearFilters'));
-  for (const [field, op, value] of clauses) await addPill(user, field, op, value);
-}
-
+const show = () => render(<AllExpensesList />);
 
 /** A spy shaped like the `onCall` hook the tRPC mock takes. */
 type OnCall = ReturnType<typeof vi.fn<(...args: unknown[]) => void>>;
@@ -354,9 +317,8 @@ describe('the expense list', () => {
      * a status that survives the default would leave it asserting the default instead, and
      * REIMBURSED is the exact status the original defect was reported against.
      */
-    // VeloExpense: cleared through the bar (`showUnfiltered`).
-    setTrpc([expense({ report: report({ status: 'REIMBURSED' }) })]);
-    await showUnfiltered();
+    setTrpcUnfiltered([expense({ report: report({ status: 'REIMBURSED' }) })]);
+    show();
     expect(await screen.findByText('expenses.status.reimbursed')).toBeInTheDocument();
     expect(screen.queryByText('Reimbursed')).not.toBeInTheDocument();
   });
@@ -371,40 +333,9 @@ describe('the expense list', () => {
      * it. That is the allowlist's accepted cost, spelled out on `defaultFilters` — and it is
      * why this test has to reach past the default to say anything about the badge at all.
      */
-    // VeloExpense: cleared through the bar (`showUnfiltered`).
-    setTrpc([expense({ report: report({ status: 'SOMETHING_NEW' }) })]);
-    await showUnfiltered();
+    setTrpcUnfiltered([expense({ report: report({ status: 'SOMETHING_NEW' }) })]);
+    show();
     expect(await screen.findByText('expenses.status.submitted')).toBeInTheDocument();
-  });
-
-  it('VeloExpense: dashes an expense with no date, and exports it empty', async () => {
-    // A VeloExpense expense may not have a date yet. `new Date(null)` would print 1970.
-    setTrpc([expense({ date: null })]);
-    show();
-    expect(rowTexts()[0]).toContain('—');
-    expect(rowTexts()[0]).not.toContain('1970');
-  });
-
-  it('VeloExpense: dashes a report from before numbering, and still filters by report', async () => {
-    // `report.number` is null on a report made before numbering; the link must not be empty
-    // and a report filter must not throw on it.
-    const user = userEvent.setup();
-    setTrpc([
-      expense({ report: report({ number: null }) }),
-      expense({
-        id: 'exp-2',
-        merchant: 'Air Canada',
-        report: report({ id: 'rep-2', number: 'EXP-1043' }),
-      }),
-    ]);
-    show();
-    expect(screen.getByRole('link', { name: '—' })).toHaveAttribute(
-      'href',
-      '/expenses/rep-1?expense=exp-1',
-    );
-    await withFilters(user, [['report', 'contains', '1043']]);
-    expect(rowTexts()).toHaveLength(1);
-    expect(rowTexts()[0]).toContain('Air Canada');
   });
 
   it('says so when nothing matches', () => {
@@ -419,18 +350,125 @@ describe('the expense list', () => {
 
 describe('saved views', () => {
   /**
-   * VeloExpense: ExpenseOS's seven cases here — applying, ignoring a stale id, opening on a
-   * pinned view, saving, dismissing the name prompt, renaming and deleting — cover the
-   * saved-views machinery, which arrives in Wave 4 (d15) and comes back with them.
+   * The page's most-used filter used to be a toggle button beside the bar, which made it
+   * the one thing on the page that could not be saved, renamed, pinned as somebody's
+   * default, or combined with anything else and kept. These cover the machinery that
+   * replaced it.
    */
-  it('VeloExpense: draws no views dropdown until saved views are ported', () => {
-    // A dropdown whose "Save current as new view" did nothing would be worse than none.
-    setTrpc();
+
+  const userView = (over: Record<string, unknown> = {}) => ({
+    id: 'uv-1',
+    name: 'Dana’s chase list',
+    pinned: false,
+    state: {
+      filters: [{ id: 'f1', field: 'merchant', op: 'contains', value: 'Air' }],
+      visibleColumns: ['date', 'merchant'],
+      sort: { field: 'amount', dir: 'desc' },
+      density: 'compact',
+    },
+    ...over,
+  });
+
+  const withViews = (views: unknown[], over: TrpcMockConfig = {}) =>
+    setTrpc([expense(), expense({ id: 'exp-2', merchant: 'Air Canada' })], {
+      ...over,
+      queries: { 'savedViews.list': { data: views }, ...over.queries },
+    });
+
+  const openViews = async (user: ReturnType<typeof userEvent.setup>, activeName: string) =>
+    user.click(screen.getByRole('button', { name: activeName }));
+
+  it('applies a saved view’s filters, sort and columns', async () => {
+    const user = userEvent.setup();
+    withViews([userView()]);
     show();
-    expect(
-      screen.queryByRole('button', { name: 'expenses.allExpenses.viewDefault' }),
-    ).not.toBeInTheDocument();
-    expect(screen.queryByText('expenses.allExpenses.viewMissingReceipt')).not.toBeInTheDocument();
+    await openViews(user, 'expenses.allExpenses.viewDefault');
+    await user.click(await screen.findByRole('button', { name: 'Dana’s chase list' }));
+    // The stored text filter narrows the loaded rows in the browser.
+    expect(rowTexts()).toHaveLength(1);
+    expect(rowTexts()[0]).toContain('Air Canada');
+  });
+
+  it('ignores a view id that is not in the list', async () => {
+    // A stale id from a deleted view must not blank the page.
+    const user = userEvent.setup();
+    withViews([]);
+    show();
+    await openViews(user, 'expenses.allExpenses.viewDefault');
+    expect(screen.getByText('expenses.allExpenses.viewMissingReceipt')).toBeInTheDocument();
+  });
+
+  it('opens on a pinned view instead of the opening default', async () => {
+    /**
+     * "Unless there's a change in the saved filter" is the whole rule: the pre-filled
+     * window and statuses are what the page does when nobody has said otherwise, and
+     * somebody who pinned a view has said otherwise. It replaces BOTH clauses.
+     */
+    withViews([userView({ pinned: true })]);
+    show();
+    await waitFor(() => expect(rowTexts()).toHaveLength(1));
+    expect(rowTexts()[0]).toContain('Air Canada');
+  });
+
+  it('saves the current filters as a new view', async () => {
+    const onCall = vi.fn();
+    const user = userEvent.setup();
+    vi.spyOn(window, 'prompt').mockReturnValue('Receipts to chase');
+    withViews([], { mutations: { 'savedViews.create': { onCall } } });
+    show();
+    await openViews(user, 'expenses.allExpenses.viewDefault');
+    await user.click(await screen.findByText('Save current as new view'));
+    expect(onCall.mock.calls[0][0]).toMatchObject({
+      resource: 'expenses',
+      name: 'Receipts to chase',
+    });
+  });
+
+  it('saves nothing when the name prompt is dismissed', async () => {
+    const onCall = vi.fn();
+    const user = userEvent.setup();
+    vi.spyOn(window, 'prompt').mockReturnValue(null);
+    withViews([], { mutations: { 'savedViews.create': { onCall } } });
+    show();
+    await openViews(user, 'expenses.allExpenses.viewDefault');
+    await user.click(await screen.findByText('Save current as new view'));
+    expect(onCall).not.toHaveBeenCalled();
+  });
+
+  it('renames a view, and leaves it alone on cancel or on the same name', async () => {
+    const onCall = vi.fn();
+    const user = userEvent.setup();
+    const prompt = vi.spyOn(window, 'prompt');
+    withViews([userView()], { mutations: { 'savedViews.update': { onCall } } });
+    show();
+    await openViews(user, 'expenses.allExpenses.viewDefault');
+
+    prompt.mockReturnValue(null);
+    await user.click((await screen.findAllByLabelText('Rename'))[0]);
+    expect(onCall).not.toHaveBeenCalled();
+
+    prompt.mockReturnValue('Dana’s chase list');
+    await user.click(screen.getAllByLabelText('Rename')[0]);
+    expect(onCall).not.toHaveBeenCalled();
+
+    prompt.mockReturnValue('AP chase list');
+    await user.click(screen.getAllByLabelText('Rename')[0]);
+    expect(onCall).toHaveBeenCalledWith({ id: 'uv-1', name: 'AP chase list' });
+  });
+
+  it('deletes a view only once it is confirmed', async () => {
+    const onCall = vi.fn();
+    const user = userEvent.setup();
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    withViews([userView()], { mutations: { 'savedViews.delete': { onCall } } });
+    show();
+    await openViews(user, 'expenses.allExpenses.viewDefault');
+    await user.click((await screen.findAllByLabelText('Delete'))[0]);
+    expect(onCall).not.toHaveBeenCalled();
+
+    confirm.mockReturnValue(true);
+    await user.click(screen.getAllByLabelText('Delete')[0]);
+    expect(onCall).toHaveBeenCalledWith({ id: 'uv-1' });
   });
 });
 
@@ -460,17 +498,11 @@ describe('narrowing the list', () => {
       },
     });
 
-  /**
-   * VeloExpense: ExpenseOS picks a system view out of the saved-views dropdown here. Without
-   * saved views (Wave 4) the same clauses go on through the bar: `All time` is `Clear`, and
-   * `Missing receipt` is its two clauses added by hand.
-   */
-  const pickAllTime = (user: ReturnType<typeof userEvent.setup>) =>
-    user.click(screen.getByText('table.misc.clearFilters'));
-  const pickMissingReceipt = async (user: ReturnType<typeof userEvent.setup>) => {
-    await user.click(screen.getByText('table.misc.clearFilters'));
-    await addPill(user, 'date', 'within', 'last12mo');
-    await addPill(user, 'receipt', 'equals', 'missing');
+  /** Pick a view out of the saved-views dropdown by its name. The trigger is labelled
+   *  with the ACTIVE view, so opening it means clicking that. */
+  const pickView = async (user: ReturnType<typeof userEvent.setup>, name: string) => {
+    await user.click(screen.getByRole('button', { name: 'expenses.allExpenses.viewDefault' }));
+    await user.click(await screen.findByRole('button', { name }));
   };
 
   it('opens on the last ninety days, without being asked', async () => {
@@ -574,16 +606,36 @@ describe('narrowing the list', () => {
 
   it('clears the statuses as well as the window on the all-time view', async () => {
     // `All time` means all of it — both clauses, not just the one with a date on it.
-    // VeloExpense: `Clear` (`pickAllTime`).
     const user = userEvent.setup();
     withOnCall(vi.fn() as OnCall, fourStatuses());
     show();
-    await pickAllTime(user);
+    await pickView(user, 'expenses.allExpenses.viewAllTime');
     await waitFor(() => expect(rowTexts()).toHaveLength(4));
   });
 
-  // VeloExpense: ExpenseOS's "puts the default back unchanged when the default view is
-  // picked" needs the `sys:default` view, and comes back with saved views (Wave 4).
+  it('puts the default back unchanged when the default view is picked', async () => {
+    /**
+     * `sys:default` is the opening default written out as a view, and the two are built from
+     * the same `statusClauses` for exactly this reason: clicking the view the list already
+     * opens on must not silently widen the window or change the statuses. A second,
+     * hand-written copy of the clauses is the kind of thing that drifts by one token and
+     * nobody notices for a year.
+     */
+    const user = userEvent.setup();
+    const onCall: OnCall = vi.fn();
+    withOnCall(onCall, fourStatuses());
+    show();
+    await pickView(user, 'expenses.allExpenses.viewAllTime');
+    await waitFor(() => expect(rowTexts()).toHaveLength(4));
+    // The dropdown trigger carries the ACTIVE view's name, so it reads `All time` now.
+    await user.click(screen.getByRole('button', { name: 'expenses.allExpenses.viewAllTime' }));
+    await user.click(
+      await screen.findByRole('button', { name: 'expenses.allExpenses.viewDefault' }),
+    );
+    await waitFor(() => expect(rowTexts()).toHaveLength(3));
+    expect(datePreset().value).toBe('last90');
+    await waitFor(() => expect(queryArgs(onCall).from).toBeInstanceOf(Date));
+  });
 
   it('filters the statuses over the rows it has, not over the ones it has not fetched', async () => {
     /**
@@ -643,14 +695,12 @@ describe('narrowing the list', () => {
     /**
      * Filtering the loaded page would answer "which of the first 200 expenses are missing a
      * receipt", which is a different and much less useful question — and this list is paged.
-     *
-     * VeloExpense: the view's clauses, added through the bar (`pickMissingReceipt`).
      */
     const user = userEvent.setup();
     const onCall: OnCall = vi.fn();
     withOnCall(onCall);
     show();
-    await pickMissingReceipt(user);
+    await pickView(user, 'expenses.allExpenses.viewMissingReceipt');
     await waitFor(() => expect(queryArgs(onCall).missingReceipt).toBe(true));
     // …and the view carries the window with it: a chase list of receipts missing since
     // 2023 is not a work queue.
@@ -675,8 +725,7 @@ describe('narrowing the list', () => {
     const user = userEvent.setup();
     withOnCall(vi.fn() as OnCall, [expense(), expense({ id: 'exp-2', merchant: 'Air Canada' })]);
     show();
-    // VeloExpense: the view's clauses, added through the bar.
-    await pickMissingReceipt(user);
+    await pickView(user, 'expenses.allExpenses.viewMissingReceipt');
     expect(rowTexts()).toHaveLength(2);
   });
 
@@ -689,21 +738,39 @@ describe('narrowing the list', () => {
      */
     const user = userEvent.setup();
     const onCall: OnCall = vi.fn();
-    withOnCall(onCall);
+    setTrpc([expense()], {
+      queries: {
+        'expenseApprovals.expenses': {
+          data: { pages: [{ items: [expense()], nextCursor: null }] },
+          onCall,
+        },
+        'savedViews.list': {
+          data: [
+            {
+              id: 'uv-has',
+              name: 'Has a receipt',
+              pinned: false,
+              // "receipt doesNotEqual missing" is the other side of a two-value enum.
+              state: {
+                filters: [{ id: 'f1', field: 'receipt', op: 'doesNotEqual', value: 'missing' }],
+              },
+            },
+          ],
+        },
+      },
+    });
     show();
-    // "receipt doesNotEqual missing" is the other side of a two-value enum.
-    // VeloExpense: added through the bar rather than from a saved view.
-    await withFilters(user, [['receipt', 'doesNotEqual', 'missing']]);
+    await user.click(screen.getByRole('button', { name: 'expenses.allExpenses.viewDefault' }));
+    await user.click(await screen.findByRole('button', { name: 'Has a receipt' }));
     await waitFor(() => expect(queryArgs(onCall).missingReceipt).toBe(false));
   });
 
   it('drops the window entirely on the all-time view', async () => {
-    // VeloExpense: `Clear` (`pickAllTime`).
     const user = userEvent.setup();
     const onCall: OnCall = vi.fn();
     withOnCall(onCall);
     show();
-    await pickAllTime(user);
+    await pickView(user, 'expenses.allExpenses.viewAllTime');
     await waitFor(() => expect(queryArgs(onCall).from).toBeUndefined());
   });
 
@@ -713,14 +780,26 @@ describe('narrowing the list', () => {
      * rather than an Invalid Date is the difference between "no window yet" and a query
      * the server cannot answer.
      */
-    // VeloExpense: ExpenseOS's pinned view held `date on ''`. Here the date pill's operator
-    // is switched to `on`, which leaves the clause with no date yet — the same half-typed state.
-    const user = userEvent.setup();
     const onCall: OnCall = vi.fn();
-    withOnCall(onCall);
+    setTrpc([expense()], {
+      queries: {
+        'expenseApprovals.expenses': {
+          data: { pages: [{ items: [expense()], nextCursor: null }] },
+          onCall,
+        },
+        'savedViews.list': {
+          data: [
+            {
+              id: 'uv-half',
+              name: 'Half typed',
+              pinned: true,
+              state: { filters: [{ id: 'f1', field: 'date', op: 'on', value: '' }] },
+            },
+          ],
+        },
+      },
+    });
     show();
-    await user.click(within(pillFor('expenses.columns.date')).getByTitle('Change operator'));
-    await user.click(await screen.findByRole('button', { name: /(?:^On$|filterOps\.on$)/ }));
     await waitFor(() => expect(queryArgs(onCall).from).toBeUndefined());
     expect(queryArgs(onCall).to).toBeUndefined();
   });
@@ -737,10 +816,21 @@ describe('narrowing the list', () => {
       ['submitter', 'Dana', 'Canoe'],
     ] as const) {
       cleanup();
-      setTrpc([expense(), expense({ id: 'exp-2', merchant: 'Air Canada' })]);
+      setTrpc([expense(), expense({ id: 'exp-2', merchant: 'Air Canada' })], {
+        queries: {
+          'savedViews.list': {
+            data: [
+              {
+                id: `uv-${field}`,
+                name: field,
+                pinned: true,
+                state: { filters: [{ id: 'f1', field, op: 'contains', value }] },
+              },
+            ],
+          },
+        },
+      });
       show();
-      // VeloExpense: through the bar rather than a pinned view.
-      await withFilters(userEvent.setup(), [[field, 'contains', value]]);
       await waitFor(() => expect(rowTexts().length).toBeGreaterThan(0));
       expect(rowTexts()[0], field).toContain(expected);
     }
@@ -754,10 +844,21 @@ describe('narrowing the list', () => {
       ['doesNotEqual', 'canoe', 'Air Canada'],
     ] as const) {
       cleanup();
-      setTrpc([expense(), expense({ id: 'exp-2', merchant: 'Air Canada' })]);
+      setTrpc([expense(), expense({ id: 'exp-2', merchant: 'Air Canada' })], {
+        queries: {
+          'savedViews.list': {
+            data: [
+              {
+                id: `uv-${op}`,
+                name: op,
+                pinned: true,
+                state: { filters: [{ id: 'f1', field: 'merchant', op, value }] },
+              },
+            ],
+          },
+        },
+      });
       show();
-      // VeloExpense: through the bar rather than a pinned view.
-      await withFilters(userEvent.setup(), [['merchant', op, value]]);
       await waitFor(() => expect(rowTexts()).toHaveLength(1));
       expect(rowTexts()[0], op).toContain(expected);
     }
@@ -980,8 +1081,18 @@ describe('narrowing by exclusion', () => {
    * that matches nothing — the reader believes they have narrowed the list and reads the
    * wrong rows as the answer.
    */
-  // VeloExpense: `addPill` is hoisted to the top of the file, so the cases that used saved
-  // views can use it too.
+  const addPill = async (
+    user: ReturnType<typeof userEvent.setup>,
+    field: string,
+    op: string,
+    value: string,
+  ) => {
+    await user.click(screen.getByRole('button', { name: /(?:Add filter|filters\.addFilter)/ }));
+    await user.selectOptions(await screen.findByLabelText(/(?:^Field$|filters\.field)/), field);
+    await user.selectOptions(screen.getByLabelText(/(?:^Operator$|filters\.operator)/), op);
+    await user.type(screen.getByLabelText(/(?:^Value$|filters\.value$)/), value);
+    await user.click(screen.getByRole('button', { name: /(?:^Add$|filters\.add$)/ }));
+  };
 
   const twoMerchants = () => [expense(), expense({ id: 'exp-2', merchant: 'Air Canada' })];
 
@@ -1053,26 +1164,24 @@ describe('narrowing to several values on one field', () => {
    * the default carries status clauses of its own: a pinned view REPLACES the default, so
    * each of these drives exactly the clauses it names and nothing else. This is the matcher
    * under test, not the default over it.
-   *
-   * VeloExpense: the bar is cleared and the clauses added through it (`withFilters`), which
-   * replaces the default in the same way.
    */
 
-  const withPinnedFilters = async (
-    items: unknown[],
-    clauses: readonly (readonly [field: string, op: string, value: string])[],
-  ) => {
-    setTrpc(items);
-    show();
-    await withFilters(userEvent.setup(), clauses);
-  };
+  const withPinnedFilters = (items: unknown[], filters: unknown[]) =>
+    setTrpc(items, {
+      queries: {
+        'savedViews.list': {
+          data: [{ id: 'uv-or', name: 'pinned', pinned: true, state: { filters } }],
+        },
+      },
+    });
 
   it('shows the submitted, approved and returned charges, not none of them', async () => {
-    await withPinnedFilters(fourStatuses(), [
-      ['status', 'equals', 'SUBMITTED'],
-      ['status', 'equals', 'APPROVED'],
-      ['status', 'equals', 'RETURNED'],
+    withPinnedFilters(fourStatuses(), [
+      { id: 'f1', field: 'status', op: 'equals', value: 'SUBMITTED' },
+      { id: 'f2', field: 'status', op: 'equals', value: 'APPROVED' },
+      { id: 'f3', field: 'status', op: 'equals', value: 'RETURNED' },
     ]);
+    show();
     await waitFor(() => expect(rowTexts()).toHaveLength(3));
     expect(screen.getByText('Canoe')).toBeInTheDocument();
     expect(screen.getByText('Air Canada')).toBeInTheDocument();
@@ -1084,10 +1193,11 @@ describe('narrowing to several values on one field', () => {
   it('unions on any field, not only on status', async () => {
     // `merchant`, `category`, `report` and `submitter` have been filterable all along, and
     // each one emptied the list the moment a second value went on its pill.
-    await withPinnedFilters(fourStatuses(), [
-      ['merchant', 'equals', 'Canoe'],
-      ['merchant', 'equals', 'Via Rail'],
+    withPinnedFilters(fourStatuses(), [
+      { id: 'f1', field: 'merchant', op: 'equals', value: 'Canoe' },
+      { id: 'f2', field: 'merchant', op: 'equals', value: 'Via Rail' },
     ]);
+    show();
     // Asserted through the ROWS, not `getByText`: the merchant pills on the bar carry these
     // same two names as value chips.
     await waitFor(() => expect(rowTexts()).toHaveLength(2));
@@ -1097,11 +1207,12 @@ describe('narrowing to several values on one field', () => {
 
   it('still intersects across two different fields', async () => {
     // The other half of the rule. Widening within a field must not widen between them.
-    await withPinnedFilters(fourStatuses(), [
-      ['status', 'equals', 'SUBMITTED'],
-      ['status', 'equals', 'APPROVED'],
-      ['merchant', 'contains', 'Air'],
+    withPinnedFilters(fourStatuses(), [
+      { id: 'f1', field: 'status', op: 'equals', value: 'SUBMITTED' },
+      { id: 'f2', field: 'status', op: 'equals', value: 'APPROVED' },
+      { id: 'f3', field: 'merchant', op: 'contains', value: 'Air' },
     ]);
+    show();
     await waitFor(() => expect(rowTexts()).toHaveLength(1));
     expect(screen.getByText('Air Canada')).toBeInTheDocument();
   });
@@ -1111,10 +1222,11 @@ describe('narrowing to several values on one field', () => {
      * The trap in grouping by field: OR the negatives too and "not Canoe or not Air Canada"
      * matches every row, so the reader's exclusion silently stops excluding.
      */
-    await withPinnedFilters(fourStatuses(), [
-      ['merchant', 'doesNotEqual', 'Canoe'],
-      ['merchant', 'doesNotEqual', 'Air Canada'],
+    withPinnedFilters(fourStatuses(), [
+      { id: 'f1', field: 'merchant', op: 'doesNotEqual', value: 'Canoe' },
+      { id: 'f2', field: 'merchant', op: 'doesNotEqual', value: 'Air Canada' },
     ]);
+    show();
     await waitFor(() => expect(rowTexts()).toHaveLength(2));
     expect(screen.getByText('Via Rail')).toBeInTheDocument();
     expect(screen.getByText('Petro-Canada')).toBeInTheDocument();
@@ -1131,9 +1243,8 @@ describe('narrowing to several values on one field', () => {
     // `equals` clause to that pill would UNION with it rather than narrow to it. What is
     // under test here is that the enum select is wired end to end and compares against the
     // enum — the default's own behaviour is covered in "narrowing the list".
-    // VeloExpense: cleared through the bar (`showUnfiltered`).
-    setTrpc(fourStatuses());
-    await showUnfiltered();
+    setTrpcUnfiltered(fourStatuses());
+    show();
     await waitFor(() => expect(rowTexts()).toHaveLength(4));
     await user.click(screen.getByRole('button', { name: /(?:Add filter|filters\.addFilter)/ }));
     await user.selectOptions(await screen.findByLabelText(/(?:^Field$|filters\.field)/), 'status');
@@ -1249,5 +1360,47 @@ describe('taking the list to a spreadsheet', () => {
     const csv = await exportCsv(user);
     expect(csv).toContain('Canoe');
     expect(csv).not.toContain('Air Canada');
+  });
+});
+
+/*
+ * VeloExpense: what a VeloExpense row can hold that an ExpenseOS one cannot — an expense with
+ * no date yet, and a report from before numbering.
+ */
+describe('VeloExpense', () => {
+  it('dashes an expense with no date, and exports it empty', async () => {
+    // A VeloExpense expense may not have a date yet. `new Date(null)` would print 1970.
+    setTrpc([expense({ date: null })]);
+    show();
+    expect(rowTexts()[0]).toContain('—');
+    expect(rowTexts()[0]).not.toContain('1970');
+  });
+
+  it('dashes a report from before numbering, and still filters by report', async () => {
+    // `report.number` is null on a report made before numbering; the link must not be empty
+    // and a report filter must not throw on it.
+    const user = userEvent.setup();
+    setTrpc([
+      expense({ report: report({ number: null }) }),
+      expense({
+        id: 'exp-2',
+        merchant: 'Air Canada',
+        report: report({ id: 'rep-2', number: 'EXP-1043' }),
+      }),
+    ]);
+    show();
+    expect(screen.getByRole('link', { name: '—' })).toHaveAttribute(
+      'href',
+      '/expenses/rep-1?expense=exp-1',
+    );
+    // Only this clause on the bar: clear the opening default, then add it.
+    await user.click(screen.getByText('table.misc.clearFilters'));
+    await user.click(screen.getByRole('button', { name: /(?:Add filter|filters\.addFilter)/ }));
+    await user.selectOptions(await screen.findByLabelText(/(?:^Field$|filters\.field)/), 'report');
+    await user.selectOptions(screen.getByLabelText(/(?:^Operator$|filters\.operator)/), 'contains');
+    await user.type(screen.getByLabelText(/(?:^Value$|filters\.value$)/), '1043');
+    await user.click(screen.getByRole('button', { name: /(?:^Add$|filters\.add$)/ }));
+    expect(rowTexts()).toHaveLength(1);
+    expect(rowTexts()[0]).toContain('Air Canada');
   });
 });

@@ -2864,6 +2864,62 @@ describe('RLS tenant isolation', () => {
     await admin.query('DELETE FROM expense_category_policy');
   });
 
+  /* ── saved views (Wave 4, w4-08, migration 0067) ─────────────────────────────────
+   *
+   * ExpenseOS's SavedView: a person's saved filters are their tenant's, and a view may not
+   * name another tenant's person as its owner (composite key).
+   */
+  it('saved views are tenant-isolated, and cannot belong to another tenant\'s person', async () => {
+    const ownerIn = async (org: string) =>
+      (await admin.query('SELECT id FROM app_user WHERE organization_id = $1 LIMIT 1', [org])).rows[0].id as string;
+    const ownerA = await ownerIn(orgA);
+    const ownerB = await ownerIn(orgB);
+    for (const [org, owner, name] of [
+      [orgA, ownerA, 'View A'],
+      [orgB, ownerB, 'View B'],
+    ] as const) {
+      await withOrg(org, (tx) =>
+        tx.query(
+          `INSERT INTO saved_view (organization_id, owner_id, resource, name, state)
+           VALUES ($1, $2, 'expenses', $3, '{"filters":[]}')`,
+          [org, owner, name],
+        ),
+      );
+    }
+    for (const [org, name] of [
+      [orgA, 'View A'],
+      [orgB, 'View B'],
+    ] as const) {
+      const rows = await withOrg(org, (tx) => tx.query('SELECT name FROM saved_view'));
+      expect(rows.rows).toEqual([{ name }]);
+    }
+    expect((await withoutOrg((tx) => tx.query('SELECT * FROM saved_view'))).rows).toHaveLength(0);
+    expect((await withPlatformRead((tx) => tx.query('SELECT * FROM saved_view'))).rows).toHaveLength(0);
+
+    // WITH CHECK: naming the other tenant is refused outright.
+    await expect(
+      withOrg(orgB, (tx) =>
+        tx.query(
+          `INSERT INTO saved_view (organization_id, owner_id, resource, name, state)
+           VALUES ($1, $2, 'expenses', 'x', '{}')`,
+          [orgA, ownerA],
+        ),
+      ),
+    ).rejects.toThrow(/row-level security|violates/i);
+    // Composite key: B may not file a view under A's person.
+    await expect(
+      withOrg(orgB, (tx) =>
+        tx.query(
+          `INSERT INTO saved_view (organization_id, owner_id, resource, name, state)
+           VALUES ($1, $2, 'expenses', 'x', '{}')`,
+          [orgB, ownerA],
+        ),
+      ),
+    ).rejects.toThrow(/foreign key/i);
+
+    await admin.query('DELETE FROM saved_view');
+  });
+
   it('approval workflows, versions, runs and tasks are tenant-isolated, across every key', async () => {
     // w4-00d: each tenant's workflow, version, run and task are the suite's own seed (above),
     // which the dropped ladder's rows used to occupy; this reads their ids back.

@@ -43,6 +43,12 @@ const adminAndOthers = {
     saveDraft: 'APPROVAL_WORKFLOW_DRAFT_SAVED',
     publish: 'APPROVAL_WORKFLOW_PUBLISHED',
   },
+  /** ExpenseOS's `savedView.*` keys (w4-08, server/routers/savedViews.ts). */
+  savedView: {
+    create: 'SAVED_VIEW_CREATED',
+    update: 'SAVED_VIEW_UPDATED',
+    delete: 'SAVED_VIEW_DELETED',
+  },
   /** ExpenseOS's `workflow.*` key (w4-00c, server/lib/workflowEffects). */
   workflow: {
     actionFired: 'WORKFLOW_ACTION_FIRED',

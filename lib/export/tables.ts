@@ -159,6 +159,9 @@ export const EXPORTED: Readonly<Record<string, ExportedTable>> = {
   expense_category_policy: { file: 'expense-category-policies.csv' },
   policy_violation: { file: 'policy-violations.csv' },
   delegation: { file: 'delegations.csv' },
+  // w4-08 (0067): ExpenseOS's saved views — people's own filter and column choices on a list.
+  // The tenant's own records; nothing secret.
+  saved_view: { file: 'saved-views.csv' },
   // w4-00a (0058): ExpenseOS's workflow engine — the workflows a tenant authored, their
   // versions and the runs and tasks they produced. The tenant's own records; nothing secret.
   approval_workflow: { file: 'approval-workflows.csv' },
