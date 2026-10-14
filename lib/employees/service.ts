@@ -452,11 +452,28 @@ export async function updateEmployee(
     const role = await assignableRole(tx, patch.roleId);
     await assertRoleChange(tx, current, role!, opts.actor);
   }
-  // w4-10d (VeloExpense): deactivating through the form ends the last admin as surely as a
-  // demotion does, so the same count applies. Not in ExpenseOS, whose `deactivate` checks
-  // only the caller themselves.
-  if (patch.employeeStatus === 'DEACTIVATED' && current.employee_status !== 'DEACTIVATED') {
+  // w4-10f: DEACTIVATED through the form IS a deactivation — before this, it changed the
+  // label and nothing else: `deleted_at` stayed null, and sign-in, `requireActor`, the admin
+  // gate and the seat meter all read `deleted_at`, so a person shown as deactivated kept
+  // signing in and acting. It now takes `deactivateEmployee`'s guards (not yourself; nobody
+  // reporting to them, since the form cannot say where they go; not the last admin, w4-10d)
+  // and stamps `deleted_at` below. (0071 stamps the rows written before this.)
+  const deactivating = patch.employeeStatus === 'DEACTIVATED' && current.deleted_at === null;
+  if (deactivating) {
+    if (opts.actor && opts.actor.id === employeeId) {
+      throw new EmployeeError('you cannot deactivate your own account', 'SELF_DEACTIVATE',
+        'DEACTIVATE_SELF',
+      );
+    }
     await assertNotLastAdmin(tx, current);
+    const reports = await getDirectReports(tx, employeeId);
+    if (reports.length > 0) {
+      throw new EmployeeError(
+        `${reports.length} direct report(s) still report to this employee — choose a new manager first`,
+        'HAS_DIRECT_REPORTS',
+        { code: 'EMPLOYEE_HAS_REPORTS', params: { count: reports.length } },
+      );
+    }
   }
   assertStatus(patch.employeeStatus);
   assertCountry(patch.country);
@@ -499,16 +516,19 @@ export async function updateEmployee(
   if ('legalEntityId' in patch) put('legal_entity_id', patch.legalEntityId ?? null);
   // w2-10: the person's own. Changing the legal entity does not move it (0055).
   if ('country' in patch) put('country', patch.country ?? null);
-  if ('employeeStatus' in patch) {
+  if ('employeeStatus' in patch && patch.employeeStatus !== undefined) {
     // Reactivating a DEACTIVATED person takes a seat back — the meter counts
     // `deleted_at IS NULL` — so it is capped like a new one. Without this, a cap
     // enforced only on creation is walked round by deactivating and reactivating.
-    if (patch.employeeStatus === 'ACTIVE' && current.deleted_at !== null) {
-      await assertSeatAvailable(tx);
-    }
+    // w4-10f: ON LEAVE is a member too (they sign in, and the meter counts them), so moving
+    // a deactivated person to it is a reactivation as much as ACTIVE is.
+    const reactivating = patch.employeeStatus !== 'DEACTIVATED' && current.deleted_at !== null;
+    if (reactivating) await assertSeatAvailable(tx);
     put('employee_status', patch.employeeStatus);
-    // Reactivating clears the soft-delete stamp; anything else leaves it alone.
-    if (patch.employeeStatus === 'ACTIVE') sets.push('deleted_at = NULL');
+    // w4-10f: the status and the soft-delete stamp move together — DEACTIVATED stamps it
+    // (keeping an earlier stamp), any other status clears it.
+    if (deactivating) sets.push('deleted_at = COALESCE(deleted_at, now())');
+    if (reactivating) sets.push('deleted_at = NULL');
   }
 
   if (sets.length === 0) return current;
