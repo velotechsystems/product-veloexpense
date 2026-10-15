@@ -266,6 +266,9 @@ describe('every finding is actionable', () => {
     expect(PHONE_PROJECTS_MODULE).toBe('e2e/support/phone-projects.ts');
     expect(PACKAGE_JSON).toBe('package.json');
     // VeloExpense: the consumers ported so far (see `CONSUMERS`).
-    expect(CONSUMERS).toEqual(['e2e/expense-workbench.mobile.spec.ts']);
+    expect(CONSUMERS).toEqual([
+      'e2e/expense-workbench.mobile.spec.ts',
+      'e2e/tap-targets.mobile.spec.ts',
+    ]);
   });
 });
