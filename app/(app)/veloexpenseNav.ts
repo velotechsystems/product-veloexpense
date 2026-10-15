@@ -174,6 +174,12 @@ export const PORTED_SCREENS: readonly string[] = [
   '/admin/policies',
   // w4-02e: the policy-violation register.
   '/admin/policy-violations',
+  // w2-05/w2-06: the reports list and the all-expenses list (and the report workbench,
+  // `/expenses/[reportId]`, which sets its own `left` slot, so the title never shows there).
+  // Missing until phone e2e 5, whose `expenses.mobile` port found `/expenses` with no heading
+  // at all: its title rides on the top bar (`ROUTE_TITLE_KEYS['/expenses']`), and the top bar
+  // only titles a path listed here. This entry also covers `/expenses/approvals` below.
+  '/expenses',
   // w4-05/w4-07 (d71): the approvals inbox, in place of VeloExpense's /approvals.
   '/expenses/approvals',
   // w4-09 (d72): the dashboard, in place of VeloExpense's home page at `/`.
