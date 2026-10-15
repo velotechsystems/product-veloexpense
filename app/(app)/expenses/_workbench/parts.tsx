@@ -534,34 +534,27 @@ export function ExpenseListRow({
 /**
  * The four header fields as prose — date · vendor · currency · location.
  *
- * Lifted out of `ExpenseEditor`'s `!editable` arm unchanged so that the SAME markup can be
- * rendered in two conditions: alone on a submitted report (as before), and beside the
- * editable grid as its below-`lg` face on a draft one.
+ * Rendered in ONE condition: a submitted report (`!editable`). It was briefly also the
+ * below-`lg` face of a draft report, CSS-selected against the editable grid; P18 brought
+ * that grid back at every width, so a draft has one set of core fields and no twin.
  *
  * NOT ONE `<Field>`, NOT ONE `<input>`, NOT ONE `aria-label`, and that is a contract rather
- * than a style. On a draft report this renders at the same time as the labelled Date,
- * Vendor, Currency and Location inputs — merely CSS-hidden — and Playwright's label engine
- * has no visibility filter, so a second labelled "Vendor" here would make
+ * than a style. Today it never renders beside the labelled Date, Vendor, Currency and
+ * Location inputs, so the contract holds vacuously — and it stays written down for whoever
+ * is next tempted to give a draft a read-only twin again. Playwright's label engine has no
+ * visibility filter, so a second labelled "Vendor", even a CSS-hidden one, would make
  * `e2e/support/workbench.ts:81`'s unscoped, strict `getByLabel('Vendor')` ambiguous in
  * every spec that adds an expense, at 1280 in `chromium`. `getByRole` skips ARIA-hidden
  * nodes and would not have cared; `getByLabel` does. Plain spans, so neither does.
  */
-function ExpenseFieldsReadOnly({
-  expense,
-  locale,
-  className,
-}: {
-  expense: ExpenseDetail;
-  locale: string;
-  className?: string;
-}) {
+function ExpenseFieldsReadOnly({ expense, locale }: { expense: ExpenseDetail; locale: string }) {
   const t = useTranslations('expenses');
   return (
     /* Narrow-first: two columns at a phone's width, three from `sm` up — the idiom
        `TotalsReadOnly` already uses. A third of a 360px pane is 120px, narrower than
        the labelled values these cells carry. `col-span-2` still means "the rest of the
        row" in either shape. */
-    <div className={`grid grid-cols-2 gap-x-4 gap-y-1 text-sm sm:grid-cols-3 ${className ?? ''}`}>
+    <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm sm:grid-cols-3">
       <div>
         <span className="text-muted-foreground text-xs">{t('line.date')}: </span>
         {/* VeloExpense: an expense may have no date yet — a dash. */}
@@ -584,6 +577,31 @@ function ExpenseFieldsReadOnly({
     </div>
   );
 }
+
+/**
+ * The 44px floor for the editor's core fields on a coarse pointer, as TWO halves, because
+ * `className` on these primitives does not always reach the `<input>` a finger lands on:
+ *
+ *   · a plain `Input` (Vendor, Location) puts it on the `<input>` itself, so the bare
+ *     `pointer-coarse:h-11` half lands and the `[&_input]` half has no subject;
+ *   · `Input type="date"` gets an auto-suffix (the calendar button), takes the WRAPPER
+ *     branch, and puts `className` on `cn('relative w-full', className)` — the `<input>`
+ *     never sees it — so only the `[&_input]` half reaches the control;
+ *   · `Combobox` puts `className` on its `relative` wrapper by construction, and its
+ *     `ComboboxPrimitive.Input` (an `<input>`) hardcodes `h-10`; again the `[&_input]` half.
+ *
+ * `[&_input]` compiles to `.x input`, (0,1,1) against the primitive's (0,1,0) `.h-10`, so it
+ * wins on specificity as well as order. The popups portal out, so the field's own input is
+ * the only one the descendant selector can reach. Same recipe, same reasoning, as
+ * `DRAWER_FIELD` in `delegations/DelegationsManager.tsx`, with `pointer-coarse:` in place
+ * of `max-lg:` because this floor is about the finger, not the width — a desktop keeps 40px.
+ *
+ * VeloExpense: the kit's primitives are simpler, and the bare half is the one that lands
+ * every time. Its `Input` (date included) has no wrapper branch, and its `Combobox` is a
+ * `<button role="combobox">` whose `className` goes on that button. The `[&_input]` half has
+ * no subject here; it stays, as ExpenseOS's recipe, and is harmless.
+ */
+const TAP_FIELD = 'pointer-coarse:h-11 pointer-coarse:[&_input]:h-11';
 
 // ── Center-pane expense editor ────────────────────────────────────────────────
 export function ExpenseEditor({
@@ -689,10 +707,12 @@ export function ExpenseEditor({
           delete.
 
           The testid exists so a test can say "the HEADER names the vendor" and mean it.
-          The vendor, the currency code and the amount have always also appeared in the
-          read-only field grid below — on a submitted report — and since that grid is now
-          rendered on a draft report too (CSS-hidden above `lg`), an unscoped
-          `getByText('Corner Bistro')` in jsdom, which applies no CSS, matches both. */}
+          The vendor and the currency code also appear as text in the read-only field grid
+          below, which renders on a SUBMITTED report only, so an unscoped
+          `getByText('Corner Bistro')` there matches twice; and the amount is repeated by
+          the read-only line row, which is also submitted-only. On a draft the field grid
+          and the read-only line row are both absent (the editable inputs hold their values
+          as `value`, not text). The scope keeps one assertion right in every condition. */}
       <div
         data-testid="expense-header"
         className="flex h-12 shrink-0 items-center gap-3 border-border border-b px-3"
@@ -728,34 +748,6 @@ export function ExpenseEditor({
       </div>
 
       <div className="flex flex-col gap-3 p-3">
-        {/**
-         * THE ONE `SectionNotice` ON THIS ROUTE, and the only place it is rendered.
-         *
-         * It used to be five — one at the cost-allocation card, one at the tax panel, one
-         * at the line items, one at the attendees, and one in the expenses card over in
-         * `ExpenseReportWorkbench`. Each was accurate and each was in the right place, and
-         * together they were five copies of one sentence down a single 664px scroll. The
-         * register cannot carry that: by the third the reader is skipping a box that is
-         * trying to tell them something, and the field grid (which has no notice of its
-         * own) was left looking like the one region that was merely broken.
-         *
-         * Said once, at the top of the editor, it covers the whole of what this pane
-         * suppresses — the header fields as well as the four regions that used to carry
-         * their own — and the reader meets it before the read-only values rather than
-         * after them, which is the order in which it explains anything. That also closes
-         * the field-grid gap `docs/design/pwa.md` recorded as an open product call: the
-         * answer was not a sixth notice, it was one.
-         *
-         * Above the violation warnings, not below: this is the frame for the whole pane,
-         * and a phone reader who scrolled past it to reach the warnings would have to come
-         * back up to find out why the values under them cannot be changed.
-         *
-         * `editable` for exactly the reason each placement carried it: on a submitted
-         * report the editing controls are absent at EVERY width, so a notice saying
-         * "changing them is a desktop task" would blame the screen for a refusal the
-         * report's status made. `lg:hidden`, so a desktop sees nothing here at all.
-         */}
-        {editable && <SectionNotice className="lg:hidden" />}
         {violations.length > 0 && (
           <div className="rounded-md border border-warning/40 bg-warning/5 p-3">
             <div className="mb-2 font-medium text-foreground text-xs uppercase tracking-wide">
@@ -769,84 +761,79 @@ export function ExpenseEditor({
           </div>
         )}
         {/*
-         * ALWAYS BOTH, CSS-SELECTED — not mutually exclusive on `editable` any more.
+         * ONE FACE, MUTUALLY EXCLUSIVE ON `editable` — no CSS selection here any more.
          *
-         * On a DRAFT report (`editable === true`) both faces exist in the DOM at every
-         * width and only the viewport decides which one has a box. On a SUBMITTED report
-         * (`editable === false`) the editable twin is not rendered at all, exactly as it
-         * was before — so `editable` still means precisely what it meant: "the server will
-         * accept a mutation on this report". Nothing about the predicate moved, and the
-         * server re-derives it from `EDITABLE_REPORT_STATUSES` on every write regardless.
+         * On a DRAFT report (`editable === true`) the editable grid renders at every width
+         * and nothing else does: no read-only twin, no `lg:` class, no `useIsBelowLg`
+         * branch, so there is no width at which these inputs could unmount and take a
+         * half-typed value with them. On a SUBMITTED report (`editable === false`) only
+         * the read-only prose renders. `editable` still means precisely "the server will
+         * accept a mutation on this report", and the server re-derives it from
+         * `EDITABLE_REPORT_STATUSES` on every write regardless.
          *
-         * The reason it is CSS and not a `useIsBelowLg` branch: a JS branch would UNMOUNT
-         * the four inputs on a desktop resize across 1024px and take any half-typed value
-         * with them, for a reader who did nothing but drag a window.
-         *
-         * `lg:contents`, NEVER `lg:block`. The parent is `flex flex-col gap-3 p-3`, so a
-         * `block` wrapper would become the flex item and the grid inside it would resolve
-         * its own sizing against the wrapper rather than against the column.
+         * The grid used to sit in a `hidden lg:contents` wrapper with the read-only twin as
+         * its below-`lg` face. Removing that wrapper is layout-identical at `lg`+: a
+         * `contents` box generates no box, so the grid was already the flex item of the
+         * `flex flex-col gap-3 p-3` column, and it still is.
          */}
-        <ExpenseFieldsReadOnly
-          expense={expense}
-          locale={locale}
-          className={editable ? 'lg:hidden' : undefined}
-        />
+        {!editable && <ExpenseFieldsReadOnly expense={expense} locale={locale} />}
         {editable && (
-          <div className="hidden lg:contents">
-            {/* 1/3 · 2/3 grid: date (small, first) · vendor; currency · location.
-                Narrow-first like its read-only twin. Inert below `lg` today — this face
-                sits inside `hidden lg:contents` — and written that way anyway so that
-                the day P12 uncloaks it the grid is already the right shape, and so the
-                two faces cannot be read as having different intentions. */}
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-              <Field label={t('line.date')}>
+          /* 1/3 · 2/3 grid: date (small, first) · vendor; currency · location.
+             Narrow-first: two columns below `sm` (Date and Currency each alone on a row,
+             Vendor and Location spanning both), three from `sm` up. P18 brought this grid
+             back below `lg` in this shape; a tighter phone order is a design call. */
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+            <Field label={t('line.date')}>
+              <Input
+                type="date"
+                className={TAP_FIELD}
+                // VeloExpense: an undated expense opens with the field empty.
+                defaultValue={expense.date ? new Date(expense.date).toISOString().slice(0, 10) : ''}
+                onBlur={(e) =>
+                  e.currentTarget.value &&
+                  updateExpense.mutate({ expenseId: expense.id, date: e.currentTarget.value })
+                }
+              />
+            </Field>
+            <div className="col-span-2">
+              <Field label={t('workbench.vendor')}>
                 <Input
-                  type="date"
-                  // VeloExpense: an undated expense opens with the field empty.
-                  defaultValue={expense.date ? new Date(expense.date).toISOString().slice(0, 10) : ''}
+                  className={TAP_FIELD}
+                  defaultValue={expense.merchant ?? ''}
+                  placeholder={t('addLine.merchantPlaceholder')}
                   onBlur={(e) =>
-                    e.currentTarget.value &&
-                    updateExpense.mutate({ expenseId: expense.id, date: e.currentTarget.value })
+                    updateExpense.mutate({
+                      expenseId: expense.id,
+                      merchant: e.currentTarget.value || null,
+                    })
                   }
                 />
               </Field>
-              <div className="col-span-2">
-                <Field label={t('workbench.vendor')}>
-                  <Input
-                    defaultValue={expense.merchant ?? ''}
-                    placeholder={t('addLine.merchantPlaceholder')}
-                    onBlur={(e) =>
-                      updateExpense.mutate({
-                        expenseId: expense.id,
-                        merchant: e.currentTarget.value || null,
-                      })
-                    }
-                  />
-                </Field>
-              </div>
-              <Field label={t('line.currency')}>
-                <Combobox
-                  items={currencyItems}
-                  value={expense.currencyId}
-                  onValueChange={(v) =>
-                    v && updateExpense.mutate({ expenseId: expense.id, currencyId: v })
+            </div>
+            <Field label={t('line.currency')}>
+              <Combobox
+                className={TAP_FIELD}
+                items={currencyItems}
+                value={expense.currencyId}
+                onValueChange={(v) =>
+                  v && updateExpense.mutate({ expenseId: expense.id, currencyId: v })
+                }
+                placeholder={t('line.currency')}
+              />
+            </Field>
+            <div className="col-span-2">
+              <Field label={t('line.location')}>
+                <Input
+                  className={TAP_FIELD}
+                  defaultValue={expense.placeText ?? ''}
+                  onBlur={(e) =>
+                    updateExpense.mutate({
+                      expenseId: expense.id,
+                      placeText: e.currentTarget.value || null,
+                    })
                   }
-                  placeholder={t('line.currency')}
                 />
               </Field>
-              <div className="col-span-2">
-                <Field label={t('line.location')}>
-                  <Input
-                    defaultValue={expense.placeText ?? ''}
-                    onBlur={(e) =>
-                      updateExpense.mutate({
-                        expenseId: expense.id,
-                        placeText: e.currentTarget.value || null,
-                      })
-                    }
-                  />
-                </Field>
-              </div>
             </div>
           </div>
         )}
@@ -878,6 +865,36 @@ export function ExpenseEditor({
             )}
           </Field>
         )}
+
+        {/**
+         * THE ONE `SectionNotice` ON THIS ROUTE, and the only place it is rendered.
+         *
+         * It used to be five — one at the cost-allocation card, one at the tax panel, one
+         * at the line items, one at the attendees, and one in the expenses card over in
+         * `ExpenseReportWorkbench`. Each was accurate and each was in the right place, and
+         * together they were five copies of one sentence down a single 664px scroll. The
+         * register cannot carry that: by the third the reader is skipping a box that is
+         * trying to tell them something.
+         *
+         * HERE, DIRECTLY ABOVE THE COST ALLOCATION, and no longer at the top of the pane.
+         * It sat at the top while it covered the whole pane, header fields included. P18
+         * gave the date, vendor, currency, location and explanation one editable face at
+         * every width, so a notice above them would read as "these fields are read-only"
+         * about fields a phone reader can now edit. The operator ruled (2026-10-13) that it
+         * moves to just before the first region it still names, and that its copy names
+         * only what is still suppressed below `lg`: cost allocation, tax and attendees.
+         * This reverses the earlier "one notice, at the top of the pane" ruling.
+         *
+         * Below the violation warnings and the editable fields, then: the reader meets the
+         * things they can change first, and the notice frames the regions after it.
+         *
+         * `editable` for exactly the reason each placement carried it: on a submitted
+         * report the editing controls are absent at EVERY width, so a notice saying
+         * "changing them needs a larger screen" would blame the screen for a refusal the
+         * report's status made. `lg:hidden`, so a desktop sees nothing here at all. Still a
+         * direct child of this pane column, never inside a region's card.
+         */}
+        {editable && <SectionNotice className="lg:hidden" />}
 
         {/* Cost allocation across BU / Department / Class — before taxes */}
         <AllocationEditor
@@ -920,60 +937,77 @@ export function ExpenseEditor({
               ))}
             </div>
           )}
-          {/* No notice here: this region's suppression is named once, at the top of the
-              pane — see the single `SectionNotice` in `ExpenseEditor`. The cloak below is
-              unchanged, so what this width renders is exactly what it rendered before. */}
-          <div className="hidden lg:contents">
-            {editable && drafts.length > 0 && (
-              <div className="mt-2 flex flex-col gap-1.5">
-                {drafts.map((d) => (
-                  <NewLineForm
-                    key={d}
-                    categoryItems={categoryItems}
-                    expenseId={expense.id}
-                    currencySymbol={currencySymbol}
-                    currencyCode={expense.currency.code}
-                    pending={lineCreate.isPending}
-                    error={lineErrors[d]}
-                    onDraftChange={(draft) => setDraftValue(d, draft)}
-                    onCancel={() => {
-                      setLineErrors(({ [d]: _drop, ...rest }) => rest);
-                      removeDraft(d);
-                    }}
-                    onSave={(data) => {
-                      setLineErrors(({ [d]: _drop, ...rest }) => rest);
-                      // The draft is removed on SUCCESS only. Anything else keeps the row
-                      // and its values, so the fix is one edit away rather than a retype.
-                      lineCreate.mutate(
-                        { expenseId: expense.id, ...data },
-                        {
-                          onSuccess: () => removeDraft(d),
-                          onError: (err) =>
-                            setLineErrors((prev) => ({ ...prev, [d]: err.message })),
-                        },
-                      );
-                    }}
-                  />
-                ))}
-              </div>
-            )}
-            {editable && (
-              <Button size="sm" variant="outline" className="mt-2 w-full" onClick={addDraft}>
-                <IconPlus size={12} className="mr-1" />
-                {t('drawer.addLine')}
-              </Button>
-            )}
-            {/* What saving those drafts will do to the tax and the converted total —
-                below the rows it describes. Whether there is anything to show is the
-                component's own call, so there is one rule rather than two. */}
-            {editable && (
-              <ProjectedTotals
-                expense={expense}
-                drafts={openDrafts}
-                entityRecovers={entityRecovers}
-              />
-            )}
-          </div>
+          {/*
+           * NOT SUPPRESSED, at any width (P18, which absorbed P12). "Add line", the new-line
+           * forms and the projected totals render wherever the report is editable, so a phone
+           * can add a line, type its amount and watch the report total move. The notice above
+           * the cost allocation does not name this region, and must not.
+           *
+           * These used to sit in a `hidden lg:contents` wrapper. Removing it is
+           * layout-identical at `lg`+: a `contents` box generates no box, so its children
+           * were already direct children of this block, and they still are.
+           *
+           * Accepted with the operator's Option A: a mileage category opens `MileageFields`
+           * here at phone width unassessed (P14's), and a meals line can be created on a phone
+           * while `AttendeesEditor` below stays suppressed (P13's).
+           */}
+          {editable && drafts.length > 0 && (
+            <div className="mt-2 flex flex-col gap-1.5">
+              {drafts.map((d) => (
+                <NewLineForm
+                  key={d}
+                  categoryItems={categoryItems}
+                  expenseId={expense.id}
+                  currencySymbol={currencySymbol}
+                  currencyCode={expense.currency.code}
+                  pending={lineCreate.isPending}
+                  error={lineErrors[d]}
+                  onDraftChange={(draft) => setDraftValue(d, draft)}
+                  onCancel={() => {
+                    setLineErrors(({ [d]: _drop, ...rest }) => rest);
+                    removeDraft(d);
+                  }}
+                  onSave={(data) => {
+                    setLineErrors(({ [d]: _drop, ...rest }) => rest);
+                    // The draft is removed on SUCCESS only. Anything else keeps the row
+                    // and its values, so the fix is one edit away rather than a retype.
+                    lineCreate.mutate(
+                      { expenseId: expense.id, ...data },
+                      {
+                        onSuccess: () => removeDraft(d),
+                        onError: (err) => setLineErrors((prev) => ({ ...prev, [d]: err.message })),
+                      },
+                    );
+                  }}
+                />
+              ))}
+            </div>
+          )}
+          {editable && (
+            /* A real 44px box at a coarse pointer, not only `size="sm"`'s invisible 44px
+               `::after` slop around a 36px button: this is now a phone's primary action in
+               the pane. `min-w-11` is inert here (`w-full`) and is kept for the pair's sake.
+               A fine pointer keeps the 36px button at every width. */
+            <Button
+              size="sm"
+              variant="outline"
+              className="mt-2 pointer-coarse:min-h-11 w-full pointer-coarse:min-w-11"
+              onClick={addDraft}
+            >
+              <IconPlus size={12} className="mr-1" />
+              {t('drawer.addLine')}
+            </Button>
+          )}
+          {/* What saving those drafts will do to the tax and the converted total —
+              below the rows it describes. Whether there is anything to show is the
+              component's own call, so there is one rule rather than two. */}
+          {editable && (
+            <ProjectedTotals
+              expense={expense}
+              drafts={openDrafts}
+              entityRecovers={entityRecovers}
+            />
+          )}
         </div>
 
         {/* Attendees — after line items; only when a line's category requires it */}
@@ -982,7 +1016,7 @@ export function ExpenseEditor({
             <div className="mb-1 text-muted-foreground text-xs uppercase tracking-wide">
               {t('drawer.attendees')}
             </div>
-            {/* Named once at the top of the pane, like every other region here. This is
+            {/* Named once above the cost allocation, like every other region here. This is
                 still the one with nothing to show beneath it — `AttendeesEditor` has no
                 read-only twin anywhere in this file, and building it is P13's, with the
                 editing. */}
@@ -1198,7 +1232,8 @@ function AllocationEditor({
         )}
       </div>
       {/*
-       * The below-`lg` face of the rows, and the third always-both region of this pane.
+       * The below-`lg` face of the rows, and one of the two regions of this pane that still
+       * render both faces on a draft (the tax panel is the other).
        *
        * The head above it used to be the WHOLE of what a phone was shown: a heading, a
        * "% / 100 %" total and — when a row was half-coded — a warning. So the reader was
@@ -1451,7 +1486,9 @@ function ExpenseTaxPanel({
     <div className="rounded-md border border-border p-3">
       {head}
       {/*
-       * PLACEMENT 2 of 5, and the second of the three always-both regions.
+       * PLACEMENT 2 of 5, and one of the two regions that still render both faces on a
+       * draft (the cost allocation is the other; the core fields and the line rows have
+       * one face since P18).
        *
        * GST/HST, QST and PST are real review content — an approver reads them on a phone —
        * so the figures are shown rather than merely named as missing. Below `lg` they are
@@ -2978,197 +3015,199 @@ function LineItemRow({
   };
   // One definition, two placements: inline for a mileage line (inside MileageFields,
   // to stay on the first row) and directly after the amount for every other line.
+  //
+  // A 44px box on a coarse pointer, on both axes. Under a mouse this is a 14px-wide
+  // glyph in a 40px-tall flex item, and it stays exactly that; the floor exists because
+  // the editable row now renders on a phone (P18), where a 14px-wide destructive target
+  // beside the amount field is a mis-tap waiting to happen.
   const deleteButton = (
     <button
       type="button"
       aria-label={t('actions.delete')}
-      className="flex h-10 shrink-0 items-center justify-center text-muted-foreground hover:text-destructive"
+      className="flex h-10 pointer-coarse:min-h-11 pointer-coarse:min-w-11 shrink-0 items-center justify-center self-end text-muted-foreground hover:text-destructive lg:self-auto"
       onClick={() => remove.mutate({ id: line.id })}
     >
       <IconTrash size={14} />
     </button>
   );
+  /*
+   * ONE FACE, MUTUALLY EXCLUSIVE ON `editable` — the same rule as the core-field grid in
+   * `ExpenseEditor`, and for the same reason.
+   *
+   * This row used to render BOTH faces on a draft — `LineItemReadOnlyRow` with
+   * `lg:hidden` and the editable row in a `hidden lg:contents` cloak — so a phone saw the
+   * figures and a desktop the controls. P18 brought the line block back below `lg`, so the
+   * editable row now renders at every width and the read-only row only on a SUBMITTED
+   * report (the early return above). One face means no width at which this component's
+   * eight pieces of state and two re-sync guards could unmount mid-edit, and exactly one
+   * `line.amount`-labelled control per saved line, as `e2e/support/workbench.ts` needs.
+   *
+   * Layout-identical at `lg`+: the cloak was `contents` (no box), and the twin was
+   * `display: none` there (no box, and no flex gap either), so the editable row was
+   * already the flex item of the list's `flex flex-col gap-1.5`, and it still is.
+   */
   return (
-    <>
-      {/*
-       * The third always-both region, and the one the plan flagged as possibly needing a
-       * read-only row built from nothing. It did not: the `!editable` arm above was already
-       * a clean, self-contained row — icon · category · amount, no state, no mutation — so
-       * this is a REUSE of markup that had merely been sitting behind an early return, not
-       * an extraction of one out of the editable branch.
-       *
-       * Both are rendered on a draft report, at every width, and CSS picks. The reason it
-       * cannot be a JS branch is this component specifically: it holds eight pieces of
-       * `useState` (category, amount, km, unit, route, tip, saveError) plus two `useRef`
-       * re-sync guards, and unmounting it mid-edit on a desktop window drag across 1024px
-       * would discard a half-typed distance or amount with no recovery path.
-       */}
-      <LineItemReadOnlyRow
-        line={line}
-        currencyCode={currencyCode}
-        currencySymbol={currencySymbol}
-        locale={locale}
-        className="lg:hidden"
-      />
-      <div className="hidden lg:contents">
-        <div
-          className={`flex flex-wrap items-center gap-1.5 rounded-md border p-2 ${
-            saveError ? 'border-destructive' : 'border-border'
-          }`}
-        >
-          {saveError && (
-            <p role="alert" className="w-full text-destructive text-xs">
-              {saveError}
-            </p>
-          )}
-          {/* No icon span here: the Combobox trigger already prefixes the selected
-          category's icon onto its own text (see design-system combobox.tsx), so one
-          beside it rendered the emoji twice. The read-only row above still needs its
-          own, because it has no combobox. */}
-          <div className="min-w-[8rem] flex-1">
-            <Combobox
-              items={categoryItems}
-              value={category}
-              onValueChange={(v) => {
-                // What a category change invalidates is DECLARED by the two strategies
-                // rather than derived from one boolean here — see `fieldsToClear`.
-                const clearing = fieldsToClear(capsOf(category), capsOf(v));
-                setCategory(v);
-                // Clearing the selection is not a line state worth persisting — a line
-                // IS a category plus an amount — so nothing is written until one is
-                // picked again.
-                if (!v) return;
-                // A category change is committed ON ITS OWN, with no amount and no
-                // distance. `commit` used to be called here and would silently return
-                // when switching into mileage with no distance yet — so nothing was
-                // written and the row kept showing the old amount. The server owns what
-                // a line of the new kind should hold: it clears the columns that no
-                // longer apply and re-derives the rest.
-                update.mutate({ id: line.id, categoryId: v });
-                // Local fields follow. Crossing the mileage boundary invalidates both
-                // sides — a typed amount is not a distance, and a measured route is not
-                // a typed amount — so neither is carried across.
-                if (clearing.includes('amount')) setAmount('');
-                if (clearing.includes('km')) {
-                  setKm('');
-                  setRoute(EMPTY_ROUTE);
-                }
-                if (clearing.includes('tip')) setTip('');
-              }}
-              placeholder={t('addLine.categoryPlaceholder')}
-            />
-          </div>
-          {/* Extra fields contributed by the row's strategy. Mileage renders its own
-          component below (it needs the pricing query and the report ids); every other
-          kind that wants fields supplies them here — today that is the tip. */}
-          {!isMileage() && strategy.Fields && (
-            <strategy.Fields
-              draft={{ amount, km, tip }}
-              disabled={!editable}
-              currencySymbol={currencySymbol}
-              labels={{ tip: t('lineKinds.tip'), tipHint: t('lineKinds.tipHint') }}
-              onTipChange={(v) => setTip(v)}
-              onTipCommit={() => {
-                // Committed on blur, like the tax fields: a tip leaves the taxable base, so
-                // writing it per keystroke would re-derive the tax on every digit.
-                const minor = majorToMinor(tip.trim(), currencyCode, locale);
-                update.mutate({
-                  id: line.id,
-                  categoryId: category ?? line.categoryId,
-                  tipMinor: tip.trim() === '' ? null : String(minor ?? 0n),
-                });
-              }}
-            />
-          )}
-          {isMileage() ? (
-            // Distance-based: enter a distance in either unit; the amount is computed
-            // server-side against the rule in force and shown read-only alongside.
-            <MileageFields
-              distance={km}
-              onDistanceChange={setKm}
-              unit={distanceUnit}
-              onUnitChange={(u) => {
-                // A MEASURED distance is restated in the new unit; a typed one is
-                // reinterpreted. 100 km measured by the route IS 62.14 mi, whereas
-                // somebody who typed 100 and pressed MI meant a hundred miles.
-                const next = routeMeasured ? convertDistance(km, distanceUnit, u) : km;
-                setDistanceUnit(u);
-                if (next !== km) setKm(next);
-                // Commit immediately: the unit changes the amount, and leaving it
-                // uncommitted would show a figure the server disagrees with.
-                if (isValidDistance(next)) {
-                  update.mutate({
-                    id: line.id,
-                    categoryId: category ?? line.categoryId,
-                    mileageDistance: next.trim(),
-                    mileageUnit: u,
-                    mileageRoute: route.stops.some((st) => st.description.trim()) ? route : null,
-                  });
-                }
-              }}
-              route={route}
-              onRouteChange={(next) => {
-                holdForRouteEdit();
-                setRoute(next);
-                // Persist the stops as they change, not only when a distance arrives. A
-                // route whose distance is already correct produces no `onDistance`, so
-                // without this an edited From/To was never written.
-                if (isValidDistance(km)) commit({ route: next });
-              }}
-              onMeasuredDistance={(d) => {
-                holdForRouteEdit();
-                setKm(d);
-                commit({ km: d });
-              }}
-              onDistanceFocus={onNumFocus}
-              onDistanceBlur={onNumBlur}
-              // The amount used to be a separate span showing `line.amountMinor` — the
-              // SAVED figure, which is right until the distance is edited and then sits
-              // there contradicting it until a blur commits. MileageFields owns the
-              // figure now: it shows the saved one while the distance is untouched and
-              // the freshly-priced one as soon as it is not.
-              pricing={{
-                expenseId,
-                categoryId: category ?? line.categoryId,
-                lineItemId: line.id,
-                currency: { code: currencyCode, symbol: currencySymbol },
-                saved:
-                  line.mileageDistance != null
-                    ? { amountMinor: line.amountMinor, distance: line.mileageDistance }
-                    : null,
-              }}
-              // Rendered inside MileageFields so it stays on the first line: the From/To
-              // block is full-width, and anything after it wraps below.
-              trailing={deleteButton}
-            />
-          ) : (
-            <>
-              <MoneyInput
-                symbol={currencySymbol}
-                wrapperClassName="w-28"
-                aria-required
-                aria-label={t('line.amount')}
-                placeholder={`${t('line.amount')} *`}
-                locale={locale}
-                /**
-                 * Two different faults, one border. Blank is "required and missing"; unconvertible
-                 * is "this is not an amount" — which used to be indistinguishable from a saved
-                 * value, because the only consequence was a write that silently did not happen
-                 * (GA readiness report F06).
-                 */
-                invalid={amount.trim() !== '' && inputToMinor(amount, currencyCode, locale) == null}
-                value={amount}
-                onFocus={onNumFocus}
-                onChange={(e) => setAmount(e.target.value)}
-                onBlur={onNumBlur}
-                className={amount.trim() ? '' : 'border-destructive'}
-              />
-              {deleteButton}
-            </>
-          )}
-        </div>
+    <div
+      className={`flex flex-col gap-1.5 rounded-md border p-2 lg:flex-row lg:flex-wrap lg:items-center ${
+        saveError ? 'border-destructive' : 'border-border'
+      }`}
+    >
+      {saveError && (
+        <p role="alert" className="w-full text-destructive text-xs">
+          {saveError}
+        </p>
+      )}
+      {/* No icon span here: the Combobox trigger already prefixes the selected
+      category's icon onto its own text (see design-system combobox.tsx), so one
+      beside it rendered the emoji twice. `LineItemReadOnlyRow` still needs its
+      own, because it has no combobox.
+
+      `TAP_FIELD` on the category and the amount: this row renders on a phone now (P18),
+      and both fields are 40px under the primitives' own `h-10`. Same recipe, same
+      reasoning as the core-field grid — a fine pointer keeps 40px. */}
+      <div className="min-w-[8rem] lg:flex-1">
+        <Combobox
+          className={TAP_FIELD}
+          items={categoryItems}
+          value={category}
+          onValueChange={(v) => {
+            // What a category change invalidates is DECLARED by the two strategies
+            // rather than derived from one boolean here — see `fieldsToClear`.
+            const clearing = fieldsToClear(capsOf(category), capsOf(v));
+            setCategory(v);
+            // Clearing the selection is not a line state worth persisting — a line
+            // IS a category plus an amount — so nothing is written until one is
+            // picked again.
+            if (!v) return;
+            // A category change is committed ON ITS OWN, with no amount and no
+            // distance. `commit` used to be called here and would silently return
+            // when switching into mileage with no distance yet — so nothing was
+            // written and the row kept showing the old amount. The server owns what
+            // a line of the new kind should hold: it clears the columns that no
+            // longer apply and re-derives the rest.
+            update.mutate({ id: line.id, categoryId: v });
+            // Local fields follow. Crossing the mileage boundary invalidates both
+            // sides — a typed amount is not a distance, and a measured route is not
+            // a typed amount — so neither is carried across.
+            if (clearing.includes('amount')) setAmount('');
+            if (clearing.includes('km')) {
+              setKm('');
+              setRoute(EMPTY_ROUTE);
+            }
+            if (clearing.includes('tip')) setTip('');
+          }}
+          placeholder={t('addLine.categoryPlaceholder')}
+        />
       </div>
-    </>
+      {/* Extra fields contributed by the row's strategy. Mileage renders its own
+      component below (it needs the pricing query and the report ids); every other
+      kind that wants fields supplies them here — today that is the tip. */}
+      {!isMileage() && strategy.Fields && (
+        <strategy.Fields
+          draft={{ amount, km, tip }}
+          disabled={!editable}
+          currencySymbol={currencySymbol}
+          labels={{ tip: t('lineKinds.tip'), tipHint: t('lineKinds.tipHint') }}
+          onTipChange={(v) => setTip(v)}
+          onTipCommit={() => {
+            // Committed on blur, like the tax fields: a tip leaves the taxable base, so
+            // writing it per keystroke would re-derive the tax on every digit.
+            const minor = majorToMinor(tip.trim(), currencyCode, locale);
+            update.mutate({
+              id: line.id,
+              categoryId: category ?? line.categoryId,
+              tipMinor: tip.trim() === '' ? null : String(minor ?? 0n),
+            });
+          }}
+        />
+      )}
+      {isMileage() ? (
+        // Distance-based: enter a distance in either unit; the amount is computed
+        // server-side against the rule in force and shown read-only alongside.
+        <MileageFields
+          distance={km}
+          onDistanceChange={setKm}
+          unit={distanceUnit}
+          onUnitChange={(u) => {
+            // A MEASURED distance is restated in the new unit; a typed one is
+            // reinterpreted. 100 km measured by the route IS 62.14 mi, whereas
+            // somebody who typed 100 and pressed MI meant a hundred miles.
+            const next = routeMeasured ? convertDistance(km, distanceUnit, u) : km;
+            setDistanceUnit(u);
+            if (next !== km) setKm(next);
+            // Commit immediately: the unit changes the amount, and leaving it
+            // uncommitted would show a figure the server disagrees with.
+            if (isValidDistance(next)) {
+              update.mutate({
+                id: line.id,
+                categoryId: category ?? line.categoryId,
+                mileageDistance: next.trim(),
+                mileageUnit: u,
+                mileageRoute: route.stops.some((st) => st.description.trim()) ? route : null,
+              });
+            }
+          }}
+          route={route}
+          onRouteChange={(next) => {
+            holdForRouteEdit();
+            setRoute(next);
+            // Persist the stops as they change, not only when a distance arrives. A
+            // route whose distance is already correct produces no `onDistance`, so
+            // without this an edited From/To was never written.
+            if (isValidDistance(km)) commit({ route: next });
+          }}
+          onMeasuredDistance={(d) => {
+            holdForRouteEdit();
+            setKm(d);
+            commit({ km: d });
+          }}
+          onDistanceFocus={onNumFocus}
+          onDistanceBlur={onNumBlur}
+          // The amount used to be a separate span showing `line.amountMinor` — the
+          // SAVED figure, which is right until the distance is edited and then sits
+          // there contradicting it until a blur commits. MileageFields owns the
+          // figure now: it shows the saved one while the distance is untouched and
+          // the freshly-priced one as soon as it is not.
+          pricing={{
+            expenseId,
+            categoryId: category ?? line.categoryId,
+            lineItemId: line.id,
+            currency: { code: currencyCode, symbol: currencySymbol },
+            saved:
+              line.mileageDistance != null
+                ? { amountMinor: line.amountMinor, distance: line.mileageDistance }
+                : null,
+          }}
+          // Rendered inside MileageFields so it stays on the first line: the From/To
+          // block is full-width, and anything after it wraps below.
+          trailing={deleteButton}
+        />
+      ) : (
+        <>
+          <MoneyInput
+            symbol={currencySymbol}
+            wrapperClassName="w-full lg:w-28"
+            aria-required
+            aria-label={t('line.amount')}
+            placeholder={`${t('line.amount')} *`}
+            locale={locale}
+            /**
+             * Two different faults, one border. Blank is "required and missing"; unconvertible
+             * is "this is not an amount" — which used to be indistinguishable from a saved
+             * value, because the only consequence was a write that silently did not happen
+             * (GA readiness report F06).
+             */
+            invalid={amount.trim() !== '' && inputToMinor(amount, currencyCode, locale) == null}
+            value={amount}
+            onFocus={onNumFocus}
+            onChange={(e) => setAmount(e.target.value)}
+            onBlur={onNumBlur}
+            className={amount.trim() ? TAP_FIELD : `${TAP_FIELD} border-destructive`}
+          />
+          {deleteButton}
+        </>
+      )}
+    </div>
   );
 }
 
@@ -3199,9 +3238,9 @@ function routeStopsOf(route: unknown): MileageLineFields['mileageRoute'] {
  * One saved line as prose — icon · category · amount, and for a mileage line the claim
  * behind the amount.
  *
- * The `!editable` arm of `LineItemRow`, given a name so it can also be the below-`lg` face
- * of an EDITABLE row. It holds no state and fires no mutation, which is exactly why it can
- * be rendered twice over: there is nothing in it to lose.
+ * The `!editable` arm of `LineItemRow`, and only that. It was briefly also the below-`lg`
+ * face of an EDITABLE row, beside a cloaked editor; P18 gave the editable row one face at
+ * every width, so on a draft report this does not render at all.
  *
  * A `MILEAGE` line carries `MileageLineDetail` — distance, route, rate or band split — the
  * same component the approvals drawer draws, for every reader including the submitter on
@@ -3209,26 +3248,24 @@ function routeStopsOf(route: unknown): MileageLineFields['mileageRoute'] {
  * never shows an approver less than the drawer did. What a reader who is not the line's
  * writer is sent (stop names, no year-to-date basis) is decided on the server.
  *
- * No `aria-label` and no labelled control, so it adds no second match to any `getByLabel`
- * in `e2e/support/workbench.ts` — in particular `Amount`, which `addExpense` fills and
- * blurs on every expense the suite creates. The amount here is a `<span>`.
+ * No `aria-label` and no labelled control. It never shares a tree with the editable row
+ * now, but the amount stays a `<span>`: `Amount` is the name `e2e/support/workbench.ts`'s
+ * `addExpense` fills and blurs on every expense the suite creates.
  */
 function LineItemReadOnlyRow({
   line,
   currencyCode,
   currencySymbol,
   locale,
-  className,
 }: {
   line: LineItemDetail;
   currencyCode: string;
   currencySymbol: string;
   locale: string;
-  className?: string;
 }) {
   const currency = { code: currencyCode, symbol: currencySymbol };
   return (
-    <div className={`rounded-md border border-border p-2.5 text-sm ${className ?? ''}`}>
+    <div className="rounded-md border border-border p-2.5 text-sm">
       <div className="flex items-center gap-2">
         {line.category.icon && <span className="shrink-0">{line.category.icon}</span>}
         <span className="min-w-0 flex-1 truncate text-foreground">
@@ -3376,9 +3413,12 @@ function NewLineForm({
           {error}
         </p>
       )}
-      <div className="flex flex-wrap items-center gap-1.5">
-        <div className="min-w-[8rem] flex-1">
+      <div className="flex flex-col gap-1.5 lg:flex-row lg:flex-wrap lg:items-center">
+        <div className="min-w-[8rem] lg:flex-1">
+          {/* `TAP_FIELD` for the same reason as the saved row's category: a phone reaches
+              this form now (P18), and the primitive's input is 40px. */}
           <Combobox
+            className={TAP_FIELD}
             items={categoryItems}
             value={category}
             onValueChange={(value) => {

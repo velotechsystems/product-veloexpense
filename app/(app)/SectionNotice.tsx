@@ -72,18 +72,20 @@ import { useTranslations } from 'next-intl';
  *
  * ─── THE COPY SAYS WHAT YOU *CAN* DO, AND IT IS SAID ONCE ────────────────────────────────
  *
- * One pair of strings, and it leads with the affirmative: these values are current and can
- * be read here; changing them is a desktop task. A notice that says only "not available on
- * mobile" makes the page read as broken rather than as scoped.
+ * One pair of strings, and it says what you *can* do: these regions are current and can be
+ * read here; changing them needs a larger screen. It names the regions it covers rather
+ * than saying "everything", so it stays true as regions gain a phone editor. A notice that
+ * says only "not available on mobile" makes the page read as broken rather than as scoped.
  *
  * ONCE PER PANE, NOT ONCE PER REGION. This shipped as five placements inside
  * `/expenses/[reportId]` — allocations, tax, line items, attendees, and the expenses card
  * — each accurate and each in the right place. On a 664px screen they read as five copies
  * of one sentence, and the reader who skips the third is skipping a box that is trying to
- * tell them something. It is now rendered once, at the top of the pane it describes, where
- * it speaks for every region below it. A caller adding a second one to the same scroll is
- * almost certainly answering "which region" — a question the surrounding card headings
- * already answer — rather than "why can I not change this".
+ * tell them something. It is now rendered once, directly above the first region it names
+ * (on `/expenses/[reportId]`, the cost allocation), where it speaks for every region it
+ * names. A caller adding a second one to the same scroll is almost certainly answering
+ * "which region" — a question the surrounding card headings already answer — rather than
+ * "why can I not change this".
  *
  * The lead sentence is emphasised prose rather than a heading, on purpose: a heading here
  * would add an entry to the document outline and to a screen reader's heading list that

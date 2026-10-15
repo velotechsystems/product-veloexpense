@@ -214,7 +214,7 @@ export function MileageFields({
           onFocus={onDistanceFocus}
           onChange={(e) => onDistanceChange(e.target.value)}
           onBlur={onDistanceBlur}
-          className={`w-24 ${valid ? '' : 'border-destructive'}`}
+          className={`w-full lg:w-24 ${valid ? '' : 'border-destructive'}`}
         />
       )}
       {/* Text buttons, not a select: two options, and the chosen one has to be
@@ -230,7 +230,7 @@ export function MileageFields({
               if (unit === u) return;
               onUnitChange(u);
             }}
-            className={`px-2 py-1 text-xs disabled:opacity-50 ${
+            className={`flex-1 px-2 py-1 text-xs disabled:opacity-50 lg:flex-initial ${
               unit === u
                 ? 'bg-primary font-semibold text-primary-foreground'
                 : 'text-muted-foreground hover:bg-muted'

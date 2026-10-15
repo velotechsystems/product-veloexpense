@@ -1,13 +1,15 @@
 import '@testing-library/jest-dom/vitest';
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, render, screen, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 // VeloExpense: ExpenseOS's catalogue locale — what next-intl reports on every ported screen
 // (i18n/request.ts) — named rather than spelled, for check-i18n's IL-1 scan.
 import { DEFAULT_LOCALE as CATALOG_LOCALE } from '@expenseos/i18n';
 
 /**
- * The `limited` suppression inside `ExpenseEditor` — the ONE `SectionNotice` at the top of
- * the pane, and the three regions that render BOTH faces.
+ * The `limited` suppression inside `ExpenseEditor` — the ONE `SectionNotice`, directly
+ * above the cost allocation, and the two regions that still render BOTH faces (cost
+ * allocation and tax). The core fields and the line block have one face since P18; see the
+ * last two `describe` blocks.
  *
  * ─── READ THIS BEFORE ADDING A CASE HERE ─────────────────────────────────────────────────
  *
@@ -25,12 +27,14 @@ import { DEFAULT_LOCALE as CATALOG_LOCALE } from '@expenseos/i18n';
  *      read-only twin.** Catches a future edit that "tidies up" the duplication by
  *      restoring the `editable ?` ternary, which would leave a phone reader with three
  *      60px comboboxes instead of the figures.
- *   1b. **Exactly one notice, and it is the FIRST thing in the pane.** This file used to
- *      pin three (four with attendees), one beside each suppressed region. On a 664px
- *      screen that read as four copies of one sentence, so the operator asked for it once
- *      at the top and nowhere else. The count and the POSITION are both pinned: a notice
- *      that drifts below the read-only values explains them after the reader has already
- *      passed them, and a second one anywhere is the regression this replaced.
+ *   1b. **Exactly one notice, after the editable fields and before the first region it
+ *      names.** This file used to pin three (four with attendees), one beside each
+ *      suppressed region. On a 664px screen that read as four copies of one sentence, so
+ *      the operator asked for it once. It sat at the top of the pane until P18 gave the
+ *      core fields a phone editor; the operator then moved it (2026-10-13) to just above
+ *      the cost allocation, so it no longer sits over fields a phone reader can edit. The
+ *      count and the POSITION are both pinned, and a second one anywhere is the regression
+ *      this replaced.
  *   2. **`hidden lg:contents`, never `lg:block`.** ADR-0005 D3 measured `block` moving 4 of
  *      154 rectangles. These regions are flex children of `ExpenseEditor`'s
  *      `flex flex-col gap-3 p-3`, so a `block` wrapper becomes the flex item and every
@@ -191,9 +195,9 @@ beforeEach(() => {
 describe('the one `limited` notice', () => {
   it('says it once on a draft report, whatever the expense contains', () => {
     /**
-     * ONE, not one per region. Cost allocation, expense tax, line items and (with a
-     * category that needs them) attendees are all suppressed below `lg` and all named by
-     * this single notice; the count must not move when the expense grows a region.
+     * ONE, not one per region. Cost allocation, expense tax and (with a category that
+     * needs them) attendees are all suppressed below `lg` and all named by this single
+     * notice; the count must not move when the expense grows a region.
      */
     renderEditor();
     expect(notices()).toHaveLength(1);
@@ -215,20 +219,24 @@ describe('the one `limited` notice', () => {
     expect(notices()).toHaveLength(1);
   });
 
-  it('puts it at the top of the pane, above the read-only fields', () => {
+  it('puts it after the editable fields, before the first region it names', () => {
     /**
-     * Position, not just presence. The notice is the frame for everything under it, so it
-     * has to be met BEFORE the read-only values it explains — a reader who finds it after
-     * scrolling past a vendor they cannot edit has already formed the other conclusion.
+     * Position, not just presence. On a draft the core fields have one editable face at
+     * every width (P18), so the notice must not sit above them reading as "these are
+     * read-only". It names cost allocation, tax and attendees, and the allocation card is
+     * the first of those in the pane, so the notice sits between the editable Vendor
+     * field and the allocation heading (operator ruling, 2026-10-13).
      *
-     * `compareDocumentPosition` rather than an index into `children`, because the sibling
-     * ahead of the read-only grid changes with the fixture (the violations block appears
-     * only when there are violations) and the claim is about ORDER, not about slot.
+     * `compareDocumentPosition` rather than an index into `children`, because the siblings
+     * around it change with the fixture (the violations block appears only when there are
+     * violations) and the claim is about ORDER, not about slot.
      */
     renderEditor();
     const [notice] = notices();
-    const readOnlyVendor = screen.getByText('workbench.vendor:');
-    expect(notice.compareDocumentPosition(readOnlyVendor)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+    const vendor = screen.getByLabelText('workbench.vendor');
+    const allocation = screen.getByText('allocation.heading');
+    expect(vendor.compareDocumentPosition(notice)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+    expect(notice.compareDocumentPosition(allocation)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
   });
 
   it('leaves none of them behind in the regions that used to carry one', () => {
@@ -288,30 +296,27 @@ describe('the one `limited` notice', () => {
 });
 
 describe('the always-both regions', () => {
-  it('keeps both faces in the DOM on a draft report', () => {
+  it('keeps both faces in the DOM on a draft report, for the regions still suppressed', () => {
     /**
      * The whole point of CSS selection: at no width is either face unmounted, so dragging
      * a desktop window across 1024px cannot discard a half-typed value. jsdom sees both,
      * which is exactly what this asserts.
+     *
+     * The core fields (date, vendor, currency, location) are NOT asserted here any more:
+     * P18 took them out of suppression, so they have one face at every width — see
+     * "a draft has one set of core fields and no read-only twin" below.
      */
     renderEditor();
 
-    // Editable faces.
-    expect(screen.getByLabelText('workbench.vendor')).toBeInTheDocument();
-    // A regex, because `Field` labels by WRAPPING and `MoneyInput` puts the currency
-    // symbol inside that wrapper — so the tax fields' accessible name is "line.gst $",
-    // not "line.gst". Worth knowing: it means no `getByLabel('GST/HST')` in the browser
-    // suite could have matched them exactly either.
+    // Editable face. A regex, because `Field` labels by WRAPPING and `MoneyInput` puts the
+    // currency symbol inside that wrapper — so the tax fields' accessible name is
+    // "line.gst $", not "line.gst". Worth knowing: it means no `getByLabel('GST/HST')` in
+    // the browser suite could have matched them exactly either.
     expect(screen.getAllByLabelText(/^line\.gst/)).toHaveLength(1);
-    // Read-only faces, as prose rather than as fields.
-    expect(screen.getByText('workbench.vendor:')).toBeInTheDocument();
+    // Read-only face, as prose rather than as fields.
     expect(screen.getByText('line.gst:')).toBeInTheDocument();
-    // The read-only line row, which was an early return and is now also a twin.
-    // VeloExpense: the editable face's kit Combobox shows the same label as its text (an
-    // input's value in ExpenseOS), so the read-only one is the copy outside a combobox.
-    expect(
-      screen.getAllByText('Travel - Meals').filter((el) => !el.closest('[role="combobox"]')),
-    ).toHaveLength(1);
+    // The line rows are NOT asserted here any more: P18 brought the line block back, so a
+    // draft has the editable row alone — see "the line block" below.
   });
 
   it('cloaks with `hidden lg:contents` and never with `lg:block`', () => {
@@ -497,5 +502,150 @@ describe('the cost-allocation twin', () => {
     expect(
       twin.querySelector('input,select,textarea,label,[aria-label],[role="combobox"]'),
     ).toBeNull();
+  });
+});
+
+/**
+ * The core fields — date, vendor, currency, location — on a phone (P18).
+ *
+ * These left suppression: on a draft report the editable grid renders at every width and
+ * the read-only prose twin does not render at all. It is ONE face, so there is nothing for
+ * CSS to select between and no width at which the inputs could unmount. On a submitted
+ * report the prose is the only face, exactly as before.
+ *
+ * Same limits as every other case here: jsdom applies no CSS, so what is asserted is the
+ * DOM and the classes on it, never what is visible.
+ */
+describe('the core fields', () => {
+  const CORE = ['line.date', 'workbench.vendor', 'line.currency', 'line.location'];
+  const PROSE = ['line.date:', 'workbench.vendor:', 'line.currency:', 'line.location:'];
+
+  it('a draft has one set of core fields and no read-only twin', () => {
+    renderEditor();
+
+    for (const label of CORE) {
+      const field = screen.getByLabelText(label);
+      // Not cloaked: no ancestor hides it at any width. `hidden` alone is how the
+      // `hidden lg:contents` pair hid it below `lg`, so a bare class check is enough.
+      expect(field.closest('[class*="lg:contents"],[class*="lg:hidden"]')).toBeNull();
+      expect(field.closest('.hidden')).toBeNull();
+    }
+    // The prose twin is gone from a draft, not merely hidden.
+    for (const text of PROSE) expect(screen.queryByText(text)).toBeNull();
+  });
+
+  it('a submitted report has the read-only prose and no core field', () => {
+    renderEditor({}, { editable: false });
+
+    for (const text of PROSE) expect(screen.getByText(text)).toBeInTheDocument();
+    for (const label of CORE) expect(screen.queryByLabelText(label)).toBeNull();
+    // One face, so nothing beside it to select between.
+    const prose = screen.getByText('workbench.vendor:').closest('.grid') as HTMLElement;
+    expect(prose.className).not.toContain('lg:hidden');
+  });
+
+  it('gives each core field a 44px floor on a coarse pointer, on the `<input>` itself', () => {
+    /**
+     * The class has to land on the control a finger hits, and `className` on these
+     * primitives does not always reach it: `Input type="date"` and `Combobox` put it on a
+     * wrapper. So the claim is per input: either the `<input>` carries
+     * `pointer-coarse:h-11` itself, or an ancestor carries the descendant half
+     * `pointer-coarse:[&_input]:h-11` that compiles to `.x input`.
+     */
+    renderEditor();
+
+    // A classList walk rather than `closest('[class~="…[&_input]…"]')`: jsdom's selector
+    // engine does not match that bracketed attribute value, so the selector form would
+    // fail on a DOM that is right.
+    const ancestorHas = (el: HTMLElement, cls: string) => {
+      for (let n = el.parentElement; n; n = n.parentElement) {
+        if (n.classList.contains(cls)) return true;
+      }
+      return false;
+    };
+    for (const label of CORE) {
+      const field = screen.getByLabelText(label);
+      // VeloExpense: the kit's Combobox (Currency) is a `<button role="combobox">` with
+      // `className` on the button itself, not an `<input>` in a wrapper, so the bare half
+      // lands on the control a finger hits. ExpenseOS: `expect(field.tagName).toBe('INPUT')`.
+      expect(
+        field.tagName === 'INPUT' ||
+          (field.tagName === 'BUTTON' && field.getAttribute('role') === 'combobox'),
+      ).toBe(true);
+      const own = field.classList.contains('pointer-coarse:h-11');
+      const viaWrapper = ancestorHas(field, 'pointer-coarse:[&_input]:h-11');
+      expect({ label, floored: own || viaWrapper }).toEqual({ label, floored: true });
+    }
+  });
+});
+
+/**
+ * The line block on a phone (P18, which absorbed P12): "Add line", the new-line form, the
+ * saved line's editable row and the projected totals.
+ *
+ * Like the core fields, these left suppression with ONE face: the editable row renders at
+ * every width on a draft, and `LineItemReadOnlyRow` renders only on a submitted report.
+ * Same limits as every other case here — jsdom applies no CSS, so what is asserted is the
+ * DOM and the classes on it.
+ */
+describe('the line block', () => {
+  /** No ancestor that hides it at any width: neither half of a cloak pair, nor bare `hidden`. */
+  const uncloaked = (el: HTMLElement) => {
+    expect(el.closest('[class*="lg:contents"],[class*="lg:hidden"]')).toBeNull();
+    expect(el.closest('.hidden')).toBeNull();
+  };
+
+  it('a draft has the editable row alone: one amount per saved line, no read-only row', () => {
+    renderEditor();
+
+    const [amount] = screen.getAllByLabelText('line.amount');
+    uncloaked(amount);
+    uncloaked(screen.getByRole('button', { name: 'drawer.addLine' }));
+    // The read-only row is absent, not hidden. It is the only thing that writes the
+    // category label as TEXT; the editable row's combobox holds it as the input's value.
+    // VeloExpense: the kit's Combobox shows the label as its text (an input's value in
+    // ExpenseOS), so the read-only row is any copy OUTSIDE a combobox — there is none.
+    const category = screen.getByText('Travel - Meals');
+    expect(category.closest('[role="combobox"]')).not.toBeNull();
+  });
+
+  it('a second saved line is a second amount, never a twin of the first', () => {
+    renderEditor({ lineItems: [line(), line({ id: 'line-2', amountMinor: '2500' })] });
+    expect(screen.getAllByLabelText('line.amount')).toHaveLength(2);
+  });
+
+  it('a submitted report has the read-only row and no line control', () => {
+    renderEditor({}, { editable: false });
+
+    const row = screen.getByText('Travel - Meals').closest('.rounded-md') as HTMLElement;
+    expect(row).not.toBeNull();
+    // One face, so nothing beside it to select between.
+    expect(row.className).not.toContain('lg:hidden');
+    expect(screen.queryAllByLabelText('line.amount')).toHaveLength(0);
+    expect(screen.queryByRole('button', { name: 'drawer.addLine' })).toBeNull();
+  });
+
+  it('gives "Add line" and the line delete a 44px box on a coarse pointer', () => {
+    renderEditor();
+    // Scoped to the line row: the expense header carries its own `actions.delete`.
+    const row = screen.getByLabelText('line.amount').closest('.lg\\:flex-wrap') as HTMLElement;
+    for (const button of [
+      screen.getByRole('button', { name: 'drawer.addLine' }),
+      within(row).getByRole('button', { name: 'actions.delete' }),
+    ]) {
+      expect(button).toHaveClass('pointer-coarse:min-h-11', 'pointer-coarse:min-w-11');
+    }
+  });
+
+  it("floors the saved row's category and amount at 44px on a coarse pointer", () => {
+    renderEditor();
+    // The amount is a plain `Input`, so the bare half lands on the `<input>` itself.
+    expect(screen.getByLabelText('line.amount')).toHaveClass('pointer-coarse:h-11');
+    // The category is a `Combobox`, whose `className` lands on its wrapper; the descendant
+    // half reaches the `<input>`. Its value is the selected category's label.
+    // VeloExpense: the kit's Combobox is the `<button role="combobox">` showing the label,
+    // and `className` lands on it, so the bare half floors it directly.
+    const category = screen.getByText('Travel - Meals').closest('[role="combobox"]');
+    expect(category).toHaveClass('pointer-coarse:h-11');
   });
 });
