@@ -654,6 +654,42 @@ describe('the fan-out', () => {
     expect(body).toContain('mgr');
     expect(body).not.toContain('IMPOSTOR');
   });
+
+  it('a STORED in-app template prints {actor} too, and a payload still cannot shadow it', async () => {
+    /**
+     * ExpenseOS #575 ("print the actor's name on every channel"): its inbox supplied the
+     * actor only as a group, so a stored IN_APP version's bare `{actor}` stayed verbatim,
+     * and a payload `link`/`cta` reached the inbox body. VeloExpense's grammar has no
+     * groups (`applyPlaceholders` substitutes flat `{name}` only) and no `{link}`/`{cta}`
+     * placeholders, so neither fault exists here; this pins the half that does carry over —
+     * the inbox's STORED-template path, not just the shipped copy above, gets the actor's
+     * name, applied after the payload.
+     */
+    await withOrg(orgId, (tx) =>
+      setTemplate(tx, finance, {
+        templateKey: APPROVED_KEY,
+        channel: 'IN_APP',
+        body: '{actor} / {report}',
+      }),
+    );
+    const { reportId } = await submitted();
+    await withOrg(orgId, (tx) =>
+      notify(
+        tx,
+        {
+          subjectType: 'EXPENSE_REPORT',
+          subjectId: reportId,
+          eventType: 'APPROVED',
+          actorId: manager,
+          payload: { actor: 'AN IMPOSTOR', report: 'Q3' },
+        },
+        [submitter],
+      ),
+    );
+    const row = (await inboxOf(submitter))[0];
+    expect(row.fromTemplate).toBe(true);
+    expect(row.body).toBe('mgr / Q3');
+  });
 });
 
 /* ── read state ────────────────────────────────────────────────────────────── */
