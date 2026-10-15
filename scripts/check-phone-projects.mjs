@@ -69,11 +69,12 @@ export const PACKAGE_JSON = 'package.json';
  * would report clean on exactly the regression it exists to catch.
  */
 export const CONSUMERS = [
-  // VeloExpense: the consumers ported so far. ExpenseOS's three — `e2e/desktop-notice.spec.ts`,
-  // `e2e/tap-targets.mobile.spec.ts`, `e2e/support/safe-area.ts` — join this list as each is
-  // ported; `expense-workbench.mobile.spec.ts` is here because it imports the list too (its
+  // VeloExpense: the consumers ported so far. Of ExpenseOS's three, `tap-targets.mobile.spec.ts`
+  // is here; `e2e/desktop-notice.spec.ts` and `e2e/support/safe-area.ts` join as each is
+  // ported. `expense-workbench.mobile.spec.ts` is here because it imports the list too (its
   // `assertProject` call), which in ExpenseOS this guard did not watch.
   'e2e/expense-workbench.mobile.spec.ts',
+  'e2e/tap-targets.mobile.spec.ts',
 ];
 
 /** The npm script that must select every phone project. */
