@@ -467,6 +467,10 @@ const EXEMPT_JOINS = new Map([
     'scripts/check-i18n.mjs',
     'this gate quotes the pattern it refuses.',
   ],
+  [
+    'scripts/check-phone-projects.mjs',
+    "ExpenseOS's developer guard, ported as it is: its `' vs '` joins two constant names in a terminal message for whoever broke the Playwright config. No person using the product reads it.",
+  ],
 ]);
 
 function wordJoins(text, filePath) {

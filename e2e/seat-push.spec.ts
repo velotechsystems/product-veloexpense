@@ -139,6 +139,20 @@ async function employeeIsActive() {
   );
 }
 
+/**
+ * And put them back when the file is done.
+ *
+ * Both tests leave `employee@demo.test` deactivated, and the restore above runs only at the
+ * START of each test here. Every later spec that signs in as the employee then meets a
+ * deactivated person: the phone projects (ExpenseOS's phone specs) run after the whole
+ * `chromium` project, so all six phone flows of `expense-workbench.mobile.spec.ts` failed at
+ * "New report" behind a refusal page. A file that changes a shared seeded person restores
+ * them on the way out, not only on the way in.
+ */
+test.afterAll(async () => {
+  await employeeIsActive();
+});
+
 test.describe('the seat count reaches the platform', () => {
   test('the reconcile sweep reports the demo tenant and skips the accountless ones', async ({
     request,

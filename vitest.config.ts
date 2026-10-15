@@ -40,6 +40,9 @@ export default defineConfig({
       '{packages,server,lib,app,components,i18n}/**/*.test.{ts,tsx}',
       // Wave 3 (w3-00): ExpenseOS's worker (apps/worker there), under node as it runs.
       'worker/src/**/*.test.ts',
+      // ExpenseOS's script guards keep their tests beside them (`scripts/*.test.mjs`), as
+      // `check-phone-projects.test.mjs` does.
+      'scripts/**/*.test.mjs',
     ],
     // ExpenseOS runs its colocated tests under jsdom (its `unit` project); a file that
     // needs node says so with `// @vitest-environment node`, as several do.

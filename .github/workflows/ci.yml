@@ -171,6 +171,12 @@ jobs:
       # asks for (`t('...')`) resolves. packages/i18n/scripts/.
       - name: Ported catalogues (coverage + used keys)
         run: npm run check:catalogs
+      # ExpenseOS's phone-project wiring guard, ported with its phone projects. A text scan of
+      # playwright.config.ts, e2e/support/phone-projects.ts, package.json and the specs that
+      # read the list — no browser, no database — so a phone project declared but wired to
+      # nothing fails here rather than measuring nothing in the e2e run below.
+      - name: Phone-project wiring (scripts/check-phone-projects.mjs)
+        run: npm run check:phone-projects
 
       # Build first: Next 16 generates .next/types/** (e.g. LayoutProps) that the
       # standalone `tsc --noEmit` typecheck depends on.
