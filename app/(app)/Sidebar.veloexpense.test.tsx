@@ -203,6 +203,7 @@ describe('isPortedScreen', () => {
       '/admin/policy-rules',
       '/admin/policies',
       '/admin/policy-violations',
+      '/expenses',
       '/expenses/approvals',
       '/dashboard',
       '/admin/roles',
