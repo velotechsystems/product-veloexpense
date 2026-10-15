@@ -43,18 +43,52 @@ const buttonVariants = cva(
         // light for text on white (2026 guidelines); every other product's link = primary.
         link: "text-brand-link underline-offset-4 hover:underline",
       },
+      /**
+       * Tap slop (coarse pointers only), ported from ExpenseOS's design-system Button
+       * (1e682dd6), is wired HERE, on the size variants, and never on the base — the size
+       * is what decides whether a control is short of 44px and by how much.
+       *
+       * `.einc-tap-slop` floors the hit target at 44px vertically;
+       * `.einc-tap-slop-both` floors it on both axes. Neither changes a single painted
+       * pixel and neither exists at all under `pointer: fine`. The rule is
+       * `height: 100%; min-height: 44px` (the block in `tokens/tailwind-v4.css`), so the
+       * used height is `max(control, 44px)` and the per-side slop — `(44 - rendered) / 2` —
+       * falls out of the geometry. NOTHING here states a slop value.
+       *
+       * Which class each size gets (the kit's sizes, smaller than ExpenseOS's, so the
+       * ruling is applied by what each size IS rather than by its name):
+       *   default  32px → `-both`. A content-width button: the horizontal floor is inert
+       *                   once the label makes it wider than 44px, and it is the honest
+       *                   declaration of intent when it does not.
+       *   lg       36px → NOTHING, as ExpenseOS's `lg` gets nothing. ExpenseOS's is 44px
+       *                   and its ported screens use `lg` as "the size that is already at
+       *                   target" — VeloExpense's card-list sheet triggers are `size="lg"`
+       *                   with `h-11`, and a slop class on them would be a no-op that reads
+       *                   as a promise. A bare kit `lg` is 36px and NOT floored; give it
+       *                   `h-11` (or use `default`) where it must meet 44px.
+       *   sm 28px / xs 24px → vertical only.
+       *   icon 32, icon-lg 36, icon-sm 28, icon-xs 24 → vertical only. ExpenseOS gives
+       *                   its 40px `icon` both axes ("square, isolated, 2px short") and
+       *                   its 32px `icon-sm` vertical only; every kit icon size is 36px
+       *                   or less, so every one takes the `icon-sm` ruling.
+       *
+       * The icon sizes are vertical-only deliberately, and the reason is load-bearing
+       * rather than conservative: horizontal slop on a small icon button in a dense row
+       * would cover part of a neighbouring text input's or chip's own box and — painting
+       * later, same stacking context — win the tap.
+       */
       size: {
         default:
-          "h-8 gap-1.5 px-2.5 has-data-[icon=inline-end]:pr-2 has-data-[icon=inline-start]:pl-2",
-        xs: "h-6 gap-1 rounded-[min(var(--radius-md),10px)] px-2 text-xs in-data-[slot=button-group]:rounded-lg has-data-[icon=inline-end]:pr-1.5 has-data-[icon=inline-start]:pl-1.5 [&_svg:not([class*='size-'])]:size-3",
-        sm: "h-7 gap-1 rounded-[min(var(--radius-md),12px)] px-2.5 text-[0.8rem] in-data-[slot=button-group]:rounded-lg has-data-[icon=inline-end]:pr-1.5 has-data-[icon=inline-start]:pl-1.5 [&_svg:not([class*='size-'])]:size-3.5",
+          "einc-tap-slop-both h-8 gap-1.5 px-2.5 has-data-[icon=inline-end]:pr-2 has-data-[icon=inline-start]:pl-2",
+        xs: "einc-tap-slop h-6 gap-1 rounded-[min(var(--radius-md),10px)] px-2 text-xs in-data-[slot=button-group]:rounded-lg has-data-[icon=inline-end]:pr-1.5 has-data-[icon=inline-start]:pl-1.5 [&_svg:not([class*='size-'])]:size-3",
+        sm: "einc-tap-slop h-7 gap-1 rounded-[min(var(--radius-md),12px)] px-2.5 text-[0.8rem] in-data-[slot=button-group]:rounded-lg has-data-[icon=inline-end]:pr-1.5 has-data-[icon=inline-start]:pl-1.5 [&_svg:not([class*='size-'])]:size-3.5",
         lg: "h-9 gap-1.5 px-2.5 has-data-[icon=inline-end]:pr-2 has-data-[icon=inline-start]:pl-2",
-        icon: "size-8",
+        icon: "einc-tap-slop size-8",
         "icon-xs":
-          "size-6 rounded-[min(var(--radius-md),10px)] in-data-[slot=button-group]:rounded-lg [&_svg:not([class*='size-'])]:size-3",
+          "einc-tap-slop size-6 rounded-[min(var(--radius-md),10px)] in-data-[slot=button-group]:rounded-lg [&_svg:not([class*='size-'])]:size-3",
         "icon-sm":
-          "size-7 rounded-[min(var(--radius-md),12px)] in-data-[slot=button-group]:rounded-lg",
-        "icon-lg": "size-9",
+          "einc-tap-slop size-7 rounded-[min(var(--radius-md),12px)] in-data-[slot=button-group]:rounded-lg",
+        "icon-lg": "einc-tap-slop size-9",
       },
     },
     defaultVariants: {
