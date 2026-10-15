@@ -42,6 +42,13 @@ const config: PlaywrightTestConfig = {
   // The base config ignores this spec; this config is the one place that runs
   // it, so the ignore has to be lifted here or nothing matches.
   testIgnore: undefined,
+  // The phone projects (ExpenseOS's, ported with its phone specs) are not this run's: each
+  // has its own `testMatch`, which would replace the one above and run the phone specs here.
+  // And `chromium`'s own `testIgnore` names the pseudo crawl (a project's `testIgnore`
+  // replaces the root one), so it is lifted on the project too, or nothing matches.
+  projects: (base.projects ?? [])
+    .filter((p) => p.name === 'setup' || p.name === 'chromium')
+    .map((p) => (p.name === 'chromium' ? { ...p, testIgnore: undefined } : p)),
   webServer: servers.map((server) => ({
     ...server,
     env: { ...(server.env ?? {}), PSEUDO_LOCALE: '1' },

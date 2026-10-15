@@ -146,6 +146,113 @@ const APP_ENV = {
     process.env.SECRET_ENCRYPTION_KEY ?? 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=',
 };
 
+/*
+ * VeloExpense: ExpenseOS's phone projects (1e682dd6 `playwright.config.ts`), ported with its
+ * phone specs. The lists, the three projects and their reasons are ExpenseOS's; what changed
+ * is marked "VeloExpense:" — the stored session (`e2e/.auth/state.json`, the admin, as
+ * `chromium` uses) and `chromium`'s `testIgnore`, which also keeps this config's pseudo crawl
+ * out (a project's `testIgnore` replaces the root one).
+ */
+/**
+ * ─── THE PHONE SPEC LISTS ────────────────────────────────────────────────────────────────
+ *
+ * Four projects share one `e2e/` directory, so every spec file lands in one of three
+ * buckets — and two of those buckets are expressed as regexes that MUST agree:
+ *
+ *   · phone-only    — collected by every phone project, and ignored by `chromium`.
+ *   · all projects  — collected by every project, desktop included.
+ *   · chromium-only — collected by `chromium`, named by neither pattern list below. Needs no
+ *                     entry below: `chromium`'s `.*\.spec\.ts$` is the default bucket, and
+ *                     the phone projects only ever collect what these lists name.
+ *                     `e2e/tap-targets-desktop.spec.ts` is deliberately in this bucket —
+ *                     it is the counterpart assertion, that the desktop layout does NOT get
+ *                     the coarse-pointer tap targets, so putting it in a phone project
+ *                     would invert its meaning.
+ *
+ * WHY THESE ARE DERIVED AND NOT TWO HAND-KEPT REGEXES. The dangerous edit is a half-edit:
+ * widening the phone `testMatch` to pick up a new phone spec WITHOUT widening `chromium`'s
+ * `testIgnore` to drop it. The symptom is not a missing test — it is `chromium` running a
+ * phone spec at 1280×720, and in particular running `e2e/support/safe-area.ts`'s forced
+ * insets in the project where `e2e/topbar-overlap.spec.ts` asserts
+ * `headerPaddingLeft === 32`. That spec goes red for a reason that has nothing to do with
+ * the top bar, several files from the edit that caused it. So both regexes are built from
+ * one array of patterns each, and the phone-only array is a literal prefix of the
+ * phone-project array — the subset invariant holds BY CONSTRUCTION, not by review.
+ */
+
+/**
+ * Phone-only: the phone projects collect these, `chromium` must not.
+ *
+ * Patterns are end-anchored fragments matched against the absolute spec path, exactly as
+ * the hand-written `/crawl-mobile\.spec\.ts$/` they replace was.
+ */
+const PHONE_ONLY_SPEC_PATTERNS = [
+  // T02's inherited overflow crawl. It measures a phone layout viewport; running it at
+  // 1280×720 would either pass vacuously or fail for reasons that say nothing about a
+  // phone. See the `mobile-360` block below.
+  String.raw`crawl-mobile\.spec\.ts`,
+  // The `*.mobile.spec.ts` family — a naming CONVENTION rather than a file list, so a new
+  // phone spec joins both phone projects and leaves `chromium` by adding a file, with no
+  // edit here at all. That is the half-edit closed off at the source. Note the literal
+  // `\.mobile\.` does not match `crawl-mobile.spec.ts` (hyphen, not dot), so the two
+  // patterns are disjoint and the alternation cannot double-count.
+  String.raw`.*\.mobile\.spec\.ts`,
+] as const;
+
+/**
+ * Collected by the phone projects AND by `chromium` — one behaviour asserted at a phone
+ * viewport and at a desktop one.
+ *
+ * It holds exactly one entry, `desktop-notice.spec.ts`, and that is the entire reason the
+ * two arrays are separate: the desktop-only notice has a claim to make in every project
+ * (rendered on the phone, suppressed on the desktop), so a pattern HERE widens the phone
+ * `testMatch` while deliberately leaving `chromium`'s `testIgnore` alone. A pattern in the
+ * array above would do both, and `chromium` would stop collecting the desktop half.
+ */
+const PHONE_SHARED_SPEC_PATTERNS: readonly string[] = [
+  // The desktop-only notice (ADR-0005). In the phone projects it asserts the notice IS shown and
+  // the page is not; in `chromium` at 1280 it asserts the exact inverse. Both halves are the
+  // same claim, and a one-sided version of it passes on a build where the suppression is
+  // unconditional. Hence here and not in `PHONE_ONLY_SPEC_PATTERNS`.
+  // VeloExpense: kept although `desktop-notice.spec.ts` is not ported yet — the pattern
+  // matches nothing until it is, and the list stays ExpenseOS's so the spec joins both
+  // buckets by being added.
+  String.raw`desktop-notice\.spec\.ts`,
+];
+
+/** Everything the phone projects collect. A superset of the phone-only list by shape. */
+const PHONE_PROJECT_SPEC_PATTERNS: readonly string[] = [
+  ...PHONE_ONLY_SPEC_PATTERNS,
+  ...PHONE_SHARED_SPEC_PATTERNS,
+];
+
+/**
+ * Join basename fragments into one end-anchored alternation.
+ *
+ * Throws on an empty list rather than returning `/(?:)$/`, which matches EVERY path: as a
+ * `testMatch` that sweeps the whole desktop suite into a 360px project, and as a
+ * `testIgnore` it collects nothing at all. Both are silent, and a config that refuses to
+ * load is strictly better than either.
+ */
+function phoneSpecPattern(patterns: readonly string[]): RegExp {
+  if (patterns.length === 0) {
+    throw new Error('phoneSpecPattern: an empty pattern list would match every path');
+  }
+  return new RegExp(`(?:${patterns.join('|')})$`);
+}
+
+/** `chromium`'s `testIgnore`. */
+const PHONE_ONLY_SPECS = phoneSpecPattern(PHONE_ONLY_SPEC_PATTERNS);
+/**
+ * EVERY phone project's `testMatch` — a superset of `PHONE_ONLY_SPECS` by construction.
+ *
+ * Shared, not copied: `mobile-360`, `mobile-390` and `mobile-412` all name THIS constant.
+ * A fourth phone project written with its own regex would break the subset invariant above
+ * silently, so `scripts/check-phone-projects.mjs` asserts by text that every phone project's
+ * `testMatch` is one shared identifier and never a regex literal.
+ */
+const PHONE_PROJECT_SPECS = phoneSpecPattern(PHONE_PROJECT_SPEC_PATTERNS);
+
 export default defineConfig({
   testDir: './e2e',
   // The pseudo crawl needs a server booted with PSEUDO_LOCALE=1, so it has its
@@ -174,7 +281,191 @@ export default defineConfig({
     { name: 'setup', testMatch: /auth\.setup\.ts/ },
     {
       name: 'chromium',
+      // ... minus the phone-only specs, which the default `testMatch` would otherwise sweep
+      // in. Derived from `PHONE_ONLY_SPEC_PATTERNS`, so this can never fall out of step with
+      // what the phone projects collect — see the spec-list note above the config.
+      // VeloExpense: and the pseudo crawl, as the root `testIgnore` says — a project's
+      // `testIgnore` REPLACES the root one rather than adding to it.
+      testIgnore: [PHONE_ONLY_SPECS, /pseudo-crawl\.spec\.ts/],
       use: { ...devices['Desktop Chrome'], storageState: 'e2e/.auth/state.json' },
+      dependencies: ['setup'],
+    },
+    /**
+     * mobile-360 — the narrow end of the phone field, spelled out rather than borrowed.
+     *
+     * Deliberately NOT a `devices[...]` spread, and deliberately not named for a handset:
+     * Android is unverified here, so a project called `Pixel 7` would be a coverage claim
+     * nothing in this repo backs. Every key below is load-bearing, and a descriptor would
+     * hide which:
+     *
+     *   · `viewport: { width: 360, height: 800 }` — 360 is the narrowest width we care
+     *     about, so it is where a fixed-width table or an unwrapped toolbar shows first.
+     *   · `isMobile: true` — this is the line that makes the overflow gate mean anything.
+     *     Without it Chromium applies NO meta-viewport emulation, so
+     *     `document.documentElement.clientWidth` is always exactly 360 whatever the page's
+     *     own `<meta name="viewport">` does or fails to do. The measurement could never
+     *     disagree with the viewport, and the gate would report green on a page that
+     *     overflows in a real browser. With it, the layout viewport is derived from the
+     *     page's meta tag, so a missing or broken tag surfaces as a clientWidth ≠ 360.
+     *   · `hasTouch: true` — hover-gated affordances behave as they do under a finger
+     *     rather than under a mouse, which is the difference between a control being
+     *     reachable on a phone and only looking reachable.
+     *
+     * `deviceScaleFactor` is deliberately left unset, so it defaults to 1: this project's
+     * job is layout, and DSF 1 keeps its PNGs a ninth the size of mobile-390's. See the
+     * screenshot note in that block — `scale: 'css'` is mandatory there, and a no-op here
+     * precisely because DSF is 1.
+     */
+    {
+      name: 'mobile-360',
+      // The phone specs and nothing else. If this project swept `*.spec.ts` it would
+      // re-run the entire desktop suite at 360px — hundreds of tests written for a
+      // desktop viewport, failing for reasons that are not the thing being gated.
+      testMatch: PHONE_PROJECT_SPECS,
+      /**
+       * Zero retries, overriding the root `retries: process.env.CI ? 2 : 1`.
+       *
+       * Not a preference. Playwright classifies a test that fails and then passes on retry
+       * as FLAKY, and a run whose only problems are flaky exits 0. An overflow that depends
+       * on the data in one row — a long vendor name, a wide currency amount — is exactly
+       * the intermittent case, so with retries enabled the interesting failure is reported
+       * as flaky and CI goes green. For an overflow gate that is precisely backwards.
+       */
+      retries: 0,
+      use: {
+        // Stated rather than inherited from the default. `isMobile` below is NOT supported
+        // on firefox, and the other engine that does support it — webkit — is the one
+        // DevOps ruled out of this pipeline (see mobile-390). Naming the engine at the
+        // lines that depend on it is the point: a root-level `use.browserName` added later
+        // would otherwise move this project onto an engine where `isMobile` silently stops
+        // applying, and the gate would go quiet rather than fail. (`--browser` cannot do
+        // that — Playwright refuses the flag outright once a config declares projects.)
+        browserName: 'chromium',
+        viewport: { width: 360, height: 800 },
+        isMobile: true,
+        hasTouch: true,
+        // Same stored session as `chromium`. Without it every route 302s to /login and the
+        // crawl measures the login page 52 times over, green and worthless.
+        // VeloExpense: the admin's session, as `chromium` uses (ExpenseOS: `user.json`).
+        storageState: 'e2e/.auth/state.json',
+      },
+      dependencies: ['setup'],
+    },
+    /**
+     * mobile-390 — iPhone 14 metrics, running on Blink.
+     *
+     * This one DOES spread the descriptor, because what is wanted is the metric set
+     * Playwright ships and keeps current rather than nine numbers copied out of it:
+     * `viewport: { width: 390, height: 664 }`, `screen: { width: 390, height: 844 }`,
+     * `deviceScaleFactor: 3`, `isMobile: true`, `hasTouch: true`. Note 844 is the SCREEN
+     * height and 664 the viewport — 664 is what is left once Safari's chrome is accounted
+     * for, and it is the number a layout actually gets.
+     *
+     * `browserName: 'chromium'` overrides the descriptor's own
+     * `defaultBrowserType: 'webkit'`, and it is the single most important line in this
+     * block. Per DevOps: webkit is not installable on the nightly runner as configured —
+     * `playwright install --with-deps` only implements host-dependency installation for
+     * Debian/Ubuntu, and on Amazon Linux it does not resolve. Deleting this line costs
+     * nothing locally on macOS, where webkit is already installed, and breaks the nightly.
+     * Do not put webkit in this pipeline.
+     *
+     * SCREENSHOTS: every `page.screenshot()` taken under this project MUST pass
+     * `scale: 'css'`. At DSF 3 the device-pixel default is 9× the pixels and roughly 9×
+     * the bytes of the CSS-pixel image, per screenshot, and this is the only high-DPR
+     * project left in the config — so nothing else here would absorb the mistake. `scale`
+     * is NOT a `use.screenshot` key (that option takes only a mode plus `fullPage` /
+     * `omitBackground`); it is an argument to the explicit `page.screenshot({ path, scale })`
+     * call, which is where the mobile crawl takes its captures and is also why the captures
+     * are explicit rather than `screenshot: 'on'` — the automatic mode would route the
+     * whole corpus into the uploaded `test-results/`.
+     *
+     * OPEN QUESTION, recorded so the next reader knows it is live and not an oversight:
+     * spreading the descriptor also inherits its iOS Safari `userAgent`, which is untrue of
+     * the Blink engine actually running. Whether to override it was deliberately left
+     * unruled, to be settled alongside the platform-branching install section. It is
+     * inherited as-is until then.
+     */
+    {
+      name: 'mobile-390',
+      // As mobile-360, from the same derived list: every phone project collects the SAME
+      // files and they differ only in the viewport they emulate — that is the whole point of
+      // there being more than one, and it is why this is the identical constant rather than a
+      // second regex.
+      testMatch: PHONE_PROJECT_SPECS,
+      // Zero for the same reason as mobile-360 — see the retries note there. A flaky
+      // classification exits 0, which turns an overflow gate off exactly when it fires.
+      retries: 0,
+      use: {
+        ...devices['iPhone 14'],
+        // Overrides the descriptor's `defaultBrowserType: 'webkit'`. See the block comment:
+        // webkit does not install on the nightly runner. This line is not cosmetic.
+        browserName: 'chromium',
+        // VeloExpense: the admin's session, as `chromium` uses (ExpenseOS: `user.json`).
+        storageState: 'e2e/.auth/state.json',
+      },
+      dependencies: ['setup'],
+    },
+    /**
+     * mobile-412 — the wide end of the phone field, added by P02 (`pwa-pages-everyday`).
+     *
+     * 412 IS A LAYOUT WIDTH, NOT A HANDSET, and the name says so deliberately. It is the
+     * widest width still inside the phone field — below Tailwind's `sm` (640) and a long way
+     * below `lg` (1024), so the `DesktopOnlyNotice` gate and the coarse-pointer tap targets
+     * behave here exactly as they do at 360. What it adds over 360 and 390 is the opposite
+     * failure: a layout that only looks right when it is CRAMPED — a flex row that wraps at
+     * 390 and stops wrapping at 412, a card grid that goes to two columns a breakpoint early,
+     * a fixed-width element that stops being the widest thing on the page and lets something
+     * else overflow instead. None of that is visible at the narrow end.
+     *
+     * WHAT THIS PROJECT DOES NOT CLAIM: any Android coverage. Ruling 9 in
+     * `docs/design/pwa.md` keeps `android: unverified` because nobody has run this suite on
+     * an Android device, and that is unchanged by adding a width. The earlier ruling that
+     * dropped a `Pixel 7` project was right about the reason — naming a project for a handset
+     * is a coverage claim — and this project is named for the width precisely so the reason
+     * still holds. Do not rename it after a device, and do not read a green run here as
+     * anything about Chrome on Android.
+     *
+     * Spelled out rather than spread from a `devices[...]` descriptor, for the same reason as
+     * `mobile-360`: every key below is load-bearing and a descriptor would hide which. See
+     * that block for what `isMobile` and `hasTouch` are each doing — the arguments are
+     * identical here and are not repeated.
+     *
+     * `deviceScaleFactor` is deliberately left unset, so it defaults to 1. This project's job
+     * is layout, and at DSF 1 each of its PNGs is roughly a ninth the pixels — and so a small
+     * fraction of the bytes — of the same capture under `mobile-390`. A third phone project
+     * therefore adds one more full set of route screenshots while adding close to nothing to
+     * what a run uploads, which is the trade this ruling turns on. `scale: 'css'` is a no-op
+     * here precisely because DSF is 1; it remains mandatory under `mobile-390`.
+     *
+     * The height, 900, is a round number in the tall-phone band and NOT a device's screen —
+     * only the width is load-bearing. It is deliberately taller than `mobile-360`'s 800 so
+     * that the two are not accidentally the same viewport aspect; nothing asserts on it.
+     */
+    {
+      name: 'mobile-412',
+      // The identical constant `mobile-360` and `mobile-390` use, never a third regex. The
+      // subset invariant documented above holds BY CONSTRUCTION only while that is true —
+      // a hand-written regex here is the documented half-edit, and its symptom lands in
+      // `e2e/topbar-overlap.spec.ts`, three files away. Guarded by text in
+      // `scripts/check-phone-projects.mjs`.
+      testMatch: PHONE_PROJECT_SPECS,
+      // Zero for the same reason as the other two phone projects — see the retries note in
+      // `mobile-360`. Playwright reports a fail-then-pass as FLAKY and a flaky-only run
+      // exits 0, which turns an overflow gate off exactly when it fires.
+      retries: 0,
+      use: {
+        // Stated, not inherited — `isMobile` is unsupported on firefox, and webkit is out of
+        // this pipeline (see `mobile-390`). Naming the engine at the lines that depend on it
+        // is the point.
+        browserName: 'chromium',
+        viewport: { width: 412, height: 900 },
+        isMobile: true,
+        hasTouch: true,
+        // Same stored session as every other project. Without it every route 302s to /login
+        // and the crawl measures the login page 52 times over, green and worthless.
+        // VeloExpense: the admin's session, as `chromium` uses (ExpenseOS: `user.json`).
+        storageState: 'e2e/.auth/state.json',
+      },
       dependencies: ['setup'],
     },
   ],
