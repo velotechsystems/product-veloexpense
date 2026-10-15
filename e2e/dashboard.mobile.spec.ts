@@ -12,10 +12,11 @@ import { reportTag } from './support/workbench';
  * `MyExpenseReportsCard` are byte-identical). The changes are marked `VeloExpense:` where they
  * are made, and are these:
  *
- *   · EN ONLY. VeloExpense has no locale segment: the reader's locale is their stored
- *     preference, else their company's (`lib/i18n/request.ts`), so an FR-CA run means writing
- *     `app_user.locale` on a seeded person that every other spec is reading concurrently.
- *     `LOCALES` keeps ExpenseOS's shape and holds one entry; the catalog reads are unchanged.
+ *   · EN ONLY. VeloExpense serves no French: its locales are en-CA and en-US
+ *     (`lib/i18n/locales.ts`), and every ported screen renders ExpenseOS's `en` catalog for
+ *     every reader (`i18n/request.ts`, decided 7 Oct: the fr-CA catalogs are ported but not
+ *     offered). There is no FR-CA page to run against. `LOCALES` keeps ExpenseOS's shape with
+ *     one entry; the day French is offered, its second entry comes back.
  *   · NO TRAVEL. VeloExpense ships no travel module, so the "My travel requests" assertions
  *     are gone; the card's gate is still read, and must say `false` with no card on screen.
  *   · `/preferences` IS `/profile`, as the identity band's own comment records.
@@ -139,7 +140,7 @@ import { reportTag } from './support/workbench';
  * projects), and one locale halves that. A recorded 6 means the locale axis did not run.
  */
 type Locale = 'en' | 'fr-CA';
-// VeloExpense: EN only — the locale is a stored preference, not a URL segment. See the header.
+// VeloExpense: EN only — VeloExpense offers no French (`i18n/request.ts`). See the header.
 const LOCALES: Locale[] = ['en'];
 
 /* ──────────────────────────────────────────────────────────────────────────────────────────
