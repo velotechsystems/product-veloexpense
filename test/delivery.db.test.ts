@@ -435,6 +435,33 @@ describe('composition', () => {
     expect(mail.sent[0].text).toContain('Please look at Oslo ($500.00) from sub.');
   });
 
+  it('prints {actor} from the machinery, not from a payload that names somebody else', async () => {
+    /**
+     * ExpenseOS #575's email half: its dispatcher overwrote the actor with a plain string
+     * after the payload. VeloExpense's `prepareEmail` applies `actor` (and the report's
+     * figures) after the payload in the same way, so the fault does not exist here; this
+     * pins it, end to end through the outbox, with a hostile payload on the activity.
+     */
+    await withOrg(orgId, (tx) =>
+      tx.query(
+        `INSERT INTO notification_template
+           (organization_id, template_key, channel, body, subject)
+         VALUES (current_setting('app.current_org', true)::uuid,
+                 'expense_management.report_awaiting_approval', 'EMAIL', $1::jsonb, $2::jsonb)`,
+        [JSON.stringify({ 'en-CA': '{actor} | {report}' }), JSON.stringify({ 'en-CA': '{actor}' })],
+      ),
+    );
+    await submitted(50000, 'Bergen');
+    await admin.query(
+      `UPDATE activity SET payload = payload || '{"actor":"AN IMPOSTOR","report":"FORGED"}'::jsonb`,
+    );
+    await drainOutbox();
+    expect(mail.sent[0].subject).toBe('sub');
+    expect(mail.sent[0].text).toContain('sub | Bergen');
+    expect(mail.sent[0].text).not.toContain('IMPOSTOR');
+    expect(mail.sent[0].text).not.toContain('FORGED');
+  });
+
   it('IGNORES a template still keyed on the retagged-away `en`', async () => {
     // VX4-7. This fixture is what a tenant row written before 0027 looks like,
     // and the assertion is at the layer that actually sends rather than in the
