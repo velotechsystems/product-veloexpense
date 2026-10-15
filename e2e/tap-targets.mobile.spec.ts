@@ -17,8 +17,9 @@ import {
   type TapCandidate,
   type TapCensus,
 } from './support/tap-targets';
+import { seedEmployeeActivity } from './support/seed-activity';
 import { closeTestDb, testDb } from './support/test-db';
-import { addExpense, createReport, openExpenseList, reportTag } from './support/workbench';
+import { openExpenseList, reportTag } from './support/workbench';
 
 /*
  * VeloExpense: ExpenseOS's `e2e/tap-targets.mobile.spec.ts` (1e682dd6), ported with the phone
@@ -778,42 +779,19 @@ async function runUniversalGates(
 
 /**
  * VeloExpense: the rows ExpenseOS's lanes borrow from its QA seed (`qa-activity.json`), built
- * here instead, once per file, on a desktop-sized page of their own. ExpenseOS's lanes stay
- * READ-ONLY over them, as they are over the seed:
+ * once per file by `seedEmployeeActivity` (`e2e/support/seed-activity.ts`). ExpenseOS's lanes
+ * stay READ-ONLY over them, as they are over the seed:
  *
- *   · `draftTitle` — the employee's DRAFT report with one hotel line (Lodging, receipted), the
- *     subject of `/expenses/[reportId]` and a row on the employee's `/expenses`;
+ *   · `draftTitle` — the employee's DRAFT report with one hotel line, the subject of
+ *     `/expenses/[reportId]` and a row on the employee's `/expenses`;
  *   · a submitted report of the employee's, so the manager's `/expenses/approvals` queue and
  *     the dashboard's "Reports to approve" card have a row to render.
- *
- * Built through the workbench as `e2e/support/workbench.ts` drives it, at 1280 — the phone
- * projects' own page never leaves its phone metrics.
  */
 let draftTitle = '';
 
 async function seedTapFixture(browser: import('@playwright/test').Browser): Promise<void> {
-  const context = await browser.newContext({
-    storageState: stateFileFor('employee'),
-    viewport: { width: 1280, height: 900 },
-  });
-  const desk = await context.newPage();
-  try {
-    draftTitle = `${REPORT_TITLE} ${reportTag('taps')}`;
-    await createReport(desk, draftTitle);
-    await addExpense(desk, { vendor: 'Harbour Hotel', amount: '180.00', category: /Lodging/ });
-
-    const queued = reportTag('taps queue');
-    await createReport(desk, queued);
-    await addExpense(desk, { vendor: 'Harbour Taxi', amount: '20.00', category: /Ground Transportation/ });
-    const submit = desk.getByRole('button', { name: 'Submit report' });
-    await expect(submit).toBeEnabled({ timeout: 30_000 });
-    await submit.click();
-    await expect(desk.getByRole('banner').getByText('Submitted', { exact: true })).toBeVisible({
-      timeout: 30_000,
-    });
-  } finally {
-    await context.close();
-  }
+  draftTitle = `${REPORT_TITLE} ${reportTag('taps')}`;
+  await seedEmployeeActivity(browser, { draftTitle, queuedTitle: reportTag('taps queue') });
 }
 
 test.beforeAll(async ({ browser }) => {
