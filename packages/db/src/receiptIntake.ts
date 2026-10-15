@@ -91,6 +91,15 @@ export interface BlankExpenseInput {
    * person types it in the workbench.
    */
   purpose?: string | null;
+  /**
+   * "Explain this charge" text recorded on every expense created here.
+   *
+   * Set by the email path to the same message body as `purpose`: the note somebody typed
+   * when they emailed the receipts is the explanation they would otherwise retype on each
+   * expense, and `purpose` alone is not shown in the workbench. The browser paths leave it
+   * unset.
+   */
+  explanation?: string | null;
   /** Placeholder date, injected so a test can pin it. Extraction overwrites it. */
   now?: Date;
 }
@@ -110,6 +119,7 @@ export async function createBlankExpensesForReceipts(
 ): Promise<string[]> {
   const date = input.now ?? new Date();
   const purpose = input.purpose?.trim() || null;
+  const explanation = input.explanation?.trim() || null;
   // One create per row rather than createMany: createMany returns no ids, and the order of
   // the ids IS the contract with the caller (file[i] → expense[i]).
   const created = await Promise.all(
@@ -123,6 +133,7 @@ export async function createBlankExpensesForReceipts(
           date,
           amountMinor: 0n,
           ...(purpose ? { purpose } : {}),
+          ...(explanation ? { explanation } : {}),
           // The filer's own department / BU / class, in the same statement as the expense.
           ...allocationCreateFor(input.coding ?? null, input.businessUnitSource),
         },
@@ -144,6 +155,8 @@ export interface ReportFromReceiptsInput {
   currencyId: string;
   count: number;
   purpose?: string | null;
+  /** See `BlankExpenseInput.explanation`. */
+  explanation?: string | null;
   /** The submitter's own coding, copied onto every expense. See `expenseCodingDefaults`. */
   coding?: CodingDefaults | null;
   /** The business unit source `coding` was resolved for (`codingDefaultsFor`). */
@@ -164,6 +177,7 @@ export async function createReportFromReceipts(
 ): Promise<{ id: string; number: string; expenseIds: string[] }> {
   const date = input.now ?? new Date();
   const purpose = input.purpose?.trim() || null;
+  const explanation = input.explanation?.trim() || null;
   const report = await tx.expenseReport.create({
     data: {
       number: input.number,
@@ -177,6 +191,7 @@ export async function createReportFromReceipts(
           amountMinor: 0n,
           currencyId: input.currencyId,
           ...(purpose ? { purpose } : {}),
+          ...(explanation ? { explanation } : {}),
           ...allocationCreateFor(input.coding ?? null, input.businessUnitSource),
         })),
       },

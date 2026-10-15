@@ -128,7 +128,30 @@
     "notEditableSubject": "Cette note de frais ne peut plus être modifiée",
     "notEditableBody": "Cette note de frais a déjà été soumise ; il n'est donc pas possible d'y ajouter des reçus. Rappelez-la d'abord dans VeloExpense, ou envoyez un nouveau courriel pour créer une autre note.",
     "capReachedSubject": "La limite de dépenses de votre forfait est atteinte",
-    "capReachedBody": "Votre organisation a ajouté cette année autant de dépenses que son forfait le permet ; ces reçus n'ont donc pas pu être classés. Adressez-vous à un administrateur au sujet du forfait."
+    "capReachedBody": "Votre organisation a ajouté cette année autant de dépenses que son forfait le permet ; ces reçus n'ont donc pas pu être classés. Adressez-vous à un administrateur au sujet du forfait.",
+    "summary": {
+      "heading": "Vos reçus sont sur {number}",
+      "lead": "{count} reçu(s) de votre courriel ont été classé(s) sur la note de frais {number}.",
+      "allRead": "VeloExpense les a lus. Vérifiez les détails, puis soumettez la note de frais lorsque vous êtes prêt.",
+      "stillReading": "{count} en cours de lecture ; leurs détails apparaîtront sous peu sur la note de frais.",
+      "couldNotRead": "{count} n'ont pas pu être lus ; ouvrez la note de frais et saisissez leurs détails à la main.",
+      "expenses": "Dépenses :",
+      "lineReading": "lecture en cours",
+      "lineUnread": "n'a pas pu être lu",
+      "report": "Note de frais",
+      "status": "Statut",
+      "total": "Total",
+      "receipts": "Reçus",
+      "receiptsValue": "{filed} classé(s) · {read} lu(s)",
+      "approver": "Approbateur",
+      "approverValue": "{names} (confirmé à la soumission)",
+      "approverPool": "un approbateur admissible, assigné à la soumission",
+      "approverAuto": "Aucun — approuvée automatiquement à la soumission",
+      "note": "Note",
+      "openReport": "Ouvrir la note de frais",
+      "replyToAdd": "Répondez à ce courriel pour ajouter d'autres reçus à la même note de frais.",
+      "footer": "Vous recevez ce message parce que vous avez envoyé des reçus à VeloExpense depuis cette adresse."
+    }
   },
   "subject": {
     "VIRTUAL_CARD_REQUEST": "Demande de carte",

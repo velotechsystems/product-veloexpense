@@ -23,13 +23,22 @@ import { type BoundedRead, getInboundMailStorage, getStorage } from '@/lib/stora
 import { guardedRead } from '@/lib/storage/guardedRead';
 import { receiptKey } from '@/lib/storage/keys';
 import { INBOUND_MAIL_CAP_BYTES } from '@/lib/storage/limits';
+// VeloExpense: ExpenseOS's summary job, ported (#567).
+import {
+  SUMMARY_FIRST_DELAY_MS,
+  SUMMARY_MAX_WAIT_MS,
+  summaryJobId,
+} from './receipts-summary-email';
 
 /**
  * Handler for `email.ingestReceipts` — an emailed receipt becomes an expense report.
  *
  * Subject → the report title. Body, signature and quoted history stripped → the business
- * purpose on every expense it creates. Each attachment → one expense with that receipt filed
- * against it, read by the same GuardDuty-gated extraction pipeline as a browser upload.
+ * purpose AND the "Explain this charge" explanation on every expense it creates (the
+ * workbench shows the explanation; `purpose` alone was invisible there). Each attachment →
+ * one expense with that receipt filed against it, read by the same GuardDuty-gated
+ * extraction pipeline as a browser upload. The acknowledgement waits for that reading — see
+ * `email.receiptsSummary`.
  *
  * **The model never sees the receipt, and neither does this handler.** It stores the bytes and
  * enqueues extraction; the merchant, date, amount and tax come from the pipeline that already
@@ -232,14 +241,38 @@ export async function handleIngestReceiptEmail(
   if (stored.length > 0) await startExtraction(stored);
 
   // VeloExpense: sent from the ordinary address — no threaded reply address until w5-01.
-  const replyAddress = undefined;
-  await reply(
-    fromAddr,
-    strings.filedSubject(filed.number, title),
-    strings.filedBody(stored.length, filed.number),
-    replyAddress,
-    threadHeaders,
-  );
+  const replyAddress = undefined as string | undefined;
+  // The acknowledgement waits for the reading: until then the total is 0.00 and there is no
+  // approver to name. If the summary cannot even be queued, the plain line goes out now —
+  // a person who emailed receipts must hear back either way.
+  try {
+    await enqueue(
+      'email.receiptsSummary',
+      {
+        reportId: filed.reportId,
+        receiptIds: stored,
+        userId: user.id,
+        to: fromAddr,
+        ...(replyAddress ? { replyAddress } : {}),
+        ...threadHeaders,
+        sesMessageId: data.sesMessageId,
+        attempt: 0,
+        waitUntil: Date.now() + SUMMARY_MAX_WAIT_MS,
+        // VeloExpense: the summary runs as the tenant the receipts were filed in.
+        organizationId: data.organizationId,
+      },
+      { jobId: summaryJobId(data.sesMessageId, 0), delayMs: SUMMARY_FIRST_DELAY_MS },
+    );
+  } catch (err) {
+    console.warn('[email.ingestReceipts] summary enqueue failed; acknowledging now:', err);
+    await reply(
+      fromAddr,
+      strings.filedSubject(filed.number, title),
+      strings.filedBody(stored.length, filed.number),
+      replyAddress,
+      threadHeaders,
+    );
+  }
 }
 
 /**
@@ -368,6 +401,7 @@ async function createReport(
         currencyId,
         count: attachments.length,
         purpose,
+        explanation: purpose,
         coding,
         businessUnitSource,
       });
@@ -424,6 +458,7 @@ async function addToReport(
         currencyId: target.currencyId,
         count: attachments.length,
         purpose,
+        explanation: purpose,
         coding,
         businessUnitSource,
       });

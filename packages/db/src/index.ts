@@ -51,6 +51,19 @@ export {
   resolveExpenseFx,
   snapshotExpensesFx,
 } from './expenseFx';
+// Report-total roll-up — shared by the web routers and the worker's prefill so
+// one report never has two totals.
+// Is a receipt still being read? One rule for the submit gate, the workbench and the
+// worker's emailed-receipts summary.
+export {
+  classifyExtraction,
+  EXTRACTION_IN_FLIGHT_MAX_MS,
+  type ExtractionProgress,
+  type ExtractionProgressRow,
+  type ExtractionProgressSummary,
+  reportExtractionProgress,
+  summarizeExtractionProgress,
+} from './extractionProgress';
 // Stamping a line's GL account from its category — one helper for the four places
 // that write expense line items, so they cannot drift.
 export { glAccountIdForCategory, glAccountIdsForCategories } from './glAccount';

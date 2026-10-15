@@ -89,6 +89,13 @@ vi.mock('@/lib/storage', () => ({
 vi.mock('@/lib/storage/keys', () => ({
   receiptKey: (orgId: string, reportId: string, ext: string) => `org/${orgId}/${reportId}/obj.${ext}`,
 }));
+// The summary's own behaviour is pinned in `receipts-summary-email.test.ts`; here only the
+// hand-off is, so its timing constants and job id are stand-ins.
+vi.mock('./receipts-summary-email', () => ({
+  SUMMARY_FIRST_DELAY_MS: 20_000,
+  SUMMARY_MAX_WAIT_MS: 600_000,
+  summaryJobId: (id: string, attempt: number) => `sum-${id}-${attempt}`,
+}));
 vi.mock('@expenseos/jobs', () => ({ enqueue: h.enqueue }));
 vi.mock('@/lib/notifications/email', () => ({ sendEmail: h.sendEmail }));
 // VeloExpense: the catalogue loader, empty, so the handler's own English copy is what is sent.
@@ -402,14 +409,46 @@ describe('a new report from an email', () => {
   });
 
   // VeloExpense: skipped — the threaded address needs reply threads (w5-01, d48). The
-  // acknowledgement is sent from the ordinary address; see the VeloExpense cases below.
-  it.skip('acknowledges from the threaded address, so a reply adds to the same report', async () => {
+  // summary is queued, and the fallback sent, from the ordinary address; see the VeloExpense
+  // cases below.
+  it.skip('queues the summary instead of acknowledging before anything has been read', async () => {
+    /**
+     * An acknowledgement sent now would say "total 0.00, no approver": nothing is read yet.
+     * So the reply is the summary job, delayed, carrying everything it needs to answer on
+     * the same thread from the same threaded address — and nothing is sent here.
+     */
     serveMessage(mime({ parts: [RECEIPT_PART] }));
     await handleIngestReceiptEmail(JOB);
     expect(h.ensureReplyThread).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({ subjectType: RECEIPTS_SUBJECT_TYPE, subjectId: 'r1' }),
     );
+    expect(h.enqueue).toHaveBeenCalledWith(
+      'email.receiptsSummary',
+      expect.objectContaining({
+        reportId: 'r1',
+        receiptIds: ['receipt-1'],
+        userId: 'u1',
+        to: 'claimant@e.inc',
+        replyAddress: 'receipts-dev+tok123@e.inc',
+        inReplyTo: '<orig-1@mail.test>',
+        sesMessageId: 'ses-1',
+        attempt: 0,
+      }),
+      { jobId: 'sum-ses-1-0', delayMs: 20_000 },
+    );
+    expect(h.sendEmail).not.toHaveBeenCalled();
+  });
+
+  // VeloExpense: skipped, as the case above (w5-01, d48).
+  it.skip('acknowledges at once, from the threaded address, when the summary cannot be queued', async () => {
+    // Somebody who emailed receipts hears back either way: the plain line is the fallback.
+    h.enqueue.mockImplementation(async (name: string) => {
+      if (name === 'email.receiptsSummary') throw new Error('redis down');
+    });
+    serveMessage(mime({ parts: [RECEIPT_PART] }));
+    await handleIngestReceiptEmail(JOB);
+    expect(h.sendEmail).toHaveBeenCalledTimes(1);
     expect(h.sendEmail).toHaveBeenCalledWith(
       expect.objectContaining({
         to: 'claimant@e.inc',
@@ -429,9 +468,31 @@ describe('a new report from an email', () => {
     await handleIngestReceiptEmail(JOB);
 
     expect(h.db.receipt.create).not.toHaveBeenCalled();
-    expect(h.enqueue).not.toHaveBeenCalled();
+    // Nothing to read, so no extraction; the summary still goes, naming no receipts.
+    expect(h.enqueue).toHaveBeenCalledTimes(1);
+    expect(h.enqueue).toHaveBeenCalledWith(
+      'email.receiptsSummary',
+      expect.objectContaining({ receiptIds: [] }),
+      expect.anything(),
+    );
     // The report still exists — a draft with an empty expense is visible and fixable.
     expect(h.createReportFromReceipts).toHaveBeenCalled();
+  });
+
+  it('writes the email body as the purpose AND the explanation of every expense', async () => {
+    /**
+     * The workbench shows "Explain this charge" (`explanation`) and never `purpose`, so a
+     * body written to `purpose` alone was a note nobody could see. Both get it, signature
+     * and quoted history already stripped.
+     */
+    serveMessage(
+      mime({ text: 'Client dinner with Acme.\n-- \nAlex Doe | Sales', parts: [RECEIPT_PART] }),
+    );
+    await handleIngestReceiptEmail(JOB);
+    expect(h.createReportFromReceipts.mock.calls[0]?.[1]).toMatchObject({
+      purpose: 'Client dinner with Acme.',
+      explanation: 'Client dinner with Acme.',
+    });
   });
 });
 
@@ -644,6 +705,9 @@ describe.skip('a threaded reply', () => {
       expect.objectContaining({
         reportId: 'r-old',
         count: 1,
+        // A reply's own body, not the first email's, on the expenses the reply adds.
+        purpose: 'Dinner with Acme after the Q3 review.',
+        explanation: 'Dinner with Acme after the Q3 review.',
         coding: { businessUnitId: 'bu-1', departmentId: 'dept-1', nsClassId: 'cls-1' },
         businessUnitSource: 'EXPENSEOS',
       }),
@@ -760,7 +824,12 @@ describe('mail loops', () => {
   });
 
   it('marks its own acknowledgement as machine-generated', async () => {
-    // The other half of the guard: a well-behaved responder must not answer us either.
+    // The other half of the guard: a well-behaved responder must not answer us either. The
+    // fallback acknowledgement is the one this handler sends itself; the summary's header is
+    // pinned in its own test.
+    h.enqueue.mockImplementation(async (name: string) => {
+      if (name === 'email.receiptsSummary') throw new Error('redis down');
+    });
     serveMessage(mime({ parts: [RECEIPT_PART] }));
     await handleIngestReceiptEmail(JOB);
     expect(h.sendEmail).toHaveBeenCalledWith(
@@ -827,7 +896,35 @@ describe('VeloExpense', () => {
     });
   });
 
+  it('queues the summary, as the tenant, instead of acknowledging before anything is read (#567)', async () => {
+    // ExpenseOS's "queues the summary instead of acknowledging…", without the threaded
+    // address (w5-01, d48): no `replyAddress`, and the tenant named for the job's scope.
+    // `clearAllMocks` keeps an implementation, and two cases above make the summary's
+    // enqueue throw; this one needs it to succeed.
+    h.enqueue.mockResolvedValue(undefined);
+    serveMessage(mime({ parts: [RECEIPT_PART] }));
+    await handleIngestReceiptEmail(JOB);
+    const call = h.enqueue.mock.calls.find((c: unknown[]) => c[0] === 'email.receiptsSummary');
+    expect(call?.[1]).toMatchObject({
+      reportId: 'r1',
+      receiptIds: ['receipt-1'],
+      userId: 'u1',
+      to: 'claimant@e.inc',
+      inReplyTo: '<orig-1@mail.test>',
+      sesMessageId: 'ses-1',
+      attempt: 0,
+      organizationId: 'org-1',
+    });
+    expect(call?.[1]).not.toHaveProperty('replyAddress');
+    expect(call?.[2]).toEqual({ jobId: 'sum-ses-1-0', delayMs: 20_000 });
+    expect(h.sendEmail).not.toHaveBeenCalled();
+  });
+
   it('acknowledges from the ordinary address and does not offer a reply it cannot take (d48)', async () => {
+    // #567: the plain line is now the fallback, sent when the summary cannot be queued.
+    h.enqueue.mockImplementation(async (name: string) => {
+      if (name === 'email.receiptsSummary') throw new Error('redis down');
+    });
     serveMessage(mime({ parts: [RECEIPT_PART] }));
     await handleIngestReceiptEmail(JOB);
     const sent = h.sendEmail.mock.calls[0]?.[0] as Record<string, unknown>;

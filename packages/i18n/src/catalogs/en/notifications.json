@@ -128,7 +128,30 @@
     "notEditableSubject": "That report can no longer be changed",
     "notEditableBody": "That expense report has already been submitted, so receipts cannot be added to it. Recall it in VeloExpense first, or send a new email to start another report.",
     "capReachedSubject": "Your plan’s expense limit has been reached",
-    "capReachedBody": "Your organization has added as many expenses this year as its plan allows, so these receipts could not be filed. Ask an administrator about the plan."
+    "capReachedBody": "Your organization has added as many expenses this year as its plan allows, so these receipts could not be filed. Ask an administrator about the plan.",
+    "summary": {
+      "heading": "Your receipts are on {number}",
+      "lead": "{count} receipt(s) from your email are filed on report {number}.",
+      "allRead": "VeloExpense has read them. Check the details, then submit the report when you are ready.",
+      "stillReading": "{count} still being read; their details will fill in on the report shortly.",
+      "couldNotRead": "{count} could not be read; open the report and enter their details by hand.",
+      "expenses": "Expenses:",
+      "lineReading": "still being read",
+      "lineUnread": "could not be read",
+      "report": "Report",
+      "status": "Status",
+      "total": "Total",
+      "receipts": "Receipts",
+      "receiptsValue": "{filed} filed · {read} read",
+      "approver": "Approver",
+      "approverValue": "{names} (confirmed when you submit)",
+      "approverPool": "an eligible approver, assigned when you submit",
+      "approverAuto": "None needed — approved automatically when you submit",
+      "note": "Note",
+      "openReport": "Open report",
+      "replyToAdd": "Reply to this email to add more receipts to the same report.",
+      "footer": "You received this because you emailed receipts to VeloExpense from this address."
+    }
   },
   "subject": {
     "VIRTUAL_CARD_REQUEST": "Card request",
