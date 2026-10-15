@@ -255,6 +255,17 @@ const PHONE_PROJECT_SPECS = phoneSpecPattern(PHONE_PROJECT_SPEC_PATTERNS);
 
 export default defineConfig({
   testDir: './e2e',
+  /**
+   * Empties `e2e/.artifacts/mobile/` and stamps a fresh run id, once, before any project
+   * starts — so ONE invocation's PNGs, sidecars and census describe THAT invocation and
+   * nothing else. (ExpenseOS's, ported with the mobile crawl; see `e2e/support/mobile-census.ts`.)
+   */
+  globalSetup: './e2e/support/mobile-reset.ts',
+  /**
+   * Collates the mobile crawl's per-route JSON sidecars and prints its census. A no-op when
+   * this run wrote no mobile sidecars. (ExpenseOS's, as above.)
+   */
+  globalTeardown: './e2e/support/mobile-census.ts',
   // The pseudo crawl needs a server booted with PSEUDO_LOCALE=1, so it has its
   // own config and is excluded here. Without this line it would run against a
   // normal server and pass by finding nothing bracketed anywhere — a spec that

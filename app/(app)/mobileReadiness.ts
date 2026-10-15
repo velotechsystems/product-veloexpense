@@ -691,6 +691,11 @@ export const MOBILE_READINESS: DispositionTable = Object.freeze({
   '/admin/policy-rules': 'desktop',
   '/admin/policy-violations': 'desktop',
   '/admin/travel-categories': 'desktop',
+  // VeloExpense: VeloExpense's own screens, ruled here as each is found not to fit a phone.
+  // `/admin/compliance` (phone e2e 3): a dense findings table (860px) and a header whose actions
+  // the kit's `PageHeader` will not let shrink — 57px past a 360 viewport. Ruled `desktop`, as
+  // ExpenseOS rules its dense `/admin/*` tables; the `PageHeader` half is a lib-ui-kit fix.
+  '/admin/compliance': 'desktop',
   // The module-gated routes: P10's eleven, plus `/ledger/expense-categories`, added
   // 2026-09-24 with its page (netsuite-report-expense-category), and `/ledger/tax-groups`,
   // added 2026-09-29 with its page (netsuite-tax-group-rates), on the same ruling and for

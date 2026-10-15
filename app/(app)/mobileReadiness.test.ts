@@ -1711,8 +1711,9 @@ const PERMITTED_IMPORTERS: Readonly<Record<string, ImporterKind>> = {
   // a route list copied into the e2e tree goes stale silently and then lies about which
   // pages a phone can reach.
   //
-  // VeloExpense: not ported — VeloExpense has no mobile crawl yet, so P10's two e2e
-  // importers are absent and the allowlist does not name them.
+  // VeloExpense: ported with the mobile crawl (phone e2e 3), at VeloExpense's paths.
+  'e2e/crawl-mobile.spec.ts': 'test-tree',
+  'e2e/support/mobile-census.ts': 'test-tree',
 };
 
 /**
