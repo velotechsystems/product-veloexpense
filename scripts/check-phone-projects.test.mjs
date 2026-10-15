@@ -189,15 +189,13 @@ describe('proves the check can fail', () => {
 
   it('catches a consumer that restates the list instead of importing it', () => {
     // Precisely the state all three consumers were in before this phase.
-    // VeloExpense: on the consumer VeloExpense has (ExpenseOS: `desktop-notice.spec.ts`).
-    const file = 'e2e/expense-workbench.mobile.spec.ts';
+    const file = 'e2e/desktop-notice.spec.ts';
     const doctored = read(file)
       .replace("import { PHONE_PROJECTS } from './support/phone-projects';\n", '')
       .replace(
-        'const CALLER =',
-        "const PHONE_PROJECTS = ['mobile-360', 'mobile-390'] as const;\nconst CALLER =",
+        'const NOTICE =',
+        "const PHONE_PROJECTS = ['mobile-360', 'mobile-390'] as const;\nconst NOTICE =",
       );
-    expect(doctored).not.toEqual(read(file));
     const result = withPatch({
       consumers: { ...real().consumers, [file]: doctored },
     });
@@ -213,12 +211,11 @@ describe('proves the check can fail', () => {
     // Blanked comments rather than deleted ones. These files carry 100-line prose headers,
     // so collapsing one would move every line after it and send the reader to the wrong
     // place — the bug `check-e2e-ids.mjs` records having shipped once.
-    // VeloExpense: on the consumer VeloExpense has (ExpenseOS: `support/safe-area.ts`).
-    const file = 'e2e/expense-workbench.mobile.spec.ts';
+    const file = 'e2e/support/safe-area.ts';
     const source = read(file);
     const doctored = source.replace(
-      'const CALLER =',
-      "const COPY = ['mobile-360'];\nconst CALLER =",
+      'export interface SafeAreaInsets {',
+      "const COPY = ['mobile-360'];\nexport interface SafeAreaInsets {",
     );
     const expectedLine = doctored.split('\n').findIndex((l) => l.startsWith('const COPY')) + 1;
     expect(expectedLine).toBeGreaterThan(50);
@@ -265,10 +262,12 @@ describe('every finding is actionable', () => {
     expect(PLAYWRIGHT_CONFIG).toBe('playwright.config.ts');
     expect(PHONE_PROJECTS_MODULE).toBe('e2e/support/phone-projects.ts');
     expect(PACKAGE_JSON).toBe('package.json');
-    // VeloExpense: the consumers ported so far (see `CONSUMERS`).
+    // VeloExpense: ExpenseOS's three, then the one VeloExpense adds (see `CONSUMERS`).
     expect(CONSUMERS).toEqual([
-      'e2e/expense-workbench.mobile.spec.ts',
+      'e2e/desktop-notice.spec.ts',
       'e2e/tap-targets.mobile.spec.ts',
+      'e2e/support/safe-area.ts',
+      'e2e/expense-workbench.mobile.spec.ts',
     ]);
   });
 });

@@ -579,7 +579,13 @@ describe('the small-screen nav filter', () => {
      * question — a task whose subject is the consequence of a decision may not edit the
      * decision.
      */
-    const navDestinations = new Set(SECTIONS.flatMap((s) => s.items.map((i) => i.to)));
+    // VeloExpense: and VeloExpense's own screens' nav items (`veloexpenseNav.ts`), which the
+    // sidebar renders in the same sections and through the same phone filter — the first
+    // VeloExpense row ruled `desktop`, `/admin/compliance` (phone e2e 3), is reached from there.
+    const navDestinations = new Set([
+      ...SECTIONS.flatMap((s) => s.items.map((i) => i.to)),
+      ...Object.values(VELOEXPENSE_ITEMS).flatMap((items) => items.map((i) => i.to)),
+    ]);
     const unreachable = Object.entries(MOBILE_READINESS)
       .filter(([, disposition]) => disposition === 'desktop')
       .map(([to]) => to)

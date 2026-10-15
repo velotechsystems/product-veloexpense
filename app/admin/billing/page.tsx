@@ -192,7 +192,10 @@ export default async function BillingPage() {
 
       <p className="text-sm text-muted-foreground">
         {t('billing.managed.elsewhere')}{' '}
-        <Link href="/admin" className="underline underline-offset-4">
+        {/* `/admin/modules`, not `/admin`: the admin landing page this pointed at went when
+            ExpenseOS's shell replaced it, and the link answered 404 (the mobile crawl caught
+            the failed prefetch). Modules is the nearest settings page. */}
+        <Link href="/admin/modules" className="underline underline-offset-4">
           {t('billing.back')}
         </Link>
       </p>
