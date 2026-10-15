@@ -628,9 +628,10 @@ describe('the small-screen nav filter', () => {
     // 9 `limited`, 8 `ready`.
     //
     // This note read "thirty-eight of the forty-five registry keys" and named the four unshelled
-    // auth routes and `/vcc-action` among the absent. Both halves are stale: the registry has
-    // grown three times in the four days before this edit, and those five rows are ruled `ready`
-    // or `limited` today, so they are not candidates for a list of what a phone LOSES at all.
+    // auth routes and the email decision page among the absent. Both halves are stale: the
+    // registry has grown three times in the four days before this edit, and those rows are
+    // ruled `ready` or `limited` (or, for the decision page, removed), so they are not
+    // candidates for a list of what a phone LOSES at all.
     // Re-measure at the commit rather than trusting this paragraph — it has been wrong twice.
     //
     // TWELVE OF THE THIRTY-NINE ARE ROUTES NOBODY CAN REACH ON A STOCK SEED.

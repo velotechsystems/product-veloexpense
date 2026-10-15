@@ -158,6 +158,56 @@ async function userId(pool: Pool, orgId: string, email: string): Promise<string>
   return r.rows[0].id as string;
 }
 
+/**
+ * The rows this fixture installs and can name by its tag: its reports (with their
+ * engine instances, whose tasks cascade), its inactive workflow, and its delegation.
+ * Run before installing — a rerun starts from nothing of its own — and after the
+ * crawl, by `removeCrawlFixture`.
+ */
+async function removeOwnRows(pool: Pool, orgId: string): Promise<void> {
+  // w4-00c: the engine's instances (their tasks cascade), and the workflow they ran on.
+  await pool.query(
+    `DELETE FROM approval_instance
+      WHERE subject_id IN (SELECT id FROM expense_report WHERE title LIKE $1)`,
+    [`${TAG}%`],
+  );
+  await pool.query('DELETE FROM approval_workflow WHERE organization_id = $1 AND key = $2', [
+    orgId,
+    CRAWL_FLOW_KEY,
+  ]);
+  await pool.query('DELETE FROM expense_report WHERE title LIKE $1', [`${TAG}%`]);
+  await pool.query('DELETE FROM delegation WHERE organization_id = $1 AND note = $2', [orgId, TAG]);
+}
+
+/**
+ * Take the fixture's own rows back out once the crawl is done.
+ *
+ * THE DELEGATION IS THE REASON THIS EXISTS. It hands the manager's approvals to the
+ * admin for thirty days, so on a database the crawl has run against, every later
+ * submit by the employee parks on the admin rather than the manager. CI never sees it
+ * — the crawl is the last thing that runs on a fresh database — but a second local
+ * `npx playwright test` on the same database did: `expenses-approvals.mobile` signed in
+ * as the admin the engine had routed to, and the admin's team view is empty (phone
+ * e2e 5, and the "noticed, not changed" note in phone e2e 1).
+ *
+ * What it cannot put back is what installing took away: the crawl admin's foreign
+ * pending tasks and notifications, cleared on purpose (see `installCrawlFixture`).
+ * Reset and reseed for a database that has everything again. The notifications the
+ * fixture inserted stay too; they are the admin's own and route nothing.
+ */
+export async function removeCrawlFixture(): Promise<void> {
+  const connectionString = process.env.ADMIN_DATABASE_URL ?? process.env.DATABASE_URL;
+  if (!connectionString) throw new Error('crawl fixture: no ADMIN_DATABASE_URL or DATABASE_URL');
+  const pool = new Pool({ connectionString });
+  try {
+    const org = await pool.query('SELECT id FROM organization WHERE slug = $1', [ORG_SLUG]);
+    if (org.rowCount !== 1) return;
+    await removeOwnRows(pool, org.rows[0].id as string);
+  } finally {
+    await pool.end();
+  }
+}
+
 export async function installCrawlFixture(): Promise<CrawlFixture> {
   const connectionString = process.env.ADMIN_DATABASE_URL ?? process.env.DATABASE_URL;
   if (!connectionString) throw new Error('crawl fixture: no ADMIN_DATABASE_URL or DATABASE_URL');
@@ -173,21 +223,7 @@ export async function installCrawlFixture(): Promise<CrawlFixture> {
     const employeeId = await userId(pool, orgId, EMPLOYEE_EMAIL);
 
     // ── clean first ────────────────────────────────────────────────────────
-    // w4-00c: the engine's instances (their tasks cascade), and the workflow they ran on.
-    await pool.query(
-      `DELETE FROM approval_instance
-        WHERE subject_id IN (SELECT id FROM expense_report WHERE title LIKE $1)`,
-      [`${TAG}%`],
-    );
-    await pool.query('DELETE FROM approval_workflow WHERE organization_id = $1 AND key = $2', [
-      orgId,
-      CRAWL_FLOW_KEY,
-    ]);
-    await pool.query('DELETE FROM expense_report WHERE title LIKE $1', [`${TAG}%`]);
-    await pool.query(
-      'DELETE FROM delegation WHERE organization_id = $1 AND note = $2',
-      [orgId, TAG],
-    );
+    await removeOwnRows(pool, orgId);
     // FOREIGN pending tasks for the crawl's admin, cleared.
     //
     // This is the one destructive thing in this file and it needs its reason in
