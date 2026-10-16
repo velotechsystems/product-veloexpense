@@ -102,7 +102,7 @@ export const DEFAULT_DISPOSITION: Disposition = 'limited';
  *
  * ─── WHY A `limited` ROW IS WRITTEN DOWN AT ALL ──────────────────────────────────────────
  *
- * `limited` is also `DEFAULT_DISPOSITION`, so `/vcc-action` would resolve to `limited` with
+ * `limited` is also `DEFAULT_DISPOSITION`, so `/delegations` would resolve to `limited` with
  * no row here at all, and the row changes NOTHING about what any consumer renders — the two
  * consumers both act on `desktop` only. It is here because a ruling and a default are not
  * the same claim. The parity block in `mobileReadiness.test.ts` enforces ruled-row for
@@ -111,22 +111,11 @@ export const DEFAULT_DISPOSITION: Disposition = 'limited';
  * still be `unruled` there. Omitting this row to "save" a redundant lookup would make the
  * markdown ruling unenforceable, which is the one thing the registry exists to prevent.
  *
- * ─── THE FIVE P01 ROWS ───────────────────────────────────────────────────────────────────
+ * ─── THE FOUR P01 ROWS ───────────────────────────────────────────────────────────────────
  *
- * Four `ready`, one `limited`, and the split is a ruling rather than a shortfall of effort.
- * `/vcc-action` shipped every fix its siblings did — `docs/design/pwa.md`'s Page-readiness
- * row for that route enumerates them — and is still `limited` because its APPROVE
- * control's label fails AA on contrast: `--color-success` `#0b8a3e` on
- * `--color-background` `#ffffff` computes to 4.4506:1, under the 4.5:1 floor for the
- * `text-sm font-medium` label on `success-outline`, while its `destructive-outline` sibling
- * (`#cc1f1a`, 5.56:1) passes. The token fix is out of P01's lane — it is a
- * design-system token change, tracked separately;
- * `docs/design/pwa.md`'s Page-readiness row carries the same figures, and it is what a
- * reader should consult to see exactly what would move this row to `ready`.
- *
- * The four `ready` rows are UNSHELLED routes — they live under `[locale]`, not under
- * `(app)`, so neither `Sidebar` nor `DesktopOnlyNotice` ever sees them. Their rulings are a
- * record of what was measured and fixed, not a switch that turns anything on.
+ * All four are `ready`, and all four are UNSHELLED routes — they live under `[locale]`, not
+ * under `(app)`, so neither `Sidebar` nor `DesktopOnlyNotice` ever sees them. Their rulings
+ * are a record of what was measured and fixed, not a switch that turns anything on.
  *
  * `/notifications` — `ready`, P02, AND IT IS THE FIRST `ready` ROW ON A SHELLED `(app)`
  * ROUTE — P01's four `ready` rows are unshelled auth pages that neither `Sidebar` nor
@@ -661,7 +650,6 @@ export const MOBILE_READINESS: DispositionTable = Object.freeze({
   '/enroll-mfa': 'ready',
   '/change-password': 'ready',
   '/reset-password': 'ready',
-  '/vcc-action': 'limited',
   '/notifications': 'ready',
   '/dashboard': 'ready',
   '/delegations': 'limited',
@@ -786,7 +774,7 @@ export const MOBILE_READINESS: DispositionTable = Object.freeze({
    *   `{ disposition: 'ready', prefix: '/virtual-cards' }` before this commit and answers
    *   `{ disposition: 'limited', prefix: '/virtual-cards/transactions' }` after it.
    *
-   * `/vcc-action`, `/expenses`, `/expenses/[reportId]` and the rest are written down while
+   * `/expenses`, `/expenses/[reportId]` and the rest are written down while
    * resolving to `DEFAULT_DISPOSITION` either way — their rows record a claim and move no
    * answer. This row does move one: it REDUCES an inherited positive claim. P07's `ready` on
    * the parent reached this route by longest prefix without P07 having examined it, and this

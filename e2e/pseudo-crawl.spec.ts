@@ -38,7 +38,7 @@
  */
 import { test, expect, type Page } from '@playwright/test';
 import { ADMIN_STATE } from './helpers';
-import { installCrawlFixture } from './crawl-fixture';
+import { installCrawlFixture, removeCrawlFixture } from './crawl-fixture';
 import { PSEUDO_MARKERS } from '@/lib/i18n/pseudo';
 
 const { open: OPEN, close: CLOSE } = PSEUDO_MARKERS;
@@ -264,6 +264,11 @@ test.use({ storageState: ADMIN_STATE });
  */
 test.beforeAll(async () => {
   await installCrawlFixture();
+});
+
+// Its own rows back out, the delegation above all — `removeCrawlFixture` says why.
+test.afterAll(async () => {
+  await removeCrawlFixture();
 });
 
 test.describe('the pseudo-locale crawl', () => {

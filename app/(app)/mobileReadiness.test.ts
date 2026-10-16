@@ -57,14 +57,14 @@ const PWA_DOC = join(REPO_ROOT, 'docs', 'design', 'pwa.md');
  * Where `routeExists` starts walking: `[locale]`, the PARENT of this directory.
  *
  * IT USED TO BE `HERE` — i.e. `(app)` — and that was correct only while every registry key
- * was a shelled route. P01 rules five routes that live OUTSIDE `(app)`: `/login`,
- * `/enroll-mfa`, `/change-password`, `/reset-password` and `/vcc-action` are all direct
- * children of `[locale]`. A walk rooted at `(app)` cannot see any of them — it would report
- * all five as "a registry key pointing at a route with no page.tsx" and be wrong about
- * routes that plainly exist.
+ * was a shelled route. P01 rules four routes that live OUTSIDE `(app)`: `/login`,
+ * `/enroll-mfa`, `/change-password` and `/reset-password` are all direct children of
+ * `[locale]`. A walk rooted at `(app)` cannot see any of them — it would report all four
+ * as "a registry key pointing at a route with no page.tsx" and be wrong about routes that
+ * plainly exist.
  *
  * THE ALTERNATIVE WAS REFUSED, and it is worth naming so nobody re-proposes it. "Skip the
- * route-exists check for routes outside `(app)`" turns the check off for exactly the five
+ * route-exists check for routes outside `(app)`" turns the check off for exactly the four
  * rows being added: the registry would then accept `/reset-passwrod` as a `ready` route, and
  * the parity block would happily agree with a matching typo in the markdown. An exemption
  * scoped to the new rows is not scoping, it is hollowing.
@@ -399,7 +399,7 @@ describe('the shipped registry', () => {
      * says yes to everything: one root too high, or one extra `walk(dir, rest)` in the
      * traversal, and every path resolves through some group directory. The case above
      * proves the check can fail INSIDE `(app)`; this one proves it can still fail for a
-     * path shaped like the five rows the re-root was performed for.
+     * path shaped like the four rows the re-root was performed for.
      *
      * `/reset-passwrod` is the exact failure QA named when refusing the exemption
      * alternative: a typo in the registry that a matching typo in the markdown would
@@ -410,24 +410,18 @@ describe('the shipped registry', () => {
     // Two more shapes, and each catches a mutation the pair above does not. `/admin` is a
     // real DIRECTORY reachable through the `(app)` group that has no `page.tsx` of its own
     // (it is 404 signed in or out), so it goes true the moment the leaf stops asking for
-    // the file. `/vcc-action/approve` is one segment too deep under a route that does
+    // the file. `/reset-password/confirm` is one segment too deep under a route that does
     // exist — what a copy-pasted registry key looks like.
     expect(routeExists('/admin')).toBe(false);
-    expect(routeExists('/vcc-action/approve')).toBe(false);
+    expect(routeExists('/reset-password/confirm')).toBe(false);
   });
 
-  // VeloExpense: skipped — ExpenseOS's unshelled routes (/enroll-mfa, /reset-password, /vcc-action) are not VeloExpense's.
+  // VeloExpense: skipped — ExpenseOS's unshelled routes (/enroll-mfa, /reset-password) are not VeloExpense's.
   it.skip('reaches the unshelled routes the re-root exists for', () => {
-    // The positive half. All five P01 rows live under `[locale]`, NOT under `(app)`, so a
+    // The positive half. All four P01 rows live under `[locale]`, NOT under `(app)`, so a
     // walk rooted at `(app)` reports every one of them missing. `names only routes that
     // exist` above would catch that — but it would blame the registry, not the walk.
-    for (const route of [
-      '/login',
-      '/enroll-mfa',
-      '/change-password',
-      '/reset-password',
-      '/vcc-action',
-    ])
+    for (const route of ['/login', '/enroll-mfa', '/change-password', '/reset-password'])
       expect(routeExists(route), `${route} has a page.tsx under [locale]/ and must resolve`).toBe(
         true,
       );
@@ -689,9 +683,9 @@ describe('the shipped registry', () => {
      * ABSENCE of the key; this one pins the PRESENCE of the ruling.
      *
      * THE REGISTRY KEYS NOT IN THIS LIST are not P10's: `/admin/roles` is T04's; `/login`,
-     * `/enroll-mfa`, `/change-password`, `/reset-password` and `/vcc-action` are P01's;
+     * `/enroll-mfa`, `/change-password` and `/reset-password` are P01's;
      * `/notifications`, `/dashboard` and `/delegations` are P02's; `/profile` is P03's —
-     * ten keys, of which only `/admin/roles` is `desktop`. So 39 + 10 = 49 keys ship, and
+     * nine keys, of which only `/admin/roles` is `desktop`. So 39 + 9 = 48 keys ship, and
      * this case deliberately checks P10's 40 routes rather than all of them: it is P10's
      * criterion, not a second copy of the parity equality.
      */
