@@ -28,13 +28,13 @@
  *     `cdk deploy` with SSO admin credentials (scripts/deploy-dev.sh), which never
  *     used this role.
  *
- * Permissions (VeloExpense): exactly the calls scripts/deploy-dev.sh makes, so a
- * workflow can run that script as it is.
+ * Permissions (VeloExpense): exactly the calls scripts/deploy-dev.sh and
+ * .github/workflows/cd.yml make.
  *   - Take on CDK's bootstrap roles (deploy, file and image publishing, lookup).
  *     `cdk deploy` does all its CloudFormation work through them.
  *   - Push to and read this stage's ECR repository; the login token.
  *   - Read this product's stacks' outputs.
- *   - Start this stage's database task, read tasks, restart this stage's worker,
+ *   - Start this stage's database task, read tasks, restart this stage's services,
  *     and pass this product's own task roles to ECS (needed to start the task).
  *   - Read this stage's ECS log groups.
  *   The limit, stated plainly: CDK's bootstrap roles are shared by every product
@@ -188,11 +188,12 @@ export class DeployRoleStack extends Stack {
         resources: [arn('iam', `role/${prefix}-*`, '')],
         conditions: { StringEquals: { 'iam:PassedToService': 'ecs-tasks.amazonaws.com' } },
       }),
-      // 7. --restart-worker.
+      // 7. --restart-worker; and cd.yml's verify step, which restarts and waits for
+      // both services (ExpenseOS's "force new deployment if CDK didn't change them").
       new iam.PolicyStatement({
-        sid: 'RestartWorker',
+        sid: 'RestartOwnServices',
         actions: ['ecs:UpdateService', 'ecs:DescribeServices'],
-        resources: [arn('ecs', `service/*/${prefix}-worker`)],
+        resources: [arn('ecs', `service/*/${prefix}-web`), arn('ecs', `service/*/${prefix}-worker`)],
       }),
       // 6-7. Print the database task's and the worker's log lines.
       new iam.PolicyStatement({

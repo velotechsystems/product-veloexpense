@@ -139,11 +139,12 @@ describe.each(STAGES)('DeployRoleStack (%s)', (stage) => {
     expect(resources).not.toMatch(/role\/\*|cdk-\*/);
   });
 
-  it('pushes to this stage’s repository, starts this stage’s database task, and passes only its own roles to ECS', () => {
+  it('pushes to this stage’s repository, starts this stage’s database task, restarts its services, and passes only its own roles to ECS', () => {
     const doc = JSON.stringify(grants(synth(stage)));
     expect(doc).toContain(`repository/veloexpense-${stage}/web`);
     expect(doc).toContain(`task-definition/veloexpense-${stage}-db:*`);
     expect(doc).toContain(`service/*/veloexpense-${stage}-worker`);
+    expect(doc).toContain(`service/*/veloexpense-${stage}-web`);
     expect(doc).toContain(`log-group:/ecs/veloexpense-${stage}/*`);
     const [pass] = grants(synth(stage)).filter((s) => s.Action === 'iam:PassRole');
     expect(JSON.stringify(pass.Resource)).toContain(`role/veloexpense-${stage}-*`);

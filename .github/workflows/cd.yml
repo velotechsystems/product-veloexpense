@@ -1,0 +1,398 @@
+# =============================================================================
+# VeloExpense — CD (Continuous Deployment)
+#
+# Ported from ExpenseOS `.github/workflows/cd.yml` (1e682dd6). The VeloExpense changes
+# are marked "VeloExpense:"; the summary:
+#   · ONE stage, dev (dev.veloexpense.ai). ExpenseOS's release → prod path, and the
+#     copy-images job that promotes dev's images to prod's account, are left out until
+#     VeloExpense has a production stage (config.ts: "Production is added when it is
+#     built, not before").
+#   · GitHub-hosted runners, not CodeBuild runners inside a VPC. The database step runs
+#     as the ECS database task (as scripts/deploy-dev.sh does), so no runner needs a
+#     route to Aurora, and no database credential ever reaches a runner.
+#   · One image, `veloexpense-dev/web`; the worker runs the same image.
+#   · The deploy role is committed (CD_ROLE_ARN below), as VeloLedger's CD does, not a
+#     GitHub Environment variable: it is not a secret, and deploy-role-stack.ts names it.
+#   · Stage config is committed in infrastructure/cdk/lib/config.ts and needs no .env;
+#     there is no CloudFront origin secret, SES SMTP password or app DB role to set up
+#     here (db-bootstrap.mjs does the role, in the database task).
+#
+# Flow:
+#   CI succeeds on a push to main → build the image → cdk deploy → database task → verify → dev
+#   workflow_dispatch             → manual re-deploy of main
+#
+# Auth to AWS: GitHub OIDC. Every job that touches AWS declares `environment: dev`,
+# so the token's `sub` is repo:velotechsystems/product-veloexpense:environment:dev —
+# which is exactly what the deploy role (veloexpense-dev-deploy-role, deploy-role-stack.ts)
+# trusts, scoped to that one environment. The `dev` Environment admits only `main`.
+# Application secrets live in AWS Secrets Manager and are pulled natively by ECS at
+# runtime; this pipeline never injects them.
+# =============================================================================
+
+name: CD
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: 'Image tag (defaults to the commit SHA, 7 characters)'
+        required: false
+        default: ''
+
+concurrency:
+  group: cd-${{ github.ref }}
+  # NEVER auto-cancel. This used to be true on the workflow_run path, on the reasoning
+  # that letting the next push supersede a wedged run would "self-clear the queue".
+  # The opposite happened, and the auto-cancel was the CAUSE rather than the cure.
+  #
+  # 2026-08-11, to the second: run A started 04:58:57. A newer run arrived 05:14:39 and
+  # cancel-in-progress asked GitHub to cancel A. A's CDK Deploy then finished at
+  # 05:15:33, making DB Migrate eligible 54s AFTER cancellation was requested — and
+  # GitHub never emitted its `workflow_job queued` webhook (confirmed absent from the
+  # delivery log). So CodeBuild was never asked for a runner, the job could not be
+  # cancelled without one, and A held this lock for 9h45m. Every later run was cancelled
+  # or left pending behind it. It took a manual force-cancel to clear.
+  #
+  # Cancelling cannot clear that state, because cancellation itself needs a runner to
+  # acknowledge. So the race is removed instead: runs queue and execute in order. That is
+  # what a deploy pipeline wants anyway — two concurrent `cdk deploy`s against one stack
+  # is a worse outcome than waiting. ci-watchdog.yml is the backstop if one wedges.
+  #
+  # VeloExpense: ExpenseOS's incident and reasoning, kept. There is no ci-watchdog.yml
+  # here yet, and scripts/deploy-dev.sh run by hand does not take this lock — don't run
+  # it while a CD run is deploying.
+  cancel-in-progress: false
+
+# VeloExpense: `contents: read`. ExpenseOS's `write` served its release path.
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  NODE_VERSION: "22" # VeloExpense: the version ci.yml tests on
+  AWS_REGION: ca-central-1
+  CD_ROLE_ARN: arn:aws:iam::535079144866:role/veloexpense-dev-deploy-role
+  ECR_REPOSITORY: veloexpense-dev/web
+  COMPUTE_STACK: VeloExpense-Dev-Compute
+  DB_LOG_GROUP: /ecs/veloexpense-dev/db
+  DOMAIN_NAME: dev.veloexpense.ai
+
+jobs:
+  # -- 1. Resolve Environment --------------------------------------------------
+  resolve-env:
+    name: Resolve Environment
+    timeout-minutes: 10
+    # VeloExpense: also requires the CI run to be a PUSH in THIS repository. `branches:
+    # [main]` above matches the run's head branch by NAME only, so a pull request from a
+    # fork whose branch is called `main` would otherwise pass, and the jobs below would
+    # check out and deploy the fork's head commit with the dev deploy role.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push' &&
+       github.event.workflow_run.head_repository.full_name == github.repository)
+    runs-on: ubuntu-latest
+    outputs:
+      stage: ${{ steps.resolve.outputs.stage }}
+      image_tag: ${{ steps.resolve.outputs.image_tag }}
+      git_sha: ${{ steps.resolve.outputs.git_sha }}
+    steps:
+      - name: Determine target stage and image tag
+        id: resolve
+        env:
+          EVENT: ${{ github.event_name }}
+          RUN_SHA: ${{ github.event.workflow_run.head_sha }}
+          INPUT_TAG: ${{ github.event.inputs.image_tag }}
+        run: |
+          # VeloExpense: one stage, and a 7-character tag — scripts/deploy-dev.sh's, so a
+          # commit deployed by hand and by CD names the same (immutable) image.
+          if [[ "$EVENT" == "workflow_run" ]]; then
+            SHA="$RUN_SHA"
+            TAG="${SHA::7}"
+          elif [[ "$EVENT" == "workflow_dispatch" ]]; then
+            SHA="${GITHUB_SHA}"
+            TAG="$INPUT_TAG"
+            [ -z "$TAG" ] && TAG="${SHA::7}"
+          else
+            echo "::error::Unable to resolve stage from event '$EVENT'"
+            exit 1
+          fi
+          {
+            echo "stage=dev"
+            echo "image_tag=${TAG}"
+            echo "git_sha=${SHA}"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Log
+        run: echo "Stage=${{ steps.resolve.outputs.stage }} Tag=${{ steps.resolve.outputs.image_tag }} SHA=${{ steps.resolve.outputs.git_sha }}"
+
+  # -- 2. Build Image ------------------------------------------------------------
+  build-image:
+    name: Build Image
+    timeout-minutes: 45
+    needs: [resolve-env]
+    # VeloExpense: GitHub's ARM runner. The Fargate tasks are ARM64, so the image is
+    # built natively, as ExpenseOS's ARM CodeBuild runners did (and VeloLedger's CD).
+    runs-on: ubuntu-24.04-arm
+    environment: ${{ needs.resolve-env.outputs.stage }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.resolve-env.outputs.git_sha }}
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ env.CD_ROLE_ARN }}
+          role-skip-session-tagging: true
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: ecr-login
+        uses: aws-actions/amazon-ecr-login@v2
+
+      # VeloExpense: the repository's tags are immutable, and a commit may already have
+      # been built — by scripts/deploy-dev.sh, or by an earlier run of this workflow. Push
+      # nothing then, as deploy-dev.sh does.
+      - name: Is this tag already in ECR?
+        id: exists
+        env:
+          TAG: ${{ needs.resolve-env.outputs.image_tag }}
+        run: |
+          if aws ecr describe-images --repository-name "$ECR_REPOSITORY" \
+               --image-ids "imageTag=${TAG}" >/dev/null 2>&1; then
+            echo "Image ${TAG} is already in ECR; not rebuilding."
+            echo "found=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "found=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Set up Docker Buildx
+        if: steps.exists.outputs.found != 'true'
+        uses: docker/setup-buildx-action@v4
+
+      - name: Build and push
+        if: steps.exists.outputs.found != 'true'
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: Dockerfile # VeloExpense: one Dockerfile, at the root
+          platforms: linux/arm64
+          push: true
+          # VeloExpense: deploy-dev.sh's flags. Without them buildx pushes an image index
+          # with attestation manifests, not the single image the task definition names.
+          provenance: false
+          sbom: false
+          tags: ${{ steps.ecr-login.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ needs.resolve-env.outputs.image_tag }}
+          cache-from: type=gha,scope=web-${{ needs.resolve-env.outputs.stage }}
+          cache-to: type=gha,scope=web-${{ needs.resolve-env.outputs.stage }},mode=max
+
+  # -- 3. CDK Deploy -----------------------------------------------------------
+  cdk-deploy:
+    name: CDK Deploy (${{ needs.resolve-env.outputs.stage }})
+    timeout-minutes: 60
+    needs: [resolve-env, build-image]
+    if: |
+      always() &&
+      needs.resolve-env.result == 'success' &&
+      !contains(needs.*.result, 'failure') &&
+      !contains(needs.*.result, 'cancelled')
+    runs-on: ubuntu-latest
+    environment: ${{ needs.resolve-env.outputs.stage }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.resolve-env.outputs.git_sha }}
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ env.CD_ROLE_ARN }}
+          role-skip-session-tagging: true
+          # This job may run for its full 60m timeout; the default credential
+          # lifetime is also 60m. The deploy role allows 7200s, so use it.
+          role-duration-seconds: 7200
+          aws-region: ${{ env.AWS_REGION }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: infrastructure/cdk/package-lock.json
+
+      - name: Install CDK dependencies
+        working-directory: infrastructure/cdk
+        run: npm ci --no-audit --no-fund
+
+      - name: CDK diff
+        working-directory: infrastructure/cdk
+        env:
+          VELOEXPENSE_STAGE: ${{ needs.resolve-env.outputs.stage }}
+          IMAGE_TAG: ${{ needs.resolve-env.outputs.image_tag }}
+        run: npx cdk diff --all 2>&1 || true
+
+      - name: CDK deploy
+        working-directory: infrastructure/cdk
+        env:
+          VELOEXPENSE_STAGE: ${{ needs.resolve-env.outputs.stage }}
+          IMAGE_TAG: ${{ needs.resolve-env.outputs.image_tag }}
+        run: npx cdk deploy --all --require-approval never --outputs-file cdk-outputs.json
+
+      - name: Upload CDK outputs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cdk-outputs-${{ needs.resolve-env.outputs.stage }}
+          path: infrastructure/cdk/cdk-outputs.json
+          retention-days: 7
+
+  # -- 4. Database Migration -----------------------------------------------------
+  # VeloExpense: ExpenseOS runs `prisma migrate deploy` on an in-VPC runner with the
+  # rds-master credential. Here the image's own database task does it (db-bootstrap.mjs,
+  # then migrate.mjs — compute-stack.ts), started exactly as scripts/deploy-dev.sh step 6
+  # starts it. ExpenseOS's seed step is left out: VeloExpense's deploys do not seed.
+  db-migrate:
+    name: DB Migrate (${{ needs.resolve-env.outputs.stage }})
+    timeout-minutes: 30
+    needs: [resolve-env, cdk-deploy]
+    if: always() && needs.cdk-deploy.result == 'success'
+    runs-on: ubuntu-latest
+    environment: ${{ needs.resolve-env.outputs.stage }}
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ env.CD_ROLE_ARN }}
+          role-skip-session-tagging: true
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Run the database task (bootstrap + migrations)
+        run: |
+          set -euo pipefail
+          output() {
+            aws cloudformation describe-stacks --stack-name "$COMPUTE_STACK" \
+              --query "Stacks[0].Outputs[?OutputKey=='$1'].OutputValue" --output text
+          }
+          CLUSTER="$(output ClusterName)"
+          FAMILY="$(output DbTaskFamily)"
+          SUBNETS="$(output TaskSubnets)"
+          SG="$(output TaskSecurityGroup)"
+          if [ -z "$CLUSTER" ] || [ -z "$FAMILY" ] || [ -z "$SUBNETS" ] || [ -z "$SG" ]; then
+            echo "::error::could not read the $COMPUTE_STACK outputs"
+            exit 1
+          fi
+          TASK="$(aws ecs run-task --cluster "$CLUSTER" --launch-type FARGATE \
+            --task-definition "$FAMILY" \
+            --network-configuration "awsvpcConfiguration={subnets=[${SUBNETS}],securityGroups=[${SG}],assignPublicIp=DISABLED}" \
+            --query 'tasks[0].taskArn' --output text)"
+          if [ -z "$TASK" ] || [ "$TASK" = "None" ]; then
+            echo "::error::the database task did not start"
+            exit 1
+          fi
+          echo "$TASK"
+          aws ecs wait tasks-stopped --cluster "$CLUSTER" --tasks "$TASK"
+          EXIT_CODE="$(aws ecs describe-tasks --cluster "$CLUSTER" --tasks "$TASK" \
+            --query 'tasks[0].containers[0].exitCode' --output text)"
+          aws logs tail "$DB_LOG_GROUP" --since 15m \
+            --log-stream-name-prefix "db/db/${TASK##*/}" || true
+          if [ "$EXIT_CODE" != "0" ]; then
+            echo "::error::the database task exited ${EXIT_CODE}; nothing after it was done"
+            exit 1
+          fi
+
+  # -- 5. Verify Deploy --------------------------------------------------------
+  verify-deploy:
+    name: Verify Deploy (${{ needs.resolve-env.outputs.stage }})
+    timeout-minutes: 20
+    needs: [resolve-env, cdk-deploy, db-migrate]
+    if: always() && needs.db-migrate.result == 'success'
+    runs-on: ubuntu-latest
+    environment: ${{ needs.resolve-env.outputs.stage }}
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ env.CD_ROLE_ARN }}
+          role-skip-session-tagging: true
+          aws-region: ${{ env.AWS_REGION }}
+
+      # VeloExpense: the services run on the SHARED velotech-dev cluster, named by the
+      # Compute stack's output, not on a cluster named after the prefix.
+      - name: Read the cluster name
+        run: |
+          set -euo pipefail
+          CLUSTER="$(aws cloudformation describe-stacks --stack-name "$COMPUTE_STACK" \
+            --query "Stacks[0].Outputs[?OutputKey=='ClusterName'].OutputValue" --output text)"
+          [ -n "$CLUSTER" ] && [ "$CLUSTER" != "None" ] || { echo "::error::no ClusterName output"; exit 1; }
+          echo "CLUSTER=${CLUSTER}" >> "$GITHUB_ENV"
+
+      - name: Force new deployment if CDK didn't change the task definitions
+        env:
+          PREFIX: veloexpense-${{ needs.resolve-env.outputs.stage }}
+          PIPELINE_START: ${{ github.event.workflow_run.run_started_at || github.event.head_commit.timestamp }}
+        run: |
+          START_EPOCH=$(date -d "${PIPELINE_START}" +%s 2>/dev/null || date -j -f "%Y-%m-%dT%H:%M:%SZ" "${PIPELINE_START}" +%s 2>/dev/null || echo "0")
+          for svc in web worker; do
+            SERVICE="${PREFIX}-${svc}"
+            UPDATED_AT=$(aws ecs describe-services --cluster "${CLUSTER}" --services "${SERVICE}" \
+              --query 'services[0].deployments[0].updatedAt' --output text --no-cli-pager 2>/dev/null || echo "")
+            if [ -z "${UPDATED_AT}" ] || [ "${UPDATED_AT}" = "None" ]; then
+              echo "${svc}: Could not determine last deployment time — forcing."
+              aws ecs update-service --cluster "${CLUSTER}" --service "${SERVICE}" --force-new-deployment --no-cli-pager
+              continue
+            fi
+            DEPLOY_EPOCH=$(date -d "${UPDATED_AT}" +%s 2>/dev/null || date -j -f "%Y-%m-%dT%H:%M:%S" "${UPDATED_AT%%.*}" +%s 2>/dev/null || echo "0")
+            if [ "${DEPLOY_EPOCH}" -lt "${START_EPOCH}" ]; then
+              echo "${svc}: Last deployment (${UPDATED_AT}) predates pipeline start — forcing."
+              aws ecs update-service --cluster "${CLUSTER}" --service "${SERVICE}" --force-new-deployment --no-cli-pager
+            else
+              echo "${svc}: Already updated during this pipeline (${UPDATED_AT})."
+            fi
+          done
+
+      - name: Wait for ECS services to stabilize
+        env:
+          PREFIX: veloexpense-${{ needs.resolve-env.outputs.stage }}
+        run: |
+          for svc in web worker; do
+            echo "Waiting for ${svc} to stabilize..."
+            if ! aws ecs wait services-stable --cluster "${CLUSTER}" --services "${PREFIX}-${svc}"; then
+              echo "::error::${svc} failed to stabilize:"
+              aws ecs describe-services --cluster "${CLUSTER}" --services "${PREFIX}-${svc}" \
+                --query 'services[0].events[:5]' --output table --no-cli-pager
+              # VeloExpense: the deploy role is not granted ecs:ListTasks (it would have
+              # to be on every task in the shared cluster), so this part may be refused.
+              TASKS=$(aws ecs list-tasks --cluster "${CLUSTER}" --service-name "${PREFIX}-${svc}" --desired-status STOPPED --query 'taskArns[:3]' --output text --no-cli-pager 2>/dev/null || true)
+              if [ -n "$TASKS" ]; then
+                # shellcheck disable=SC2086 # one argument per task ARN, as ExpenseOS's
+                aws ecs describe-tasks --cluster "${CLUSTER}" --tasks $TASKS \
+                  --query 'tasks[].{id:taskArn,status:lastStatus,reason:stoppedReason,exitCode:containers[0].exitCode}' \
+                  --output table --no-cli-pager
+              fi
+              exit 1
+            fi
+          done
+          echo "All services stable."
+
+      # VeloExpense: Cloudflare in front of the shared ALB, and dev.veloexpense.ai always
+      # resolves, so there is no ALB fallback; the health route is /api/health, the one the
+      # target group checks and the proxy lets through unauthenticated.
+      - name: Smoke test
+        run: |
+          TARGET="https://${DOMAIN_NAME}"
+          echo "Checking ${TARGET}/api/health ..."
+          for i in $(seq 1 10); do
+            STATUS=$(curl -sf -o /dev/null -w "%{http_code}" "${TARGET}/api/health" || true)
+            if [ "$STATUS" = "200" ]; then
+              echo "Health check passed (attempt ${i})."
+              exit 0
+            fi
+            echo "Attempt ${i}: HTTP ${STATUS}, retrying in 15s..."
+            sleep 15
+          done
+          echo "::warning::Health check did not pass after 10 attempts against ${TARGET}."
+          exit 1
