@@ -95,7 +95,10 @@ jobs:
       (github.event.workflow_run.conclusion == 'success' &&
        github.event.workflow_run.event == 'push' &&
        github.event.workflow_run.head_repository.full_name == github.repository)
-    runs-on: ubuntu-latest
+    # Pinned, not ubuntu-latest: that label moves to Ubuntu 26 from 19 Oct 2026, and a new
+    # OS can break Playwright's system libraries or the Postgres service with no change of
+    # ours. Move to 26 on purpose, in a branch whose CI is watched. (Same in every job.)
+    runs-on: ubuntu-24.04
     outputs:
       stage: ${{ steps.resolve.outputs.stage }}
       image_tag: ${{ steps.resolve.outputs.image_tag }}
@@ -140,7 +143,7 @@ jobs:
     runs-on: ubuntu-24.04-arm
     environment: ${{ needs.resolve-env.outputs.stage }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           ref: ${{ needs.resolve-env.outputs.git_sha }}
 
@@ -201,10 +204,11 @@ jobs:
       needs.resolve-env.result == 'success' &&
       !contains(needs.*.result, 'failure') &&
       !contains(needs.*.result, 'cancelled')
-    runs-on: ubuntu-latest
+    # Pinned, not ubuntu-latest; see the note on the first job.
+    runs-on: ubuntu-24.04
     environment: ${{ needs.resolve-env.outputs.stage }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           ref: ${{ needs.resolve-env.outputs.git_sha }}
 
@@ -218,7 +222,7 @@ jobs:
           role-duration-seconds: 7200
           aws-region: ${{ env.AWS_REGION }}
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
@@ -244,7 +248,7 @@ jobs:
 
       - name: Upload CDK outputs
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: cdk-outputs-${{ needs.resolve-env.outputs.stage }}
           path: infrastructure/cdk/cdk-outputs.json
@@ -260,7 +264,8 @@ jobs:
     timeout-minutes: 30
     needs: [resolve-env, cdk-deploy]
     if: always() && needs.cdk-deploy.result == 'success'
-    runs-on: ubuntu-latest
+    # Pinned, not ubuntu-latest; see the note on the first job.
+    runs-on: ubuntu-24.04
     environment: ${{ needs.resolve-env.outputs.stage }}
     steps:
       - name: Configure AWS credentials
@@ -310,7 +315,8 @@ jobs:
     timeout-minutes: 20
     needs: [resolve-env, cdk-deploy, db-migrate]
     if: always() && needs.db-migrate.result == 'success'
-    runs-on: ubuntu-latest
+    # Pinned, not ubuntu-latest; see the note on the first job.
+    runs-on: ubuntu-24.04
     environment: ${{ needs.resolve-env.outputs.stage }}
     steps:
       - name: Configure AWS credentials

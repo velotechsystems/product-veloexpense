@@ -13,7 +13,7 @@
  *
  * Nothing here reaches GitHub or AWS.
  */
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
 const CD = readFileSync('.github/workflows/cd.yml', 'utf8');
@@ -125,5 +125,27 @@ describe('cd.yml names what deploy-dev.sh and the CDK name', () => {
   it('a 7-character tag, as deploy-dev.sh tags, so both name the same immutable image', () => {
     expect(DEPLOY_DEV).toContain('git rev-parse --short=7');
     expect(CD).toContain('TAG="${SHA::7}"');
+  });
+});
+
+describe('every workflow here (not the shared infra-ci-cd ones it calls)', () => {
+  const files = readdirSync('.github/workflows').filter((f) => f.endsWith('.yml'));
+  const text = (f: string) => readFileSync(`.github/workflows/${f}`, 'utf8');
+
+  it('runs on a pinned Ubuntu, so the OS changes only when we change it', () => {
+    // ubuntu-latest became Ubuntu 26 from 19 Oct 2026. Moving is a deliberate change,
+    // made in a branch whose CI is watched, never a side effect of GitHub's label.
+    for (const f of files) {
+      for (const [, label] of text(f).matchAll(/^\s*runs-on: (\S+)$/gm)) {
+        expect(label, f).toMatch(/^ubuntu-\d{2}\.\d{2}(-arm)?$/);
+      }
+    }
+  });
+
+  it('uses no GitHub action major that runs on the retired Node 20', () => {
+    const node20 = ['actions/checkout@v4', 'actions/setup-node@v4', 'actions/upload-artifact@v4', 'docker/setup-buildx-action@v3'];
+    for (const f of files) {
+      for (const uses of node20) expect(text(f), `${f}: ${uses}`).not.toContain(uses);
+    }
   });
 });
