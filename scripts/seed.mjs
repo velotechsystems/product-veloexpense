@@ -207,7 +207,10 @@ async function upsertOrg(client, slug, name) {
 /** ExpenseOS's system role ids (@expenseos/rbac SYSTEM_ROLE_IDS), held by every tenant (0068). */
 const ROLE_IDS = {
   admin: '019e3000-0000-7000-8000-000000000001',
+  'expense-administrator': '019e3000-0000-7000-8000-000000000002',
   employee: '019e3000-0000-7000-8000-000000000004',
+  'ap-clerk': '019e3000-0000-7000-8000-000000000006',
+  executive: '019e3000-0000-7000-8000-000000000007',
 };
 
 async function seedUser(orgId, email, displayName, employee = {}) {
@@ -244,7 +247,13 @@ async function seedUser(orgId, email, displayName, employee = {}) {
         email,
         displayName,
         employee.title ?? null,
-        employee.role === 'ADMIN' ? ROLE_IDS.admin : ROLE_IDS.employee,
+        // `roleKind` names any system role above by its kind (the role-matrix people);
+        // without it, `role: 'ADMIN'` is System Administrator and anything else Employee.
+        employee.roleKind
+          ? ROLE_IDS[employee.roleKind]
+          : employee.role === 'ADMIN'
+            ? ROLE_IDS.admin
+            : ROLE_IDS.employee,
       ],
     );
     await client.query('COMMIT');
@@ -351,6 +360,9 @@ async function seedReportingLine(orgId, opts = {}) {
     ['manager@demo.test', 'admin@demo.test'],
     ['employee@demo.test', 'manager@demo.test'],
     ['admin@demo.test', 'owner@demo.test'],
+    // The role-matrix people (see `main`); the executive has no manager, on purpose.
+    ['expense-admin@demo.test', 'admin@demo.test'],
+    ['ap-clerk@demo.test', 'manager@demo.test'],
   ];
 
   const client = await pool.connect();
@@ -636,6 +648,15 @@ async function main() {
   await seedUser(demoId, 'admin@demo.test', 'Demo Admin', { role: 'ADMIN', title: 'Controller' });
   await seedUser(demoId, 'manager@demo.test', 'Demo Manager', { role: 'MANAGER', title: 'Finance Manager' });
   await seedUser(demoId, 'employee@demo.test', 'Demo Employee', { role: 'EMPLOYEE', title: 'Analyst' });
+  // THREE MORE, ONE PER SYSTEM ROLE NOBODY ABOVE HOLDS, for ExpenseOS's role-matrix specs
+  // (`e2e/crawl-roles.spec.ts`, `interact-roles.spec.ts`, `permissions.spec.ts`), which walk
+  // the app as each seeded role. ExpenseOS seeds the same three (`test-users.json`) and places
+  // them the same way: the expense administrator reports to the admin, the AP clerk to the
+  // manager, and the executive to nobody — "so their approvals cannot route relative to
+  // them". Card Administrator has no person: VeloExpense has no virtual-card screens to walk.
+  await seedUser(demoId, 'expense-admin@demo.test', 'Demo Expense Admin', { roleKind: 'expense-administrator', title: 'Expense Administrator' });
+  await seedUser(demoId, 'ap-clerk@demo.test', 'Demo AP Clerk', { roleKind: 'ap-clerk', title: 'AP Clerk' });
+  await seedUser(demoId, 'executive@demo.test', 'Demo Executive', { roleKind: 'executive', title: 'Executive' });
   await seedReportingLine(demoId);
   await seedDefaultApprovalWorkflow(demoId);
 
@@ -698,7 +719,7 @@ async function main() {
   // bonus, is the first coverage the connect screen has ever had.
 
   console.log(
-    'Seeded: demo (accounting module + reference data + 4 users: owner/admin/manager/employee, reporting line wired,' +
+    'Seeded: demo (accounting module + reference data + 7 users: owner/admin/manager/employee + expense-admin/ap-clerk/executive for the role matrix, reporting line wired,' +
       ' sole-approver self-approval enabled), second (accounting module + reference data' +
       ' + 2 users), blank (0 users, NO modules — a fresh org before provisioning).' +
       ' No ledger is connected — the e2e connects one per tenant.',

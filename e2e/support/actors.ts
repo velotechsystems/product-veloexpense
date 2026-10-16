@@ -13,9 +13,9 @@ import type { BrowserContext, Page } from '@playwright/test';
  *
  * VeloExpense: the demo tenant's seeded people (`scripts/seed.mjs`), whose sessions
  * `e2e/auth.setup.ts` mints into `e2e/.auth/` — there is no password sign-in to drive (SSO is
- * invite-only). Three of ExpenseOS's nine actors have a VeloExpense person, plus `approver`; the rest are
- * ExpenseOS's QA accounts for roles and entities VeloExpense does not seed, and arrive with
- * the specs that need them. `employee` reports to `manager` (seed.mjs), as ExpenseOS's do.
+ * invite-only). Six of ExpenseOS's nine actors have a VeloExpense person, plus `approver`; the
+ * three left out are named below the table, with why. `employee` and `apClerk` report to
+ * `manager`, and `expenseAdmin` to `admin` (seed.mjs), as ExpenseOS's do.
  */
 
 export const ACTORS = {
@@ -24,11 +24,21 @@ export const ACTORS = {
   employee: 'employee@demo.test',
   /** VeloExpense: the demo tenant's owner, who approves the admin's reports (`approver.json`). */
   approver: 'owner@demo.test',
+  // VeloExpense: the role-matrix people, ExpenseOS's three for the system roles nobody above
+  // holds — seeded and placed as ExpenseOS places them (`scripts/seed.mjs`).
+  expenseAdmin: 'expense-admin@demo.test',
+  apClerk: 'ap-clerk@demo.test',
+  /**
+   * The top of the org chart. `executive` has NO manager on purpose, so their approvals
+   * cannot route relative to them.
+   */
+  executive: 'executive@demo.test',
 } as const;
 
-// VeloExpense: ExpenseOS's other actors — expenseAdmin, cardAdmin, apClerk, usEmployee,
-// executive, cfo — are QA accounts for roles and entities VeloExpense does not seed; each
-// arrives with the spec that needs it (see the header).
+// VeloExpense: ExpenseOS's remaining actors are not here. `cardAdmin` holds a role whose
+// screens (virtual cards) VeloExpense does not have; `usEmployee` exists for a US legal entity
+// VeloExpense does not seed; and `cfo` is the fallback approver ExpenseOS's seeded workflows
+// name, where VeloExpense's default workflow falls back to the System Administrator role.
 
 export type Actor = keyof typeof ACTORS;
 

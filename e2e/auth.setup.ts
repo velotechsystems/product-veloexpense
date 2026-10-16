@@ -177,3 +177,18 @@ setup('mint a session cookie for a manager', async () => {
 setup('mint a session cookie for an employee', async () => {
   await mintSession(E2E_ORG_SLUG, EMPLOYEE_EMAIL, EMPLOYEE_STATE_PATH);
 });
+
+/**
+ * The role-matrix people (`scripts/seed.mjs`), one per system role nobody above holds, for
+ * ExpenseOS's role-matrix specs. Each session lands where `e2e/support/actors.ts`'s
+ * `stateFileFor` looks for it: `e2e/.auth/<actor>.json`.
+ */
+for (const [actor, email] of [
+  ['expenseAdmin', 'expense-admin@demo.test'],
+  ['apClerk', 'ap-clerk@demo.test'],
+  ['executive', 'executive@demo.test'],
+] as const) {
+  setup(`mint a session cookie for the ${actor}`, async () => {
+    await mintSession(E2E_ORG_SLUG, email, path.join('e2e', '.auth', `${actor}.json`));
+  });
+}

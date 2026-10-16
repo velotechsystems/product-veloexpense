@@ -243,6 +243,16 @@ function phoneSpecPattern(patterns: readonly string[]): RegExp {
 
 /** `chromium`'s `testIgnore`. */
 const PHONE_ONLY_SPECS = phoneSpecPattern(PHONE_ONLY_SPEC_PATTERNS);
+
+/**
+ * VeloExpense: ExpenseOS's role-matrix specs, which walk every page as every seeded role
+ * (`crawl-roles`, `interact-roles`) and probe what each role reaches (`permissions`). About
+ * fourteen minutes together, so they run as their own project — and in CI as their own job,
+ * beside `quality` and `phones` — rather than inside `chromium`, whose job would not fit its
+ * ceiling with them. ExpenseOS runs every browser project nightly; VeloExpense runs these on
+ * every PR, as it does the phone projects.
+ */
+const ROLE_MATRIX_SPECS = /(^|\/)(crawl-roles|interact-roles|permissions)\.spec\.ts$/;
 /**
  * EVERY phone project's `testMatch` — a superset of `PHONE_ONLY_SPECS` by construction.
  *
@@ -297,7 +307,16 @@ export default defineConfig({
       // what the phone projects collect — see the spec-list note above the config.
       // VeloExpense: and the pseudo crawl, as the root `testIgnore` says — a project's
       // `testIgnore` REPLACES the root one rather than adding to it.
-      testIgnore: [PHONE_ONLY_SPECS, /pseudo-crawl\.spec\.ts/],
+      // VeloExpense: and the role-matrix specs, which are the `roles` project's.
+      testIgnore: [PHONE_ONLY_SPECS, /pseudo-crawl\.spec\.ts/, ROLE_MATRIX_SPECS],
+      use: { ...devices['Desktop Chrome'], storageState: 'e2e/.auth/state.json' },
+      dependencies: ['setup'],
+    },
+    // VeloExpense: the role-matrix specs, at `chromium`'s desktop settings. See
+    // `ROLE_MATRIX_SPECS`.
+    {
+      name: 'roles',
+      testMatch: ROLE_MATRIX_SPECS,
       use: { ...devices['Desktop Chrome'], storageState: 'e2e/.auth/state.json' },
       dependencies: ['setup'],
     },
