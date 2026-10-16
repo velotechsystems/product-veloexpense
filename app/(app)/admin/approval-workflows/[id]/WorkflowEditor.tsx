@@ -649,6 +649,12 @@ function PaletteGroup({
      * and 8px between buttons, so 4px of slop each side meets 8px of gutter and the regions
      * end tangent instead of overlapping. Tighten either back to `space-y-1` and
      * `e2e/tap-targets.mobile.spec.ts`'s R1 pass goes red on this route.
+     *
+     * VeloExpense: the kit's `sm` is 28px, not 36, so its slop reaches 8px each side and this
+     * 8px rhythm would overlap by 8px. Found when the kit Button gained ExpenseOS's slop
+     * classes (the R1 pass went red on exactly these five pairs). The buttons take `h-9` —
+     * ExpenseOS's 36px, the height this rhythm is computed against — rather than the gap
+     * growing to 16px: the palette keeps ExpenseOS's look, and the regions end tangent again.
      */
     <div className="space-y-2">
       <button
@@ -666,7 +672,8 @@ function PaletteGroup({
               key={type}
               size="sm"
               variant="outline"
-              className="w-full justify-start"
+              // VeloExpense: `h-9`, ExpenseOS's `sm` height — see the rhythm note above.
+              className="h-9 w-full justify-start"
               onClick={() => onAdd(type)}
             >
               {TYPE_LABEL[type]}

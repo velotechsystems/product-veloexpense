@@ -1640,30 +1640,17 @@ test.describe('tap targets, coarse pointer', () => {
         "into `DataTableToolbar`'s `rightSlot` at every width, so this is the gate losing " +
         'its subject rather than a finding about the toolbar.',
     ).toBeDefined();
-    /**
-     * VeloExpense: A GAP HERE, ASSERTED POSITIVELY on the column chooser's doctrine below.
-     *
-     * VeloExpense's screens use lib-ui-kit's `Button`, not ExpenseOS's design-system one, and
-     * the kit's `sm` is `h-7` with no `einc-tap-slop` (ExpenseOS: `einc-tap-slop h-9`). So
-     * this trigger is ~28px tall at a coarse pointer, declares no floor, and Gate 1 skips it.
-     * The fix belongs in the kit — ExpenseOS's slop classes on the kit Button's small sizes —
-     * which is tracked on its own (it reaches every product that uses the kit). Until it
-     * lands, both halves of the shortfall are pinned, so the lane goes red the day the kit
-     * fixes it and the assertion has to be turned back into ExpenseOS's:
-     * `floored.vertical === true` and the hit extent `>= HIT_FLOOR_PX`.
-     */
     if (exportTrigger) {
       expect(
         exportTrigger.floored.vertical,
-        `${describeCandidate(exportTrigger)} now declares a vertical floor. If the kit Button's ` +
-          '`sm` gained `einc-tap-slop`, that is the FIX this pin was waiting for: restore ' +
-          "ExpenseOS's two assertions here (floored, and at or past the floor).",
-      ).toBe(false);
+        `${describeCandidate(exportTrigger)} declares no vertical floor. The trigger is ` +
+          '`Button variant="ghost" size="sm"` in ExportMenu.tsx, and `sm` carries ' +
+          '`einc-tap-slop` — without it Gate 1 above stops measuring this control entirely.',
+      ).toBe(true);
       expect(
         round(exportTrigger.hit.b - exportTrigger.hit.t),
-        `${describeCandidate(exportTrigger)} now reaches the ${HIT_FLOOR_PX}px floor — see the ` +
-          'note above; restore ExpenseOS\'s assertions.',
-      ).toBeLessThan(HIT_FLOOR_PX);
+        `${describeCandidate(exportTrigger)} is under the ${HIT_FLOOR_PX}px floor.`,
+      ).toBeGreaterThanOrEqual(HIT_FLOOR_PX);
     }
 
     /**
