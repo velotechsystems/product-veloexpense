@@ -139,6 +139,9 @@ export interface VeloExpenseConfig {
 export const LISTENER_PRIORITY_BAND = { from: 100, to: 199 } as const;
 
 const ACCOUNT_ID = '535079144866';
+
+/** The repository whose CD workflow may assume the deploy role (deploy-role-stack.ts). */
+export const GITHUB_REPOSITORY = 'velotechsystems/product-veloexpense';
 const REGION = 'ca-central-1';
 
 /**
