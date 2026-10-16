@@ -104,6 +104,8 @@ export const EMPLOYEE_STATUS_COPY: EnumCopy<EmployeeStatus> = {
   ACTIVE: { 'en-CA': 'Active' },
   ON_LEAVE: { 'en-CA': 'On leave' },
   DEACTIVATED: { 'en-CA': 'Deactivated' },
+  // People 1 (0072): ExpenseOS's fourth status.
+  TERMINATED: { 'en-CA': 'Terminated' },
 };
 
 /* ── the ledger queue ─────────────────────────────────────────────────────── */

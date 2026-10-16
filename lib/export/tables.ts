@@ -164,6 +164,8 @@ export const EXPORTED: Readonly<Record<string, ExportedTable>> = {
   role: { file: 'roles.csv' },
   // w4-10c (0070): each role's id in an outside system, as the other External IDs.
   role_external_id: { file: 'role-external-ids.csv' },
+  // People 1 (0072): each person's id in an outside system, as the other External IDs.
+  user_external_id: { file: 'user-external-ids.csv' },
   // w4-08 (0067): ExpenseOS's saved views — people's own filter and column choices on a list.
   // The tenant's own records; nothing secret.
   saved_view: { file: 'saved-views.csv' },

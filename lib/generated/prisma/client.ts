@@ -122,6 +122,11 @@ export type TaxJurisdiction = Prisma.TaxJurisdictionModel
  */
 export type User = Prisma.UserModel
 /**
+ * Model UserExternalId
+ * 
+ */
+export type UserExternalId = Prisma.UserExternalIdModel
+/**
  * Model Role
  * 
  */

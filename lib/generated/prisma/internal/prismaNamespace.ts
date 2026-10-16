@@ -399,6 +399,7 @@ export const ModelName = {
   AiUsage: 'AiUsage',
   TaxJurisdiction: 'TaxJurisdiction',
   User: 'User',
+  UserExternalId: 'UserExternalId',
   Role: 'Role',
   RoleExternalId: 'RoleExternalId',
   BusinessUnit: 'BusinessUnit',
@@ -442,7 +443,7 @@ export type TypeMap<ExtArgs extends runtime.Types.Extensions.InternalArgs = runt
     omit: GlobalOmitOptions
   }
   meta: {
-    modelProps: "expenseCategory" | "glAccount" | "expenseReport" | "expense" | "expenseAllocation" | "expenseAttendee" | "expenseLineItem" | "receipt" | "documentExtraction" | "expenseDetermination" | "receiptExternalId" | "expenseExternalId" | "aiUsage" | "taxJurisdiction" | "user" | "role" | "roleExternalId" | "businessUnit" | "externalIdSource" | "businessUnitExternalId" | "legalEntity" | "legalEntityExternalId" | "fxRate" | "mileageRate" | "mileageRateTier" | "mileageRateSubject" | "perDiemRate" | "currency" | "department" | "departmentExternalId" | "jobLevel" | "jobLevelExternalId" | "fiscalYear" | "fiscalYearExternalId" | "approvalWorkflow" | "approvalWorkflowVersion" | "approvalInstance" | "approvalTask" | "delegation" | "policyRule" | "expensePolicy" | "policyViolation" | "savedView"
+    modelProps: "expenseCategory" | "glAccount" | "expenseReport" | "expense" | "expenseAllocation" | "expenseAttendee" | "expenseLineItem" | "receipt" | "documentExtraction" | "expenseDetermination" | "receiptExternalId" | "expenseExternalId" | "aiUsage" | "taxJurisdiction" | "user" | "userExternalId" | "role" | "roleExternalId" | "businessUnit" | "externalIdSource" | "businessUnitExternalId" | "legalEntity" | "legalEntityExternalId" | "fxRate" | "mileageRate" | "mileageRateTier" | "mileageRateSubject" | "perDiemRate" | "currency" | "department" | "departmentExternalId" | "jobLevel" | "jobLevelExternalId" | "fiscalYear" | "fiscalYearExternalId" | "approvalWorkflow" | "approvalWorkflowVersion" | "approvalInstance" | "approvalTask" | "delegation" | "policyRule" | "expensePolicy" | "policyViolation" | "savedView"
     txIsolationLevel: TransactionIsolationLevel
   }
   model: {
@@ -1553,6 +1554,80 @@ export type TypeMap<ExtArgs extends runtime.Types.Extensions.InternalArgs = runt
         count: {
           args: Prisma.UserCountArgs<ExtArgs>
           result: runtime.Types.Utils.Optional<Prisma.UserCountAggregateOutputType> | number
+        }
+      }
+    }
+    UserExternalId: {
+      payload: Prisma.$UserExternalIdPayload<ExtArgs>
+      fields: Prisma.UserExternalIdFieldRefs
+      operations: {
+        findUnique: {
+          args: Prisma.UserExternalIdFindUniqueArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$UserExternalIdPayload> | null
+        }
+        findUniqueOrThrow: {
+          args: Prisma.UserExternalIdFindUniqueOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$UserExternalIdPayload>
+        }
+        findFirst: {
+          args: Prisma.UserExternalIdFindFirstArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$UserExternalIdPayload> | null
+        }
+        findFirstOrThrow: {
+          args: Prisma.UserExternalIdFindFirstOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$UserExternalIdPayload>
+        }
+        findMany: {
+          args: Prisma.UserExternalIdFindManyArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$UserExternalIdPayload>[]
+        }
+        create: {
+          args: Prisma.UserExternalIdCreateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$UserExternalIdPayload>
+        }
+        createMany: {
+          args: Prisma.UserExternalIdCreateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        createManyAndReturn: {
+          args: Prisma.UserExternalIdCreateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$UserExternalIdPayload>[]
+        }
+        delete: {
+          args: Prisma.UserExternalIdDeleteArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$UserExternalIdPayload>
+        }
+        update: {
+          args: Prisma.UserExternalIdUpdateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$UserExternalIdPayload>
+        }
+        deleteMany: {
+          args: Prisma.UserExternalIdDeleteManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateMany: {
+          args: Prisma.UserExternalIdUpdateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateManyAndReturn: {
+          args: Prisma.UserExternalIdUpdateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$UserExternalIdPayload>[]
+        }
+        upsert: {
+          args: Prisma.UserExternalIdUpsertArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$UserExternalIdPayload>
+        }
+        aggregate: {
+          args: Prisma.UserExternalIdAggregateArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.AggregateUserExternalId>
+        }
+        groupBy: {
+          args: Prisma.UserExternalIdGroupByArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.UserExternalIdGroupByOutputType>[]
+        }
+        count: {
+          args: Prisma.UserExternalIdCountArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.UserExternalIdCountAggregateOutputType> | number
         }
       }
     }
@@ -3943,6 +4018,13 @@ export const UserScalarFieldEnum = {
   organizationId: 'organizationId',
   email: 'email',
   name: 'name',
+  firstName: 'firstName',
+  lastName: 'lastName',
+  hasAccess: 'hasAccess',
+  onLeaveAt: 'onLeaveAt',
+  terminationDate: 'terminationDate',
+  lastLoginAt: 'lastLoginAt',
+  avatarUrl: 'avatarUrl',
   employeeStatus: 'employeeStatus',
   country: 'country',
   managerId: 'managerId',
@@ -3957,6 +4039,21 @@ export const UserScalarFieldEnum = {
 } as const
 
 export type UserScalarFieldEnum = (typeof UserScalarFieldEnum)[keyof typeof UserScalarFieldEnum]
+
+
+export const UserExternalIdScalarFieldEnum = {
+  id: 'id',
+  organizationId: 'organizationId',
+  sourceId: 'sourceId',
+  sourceValue: 'sourceValue',
+  userId: 'userId',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt',
+  createdBy: 'createdBy',
+  updatedBy: 'updatedBy'
+} as const
+
+export type UserExternalIdScalarFieldEnum = (typeof UserExternalIdScalarFieldEnum)[keyof typeof UserExternalIdScalarFieldEnum]
 
 
 export const RoleScalarFieldEnum = {
@@ -4704,6 +4801,7 @@ export type GlobalOmitConfig = {
   aiUsage?: Prisma.AiUsageOmit
   taxJurisdiction?: Prisma.TaxJurisdictionOmit
   user?: Prisma.UserOmit
+  userExternalId?: Prisma.UserExternalIdOmit
   role?: Prisma.RoleOmit
   roleExternalId?: Prisma.RoleExternalIdOmit
   businessUnit?: Prisma.BusinessUnitOmit
