@@ -387,8 +387,10 @@ jobs:
 
     services:
       postgres:
-        # The same image as `quality`'s; see the note there.
-        image: public.ecr.aws/docker/library/postgres:16
+        # The same image as `quality`'s; see the note there. It said so from the start and
+        # pointed at ECR Public anyway: #248 copied this job from a stale copy of ci.yml that
+        # predated f33, and #250's run then failed this pull on ECR Public's data limit.
+        image: ghcr.io/velotechsystems/base-postgres:16
         env:
           POSTGRES_PASSWORD: velo
           POSTGRES_DB: veloexpense
