@@ -3,15 +3,13 @@ import { assertFinePointer, assertProject, censusOf } from './support/tap-target
 
 /*
  * VeloExpense: ExpenseOS's `e2e/tap-targets-desktop.spec.ts` (1e682dd6), ported with the
- * phone projects (phone e2e 2). Claims 1 and 3 — the pointer is fine, and no tap-slop
- * `::after` exists under it — are ExpenseOS's, unchanged. CLAIM 2 AND ITS COROLLARY ARE NOT
- * HERE YET: their subject is an `xs` Button carrying `einc-tap-slop`, and VeloExpense's
- * screens use lib-ui-kit's Button, whose sizes carry no slop class (the gap the phone spec
- * pins on `/expenses`' Export). They come back with the kit change that gives the kit Button
- * ExpenseOS's slop classes. The route is `/dashboard` rather than `/users`, which VeloExpense
- * does not have as ExpenseOS's screen; the shell's hamburger is slopped there, and — as the
- * header below notes of ExpenseOS's run — it is checked although it is 0x0 at 1280, because
- * the rule is global.
+ * phone projects (phone e2e 2); claim 2 and its corollary came back with the lib-ui-kit change
+ * that gave the kit Button ExpenseOS's slop classes. Two changes, marked where they are made:
+ *   · the route is `/admin/expense-categories` rather than `/users`, which VeloExpense does not
+ *     have as ExpenseOS's screen. It renders the same `ViewsBar` with the same `Button size="xs"`
+ *     (`AdminLookupPage`), plus the shell's slopped hamburger;
+ *   · the kit's `xs` is `h-6`, 24px — ExpenseOS's is `h-7`, 28px — so claim 2's subject and
+ *     its pinned height are the kit's.
  */
 
 /**
@@ -103,8 +101,15 @@ import { assertFinePointer, assertProject, censusOf } from './support/tap-target
  * ungated rule would do the most damage. Sharing the route with the mobile spec is
  * deliberate — the two files then make inverse claims about the same controls.
  */
-// VeloExpense: `/dashboard` (see the note at the top).
-const ROUTE = '/dashboard';
+// VeloExpense: `/admin/expense-categories` (see the note at the top).
+const ROUTE = '/admin/expense-categories';
+
+/** `h-6`. The measured height of the kit's `Button size="xs"`, which claim 2 says the slop did
+ *  not change. This is a PINNED MEASUREMENT of the design, not a floor: the point is that it is
+ *  still 24 and not 44. VeloExpense: the kit's `xs` (ExpenseOS's is `h-7`, 28). */
+const XS_HEIGHT_PX = 24;
+/** VeloExpense: the kit `xs` size's height utility, which is how claim 2 finds its subject. */
+const XS_HEIGHT_CLASS = 'h-6';
 
 test.describe('tap targets, fine pointer', () => {
   test('the slop does not exist under a mouse', async ({ page }, testInfo) => {
@@ -126,14 +131,45 @@ test.describe('tap targets, fine pointer', () => {
         'is implicated.',
     ).toBe(true);
 
-    // VeloExpense: claim 2 is not here yet — see the note at the top.
+    // ── Claim 2: an `xs` button still measures its own height. ──────────────────────────────────
+    /**
+     * Found by measurement and by class, not by `getByRole('button', { name: 'Show filters' })`.
+     * The label is a catalog string and this file has no business pinning one; what it needs is
+     * "the shortest control carrying a slop class", which is what the filter says.
+     */
     const slopped = await page.locator('.einc-tap-slop, .einc-tap-slop-both').all();
     expect(
       slopped.length,
-      `${ROUTE} rendered no control carrying a tap-slop class at 1280, so claim 3 has no ` +
-        'subject and this file would pass vacuously. The shell renders its hamburger with ' +
-        '`einc-tap-slop-both` on every route (hidden at `lg`, still in the DOM).',
+      `${ROUTE} rendered no control carrying a tap-slop class at 1280, so claims 2 and 3 have ` +
+        'no subject and this file would pass vacuously. `ViewsBar` renders a `Button size="xs"` ' +
+        'here (`AdminLookupPage`). If the toolbar moved, this file needs a different route ' +
+        'rather than a lower bar.',
     ).toBeGreaterThan(0);
+
+    /**
+     * The subject is found by `h-7` — the SIZE utility — and not by the slop class, for the
+     * same reason the mobile spec's `xs` lane is: a subject identified by the property under
+     * test disappears exactly when that property regresses, and then what goes red is a
+     * coverage count with a misleading message instead of the assertion that means something.
+     */
+    const xsCandidates = census.candidates.filter((c) => c.classes.includes(XS_HEIGHT_CLASS));
+    expect(
+      xsCandidates.length,
+      `no \`${XS_HEIGHT_CLASS}\` control was censused on ${ROUTE} at 1280. That is claim 2 ` +
+        'losing its subject: the kit\'s `Button size="xs"` is `h-6` and `ViewsBar` renders one ' +
+        'here. If the size changed, ' +
+        'this constant changes with it — but deliberately, and in the same commit as the `h-*` ' +
+        'that moved.',
+    ).toBeGreaterThan(0);
+
+    for (const c of xsCandidates) {
+      expect(
+        Math.round(c.box.b - c.box.t),
+        `the \`${XS_HEIGHT_CLASS}\` control ${c.name || c.tag} measures ${Math.round(c.box.b - c.box.t)}px tall ` +
+          `at 1280, not ${XS_HEIGHT_PX}px. Wiring the tap slop onto the size variants was ` +
+          'supposed to change no painted pixel in either pointer mode.',
+      ).toBe(XS_HEIGHT_PX);
+    }
 
     /**
      * ── Claim 3: the ::after does not exist. The one the box measurement cannot make. ──
@@ -203,6 +239,17 @@ test.describe('tap targets, fine pointer', () => {
       }
     }
 
-    // VeloExpense: the corollary rests on claim 2's subject — see the note at the top.
+    /**
+     * The corollary, measured rather than inferred: with no pseudo-element, a control's hit
+     * region IS its box. Below the `content` assertion deliberately — see the ORDER note above.
+     */
+    for (const c of xsCandidates) {
+      expect(
+        Math.round(c.hit.b - c.hit.t),
+        `the ${XS_HEIGHT_PX}px control ${c.name || c.tag} has a hit region ` +
+          `${Math.round(c.hit.b - c.hit.t)}px tall under a fine pointer. With no ::after there ` +
+          'is nothing to widen it, so its box and its hit region must be the same rectangle.',
+      ).toBe(XS_HEIGHT_PX);
+    }
   });
 });
