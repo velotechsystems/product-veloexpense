@@ -2,6 +2,7 @@
 /**
  * VeloExpense – CDK application entry point.
  *
+ *   DeployRole (independent), then
  *   Security → Network → Storage → Data → Cache → Compute, and Mail where receipts by
  *   email is configured (w3-06) — on its own: Compute names its topic and bucket rather than
  *   referencing them, so the two deploy independently.
@@ -21,9 +22,10 @@
 import 'source-map-support/register';
 import * as cdk from 'aws-cdk-lib';
 import { CacheStack } from '../lib/cache-stack';
-import { buildConfig, type Stage } from '../lib/config';
+import { buildConfig, GITHUB_REPOSITORY, type Stage } from '../lib/config';
 import { ComputeStack } from '../lib/compute-stack';
 import { DataStack } from '../lib/data-stack';
+import { DeployRoleStack } from '../lib/deploy-role-stack';
 import { MailStack } from '../lib/mail-stack';
 import { NetworkStack } from '../lib/network-stack';
 import { SecurityStack } from '../lib/security-stack';
@@ -42,6 +44,15 @@ if (!imageTag) {
 const env: cdk.Environment = { account: config.accountId, region: config.region };
 const pascal = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 const prefix = `VeloExpense-${pascal(config.stage)}`;
+
+// Ported from ExpenseOS: the role the CD workflow assumes through GitHub OIDC. It
+// depends on nothing, and nothing depends on it; deployed once by hand first (see its header).
+new DeployRoleStack(app, `${prefix}-DeployRole`, {
+  env,
+  config,
+  githubRepository: GITHUB_REPOSITORY,
+  description: 'VeloExpense - IAM role GitHub Actions assume to deploy (OIDC)',
+});
 
 const security = new SecurityStack(app, `${prefix}-Security`, {
   env,
