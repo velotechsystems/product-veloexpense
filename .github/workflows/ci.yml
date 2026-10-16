@@ -16,7 +16,10 @@ permissions:
 jobs:
   quality:
     name: Typecheck, build, RLS gate
-    runs-on: ubuntu-latest
+    # Pinned, not ubuntu-latest: that label moves to Ubuntu 26 from 19 Oct 2026, and a new
+    # OS can break Playwright's system libraries or the Postgres service with no change of
+    # ours. Move to 26 on purpose, in a branch whose CI is watched. (Same in every job.)
+    runs-on: ubuntu-24.04
     # Everything from install to the audit-chain check runs in this one job. Wave 1
     # took it to ~15 minutes (unit + DB suite ~5, Playwright ~5-6, build, crawl), so the
     # old 15-minute ceiling started cancelling green runs mid-e2e. 30 leaves room for the
@@ -60,9 +63,9 @@ jobs:
           --health-interval 5s --health-timeout 5s --health-retries 10
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version: '22'
           cache: 'npm'
@@ -351,7 +354,7 @@ jobs:
 
       - name: Upload Playwright report on failure
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: playwright-report
           path: |
@@ -376,7 +379,8 @@ jobs:
     # requires an approval and a reimbursement in the chain (`test/chain-verify.check.ts`),
     # which the desktop e2e walks and the phone specs do not.
     name: End-to-end (phones)
-    runs-on: ubuntu-latest
+    # Pinned, not ubuntu-latest; see the note on the first job.
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     env:
       AUTH_SECRET: ci-test-only-not-a-real-secret
@@ -402,9 +406,9 @@ jobs:
           --health-interval 5s --health-timeout 5s --health-retries 10
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version: '22'
           cache: 'npm'
@@ -447,7 +451,7 @@ jobs:
 
       - name: Upload Playwright report on failure
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: playwright-report-phones
           path: |
@@ -462,7 +466,8 @@ jobs:
     # reach probed. About fourteen minutes of browser time, so a job of its own beside
     # `quality` and `phones`, built the same way as `phones` — see the notes there.
     name: End-to-end (roles)
-    runs-on: ubuntu-latest
+    # Pinned, not ubuntu-latest; see the note on the first job.
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     env:
       AUTH_SECRET: ci-test-only-not-a-real-secret
@@ -486,9 +491,9 @@ jobs:
           --health-interval 5s --health-timeout 5s --health-retries 10
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version: '22'
           cache: 'npm'
@@ -531,7 +536,7 @@ jobs:
 
       - name: Upload Playwright report on failure
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: playwright-report-roles
           path: |
@@ -549,14 +554,15 @@ jobs:
     # login in the web task) needs no database and no AWS credentials — the
     # shared infrastructure is read from SSM at DEPLOY time, not at synth.
     name: Infrastructure (CDK typecheck + template tests)
-    runs-on: ubuntu-latest
+    # Pinned, not ubuntu-latest; see the note on the first job.
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     defaults:
       run:
         working-directory: infrastructure/cdk
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v6
         with:
           node-version: '22'
           cache: npm
