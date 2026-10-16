@@ -90,6 +90,20 @@ export function veloExpenseRoute(to: string): string | null {
  */
 const VELOEXPENSE_ADMIN: Permission = P.admin.appSettings.update;
 
+/**
+ * ExpenseOS menu entries whose page at the SAME path is still VeloExpense's own, gated by
+ * `asAdminPage` (System Administrator) rather than by the permission ExpenseOS's entry names.
+ * The menu asks the page's question for these, so it never offers a link the page refuses.
+ *
+ * `/admin/notification-templates`: ExpenseOS's entry requires `notification.templateUpdate`,
+ * which the Expense Administrator holds; VeloExpense's page admits System Administrators only.
+ * The role-matrix crawl found the Expense Administrator's menu offering it and the page
+ * answering 403 (decided 16 Oct: hide it). An entry leaves this map when its page is ported.
+ */
+export const VELOEXPENSE_REQUIRES: Readonly<Record<string, Permission>> = {
+  '/admin/notification-templates': VELOEXPENSE_ADMIN,
+};
+
 export interface VeloExpenseNavItem {
   /** Catalog key under nav.items.* */
   key: string;
