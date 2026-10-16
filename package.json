@@ -35,7 +35,8 @@
     "check:catalogs": "node packages/i18n/scripts/check-coverage.mjs && node packages/i18n/scripts/check-used-keys.mjs",
     "prisma:generate": "prisma generate",
     "check:phone-projects": "node scripts/check-phone-projects.mjs",
-    "test:e2e:mobile": "playwright test --project=mobile-360 --project=mobile-390 --project=mobile-412"
+    "test:e2e:mobile": "playwright test --project=mobile-360 --project=mobile-390 --project=mobile-412",
+    "test:e2e:roles": "playwright test --project=roles"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.110.0",

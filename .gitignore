@@ -52,3 +52,9 @@ next-env.d.ts
 
 # The mobile crawl's screenshots, sidecars and census (e2e/support/mobile-census.ts).
 /e2e/.artifacts/
+
+# The role-matrix specs' reports (crawl-roles, interact-roles, permissions), written at the
+# repo root as ExpenseOS's are — run output, never committed.
+/e2e-role-crawl*.md
+/e2e-role-interact*.md
+/e2e-permission-matrix.md

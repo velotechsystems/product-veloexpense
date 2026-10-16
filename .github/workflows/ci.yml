@@ -319,8 +319,9 @@ jobs:
       # DESKTOP ONLY (`chromium`, plus the `setup` project it depends on). The three
       # phone projects run in the `phones` job below, at the same time as this one:
       # ported from ExpenseOS in phone e2e 1-5, they took this job's e2e from about 6
-      # minutes to about 17, and #246 was cancelled at the 30-minute ceiling. Every PR
-      # still runs every project — just not all in one job.
+      # minutes to about 17, and #246 was cancelled at the 30-minute ceiling. The
+      # role-matrix specs (the `roles` project) run in the `roles` job for the same reason.
+      # Every PR still runs every project — just not all in one job.
       - name: End-to-end happy path (Playwright, desktop)
         run: npx playwright test --project=chromium
 
@@ -453,6 +454,92 @@ jobs:
             playwright-report/
             test-results/
             e2e/.artifacts/
+          retention-days: 7
+
+  roles:
+    # ExpenseOS's role-matrix specs (the `roles` Playwright project; `npm run test:e2e:roles`):
+    # every page walked and every safe control clicked as each seeded role, and each role's
+    # reach probed. About fourteen minutes of browser time, so a job of its own beside
+    # `quality` and `phones`, built the same way as `phones` — see the notes there.
+    name: End-to-end (roles)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      AUTH_SECRET: ci-test-only-not-a-real-secret
+      SECRET_ENCRYPTION_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+      INTEGRATIONS_ENABLE_STUB: '1'
+      ADMIN_DATABASE_URL: postgres://postgres:velo@localhost:5432/veloexpense
+      DATABASE_URL: postgres://veloapp:velo@localhost:5432/veloexpense
+      STAGE: ci
+
+    services:
+      postgres:
+        # The same image as `quality`'s; see the note there.
+        image: ghcr.io/velotechsystems/base-postgres:16
+        env:
+          POSTGRES_PASSWORD: velo
+          POSTGRES_DB: veloexpense
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+
+      # The e2e serves the standalone output (playwright.config.ts).
+      - name: Build
+        run: npm run build
+
+      - name: Apply migrations
+        run: npm run migrate
+
+      # `quality`'s role step, verbatim: the app connects as `veloapp` so RLS applies.
+      - name: Create non-superuser app role
+        run: |
+          psql "$ADMIN_DATABASE_URL" -v ON_ERROR_STOP=1 <<'SQL'
+          DO $$ BEGIN
+            IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='veloapp') THEN
+              CREATE ROLE veloapp LOGIN PASSWORD 'velo';
+            END IF;
+          END $$;
+          GRANT CONNECT ON DATABASE veloexpense TO veloapp;
+          GRANT USAGE ON SCHEMA public TO veloapp;
+          GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO veloapp;
+          GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO veloapp;
+          ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO veloapp;
+          ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE, SELECT ON SEQUENCES TO veloapp;
+          SQL
+
+      - name: Seed the demo tenant
+        run: npm run seed
+
+      - name: Install Playwright browser
+        run: npx playwright install --with-deps chromium
+
+      - name: End-to-end (Playwright, role matrix)
+        run: npm run test:e2e:roles
+
+      - name: Upload Playwright report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report-roles
+          path: |
+            playwright-report/
+            test-results/
+            e2e-role-crawl*.md
+            e2e-role-interact*.md
+            e2e-permission-matrix.md
           retention-days: 7
 
   infra:
