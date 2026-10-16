@@ -41,7 +41,9 @@ vi.mock('./ProfilePopover', () => ({ ProfilePopover: () => null }));
 
 import { AppSidebar } from './Sidebar';
 
-const asRole = (kind: 'admin' | 'employee') => ({
+type Kind = 'admin' | 'employee' | 'expense-administrator';
+
+const asRole = (kind: Kind) => ({
   user: {
     id: 'u-1',
     name: 'Ada Lovelace',
@@ -60,7 +62,7 @@ const asRole = (kind: 'admin' | 'employee') => ({
 /** Every VeloExpense module on, as ExpenseOS slugs (`server/platform/modules.ts`). */
 const ALL_ON = new Set(['expense-management', 'travel', 'ledger-gl', 'compliance-audit', 'finance-reporting', 'budgets']);
 
-const show = (kind: 'admin' | 'employee', activeModules: ReadonlySet<string> = ALL_ON) =>
+const show = (kind: Kind, activeModules: ReadonlySet<string> = ALL_ON) =>
   render(
     <AppSidebar
       {...asRole(kind)}
@@ -163,6 +165,32 @@ describe("an employee's menu", () => {
       '/expenses/approvals',
       '/notifications',
     ]);
+  });
+});
+
+describe("an expense administrator's menu", () => {
+  /**
+   * VeloExpense: ExpenseOS's Notification templates entry requires `notification.templateUpdate`,
+   * which this role holds, but VeloExpense's page at that path admits System Administrators
+   * only (`asAdminPage`). The role-matrix crawl found the menu offering it and the page
+   * answering 403; `VELOEXPENSE_REQUIRES` makes the menu ask the page's question (16 Oct).
+   */
+  it('offers no screen whose page would refuse them', async () => {
+    const { SYSTEM_ROLE_PERMISSIONS: perms, permissions: P } = await import('@expenseos/rbac');
+    // The premise: they hold ExpenseOS's permission for the entry.
+    expect(perms['expense-administrator']).toContain(P.notification.templateUpdate);
+    show('expense-administrator');
+    expect(hrefs()).not.toContain('/admin/notification-templates');
+    // And the screens they CAN open are still offered.
+    expect(hrefs()).toContain('/admin/policies');
+    expect(hrefs()).toContain('/admin/expense-categories');
+  });
+
+  it('keeps the override to menu routes, and to the admin question', async () => {
+    const { VELOEXPENSE_REQUIRES } = await import('./veloexpenseNav');
+    const { SECTIONS } = await import('./Sidebar');
+    const menu = new Set(SECTIONS.flatMap((section) => section.items.map((item) => item.to)));
+    expect(Object.keys(VELOEXPENSE_REQUIRES).filter((to) => !menu.has(to))).toEqual([]);
   });
 });
 

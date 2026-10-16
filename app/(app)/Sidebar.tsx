@@ -55,7 +55,7 @@ import { trpc } from '@/lib/trpc/client';
 import { type DispositionTable, dispositionFor, MOBILE_READINESS } from './mobileReadiness';
 import { Wordmark } from '@/components/brand/wordmark';
 import { ProfilePopover } from './ProfilePopover';
-import { VELOEXPENSE_ITEMS, veloExpenseRoute } from './veloexpenseNav';
+import { VELOEXPENSE_ITEMS, VELOEXPENSE_REQUIRES, veloExpenseRoute } from './veloexpenseNav';
 
 interface NavItem {
   /** Catalog key under nav.items.* */
@@ -704,6 +704,10 @@ export function visibleNavSections({
       ? section.items.filter((item) => {
           if (item.key === 'people' && !canSeeOthers) return false;
           if (item.moduleSlug && !activeModules.has(item.moduleSlug)) return false;
+          // VeloExpense: an entry whose page here is still VeloExpense's own asks that page's
+          // question instead (`VELOEXPENSE_REQUIRES`, veloexpenseNav.ts).
+          const veloExpenseRequires = VELOEXPENSE_REQUIRES[item.to];
+          if (veloExpenseRequires) return can(rbac, veloExpenseRequires);
           if (!item.requires) return true;
           return Array.isArray(item.requires)
             ? item.requires.some((p) => can(rbac, p))

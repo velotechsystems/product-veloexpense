@@ -133,6 +133,7 @@ vi.mock('./ProfilePopover', () => ({
  */
 vi.mock('./veloexpenseNav', () => ({
   VELOEXPENSE_ITEMS: {},
+  VELOEXPENSE_REQUIRES: {},
   veloExpenseRoute: (to: string) => to,
 }));
 
