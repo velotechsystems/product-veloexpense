@@ -119,3 +119,5 @@ export { nextReportNumber } from './reportNumber';
 export { cacheNamespace } from './cacheNamespace';
 // VeloExpense (f29): one home-currency rule for starting a report and for reading totals.
 export { homeCurrencyCode, LAST_RESORT_CURRENCY } from './homeCurrency';
+// People 2: ExpenseOS's offboarding roll-up, reports half (`@expenseos/db/offboarding` there).
+export { type OffboardRollupSummary, rollUpOnOffboard } from './offboarding';
