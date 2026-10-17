@@ -21,8 +21,10 @@ const h = vi.hoisted(() => ({
 vi.mock('node:crypto', () => ({
   createVerify: () => ({ update: h.update, verify: h.verify }),
 }));
-// VeloExpense: no thread lookup, stored-message read or comment ingest here until reply
-// threads (w5-01); their doubles stay in `h` so the skipped cases read as ExpenseOS wrote them.
+// VeloExpense: no thread lookup, stored-message read or comment ingest here — since w5-01 the
+// reply path hands the message to the worker (`email.ingestReply`), whose checks are in
+// test/reply-threads.db.test.ts. Their doubles stay in `h` so the moved cases' expectations
+// that nothing was read or posted still read as ExpenseOS wrote them.
 vi.mock('@expenseos/jobs', () => ({ enqueue: h.enqueue }));
 vi.mock('mailparser', () => ({ simpleParser: h.simpleParser }));
 vi.mock('@/lib/tenant/context', () => ({
@@ -55,10 +57,13 @@ vi.mock('@/server/lib/rateLimit', () => ({ throttle: h.throttle }));
  *
  * VeloExpense: ExpenseOS's `route.test.ts` (550b2945), Wave 3 (w3-06). Every address is a
  * tenant's — `<mailbox>@northwind.<inbound domain>` (d47) — and the tenant is looked up by
- * that label. There is one mailbox, receipts: the reply-to-comment cases and the stored-message
- * reads behind them are skipped, marked, until reply threads (w5-01), and the cases that
- * used the reply address only as a carrier now use the receipts one, so they still observe
- * something. VeloExpense's own cases (the tenant in the address) close the file.
+ * that label. Both mailboxes hand their message to the worker (w5-01, decided 17 Oct 2026):
+ * the reply-to-comment cases that checked the thread, the From against its recipient, the body
+ * and the stored-message read moved with that work to `test/reply-threads.db.test.ts`, and
+ * what is left here is the route's half — that a reply is authenticated like any message and
+ * enqueued with its token, sender and tenant. Cases that used the reply address only as a
+ * carrier use the receipts one, so they still observe something. VeloExpense's own cases
+ * (the tenant in the address) close the file.
  */
 
 const TOPIC = 'arn:aws:sns:us-east-1:1:expenseos-inbound';
@@ -111,6 +116,14 @@ const ses = (over: Record<string, unknown> = {}) => ({
   },
   ...over,
 });
+
+/** VeloExpense (w5-01): a reply-mailbox notification, stored to S3 as the SES rule stores
+ *  every message. */
+const replySes = (over: Record<string, unknown> = {}) =>
+  ses({
+    receipt: { ...ses().receipt, action: { type: 'S3', bucketName: 'mail-bucket', objectKey: 'inbound/r1' } },
+    ...over,
+  });
 
 /** A receipts-mailbox notification with the S3 action SES uses for large messages. */
 const receiptsSes = (over: Record<string, unknown> = {}) =>
@@ -575,10 +588,9 @@ describe('which messages are processed at all', () => {
       expect(h.enqueue).not.toHaveBeenCalled();
     });
 
-    // VeloExpense: skipped — no reply mailbox until reply threads (w5-01).
-    it.skip('applies to the reply mailbox too', async () => {
+    it('applies to the reply mailbox too', async () => {
       const POST = await load();
-      const base = ses();
+      const base = replySes();
       await call(
         POST,
         notification({
@@ -590,6 +602,8 @@ describe('which messages are processed at all', () => {
       );
       expect(h.ingestReplyComment).not.toHaveBeenCalled();
       expect(h.findThreadByEmailToken).not.toHaveBeenCalled();
+      // VeloExpense: and nothing reaches the worker.
+      expect(h.enqueue).not.toHaveBeenCalled();
     });
   });
 
@@ -644,172 +658,57 @@ describe('which messages are processed at all', () => {
   });
 });
 
-// VeloExpense: skipped — the reply-to-comment path arrives with reply threads (w5-01).
-describe.skip('a reply becoming a comment', () => {
-  /** The base fixture carries no message body; a reply that can be READ needs one. */
-  const withBody = (over: Record<string, unknown> = {}) =>
-    ses({ content: Buffer.from('raw mime').toString('base64'), ...over });
-
-  it('ingests the reply against the thread’s subject', async () => {
+/**
+ * VeloExpense (w5-01): a reply becomes a JOB here, as a receipt email does — the worker reads
+ * the stored message and posts the comment, so only it reads the inbound-mail bucket (decided
+ * 17 Oct 2026). ExpenseOS's "a reply becoming a comment" and "reading the stored message"
+ * cases check work that moved with it: the thread lookup, the From against the thread's
+ * recipient (exactly, case-insensitively), an empty or text-less body and a message over the
+ * comment ceiling are asserted on `email.ingestReply` in test/reply-threads.db.test.ts.
+ */
+describe('a reply becoming a job', () => {
+  it('enqueues the pointer, the token, the authenticated sender and the tenant', async () => {
     const POST = await load();
-    await call(POST, notification(withBody()));
-    expect(h.ingestReplyComment).toHaveBeenCalledWith({
-      subjectType: 'EXPENSE_REPORT',
-      subjectId: 'rep-1',
-      actorId: 'u-1',
-      body: 'looks fine to me',
-      via: 'email',
+    await call(POST, notification(replySes()));
+    expect(h.enqueue).toHaveBeenCalledWith('email.ingestReply', {
+      bucket: 'mail-bucket',
+      objectKey: 'inbound/r1',
+      sesMessageId: 'ses-1',
+      token: 'tok1',
+      sender: 'dana@e.inc',
+      organizationId: 'org-1',
     });
+    // Nothing is read or posted here.
+    expect(h.simpleParser).not.toHaveBeenCalled();
+    expect(h.ingestReplyComment).not.toHaveBeenCalled();
   });
 
-  it('ignores a token with no thread', async () => {
-    h.findThreadByEmailToken.mockResolvedValue(null);
+  it('ignores the reply address with no token in it', async () => {
+    const POST = await load();
+    const base = replySes();
+    await call(
+      POST,
+      notification({
+        ...base,
+        mail: { ...base.mail, destination: ['reply@northwind.expenseos.dev.internal.e.inc'] },
+        receipt: { ...base.receipt, recipients: ['reply@northwind.expenseos.dev.internal.e.inc'] },
+      }),
+    );
+    expect(h.enqueue).not.toHaveBeenCalled();
+  });
+
+  it('ignores a reply to a tenant that is not active', async () => {
+    h.orgQuery.mockResolvedValue({ rows: [] });
+    const POST = await load();
+    await call(POST, notification(replySes()));
+    expect(h.enqueue).not.toHaveBeenCalled();
+  });
+
+  it('says so when the SES rule stored nothing to read', async () => {
     const POST = await load();
     await call(POST, notification(ses()));
-    expect(h.ingestReplyComment).not.toHaveBeenCalled();
-  });
-
-  it('requires the From to be exactly the recipient’s address', async () => {
-    /**
-     * Exact mailbox equality, NOT containment. A substring test let
-     * `dana@e.inc.attacker.com` satisfy this and post a comment as the wrong person —
-     * the comment is attributed to `thread.recipientId`, never to the sender.
-     */
-    const POST = await load();
-    await call(
-      POST,
-      notification(ses({ mail: { ...ses().mail, source: 'dana@e.inc.attacker.com' } })),
-    );
-    expect(h.ingestReplyComment).not.toHaveBeenCalled();
-  });
-
-  it('refuses a display name that merely contains the address', async () => {
-    const POST = await load();
-    await call(
-      POST,
-      notification(ses({ mail: { ...ses().mail, source: 'dana@e.inc <evil@x.test>' } })),
-    );
-    expect(h.ingestReplyComment).not.toHaveBeenCalled();
-  });
-
-  it('accepts the address inside a display name, case-insensitively', async () => {
-    const POST = await load();
-    await call(
-      POST,
-      notification(withBody({ mail: { ...ses().mail, source: 'Dana Patel <DANA@e.inc>' } })),
-    );
-    expect(h.ingestReplyComment).toHaveBeenCalled();
-  });
-
-  it('refuses when the recipient row has gone', async () => {
-    h.findUnique.mockResolvedValue(null);
-    const POST = await load();
-    await call(POST, notification(ses()));
-    expect(h.ingestReplyComment).not.toHaveBeenCalled();
-  });
-
-  it('refuses a message with no sender', async () => {
-    const POST = await load();
-    await call(POST, notification(ses({ mail: { ...ses().mail, source: undefined } })));
-    expect(h.ingestReplyComment).not.toHaveBeenCalled();
-  });
-
-  it('ignores a reply whose body is only whitespace', async () => {
-    h.simpleParser.mockResolvedValue({ text: '   \n  ' });
-    const POST = await load();
-    await call(POST, notification(ses()));
-    expect(h.ingestReplyComment).not.toHaveBeenCalled();
-  });
-
-  it('ignores a reply with no text part at all', async () => {
-    h.simpleParser.mockResolvedValue({});
-    const POST = await load();
-    await call(POST, notification(ses()));
-    expect(h.ingestReplyComment).not.toHaveBeenCalled();
-  });
-});
-
-// VeloExpense: skipped — only the reply path read a stored message here (w5-01).
-describe.skip('reading the stored message', () => {
-  it('reads an inline message without touching S3', async () => {
-    const POST = await load();
-    await call(POST, notification(ses({ content: Buffer.from('raw mime').toString('base64') })));
-    expect(h.head).not.toHaveBeenCalled();
-    expect(h.simpleParser).toHaveBeenCalled();
-  });
-
-  it('presigns and fetches a stored one', async () => {
-    const POST = await load();
-    await call(
-      POST,
-      notification(
-        ses({
-          receipt: {
-            ...ses().receipt,
-            action: { type: 'S3', bucketName: 'b', objectKey: 'inbound/x' },
-          },
-        }),
-      ),
-    );
-    expect(h.getViewUrl).toHaveBeenCalledWith('inbound/x');
-    expect(h.ingestReplyComment).toHaveBeenCalled();
-  });
-
-  it('refuses to read a reply larger than the comment ceiling', async () => {
-    /** A reply is prose. Anything this large is an attachment nobody will see in a
-     *  comment, and the receipts mailbox is where files belong. */
-    h.head.mockResolvedValue({ size: 5 * 1024 * 1024 });
-    const POST = await load();
-    await call(
-      POST,
-      notification(
-        ses({
-          receipt: { ...ses().receipt, action: { type: 'S3', bucketName: 'b', objectKey: 'k' } },
-        }),
-      ),
-    );
-    expect(h.ingestReplyComment).not.toHaveBeenCalled();
-  });
-
-  it('gives up when the object is not there', async () => {
-    h.head.mockResolvedValue(null);
-    const POST = await load();
-    await call(
-      POST,
-      notification(
-        ses({
-          receipt: { ...ses().receipt, action: { type: 'S3', bucketName: 'b', objectKey: 'k' } },
-        }),
-      ),
-    );
-    expect(h.ingestReplyComment).not.toHaveBeenCalled();
-  });
-
-  it('gives up when the presigned fetch is refused', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async (u: string) =>
-        String(u).includes('s3.test')
-          ? new Response(null, { status: 403 })
-          : new Response('cert-bytes'),
-      ),
-    );
-    const POST = await load();
-    await call(
-      POST,
-      notification(
-        ses({
-          receipt: { ...ses().receipt, action: { type: 'S3', bucketName: 'b', objectKey: 'k' } },
-        }),
-      ),
-    );
-    expect(h.ingestReplyComment).not.toHaveBeenCalled();
-  });
-
-  it('gives up when there is neither inline content nor an S3 action', async () => {
-    const POST = await load();
-    await call(POST, notification(ses()));
-    expect(h.ingestReplyComment).not.toHaveBeenCalled();
+    expect(h.enqueue).not.toHaveBeenCalled();
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('needs one'));
   });
 });
 
@@ -885,12 +784,11 @@ describe('a receipt email becoming a job', () => {
     expect(h.enqueue).not.toHaveBeenCalled();
   });
 
-  // VeloExpense: skipped — no reply mailbox until reply threads (w5-01).
-  it.skip('does not throttle the reply mailbox', async () => {
+  it('does not throttle the reply mailbox', async () => {
     /** A conversation is not a cost centre; the ceiling exists because each receipt
      *  email means a stored object plus N model calls. */
     const POST = await load();
-    await call(POST, notification(ses({ content: Buffer.from('m').toString('base64') })));
+    await call(POST, notification(replySes()));
     expect(h.throttle).not.toHaveBeenCalled();
   });
 });
@@ -917,14 +815,11 @@ describe('a failure after the claim is taken', () => {
     expect(h.releaseClaim).toHaveBeenCalledWith('ses-2');
   });
 
-  // VeloExpense: skipped — no comment path until reply threads (w5-01).
-  it.skip('does the same when ingesting a comment fails', async () => {
-    h.ingestReplyComment.mockRejectedValue(new Error('db down'));
+  it('does the same when handing a reply on fails', async () => {
+    // VeloExpense: the comment is the worker's now, so the failure here is the enqueue.
+    h.enqueue.mockRejectedValue(new Error('redis down'));
     const POST = await load();
-    const res = await call(
-      POST,
-      notification(ses({ content: Buffer.from('m').toString('base64') })),
-    );
+    const res = await call(POST, notification(replySes()));
     expect(res.status).toBe(500);
     expect(h.releaseClaim).toHaveBeenCalledWith('ses-1');
   });
@@ -1032,10 +927,12 @@ describe('VeloExpense: the tenant is in the address (d47)', () => {
     expect(h.enqueue).not.toHaveBeenCalled();
   });
 
-  it('ignores the reply mailbox until reply threads arrive (w5-01)', async () => {
+  it('hands a reply to the tenant its address names (w5-01)', async () => {
+    // Until w5-01 this pinned the opposite: the reply mailbox was ignored.
     const POST = await load();
     await call(POST, to('reply+tok1@northwind.expenseos.dev.internal.e.inc'));
-    expect(h.enqueue).not.toHaveBeenCalled();
-    expect(h.orgQuery).not.toHaveBeenCalled();
+    expect(h.orgQuery).toHaveBeenCalled();
+    expect(h.enqueue.mock.calls[0]?.[0]).toBe('email.ingestReply');
+    expect(h.enqueue.mock.calls[0]?.[1]).toMatchObject({ token: 'tok1', organizationId: 'org-1' });
   });
 });

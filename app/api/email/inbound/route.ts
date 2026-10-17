@@ -26,8 +26,10 @@
  *     email address is unique only inside a tenant here, so the From alone cannot say whose
  *     claim this is; the tenant comes from the address, must be active, and travels to the
  *     worker as the job's `organizationId`, where the sender is looked up inside it only;
- *   · one mailbox: the `reply+` comment path arrives with reply threads (w5-01), and so
- *     does reading a stored message here, which only that path did;
+ *   · the `reply+` comment path (w5-01) does none of its work here either: like the receipts
+ *     mailbox, it hands the stored message to the worker (`email.ingestReply`), so only the
+ *     worker reads the inbound-mail bucket (decided 17 Oct 2026). ExpenseOS reads the
+ *     message and posts the comment in this route;
  *   · no public forwarding domain: mail is received directly on the tenant's address, where
  *     ExpenseOS's Workspace MX forced a forward;
  *   · the hourly ceiling is per tenant and sender.
@@ -69,7 +71,8 @@ const INBOUND_EMAIL_DOMAIN = process.env.INBOUND_EMAIL_DOMAIN?.trim().toLowerCas
  * mailbox — `receipts-dev@e.inc` against `receipts@e.inc`.
  */
 const RECEIPTS_MAILBOXES = process.env.INBOUND_RECEIPTS_MAILBOXES?.trim() || 'receipts';
-// VeloExpense: no reply mailbox until reply threads (w5-01).
+/** Local parts of the reply mailbox (w5-01): `reply+<token>@<tenant>.<inbound domain>`. */
+const REPLY_MAILBOXES = process.env.INBOUND_REPLY_MAILBOXES?.trim() || 'reply';
 
 /**
  * Receipt emails accepted per sender per hour.
@@ -87,8 +90,10 @@ function mailboxes(): InboundMailbox[] {
       .split(',')
       .map((p) => p.trim())
       .filter(Boolean);
-  // VeloExpense: the receipts mailbox only (w5-01 brings `reply`).
-  return [{ purpose: 'receipts', localParts: parts(RECEIPTS_MAILBOXES) }];
+  return [
+    { purpose: 'receipts', localParts: parts(RECEIPTS_MAILBOXES) },
+    { purpose: 'reply', localParts: parts(REPLY_MAILBOXES) },
+  ];
 }
 // Pin the SNS topic. An SNS signing cert is a public AWS cert shared across
 // every topic/account in a region, so a valid signature alone lets ANY
@@ -273,8 +278,52 @@ async function processClaimed(
     await handleReceipts(ses, addressed.token, sender.address, organizationId, sesMessageId);
     return;
   }
-  // VeloExpense: ExpenseOS's `reply+<token>@` comment path is not here — it needs reply
-  // threads (w5-01), and `mailboxes()` names no reply mailbox, so nothing reaches this line.
+
+  // w5-01: a reply to a notification. The token names the thread and proves who was
+  // addressed; the worker checks that the sender IS that person before posting anything.
+  const token = addressed.token;
+  if (!token) return;
+  const organizationId = await activeTenantId(slug);
+  if (!organizationId) {
+    console.warn(`[email.inbound] ignoring ${sesMessageId}: no active tenant at that address`);
+    return;
+  }
+  await handleReply(ses, token, sender.address, organizationId, sesMessageId);
+}
+
+/**
+ * Hand a reply to the worker (w5-01). VeloExpense: ExpenseOS reads the stored message and
+ * posts the comment here; this enqueues `email.ingestReply` instead, as `handleReceipts`
+ * does, so the web app never reads the inbound-mail bucket.
+ */
+async function handleReply(
+  ses: SesNotification,
+  token: string,
+  sender: string,
+  organizationId: string,
+  sesMessageId?: string,
+): Promise<void> {
+  const action = ses.receipt?.action;
+  if (action?.type !== 'S3' || !action.bucketName || !action.objectKey) {
+    console.warn(
+      `[email.inbound] reply message ${sesMessageId} has no S3 action; the SES rule needs one`,
+    );
+    return;
+  }
+  try {
+    await enqueue('email.ingestReply', {
+      bucket: action.bucketName,
+      objectKey: action.objectKey,
+      sesMessageId: sesMessageId ?? '',
+      token,
+      sender,
+      organizationId,
+    });
+  } catch (err) {
+    // As for receipts: no 200, so SNS redelivers, and the dedup claim is released below.
+    console.error(`[email.inbound] enqueue failed for ${sesMessageId}:`, err);
+    throw err;
+  }
 }
 
 /**
@@ -360,8 +409,8 @@ async function handleReceipts(
   }
 }
 
-// VeloExpense: ExpenseOS's `loadRawMessage` read a stored message for the reply path; it
-// returns with that path (w5-01). The receipts mailbox never reads here.
+// VeloExpense: ExpenseOS's `loadRawMessage` (the reply path's read of the stored message) is
+// in the worker's `email.ingestReply` (w5-01). Neither mailbox reads here.
 
 /** Verify an SNS message signature against its signing cert, which must come from an SNS
  *  host (see SNS_HOST) — the cert URL is attacker-supplied until the signature checks out. */

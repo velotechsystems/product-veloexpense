@@ -109,6 +109,27 @@ export interface JobMap {
     organizationId: string;
   };
 
+  /**
+   * w5-01 — a reply to a notification email, to become a COMMENT on its subject.
+   *
+   * ExpenseOS reads and posts these in the inbound route itself. VeloExpense (decided 17 Oct
+   * 2026): the route checks the sender and hands the stored message here, as it does the
+   * receipts mailbox's, so only the worker reads the inbound-mail bucket.
+   */
+  'email.ingestReply': {
+    /** Where SES put the raw message. */
+    bucket: string;
+    objectKey: string;
+    /** SES's message id — the dedup key the route already claimed. */
+    sesMessageId: string;
+    /** The raw token from `reply+<token>@`: the thread, and the proof of who was addressed. */
+    token: string;
+    /** The From the route AUTHENTICATED, lowercased. It must be the thread's recipient. */
+    sender: string;
+    /** The tenant the address named; the job runs as it. */
+    organizationId: string;
+  };
+
   /** The acknowledgement for one receipts email, sent once its receipts have been read.
    *
    *  Enqueued (delayed) by `email.ingestReceipts` in place of an immediate "filed" reply,
@@ -160,5 +181,6 @@ export const JOB_QUEUES: Record<JobName, QueueName> = {
   'approval.sweepExpired': 'housekeeping',
   'expense.receiptChase': 'housekeeping',
   'email.ingestReceipts': 'integrations',
+  'email.ingestReply': 'notifications',
   'email.receiptsSummary': 'notifications',
 };

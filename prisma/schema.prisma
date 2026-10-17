@@ -1227,3 +1227,25 @@ model SavedView {
   @@index([organizationId, ownerId, resource, deletedAt], map: "saved_view_owner_resource_idx")
   @@map("saved_view")
 }
+
+/// w5-01 — ExpenseOS's `ReplyThread` (0073): maps an outbound notification back to its subject
+/// so a reply (email, or a Slack thread from w5-02) becomes a COMMENT. One row per recipient ×
+/// subject. Loose ids, as ExpenseOS's: the inbound path re-validates the subject and recipient.
+/// VeloExpense: per tenant, under RLS.
+model ReplyThread {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String   @default(dbgenerated("(NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid")) @map("organization_id") @db.Uuid
+  subjectType    String   @map("subject_type")
+  subjectId      String   @map("subject_id") @db.Uuid
+  recipientId    String   @map("recipient_id") @db.Uuid
+  /// sha256 of the raw email reply token (null until an email is sent)
+  tokenHash      String?  @unique @map("token_hash")
+  slackChannelId String?  @map("slack_channel_id")
+  slackThreadTs  String?  @map("slack_thread_ts")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@unique([recipientId, subjectType, subjectId])
+  @@index([organizationId])
+  @@index([slackChannelId, slackThreadTs])
+  @@map("reply_thread")
+}

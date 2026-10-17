@@ -18,6 +18,7 @@ import { handleExpenseReceiptChase } from './handlers/expense-receipt-chase';
 import { handleExtractReceipt } from './handlers/extract-receipt';
 import { handleExtractReceiptBatch } from './handlers/extract-receipt-batch';
 import { handleIngestReceiptEmail } from './handlers/ingest-receipt-email';
+import { handleIngestReplyEmail } from './handlers/ingest-reply-email';
 import { handleReceiptsSummaryEmail } from './handlers/receipts-summary-email';
 // VeloExpense: ExpenseOS's other handlers are not imported — their jobs are not in the job
 // map (packages/jobs/src/jobs.ts says where each went).
@@ -58,6 +59,8 @@ const HANDLERS: { [N in JobName]?: (data: unknown, job: Job) => Promise<unknown>
         }),
   // VeloExpense (w3-06): as the tenant whose address the email was sent to (d47).
   'email.ingestReceipts': (data) => inTenant(data, () => handleIngestReceiptEmail(data as never)),
+  // w5-01: a reply to a notification email, as a comment.
+  'email.ingestReply': (data) => inTenant(data, () => handleIngestReplyEmail(data as never)),
   // VeloExpense: as the tenant the receipts were filed in, like the ingest job.
   'email.receiptsSummary': (data) =>
     inTenant(data, () => handleReceiptsSummaryEmail(data as never)),
