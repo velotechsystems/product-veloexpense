@@ -89,12 +89,15 @@ export async function getPreferencesPage() {
           enabled: channelEnabled(eventType, channel, overrides),
           overridden: overrides.has(`${eventType}:${channel}`),
           shipsOn: channelDefault(channel, eventType),
-          // EMAIL and SLACK have no delivery until VX2-8. Offering a live
-          // toggle for a channel that cannot deliver is exactly the dead
-          // control GAP-AUDIT NT-2 found in ExpenseOS, so they are shown and
-          // visibly disabled rather than hidden — hiding them would make the
-          // roadmap invisible and the screen look finished.
-          deliverable: channel === 'IN_APP',
+          // A live toggle for a channel that cannot deliver is exactly the dead
+          // control GAP-AUDIT NT-2 found in ExpenseOS, so such a channel is shown
+          // and visibly disabled rather than hidden.
+          //
+          // EMAIL delivers (VX2-8), so it is live. It was left disabled here when
+          // VX2-8 shipped, which meant nobody could turn an email off — or turn
+          // comment emails on, the only way into the digest (w5-00). SLACK has no
+          // delivery until Slack is connected (w5-02).
+          deliverable: channel !== 'SLACK',
         })),
       };
     });

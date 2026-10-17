@@ -13,11 +13,13 @@
  *
  * So each cell is three radio buttons and the column says what "default" means.
  *
- * EMAIL and SLACK are shown and disabled. Nothing delivers on them until VX2-8,
- * and a live toggle for a channel that cannot deliver is precisely the dead
- * control NT-2 found in ExpenseOS — where the schema documents an `inApp`
- * preference key that no code has ever read. Hiding the two columns instead
- * would make the screen look finished and the roadmap invisible.
+ * SLACK is shown and disabled: nothing delivers on it until Slack is connected
+ * (w5-02), and a live toggle for a channel that cannot deliver is precisely the
+ * dead control NT-2 found in ExpenseOS — where the schema documents an `inApp`
+ * preference key that no code has ever read. Hiding the column instead would make
+ * the screen look finished and the roadmap invisible. EMAIL is live: it delivers
+ * since VX2-8, though this screen kept it disabled until w5-00 found that comment
+ * emails — and so the digest — could not be turned on.
  */
 import { Button } from '@/components/ui/button';
 import { ErrorBanner } from '@/app/expenses/ui';
@@ -88,7 +90,7 @@ export default async function NotificationPreferencesPage({
                     <span className="text-sm font-medium">{enumLabel(CHANNEL_COPY, cell.channel, prefs.locale)}</span>
                     {cell.deliverable ? null : (
                       <span className="text-xs text-muted-foreground">
-                        no delivery until email and Slack ship
+                        not connected for your organization yet
                       </span>
                     )}
                   </div>
