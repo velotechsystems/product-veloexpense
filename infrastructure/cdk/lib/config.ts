@@ -109,9 +109,10 @@ export interface VeloExpenseConfig {
    * Receipts by email (w3-06, mail-stack.ts). Absent leaves it off: no Mail stack, and the
    * app ignores whatever reaches its endpoint (INBOUND_EMAIL_DOMAIN unset).
    *
-   * ExpenseOS's `ses.inbound` block, reduced to what VeloExpense receives: one mailbox, on
-   * every tenant's own subdomain of `domain` (d47) — no reply mailbox (w5-01), and no public
-   * forwarding domain, since SES receives on the tenant's address itself.
+   * ExpenseOS's `ses.inbound` block, reduced to what VeloExpense receives: the receipts
+   * mailbox, on every tenant's own subdomain of `domain` (d47), and no public forwarding
+   * domain, since SES receives on the tenant's address itself. The reply mailbox (`reply+`,
+   * w5-01a) shares the one rule; its local part defaults in the app.
    */
   inboundEmail?: {
     /** Each tenant's mail domain is ONE label under this: `receipts@<tenant>.<domain>`. */

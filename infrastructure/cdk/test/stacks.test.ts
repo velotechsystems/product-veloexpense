@@ -463,6 +463,11 @@ describe('receipts by email (w3-06)', () => {
     expect(json(td.Properties)).toContain(
       json({ Name: 'S3_INBOUND_MAIL_BUCKET', Value: 'veloexpense-dev-inbound-mail-535079144866' }),
     );
+    // w5-01b: what the worker builds a `receipts+<token>@<tenant>.<domain>` address from.
+    expect(json(td.Properties)).toContain(
+      json({ Name: 'INBOUND_EMAIL_DOMAIN', Value: 'mail.dev.veloexpense.ai' }),
+    );
+    expect(json(td.Properties)).toContain(json({ Name: 'INBOUND_RECEIPTS_MAILBOXES', Value: 'receipts' }));
     const worker = statements(s.compute, 'WorkerTaskRole');
     const put = worker.find((st) => json(st).includes('s3:PutObject'))!;
     expect(put.Resource).toBe('arn:aws:s3:::veloexpense-dev-receipts-535079144866/org/*');

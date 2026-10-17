@@ -332,7 +332,9 @@ async function sendSummary(data: Data, now: Date): Promise<void> {
         organizationName: branding.name,
         brandColor: branding.brandColor,
       }),
-      ...(data.replyAddress ? { from: data.replyAddress, replyTo: data.replyAddress } : {}),
+      // VeloExpense: the threaded address is the Reply-To, not the From — the suite's SMTP
+      // account cannot send as an address on the inbound domain (`receiptsReplyAddress`).
+      ...(data.replyAddress ? { replyTo: data.replyAddress } : {}),
       ...(data.inReplyTo ? { inReplyTo: data.inReplyTo } : {}),
       ...(data.references ? { references: data.references } : {}),
       // RFC 3834, as the immediate reply did: a machine reply, so responders do not answer it.

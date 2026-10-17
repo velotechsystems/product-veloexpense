@@ -84,9 +84,8 @@ export interface JobMap {
    *  be redelivered as a duplicate report.
    *
    *  VeloExpense (w3-06): plus `organizationId`, the tenant whose address the email was sent
-   *  to (d47). The sender is looked up inside it only, and the job runs as it. `token` is
-   *  carried but not yet read: replying to add receipts arrives with reply threads (w5-01,
-   *  d48). */
+   *  to (d47). The sender is looked up inside it only, and the job runs as it. `token`
+   *  adds the receipts to the report its thread names (w5-01b, d48). */
   'email.ingestReceipts': {
     /** Where SES put the raw message. */
     bucket: string;
