@@ -762,7 +762,7 @@ describe('the dashboard', () => {
       expect(textOf(notice)).toContain('nav.smallScreenNotice');
     });
 
-    it('hands a manager with reports canSeeOthers, which hides nothing here until /users is ported', async () => {
+    it('renders for a manager whose only hidden destination is /users', async () => {
       /**
        * THE `canSeeOthers` CASE, and the reason the page resolves that fact rather than
        * passing `false`. `/users` is `desktop`-ruled and carries NO `requires` — its only gate
@@ -771,11 +771,9 @@ describe('the dashboard', () => {
        * one screen away, showed the HOME disclosure control and the footnote saying something
        * WAS hidden: two surfaces of one feature, disagreeing.
        *
-       * VeloExpense: `/users` is not here yet (`VELOEXPENSE_ROUTES` maps it to `null`), so it
-       * is not in this manager's menu and there is no loss to announce — the notice is `null`
-       * either way, and ExpenseOS's assertion that it renders becomes true when `/users` is
-       * ported. What holds now is the wiring: the page hands the notice the `canSeeOthers` it
-       * resolved, `true` with a report and `false` without.
+       * VeloExpense: ExpenseOS's assertion again since People 3 ported `/users`; until then it
+       * was not in this manager's menu and the notice was `null` either way. The `canSeeOthers`
+       * the page hands the notice is still pinned, `true` with a report and `false` without.
        */
       signedIn();
       h.activeModules = new Set(['expense-management']);
@@ -784,8 +782,10 @@ describe('the dashboard', () => {
       const withReports = await DashboardPage(noParams);
       expect((elementOf(withReports, SmallScreenNotice) as { props: { canSeeOthers: boolean } } | null)?.props
         .canSeeOthers).toBe(true);
-      expect(noticeRender(withReports)).toBeNull();
+      expect(noticeRender(withReports)).not.toBeNull();
 
+      // The same reader with no reports gets nothing — so the assertion above is the gate and
+      // not an unconditional notice.
       h.reportCount = 0;
       const without = await DashboardPage(noParams);
       expect((elementOf(without, SmallScreenNotice) as { props: { canSeeOthers: boolean } } | null)?.props

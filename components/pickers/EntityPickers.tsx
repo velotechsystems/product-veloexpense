@@ -15,7 +15,7 @@
  */
 import { AsyncCombobox, type ComboboxItem } from '@expenseos/design-system';
 import { useTranslations } from 'next-intl';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { trpc } from '@/lib/trpc/client';
 
 /** Kept in sync with AsyncCombobox + the pickers router MIN_CHARS. */
@@ -134,7 +134,19 @@ export function GlAccountCombobox({ value, initialItem, ...rest }: EntityPickerP
   );
 }
 
-export function UserCombobox({ value, initialItem, ...rest }: EntityPickerProps) {
+// People 3: ExpenseOS #574 (1e682dd6) — `excludeValues`, so the person being edited is not
+// offered as their own manager.
+export interface UserComboboxProps extends EntityPickerProps {
+  /** User ids never offered as a choice — e.g. the person being edited, who cannot be
+   *  their own manager. Filtered client-side from the search results only; the current
+   *  `value` still resolves and displays normally. */
+  excludeValues?: readonly string[];
+}
+
+/** Joins ids into a memo key. UUIDs never contain NUL, so the key is unambiguous. */
+const EXCLUDE_KEY_SEPARATOR = '\u0000';
+
+export function UserCombobox({ value, initialItem, excludeValues, ...rest }: UserComboboxProps) {
   const [q, setQ] = useState('');
   const results = trpc.pickers.users.search.useQuery(
     { q },
@@ -142,11 +154,21 @@ export function UserCombobox({ value, initialItem, ...rest }: EntityPickerProps)
   );
   const seed = seedFor(initialItem, value);
   const byId = trpc.pickers.users.byId.useQuery({ id: value ?? '' }, { enabled: !!value && !seed });
+  // Keyed on the ids' CONTENT, not the array's identity: hosts pass an inline literal
+  // (`excludeValues={[user.id]}`), which is a new array every render and would otherwise
+  // hand the combobox a new item list each time.
+  const excludeKey = excludeValues?.join(EXCLUDE_KEY_SEPARATOR) ?? '';
+  const items = useMemo(() => {
+    const data = results.data ?? EMPTY_ITEMS;
+    if (!excludeKey) return data;
+    const excluded = new Set(excludeKey.split(EXCLUDE_KEY_SEPARATOR));
+    return data.filter((item) => !excluded.has(item.value));
+  }, [results.data, excludeKey]);
   return (
     <EntityAsyncCombobox
       {...rest}
       value={value}
-      items={results.data ?? EMPTY_ITEMS}
+      items={items}
       loading={results.isFetching}
       onSearchChange={setQ}
       selectedItem={seed ?? byId.data ?? null}

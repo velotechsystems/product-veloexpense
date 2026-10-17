@@ -107,6 +107,9 @@ export { SidebarSection, type SidebarSectionProps } from '@/components/navigatio
 export { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 export { Textarea } from '@/components/ui/textarea';
 export { Badge, badgeVariants } from '@/components/ui/badge';
+/** People 3: ExpenseOS's barrel exports `BadgeProps` (lib/employeeStatus.ts types its variant map
+ *  with it); the kit's Badge has no props interface of its own, so it is derived here. */
+export type BadgeProps = import('react').ComponentProps<typeof import('@/components/ui/badge').Badge>;
 export { Button, buttonVariants } from '@/components/ui/button';
 // w4-09: the kit's Card, as StatCard and SectionCard are drawn on (the kit's own shadcn card;
 // ExpenseOS's is a plain bordered box with the same part names).
