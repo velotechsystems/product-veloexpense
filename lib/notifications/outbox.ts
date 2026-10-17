@@ -90,16 +90,34 @@ export async function enqueueDelivery(
   tx: QueryRunner,
   notificationId: string,
   channel: Exclude<Channel, 'IN_APP'>,
+  opts: { digest?: boolean } = {},
 ): Promise<string | null> {
+  // w5-00: a digest-type email is not due until the next digest boundary (ExpenseOS runs
+  // its digest every 15 minutes, on the quarter hour), so everything that lands for one
+  // person before then goes out together. `next_attempt_at` is the outbox's own "not before"
+  // column, so the hold needs no new state: the poller simply does not see the row until it
+  // is due, and the admin queue shows when it will be.
   const r = await tx.query(
-    `INSERT INTO notification_delivery (organization_id, notification_id, channel)
-     VALUES (${ORG}, $1, $2)
+    `INSERT INTO notification_delivery (organization_id, notification_id, channel, next_attempt_at)
+     VALUES (${ORG}, $1, $2,
+             CASE WHEN $3::boolean
+                  THEN date_bin(make_interval(mins => $4), clock_timestamp(),
+                                TIMESTAMPTZ '2000-01-01 00:00:00+00')
+                       + make_interval(mins => $4)
+                  ELSE clock_timestamp() END)
      ON CONFLICT (notification_id, channel) DO NOTHING
      RETURNING id`,
-    [notificationId, channel],
+    [notificationId, channel, opts.digest === true, DIGEST_INTERVAL_MINUTES],
   );
   return (r.rows[0]?.id as string) ?? null;
 }
+
+/**
+ * w5-00 — how often the digest goes out: ExpenseOS's `notification.emailDigest` schedule
+ * (every 15 minutes, on the quarter hour, UTC). A digest-type delivery is held until the next
+ * quarter hour.
+ */
+export const DIGEST_INTERVAL_MINUTES = 15;
 
 /* ── the poller ───────────────────────────────────────────────────────────── */
 
@@ -264,6 +282,8 @@ export async function markCancelled(
 
 export interface QueueRow extends DeliveryRow {
   eventType: string;
+  /** w5-00: PENDING and not yet due — a digest-type email waiting for its quarter hour. */
+  heldForDigest: boolean;
   recipientName: string;
   recipientEmail: string;
   subjectId: string;
@@ -305,6 +325,7 @@ export async function listQueue(
     `SELECT d.id, d.notification_id, d.channel, d.status, d.attempts, d.next_attempt_at,
             d.claimed_at, d.claimed_by, d.sent_at, d.last_error, d.destination, d.created_at,
             a.event_type, a.subject_id,
+            (d.status = 'PENDING' AND d.next_attempt_at > clock_timestamp()) AS held,
             COALESCE(u.display_name, u.email) AS recipient_name, u.email AS recipient_email
        FROM notification_delivery d
        JOIN notification n ON n.id = d.notification_id
@@ -335,6 +356,7 @@ export async function listQueue(
     destination: row.destination as string | null,
     createdAt: row.created_at as Date,
     eventType: row.event_type as string,
+    heldForDigest: row.held as boolean,
     subjectId: row.subject_id as string,
     recipientName: row.recipient_name as string,
     recipientEmail: row.recipient_email as string,

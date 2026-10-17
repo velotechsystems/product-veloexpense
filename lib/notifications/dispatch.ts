@@ -31,7 +31,9 @@ import { escapeHtml } from '@/lib/notifications/html';
 import type { QueryRunner } from '@/lib/db/client';
 import { formatMinor } from '@/lib/money';
 import { resolveReaderPrefs } from '@/lib/i18n/resolve';
-import { placeholderValuesFrom } from '@/lib/notifications/catalog';
+import { DIGEST_EVENT_TYPES, isDigestType, placeholderValuesFrom } from '@/lib/notifications/catalog';
+import { buildDigest, ctaFor, type DigestLine } from '@/lib/notifications/digest';
+import { loadCatalog } from '@expenseos/i18n/load';
 import { renderMessage } from '@/lib/notifications/service';
 import {
   originForTenant,
@@ -171,7 +173,6 @@ export async function prepareEmail(
     };
   }
 
-  const actor = row.actor_name ?? 'Somebody';
   // The recipient's own answer, else their company's, else the constants — the
   // same precedence every screen uses, resolved here from the row above.
   const prefs = resolveReaderPrefs({
@@ -181,19 +182,7 @@ export async function prepareEmail(
     orgTimeZone: row.org_timezone,
   });
 
-  const values = {
-    ...placeholderValuesFrom(row.payload),
-    // Reserved names LAST, so a payload key cannot shadow them (NT-6 rule 4).
-    actor,
-    report: row.report_title,
-    number: row.report_number ?? '',
-    total: formatMinor(
-      row.report_total_minor ?? '0',
-      row.report_currency ?? 'CAD',
-      undefined,
-      prefs.locale,
-    ),
-  };
+  const values = messageValues(row, prefs.locale);
 
   const rendered = await renderMessage(tx, {
     channel: 'EMAIL',
@@ -270,6 +259,118 @@ export async function prepareEmail(
         'Auto-Submitted': 'auto-generated',
       },
     },
+  };
+}
+
+/**
+ * w5-00 — compose ONE email for several digest-type deliveries to one person, inside the
+ * tenant, having claimed them all.
+ *
+ * ExpenseOS's `handleNotificationEmailDigest` builds this per recipient from
+ * `notification.emailedAt IS NULL` rows. VeloExpense: from the delivery rows the drain just
+ * claimed (`claimDigestSiblings`), so a digest is an outbox send like any other.
+ *
+ * Each line is rendered as that event's own email would have been — the tenant's template,
+ * the recipient's locale — and links to its report. A line whose subject is gone or is not
+ * a report keeps its sentence and loses its link, as ExpenseOS renders "an item with no
+ * landing page"; a notification deleted since is left out, and its delivery CANCELLED.
+ *
+ * Preferences are not re-read: VeloExpense decides the channels when the event happens
+ * (`notifyRecipients`), where ExpenseOS's digest re-reads them and stamps excluded rows.
+ */
+export async function prepareDigest(
+  tx: QueryRunner,
+  claims: readonly ClaimedDelivery[],
+): Promise<{ prepared: Prepared; included: ClaimedDelivery[]; gone: ClaimedDelivery[] }> {
+  const included: ClaimedDelivery[] = [];
+  const gone: ClaimedDelivery[] = [];
+  const lines: DigestLine[] = [];
+  let destination: string | null = null;
+
+  // VeloExpense: English only for now (7 Oct 2026), as the receipts summary reads it.
+  const cat = await loadCatalog('en');
+  const slugRow = await tx.query(`SELECT slug FROM organization WHERE id = ${ORG}`);
+  const origin = originForTenant((slugRow.rows[0]?.slug as string | undefined) ?? '');
+
+  for (const claim of claims) {
+    const row = await loadForDelivery(tx, claim.notificationId);
+    if (!row) {
+      gone.push(claim);
+      continue;
+    }
+    destination ??= row.recipient_email;
+    const prefs = resolveReaderPrefs({
+      userLocale: row.recipient_locale,
+      orgLocale: row.org_locale,
+      userTimeZone: row.recipient_timezone,
+      orgTimeZone: row.org_timezone,
+    });
+    const rendered = await renderMessage(tx, {
+      channel: 'EMAIL',
+      eventType: row.event_type,
+      subjectType: row.subject_type,
+      values: messageValues(row, prefs.locale),
+      locale: prefs.locale,
+    });
+    const isReport = row.subject_type === 'EXPENSE_REPORT' && row.report_title !== null;
+    lines.push({
+      msg: rendered.body,
+      link: isReport && origin ? `${origin}/expenses/${row.subject_id}` : null,
+      cta: ctaFor(cat, row.subject_type),
+    });
+    included.push(claim);
+  }
+
+  if (included.length === 0) {
+    return { prepared: { kind: 'CANCEL', reason: 'the notifications no longer exist' }, included, gone };
+  }
+  // DEFENSIVE, as in `prepareEmail`: `app_user.email` is NOT NULL today.
+  if (!destination) {
+    return {
+      prepared: { kind: 'CANCEL', reason: 'the recipient has no email address' },
+      included,
+      gone,
+    };
+  }
+
+  const branding = await getBranding(tx);
+  const { subject, text, html } = buildDigest(cat, lines, {
+    organizationName: branding.name,
+    brandColor: branding.brandColor,
+  });
+  return {
+    included,
+    gone,
+    prepared: {
+      kind: 'SEND',
+      destination,
+      message: {
+        to: destination,
+        subject,
+        from: fromAddress(),
+        text,
+        html,
+        // Its own id, and no thread: a digest mixes subjects, so it belongs to none of
+        // their conversations.
+        messageId: `<velo-digest-${included[0].id}@${messageIdDomain()}>`,
+        headers: { 'Auto-Submitted': 'auto-generated' },
+      },
+    },
+  };
+}
+
+/**
+ * The placeholder values an event's message is rendered with — shared by the single email
+ * and the digest, so a line in the digest says what that event's own email would have.
+ */
+function messageValues(row: Row, locale: string) {
+  return {
+    ...placeholderValuesFrom(row.payload),
+    // Reserved names LAST, so a payload key cannot shadow them (NT-6 rule 4).
+    actor: row.actor_name ?? 'Somebody',
+    report: row.report_title ?? '',
+    number: row.report_number ?? '',
+    total: formatMinor(row.report_total_minor ?? '0', row.report_currency ?? 'CAD', undefined, locale),
   };
 }
 
@@ -354,15 +455,68 @@ function htmlBody(
 // and this file imports `email-shell.ts`. Re-exported so no caller had to change.
 export { escapeHtml } from '@/lib/notifications/html';
 
+/**
+ * w5-00 — the rest of one person's due digest deliveries, claimed alongside `first`.
+ *
+ * Null when `first` is not a digest-type event (it is sent on its own, as before). Each
+ * sibling is claimed with the same conditional write as `first`, so a row another poller
+ * holds is simply not in this digest — it goes in the next one.
+ */
+async function claimDigestSiblings(
+  tx: QueryRunner,
+  first: ClaimedDelivery,
+  claimedBy: string,
+): Promise<ClaimedDelivery[] | null> {
+  const head = await tx.query(
+    `SELECT a.event_type, n.recipient_id
+       FROM notification n JOIN activity a ON a.id = n.activity_id
+      WHERE n.id = $1`,
+    [first.notificationId],
+  );
+  const h = head.rows[0] as { event_type: string; recipient_id: string } | undefined;
+  if (!h || !isDigestType(h.event_type)) return null;
+
+  const due = await tx.query(
+    `SELECT d.id
+       FROM notification_delivery d
+       JOIN notification n ON n.id = d.notification_id
+       JOIN activity a     ON a.id = n.activity_id
+      WHERE n.recipient_id = $1
+        AND d.id <> $2
+        AND d.channel = 'EMAIL'
+        AND a.event_type = ANY($3::text[])
+        AND d.status IN ('PENDING', 'FAILED')
+        AND d.next_attempt_at <= clock_timestamp()
+      ORDER BY d.created_at
+      LIMIT $4`,
+    [h.recipient_id, first.id, [...DIGEST_EVENT_TYPES], DIGEST_MAX_ITEMS - 1],
+  );
+  const claims = [first];
+  for (const r of due.rows as { id: string }[]) {
+    const c = await claimDelivery(tx, r.id, claimedBy);
+    if (c) claims.push(c);
+  }
+  return claims;
+}
+
+/**
+ * The most lines one digest carries. ExpenseOS caps the job's whole query at 5000 rows "so
+ * one run cannot try to mail a year of backlog"; VeloExpense caps each message instead —
+ * anything beyond goes in the next digest, two minutes later.
+ */
+const DIGEST_MAX_ITEMS = 200;
+
 /* ── the drain loop ───────────────────────────────────────────────────────── */
 
+/** Counted per DELIVERY ROW, so a digest covering three rows counts three sent. */
 export interface DrainSummary {
   scanned: number;
   sent: number;
   failed: number;
   dead: number;
   cancelled: number;
-  /** Claimed by somebody else between the scan and the claim. Not an error. */
+  /** Claimed by somebody else between the scan and the claim — or, since w5-00, already
+   *  sent earlier in this run inside somebody's digest. Not an error. */
   skipped: number;
 }
 
@@ -404,14 +558,26 @@ export async function drainOutbox(
       // response to a Slack job, which is a worse failure than refusing.
       if (claim.channel !== 'EMAIL') {
         await markCancelled(tx, claim.id, `no transport for ${claim.channel} yet`);
-        return { claim, outcome: 'CANCELLED' as const };
+        return { claim, covers: [claim], outcome: 'CANCELLED' as const };
+      }
+      // w5-00: a digest-type delivery takes the rest of that person's due digest rows
+      // with it, and they go out as one message.
+      const digest = await claimDigestSiblings(tx, claim, claimedBy);
+      if (digest) {
+        const d = await prepareDigest(tx, digest);
+        for (const g of d.gone) await markCancelled(tx, g.id, 'the notification no longer exists');
+        if (d.prepared.kind === 'CANCEL') {
+          for (const c of d.included) await markCancelled(tx, c.id, d.prepared.reason);
+          return { claim, covers: digest, outcome: 'CANCELLED' as const };
+        }
+        return { claim, covers: d.included, outcome: 'SEND' as const, prepared: d.prepared };
       }
       const p = await prepareEmail(tx, claim);
       if (p.kind === 'CANCEL') {
         await markCancelled(tx, claim.id, p.reason);
-        return { claim, outcome: 'CANCELLED' as const };
+        return { claim, covers: [claim], outcome: 'CANCELLED' as const };
       }
-      return { claim, outcome: 'SEND' as const, prepared: p };
+      return { claim, covers: [claim], outcome: 'SEND' as const, prepared: p };
     });
 
     if (prepared === null) {
@@ -419,30 +585,36 @@ export async function drainOutbox(
       continue;
     }
     if (prepared.outcome === 'CANCELLED') {
-      summary.cancelled += 1;
+      summary.cancelled += prepared.covers.length;
       continue;
     }
 
-    // No transaction across the send.
+    // No transaction across the send. A digest is ONE send for every row it covers, so
+    // they are marked together: all SENT, or each FAILED with its own attempt count.
     try {
       await sendEmail(prepared.prepared.message);
-      await withOrg(job.organizationId, (tx) =>
-        markSent(tx, prepared.claim.id, prepared.prepared.destination),
-      );
-      summary.sent += 1;
+      await withOrg(job.organizationId, async (tx) => {
+        for (const c of prepared.covers) await markSent(tx, c.id, prepared.prepared.destination);
+      });
+      summary.sent += prepared.covers.length;
     } catch (err) {
-      const status = await withOrg(job.organizationId, (tx) =>
-        markFailed(tx, prepared.claim.id, prepared.claim.attempts, err),
-      );
-      if (status === 'DEAD') summary.dead += 1;
-      else summary.failed += 1;
+      const statuses = await withOrg(job.organizationId, async (tx) => {
+        const out: string[] = [];
+        for (const c of prepared.covers) out.push(await markFailed(tx, c.id, c.attempts, err));
+        return out;
+      });
+      for (const status of statuses) {
+        if (status === 'DEAD') summary.dead += 1;
+        else summary.failed += 1;
+      }
       // Logged as well as stored. The row is the durable record and the admin
       // screen reads it; the log line is what an operator tailing a deploy sees.
       // NT-11's rule: a non-delivery that is only in a database is a non-delivery
       // nobody notices for a day.
       console.warn(
-        `[notifications] delivery ${prepared.claim.id} failed ` +
-          `(attempt ${prepared.claim.attempts}, now ${status}):`,
+        `[notifications] delivery ${prepared.claim.id}` +
+          `${prepared.covers.length > 1 ? ` (a digest of ${prepared.covers.length})` : ''} failed ` +
+          `(attempt ${prepared.claim.attempts}, now ${statuses[0]}):`,
         err instanceof Error ? err.message : err,
       );
     }

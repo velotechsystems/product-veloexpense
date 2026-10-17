@@ -102,7 +102,7 @@
       "unknown": "Votre compte Slack n'a pas encore été recherché. La recherche se fait automatiquement à la première notification Slack qui vous est destinée."
     }
   },
-  "cta": "Voir dans ExpenseOS",
+  "cta": "Voir dans VeloExpense",
   "ctaSubject": {
     "VIRTUAL_CARD_REQUEST": "Voir la demande de carte",
     "VIRTUAL_CARD_LIMIT_INCREASE": "Voir la demande d'augmentation de limite",
@@ -113,8 +113,8 @@
     "BUDGET": "Voir le budget"
   },
   "digest": {
-    "subjectOne": "1 nouvelle mise à jour dans ExpenseOS",
-    "subjectMany": "{count} nouvelles mises à jour dans ExpenseOS",
+    "subjectOne": "1 nouvelle mise à jour dans VeloExpense",
+    "subjectMany": "{count} nouvelles mises à jour dans VeloExpense",
     "intro": "Voici un résumé de l'activité récente :"
   },
   "receiptsEmail": {
@@ -162,7 +162,7 @@
     "TRAVEL_REQUEST": "Demande de voyage",
     "BUDGET": "Budget"
   },
-  "emailFooter": "Vous recevez ce message en raison de vos préférences de notification dans ExpenseOS.",
+  "emailFooter": "Vous recevez ce message en raison de vos préférences de notification dans VeloExpense.",
   "emailReplyHint": "Répondre à ce courriel ajoute un commentaire au fil.",
   "email": {
     "greeting": "Bonjour {name}!",
