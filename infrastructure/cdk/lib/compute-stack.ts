@@ -395,7 +395,15 @@ export class ComputeStack extends Stack {
         // One job at a time per queue is the most this task's pool is asked for.
         PG_POOL_MAX: '5',
         // Receipts by email (w3-06): the bucket SES stores raw messages in.
-        ...(config.inboundEmail ? { S3_INBOUND_MAIL_BUCKET: inboundMailBucketName(config) } : {}),
+        // w5-01b: and the tenant mail domain and the receipts mailbox, so an acknowledgement
+        // can carry the `receipts+<token>@<tenant>.<domain>` address a reply adds receipts to.
+        ...(config.inboundEmail
+          ? {
+              S3_INBOUND_MAIL_BUCKET: inboundMailBucketName(config),
+              INBOUND_EMAIL_DOMAIN: config.inboundEmail.domain,
+              INBOUND_RECEIPTS_MAILBOXES: config.inboundEmail.receiptsMailboxes.join(','),
+            }
+          : {}),
         ...dbEnv,
       },
       secrets: {

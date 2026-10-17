@@ -231,6 +231,43 @@ describe.skipIf(!process.env.DATABASE_URL)('email.ingestReceipts (integration)',
     expect(mail.sent[0].html).toContain('Receipt Mail');
   });
 
+  it('adds a reply to the report its acknowledgement threaded, on the tenant domain (w5-01b, d48)', async () => {
+    // ExpenseOS's threaded reply, end to end: the first email's summary is queued carrying a
+    // `receipts+<token>@` address — VeloExpense: the tenant's — and a reply to it, addressed
+    // there, adds its receipts to that same report instead of starting another.
+    process.env.INBOUND_EMAIL_DOMAIN = 'mail.dev.example';
+    process.env.INBOUND_RECEIPTS_MAILBOXES = 'receipts';
+    try {
+      const filer = h.people[1];
+      await handle(h.orgId, job(h.orgId, filer.email, mime(filer.email, 'Offsite', ['a.png'])));
+      const summary = enqueue.mock.calls.find((c) => c[0] === 'email.receiptsSummary')?.[1] as
+        | { reportId: string; replyAddress?: string }
+        | undefined;
+      expect(summary?.replyAddress).toMatch(/^receipts\+[\w-]+@receipt-mail\.mail\.dev\.example$/);
+      const token = summary!.replyAddress!.match(/^receipts\+([^@]+)@/)![1];
+
+      enqueue.mockReset();
+      await handle(h.orgId, {
+        ...job(h.orgId, filer.email, mime(filer.email, 'Re: Offsite', ['b.png', 'c.png'])),
+        token,
+      });
+
+      const reports = (
+        await h.admin.query(`SELECT id FROM expense_report WHERE title LIKE '%Offsite%'`)
+      ).rows as any[];
+      expect(reports.map((r) => r.id)).toEqual([summary!.reportId]);
+      const files = await h.admin.query(
+        `SELECT count(*)::int AS n FROM receipt r JOIN expense e ON e.id = r.expense_id
+          WHERE e.report_id = $1`,
+        [summary!.reportId],
+      );
+      expect(files.rows[0].n).toBe(3);
+    } finally {
+      delete process.env.INBOUND_EMAIL_DOMAIN;
+      delete process.env.INBOUND_RECEIPTS_MAILBOXES;
+    }
+  });
+
   it('files nothing for a sender who belongs to another tenant, and says so to them once', async () => {
     const outsider = other.people[1];
     const before = Number(

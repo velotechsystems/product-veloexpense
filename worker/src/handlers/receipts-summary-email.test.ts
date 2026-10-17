@@ -195,13 +195,14 @@ describe('the summary', () => {
     expect(mail).toMatchObject({
       to: 'alex@e.inc',
       subject: 'EXP-005814: Toronto client dinner',
-      // From and Reply-To the threaded address, so a reply adds to this report.
-      from: 'receipts-dev+tok@e.inc',
+      // Reply-To the threaded address, so a reply adds to this report. VeloExpense: NOT From
+      // it — the suite's SMTP account cannot send as an inbound-domain address (w5-01b).
       replyTo: 'receipts-dev+tok@e.inc',
       inReplyTo: '<orig@mail.test>',
       references: '<orig@mail.test>',
       headers: { 'Auto-Submitted': 'auto-replied' },
     });
+    expect(mail.from).toBeUndefined();
     const text = sentText();
     // VeloExpense: the display name (ExpenseOS: the first name, "Hello Alex!").
     expect(text).toContain('Hello Alex Doe!');
