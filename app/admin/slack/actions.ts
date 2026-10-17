@@ -18,6 +18,9 @@ import { revalidatePath } from 'next/cache';
 import { errorParam } from '@/lib/errors/domain';
 import { asAdmin, asAdminPage } from '@/lib/auth/admin-guard';
 import { verifySlackToken } from '@/lib/notifications/slack';
+import { originForTenant } from '@/lib/notifications/email';
+import { candidateSlugFromHost } from '@/lib/tenant/host';
+import { ORG } from '@/lib/tenant/sql';
 import {
   SlackConnectionError,
   disconnectSlack,
@@ -34,7 +37,29 @@ export async function getSlackPage() {
     connection: await getSlackConnection(tx),
     // Said before somebody pastes a token, not after the save fails — as /admin/integrations.
     keyConfigured: Boolean(process.env.SECRET_ENCRYPTION_KEY),
+    events: await eventsUrl(tx),
   }));
+}
+
+/**
+ * w5-02b — the Events Request URL to paste into Slack: this tenant's own address, which is how
+ * `/api/slack/events` knows whose app is calling (`server/lib/slackTenant.ts`). ExpenseOS's
+ * catalog lists it as the entry's `callbackUrls` and renders it against the browser's origin.
+ *
+ * `reachable` is false when the address is not a tenant address at all — a deployment with no
+ * tenant subdomains (`AUTH_COOKIE_DOMAIN` unset) — because the route would answer it 404.
+ */
+async function eventsUrl(
+  tx: Parameters<Parameters<typeof asAdminPage>[0]>[0],
+): Promise<{ url: string | null; reachable: boolean }> {
+  const r = await tx.query(`SELECT slug FROM organization WHERE id = ${ORG}`);
+  const slug = (r.rows[0]?.slug as string | undefined) ?? '';
+  const origin = slug ? originForTenant(slug) : null;
+  if (!origin) return { url: null, reachable: false };
+  return {
+    url: `${origin}/api/slack/events`,
+    reachable: candidateSlugFromHost(new URL(origin).host) === slug,
+  };
 }
 
 function isRedirect(err: unknown): boolean {

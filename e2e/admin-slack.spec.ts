@@ -19,6 +19,9 @@ test('an admin connects Slack, people can choose it, and disconnecting takes it 
   // ExpenseOS's setup steps, before anything is pasted.
   await expect(page.getByText('First, in Slack:')).toBeVisible();
   await expect(page.getByText(/Bot Token Scopes: add chat:write/)).toBeVisible();
+  // w5-02b: where Slack sends replies — this organization's own address, or a plain
+  // statement that this deployment has none.
+  await expect(page.getByRole('heading', { name: 'Events Request URL' })).toBeVisible();
 
   await page.getByLabel(/Bot User OAuth Token/).fill('xoxb-e2e-not-a-real-token');
   await page.getByRole('button', { name: 'Connect Slack' }).click();
