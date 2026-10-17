@@ -50,6 +50,8 @@ export type AuthRefusal =
   | 'NOT_A_MEMBER'
   /** A row that exists and is soft-deleted. */
   | 'DEACTIVATED'
+  /** People 1 (0072): a member whose access an administrator has turned off. */
+  | 'NO_ACCESS'
   /** A member, but not an active administrator. */
   | 'NOT_AN_ADMIN'
   /** A member, but this record is somebody else's. */
@@ -111,6 +113,11 @@ export async function requireActor(tx: QueryRunner, email: string): Promise<Empl
       'DEACTIVATED',
       'ACCOUNT_DEACTIVATED',
     );
+  }
+  // People 1 (0072): ExpenseOS's `hasExpenseOSAccess`, refused on every request rather than
+  // only at sign-in, so turning access off takes effect on a session already open.
+  if (!actor.has_access) {
+    throw new ForbiddenError('forbidden: access has been turned off', 'NO_ACCESS', 'ACCESS_REVOKED');
   }
   return actor;
 }

@@ -106,7 +106,7 @@ export async function resolveSsoUser(orgSlug: string, identity: SsoIdentity): Pr
 
   const existing = await withOrg(orgId, async (tx) => {
     const r = await tx.query(
-      `SELECT id, email FROM app_user
+      `SELECT id, email, has_access FROM app_user
         WHERE lower(email) = lower($1)
           -- VX5-3: a deactivated account is refused HERE, not two steps later.
           AND deleted_at IS NULL
@@ -114,8 +114,14 @@ export async function resolveSsoUser(orgSlug: string, identity: SsoIdentity): Pr
       [email],
     );
     if (r.rows.length === 0) return null;
-    const row = r.rows[0] as { id: string; email: string };
-    return { userId: row.id, orgId, email: row.email, role: 'member', subjectId: null };
+    const row = r.rows[0] as { id: string; email: string; has_access: boolean };
+    // People 1 (0072): ExpenseOS's `hasExpenseOSAccess` — its `signIn` callback refuses
+    // without it, for every provider, and so does this. A member, not a stranger, so the
+    // denial says the account is disabled rather than unknown.
+    if (!row.has_access) return { denied: 'account_disabled' } as SsoDenied;
+    // People 1: ExpenseOS's `lastLoginAt`, which the People directory shows.
+    await tx.query('UPDATE app_user SET last_login_at = now() WHERE id = $1', [row.id]);
+    return { userId: row.id, orgId, email: row.email, role: 'member', subjectId: null } as ResolvedUser;
   });
   if (existing !== null) return existing;
 
@@ -171,6 +177,16 @@ export async function resolveSsoUser(orgSlug: string, identity: SsoIdentity): Pr
    * platform is slow, and nobody should wait on it either.
    */
   if (accepted.kind === 'ACCEPTED') pushSeatCountInBackground(accepted.organizationId);
+
+  // People 1: the new member's first sign-in is a sign-in (`last_login_at`, 0072). Best
+  // effort, for the reason `recordDeniedSignIn` gives: nothing here may throw.
+  try {
+    await withOrg(accepted.organizationId, (tx) =>
+      tx.query('UPDATE app_user SET last_login_at = now() WHERE id = $1', [accepted.userId]),
+    );
+  } catch (err) {
+    console.error('[auth] could not record a first sign-in:', err);
+  }
 
   return {
     userId: accepted.userId,

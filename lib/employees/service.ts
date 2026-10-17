@@ -36,9 +36,18 @@ import {
  */
 export const MAX_CHAIN_DEPTH = 20;
 
-export type EmployeeStatus = 'ACTIVE' | 'ON_LEAVE' | 'DEACTIVATED';
+/** ExpenseOS's EmployeeStatus; People 1 (0072) added TERMINATED to the column's CHECK. */
+export type EmployeeStatus = 'ACTIVE' | 'ON_LEAVE' | 'DEACTIVATED' | 'TERMINATED';
 
+/**
+ * What THIS screen's form offers. TERMINATED (0072) is left out on purpose: this service
+ * stamps `deleted_at` only for DEACTIVATED (w4-10f), so offering TERMINATED here would let
+ * a terminated person keep signing in. ExpenseOS's offboarding writes it, with People 3.
+ */
 export const EMPLOYEE_STATUSES: EmployeeStatus[] = ['ACTIVE', 'ON_LEAVE', 'DEACTIVATED'];
+
+/** Every value the column holds (0072's CHECK), which the copy catalogue must cover. */
+export const ALL_EMPLOYEE_STATUSES: EmployeeStatus[] = [...EMPLOYEE_STATUSES, 'TERMINATED'];
 
 export interface EmployeeRow {
   id: string;
@@ -65,6 +74,8 @@ export interface EmployeeRow {
   legal_entity_name: string | null;
   /** w2-10: ISO-3166-1 alpha-2 — ExpenseOS's `User.country`, read by mileage pricing. */
   country: string | null;
+  /** People 1 (0072): may this person sign in at all. `requireActor` refuses without it. */
+  has_access: boolean;
   deleted_at: Date | null;
   created_at: Date;
   updated_at: Date;
@@ -140,6 +151,7 @@ const EMPLOYEE_COLUMNS = `
   u.business_unit_id, bu.label ->> 'en' AS business_unit_name,
   u.legal_entity_id, le.label ->> 'en' AS legal_entity_name,
   u.country,
+  u.has_access,
   u.deleted_at, u.created_at, u.updated_at`;
 
 const EMPLOYEE_FROM = `

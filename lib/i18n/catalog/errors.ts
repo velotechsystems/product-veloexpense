@@ -242,6 +242,8 @@ export const USER_MESSAGE_CODES = [
   'NOT_A_MEMBER_HERE',
   'ACCOUNT_DEACTIVATED',
   'ADMIN_ONLY',
+  /* ── People 1: access revoked (has_access, 0072) ──────────────────────── */
+  'ACCESS_REVOKED',
 ] as const;
 export type UserMessageCode = (typeof USER_MESSAGE_CODES)[number];
 
@@ -1083,6 +1085,14 @@ export const ERROR_COPY: Record<UserMessageCode, Copy> = {
     'en-CA':
       'This account has been deactivated. Ask an administrator of your organization to ' +
       'reactivate it.',
+  },
+  ACCESS_REVOKED: {
+    // People 1 (0072): an administrator turned this person's access off on the People
+    // screen. Separate from deactivation — the person is still an employee, still in the
+    // org chart and on their reports — so it says "access", not "deactivated".
+    'en-CA':
+      'Your access to this organization has been turned off. Ask an administrator of your ' +
+      'organization if you need it back.',
   },
   ADMIN_ONLY: {
     // Says WHOSE it is and what to do, not just "denied". A person refused with

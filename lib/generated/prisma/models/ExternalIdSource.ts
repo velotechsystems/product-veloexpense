@@ -202,6 +202,7 @@ export type ExternalIdSourceWhereInput = {
   receiptAliases?: Prisma.ReceiptExternalIdListRelationFilter
   expenseAliases?: Prisma.ExpenseExternalIdListRelationFilter
   roleAliases?: Prisma.RoleExternalIdListRelationFilter
+  userAliases?: Prisma.UserExternalIdListRelationFilter
 }
 
 export type ExternalIdSourceOrderByWithRelationInput = {
@@ -220,6 +221,7 @@ export type ExternalIdSourceOrderByWithRelationInput = {
   receiptAliases?: Prisma.ReceiptExternalIdOrderByRelationAggregateInput
   expenseAliases?: Prisma.ExpenseExternalIdOrderByRelationAggregateInput
   roleAliases?: Prisma.RoleExternalIdOrderByRelationAggregateInput
+  userAliases?: Prisma.UserExternalIdOrderByRelationAggregateInput
 }
 
 export type ExternalIdSourceWhereUniqueInput = Prisma.AtLeast<{
@@ -243,6 +245,7 @@ export type ExternalIdSourceWhereUniqueInput = Prisma.AtLeast<{
   receiptAliases?: Prisma.ReceiptExternalIdListRelationFilter
   expenseAliases?: Prisma.ExpenseExternalIdListRelationFilter
   roleAliases?: Prisma.RoleExternalIdListRelationFilter
+  userAliases?: Prisma.UserExternalIdListRelationFilter
 }, "id" | "organizationId_code" | "organizationId_id">
 
 export type ExternalIdSourceOrderByWithAggregationInput = {
@@ -287,6 +290,7 @@ export type ExternalIdSourceCreateInput = {
   receiptAliases?: Prisma.ReceiptExternalIdCreateNestedManyWithoutSourceInput
   expenseAliases?: Prisma.ExpenseExternalIdCreateNestedManyWithoutSourceInput
   roleAliases?: Prisma.RoleExternalIdCreateNestedManyWithoutSourceInput
+  userAliases?: Prisma.UserExternalIdCreateNestedManyWithoutSourceInput
 }
 
 export type ExternalIdSourceUncheckedCreateInput = {
@@ -305,6 +309,7 @@ export type ExternalIdSourceUncheckedCreateInput = {
   receiptAliases?: Prisma.ReceiptExternalIdUncheckedCreateNestedManyWithoutSourceInput
   expenseAliases?: Prisma.ExpenseExternalIdUncheckedCreateNestedManyWithoutSourceInput
   roleAliases?: Prisma.RoleExternalIdUncheckedCreateNestedManyWithoutSourceInput
+  userAliases?: Prisma.UserExternalIdUncheckedCreateNestedManyWithoutSourceInput
 }
 
 export type ExternalIdSourceUpdateInput = {
@@ -323,6 +328,7 @@ export type ExternalIdSourceUpdateInput = {
   receiptAliases?: Prisma.ReceiptExternalIdUpdateManyWithoutSourceNestedInput
   expenseAliases?: Prisma.ExpenseExternalIdUpdateManyWithoutSourceNestedInput
   roleAliases?: Prisma.RoleExternalIdUpdateManyWithoutSourceNestedInput
+  userAliases?: Prisma.UserExternalIdUpdateManyWithoutSourceNestedInput
 }
 
 export type ExternalIdSourceUncheckedUpdateInput = {
@@ -341,6 +347,7 @@ export type ExternalIdSourceUncheckedUpdateInput = {
   receiptAliases?: Prisma.ReceiptExternalIdUncheckedUpdateManyWithoutSourceNestedInput
   expenseAliases?: Prisma.ExpenseExternalIdUncheckedUpdateManyWithoutSourceNestedInput
   roleAliases?: Prisma.RoleExternalIdUncheckedUpdateManyWithoutSourceNestedInput
+  userAliases?: Prisma.UserExternalIdUncheckedUpdateManyWithoutSourceNestedInput
 }
 
 export type ExternalIdSourceCreateManyInput = {
@@ -444,6 +451,20 @@ export type ExternalIdSourceUpdateOneRequiredWithoutExpenseAliasesNestedInput = 
   update?: Prisma.XOR<Prisma.XOR<Prisma.ExternalIdSourceUpdateToOneWithWhereWithoutExpenseAliasesInput, Prisma.ExternalIdSourceUpdateWithoutExpenseAliasesInput>, Prisma.ExternalIdSourceUncheckedUpdateWithoutExpenseAliasesInput>
 }
 
+export type ExternalIdSourceCreateNestedOneWithoutUserAliasesInput = {
+  create?: Prisma.XOR<Prisma.ExternalIdSourceCreateWithoutUserAliasesInput, Prisma.ExternalIdSourceUncheckedCreateWithoutUserAliasesInput>
+  connectOrCreate?: Prisma.ExternalIdSourceCreateOrConnectWithoutUserAliasesInput
+  connect?: Prisma.ExternalIdSourceWhereUniqueInput
+}
+
+export type ExternalIdSourceUpdateOneRequiredWithoutUserAliasesNestedInput = {
+  create?: Prisma.XOR<Prisma.ExternalIdSourceCreateWithoutUserAliasesInput, Prisma.ExternalIdSourceUncheckedCreateWithoutUserAliasesInput>
+  connectOrCreate?: Prisma.ExternalIdSourceCreateOrConnectWithoutUserAliasesInput
+  upsert?: Prisma.ExternalIdSourceUpsertWithoutUserAliasesInput
+  connect?: Prisma.ExternalIdSourceWhereUniqueInput
+  update?: Prisma.XOR<Prisma.XOR<Prisma.ExternalIdSourceUpdateToOneWithWhereWithoutUserAliasesInput, Prisma.ExternalIdSourceUpdateWithoutUserAliasesInput>, Prisma.ExternalIdSourceUncheckedUpdateWithoutUserAliasesInput>
+}
+
 export type ExternalIdSourceCreateNestedOneWithoutRoleAliasesInput = {
   create?: Prisma.XOR<Prisma.ExternalIdSourceCreateWithoutRoleAliasesInput, Prisma.ExternalIdSourceUncheckedCreateWithoutRoleAliasesInput>
   connectOrCreate?: Prisma.ExternalIdSourceCreateOrConnectWithoutRoleAliasesInput
@@ -543,6 +564,7 @@ export type ExternalIdSourceCreateWithoutReceiptAliasesInput = {
   fiscalYearAliases?: Prisma.FiscalYearExternalIdCreateNestedManyWithoutSourceInput
   expenseAliases?: Prisma.ExpenseExternalIdCreateNestedManyWithoutSourceInput
   roleAliases?: Prisma.RoleExternalIdCreateNestedManyWithoutSourceInput
+  userAliases?: Prisma.UserExternalIdCreateNestedManyWithoutSourceInput
 }
 
 export type ExternalIdSourceUncheckedCreateWithoutReceiptAliasesInput = {
@@ -560,6 +582,7 @@ export type ExternalIdSourceUncheckedCreateWithoutReceiptAliasesInput = {
   fiscalYearAliases?: Prisma.FiscalYearExternalIdUncheckedCreateNestedManyWithoutSourceInput
   expenseAliases?: Prisma.ExpenseExternalIdUncheckedCreateNestedManyWithoutSourceInput
   roleAliases?: Prisma.RoleExternalIdUncheckedCreateNestedManyWithoutSourceInput
+  userAliases?: Prisma.UserExternalIdUncheckedCreateNestedManyWithoutSourceInput
 }
 
 export type ExternalIdSourceCreateOrConnectWithoutReceiptAliasesInput = {
@@ -593,6 +616,7 @@ export type ExternalIdSourceUpdateWithoutReceiptAliasesInput = {
   fiscalYearAliases?: Prisma.FiscalYearExternalIdUpdateManyWithoutSourceNestedInput
   expenseAliases?: Prisma.ExpenseExternalIdUpdateManyWithoutSourceNestedInput
   roleAliases?: Prisma.RoleExternalIdUpdateManyWithoutSourceNestedInput
+  userAliases?: Prisma.UserExternalIdUpdateManyWithoutSourceNestedInput
 }
 
 export type ExternalIdSourceUncheckedUpdateWithoutReceiptAliasesInput = {
@@ -610,6 +634,7 @@ export type ExternalIdSourceUncheckedUpdateWithoutReceiptAliasesInput = {
   fiscalYearAliases?: Prisma.FiscalYearExternalIdUncheckedUpdateManyWithoutSourceNestedInput
   expenseAliases?: Prisma.ExpenseExternalIdUncheckedUpdateManyWithoutSourceNestedInput
   roleAliases?: Prisma.RoleExternalIdUncheckedUpdateManyWithoutSourceNestedInput
+  userAliases?: Prisma.UserExternalIdUncheckedUpdateManyWithoutSourceNestedInput
 }
 
 export type ExternalIdSourceCreateWithoutExpenseAliasesInput = {
@@ -627,6 +652,7 @@ export type ExternalIdSourceCreateWithoutExpenseAliasesInput = {
   fiscalYearAliases?: Prisma.FiscalYearExternalIdCreateNestedManyWithoutSourceInput
   receiptAliases?: Prisma.ReceiptExternalIdCreateNestedManyWithoutSourceInput
   roleAliases?: Prisma.RoleExternalIdCreateNestedManyWithoutSourceInput
+  userAliases?: Prisma.UserExternalIdCreateNestedManyWithoutSourceInput
 }
 
 export type ExternalIdSourceUncheckedCreateWithoutExpenseAliasesInput = {
@@ -644,6 +670,7 @@ export type ExternalIdSourceUncheckedCreateWithoutExpenseAliasesInput = {
   fiscalYearAliases?: Prisma.FiscalYearExternalIdUncheckedCreateNestedManyWithoutSourceInput
   receiptAliases?: Prisma.ReceiptExternalIdUncheckedCreateNestedManyWithoutSourceInput
   roleAliases?: Prisma.RoleExternalIdUncheckedCreateNestedManyWithoutSourceInput
+  userAliases?: Prisma.UserExternalIdUncheckedCreateNestedManyWithoutSourceInput
 }
 
 export type ExternalIdSourceCreateOrConnectWithoutExpenseAliasesInput = {
@@ -677,6 +704,7 @@ export type ExternalIdSourceUpdateWithoutExpenseAliasesInput = {
   fiscalYearAliases?: Prisma.FiscalYearExternalIdUpdateManyWithoutSourceNestedInput
   receiptAliases?: Prisma.ReceiptExternalIdUpdateManyWithoutSourceNestedInput
   roleAliases?: Prisma.RoleExternalIdUpdateManyWithoutSourceNestedInput
+  userAliases?: Prisma.UserExternalIdUpdateManyWithoutSourceNestedInput
 }
 
 export type ExternalIdSourceUncheckedUpdateWithoutExpenseAliasesInput = {
@@ -693,6 +721,95 @@ export type ExternalIdSourceUncheckedUpdateWithoutExpenseAliasesInput = {
   jobLevelAliases?: Prisma.JobLevelExternalIdUncheckedUpdateManyWithoutSourceNestedInput
   fiscalYearAliases?: Prisma.FiscalYearExternalIdUncheckedUpdateManyWithoutSourceNestedInput
   receiptAliases?: Prisma.ReceiptExternalIdUncheckedUpdateManyWithoutSourceNestedInput
+  roleAliases?: Prisma.RoleExternalIdUncheckedUpdateManyWithoutSourceNestedInput
+  userAliases?: Prisma.UserExternalIdUncheckedUpdateManyWithoutSourceNestedInput
+}
+
+export type ExternalIdSourceCreateWithoutUserAliasesInput = {
+  id?: string
+  organizationId?: string
+  code: string
+  label: Prisma.JsonNullValueInput | runtime.InputJsonValue
+  active?: boolean
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  businessUnitAliases?: Prisma.BusinessUnitExternalIdCreateNestedManyWithoutSourceInput
+  legalEntityAliases?: Prisma.LegalEntityExternalIdCreateNestedManyWithoutSourceInput
+  departmentAliases?: Prisma.DepartmentExternalIdCreateNestedManyWithoutSourceInput
+  jobLevelAliases?: Prisma.JobLevelExternalIdCreateNestedManyWithoutSourceInput
+  fiscalYearAliases?: Prisma.FiscalYearExternalIdCreateNestedManyWithoutSourceInput
+  receiptAliases?: Prisma.ReceiptExternalIdCreateNestedManyWithoutSourceInput
+  expenseAliases?: Prisma.ExpenseExternalIdCreateNestedManyWithoutSourceInput
+  roleAliases?: Prisma.RoleExternalIdCreateNestedManyWithoutSourceInput
+}
+
+export type ExternalIdSourceUncheckedCreateWithoutUserAliasesInput = {
+  id?: string
+  organizationId?: string
+  code: string
+  label: Prisma.JsonNullValueInput | runtime.InputJsonValue
+  active?: boolean
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  businessUnitAliases?: Prisma.BusinessUnitExternalIdUncheckedCreateNestedManyWithoutSourceInput
+  legalEntityAliases?: Prisma.LegalEntityExternalIdUncheckedCreateNestedManyWithoutSourceInput
+  departmentAliases?: Prisma.DepartmentExternalIdUncheckedCreateNestedManyWithoutSourceInput
+  jobLevelAliases?: Prisma.JobLevelExternalIdUncheckedCreateNestedManyWithoutSourceInput
+  fiscalYearAliases?: Prisma.FiscalYearExternalIdUncheckedCreateNestedManyWithoutSourceInput
+  receiptAliases?: Prisma.ReceiptExternalIdUncheckedCreateNestedManyWithoutSourceInput
+  expenseAliases?: Prisma.ExpenseExternalIdUncheckedCreateNestedManyWithoutSourceInput
+  roleAliases?: Prisma.RoleExternalIdUncheckedCreateNestedManyWithoutSourceInput
+}
+
+export type ExternalIdSourceCreateOrConnectWithoutUserAliasesInput = {
+  where: Prisma.ExternalIdSourceWhereUniqueInput
+  create: Prisma.XOR<Prisma.ExternalIdSourceCreateWithoutUserAliasesInput, Prisma.ExternalIdSourceUncheckedCreateWithoutUserAliasesInput>
+}
+
+export type ExternalIdSourceUpsertWithoutUserAliasesInput = {
+  update: Prisma.XOR<Prisma.ExternalIdSourceUpdateWithoutUserAliasesInput, Prisma.ExternalIdSourceUncheckedUpdateWithoutUserAliasesInput>
+  create: Prisma.XOR<Prisma.ExternalIdSourceCreateWithoutUserAliasesInput, Prisma.ExternalIdSourceUncheckedCreateWithoutUserAliasesInput>
+  where?: Prisma.ExternalIdSourceWhereInput
+}
+
+export type ExternalIdSourceUpdateToOneWithWhereWithoutUserAliasesInput = {
+  where?: Prisma.ExternalIdSourceWhereInput
+  data: Prisma.XOR<Prisma.ExternalIdSourceUpdateWithoutUserAliasesInput, Prisma.ExternalIdSourceUncheckedUpdateWithoutUserAliasesInput>
+}
+
+export type ExternalIdSourceUpdateWithoutUserAliasesInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  organizationId?: Prisma.StringFieldUpdateOperationsInput | string
+  code?: Prisma.StringFieldUpdateOperationsInput | string
+  label?: Prisma.JsonNullValueInput | runtime.InputJsonValue
+  active?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  businessUnitAliases?: Prisma.BusinessUnitExternalIdUpdateManyWithoutSourceNestedInput
+  legalEntityAliases?: Prisma.LegalEntityExternalIdUpdateManyWithoutSourceNestedInput
+  departmentAliases?: Prisma.DepartmentExternalIdUpdateManyWithoutSourceNestedInput
+  jobLevelAliases?: Prisma.JobLevelExternalIdUpdateManyWithoutSourceNestedInput
+  fiscalYearAliases?: Prisma.FiscalYearExternalIdUpdateManyWithoutSourceNestedInput
+  receiptAliases?: Prisma.ReceiptExternalIdUpdateManyWithoutSourceNestedInput
+  expenseAliases?: Prisma.ExpenseExternalIdUpdateManyWithoutSourceNestedInput
+  roleAliases?: Prisma.RoleExternalIdUpdateManyWithoutSourceNestedInput
+}
+
+export type ExternalIdSourceUncheckedUpdateWithoutUserAliasesInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  organizationId?: Prisma.StringFieldUpdateOperationsInput | string
+  code?: Prisma.StringFieldUpdateOperationsInput | string
+  label?: Prisma.JsonNullValueInput | runtime.InputJsonValue
+  active?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  businessUnitAliases?: Prisma.BusinessUnitExternalIdUncheckedUpdateManyWithoutSourceNestedInput
+  legalEntityAliases?: Prisma.LegalEntityExternalIdUncheckedUpdateManyWithoutSourceNestedInput
+  departmentAliases?: Prisma.DepartmentExternalIdUncheckedUpdateManyWithoutSourceNestedInput
+  jobLevelAliases?: Prisma.JobLevelExternalIdUncheckedUpdateManyWithoutSourceNestedInput
+  fiscalYearAliases?: Prisma.FiscalYearExternalIdUncheckedUpdateManyWithoutSourceNestedInput
+  receiptAliases?: Prisma.ReceiptExternalIdUncheckedUpdateManyWithoutSourceNestedInput
+  expenseAliases?: Prisma.ExpenseExternalIdUncheckedUpdateManyWithoutSourceNestedInput
   roleAliases?: Prisma.RoleExternalIdUncheckedUpdateManyWithoutSourceNestedInput
 }
 
@@ -711,6 +828,7 @@ export type ExternalIdSourceCreateWithoutRoleAliasesInput = {
   fiscalYearAliases?: Prisma.FiscalYearExternalIdCreateNestedManyWithoutSourceInput
   receiptAliases?: Prisma.ReceiptExternalIdCreateNestedManyWithoutSourceInput
   expenseAliases?: Prisma.ExpenseExternalIdCreateNestedManyWithoutSourceInput
+  userAliases?: Prisma.UserExternalIdCreateNestedManyWithoutSourceInput
 }
 
 export type ExternalIdSourceUncheckedCreateWithoutRoleAliasesInput = {
@@ -728,6 +846,7 @@ export type ExternalIdSourceUncheckedCreateWithoutRoleAliasesInput = {
   fiscalYearAliases?: Prisma.FiscalYearExternalIdUncheckedCreateNestedManyWithoutSourceInput
   receiptAliases?: Prisma.ReceiptExternalIdUncheckedCreateNestedManyWithoutSourceInput
   expenseAliases?: Prisma.ExpenseExternalIdUncheckedCreateNestedManyWithoutSourceInput
+  userAliases?: Prisma.UserExternalIdUncheckedCreateNestedManyWithoutSourceInput
 }
 
 export type ExternalIdSourceCreateOrConnectWithoutRoleAliasesInput = {
@@ -761,6 +880,7 @@ export type ExternalIdSourceUpdateWithoutRoleAliasesInput = {
   fiscalYearAliases?: Prisma.FiscalYearExternalIdUpdateManyWithoutSourceNestedInput
   receiptAliases?: Prisma.ReceiptExternalIdUpdateManyWithoutSourceNestedInput
   expenseAliases?: Prisma.ExpenseExternalIdUpdateManyWithoutSourceNestedInput
+  userAliases?: Prisma.UserExternalIdUpdateManyWithoutSourceNestedInput
 }
 
 export type ExternalIdSourceUncheckedUpdateWithoutRoleAliasesInput = {
@@ -778,6 +898,7 @@ export type ExternalIdSourceUncheckedUpdateWithoutRoleAliasesInput = {
   fiscalYearAliases?: Prisma.FiscalYearExternalIdUncheckedUpdateManyWithoutSourceNestedInput
   receiptAliases?: Prisma.ReceiptExternalIdUncheckedUpdateManyWithoutSourceNestedInput
   expenseAliases?: Prisma.ExpenseExternalIdUncheckedUpdateManyWithoutSourceNestedInput
+  userAliases?: Prisma.UserExternalIdUncheckedUpdateManyWithoutSourceNestedInput
 }
 
 export type ExternalIdSourceCreateWithoutBusinessUnitAliasesInput = {
@@ -795,6 +916,7 @@ export type ExternalIdSourceCreateWithoutBusinessUnitAliasesInput = {
   receiptAliases?: Prisma.ReceiptExternalIdCreateNestedManyWithoutSourceInput
   expenseAliases?: Prisma.ExpenseExternalIdCreateNestedManyWithoutSourceInput
   roleAliases?: Prisma.RoleExternalIdCreateNestedManyWithoutSourceInput
+  userAliases?: Prisma.UserExternalIdCreateNestedManyWithoutSourceInput
 }
 
 export type ExternalIdSourceUncheckedCreateWithoutBusinessUnitAliasesInput = {
@@ -812,6 +934,7 @@ export type ExternalIdSourceUncheckedCreateWithoutBusinessUnitAliasesInput = {
   receiptAliases?: Prisma.ReceiptExternalIdUncheckedCreateNestedManyWithoutSourceInput
   expenseAliases?: Prisma.ExpenseExternalIdUncheckedCreateNestedManyWithoutSourceInput
   roleAliases?: Prisma.RoleExternalIdUncheckedCreateNestedManyWithoutSourceInput
+  userAliases?: Prisma.UserExternalIdUncheckedCreateNestedManyWithoutSourceInput
 }
 
 export type ExternalIdSourceCreateOrConnectWithoutBusinessUnitAliasesInput = {
@@ -845,6 +968,7 @@ export type ExternalIdSourceUpdateWithoutBusinessUnitAliasesInput = {
   receiptAliases?: Prisma.ReceiptExternalIdUpdateManyWithoutSourceNestedInput
   expenseAliases?: Prisma.ExpenseExternalIdUpdateManyWithoutSourceNestedInput
   roleAliases?: Prisma.RoleExternalIdUpdateManyWithoutSourceNestedInput
+  userAliases?: Prisma.UserExternalIdUpdateManyWithoutSourceNestedInput
 }
 
 export type ExternalIdSourceUncheckedUpdateWithoutBusinessUnitAliasesInput = {
@@ -862,6 +986,7 @@ export type ExternalIdSourceUncheckedUpdateWithoutBusinessUnitAliasesInput = {
   receiptAliases?: Prisma.ReceiptExternalIdUncheckedUpdateManyWithoutSourceNestedInput
   expenseAliases?: Prisma.ExpenseExternalIdUncheckedUpdateManyWithoutSourceNestedInput
   roleAliases?: Prisma.RoleExternalIdUncheckedUpdateManyWithoutSourceNestedInput
+  userAliases?: Prisma.UserExternalIdUncheckedUpdateManyWithoutSourceNestedInput
 }
 
 export type ExternalIdSourceCreateWithoutLegalEntityAliasesInput = {
@@ -879,6 +1004,7 @@ export type ExternalIdSourceCreateWithoutLegalEntityAliasesInput = {
   receiptAliases?: Prisma.ReceiptExternalIdCreateNestedManyWithoutSourceInput
   expenseAliases?: Prisma.ExpenseExternalIdCreateNestedManyWithoutSourceInput
   roleAliases?: Prisma.RoleExternalIdCreateNestedManyWithoutSourceInput
+  userAliases?: Prisma.UserExternalIdCreateNestedManyWithoutSourceInput
 }
 
 export type ExternalIdSourceUncheckedCreateWithoutLegalEntityAliasesInput = {
@@ -896,6 +1022,7 @@ export type ExternalIdSourceUncheckedCreateWithoutLegalEntityAliasesInput = {
   receiptAliases?: Prisma.ReceiptExternalIdUncheckedCreateNestedManyWithoutSourceInput
   expenseAliases?: Prisma.ExpenseExternalIdUncheckedCreateNestedManyWithoutSourceInput
   roleAliases?: Prisma.RoleExternalIdUncheckedCreateNestedManyWithoutSourceInput
+  userAliases?: Prisma.UserExternalIdUncheckedCreateNestedManyWithoutSourceInput
 }
 
 export type ExternalIdSourceCreateOrConnectWithoutLegalEntityAliasesInput = {
@@ -929,6 +1056,7 @@ export type ExternalIdSourceUpdateWithoutLegalEntityAliasesInput = {
   receiptAliases?: Prisma.ReceiptExternalIdUpdateManyWithoutSourceNestedInput
   expenseAliases?: Prisma.ExpenseExternalIdUpdateManyWithoutSourceNestedInput
   roleAliases?: Prisma.RoleExternalIdUpdateManyWithoutSourceNestedInput
+  userAliases?: Prisma.UserExternalIdUpdateManyWithoutSourceNestedInput
 }
 
 export type ExternalIdSourceUncheckedUpdateWithoutLegalEntityAliasesInput = {
@@ -946,6 +1074,7 @@ export type ExternalIdSourceUncheckedUpdateWithoutLegalEntityAliasesInput = {
   receiptAliases?: Prisma.ReceiptExternalIdUncheckedUpdateManyWithoutSourceNestedInput
   expenseAliases?: Prisma.ExpenseExternalIdUncheckedUpdateManyWithoutSourceNestedInput
   roleAliases?: Prisma.RoleExternalIdUncheckedUpdateManyWithoutSourceNestedInput
+  userAliases?: Prisma.UserExternalIdUncheckedUpdateManyWithoutSourceNestedInput
 }
 
 export type ExternalIdSourceCreateWithoutDepartmentAliasesInput = {
@@ -963,6 +1092,7 @@ export type ExternalIdSourceCreateWithoutDepartmentAliasesInput = {
   receiptAliases?: Prisma.ReceiptExternalIdCreateNestedManyWithoutSourceInput
   expenseAliases?: Prisma.ExpenseExternalIdCreateNestedManyWithoutSourceInput
   roleAliases?: Prisma.RoleExternalIdCreateNestedManyWithoutSourceInput
+  userAliases?: Prisma.UserExternalIdCreateNestedManyWithoutSourceInput
 }
 
 export type ExternalIdSourceUncheckedCreateWithoutDepartmentAliasesInput = {
@@ -980,6 +1110,7 @@ export type ExternalIdSourceUncheckedCreateWithoutDepartmentAliasesInput = {
   receiptAliases?: Prisma.ReceiptExternalIdUncheckedCreateNestedManyWithoutSourceInput
   expenseAliases?: Prisma.ExpenseExternalIdUncheckedCreateNestedManyWithoutSourceInput
   roleAliases?: Prisma.RoleExternalIdUncheckedCreateNestedManyWithoutSourceInput
+  userAliases?: Prisma.UserExternalIdUncheckedCreateNestedManyWithoutSourceInput
 }
 
 export type ExternalIdSourceCreateOrConnectWithoutDepartmentAliasesInput = {
@@ -1013,6 +1144,7 @@ export type ExternalIdSourceUpdateWithoutDepartmentAliasesInput = {
   receiptAliases?: Prisma.ReceiptExternalIdUpdateManyWithoutSourceNestedInput
   expenseAliases?: Prisma.ExpenseExternalIdUpdateManyWithoutSourceNestedInput
   roleAliases?: Prisma.RoleExternalIdUpdateManyWithoutSourceNestedInput
+  userAliases?: Prisma.UserExternalIdUpdateManyWithoutSourceNestedInput
 }
 
 export type ExternalIdSourceUncheckedUpdateWithoutDepartmentAliasesInput = {
@@ -1030,6 +1162,7 @@ export type ExternalIdSourceUncheckedUpdateWithoutDepartmentAliasesInput = {
   receiptAliases?: Prisma.ReceiptExternalIdUncheckedUpdateManyWithoutSourceNestedInput
   expenseAliases?: Prisma.ExpenseExternalIdUncheckedUpdateManyWithoutSourceNestedInput
   roleAliases?: Prisma.RoleExternalIdUncheckedUpdateManyWithoutSourceNestedInput
+  userAliases?: Prisma.UserExternalIdUncheckedUpdateManyWithoutSourceNestedInput
 }
 
 export type ExternalIdSourceCreateWithoutJobLevelAliasesInput = {
@@ -1047,6 +1180,7 @@ export type ExternalIdSourceCreateWithoutJobLevelAliasesInput = {
   receiptAliases?: Prisma.ReceiptExternalIdCreateNestedManyWithoutSourceInput
   expenseAliases?: Prisma.ExpenseExternalIdCreateNestedManyWithoutSourceInput
   roleAliases?: Prisma.RoleExternalIdCreateNestedManyWithoutSourceInput
+  userAliases?: Prisma.UserExternalIdCreateNestedManyWithoutSourceInput
 }
 
 export type ExternalIdSourceUncheckedCreateWithoutJobLevelAliasesInput = {
@@ -1064,6 +1198,7 @@ export type ExternalIdSourceUncheckedCreateWithoutJobLevelAliasesInput = {
   receiptAliases?: Prisma.ReceiptExternalIdUncheckedCreateNestedManyWithoutSourceInput
   expenseAliases?: Prisma.ExpenseExternalIdUncheckedCreateNestedManyWithoutSourceInput
   roleAliases?: Prisma.RoleExternalIdUncheckedCreateNestedManyWithoutSourceInput
+  userAliases?: Prisma.UserExternalIdUncheckedCreateNestedManyWithoutSourceInput
 }
 
 export type ExternalIdSourceCreateOrConnectWithoutJobLevelAliasesInput = {
@@ -1097,6 +1232,7 @@ export type ExternalIdSourceUpdateWithoutJobLevelAliasesInput = {
   receiptAliases?: Prisma.ReceiptExternalIdUpdateManyWithoutSourceNestedInput
   expenseAliases?: Prisma.ExpenseExternalIdUpdateManyWithoutSourceNestedInput
   roleAliases?: Prisma.RoleExternalIdUpdateManyWithoutSourceNestedInput
+  userAliases?: Prisma.UserExternalIdUpdateManyWithoutSourceNestedInput
 }
 
 export type ExternalIdSourceUncheckedUpdateWithoutJobLevelAliasesInput = {
@@ -1114,6 +1250,7 @@ export type ExternalIdSourceUncheckedUpdateWithoutJobLevelAliasesInput = {
   receiptAliases?: Prisma.ReceiptExternalIdUncheckedUpdateManyWithoutSourceNestedInput
   expenseAliases?: Prisma.ExpenseExternalIdUncheckedUpdateManyWithoutSourceNestedInput
   roleAliases?: Prisma.RoleExternalIdUncheckedUpdateManyWithoutSourceNestedInput
+  userAliases?: Prisma.UserExternalIdUncheckedUpdateManyWithoutSourceNestedInput
 }
 
 export type ExternalIdSourceCreateWithoutFiscalYearAliasesInput = {
@@ -1131,6 +1268,7 @@ export type ExternalIdSourceCreateWithoutFiscalYearAliasesInput = {
   receiptAliases?: Prisma.ReceiptExternalIdCreateNestedManyWithoutSourceInput
   expenseAliases?: Prisma.ExpenseExternalIdCreateNestedManyWithoutSourceInput
   roleAliases?: Prisma.RoleExternalIdCreateNestedManyWithoutSourceInput
+  userAliases?: Prisma.UserExternalIdCreateNestedManyWithoutSourceInput
 }
 
 export type ExternalIdSourceUncheckedCreateWithoutFiscalYearAliasesInput = {
@@ -1148,6 +1286,7 @@ export type ExternalIdSourceUncheckedCreateWithoutFiscalYearAliasesInput = {
   receiptAliases?: Prisma.ReceiptExternalIdUncheckedCreateNestedManyWithoutSourceInput
   expenseAliases?: Prisma.ExpenseExternalIdUncheckedCreateNestedManyWithoutSourceInput
   roleAliases?: Prisma.RoleExternalIdUncheckedCreateNestedManyWithoutSourceInput
+  userAliases?: Prisma.UserExternalIdUncheckedCreateNestedManyWithoutSourceInput
 }
 
 export type ExternalIdSourceCreateOrConnectWithoutFiscalYearAliasesInput = {
@@ -1181,6 +1320,7 @@ export type ExternalIdSourceUpdateWithoutFiscalYearAliasesInput = {
   receiptAliases?: Prisma.ReceiptExternalIdUpdateManyWithoutSourceNestedInput
   expenseAliases?: Prisma.ExpenseExternalIdUpdateManyWithoutSourceNestedInput
   roleAliases?: Prisma.RoleExternalIdUpdateManyWithoutSourceNestedInput
+  userAliases?: Prisma.UserExternalIdUpdateManyWithoutSourceNestedInput
 }
 
 export type ExternalIdSourceUncheckedUpdateWithoutFiscalYearAliasesInput = {
@@ -1198,6 +1338,7 @@ export type ExternalIdSourceUncheckedUpdateWithoutFiscalYearAliasesInput = {
   receiptAliases?: Prisma.ReceiptExternalIdUncheckedUpdateManyWithoutSourceNestedInput
   expenseAliases?: Prisma.ExpenseExternalIdUncheckedUpdateManyWithoutSourceNestedInput
   roleAliases?: Prisma.RoleExternalIdUncheckedUpdateManyWithoutSourceNestedInput
+  userAliases?: Prisma.UserExternalIdUncheckedUpdateManyWithoutSourceNestedInput
 }
 
 
@@ -1214,6 +1355,7 @@ export type ExternalIdSourceCountOutputType = {
   receiptAliases: number
   expenseAliases: number
   roleAliases: number
+  userAliases: number
 }
 
 export type ExternalIdSourceCountOutputTypeSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
@@ -1225,6 +1367,7 @@ export type ExternalIdSourceCountOutputTypeSelect<ExtArgs extends runtime.Types.
   receiptAliases?: boolean | ExternalIdSourceCountOutputTypeCountReceiptAliasesArgs
   expenseAliases?: boolean | ExternalIdSourceCountOutputTypeCountExpenseAliasesArgs
   roleAliases?: boolean | ExternalIdSourceCountOutputTypeCountRoleAliasesArgs
+  userAliases?: boolean | ExternalIdSourceCountOutputTypeCountUserAliasesArgs
 }
 
 /**
@@ -1293,6 +1436,13 @@ export type ExternalIdSourceCountOutputTypeCountRoleAliasesArgs<ExtArgs extends 
   where?: Prisma.RoleExternalIdWhereInput
 }
 
+/**
+ * ExternalIdSourceCountOutputType without action
+ */
+export type ExternalIdSourceCountOutputTypeCountUserAliasesArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  where?: Prisma.UserExternalIdWhereInput
+}
+
 
 export type ExternalIdSourceSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetSelect<{
   id?: boolean
@@ -1310,6 +1460,7 @@ export type ExternalIdSourceSelect<ExtArgs extends runtime.Types.Extensions.Inte
   receiptAliases?: boolean | Prisma.ExternalIdSource$receiptAliasesArgs<ExtArgs>
   expenseAliases?: boolean | Prisma.ExternalIdSource$expenseAliasesArgs<ExtArgs>
   roleAliases?: boolean | Prisma.ExternalIdSource$roleAliasesArgs<ExtArgs>
+  userAliases?: boolean | Prisma.ExternalIdSource$userAliasesArgs<ExtArgs>
   _count?: boolean | Prisma.ExternalIdSourceCountOutputTypeDefaultArgs<ExtArgs>
 }, ExtArgs["result"]["externalIdSource"]>
 
@@ -1353,6 +1504,7 @@ export type ExternalIdSourceInclude<ExtArgs extends runtime.Types.Extensions.Int
   receiptAliases?: boolean | Prisma.ExternalIdSource$receiptAliasesArgs<ExtArgs>
   expenseAliases?: boolean | Prisma.ExternalIdSource$expenseAliasesArgs<ExtArgs>
   roleAliases?: boolean | Prisma.ExternalIdSource$roleAliasesArgs<ExtArgs>
+  userAliases?: boolean | Prisma.ExternalIdSource$userAliasesArgs<ExtArgs>
   _count?: boolean | Prisma.ExternalIdSourceCountOutputTypeDefaultArgs<ExtArgs>
 }
 export type ExternalIdSourceIncludeCreateManyAndReturn<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {}
@@ -1372,6 +1524,10 @@ export type $ExternalIdSourcePayload<ExtArgs extends runtime.Types.Extensions.In
      * w4-10c: ExpenseOS's `RoleExternalId` (0070).
      */
     roleAliases: Prisma.$RoleExternalIdPayload<ExtArgs>[]
+    /**
+     * People 1: ExpenseOS's `UserExternalId` (0072).
+     */
+    userAliases: Prisma.$UserExternalIdPayload<ExtArgs>[]
   }
   scalars: runtime.Types.Extensions.GetPayloadResult<{
     id: string
@@ -1783,6 +1939,7 @@ export interface Prisma__ExternalIdSourceClient<T, Null = never, ExtArgs extends
   receiptAliases<T extends Prisma.ExternalIdSource$receiptAliasesArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.ExternalIdSource$receiptAliasesArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$ReceiptExternalIdPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
   expenseAliases<T extends Prisma.ExternalIdSource$expenseAliasesArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.ExternalIdSource$expenseAliasesArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$ExpenseExternalIdPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
   roleAliases<T extends Prisma.ExternalIdSource$roleAliasesArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.ExternalIdSource$roleAliasesArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$RoleExternalIdPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
+  userAliases<T extends Prisma.ExternalIdSource$userAliasesArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.ExternalIdSource$userAliasesArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$UserExternalIdPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
   /**
    * Attaches callbacks for the resolution and/or rejection of the Promise.
    * @param onfulfilled The callback to execute when the Promise is resolved.
@@ -2401,6 +2558,30 @@ export type ExternalIdSource$roleAliasesArgs<ExtArgs extends runtime.Types.Exten
   take?: number
   skip?: number
   distinct?: Prisma.RoleExternalIdScalarFieldEnum | Prisma.RoleExternalIdScalarFieldEnum[]
+}
+
+/**
+ * ExternalIdSource.userAliases
+ */
+export type ExternalIdSource$userAliasesArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  /**
+   * Select specific fields to fetch from the UserExternalId
+   */
+  select?: Prisma.UserExternalIdSelect<ExtArgs> | null
+  /**
+   * Omit specific fields from the UserExternalId
+   */
+  omit?: Prisma.UserExternalIdOmit<ExtArgs> | null
+  /**
+   * Choose, which related nodes to fetch as well
+   */
+  include?: Prisma.UserExternalIdInclude<ExtArgs> | null
+  where?: Prisma.UserExternalIdWhereInput
+  orderBy?: Prisma.UserExternalIdOrderByWithRelationInput | Prisma.UserExternalIdOrderByWithRelationInput[]
+  cursor?: Prisma.UserExternalIdWhereUniqueInput
+  take?: number
+  skip?: number
+  distinct?: Prisma.UserExternalIdScalarFieldEnum | Prisma.UserExternalIdScalarFieldEnum[]
 }
 
 /**

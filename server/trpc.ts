@@ -242,8 +242,15 @@ export async function resolveTenantMember(
   // a token outlives a demotion or a deactivation (lib/auth/actor.ts).
   // VeloExpense (w4-10a, d73): the person's role is their tenant's `role` row (0068).
   const [member] = await tx.$queryRaw<
-    { id: string; display_name: string | null; role_id: string; role_label: Record<string, string>; deleted_at: Date | null }[]
-  >`SELECT u.id, u.display_name, u.role_id, r.label AS role_label, u.deleted_at
+    {
+      id: string;
+      display_name: string | null;
+      role_id: string;
+      role_label: Record<string, string>;
+      deleted_at: Date | null;
+      has_access: boolean;
+    }[]
+  >`SELECT u.id, u.display_name, u.role_id, r.label AS role_label, u.deleted_at, u.has_access
       FROM app_user u
       JOIN role r ON r.organization_id = u.organization_id AND r.id = u.role_id
      WHERE lower(u.email) = lower(${caller.email}) LIMIT 1`;
@@ -252,6 +259,10 @@ export async function resolveTenantMember(
   }
   if (member.deleted_at !== null) {
     throw new TRPCError({ code: 'FORBIDDEN', message: 'This account has been deactivated.' });
+  }
+  // People 1 (0072): access turned off on the People screen takes effect on the next request.
+  if (!member.has_access) {
+    throw new TRPCError({ code: 'FORBIDDEN', message: 'Your access to this organization has been turned off.' });
   }
   const roleId = member.role_id;
   // VeloExpense: English until the reader's locale reaches the tRPC context with next-intl —

@@ -13,6 +13,7 @@ import { pickersRouter } from './pickers';
 import { policiesRouter } from './policies';
 import { rolesRouter } from './roles';
 import { savedViewsRouter } from './savedViews';
+import { usersRouter } from './users';
 
 /**
  * Root tRPC router — composes per-domain sub-routers. Add a new module's
@@ -45,6 +46,8 @@ export const appRouter = router({
   roles: rolesRouter,
   // w4-08: a person's saved list views.
   savedViews: savedViewsRouter,
+  // People 1 (16 Oct 2026): the People screen's reads; its writes come with People 3.
+  users: usersRouter,
 });
 
 /** Exported type used by the client to derive typed hooks. */

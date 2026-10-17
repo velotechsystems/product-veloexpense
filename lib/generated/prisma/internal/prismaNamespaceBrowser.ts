@@ -66,6 +66,7 @@ export const ModelName = {
   AiUsage: 'AiUsage',
   TaxJurisdiction: 'TaxJurisdiction',
   User: 'User',
+  UserExternalId: 'UserExternalId',
   Role: 'Role',
   RoleExternalId: 'RoleExternalId',
   BusinessUnit: 'BusinessUnit',
@@ -388,6 +389,13 @@ export const UserScalarFieldEnum = {
   organizationId: 'organizationId',
   email: 'email',
   name: 'name',
+  firstName: 'firstName',
+  lastName: 'lastName',
+  hasAccess: 'hasAccess',
+  onLeaveAt: 'onLeaveAt',
+  terminationDate: 'terminationDate',
+  lastLoginAt: 'lastLoginAt',
+  avatarUrl: 'avatarUrl',
   employeeStatus: 'employeeStatus',
   country: 'country',
   managerId: 'managerId',
@@ -402,6 +410,21 @@ export const UserScalarFieldEnum = {
 } as const
 
 export type UserScalarFieldEnum = (typeof UserScalarFieldEnum)[keyof typeof UserScalarFieldEnum]
+
+
+export const UserExternalIdScalarFieldEnum = {
+  id: 'id',
+  organizationId: 'organizationId',
+  sourceId: 'sourceId',
+  sourceValue: 'sourceValue',
+  userId: 'userId',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt',
+  createdBy: 'createdBy',
+  updatedBy: 'updatedBy'
+} as const
+
+export type UserExternalIdScalarFieldEnum = (typeof UserExternalIdScalarFieldEnum)[keyof typeof UserExternalIdScalarFieldEnum]
 
 
 export const RoleScalarFieldEnum = {

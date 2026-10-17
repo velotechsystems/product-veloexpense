@@ -31,6 +31,8 @@ export interface TestCtxOptions {
   email?: string | null;
   /** Permission strings the caller carries (checked by `withPermission`). */
   permissions?: readonly string[];
+  /** VeloExpense: the caller's tenant (`session.user.organizationId`). */
+  organizationId?: string;
 }
 
 /** Assemble a `Context` for a server-side caller. Mirrors the shape produced by
@@ -47,6 +49,7 @@ export function makeContext(opts: TestCtxOptions): Context {
         email: opts.email ?? 'test@e.inc',
         roleId,
         roleLabel,
+        organizationId: opts.organizationId ?? '00000000-0000-7000-8000-0000000000c1',
       },
       expires: '2999-01-01T00:00:00.000Z',
     },
