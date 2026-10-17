@@ -497,6 +497,25 @@ describe('an adapter with unmet prerequisites is invisible', () => {
     expect(slugs()).not.toContain('quickbooks');
   });
 
+  it('nor is Xero (w5-03, d80), by its own credentials', async () => {
+    const { listAdapters } = await import('@/lib/integrations/registry');
+    const slugs = () => listAdapters().map((a) => a.slug);
+
+    delete process.env.XERO_CLIENT_ID;
+    delete process.env.XERO_CLIENT_SECRET;
+    expect(slugs()).not.toContain('xero');
+
+    process.env.XERO_CLIENT_ID = 'id';
+    process.env.XERO_CLIENT_SECRET = 'secret';
+    expect(slugs()).toContain('xero');
+    // Each is gated by its own app, not by the other's.
+    expect(slugs()).not.toContain('quickbooks');
+
+    delete process.env.XERO_CLIENT_ID;
+    delete process.env.XERO_CLIENT_SECRET;
+    expect(slugs()).not.toContain('xero');
+  });
+
   it('and cannot be installed while it is invisible', async () => {
     delete process.env.QUICKBOOKS_CLIENT_ID;
     await expect(
