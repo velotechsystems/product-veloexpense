@@ -193,6 +193,18 @@ export const EXPORTED: Readonly<Record<string, ExportedTable>> = {
     },
   },
   integration_post: { file: 'integration-posts.csv' },
+  // w5-02a (0074): the tenant's own Slack app. Exported for who connected it and when; the
+  // two credentials are withheld for `integration_installation.config`'s reason.
+  slack_connection: {
+    file: 'slack-connection.csv',
+    redact: {
+      bot_token:
+        'an encrypted bot token for the tenant\'s Slack workspace — ciphertext under the ' +
+        'SERVER\'s key, useless outside it, and a live credential inside it.',
+      signing_secret:
+        'the encrypted signing secret of the tenant\'s Slack app, for the same reason.',
+    },
+  },
 
   /* ── budgets and spend ────────────────────────────────────────────────── */
   budget: { file: 'budgets.csv' },

@@ -94,7 +94,7 @@
       "checkedAt": "Dernière vérification : {date}",
       "hint": "Vous avez changé l'adresse courriel de votre compte Slack? Lancez une nouvelle vérification pour que la prochaine notification vous trouve.",
       "linked": "Votre compte Slack est lié. Les messages directs y seront envoyés.",
-      "notLinked": "Slack n'a aucun compte associé à votre adresse courriel ExpenseOS; les notifications Slack ne peuvent donc pas être livrées.",
+      "notLinked": "Slack n'a aucun compte associé à votre adresse courriel VeloExpense; les notifications Slack ne peuvent donc pas être livrées.",
       "relink": "Vérifier de nouveau",
       "relinked": "Effacé. Votre compte Slack sera recherché de nouveau à votre prochaine notification.",
       "relinking": "Vérification…",
@@ -103,6 +103,7 @@
     }
   },
   "cta": "Voir dans VeloExpense",
+  "ctaApprover": "Examiner et approuver dans VeloExpense",
   "ctaSubject": {
     "VIRTUAL_CARD_REQUEST": "Voir la demande de carte",
     "VIRTUAL_CARD_LIMIT_INCREASE": "Voir la demande d'augmentation de limite",

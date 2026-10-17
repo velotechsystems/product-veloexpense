@@ -78,6 +78,7 @@
     "ledgerQueue": "Ledger queue",
     "branding": "Branding",
     "defaultLanguage": "Default language",
+    "slack": "Slack",
     "emailDelivery": "Email delivery",
     "billing": "Billing"
   },

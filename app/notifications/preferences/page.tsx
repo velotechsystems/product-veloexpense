@@ -13,19 +13,25 @@
  *
  * So each cell is three radio buttons and the column says what "default" means.
  *
- * SLACK is shown and disabled: nothing delivers on it until Slack is connected
- * (w5-02), and a live toggle for a channel that cannot deliver is precisely the
- * dead control NT-2 found in ExpenseOS — where the schema documents an `inApp`
- * preference key that no code has ever read. Hiding the column instead would make
- * the screen look finished and the roadmap invisible. EMAIL is live: it delivers
- * since VX2-8, though this screen kept it disabled until w5-00 found that comment
- * emails — and so the digest — could not be turned on.
+ * SLACK is live once the organization has connected its Slack app (w5-02a, /admin/slack),
+ * and shown and disabled until then: a live toggle for a channel that cannot deliver is
+ * precisely the dead control NT-2 found in ExpenseOS — where the schema documents an `inApp`
+ * preference key that no code has ever read. Hiding the column instead would make the
+ * screen look finished and the roadmap invisible. EMAIL is live: it delivers since VX2-8,
+ * though this screen kept it disabled until w5-00 found that comment emails — and so the
+ * digest — could not be turned on.
+ *
+ * Under the grid, when Slack is connected: ExpenseOS's "Slack account" — whether Slack knows
+ * who you are, and the one button that can correct it (`SlackLink`).
  */
 import { Button } from '@/components/ui/button';
 import { ErrorBanner } from '@/app/expenses/ui';
 import { enumLabel, CHANNEL_COPY } from '@/lib/i18n/catalog/enums';
 import { readerPrefs } from '@/lib/i18n/request';
-import { getPreferencesPage, setPreferenceFromForm } from '../actions';
+import { formatInstant } from '@/lib/i18n/format';
+import type { ReaderPrefs } from '@/lib/i18n/resolve';
+import { loadCatalog } from '@expenseos/i18n/load';
+import { forgetSlackLinkFromForm, getPreferencesPage, setPreferenceFromForm } from '../actions';
 
 import { pageTitle } from '@/lib/i18n/page-title';
 import { PageHeader, Screen } from '@/components/screen';
@@ -41,11 +47,11 @@ export const dynamic = 'force-dynamic';
 export default async function NotificationPreferencesPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string }>;
+  searchParams: Promise<{ error?: string; relinked?: string }>;
 }) {
   const prefs = await readerPrefs();
-  const { error } = await searchParams;
-  const { grid } = await getPreferencesPage();
+  const { error, relinked } = await searchParams;
+  const { grid, slackLink } = await getPreferencesPage();
 
   return (
     <Screen>
@@ -131,11 +137,71 @@ export default async function NotificationPreferencesPage({
         ))}
       </div>
 
+      {slackLink ? <SlackLink link={slackLink} relinked={Boolean(relinked)} prefs={prefs} /> : null}
+
       <p className="text-xs text-muted-foreground">
         Preference changes are recorded in the audit trail. The messages you mute are not — so if a
         report ever seems to have gone quiet, the trail can say when the setting changed and who
         changed it.
       </p>
     </Screen>
+  );
+}
+
+/**
+ * Whether Slack knows who you are — and the one button that can correct it.
+ *
+ * A Slack DM is addressed to a Slack user id resolved from the ExpenseOS email address
+ * once and then cached on the User row, because `users.lookupByEmail` is rate-limited. The
+ * cache is refreshed on a timer and repaired automatically when Slack rejects the id, but
+ * neither helps the person who has just changed the email on their Slack account and is
+ * looking at a Slack column they ticked days ago, wondering why nothing arrives. They are
+ * the only one who knows the answer changed, so they get the button.
+ *
+ * Rendered under the toggles rather than as its own card: it explains the Slack COLUMN,
+ * and away from it the sentence "your Slack account is linked" has nothing to attach to.
+ *
+ * w5-02a — ExpenseOS's `SlackLink` (`profile/NotificationPreferences.tsx`, 1e682dd6), with its
+ * catalog copy (`notifications.prefs.slackLink`). VeloExpense: a server component posting a
+ * form, where ExpenseOS's is a client component with a tRPC mutation; "Cleared" arrives as a
+ * query value after the redirect. English for now, as the rest of this screen is.
+ */
+async function SlackLink({
+  link,
+  relinked,
+  prefs,
+}: {
+  link: { linked: boolean; checkedAt: Date | null };
+  relinked: boolean;
+  prefs: ReaderPrefs;
+}) {
+  const cat = await loadCatalog('en');
+  const copy =
+    ((cat.notifications as { prefs?: { slackLink?: Record<string, string> } } | undefined)?.prefs
+      ?.slackLink ?? {}) as Record<string, string>;
+  const t = (key: string) => copy[key] ?? key;
+  const { linked, checkedAt } = link;
+  // Three states, not two. "Never looked up" is not "Slack has no account for you": the
+  // first resolves itself the moment a Slack notification is due, and telling somebody
+  // their address is unknown to Slack when nobody has asked yet sends them to fix Slack.
+  const status = linked ? 'linked' : checkedAt ? 'notLinked' : 'unknown';
+
+  return (
+    <section className="rounded-lg border border-border p-4">
+      <h2 className="font-medium">{t('title')}</h2>
+      <p className="mt-1 text-sm text-muted-foreground">{t(status)}</p>
+      {checkedAt ? (
+        <p className="mt-1 text-xs text-muted-foreground">
+          {t('checkedAt').replace('{date}', formatInstant(checkedAt, prefs))}
+        </p>
+      ) : null}
+      <p className="mt-1 text-xs text-muted-foreground">{t('hint')}</p>
+      <form action={forgetSlackLinkFromForm} className="mt-3 flex items-center gap-3">
+        <Button type="submit" size="sm" variant="outline">
+          {t('relink')}
+        </Button>
+        {relinked ? <span className="text-xs text-muted-foreground">{t('relinked')}</span> : null}
+      </form>
+    </section>
   );
 }

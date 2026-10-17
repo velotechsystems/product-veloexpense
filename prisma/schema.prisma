@@ -471,6 +471,11 @@ model User {
   avatarUrl       String?   @map("avatar_url")
   /// ExpenseOS's EmployeeStatus enum; text with a CHECK here (ACTIVE, ON_LEAVE, DEACTIVATED).
   employeeStatus String    @default("ACTIVE") @map("employee_status")
+  /// ExpenseOS's `slackUserId` / `slackLookupAt` (w5-02, 0074): the Slack user id resolved
+  /// from this person's email and cached, and when Slack was last asked. A null id with a
+  /// lookup time is a cached "Slack has no account for this address".
+  slackUserId    String?   @map("slack_user_id")
+  slackLookupAt  DateTime? @map("slack_lookup_at") @db.Timestamptz(6)
   /// ISO-3166-1 alpha-2 country code — ExpenseOS's `User.country`, which mileage pricing
   /// reads (w2-10). Backfilled from the person's legal entity (0055).
   country        String?

@@ -37,6 +37,8 @@ export type UserMinAggregateOutputType = {
   lastLoginAt: Date | null
   avatarUrl: string | null
   employeeStatus: string | null
+  slackUserId: string | null
+  slackLookupAt: Date | null
   country: string | null
   managerId: string | null
   departmentId: string | null
@@ -62,6 +64,8 @@ export type UserMaxAggregateOutputType = {
   lastLoginAt: Date | null
   avatarUrl: string | null
   employeeStatus: string | null
+  slackUserId: string | null
+  slackLookupAt: Date | null
   country: string | null
   managerId: string | null
   departmentId: string | null
@@ -87,6 +91,8 @@ export type UserCountAggregateOutputType = {
   lastLoginAt: number
   avatarUrl: number
   employeeStatus: number
+  slackUserId: number
+  slackLookupAt: number
   country: number
   managerId: number
   departmentId: number
@@ -114,6 +120,8 @@ export type UserMinAggregateInputType = {
   lastLoginAt?: true
   avatarUrl?: true
   employeeStatus?: true
+  slackUserId?: true
+  slackLookupAt?: true
   country?: true
   managerId?: true
   departmentId?: true
@@ -139,6 +147,8 @@ export type UserMaxAggregateInputType = {
   lastLoginAt?: true
   avatarUrl?: true
   employeeStatus?: true
+  slackUserId?: true
+  slackLookupAt?: true
   country?: true
   managerId?: true
   departmentId?: true
@@ -164,6 +174,8 @@ export type UserCountAggregateInputType = {
   lastLoginAt?: true
   avatarUrl?: true
   employeeStatus?: true
+  slackUserId?: true
+  slackLookupAt?: true
   country?: true
   managerId?: true
   departmentId?: true
@@ -262,6 +274,8 @@ export type UserGroupByOutputType = {
   lastLoginAt: Date | null
   avatarUrl: string | null
   employeeStatus: string
+  slackUserId: string | null
+  slackLookupAt: Date | null
   country: string | null
   managerId: string | null
   departmentId: string | null
@@ -308,6 +322,8 @@ export type UserWhereInput = {
   lastLoginAt?: Prisma.DateTimeNullableFilter<"User"> | Date | string | null
   avatarUrl?: Prisma.StringNullableFilter<"User"> | string | null
   employeeStatus?: Prisma.StringFilter<"User"> | string
+  slackUserId?: Prisma.StringNullableFilter<"User"> | string | null
+  slackLookupAt?: Prisma.DateTimeNullableFilter<"User"> | Date | string | null
   country?: Prisma.StringNullableFilter<"User"> | string | null
   managerId?: Prisma.UuidNullableFilter<"User"> | string | null
   departmentId?: Prisma.UuidNullableFilter<"User"> | string | null
@@ -349,6 +365,8 @@ export type UserOrderByWithRelationInput = {
   lastLoginAt?: Prisma.SortOrderInput | Prisma.SortOrder
   avatarUrl?: Prisma.SortOrderInput | Prisma.SortOrder
   employeeStatus?: Prisma.SortOrder
+  slackUserId?: Prisma.SortOrderInput | Prisma.SortOrder
+  slackLookupAt?: Prisma.SortOrderInput | Prisma.SortOrder
   country?: Prisma.SortOrderInput | Prisma.SortOrder
   managerId?: Prisma.SortOrderInput | Prisma.SortOrder
   departmentId?: Prisma.SortOrderInput | Prisma.SortOrder
@@ -393,6 +411,8 @@ export type UserWhereUniqueInput = Prisma.AtLeast<{
   lastLoginAt?: Prisma.DateTimeNullableFilter<"User"> | Date | string | null
   avatarUrl?: Prisma.StringNullableFilter<"User"> | string | null
   employeeStatus?: Prisma.StringFilter<"User"> | string
+  slackUserId?: Prisma.StringNullableFilter<"User"> | string | null
+  slackLookupAt?: Prisma.DateTimeNullableFilter<"User"> | Date | string | null
   country?: Prisma.StringNullableFilter<"User"> | string | null
   managerId?: Prisma.UuidNullableFilter<"User"> | string | null
   departmentId?: Prisma.UuidNullableFilter<"User"> | string | null
@@ -434,6 +454,8 @@ export type UserOrderByWithAggregationInput = {
   lastLoginAt?: Prisma.SortOrderInput | Prisma.SortOrder
   avatarUrl?: Prisma.SortOrderInput | Prisma.SortOrder
   employeeStatus?: Prisma.SortOrder
+  slackUserId?: Prisma.SortOrderInput | Prisma.SortOrder
+  slackLookupAt?: Prisma.SortOrderInput | Prisma.SortOrder
   country?: Prisma.SortOrderInput | Prisma.SortOrder
   managerId?: Prisma.SortOrderInput | Prisma.SortOrder
   departmentId?: Prisma.SortOrderInput | Prisma.SortOrder
@@ -465,6 +487,8 @@ export type UserScalarWhereWithAggregatesInput = {
   lastLoginAt?: Prisma.DateTimeNullableWithAggregatesFilter<"User"> | Date | string | null
   avatarUrl?: Prisma.StringNullableWithAggregatesFilter<"User"> | string | null
   employeeStatus?: Prisma.StringWithAggregatesFilter<"User"> | string
+  slackUserId?: Prisma.StringNullableWithAggregatesFilter<"User"> | string | null
+  slackLookupAt?: Prisma.DateTimeNullableWithAggregatesFilter<"User"> | Date | string | null
   country?: Prisma.StringNullableWithAggregatesFilter<"User"> | string | null
   managerId?: Prisma.UuidNullableWithAggregatesFilter<"User"> | string | null
   departmentId?: Prisma.UuidNullableWithAggregatesFilter<"User"> | string | null
@@ -489,6 +513,8 @@ export type UserCreateInput = {
   lastLoginAt?: Date | string | null
   avatarUrl?: string | null
   employeeStatus?: string
+  slackUserId?: string | null
+  slackLookupAt?: Date | string | null
   country?: string | null
   deletedAt?: Date | string | null
   createdAt?: Date | string
@@ -524,6 +550,8 @@ export type UserUncheckedCreateInput = {
   lastLoginAt?: Date | string | null
   avatarUrl?: string | null
   employeeStatus?: string
+  slackUserId?: string | null
+  slackLookupAt?: Date | string | null
   country?: string | null
   managerId?: string | null
   departmentId?: string | null
@@ -558,6 +586,8 @@ export type UserUpdateInput = {
   lastLoginAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   avatarUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   employeeStatus?: Prisma.StringFieldUpdateOperationsInput | string
+  slackUserId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  slackLookupAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   country?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   deletedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -593,6 +623,8 @@ export type UserUncheckedUpdateInput = {
   lastLoginAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   avatarUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   employeeStatus?: Prisma.StringFieldUpdateOperationsInput | string
+  slackUserId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  slackLookupAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   country?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   managerId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   departmentId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -628,6 +660,8 @@ export type UserCreateManyInput = {
   lastLoginAt?: Date | string | null
   avatarUrl?: string | null
   employeeStatus?: string
+  slackUserId?: string | null
+  slackLookupAt?: Date | string | null
   country?: string | null
   managerId?: string | null
   departmentId?: string | null
@@ -652,6 +686,8 @@ export type UserUpdateManyMutationInput = {
   lastLoginAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   avatarUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   employeeStatus?: Prisma.StringFieldUpdateOperationsInput | string
+  slackUserId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  slackLookupAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   country?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   deletedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -671,6 +707,8 @@ export type UserUncheckedUpdateManyInput = {
   lastLoginAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   avatarUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   employeeStatus?: Prisma.StringFieldUpdateOperationsInput | string
+  slackUserId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  slackLookupAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   country?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   managerId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   departmentId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -716,6 +754,8 @@ export type UserCountOrderByAggregateInput = {
   lastLoginAt?: Prisma.SortOrder
   avatarUrl?: Prisma.SortOrder
   employeeStatus?: Prisma.SortOrder
+  slackUserId?: Prisma.SortOrder
+  slackLookupAt?: Prisma.SortOrder
   country?: Prisma.SortOrder
   managerId?: Prisma.SortOrder
   departmentId?: Prisma.SortOrder
@@ -741,6 +781,8 @@ export type UserMaxOrderByAggregateInput = {
   lastLoginAt?: Prisma.SortOrder
   avatarUrl?: Prisma.SortOrder
   employeeStatus?: Prisma.SortOrder
+  slackUserId?: Prisma.SortOrder
+  slackLookupAt?: Prisma.SortOrder
   country?: Prisma.SortOrder
   managerId?: Prisma.SortOrder
   departmentId?: Prisma.SortOrder
@@ -766,6 +808,8 @@ export type UserMinOrderByAggregateInput = {
   lastLoginAt?: Prisma.SortOrder
   avatarUrl?: Prisma.SortOrder
   employeeStatus?: Prisma.SortOrder
+  slackUserId?: Prisma.SortOrder
+  slackLookupAt?: Prisma.SortOrder
   country?: Prisma.SortOrder
   managerId?: Prisma.SortOrder
   departmentId?: Prisma.SortOrder
@@ -1188,6 +1232,8 @@ export type UserCreateWithoutReportsInput = {
   lastLoginAt?: Date | string | null
   avatarUrl?: string | null
   employeeStatus?: string
+  slackUserId?: string | null
+  slackLookupAt?: Date | string | null
   country?: string | null
   deletedAt?: Date | string | null
   createdAt?: Date | string
@@ -1222,6 +1268,8 @@ export type UserUncheckedCreateWithoutReportsInput = {
   lastLoginAt?: Date | string | null
   avatarUrl?: string | null
   employeeStatus?: string
+  slackUserId?: string | null
+  slackLookupAt?: Date | string | null
   country?: string | null
   managerId?: string | null
   departmentId?: string | null
@@ -1271,6 +1319,8 @@ export type UserUpdateWithoutReportsInput = {
   lastLoginAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   avatarUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   employeeStatus?: Prisma.StringFieldUpdateOperationsInput | string
+  slackUserId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  slackLookupAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   country?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   deletedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -1305,6 +1355,8 @@ export type UserUncheckedUpdateWithoutReportsInput = {
   lastLoginAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   avatarUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   employeeStatus?: Prisma.StringFieldUpdateOperationsInput | string
+  slackUserId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  slackLookupAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   country?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   managerId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   departmentId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -1338,6 +1390,8 @@ export type UserCreateWithoutExpensesInput = {
   lastLoginAt?: Date | string | null
   avatarUrl?: string | null
   employeeStatus?: string
+  slackUserId?: string | null
+  slackLookupAt?: Date | string | null
   country?: string | null
   deletedAt?: Date | string | null
   createdAt?: Date | string
@@ -1372,6 +1426,8 @@ export type UserUncheckedCreateWithoutExpensesInput = {
   lastLoginAt?: Date | string | null
   avatarUrl?: string | null
   employeeStatus?: string
+  slackUserId?: string | null
+  slackLookupAt?: Date | string | null
   country?: string | null
   managerId?: string | null
   departmentId?: string | null
@@ -1421,6 +1477,8 @@ export type UserUpdateWithoutExpensesInput = {
   lastLoginAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   avatarUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   employeeStatus?: Prisma.StringFieldUpdateOperationsInput | string
+  slackUserId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  slackLookupAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   country?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   deletedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -1455,6 +1513,8 @@ export type UserUncheckedUpdateWithoutExpensesInput = {
   lastLoginAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   avatarUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   employeeStatus?: Prisma.StringFieldUpdateOperationsInput | string
+  slackUserId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  slackLookupAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   country?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   managerId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   departmentId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -1488,6 +1548,8 @@ export type UserCreateWithoutReceiptsInput = {
   lastLoginAt?: Date | string | null
   avatarUrl?: string | null
   employeeStatus?: string
+  slackUserId?: string | null
+  slackLookupAt?: Date | string | null
   country?: string | null
   deletedAt?: Date | string | null
   createdAt?: Date | string
@@ -1522,6 +1584,8 @@ export type UserUncheckedCreateWithoutReceiptsInput = {
   lastLoginAt?: Date | string | null
   avatarUrl?: string | null
   employeeStatus?: string
+  slackUserId?: string | null
+  slackLookupAt?: Date | string | null
   country?: string | null
   managerId?: string | null
   departmentId?: string | null
@@ -1571,6 +1635,8 @@ export type UserUpdateWithoutReceiptsInput = {
   lastLoginAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   avatarUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   employeeStatus?: Prisma.StringFieldUpdateOperationsInput | string
+  slackUserId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  slackLookupAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   country?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   deletedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -1605,6 +1671,8 @@ export type UserUncheckedUpdateWithoutReceiptsInput = {
   lastLoginAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   avatarUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   employeeStatus?: Prisma.StringFieldUpdateOperationsInput | string
+  slackUserId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  slackLookupAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   country?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   managerId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   departmentId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -1638,6 +1706,8 @@ export type UserCreateWithoutDirectReportsInput = {
   lastLoginAt?: Date | string | null
   avatarUrl?: string | null
   employeeStatus?: string
+  slackUserId?: string | null
+  slackLookupAt?: Date | string | null
   country?: string | null
   deletedAt?: Date | string | null
   createdAt?: Date | string
@@ -1672,6 +1742,8 @@ export type UserUncheckedCreateWithoutDirectReportsInput = {
   lastLoginAt?: Date | string | null
   avatarUrl?: string | null
   employeeStatus?: string
+  slackUserId?: string | null
+  slackLookupAt?: Date | string | null
   country?: string | null
   managerId?: string | null
   departmentId?: string | null
@@ -1710,6 +1782,8 @@ export type UserCreateWithoutManagerInput = {
   lastLoginAt?: Date | string | null
   avatarUrl?: string | null
   employeeStatus?: string
+  slackUserId?: string | null
+  slackLookupAt?: Date | string | null
   country?: string | null
   deletedAt?: Date | string | null
   createdAt?: Date | string
@@ -1744,6 +1818,8 @@ export type UserUncheckedCreateWithoutManagerInput = {
   lastLoginAt?: Date | string | null
   avatarUrl?: string | null
   employeeStatus?: string
+  slackUserId?: string | null
+  slackLookupAt?: Date | string | null
   country?: string | null
   departmentId?: string | null
   businessUnitId?: string | null
@@ -1798,6 +1874,8 @@ export type UserUpdateWithoutDirectReportsInput = {
   lastLoginAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   avatarUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   employeeStatus?: Prisma.StringFieldUpdateOperationsInput | string
+  slackUserId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  slackLookupAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   country?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   deletedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -1832,6 +1910,8 @@ export type UserUncheckedUpdateWithoutDirectReportsInput = {
   lastLoginAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   avatarUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   employeeStatus?: Prisma.StringFieldUpdateOperationsInput | string
+  slackUserId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  slackLookupAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   country?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   managerId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   departmentId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -1885,6 +1965,8 @@ export type UserScalarWhereInput = {
   lastLoginAt?: Prisma.DateTimeNullableFilter<"User"> | Date | string | null
   avatarUrl?: Prisma.StringNullableFilter<"User"> | string | null
   employeeStatus?: Prisma.StringFilter<"User"> | string
+  slackUserId?: Prisma.StringNullableFilter<"User"> | string | null
+  slackLookupAt?: Prisma.DateTimeNullableFilter<"User"> | Date | string | null
   country?: Prisma.StringNullableFilter<"User"> | string | null
   managerId?: Prisma.UuidNullableFilter<"User"> | string | null
   departmentId?: Prisma.UuidNullableFilter<"User"> | string | null
@@ -1909,6 +1991,8 @@ export type UserCreateWithoutExternalIdsInput = {
   lastLoginAt?: Date | string | null
   avatarUrl?: string | null
   employeeStatus?: string
+  slackUserId?: string | null
+  slackLookupAt?: Date | string | null
   country?: string | null
   deletedAt?: Date | string | null
   createdAt?: Date | string
@@ -1943,6 +2027,8 @@ export type UserUncheckedCreateWithoutExternalIdsInput = {
   lastLoginAt?: Date | string | null
   avatarUrl?: string | null
   employeeStatus?: string
+  slackUserId?: string | null
+  slackLookupAt?: Date | string | null
   country?: string | null
   managerId?: string | null
   departmentId?: string | null
@@ -1992,6 +2078,8 @@ export type UserUpdateWithoutExternalIdsInput = {
   lastLoginAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   avatarUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   employeeStatus?: Prisma.StringFieldUpdateOperationsInput | string
+  slackUserId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  slackLookupAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   country?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   deletedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -2026,6 +2114,8 @@ export type UserUncheckedUpdateWithoutExternalIdsInput = {
   lastLoginAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   avatarUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   employeeStatus?: Prisma.StringFieldUpdateOperationsInput | string
+  slackUserId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  slackLookupAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   country?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   managerId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   departmentId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -2059,6 +2149,8 @@ export type UserCreateWithoutRoleInput = {
   lastLoginAt?: Date | string | null
   avatarUrl?: string | null
   employeeStatus?: string
+  slackUserId?: string | null
+  slackLookupAt?: Date | string | null
   country?: string | null
   deletedAt?: Date | string | null
   createdAt?: Date | string
@@ -2092,6 +2184,8 @@ export type UserUncheckedCreateWithoutRoleInput = {
   lastLoginAt?: Date | string | null
   avatarUrl?: string | null
   employeeStatus?: string
+  slackUserId?: string | null
+  slackLookupAt?: Date | string | null
   country?: string | null
   managerId?: string | null
   departmentId?: string | null
@@ -2151,6 +2245,8 @@ export type UserCreateWithoutBusinessUnitInput = {
   lastLoginAt?: Date | string | null
   avatarUrl?: string | null
   employeeStatus?: string
+  slackUserId?: string | null
+  slackLookupAt?: Date | string | null
   country?: string | null
   deletedAt?: Date | string | null
   createdAt?: Date | string
@@ -2185,6 +2281,8 @@ export type UserUncheckedCreateWithoutBusinessUnitInput = {
   lastLoginAt?: Date | string | null
   avatarUrl?: string | null
   employeeStatus?: string
+  slackUserId?: string | null
+  slackLookupAt?: Date | string | null
   country?: string | null
   managerId?: string | null
   departmentId?: string | null
@@ -2244,6 +2342,8 @@ export type UserCreateWithoutEntityInput = {
   lastLoginAt?: Date | string | null
   avatarUrl?: string | null
   employeeStatus?: string
+  slackUserId?: string | null
+  slackLookupAt?: Date | string | null
   country?: string | null
   deletedAt?: Date | string | null
   createdAt?: Date | string
@@ -2278,6 +2378,8 @@ export type UserUncheckedCreateWithoutEntityInput = {
   lastLoginAt?: Date | string | null
   avatarUrl?: string | null
   employeeStatus?: string
+  slackUserId?: string | null
+  slackLookupAt?: Date | string | null
   country?: string | null
   managerId?: string | null
   departmentId?: string | null
@@ -2337,6 +2439,8 @@ export type UserCreateWithoutMileageRatesInput = {
   lastLoginAt?: Date | string | null
   avatarUrl?: string | null
   employeeStatus?: string
+  slackUserId?: string | null
+  slackLookupAt?: Date | string | null
   country?: string | null
   deletedAt?: Date | string | null
   createdAt?: Date | string
@@ -2371,6 +2475,8 @@ export type UserUncheckedCreateWithoutMileageRatesInput = {
   lastLoginAt?: Date | string | null
   avatarUrl?: string | null
   employeeStatus?: string
+  slackUserId?: string | null
+  slackLookupAt?: Date | string | null
   country?: string | null
   managerId?: string | null
   departmentId?: string | null
@@ -2420,6 +2526,8 @@ export type UserUpdateWithoutMileageRatesInput = {
   lastLoginAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   avatarUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   employeeStatus?: Prisma.StringFieldUpdateOperationsInput | string
+  slackUserId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  slackLookupAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   country?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   deletedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -2454,6 +2562,8 @@ export type UserUncheckedUpdateWithoutMileageRatesInput = {
   lastLoginAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   avatarUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   employeeStatus?: Prisma.StringFieldUpdateOperationsInput | string
+  slackUserId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  slackLookupAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   country?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   managerId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   departmentId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -2487,6 +2597,8 @@ export type UserCreateWithoutDepartmentInput = {
   lastLoginAt?: Date | string | null
   avatarUrl?: string | null
   employeeStatus?: string
+  slackUserId?: string | null
+  slackLookupAt?: Date | string | null
   country?: string | null
   deletedAt?: Date | string | null
   createdAt?: Date | string
@@ -2521,6 +2633,8 @@ export type UserUncheckedCreateWithoutDepartmentInput = {
   lastLoginAt?: Date | string | null
   avatarUrl?: string | null
   employeeStatus?: string
+  slackUserId?: string | null
+  slackLookupAt?: Date | string | null
   country?: string | null
   managerId?: string | null
   businessUnitId?: string | null
@@ -2580,6 +2694,8 @@ export type UserCreateWithoutJobLevelInput = {
   lastLoginAt?: Date | string | null
   avatarUrl?: string | null
   employeeStatus?: string
+  slackUserId?: string | null
+  slackLookupAt?: Date | string | null
   country?: string | null
   deletedAt?: Date | string | null
   createdAt?: Date | string
@@ -2614,6 +2730,8 @@ export type UserUncheckedCreateWithoutJobLevelInput = {
   lastLoginAt?: Date | string | null
   avatarUrl?: string | null
   employeeStatus?: string
+  slackUserId?: string | null
+  slackLookupAt?: Date | string | null
   country?: string | null
   managerId?: string | null
   departmentId?: string | null
@@ -2673,6 +2791,8 @@ export type UserCreateWithoutApprovalTasksAssignedInput = {
   lastLoginAt?: Date | string | null
   avatarUrl?: string | null
   employeeStatus?: string
+  slackUserId?: string | null
+  slackLookupAt?: Date | string | null
   country?: string | null
   deletedAt?: Date | string | null
   createdAt?: Date | string
@@ -2707,6 +2827,8 @@ export type UserUncheckedCreateWithoutApprovalTasksAssignedInput = {
   lastLoginAt?: Date | string | null
   avatarUrl?: string | null
   employeeStatus?: string
+  slackUserId?: string | null
+  slackLookupAt?: Date | string | null
   country?: string | null
   managerId?: string | null
   departmentId?: string | null
@@ -2745,6 +2867,8 @@ export type UserCreateWithoutApprovalTasksDecidedInput = {
   lastLoginAt?: Date | string | null
   avatarUrl?: string | null
   employeeStatus?: string
+  slackUserId?: string | null
+  slackLookupAt?: Date | string | null
   country?: string | null
   deletedAt?: Date | string | null
   createdAt?: Date | string
@@ -2779,6 +2903,8 @@ export type UserUncheckedCreateWithoutApprovalTasksDecidedInput = {
   lastLoginAt?: Date | string | null
   avatarUrl?: string | null
   employeeStatus?: string
+  slackUserId?: string | null
+  slackLookupAt?: Date | string | null
   country?: string | null
   managerId?: string | null
   departmentId?: string | null
@@ -2828,6 +2954,8 @@ export type UserUpdateWithoutApprovalTasksAssignedInput = {
   lastLoginAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   avatarUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   employeeStatus?: Prisma.StringFieldUpdateOperationsInput | string
+  slackUserId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  slackLookupAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   country?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   deletedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -2862,6 +2990,8 @@ export type UserUncheckedUpdateWithoutApprovalTasksAssignedInput = {
   lastLoginAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   avatarUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   employeeStatus?: Prisma.StringFieldUpdateOperationsInput | string
+  slackUserId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  slackLookupAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   country?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   managerId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   departmentId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -2906,6 +3036,8 @@ export type UserUpdateWithoutApprovalTasksDecidedInput = {
   lastLoginAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   avatarUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   employeeStatus?: Prisma.StringFieldUpdateOperationsInput | string
+  slackUserId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  slackLookupAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   country?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   deletedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -2940,6 +3072,8 @@ export type UserUncheckedUpdateWithoutApprovalTasksDecidedInput = {
   lastLoginAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   avatarUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   employeeStatus?: Prisma.StringFieldUpdateOperationsInput | string
+  slackUserId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  slackLookupAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   country?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   managerId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   departmentId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -2973,6 +3107,8 @@ export type UserCreateWithoutDelegationsFromInput = {
   lastLoginAt?: Date | string | null
   avatarUrl?: string | null
   employeeStatus?: string
+  slackUserId?: string | null
+  slackLookupAt?: Date | string | null
   country?: string | null
   deletedAt?: Date | string | null
   createdAt?: Date | string
@@ -3007,6 +3143,8 @@ export type UserUncheckedCreateWithoutDelegationsFromInput = {
   lastLoginAt?: Date | string | null
   avatarUrl?: string | null
   employeeStatus?: string
+  slackUserId?: string | null
+  slackLookupAt?: Date | string | null
   country?: string | null
   managerId?: string | null
   departmentId?: string | null
@@ -3045,6 +3183,8 @@ export type UserCreateWithoutDelegationsToInput = {
   lastLoginAt?: Date | string | null
   avatarUrl?: string | null
   employeeStatus?: string
+  slackUserId?: string | null
+  slackLookupAt?: Date | string | null
   country?: string | null
   deletedAt?: Date | string | null
   createdAt?: Date | string
@@ -3079,6 +3219,8 @@ export type UserUncheckedCreateWithoutDelegationsToInput = {
   lastLoginAt?: Date | string | null
   avatarUrl?: string | null
   employeeStatus?: string
+  slackUserId?: string | null
+  slackLookupAt?: Date | string | null
   country?: string | null
   managerId?: string | null
   departmentId?: string | null
@@ -3128,6 +3270,8 @@ export type UserUpdateWithoutDelegationsFromInput = {
   lastLoginAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   avatarUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   employeeStatus?: Prisma.StringFieldUpdateOperationsInput | string
+  slackUserId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  slackLookupAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   country?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   deletedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -3162,6 +3306,8 @@ export type UserUncheckedUpdateWithoutDelegationsFromInput = {
   lastLoginAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   avatarUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   employeeStatus?: Prisma.StringFieldUpdateOperationsInput | string
+  slackUserId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  slackLookupAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   country?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   managerId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   departmentId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -3206,6 +3352,8 @@ export type UserUpdateWithoutDelegationsToInput = {
   lastLoginAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   avatarUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   employeeStatus?: Prisma.StringFieldUpdateOperationsInput | string
+  slackUserId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  slackLookupAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   country?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   deletedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -3240,6 +3388,8 @@ export type UserUncheckedUpdateWithoutDelegationsToInput = {
   lastLoginAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   avatarUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   employeeStatus?: Prisma.StringFieldUpdateOperationsInput | string
+  slackUserId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  slackLookupAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   country?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   managerId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   departmentId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -3274,6 +3424,8 @@ export type UserCreateManyManagerInput = {
   lastLoginAt?: Date | string | null
   avatarUrl?: string | null
   employeeStatus?: string
+  slackUserId?: string | null
+  slackLookupAt?: Date | string | null
   country?: string | null
   departmentId?: string | null
   businessUnitId?: string | null
@@ -3297,6 +3449,8 @@ export type UserUpdateWithoutManagerInput = {
   lastLoginAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   avatarUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   employeeStatus?: Prisma.StringFieldUpdateOperationsInput | string
+  slackUserId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  slackLookupAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   country?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   deletedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -3331,6 +3485,8 @@ export type UserUncheckedUpdateWithoutManagerInput = {
   lastLoginAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   avatarUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   employeeStatus?: Prisma.StringFieldUpdateOperationsInput | string
+  slackUserId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  slackLookupAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   country?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   departmentId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   businessUnitId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -3365,6 +3521,8 @@ export type UserUncheckedUpdateManyWithoutManagerInput = {
   lastLoginAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   avatarUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   employeeStatus?: Prisma.StringFieldUpdateOperationsInput | string
+  slackUserId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  slackLookupAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   country?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   departmentId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   businessUnitId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -3388,6 +3546,8 @@ export type UserCreateManyRoleInput = {
   lastLoginAt?: Date | string | null
   avatarUrl?: string | null
   employeeStatus?: string
+  slackUserId?: string | null
+  slackLookupAt?: Date | string | null
   country?: string | null
   managerId?: string | null
   departmentId?: string | null
@@ -3411,6 +3571,8 @@ export type UserUpdateWithoutRoleInput = {
   lastLoginAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   avatarUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   employeeStatus?: Prisma.StringFieldUpdateOperationsInput | string
+  slackUserId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  slackLookupAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   country?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   deletedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -3444,6 +3606,8 @@ export type UserUncheckedUpdateWithoutRoleInput = {
   lastLoginAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   avatarUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   employeeStatus?: Prisma.StringFieldUpdateOperationsInput | string
+  slackUserId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  slackLookupAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   country?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   managerId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   departmentId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -3477,6 +3641,8 @@ export type UserUncheckedUpdateManyWithoutRoleInput = {
   lastLoginAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   avatarUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   employeeStatus?: Prisma.StringFieldUpdateOperationsInput | string
+  slackUserId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  slackLookupAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   country?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   managerId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   departmentId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -3501,6 +3667,8 @@ export type UserCreateManyBusinessUnitInput = {
   lastLoginAt?: Date | string | null
   avatarUrl?: string | null
   employeeStatus?: string
+  slackUserId?: string | null
+  slackLookupAt?: Date | string | null
   country?: string | null
   managerId?: string | null
   departmentId?: string | null
@@ -3524,6 +3692,8 @@ export type UserUpdateWithoutBusinessUnitInput = {
   lastLoginAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   avatarUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   employeeStatus?: Prisma.StringFieldUpdateOperationsInput | string
+  slackUserId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  slackLookupAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   country?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   deletedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -3558,6 +3728,8 @@ export type UserUncheckedUpdateWithoutBusinessUnitInput = {
   lastLoginAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   avatarUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   employeeStatus?: Prisma.StringFieldUpdateOperationsInput | string
+  slackUserId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  slackLookupAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   country?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   managerId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   departmentId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -3592,6 +3764,8 @@ export type UserUncheckedUpdateManyWithoutBusinessUnitInput = {
   lastLoginAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   avatarUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   employeeStatus?: Prisma.StringFieldUpdateOperationsInput | string
+  slackUserId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  slackLookupAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   country?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   managerId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   departmentId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -3616,6 +3790,8 @@ export type UserCreateManyEntityInput = {
   lastLoginAt?: Date | string | null
   avatarUrl?: string | null
   employeeStatus?: string
+  slackUserId?: string | null
+  slackLookupAt?: Date | string | null
   country?: string | null
   managerId?: string | null
   departmentId?: string | null
@@ -3639,6 +3815,8 @@ export type UserUpdateWithoutEntityInput = {
   lastLoginAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   avatarUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   employeeStatus?: Prisma.StringFieldUpdateOperationsInput | string
+  slackUserId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  slackLookupAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   country?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   deletedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -3673,6 +3851,8 @@ export type UserUncheckedUpdateWithoutEntityInput = {
   lastLoginAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   avatarUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   employeeStatus?: Prisma.StringFieldUpdateOperationsInput | string
+  slackUserId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  slackLookupAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   country?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   managerId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   departmentId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -3707,6 +3887,8 @@ export type UserUncheckedUpdateManyWithoutEntityInput = {
   lastLoginAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   avatarUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   employeeStatus?: Prisma.StringFieldUpdateOperationsInput | string
+  slackUserId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  slackLookupAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   country?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   managerId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   departmentId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -3731,6 +3913,8 @@ export type UserCreateManyDepartmentInput = {
   lastLoginAt?: Date | string | null
   avatarUrl?: string | null
   employeeStatus?: string
+  slackUserId?: string | null
+  slackLookupAt?: Date | string | null
   country?: string | null
   managerId?: string | null
   businessUnitId?: string | null
@@ -3754,6 +3938,8 @@ export type UserUpdateWithoutDepartmentInput = {
   lastLoginAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   avatarUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   employeeStatus?: Prisma.StringFieldUpdateOperationsInput | string
+  slackUserId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  slackLookupAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   country?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   deletedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -3788,6 +3974,8 @@ export type UserUncheckedUpdateWithoutDepartmentInput = {
   lastLoginAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   avatarUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   employeeStatus?: Prisma.StringFieldUpdateOperationsInput | string
+  slackUserId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  slackLookupAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   country?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   managerId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   businessUnitId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -3822,6 +4010,8 @@ export type UserUncheckedUpdateManyWithoutDepartmentInput = {
   lastLoginAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   avatarUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   employeeStatus?: Prisma.StringFieldUpdateOperationsInput | string
+  slackUserId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  slackLookupAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   country?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   managerId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   businessUnitId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -3846,6 +4036,8 @@ export type UserCreateManyJobLevelInput = {
   lastLoginAt?: Date | string | null
   avatarUrl?: string | null
   employeeStatus?: string
+  slackUserId?: string | null
+  slackLookupAt?: Date | string | null
   country?: string | null
   managerId?: string | null
   departmentId?: string | null
@@ -3869,6 +4061,8 @@ export type UserUpdateWithoutJobLevelInput = {
   lastLoginAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   avatarUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   employeeStatus?: Prisma.StringFieldUpdateOperationsInput | string
+  slackUserId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  slackLookupAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   country?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   deletedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -3903,6 +4097,8 @@ export type UserUncheckedUpdateWithoutJobLevelInput = {
   lastLoginAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   avatarUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   employeeStatus?: Prisma.StringFieldUpdateOperationsInput | string
+  slackUserId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  slackLookupAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   country?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   managerId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   departmentId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -3937,6 +4133,8 @@ export type UserUncheckedUpdateManyWithoutJobLevelInput = {
   lastLoginAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   avatarUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   employeeStatus?: Prisma.StringFieldUpdateOperationsInput | string
+  slackUserId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  slackLookupAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   country?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   managerId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   departmentId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -4073,6 +4271,8 @@ export type UserSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs = r
   lastLoginAt?: boolean
   avatarUrl?: boolean
   employeeStatus?: boolean
+  slackUserId?: boolean
+  slackLookupAt?: boolean
   country?: boolean
   managerId?: boolean
   departmentId?: boolean
@@ -4115,6 +4315,8 @@ export type UserSelectCreateManyAndReturn<ExtArgs extends runtime.Types.Extensio
   lastLoginAt?: boolean
   avatarUrl?: boolean
   employeeStatus?: boolean
+  slackUserId?: boolean
+  slackLookupAt?: boolean
   country?: boolean
   managerId?: boolean
   departmentId?: boolean
@@ -4146,6 +4348,8 @@ export type UserSelectUpdateManyAndReturn<ExtArgs extends runtime.Types.Extensio
   lastLoginAt?: boolean
   avatarUrl?: boolean
   employeeStatus?: boolean
+  slackUserId?: boolean
+  slackLookupAt?: boolean
   country?: boolean
   managerId?: boolean
   departmentId?: boolean
@@ -4177,6 +4381,8 @@ export type UserSelectScalar = {
   lastLoginAt?: boolean
   avatarUrl?: boolean
   employeeStatus?: boolean
+  slackUserId?: boolean
+  slackLookupAt?: boolean
   country?: boolean
   managerId?: boolean
   departmentId?: boolean
@@ -4189,7 +4395,7 @@ export type UserSelectScalar = {
   updatedAt?: boolean
 }
 
-export type UserOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "organizationId" | "email" | "name" | "firstName" | "lastName" | "hasAccess" | "onLeaveAt" | "terminationDate" | "lastLoginAt" | "avatarUrl" | "employeeStatus" | "country" | "managerId" | "departmentId" | "businessUnitId" | "legalEntityId" | "jobLevelId" | "roleId" | "deletedAt" | "createdAt" | "updatedAt", ExtArgs["result"]["user"]>
+export type UserOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "organizationId" | "email" | "name" | "firstName" | "lastName" | "hasAccess" | "onLeaveAt" | "terminationDate" | "lastLoginAt" | "avatarUrl" | "employeeStatus" | "slackUserId" | "slackLookupAt" | "country" | "managerId" | "departmentId" | "businessUnitId" | "legalEntityId" | "jobLevelId" | "roleId" | "deletedAt" | "createdAt" | "updatedAt", ExtArgs["result"]["user"]>
 export type UserInclude<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   manager?: boolean | Prisma.User$managerArgs<ExtArgs>
   directReports?: boolean | Prisma.User$directReportsArgs<ExtArgs>
@@ -4301,6 +4507,13 @@ export type $UserPayload<ExtArgs extends runtime.Types.Extensions.InternalArgs =
      * ExpenseOS's EmployeeStatus enum; text with a CHECK here (ACTIVE, ON_LEAVE, DEACTIVATED).
      */
     employeeStatus: string
+    /**
+     * ExpenseOS's `slackUserId` / `slackLookupAt` (w5-02, 0074): the Slack user id resolved
+     * from this person's email and cached, and when Slack was last asked. A null id with a
+     * lookup time is a cached "Slack has no account for this address".
+     */
+    slackUserId: string | null
+    slackLookupAt: Date | null
     /**
      * ISO-3166-1 alpha-2 country code — ExpenseOS's `User.country`, which mileage pricing
      * reads (w2-10). Backfilled from the person's legal entity (0055).
@@ -4775,6 +4988,8 @@ export interface UserFieldRefs {
   readonly lastLoginAt: Prisma.FieldRef<"User", 'DateTime'>
   readonly avatarUrl: Prisma.FieldRef<"User", 'String'>
   readonly employeeStatus: Prisma.FieldRef<"User", 'String'>
+  readonly slackUserId: Prisma.FieldRef<"User", 'String'>
+  readonly slackLookupAt: Prisma.FieldRef<"User", 'DateTime'>
   readonly country: Prisma.FieldRef<"User", 'String'>
   readonly managerId: Prisma.FieldRef<"User", 'String'>
   readonly departmentId: Prisma.FieldRef<"User", 'String'>

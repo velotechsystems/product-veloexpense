@@ -1791,6 +1791,61 @@ describe('RLS tenant isolation', () => {
     await admin.query('DELETE FROM reply_thread');
   });
 
+  /* ── Slack connections (w5-02a, migration 0074) ─────────────────────────────
+   *
+   * Each tenant's own Slack app — a bot token. The ordinary claim and no hatch, plus the
+   * composite FK: Postgres checks referential integrity with RLS bypassed, so a plain
+   * `connected_by_id` reference would accept another tenant's user.
+   */
+  it('slack_connection is per tenant, with no hatch, and cannot name another tenant\'s user', async () => {
+    await admin.query('DELETE FROM slack_connection');
+    const userOf = async (org: string) =>
+      (
+        await withOrg(org, (tx) =>
+          tx.query('SELECT id FROM app_user WHERE organization_id = $1 LIMIT 1', [org]),
+        )
+      ).rows[0].id as string;
+    const [userA, userB] = [await userOf(orgA), await userOf(orgB)];
+    const connect = async (org: string, user: string, token: string) =>
+      withOrg(org, (tx) =>
+        tx.query(
+          `INSERT INTO slack_connection (organization_id, bot_token, connected_by_id)
+           VALUES ($1, $2, $3)`,
+          [org, token, user],
+        ),
+      );
+    await connect(orgA, userA, 'enc:v1:a');
+    await connect(orgB, userB, 'enc:v1:b');
+
+    for (const [org, expected] of [
+      [orgA, 'enc:v1:a'],
+      [orgB, 'enc:v1:b'],
+    ] as const) {
+      const seen = await withOrg(org, (tx) => tx.query('SELECT bot_token FROM slack_connection'));
+      expect(seen.rows.map((r) => r.bot_token)).toEqual([expected]);
+    }
+
+    // One per tenant, and WITH CHECK: naming another tenant does not write there.
+    await expect(connect(orgB, userB, 'enc:v1:x')).rejects.toThrow(/duplicate|unique/i);
+    await admin.query('DELETE FROM slack_connection WHERE organization_id = $1', [orgA]);
+    await expect(
+      withOrg(orgB, (tx) =>
+        tx.query(
+          `INSERT INTO slack_connection (organization_id, bot_token, connected_by_id) VALUES ($1, 'enc:v1:x', $2)`,
+          [orgA, userA],
+        ),
+      ),
+    ).rejects.toThrow(/row-level security|violates/i);
+    // The composite FK: a row in orgA attributed to orgB's user.
+    await expect(connect(orgA, userB, 'enc:v1:x')).rejects.toThrow(/foreign key|violates/i);
+    // Ciphertext only.
+    await expect(connect(orgA, userA, 'xoxb-plaintext')).rejects.toThrow(/check constraint|violates/i);
+
+    expect((await withPlatformRead((tx) => tx.query('SELECT * FROM slack_connection'))).rows).toHaveLength(0);
+    expect((await withoutOrg((tx) => tx.query('SELECT * FROM slack_connection'))).rows).toHaveLength(0);
+    await admin.query('DELETE FROM slack_connection');
+  });
+
   /* ── External IDs (the Wave 1 business-unit port, migration 0047) ─────────
    *
    * ExpenseOS's `ExternalIdSource` and `BusinessUnitExternalId`, made per tenant.

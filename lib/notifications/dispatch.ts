@@ -56,6 +56,7 @@ import { resolveDecidableTask } from '@/server/lib/reportApproval';
 import { hasCommentThread } from '@/server/lib/threadParticipants';
 import { ensureReplyThread, issueEmailReplyToken } from '@/lib/notifications/replyThreads';
 import type { TenantDb } from '@/lib/db/prisma';
+import { commitSlackFacts, prepareSlack, sendPreparedSlack } from '@/lib/notifications/slackDispatch';
 
 /**
  * Event types addressed to somebody who may have a decision to make, so the mail's
@@ -616,10 +617,20 @@ export async function drainOutbox(
     const prepared = await withOrg(job.organizationId, async (tx) => {
       const claim = await claimDelivery(tx, job.id, claimedBy);
       if (!claim) return null;
-      // A channel with no transport is CANCELLED, not attempted. Nothing writes
-      // such a row today — `notifyRecipients` enqueues EMAIL only — but this is
-      // the function that would otherwise compose an email and send it in
-      // response to a Slack job, which is a worse failure than refusing.
+      // w5-02a: a Slack DM. Prepared here, sent below with no transaction open, recorded
+      // in a second one — the email's three-transaction shape.
+      if (claim.channel === 'SLACK') {
+        const slack = await prepareSlack(tx, claim.notificationId, messageValues);
+        if (slack.kind === 'CANCEL') {
+          await markCancelled(tx, claim.id, slack.reason);
+          return { claim, covers: [claim], outcome: 'CANCELLED' as const };
+        }
+        return { claim, covers: [claim], outcome: 'SLACK' as const, slack };
+      }
+      // A channel with no transport is CANCELLED, not attempted. Since w5-02a every
+      // channel `notifyRecipients` enqueues has one; this stays for a row that appears by
+      // some other route, because composing an email in response to it would be a worse
+      // failure than refusing.
       if (claim.channel !== 'EMAIL') {
         await markCancelled(tx, claim.id, `no transport for ${claim.channel} yet`);
         return { claim, covers: [claim], outcome: 'CANCELLED' as const };
@@ -650,6 +661,42 @@ export async function drainOutbox(
     }
     if (prepared.outcome === 'CANCELLED') {
       summary.cancelled += prepared.covers.length;
+      continue;
+    }
+
+    if (prepared.outcome === 'SLACK') {
+      const { claim, slack } = prepared;
+      const outcome = await sendPreparedSlack(slack);
+      const status = await withOrg(job.organizationId, async (tx) => {
+        await commitSlackFacts(tx, slack, outcome);
+        if (outcome.kind === 'SENT') {
+          await markSent(tx, claim.id, outcome.slackId);
+          return 'SENT';
+        }
+        if (outcome.kind === 'NO_ACCOUNT') {
+          // ExpenseOS sends nothing and says nothing ("an address Slack has never heard of
+          // is not an error"). VeloExpense: CANCELLED with the reason, so the delivery screen
+          // can answer "why no DM" — the answer is per person, and nobody else will log it.
+          await markCancelled(
+            tx,
+            claim.id,
+            `Slack has no account for ${slack.email}. It is asked again after a week, or ` +
+              'sooner from Notification preferences → Slack account → Check again.',
+          );
+          return 'CANCELLED';
+        }
+        return markFailed(tx, claim.id, claim.attempts, outcome.error);
+      });
+      if (status === 'SENT') summary.sent += 1;
+      else if (status === 'CANCELLED') summary.cancelled += 1;
+      else if (status === 'DEAD') summary.dead += 1;
+      else summary.failed += 1;
+      if (outcome.kind === 'FAILED') {
+        console.warn(
+          `[notifications] delivery ${claim.id} (slack) failed (attempt ${claim.attempts}, now ${status}):`,
+          outcome.error.message,
+        );
+      }
       continue;
     }
 
