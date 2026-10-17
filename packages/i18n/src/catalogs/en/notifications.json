@@ -102,7 +102,7 @@
       "unknown": "Your Slack account hasn't been looked up yet. That happens automatically the first time a Slack notification is sent to you."
     }
   },
-  "cta": "View in ExpenseOS",
+  "cta": "View in VeloExpense",
   "ctaSubject": {
     "VIRTUAL_CARD_REQUEST": "View card request",
     "VIRTUAL_CARD_LIMIT_INCREASE": "View limit increase request",
@@ -113,8 +113,8 @@
     "BUDGET": "View budget"
   },
   "digest": {
-    "subjectOne": "1 new update in ExpenseOS",
-    "subjectMany": "{count} new updates in ExpenseOS",
+    "subjectOne": "1 new update in VeloExpense",
+    "subjectMany": "{count} new updates in VeloExpense",
     "intro": "Here's a summary of recent activity:"
   },
   "receiptsEmail": {
@@ -162,7 +162,7 @@
     "TRAVEL_REQUEST": "Travel request",
     "BUDGET": "Budget"
   },
-  "emailFooter": "You are receiving this because of your notification settings in ExpenseOS.",
+  "emailFooter": "You are receiving this because of your notification settings in VeloExpense.",
   "emailReplyHint": "Replying to this email adds a comment to the thread.",
   "email": {
     "greeting": "Hello {name}!",
