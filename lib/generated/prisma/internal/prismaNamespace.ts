@@ -427,7 +427,8 @@ export const ModelName = {
   PolicyRule: 'PolicyRule',
   ExpensePolicy: 'ExpensePolicy',
   PolicyViolation: 'PolicyViolation',
-  SavedView: 'SavedView'
+  SavedView: 'SavedView',
+  ReplyThread: 'ReplyThread'
 } as const
 
 export type ModelName = (typeof ModelName)[keyof typeof ModelName]
@@ -443,7 +444,7 @@ export type TypeMap<ExtArgs extends runtime.Types.Extensions.InternalArgs = runt
     omit: GlobalOmitOptions
   }
   meta: {
-    modelProps: "expenseCategory" | "glAccount" | "expenseReport" | "expense" | "expenseAllocation" | "expenseAttendee" | "expenseLineItem" | "receipt" | "documentExtraction" | "expenseDetermination" | "receiptExternalId" | "expenseExternalId" | "aiUsage" | "taxJurisdiction" | "user" | "userExternalId" | "role" | "roleExternalId" | "businessUnit" | "externalIdSource" | "businessUnitExternalId" | "legalEntity" | "legalEntityExternalId" | "fxRate" | "mileageRate" | "mileageRateTier" | "mileageRateSubject" | "perDiemRate" | "currency" | "department" | "departmentExternalId" | "jobLevel" | "jobLevelExternalId" | "fiscalYear" | "fiscalYearExternalId" | "approvalWorkflow" | "approvalWorkflowVersion" | "approvalInstance" | "approvalTask" | "delegation" | "policyRule" | "expensePolicy" | "policyViolation" | "savedView"
+    modelProps: "expenseCategory" | "glAccount" | "expenseReport" | "expense" | "expenseAllocation" | "expenseAttendee" | "expenseLineItem" | "receipt" | "documentExtraction" | "expenseDetermination" | "receiptExternalId" | "expenseExternalId" | "aiUsage" | "taxJurisdiction" | "user" | "userExternalId" | "role" | "roleExternalId" | "businessUnit" | "externalIdSource" | "businessUnitExternalId" | "legalEntity" | "legalEntityExternalId" | "fxRate" | "mileageRate" | "mileageRateTier" | "mileageRateSubject" | "perDiemRate" | "currency" | "department" | "departmentExternalId" | "jobLevel" | "jobLevelExternalId" | "fiscalYear" | "fiscalYearExternalId" | "approvalWorkflow" | "approvalWorkflowVersion" | "approvalInstance" | "approvalTask" | "delegation" | "policyRule" | "expensePolicy" | "policyViolation" | "savedView" | "replyThread"
     txIsolationLevel: TransactionIsolationLevel
   }
   model: {
@@ -3703,6 +3704,80 @@ export type TypeMap<ExtArgs extends runtime.Types.Extensions.InternalArgs = runt
         }
       }
     }
+    ReplyThread: {
+      payload: Prisma.$ReplyThreadPayload<ExtArgs>
+      fields: Prisma.ReplyThreadFieldRefs
+      operations: {
+        findUnique: {
+          args: Prisma.ReplyThreadFindUniqueArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ReplyThreadPayload> | null
+        }
+        findUniqueOrThrow: {
+          args: Prisma.ReplyThreadFindUniqueOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ReplyThreadPayload>
+        }
+        findFirst: {
+          args: Prisma.ReplyThreadFindFirstArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ReplyThreadPayload> | null
+        }
+        findFirstOrThrow: {
+          args: Prisma.ReplyThreadFindFirstOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ReplyThreadPayload>
+        }
+        findMany: {
+          args: Prisma.ReplyThreadFindManyArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ReplyThreadPayload>[]
+        }
+        create: {
+          args: Prisma.ReplyThreadCreateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ReplyThreadPayload>
+        }
+        createMany: {
+          args: Prisma.ReplyThreadCreateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        createManyAndReturn: {
+          args: Prisma.ReplyThreadCreateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ReplyThreadPayload>[]
+        }
+        delete: {
+          args: Prisma.ReplyThreadDeleteArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ReplyThreadPayload>
+        }
+        update: {
+          args: Prisma.ReplyThreadUpdateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ReplyThreadPayload>
+        }
+        deleteMany: {
+          args: Prisma.ReplyThreadDeleteManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateMany: {
+          args: Prisma.ReplyThreadUpdateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateManyAndReturn: {
+          args: Prisma.ReplyThreadUpdateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ReplyThreadPayload>[]
+        }
+        upsert: {
+          args: Prisma.ReplyThreadUpsertArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ReplyThreadPayload>
+        }
+        aggregate: {
+          args: Prisma.ReplyThreadAggregateArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.AggregateReplyThread>
+        }
+        groupBy: {
+          args: Prisma.ReplyThreadGroupByArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.ReplyThreadGroupByOutputType>[]
+        }
+        count: {
+          args: Prisma.ReplyThreadCountArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.ReplyThreadCountAggregateOutputType> | number
+        }
+      }
+    }
   }
 } & {
   other: {
@@ -4490,6 +4565,21 @@ export const SavedViewScalarFieldEnum = {
 export type SavedViewScalarFieldEnum = (typeof SavedViewScalarFieldEnum)[keyof typeof SavedViewScalarFieldEnum]
 
 
+export const ReplyThreadScalarFieldEnum = {
+  id: 'id',
+  organizationId: 'organizationId',
+  subjectType: 'subjectType',
+  subjectId: 'subjectId',
+  recipientId: 'recipientId',
+  tokenHash: 'tokenHash',
+  slackChannelId: 'slackChannelId',
+  slackThreadTs: 'slackThreadTs',
+  createdAt: 'createdAt'
+} as const
+
+export type ReplyThreadScalarFieldEnum = (typeof ReplyThreadScalarFieldEnum)[keyof typeof ReplyThreadScalarFieldEnum]
+
+
 export const SortOrder = {
   asc: 'asc',
   desc: 'desc'
@@ -4830,6 +4920,7 @@ export type GlobalOmitConfig = {
   expensePolicy?: Prisma.ExpensePolicyOmit
   policyViolation?: Prisma.PolicyViolationOmit
   savedView?: Prisma.SavedViewOmit
+  replyThread?: Prisma.ReplyThreadOmit
 }
 
 /* Types for Logging */

@@ -53,6 +53,14 @@ export interface EmailMessage {
   references?: string;
   inReplyTo?: string;
   /**
+   * w5-01 — where a reply goes: a notification's `reply+<token>@` address, so answering the
+   * email posts a comment. Until w5-01 this field did not exist, and the two callers that
+   * already spread a `replyTo` into a message (the receipts mailbox's replies) had it
+   * dropped silently by the transport — harmless only because neither had an address to
+   * give yet.
+   */
+  replyTo?: string;
+  /**
    * Extra headers. We always send one, and it is not optional in practice:
    * `Auto-Submitted: auto-replied` (RFC 3834). ExpenseOS's comment is the whole
    * justification and it is not something anyone derives from first principles —
@@ -157,6 +165,7 @@ async function smtpTransport(): Promise<EmailTransport> {
         ...(msg.messageId?.trim() ? { messageId: msg.messageId.trim() } : {}),
         ...(msg.references?.trim() ? { references: msg.references.trim() } : {}),
         ...(msg.inReplyTo?.trim() ? { inReplyTo: msg.inReplyTo.trim() } : {}),
+        ...(msg.replyTo?.trim() ? { replyTo: msg.replyTo.trim() } : {}),
         ...(msg.headers && Object.keys(msg.headers).length > 0 ? { headers: msg.headers } : {}),
       });
     },

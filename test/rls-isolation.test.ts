@@ -1748,6 +1748,49 @@ describe('RLS tenant isolation', () => {
     await admin.query('DELETE FROM subscription_meter_reading');
   });
 
+  /* ── Reply threads (w5-01, migration 0073) ──────────────────────────────────
+   *
+   * ExpenseOS's `ReplyThread`, per tenant. The ordinary claim and no hatch: a reply token is
+   * looked up inside the tenant its address named, so a thread is never readable from
+   * another one — or from the platform read the outbox poller uses.
+   */
+  it('reply_thread is per tenant, with no hatch', async () => {
+    await admin.query('DELETE FROM reply_thread');
+    const write = async (org: string, hash: string) =>
+      withOrg(org, (tx) =>
+        tx.query(
+          `INSERT INTO reply_thread (organization_id, subject_type, subject_id, recipient_id, token_hash)
+           VALUES ($1, 'EXPENSE_REPORT', gen_random_uuid(), gen_random_uuid(), $2)`,
+          [org, hash],
+        ),
+      );
+    await write(orgA, 'hash-a');
+    await write(orgB, 'hash-b');
+
+    for (const [org, expected] of [
+      [orgA, 'hash-a'],
+      [orgB, 'hash-b'],
+    ] as const) {
+      const seen = await withOrg(org, (tx) => tx.query('SELECT token_hash FROM reply_thread'));
+      expect(seen.rows.map((r) => r.token_hash)).toEqual([expected]);
+    }
+
+    // WITH CHECK: naming another tenant does not write there.
+    await expect(
+      withOrg(orgB, (tx) =>
+        tx.query(
+          `INSERT INTO reply_thread (organization_id, subject_type, subject_id, recipient_id)
+           VALUES ($1, 'EXPENSE_REPORT', gen_random_uuid(), gen_random_uuid())`,
+          [orgA],
+        ),
+      ),
+    ).rejects.toThrow(/row-level security|violates/i);
+
+    expect((await withPlatformRead((tx) => tx.query('SELECT * FROM reply_thread'))).rows).toHaveLength(0);
+    expect((await withoutOrg((tx) => tx.query('SELECT * FROM reply_thread'))).rows).toHaveLength(0);
+    await admin.query('DELETE FROM reply_thread');
+  });
+
   /* ── External IDs (the Wave 1 business-unit port, migration 0047) ─────────
    *
    * ExpenseOS's `ExternalIdSource` and `BusinessUnitExternalId`, made per tenant.

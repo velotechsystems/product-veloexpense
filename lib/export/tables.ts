@@ -254,6 +254,14 @@ export const EXCLUDED: Readonly<Record<string, string>> = {
     'was tied to the next. The credential it holds is the whole content.',
   ].join(' '),
 
+  // w5-01 (0073).
+  reply_thread: [
+    'Routing for inbound replies: which reply address belongs to which person and report,',
+    'and a hash of each address token. It records nothing the tenant did — the comments a',
+    'reply produced are in the activity export — and the hashes are fingerprints of live',
+    'reply addresses, which nobody is served by exporting.',
+  ].join(' '),
+
   tenant_export: [
     'The export ledger itself. A row here says an export was requested and where the',
     'archive went; including it makes every export contain a partial history of the',

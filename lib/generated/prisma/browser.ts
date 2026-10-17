@@ -246,3 +246,11 @@ export type PolicyViolation = Prisma.PolicyViolationModel
  * and list is also a partial unique index (`saved_view_one_default`).
  */
 export type SavedView = Prisma.SavedViewModel
+/**
+ * Model ReplyThread
+ * w5-01 — ExpenseOS's `ReplyThread` (0073): maps an outbound notification back to its subject
+ * so a reply (email, or a Slack thread from w5-02) becomes a COMMENT. One row per recipient ×
+ * subject. Loose ids, as ExpenseOS's: the inbound path re-validates the subject and recipient.
+ * VeloExpense: per tenant, under RLS.
+ */
+export type ReplyThread = Prisma.ReplyThreadModel

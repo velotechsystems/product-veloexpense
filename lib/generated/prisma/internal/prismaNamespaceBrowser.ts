@@ -94,7 +94,8 @@ export const ModelName = {
   PolicyRule: 'PolicyRule',
   ExpensePolicy: 'ExpensePolicy',
   PolicyViolation: 'PolicyViolation',
-  SavedView: 'SavedView'
+  SavedView: 'SavedView',
+  ReplyThread: 'ReplyThread'
 } as const
 
 export type ModelName = (typeof ModelName)[keyof typeof ModelName]
@@ -859,6 +860,21 @@ export const SavedViewScalarFieldEnum = {
 } as const
 
 export type SavedViewScalarFieldEnum = (typeof SavedViewScalarFieldEnum)[keyof typeof SavedViewScalarFieldEnum]
+
+
+export const ReplyThreadScalarFieldEnum = {
+  id: 'id',
+  organizationId: 'organizationId',
+  subjectType: 'subjectType',
+  subjectId: 'subjectId',
+  recipientId: 'recipientId',
+  tokenHash: 'tokenHash',
+  slackChannelId: 'slackChannelId',
+  slackThreadTs: 'slackThreadTs',
+  createdAt: 'createdAt'
+} as const
+
+export type ReplyThreadScalarFieldEnum = (typeof ReplyThreadScalarFieldEnum)[keyof typeof ReplyThreadScalarFieldEnum]
 
 
 export const SortOrder = {

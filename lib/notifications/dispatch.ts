@@ -53,6 +53,9 @@ import { withTenantDb } from '@/lib/db/prisma';
 import { tenantDbOf } from '@/lib/db/prisma-pg-bridge';
 import { ORG } from '@/lib/tenant/sql';
 import { resolveDecidableTask } from '@/server/lib/reportApproval';
+import { hasCommentThread } from '@/server/lib/threadParticipants';
+import { ensureReplyThread, issueEmailReplyToken } from '@/lib/notifications/replyThreads';
+import type { TenantDb } from '@/lib/db/prisma';
 
 /**
  * Event types addressed to somebody who may have a decision to make, so the mail's
@@ -241,6 +244,10 @@ export async function prepareEmail(
   const subject =
     rendered.subject ?? `${row.report_title}${row.report_number ? ` (${row.report_number})` : ''}`;
 
+  // w5-01: a reply to this email becomes a comment, when the subject has a thread.
+  const replyTo = await replyAddressFor(tx, row, (slugRow.rows[0]?.slug as string | undefined) ?? '');
+  const replyLine = replyTo ? await replyInvitation() : null;
+
   return {
     kind: 'SEND',
     destination: row.recipient_email,
@@ -248,8 +255,9 @@ export async function prepareEmail(
       to: row.recipient_email,
       subject,
       from: fromAddress(),
-      text: plainText(rendered.body, reportUrl, decide),
-      html: htmlBody(branding.name, branding.brandColor, rendered.body, reportUrl, decide),
+      text: plainText(rendered.body, reportUrl, decide, replyLine),
+      html: htmlBody(branding.name, branding.brandColor, rendered.body, reportUrl, decide, replyLine),
+      ...(replyTo ? { replyTo } : {}),
       ...threadHeaders(claim.notificationId, row.subject_id, row.recipient_id),
       headers: {
         // RFC 3834. Ported with ExpenseOS's reason, which nobody derives from
@@ -416,9 +424,15 @@ function reportLinkLabel(decide: boolean): string {
   return decide ? 'Review and approve' : 'Open the report';
 }
 
-function plainText(body: string, reportUrl: string | null, decide: boolean): string {
+function plainText(
+  body: string,
+  reportUrl: string | null,
+  decide: boolean,
+  replyLine: string | null = null,
+): string {
   const parts = [body, ''];
   if (reportUrl) parts.push(`${reportLinkLabel(decide)}: ${reportUrl}`);
+  if (replyLine) parts.push('', replyLine);
   return parts.join('\n');
 }
 
@@ -439,6 +453,7 @@ function htmlBody(
   body: string,
   reportUrl: string | null,
   decide: boolean,
+  replyLine: string | null = null,
 ): string {
   const link = reportUrl ? { label: reportLinkLabel(decide), url: reportUrl } : null;
   return emailShell({
@@ -447,8 +462,57 @@ function htmlBody(
     bodyHtml: `<p style="margin:0">${escapeHtml(body)}</p>`,
     cta: decide ? link : null,
     links: !decide && link ? [link] : [],
-    footnote: null,
+    // w5-01: the reply invitation, only when a reply actually lands somewhere.
+    footnote: replyLine,
   });
+}
+
+/**
+ * w5-01 — the `reply+<token>@` address a reply to this email goes to, or null.
+ *
+ * ExpenseOS's notification dispatch (`notification-dispatch.ts`, 1e682dd6): for a subject
+ * with a discussion thread (`hasCommentThread`), get-or-create the recipient's reply thread
+ * and put its token in the Reply-To; "inviting a discussion into a mailbox nothing reads is
+ * worse than not inviting one", so no inbound domain means no address and no invitation.
+ *
+ * VeloExpense: the address is the TENANT's — `reply+<token>@<tenant>.<inbound domain>` — as
+ * its receipts mailbox is (d47), because the inbound route reads the tenant from the address.
+ * The thread is a Prisma write, run on this delivery's transaction when it is bridged and in
+ * the same tenant otherwise (as `resolveDecidableTask` is above); it is idempotent, so either
+ * is safe.
+ */
+async function replyAddressFor(
+  tx: QueryRunner,
+  row: Row,
+  slug: string,
+): Promise<string | null> {
+  const domain = process.env.INBOUND_EMAIL_DOMAIN?.trim().toLowerCase();
+  if (!domain || !slug || !hasCommentThread(row.subject_type)) return null;
+  const token = async (db: TenantDb) => {
+    const thread = await ensureReplyThread(db, {
+      subjectType: row.subject_type,
+      subjectId: row.subject_id,
+      recipientId: row.recipient_id,
+    });
+    return issueEmailReplyToken(db, thread.id);
+  };
+  const bridged = tenantDbOf(tx);
+  let raw: string;
+  if (bridged) {
+    raw = await token(bridged);
+  } else {
+    const org = await tx.query(`SELECT ${ORG}::text AS id`);
+    raw = await withTenantDb(org.rows[0].id as string, token);
+  }
+  return `reply+${raw}@${slug}.${domain}`;
+}
+
+/** ExpenseOS's `replyToDiscuss` line, from the catalog with its English literal behind it. */
+async function replyInvitation(): Promise<string> {
+  const cat = await loadCatalog('en');
+  const email = (cat.notifications as { email?: Record<string, string> } | undefined)?.email;
+  const line = email?.replyToDiscuss;
+  return typeof line === 'string' && line.trim() ? line : 'Or reply to this email to start a discussion.';
 }
 
 // Moved to `lib/notifications/html.ts` — a leaf, because `email-shell.ts` needs it
