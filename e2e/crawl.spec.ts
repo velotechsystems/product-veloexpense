@@ -58,6 +58,9 @@ const PAGES = [
   '/notifications',
   '/notifications/preferences',
   '/preferences',
+  // People 3: ExpenseOS's People directory. Every member may open it — what they see is
+  // scoped (themselves and their reporting chain; everyone for an admin), so not ADMIN_ONLY.
+  '/users',
   '/admin/modules',
   '/admin/employees',
   '/admin/employees/invite',

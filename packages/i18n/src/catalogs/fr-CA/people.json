@@ -94,7 +94,9 @@
     "setRole": "Changer de rôle",
     "setOnLeave": "Mettre en congé",
     "resetPassword": "Réinitialiser le mot de passe",
-    "deactivate": "Désactiver"
+    "deactivate": "Désactiver",
+    "grantAccess": "Accorder l’accès",
+    "revokeAccess": "Révoquer l’accès"
   },
   "mfa": {
     "enrolled": "Activée",
@@ -143,6 +145,8 @@
     "country": "Pays (ISO-2)",
     "countryPlaceholder": "CA",
     "none": "Aucun",
+    "manager": "Gestionnaire",
+    "managerNone": "Aucun gestionnaire",
     "cancel": "Annuler",
     "save": "Enregistrer les modifications",
     "saving": "Enregistrement…"
@@ -165,23 +169,31 @@
   },
   "add": {
     "title": "Ajouter un utilisateur",
-    "description": "Saisissez son courriel professionnel. Tout le reste — nom, service, unité d’affaires, entité juridique, gestionnaire — provient de Google Workspace et reste synchronisé avec celui-ci.",
+    "description": "Saisissez son adresse courriel professionnelle. Nous lui envoyons une invitation; la personne apparaît ici dès qu’elle l’accepte en se connectant avec cette adresse.",
     "emailLabel": "Courriel professionnel",
-    "emailPlaceholder": "nom@e.inc",
-    "submit": "Ajouter l’utilisateur",
-    "adding": "Ajout en cours…",
-    "synced": "Ajouté, avec son profil provenant de Google Workspace ({email}).",
-    "aliasOfExisting": "Cette adresse est un alias de {email}, déjà présent. Son profil a été actualisé à la place.",
-    "notInDirectory": "Ajouté. Google Workspace n’a encore aucun compte pour cette adresse; seul le courriel est enregistré — la synchronisation quotidienne du répertoire complétera le reste dès qu’il apparaîtra.",
-    "directoryOff": "Ajouté avec le courriel seulement : le répertoire Google Workspace n’est pas activé dans cet environnement. Son profil sera complété à la première connexion.",
+    "emailPlaceholder": "nom@entreprise.com",
+    "submit": "Envoyer l’invitation",
+    "adding": "Envoi…",
     "exists": "{name} est déjà dans le répertoire.",
-    "existsDeactivated": "{name} est déjà dans le répertoire, mais désactivé. Réactivez cette personne plutôt que de l’ajouter de nouveau."
+    "existsDeactivated": "{name} est déjà dans le répertoire, mais désactivé. Réactivez cette personne plutôt que de l’ajouter de nouveau.",
+    "invited": "Invitation envoyée à {email}. La personne apparaîtra ici dès qu’elle l’aura acceptée.",
+    "reinvited": "{email} avait déjà une invitation en attente. Une nouvelle a été envoyée, et l’ancien lien ne fonctionne plus."
   },
   "access": {
     "granted": "Peut se connecter",
     "denied": "Aucun accès",
     "revoke": "Révoquer",
     "grant": "Accorder"
+  },
+  "accessBulk": {
+    "granted": "{count, plural, one {Accès accordé à # personne.} other {Accès accordé à # personnes.}}",
+    "revoked": "{count, plural, one {Accès révoqué pour # personne.} other {Accès révoqué pour # personnes.}}",
+    "alreadyGranted": "{count, plural, one {# avait déjà l’accès.} other {# avaient déjà l’accès.}}",
+    "alreadyRevoked": "{count, plural, one {# n’avait déjà aucun accès.} other {# n’avaient déjà aucun accès.}}",
+    "noneChanged": "Aucun accès n’a été modifié.",
+    "skippedSelf": "Votre propre accès a été conservé.",
+    "failed": "L’accès n’a pas pu être modifié pour tout le monde. La liste ci-dessous montre qui a changé.",
+    "dismiss": "Fermer"
   },
   "sync": {
     "badge": "NetSuite",

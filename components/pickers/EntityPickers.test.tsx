@@ -23,6 +23,10 @@ const h = vi.hoisted(() => ({
   /** Every `byId` call, so a test can assert the lookup was or was not enabled. */
   byIdCalls: [] as { input: unknown; enabled: boolean }[],
   selectedItems: [] as unknown[],
+  /** Every `items` list the combobox received, so a test can check content and identity. */
+  itemLists: [] as unknown[],
+  /** What every `search` query returns — one stable reference, as react-query's cache does. */
+  searchData: [] as { value: string; label: string }[],
 }));
 
 vi.mock('next-intl', () => ({ useTranslations: () => (k: string) => k }));
@@ -38,7 +42,7 @@ vi.mock('@/lib/trpc/client', () => {
           ? { data: { value: id, label: `resolved:${id}` }, isFetching: false }
           : { data: undefined, isFetching: false };
       }
-      return { data: [], isFetching: false };
+      return { data: h.searchData, isFetching: false };
     },
   });
   return {
@@ -54,8 +58,9 @@ vi.mock('@/lib/trpc/client', () => {
 
 /** Records what the underlying combobox was told to display. */
 vi.mock('@expenseos/design-system', () => ({
-  AsyncCombobox: (props: { selectedItem: unknown }) => {
+  AsyncCombobox: (props: { selectedItem: unknown; items: unknown }) => {
     h.selectedItems.push(props.selectedItem);
+    h.itemLists.push(props.items);
     return <div data-testid="combobox" />;
   },
 }));
@@ -69,11 +74,13 @@ const lastByIdEnabled = () => h.byIdCalls.at(-1)?.enabled;
 afterEach(() => {
   h.byIdCalls = [];
   h.selectedItems = [];
+  h.itemLists = [];
+  h.searchData = [];
   vi.clearAllMocks();
 });
 
-// VeloExpense: `VendorCombobox` is not ported (see EntityPickers.tsx).
 describe.each([
+  // VeloExpense: `VendorCombobox` is not ported (see EntityPickers.tsx).
   ['GlAccountCombobox', GlAccountCombobox],
   ['UserCombobox', UserCombobox],
 ] as const)('%s', (_name, Picker) => {
@@ -122,5 +129,54 @@ describe.each([
     /** Two vendors can share a name across subsidiaries; the id is the identity. */
     show('v-new', { value: 'v-old', label: 'Acme Supplies' });
     expect(shown()?.value).toBe('v-new');
+  });
+});
+
+describe('UserCombobox excludeValues', () => {
+  /**
+   * The People drawer's Manager picker passes the person being edited, so nobody can be
+   * offered as their own manager. The filter is client-side over the search results only.
+   */
+  const SELF = { value: 'u-self', label: 'Ada Lovelace' };
+  const OTHER = { value: 'u-other', label: 'Ada Byron' };
+  const offered = () => h.itemLists.at(-1) as { value: string; label: string }[];
+  const noop = () => {};
+
+  it('leaves an excluded id out of the items passed to the combobox', () => {
+    h.searchData = [SELF, OTHER];
+    render(<UserCombobox value={null} onValueChange={noop} excludeValues={[SELF.value]} />);
+    expect(offered()).toEqual([OTHER]);
+  });
+
+  it('passes the search results through unchanged without the prop', () => {
+    h.searchData = [SELF, OTHER];
+    render(<UserCombobox value={null} onValueChange={noop} />);
+    /** Same reference, not just equal content — a new array would churn the combobox. */
+    expect(offered()).toBe(h.searchData);
+  });
+
+  it('passes the search results through unchanged for an empty list', () => {
+    h.searchData = [SELF, OTHER];
+    render(<UserCombobox value={null} onValueChange={noop} excludeValues={[]} />);
+    expect(offered()).toBe(h.searchData);
+  });
+
+  it('keeps the same filtered list across renders with an inline array of the same ids', () => {
+    /** Hosts write `excludeValues={[user.id]}` — a new array identity on every render. */
+    h.searchData = [SELF, OTHER];
+    const { rerender } = render(
+      <UserCombobox value={null} onValueChange={noop} excludeValues={[SELF.value]} />,
+    );
+    const first = offered();
+    rerender(<UserCombobox value={null} onValueChange={noop} excludeValues={[SELF.value]} />);
+    expect(offered()).toBe(first);
+  });
+
+  it('still displays a current value that is excluded from the choices', () => {
+    /** Excluding governs what can be PICKED, not what the saved value shows as. */
+    h.searchData = [SELF, OTHER];
+    render(<UserCombobox value={SELF.value} onValueChange={noop} excludeValues={[SELF.value]} />);
+    expect(shown()?.value).toBe(SELF.value);
+    expect(offered()).toEqual([OTHER]);
   });
 });

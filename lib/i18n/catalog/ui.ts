@@ -188,6 +188,8 @@ export const UI_COPY = {
   // w4-09: ExpenseOS's dashboard, which replaced Home (d72); named as ExpenseOS's menu names it.
   'title.dashboard': { 'en-CA': 'Dashboard' },
   'title.expenses': { 'en-CA': 'Expense reports' },
+  // People 3: ExpenseOS's directory (/users), named as ExpenseOS's menu names it.
+  'title.people': { 'en-CA': 'People' },
   // The fallback when a report cannot be named — see `dataTitle`. A report's own
   // title is the CUSTOMER's words and is never catalogued.
   'title.expenses.report': { 'en-CA': 'Expense report' },

@@ -4,9 +4,9 @@
  *
  * People 1 of 4 (16 Oct 2026) ported the READS: the scoped directory (`listDirectory`), its
  * filter facets and counts, one person (`get`), their direct reports and their activity.
- * People 2 ports the WRITES: `update`, `setRole`, `setOnLeave`, `setAccess(Many)`,
- * `deactivate` and `reactivate`. `create` comes with People 4, where it becomes an
- * invitation (decided 16 Oct). `resetPassword` and `setLocalePref` are not ported:
+ * People 2 ported the WRITES: `update`, `setRole`, `setOnLeave`, `setAccess(Many)`,
+ * `deactivate` and `reactivate`. People 3 ports `create`, which sends an invitation
+ * (decided 16 Oct). `resetPassword` and `setLocalePref` are not ported:
  * VeloExpense signs in through Google only, and is English only (7 Oct 2026).
  *
  * VeloExpense, throughout:
@@ -44,6 +44,8 @@ import { assertSeatAvailable, CapReachedError } from '@/lib/billing/caps';
 import { pushSeatCountInBackground } from '@/lib/billing/seats';
 import { afterCommit, type TenantDb } from '@/lib/db/prisma';
 import { queryRunnerOf } from '@/lib/db/prisma-pg-bridge';
+import { InviteError, sendInvite } from '@/lib/invites/service';
+import { DEFAULT_ROLE_ID } from '@/lib/roles/service';
 import { type Context, protectedProcedure, router, withPermission } from '@/server/trpc';
 import { type DirectoryScope, resolveScopedIds } from '../lib/userScope';
 
@@ -1356,8 +1358,64 @@ export const usersRouter = router({
     }),
 
   // ── Mutations (admin) ──────────────────────────────────────────
-  // VeloExpense: ExpenseOS's `create` is People 4, where adding a person sends an invitation
-  // (decided 16 Oct 2026; VX5-3 makes the invitation the only way into a tenant).
+  /**
+   * Add one person from an email address alone.
+   *
+   * VeloExpense (decided 16 Oct 2026): adding somebody SENDS AN INVITATION. VX5-3 made the
+   * invitation the only way into a tenant — the person's row is created when they accept, by
+   * signing in with that verified address (lib/auth/resolve-sso-user.ts), and that is when
+   * they take a seat. So ExpenseOS's Google Workspace directory lookup and its direct insert
+   * are not ported; the email is the one field, as in ExpenseOS, and they get the default
+   * role, as an invitation from the old Employees screen does.
+   *
+   * What stays ExpenseOS's: the address is trimmed and lowercased, and somebody already here
+   * is REPORTED (with whether they are deactivated) rather than thrown, so the next act is
+   * obvious — reactivate, rather than add again.
+   *
+   * Audited by the invitation itself (`INVITE_SENT` / `INVITE_RESENT`, lib/invites/service.ts),
+   * where ExpenseOS writes `admin.user.create`: nobody is created here.
+   */
+  create: withPermission(P.user.create)
+    .input(
+      z.object({
+        // Trimmed and lowercased here rather than in the UI: `User.email` is `@unique`, and
+        // "John.Rim@e.inc " would create a second row for a person who is already here.
+        email: z.string().trim().toLowerCase().email().max(320),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const already = await ctx.db.user.findFirst({
+        where: { email: { equals: input.email, mode: 'insensitive' } },
+        select: { id: true, firstName: true, lastName: true, email: true, deletedAt: true },
+      });
+      if (already) {
+        return {
+          status: 'exists' as const,
+          userId: already.id,
+          deactivated: already.deletedAt !== null,
+          name:
+            [already.firstName, already.lastName].filter(Boolean).join(' ').trim() || already.email,
+        };
+      }
+      try {
+        const issued = await sendInvite(
+          queryRunnerOf(ctx.db as TenantDb),
+          {
+            id: ctx.rbac.id,
+            name: ctx.session.user.name ?? ctx.session.user.email,
+            role: ctx.rbac.roleLabel,
+          },
+          { email: input.email, roleId: DEFAULT_ROLE_ID },
+          { permissions: ctx.rbac.permissions },
+        );
+        return { status: 'invited' as const, email: input.email, resent: issued.resent };
+      } catch (err) {
+        if (err instanceof InviteError) {
+          throw new TRPCError({ code: 'BAD_REQUEST', message: err.message, cause: err });
+        }
+        throw err;
+      }
+    }),
 
   update: withPermission(P.user.update)
     .input(

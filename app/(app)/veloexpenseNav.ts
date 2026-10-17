@@ -45,7 +45,6 @@ export const VELOEXPENSE_ROUTES: Readonly<Record<string, string | null>> = {
   '/delegations': '/approvals/delegations',
 
   // Not ported yet. Each leaves with the wave that ports its screen (parity doc).
-  '/users': null,
   '/travel': null,
   '/admin/travel-categories': null,
   '/virtual-cards/requests': null,
@@ -200,6 +199,8 @@ export const PORTED_SCREENS: readonly string[] = [
   '/dashboard',
   // w4-10c (d74): the Role Builder.
   '/admin/roles',
+  // People 3: ExpenseOS's People directory.
+  '/users',
 ];
 
 /** Whether the top bar should title this path: it is a ported ExpenseOS screen. */

@@ -94,7 +94,9 @@
     "setRole": "Change role",
     "setOnLeave": "Set on leave",
     "resetPassword": "Reset password",
-    "deactivate": "Deactivate"
+    "deactivate": "Deactivate",
+    "grantAccess": "Grant access",
+    "revokeAccess": "Revoke access"
   },
   "mfa": {
     "enrolled": "Enrolled",
@@ -143,6 +145,8 @@
     "country": "Country (ISO-2)",
     "countryPlaceholder": "US",
     "none": "None",
+    "manager": "Manager",
+    "managerNone": "No manager",
     "cancel": "Cancel",
     "save": "Save changes",
     "saving": "Saving…"
@@ -165,23 +169,31 @@
   },
   "add": {
     "title": "Add user",
-    "description": "Enter their work email. Everything else — name, department, business unit, legal entity, manager — comes from Google Workspace and stays in sync with it.",
+    "description": "Enter their work email. We send them an invitation; they appear here once they accept it by signing in with that address.",
     "emailLabel": "Work email",
-    "emailPlaceholder": "name@e.inc",
-    "submit": "Add user",
-    "adding": "Adding…",
-    "synced": "Added, with their profile from Google Workspace ({email}).",
-    "aliasOfExisting": "That address is an alias of {email}, who is already here. Their profile was refreshed instead.",
-    "notInDirectory": "Added. Google Workspace has no account for that address yet, so only the email is on file — the daily directory sync will fill in the rest once it appears.",
-    "directoryOff": "Added with the email only: the Google Workspace directory is not enabled in this environment. Their profile fills in on first sign-in.",
+    "emailPlaceholder": "name@company.com",
+    "submit": "Send invitation",
+    "adding": "Sending…",
     "exists": "{name} is already in the directory.",
-    "existsDeactivated": "{name} is already in the directory, deactivated. Reactivate them rather than adding them again."
+    "existsDeactivated": "{name} is already in the directory, deactivated. Reactivate them rather than adding them again.",
+    "invited": "Invitation sent to {email}. They appear here once they accept it.",
+    "reinvited": "{email} already had an invitation waiting. A fresh one has been sent, and the old link no longer works."
   },
   "access": {
     "granted": "Can sign in",
     "denied": "No access",
     "revoke": "Revoke",
     "grant": "Grant"
+  },
+  "accessBulk": {
+    "granted": "{count, plural, one {Granted access to # person.} other {Granted access to # people.}}",
+    "revoked": "{count, plural, one {Revoked access for # person.} other {Revoked access for # people.}}",
+    "alreadyGranted": "{count, plural, one {# already had access.} other {# already had access.}}",
+    "alreadyRevoked": "{count, plural, one {# already had no access.} other {# already had no access.}}",
+    "noneChanged": "No one’s access changed.",
+    "skippedSelf": "Your own access was left on.",
+    "failed": "Access could not be changed for everyone. The list below shows who changed.",
+    "dismiss": "Dismiss"
   },
   "sync": {
     "badge": "NetSuite",
