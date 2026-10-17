@@ -40,6 +40,11 @@ const adminAndOthers = {
     roleCreate: 'ROLE_CREATED',
     roleUpdate: 'ROLE_UPDATED',
     roleDelete: 'ROLE_DELETED',
+    /** People 2: ExpenseOS's users router (`server/routers/users.ts`). */
+    userUpdate: 'USER_UPDATED',
+    userRoleChange: 'USER_ROLE_CHANGED',
+    userDeactivate: 'USER_DEACTIVATED',
+    userReactivate: 'USER_REACTIVATED',
   },
   /** ExpenseOS's `approvalWorkflow.*` keys (w4-01, the workflow builder). */
   approvalWorkflow: {

@@ -2,22 +2,29 @@
  * users — ExpenseOS's People router (`server/routers/users.ts`, 1e682dd6), the server half of
  * the People screen (/users).
  *
- * People 1 of 4 (16 Oct 2026) ports the READS: the scoped directory (`listDirectory`), its
+ * People 1 of 4 (16 Oct 2026) ported the READS: the scoped directory (`listDirectory`), its
  * filter facets and counts, one person (`get`), their direct reports and their activity.
- * The mutations — `create`, `update`, `setRole`, `setOnLeave`, `setAccess(Many)`,
- * `deactivate`, `reactivate` — come with the drawers that call them (People 3, and People 4
- * for `create`, which becomes an invitation). `resetPassword` and `setLocalePref` are not
- * ported: VeloExpense signs in through Google only, and is English only (7 Oct 2026).
+ * People 2 ports the WRITES: `update`, `setRole`, `setOnLeave`, `setAccess(Many)`,
+ * `deactivate` and `reactivate`. `create` comes with People 4, where it becomes an
+ * invitation (decided 16 Oct). `resetPassword` and `setLocalePref` are not ported:
+ * VeloExpense signs in through Google only, and is English only (7 Oct 2026).
  *
  * VeloExpense, throughout:
  *   · the raw SQL names `app_user`, `user_external_id` and their snake_case columns, and runs
  *     in the caller's tenant transaction, so RLS keeps every read inside the tenant;
  *   · access is `hasAccess` (`has_access`, 0072), ExpenseOS's `hasExpenseOSAccess`;
  *   · no MFA (no second factor of VeloExpense's own) and no NetSuite fields until Wave 5;
- *   · the facet cache is shared by every tenant, so its scope bucket names the tenant.
+ *   · the facet cache is shared by every tenant, so its scope bucket names the tenant;
+ *   · no `sessionEpoch`: every request reads the person's role, access and deactivation from
+ *     the database (`resolveTenantMember`, `requireActor`), so a change takes effect at once;
+ *   · a SEAT is a person who is not deactivated (lib/billing): reactivating one is capped like
+ *     a new member, and every change to the count is pushed to the platform;
+ *   · DEACTIVATED moves with `deleted_at` wherever a status is written (w4-10f, 0071), and so
+ *     does TERMINATED — the two leaver statuses — or a leaver would keep signing in.
  */
-import { permissions as P } from '@expenseos/rbac';
-import { Prisma, type PrismaClient } from '@expenseos/db';
+import { auditActions, withAudit } from '@expenseos/audit';
+import { Prisma, type PrismaClient, rollUpOnOffboard } from '@expenseos/db';
+import { permissions as P, SYSTEM_ROLE_IDS } from '@expenseos/rbac';
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 import { canViewUser } from '@/server/lib/canViewUser';
@@ -33,7 +40,11 @@ import {
   getOrSetFacetEntry,
   hashFilterPayload,
 } from '@/server/lib/facets/cache';
-import { protectedProcedure, router } from '@/server/trpc';
+import { assertSeatAvailable, CapReachedError } from '@/lib/billing/caps';
+import { pushSeatCountInBackground } from '@/lib/billing/seats';
+import { afterCommit, type TenantDb } from '@/lib/db/prisma';
+import { queryRunnerOf } from '@/lib/db/prisma-pg-bridge';
+import { type Context, protectedProcedure, router, withPermission } from '@/server/trpc';
 import { type DirectoryScope, resolveScopedIds } from '../lib/userScope';
 
 /** Trim a string to null when empty. */
@@ -449,6 +460,57 @@ type DirectoryRow = {
   } | null;
 };
 
+/**
+ * Replace a person's external-id rows to match the map given.
+ *
+ * Delete-all + recreate, mirroring `syncRoleAliases` — the map sent IS the stored set,
+ * so removing a key removes the mapping. An empty value is a removal rather than a
+ * stored blank: no system can be asked about a person whose id there is "".
+ *
+ * THE CONSTRAINT IS THE INTERESTING PART. `UserExternalId` is
+ * `@@unique([sourceId, sourceValue])` — one NetSuite employee maps to exactly one
+ * ExpenseOS person, and it has to stay that way: the expense-report poster resolves
+ * "who is being reimbursed" through it, so two people sharing an id means a
+ * reimbursement can post against the wrong employee. A bare `create` would surface that
+ * as Prisma's `P2002` on an opaque constraint name. Instead the holder is looked up and
+ * named, because "already used by kati.birmingham@e.inc" is the only version of this
+ * error anybody can act on.
+ *
+ * The delete runs first and inside the caller's transaction, so re-saving a person's own
+ * unchanged id is not a self-collision.
+ *
+ * VeloExpense: a source is the tenant's own (0047), found by code inside the tenant and
+ * created there, as `syncRoleAliases` does (roles.ts).
+ */
+async function syncUserAliases(
+  tx: Prisma.TransactionClient,
+  userId: string,
+  externalIds: Record<string, string>,
+): Promise<void> {
+  await tx.userExternalId.deleteMany({ where: { userId } });
+  for (const [code, raw] of Object.entries(externalIds)) {
+    const sourceValue = raw.trim();
+    if (!sourceValue) continue;
+    const source =
+      (await tx.externalIdSource.findFirst({ where: { code }, select: { id: true } })) ??
+      (await tx.externalIdSource.create({
+        data: { code, label: { en: code, 'fr-CA': code } },
+        select: { id: true },
+      }));
+    const held = await tx.userExternalId.findUnique({
+      where: { sourceId_sourceValue: { sourceId: source.id, sourceValue } },
+      select: { user: { select: { email: true } } },
+    });
+    if (held) {
+      throw new TRPCError({
+        code: 'CONFLICT',
+        message: `${code} id "${sourceValue}" is already assigned to ${held.user.email}. One ${code} record maps to one person.`,
+      });
+    }
+    await tx.userExternalId.create({ data: { sourceId: source.id, sourceValue, userId } });
+  }
+}
+
 const DIRECTORY_SELECT = {
   id: true,
   email: true,
@@ -524,6 +586,127 @@ function toDirectoryRow(raw: RawDirectoryRow): DirectoryRow {
     nsClass: null,
     syncDiscrepancies: [],
   };
+}
+
+/** ExpenseOS's audit actor, from the request. */
+function auditActor(ctx: {
+  rbac: NonNullable<Context['rbac']>;
+  session: NonNullable<Context['session']>;
+}) {
+  return {
+    kind: 'user' as const,
+    id: ctx.rbac.id,
+    name: [ctx.session.user.name].filter(Boolean).join(' ') || ctx.session.user.email,
+    roleLabel: ctx.rbac.roleLabel,
+  };
+}
+
+/**
+ * Set one person's `hasExpenseOSAccess`, with its audit row — what `setAccess` does, and
+ * what `setAccessMany` does once per person that changes.
+ *
+ * VeloExpense: `hasAccess` (0072).
+ */
+function writeAccess(
+  ctx: {
+    db: Context['db'];
+    rbac: NonNullable<Context['rbac']>;
+    session: NonNullable<Context['session']>;
+  },
+  id: string,
+  hasAccess: boolean,
+) {
+  return withAudit(
+    ctx.db,
+    {
+      action: auditActions.admin.userUpdate,
+      entityType: 'User',
+      entityId: id,
+      actor: auditActor(ctx),
+      details: { hasAccess },
+    },
+    async (tx) => {
+      await tx.user.update({ where: { id }, data: { hasAccess } });
+      return { ok: true as const };
+    },
+  );
+}
+
+/**
+ * VeloExpense: the two statuses that mean somebody has LEFT. Written by `update` (the edit
+ * drawer offers every status) as well as by `deactivate`, so both take the same path:
+ * `deleted_at` is stamped, which is what sign-in, every request and the seat meter read.
+ * ExpenseOS's `update` wrote the status alone, which is the w4-10f bug VeloExpense fixed in
+ * its own form (0071): a "Deactivated" person who kept signing in and kept a paid seat.
+ */
+const LEAVER_STATUSES: readonly EmployeeStatus[] = ['DEACTIVATED', 'TERMINATED'];
+
+/**
+ * VeloExpense: how many OTHER people hold System Administrator and are active — ExpenseOS's
+ * last-admin count (`setRole`), which VeloExpense also applies to deactivation (w4-10d).
+ */
+async function otherActiveAdmins(db: Prisma.TransactionClient | Context['db'], id: string) {
+  return db.user.count({
+    where: { roleId: SYSTEM_ROLE_IDS.admin, employeeStatus: 'ACTIVE', deletedAt: null, id: { not: id } },
+  });
+}
+
+/**
+ * VeloExpense: a reactivation takes a seat back, so it is capped like a new member — the
+ * same rule and the same SQL as `assertSeatAvailable` (lib/billing/caps.ts), run on this
+ * transaction. Without it a plan's seat cap is walked round by deactivating and reactivating.
+ */
+async function assertSeatAvailableTx(tx: Prisma.TransactionClient): Promise<void> {
+  await assertSeatAvailable(queryRunnerOf(tx as TenantDb)).catch((err: unknown) => {
+    if (err instanceof CapReachedError) {
+      throw new TRPCError({
+        code: 'FORBIDDEN',
+        message: `This organization's plan allows ${err.limit} people, and that many are active. Deactivate somebody or change the plan first.`,
+      });
+    }
+    throw err;
+  });
+}
+
+/**
+ * ExpenseOS's two guards on `deactivate` — not yourself, and nobody still reporting to them —
+ * and VeloExpense's third (w4-10d): not the tenant's last active System Administrator.
+ * Shared with `update`, which deactivates too when it writes a leaver status.
+ */
+async function assertCanDeactivate(
+  ctx: { db: Context['db']; rbac: NonNullable<Context['rbac']> },
+  id: string,
+): Promise<void> {
+  if (id === ctx.rbac.id) {
+    throw new TRPCError({ code: 'BAD_REQUEST', message: 'Cannot deactivate yourself' });
+  }
+  const reportsCount = await ctx.db.user.count({
+    where: { managerId: id, deletedAt: null },
+  });
+  if (reportsCount > 0) {
+    throw new TRPCError({
+      code: 'BAD_REQUEST',
+      message: `Reassign ${reportsCount} direct report${reportsCount === 1 ? '' : 's'} before deactivating`,
+    });
+  }
+  // VeloExpense (w4-10d): nor the tenant's last active System Administrator.
+  const person = await ctx.db.user.findFirst({ where: { id }, select: { roleId: true, deletedAt: true } });
+  if (!person) throw new TRPCError({ code: 'NOT_FOUND', message: 'User not found' });
+  if (person.deletedAt === null && person.roleId === SYSTEM_ROLE_IDS.admin) {
+    if ((await otherActiveAdmins(ctx.db, id)) < 1) {
+      throw new TRPCError({ code: 'BAD_REQUEST', message: 'Cannot deactivate the last active admin' });
+    }
+  }
+}
+
+/**
+ * VeloExpense: a deactivation or reactivation changes the tenant's seat count, which the
+ * platform bills on (VX5-20). Pushed once the transaction has committed, so it counts the
+ * new state, and in the background, as every other seat change is.
+ */
+function pushSeatsAfterCommit(ctx: { session: NonNullable<Context['session']> }): void {
+  const organizationId = ctx.session.user.organizationId;
+  void afterCommit(async () => pushSeatCountInBackground(organizationId));
 }
 
 export const usersRouter = router({
@@ -1172,7 +1355,371 @@ export const usersRouter = router({
       };
     }),
 
-  // People 3: the mutations (ExpenseOS's create … reactivate) arrive with the drawers.
+  // ── Mutations (admin) ──────────────────────────────────────────
+  // VeloExpense: ExpenseOS's `create` is People 4, where adding a person sends an invitation
+  // (decided 16 Oct 2026; VX5-3 makes the invitation the only way into a tenant).
+
+  update: withPermission(P.user.update)
+    .input(
+      z.object({
+        id: z.string().uuid(),
+        patch: z
+          .object({
+            firstName: z.string().min(1).max(100).nullable().optional(),
+            lastName: z.string().min(1).max(100).nullable().optional(),
+            departmentId: z.string().uuid().nullable().optional(),
+            businessUnitId: z.string().uuid().nullable().optional(),
+            legalEntityId: z.string().uuid().nullable().optional(),
+            jobLevelId: z.string().uuid().nullable().optional(),
+            country: z.string().length(2).nullable().optional(),
+            // VeloExpense: no `homeCurrencyId` — a person's currency is their legal entity's
+            // (Wave 2), so there is nothing of the person's own to write.
+            employeeStatus: employeeStatusSchema.optional(),
+            onLeaveAt: z.date().nullable().optional(),
+            terminationDate: z.date().nullable().optional(),
+            managerId: z.string().uuid().nullable().optional(),
+            /**
+             * `{ [ExternalIdSource.code]: value }` — what other systems call this person.
+             *
+             * A full REPLACE when present: the map sent is the map stored, so clearing a
+             * field removes that mapping. Omit the key entirely to leave every mapping
+             * untouched, which is what a patch that never opened this section does.
+             *
+             * An empty-string value means "remove this one" rather than "store a blank",
+             * because a blank external id is not a thing any system can be asked about.
+             */
+            externalIds: z
+              .record(z.string().trim().min(1).max(64), z.string().trim().max(200))
+              .optional(),
+          })
+          .strict(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      if (input.patch.managerId === input.id) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Cannot set self as manager' });
+      }
+      // VeloExpense: the person and the manager are read inside the tenant (RLS), so another
+      // tenant's id is "not found" here rather than a foreign-key error from the write.
+      const current = await ctx.db.user.findFirst({
+        where: { id: input.id },
+        select: { id: true, deletedAt: true, roleId: true },
+      });
+      if (!current) throw new TRPCError({ code: 'NOT_FOUND', message: 'User not found' });
+      if (input.patch.managerId) {
+        const manager = await ctx.db.user.findFirst({
+          where: { id: input.patch.managerId },
+          select: { id: true },
+        });
+        if (!manager) {
+          throw new TRPCError({ code: 'BAD_REQUEST', message: 'That manager is not in this organization' });
+        }
+      }
+      // Cycle detection: walk UP from the proposed manager; refuse if
+      // we reach `input.id` within 20 hops.
+      if (input.patch.managerId) {
+        let walker: string | null = input.patch.managerId;
+        for (let i = 0; i < 20 && walker !== null; i += 1) {
+          if (walker === input.id) {
+            throw new TRPCError({
+              code: 'BAD_REQUEST',
+              message: 'Setting this manager would create a reporting-chain cycle',
+            });
+          }
+          const next: { managerId: string | null } | null = await ctx.db.user.findUnique({
+            where: { id: walker },
+            select: { managerId: true },
+          });
+          walker = next?.managerId ?? null;
+        }
+      }
+
+      /*
+       * VeloExpense: a status that means somebody has left, or one that brings them back,
+       * is a deactivation or a reactivation, with their guards and their seat (see
+       * LEAVER_STATUSES). ExpenseOS's `update` writes the status alone.
+       */
+      const status = input.patch.employeeStatus;
+      const leaving = status !== undefined && LEAVER_STATUSES.includes(status) && current.deletedAt === null;
+      const returning = status !== undefined && !LEAVER_STATUSES.includes(status) && current.deletedAt !== null;
+      if (leaving) await assertCanDeactivate(ctx, input.id);
+
+      const changedFields = Object.keys(input.patch);
+      /**
+       * External ids are alias ROWS, not columns, so they cannot ride in the same
+       * `user.update` data payload — passing them through would make Prisma reject the
+       * whole write with "Unknown argument `externalIds`".
+       */
+      const { externalIds, ...scalarPatch } = input.patch;
+
+      const row = await withAudit(
+        ctx.db,
+        {
+          action: auditActions.admin.userUpdate,
+          entityType: 'User',
+          entityId: input.id,
+          actor: auditActor(ctx),
+          details: { changedFields },
+        },
+        async (tx) => {
+          if (returning) await assertSeatAvailableTx(tx);
+          if (externalIds !== undefined) {
+            await syncUserAliases(tx, input.id, externalIds);
+          }
+          const updated = await tx.user.update({
+            where: { id: input.id },
+            // Prisma treats an empty `data` as a no-op update, which still returns the
+            // row — so an externalIds-only patch reads back correctly without a branch.
+            data: {
+              ...scalarPatch,
+              ...(leaving ? { deletedAt: new Date() } : {}),
+              ...(returning ? { deletedAt: null } : {}),
+            },
+            select: DIRECTORY_SELECT,
+          });
+          // As `deactivate`: the leaver's open reports go to their manager.
+          if (leaving) await rollUpOnOffboard(tx, input.id);
+          return toDirectoryRow(updated);
+        },
+      );
+      if (leaving || returning) pushSeatsAfterCommit(ctx);
+      return row;
+    }),
+
+  setRole: withPermission(P.user.setRole)
+    .input(z.object({ id: z.string().uuid(), roleId: z.string().uuid() }))
+    .mutation(async ({ ctx, input }) => {
+      const [target, newRole] = await Promise.all([
+        ctx.db.user.findUnique({
+          where: { id: input.id },
+          select: { id: true, roleId: true },
+        }),
+        // VeloExpense: a role is the tenant's (keyed by organization and id), found by id
+        // inside the tenant.
+        ctx.db.role.findFirst({
+          where: { id: input.roleId },
+          select: { id: true, active: true, permissions: true },
+        }),
+      ]);
+      if (!target) throw new TRPCError({ code: 'NOT_FOUND', message: 'User not found' });
+      if (!newRole?.active) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Role not found or inactive' });
+      }
+      if (target.roleId === newRole.id) return { ok: true as const, unchanged: true };
+
+      // Last-admin guard: if demoting from the admin system role and
+      // the new role doesn't grant P.admin.role.update, refuse if the
+      // org would be left with zero active users carrying that perm.
+      // (We key off the system-role UUID, not a legacy `code` column.)
+      const ADMIN_ID = SYSTEM_ROLE_IDS.admin;
+      if (target.roleId === ADMIN_ID && newRole.id !== ADMIN_ID) {
+        const remainingAdmins = await otherActiveAdmins(ctx.db, input.id);
+        if (remainingAdmins < 1) {
+          throw new TRPCError({
+            code: 'BAD_REQUEST',
+            message: 'Cannot demote the last active admin',
+          });
+        }
+      }
+
+      // Self-lockout guard: caller can't strip their own user.setRole.
+      if (input.id === ctx.rbac.id && !newRole.permissions.includes(P.user.setRole)) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'Cannot change your own role to one without user.setRole',
+        });
+      }
+
+      // Grant ceiling: you cannot assign a role carrying permissions you don't
+      // already hold — otherwise any holder of user.setRole could mint a more
+      // privileged role (e.g. admin) for anyone, including themselves
+      // (horizontal-to-vertical escalation). Admins hold every permission, so
+      // they are unaffected.
+      const callerPerms = new Set<string>(ctx.rbac.permissions);
+      const escalating = newRole.permissions.filter((p) => !callerPerms.has(p));
+      if (escalating.length > 0) {
+        const sample = escalating.slice(0, 3).join(', ');
+        throw new TRPCError({
+          code: 'FORBIDDEN',
+          message: `Cannot assign a role with permissions you do not hold: ${sample}${escalating.length > 3 ? '…' : ''}`,
+        });
+      }
+
+      const result = await withAudit(
+        ctx.db,
+        {
+          action: auditActions.admin.userRoleChange,
+          entityType: 'User',
+          entityId: input.id,
+          actor: auditActor(ctx),
+          details: {
+            fromRoleId: target.roleId,
+            toRoleId: newRole.id,
+          },
+        },
+        async (tx) => {
+          return tx.user.update({
+            where: { id: input.id },
+            // VeloExpense: no session epoch to bump — every request reads the person's role
+            // from the database (`resolveTenantMember`), so the change takes effect at once.
+            data: { roleId: newRole.id },
+            select: { id: true },
+          });
+        },
+      );
+      return { ok: true as const, id: result.id };
+    }),
+
+  setOnLeave: withPermission(P.user.setOnLeave)
+    .input(z.object({ id: z.string().uuid(), onLeave: z.boolean() }))
+    .mutation(async ({ ctx, input }) => {
+      // VeloExpense: not for somebody who has left — moving them to ACTIVE here would revive
+      // the status without the seat or `deleted_at` (see LEAVER_STATUSES). Reactivate them.
+      const person = await ctx.db.user.findFirst({
+        where: { id: input.id },
+        select: { deletedAt: true },
+      });
+      if (!person) throw new TRPCError({ code: 'NOT_FOUND', message: 'User not found' });
+      if (person.deletedAt !== null) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Reactivate this person first' });
+      }
+      return withAudit(
+        ctx.db,
+        {
+          action: auditActions.admin.userUpdate,
+          entityType: 'User',
+          entityId: input.id,
+          actor: auditActor(ctx),
+          details: { onLeave: input.onLeave },
+        },
+        async (tx) => {
+          await tx.user.update({
+            where: { id: input.id },
+            data: {
+              employeeStatus: input.onLeave ? 'ON_LEAVE' : 'ACTIVE',
+              onLeaveAt: input.onLeave ? new Date() : null,
+            },
+          });
+          return { ok: true as const };
+        },
+      );
+    }),
+
+  /**
+   * Grant or revoke sign-in.
+   *
+   * Gated on `user.setRole` rather than a permission of its own. Assigning a role and
+   * granting access are the same class of act — deciding what somebody is authorised to do —
+   * and `setRole` is already held only by roles that make that decision. A new permission
+   * would also need a migration to reach the roles that already exist in a deployed
+   * database, because the seed no longer updates rows it did not create.
+   *
+   * Audited, like every other change to what a person may do.
+   */
+  setAccess: withPermission(P.user.setRole)
+    .input(z.object({ id: z.string().uuid(), hasAccess: z.boolean() }))
+    .mutation(async ({ ctx, input }) => {
+      // VeloExpense: inside the tenant, so another tenant's id is NOT_FOUND, not a 500.
+      const person = await ctx.db.user.findFirst({ where: { id: input.id }, select: { id: true } });
+      if (!person) throw new TRPCError({ code: 'NOT_FOUND', message: 'User not found' });
+      return writeAccess(ctx, input.id, input.hasAccess);
+    }),
+
+  /**
+   * Grant or revoke sign-in for a selection of people — the People page's bulk action.
+   *
+   * One audit row per person whose access actually changes, exactly as if `setAccess` had
+   * been called for each: the audit trail answers "who gave Ada access", and a single row
+   * naming fifty ids would answer it for nobody. Somebody already in the asked-for state is
+   * left alone and not audited, because nothing happened to them.
+   *
+   * Never revokes the caller's own access. Select-all on the People page includes yourself,
+   * and a bulk revoke that signs out the only person able to undo it is not recoverable from
+   * the UI. The single `setAccess` keeps no such guard: there the row is chosen by hand.
+   */
+  setAccessMany: withPermission(P.user.setRole)
+    .input(z.object({ ids: z.array(z.string().uuid()).min(1).max(500), hasAccess: z.boolean() }))
+    .mutation(async ({ ctx, input }) => {
+      const ids = [...new Set(input.ids)];
+      const people = await ctx.db.user.findMany({
+        where: { id: { in: ids }, deletedAt: null },
+        select: { id: true, hasAccess: true },
+      });
+      let changed = 0;
+      let unchanged = 0;
+      let skippedSelf = 0;
+      for (const person of people) {
+        if (!input.hasAccess && person.id === ctx.rbac.id) {
+          skippedSelf++;
+        } else if (person.hasAccess === input.hasAccess) {
+          unchanged++;
+        } else {
+          await writeAccess(ctx, person.id, input.hasAccess);
+          changed++;
+        }
+      }
+      return { changed, unchanged, skippedSelf, notFound: ids.length - people.length };
+    }),
+
+  deactivate: withPermission(P.user.deactivate)
+    .input(z.object({ id: z.string().uuid() }))
+    .mutation(async ({ ctx, input }) => {
+      await assertCanDeactivate(ctx, input.id);
+      const result = await withAudit(
+        ctx.db,
+        {
+          action: auditActions.admin.userDeactivate,
+          entityType: 'User',
+          entityId: input.id,
+          actor: auditActor(ctx),
+        },
+        async (tx) => {
+          await tx.user.update({
+            where: { id: input.id },
+            // VeloExpense: no session epoch; `deletedAt` is read on every request.
+            data: {
+              deletedAt: new Date(),
+              employeeStatus: 'DEACTIVATED',
+            },
+          });
+          // Roll the departing employee's cards + open reports up to their
+          // manager (or freeze/flag cards for AP when there's no manager), in
+          // the same transaction so offboarding is atomic.
+          // VeloExpense: reports only — no cards (packages/db/src/offboarding.ts).
+          const rollup = await rollUpOnOffboard(tx, input.id);
+          return { ok: true as const, rollup };
+        },
+      );
+      pushSeatsAfterCommit(ctx);
+      return result;
+    }),
+
+  reactivate: withPermission(P.user.deactivate)
+    .input(z.object({ id: z.string().uuid() }))
+    .mutation(async ({ ctx, input }) => {
+      const person = await ctx.db.user.findFirst({ where: { id: input.id }, select: { deletedAt: true } });
+      if (!person) throw new TRPCError({ code: 'NOT_FOUND', message: 'User not found' });
+      const result = await withAudit(
+        ctx.db,
+        {
+          action: auditActions.admin.userReactivate,
+          entityType: 'User',
+          entityId: input.id,
+          actor: auditActor(ctx),
+        },
+        async (tx) => {
+          // VeloExpense: a returning person takes a seat back (see assertSeatAvailableTx).
+          if (person.deletedAt !== null) await assertSeatAvailableTx(tx);
+          await tx.user.update({
+            where: { id: input.id },
+            data: { deletedAt: null, employeeStatus: 'ACTIVE' },
+          });
+          return { ok: true as const };
+        },
+      );
+      if (person.deletedAt !== null) pushSeatsAfterCommit(ctx);
+      return result;
+    }),
 });
 
 // ── helpers ────────────────────────────────────────────────────────

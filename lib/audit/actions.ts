@@ -206,6 +206,13 @@ export const AUDIT_ACTIONS = [
   'ROLE_CREATED',
   'ROLE_UPDATED',
   'ROLE_DELETED',
+  /* A person — People 2, ExpenseOS's users router (`admin.user.*`): an edit (access included,
+     in `details`), a role change, a deactivation and a reactivation. Before it, VeloExpense's
+     own employee form changed people without an audit row at all. */
+  'USER_UPDATED',
+  'USER_ROLE_CHANGED',
+  'USER_DEACTIVATED',
+  'USER_REACTIVATED',
   'MODULE_ENABLED',
   'MODULE_DISABLED',
   'USER_LOCALE_CHANGED',
