@@ -78,6 +78,7 @@
     "ledgerQueue": "File du grand livre",
     "branding": "Image de marque",
     "defaultLanguage": "Langue par défaut",
+    "slack": "Slack",
     "emailDelivery": "Envoi des courriels",
     "billing": "Facturation"
   },

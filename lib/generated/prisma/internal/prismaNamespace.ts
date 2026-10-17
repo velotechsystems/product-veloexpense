@@ -4101,6 +4101,8 @@ export const UserScalarFieldEnum = {
   lastLoginAt: 'lastLoginAt',
   avatarUrl: 'avatarUrl',
   employeeStatus: 'employeeStatus',
+  slackUserId: 'slackUserId',
+  slackLookupAt: 'slackLookupAt',
   country: 'country',
   managerId: 'managerId',
   departmentId: 'departmentId',

@@ -221,6 +221,10 @@ export const USER_MESSAGE_CODES = [
   'OAUTH_PROVIDER_REFUSED',
   'OAUTH_CALLBACK_INCOMPLETE',
 
+  /* Slack (w5-02, lib/notifications/slackConnection.ts) ─────────────────── */
+  'SLACK_TOKEN_REQUIRED',
+  'SLACK_NOT_CONNECTED',
+
   /* receipts (lib/receipts/service.ts) ─────────────────────────────────── */
   'RECEIPT_TYPE_UNSUPPORTED',
   'RECEIPT_TOO_LARGE',
@@ -1012,6 +1016,14 @@ export const ERROR_COPY: Record<UserMessageCode, Copy> = {
   },
   OAUTH_CALLBACK_INCOMPLETE: {
     'en-CA': 'That authorisation came back incomplete. Start the connection again.',
+  },
+
+  /* ── Slack ─────────────────────────────────────────────────────────────── */
+  SLACK_TOKEN_REQUIRED: {
+    'en-CA': 'Paste the Bot User OAuth Token (xoxb-…) to connect Slack.',
+  },
+  SLACK_NOT_CONNECTED: {
+    'en-CA': 'Slack is not connected, so there is nothing to test.',
   },
 
   /* ── receipts ──────────────────────────────────────────────────────────── */

@@ -77,6 +77,10 @@ export async function getInboxPage(unreadOnly: boolean) {
 export async function getPreferencesPage() {
   return asActor(async (tx, actor) => {
     const overrides = await preferencesFor(tx, actor.id);
+    // w5-02a: Slack delivers once this organization has connected its Slack app. Asked
+    // here, on the reader's own tenant transaction; `slack_connection` is under RLS.
+    const slackConnected =
+      (await tx.query('SELECT 1 FROM slack_connection')).rows.length > 0;
     const grid = EVENT_TYPES.map((eventType) => {
       const key = templateKeyFor(eventType, 'EXPENSE_REPORT');
       const def = key ? TEMPLATE_KEY_BY_KEY.get(key) : undefined;
@@ -95,14 +99,35 @@ export async function getPreferencesPage() {
           //
           // EMAIL delivers (VX2-8), so it is live. It was left disabled here when
           // VX2-8 shipped, which meant nobody could turn an email off — or turn
-          // comment emails on, the only way into the digest (w5-00). SLACK has no
-          // delivery until Slack is connected (w5-02).
-          deliverable: channel !== 'SLACK',
+          // comment emails on, the only way into the digest (w5-00). SLACK delivers
+          // once the organization has connected its Slack app (w5-02a, /admin/slack).
+          deliverable: channel !== 'SLACK' || slackConnected,
         })),
       };
     });
-    return { grid, actor: { id: actor.id, name: actor.display_name ?? actor.email } };
+    return {
+      grid,
+      actor: { id: actor.id, name: actor.display_name ?? actor.email },
+      // ExpenseOS's `notifications.slackLink`: whether Slack knows who you are. Only the
+      // two facts, never the id itself. VeloExpense: null when the organization has no
+      // Slack connected, where the sentence would have nothing to be about.
+      slackLink: slackConnected ? await slackLinkOf(tx, actor.id) : null,
+    };
   });
+}
+
+async function slackLinkOf(
+  tx: QueryRunner,
+  userId: string,
+): Promise<{ linked: boolean; checkedAt: Date | null }> {
+  const r = await tx.query(
+    'SELECT slack_user_id IS NOT NULL AS linked, slack_lookup_at FROM app_user WHERE id = $1',
+    [userId],
+  );
+  return {
+    linked: Boolean(r.rows[0]?.linked),
+    checkedAt: (r.rows[0]?.slack_lookup_at as Date | null | undefined) ?? null,
+  };
 }
 
 /* ── mutations ─────────────────────────────────────────────────────────────── */
@@ -140,6 +165,40 @@ export async function markAllReadFromForm() {
   });
   if (failure) redirect(failure);
   revalidatePath(PAGE);
+}
+
+/**
+ * Forget the caller's cached Slack id so the next notification resolves it again.
+ *
+ * The cache exists because `users.lookupByEmail` is rate-limited, and it is refreshed on
+ * a timer — 30 days for a positive answer, 7 for a negative — plus whenever Slack itself
+ * rejects the cached id. None of those help the one person who KNOWS the answer changed
+ * and is standing in front of a screen: they fixed the email on their Slack account
+ * thirty seconds ago and would otherwise wait a week to find out whether it worked.
+ *
+ * Nulling `slackLookupAt` as well as the id is the point. Leaving the timestamp would
+ * clear the id and then suppress the lookup that is meant to replace it — the button
+ * would appear to work and change nothing for seven days.
+ *
+ * Self-only, and it needs no permission: the whole effect is one extra Slack lookup for
+ * the caller's own address.
+ *
+ * w5-02a — ExpenseOS's `notifications.forgetSlackLink`, as a server action.
+ */
+export async function forgetSlackLinkFromForm() {
+  const back = `${PAGE}/preferences`;
+  try {
+    await asActor((tx, actor) =>
+      tx.query('UPDATE app_user SET slack_user_id = NULL, slack_lookup_at = NULL WHERE id = $1', [
+        actor.id,
+      ]),
+    );
+  } catch (err) {
+    const message = errorParam(err, 'notifications');
+    redirect(`${back}?error=${encodeURIComponent(message)}`);
+  }
+  revalidatePath(back);
+  redirect(`${back}?relinked=1`);
 }
 
 /**

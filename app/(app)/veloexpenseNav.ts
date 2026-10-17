@@ -1,6 +1,7 @@
 import { type Permission, permissions as P } from '@expenseos/rbac';
 import {
   IconBook,
+  IconBrandSlack,
   IconBuildingBank,
   IconChartBar,
   IconChartPie,
@@ -158,6 +159,8 @@ export const VELOEXPENSE_ITEMS: Readonly<Record<string, readonly VeloExpenseNavI
     { key: 'branding', icon: IconPalette, to: '/admin/branding', requires: VELOEXPENSE_ADMIN },
     { key: 'defaultLanguage', icon: IconLanguage, to: '/admin/locale', requires: VELOEXPENSE_ADMIN },
     { key: 'emailDelivery', icon: IconSend, to: '/admin/notification-delivery', requires: VELOEXPENSE_ADMIN },
+    // w5-02a: the tenant's own Slack app (its own page, decided 17 Oct 2026).
+    { key: 'slack', icon: IconBrandSlack, to: '/admin/slack', requires: VELOEXPENSE_ADMIN },
     { key: 'billing', icon: IconCreditCard, to: '/admin/billing', requires: VELOEXPENSE_ADMIN },
   ],
 };

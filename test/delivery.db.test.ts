@@ -343,10 +343,10 @@ describe('a failed send retries and shows in the admin queue', () => {
     expect(mail.sent).toHaveLength(0);
   });
 
-  it('cancels a channel it has no transport for', async () => {
-    // Nothing writes a SLACK row today — `notifyRecipients` enqueues EMAIL only —
-    // so this inserts one directly. The guard exists because the alternative is
-    // composing an email in response to a Slack job.
+  it('cancels a Slack delivery, with the reason, when the tenant has not connected Slack', async () => {
+    // w5-02a: SLACK has a transport now, and a tenant with no Slack connection is the case
+    // it refuses — never by composing an email in response to a Slack job. Inserted directly
+    // because nobody here opted into Slack. The DM itself: test/slack-delivery.db.test.ts.
     await submitted();
     const n = await admin.query('SELECT id, organization_id FROM notification LIMIT 1');
     await admin.query(
@@ -359,7 +359,7 @@ describe('a failed send retries and shows in the admin queue', () => {
     expect(summary.sent).toBe(1);
     const slack = (await deliveries()).find((d) => d.channel === 'SLACK');
     expect(slack).toMatchObject({ status: 'CANCELLED' });
-    expect(slack!.last_error).toContain('no transport for SLACK');
+    expect(slack!.last_error).toContain('Slack is not connected for this organization');
   });
 });
 

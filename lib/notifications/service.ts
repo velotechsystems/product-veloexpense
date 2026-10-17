@@ -237,14 +237,11 @@ export async function notifyRecipients(
     // and it is here rather than in the worker because the preference the user
     // held when the thing happened is the one that should govern — not whichever
     // one they hold four hours later when a retry finally succeeds.
-    // EMAIL ONLY, and SLACK is deliberately absent rather than listed and
-    // skipped. There is no Slack transport (NT-20/21 — its own ticket), so
-    // enqueuing one would create a job nothing can do: it would sit PENDING, get
-    // claimed by the poller, and be handed to a function whose only output is an
-    // email. Adding the channel here is one line on the day the transport exists;
-    // adding it now is a queue full of work that gets sent down the wrong pipe.
-    // `drainOutbox` refuses a non-EMAIL channel anyway, in case a row appears by
-    // some other route.
+    // w5-02a: SLACK too, now that it has a transport (`lib/notifications/slackDispatch.ts`).
+    // A Slack delivery is never held for the digest — ExpenseOS's digest is email only — and
+    // whether the tenant has Slack connected is decided at the send, not here: a delivery
+    // for a tenant that has disconnected is CANCELLED with the reason, on the delivery
+    // screen, rather than never existing.
     //
     // w5-00: a digest-type event's email is held for the digest (`isDigestType`), so a
     // burst of comments reaches somebody as one message rather than one each.
@@ -252,6 +249,9 @@ export async function notifyRecipients(
       await enqueueDelivery(tx, ins.rows[0].id as string, 'EMAIL', {
         digest: isDigestType(eventType),
       });
+    }
+    if (channels.SLACK) {
+      await enqueueDelivery(tx, ins.rows[0].id as string, 'SLACK');
     }
   }
   return written;

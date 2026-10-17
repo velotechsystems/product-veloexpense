@@ -94,7 +94,7 @@
       "checkedAt": "Last checked {date}",
       "hint": "Changed the email address on your Slack account? Check again so the next notification finds you.",
       "linked": "Your Slack account is linked. Direct messages will arrive there.",
-      "notLinked": "Slack has no account for your ExpenseOS email address, so Slack notifications cannot be delivered.",
+      "notLinked": "Slack has no account for your VeloExpense email address, so Slack notifications cannot be delivered.",
       "relink": "Check again",
       "relinked": "Cleared. Your Slack account will be looked up again with your next notification.",
       "relinking": "Checking…",
@@ -103,6 +103,7 @@
     }
   },
   "cta": "View in VeloExpense",
+  "ctaApprover": "Review and approve in VeloExpense",
   "ctaSubject": {
     "VIRTUAL_CARD_REQUEST": "View card request",
     "VIRTUAL_CARD_LIMIT_INCREASE": "View limit increase request",

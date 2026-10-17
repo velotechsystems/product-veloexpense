@@ -78,6 +78,8 @@ const PAGES = [
   '/admin/ledger-queue',
   '/admin/notification-templates',
   '/admin/notification-delivery',
+  // w5-02a: the tenant's own Slack app.
+  '/admin/slack',
   '/admin/reimbursements',
   '/admin/analytics',
   // Wave 0: the first ExpenseOS screen ported to its own path (app/(app)/admin/).

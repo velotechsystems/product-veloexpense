@@ -99,6 +99,7 @@ describe("an admin's menu", () => {
         '/admin/branding',
         '/admin/locale',
         '/admin/notification-delivery',
+        '/admin/slack',
         '/admin/billing',
         '/admin/notification-templates',
         '/admin/modules',

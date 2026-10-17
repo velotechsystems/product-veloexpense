@@ -164,7 +164,9 @@ export default async function NotificationDeliveryPage({
                     {row.recipientName}
                     <p className="text-xs text-muted-foreground">
                       {/* The address we actually USED, recorded at send time, not
-                          the one they have now. */}
+                          the one they have now. w5-02a: a Slack DM says so, and its
+                          destination is the Slack user id it went to. */}
+                      {row.channel === 'SLACK' ? 'Slack · ' : ''}
                       {row.destination ?? row.recipientEmail}
                     </p>
                   </TableCell>
