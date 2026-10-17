@@ -16,6 +16,11 @@ import { currentTenantId, db } from '@/lib/db/prisma';
 import { queryRunnerOf } from '@/lib/db/prisma-pg-bridge';
 import { displayName } from '@/lib/format';
 import { sendEmail } from '@/lib/notifications/email';
+import {
+  ensureReplyThread,
+  findThreadByEmailToken,
+  issueEmailReplyToken,
+} from '@/lib/notifications/replyThreads';
 import { escapeHtml } from '@/lib/notifications/html';
 import { type BoundedRead, getInboundMailStorage, getStorage } from '@/lib/storage';
 // Its own module, not the barrel: a test that mocks `@/lib/storage` wholesale still runs the
@@ -23,6 +28,7 @@ import { type BoundedRead, getInboundMailStorage, getStorage } from '@/lib/stora
 import { guardedRead } from '@/lib/storage/guardedRead';
 import { receiptKey } from '@/lib/storage/keys';
 import { INBOUND_MAIL_CAP_BYTES } from '@/lib/storage/limits';
+import { ORG } from '@/lib/tenant/sql';
 // VeloExpense: ExpenseOS's summary job, ported (#567).
 import {
   SUMMARY_FIRST_DELAY_MS,
@@ -60,8 +66,9 @@ import {
  *   · it runs as the tenant the email was addressed to (d47; `inTenant`, worker/src/main.ts),
  *     so the sender is found among that tenant's people only, and everything it writes is
  *     that tenant's, through RLS;
- *   · every email starts a new report: adding to one by replying (`receipts+<token>@`) needs
- *     reply threads (w5-01, d48), so the acknowledgement is sent from the ordinary address;
+ *   · w5-01b: replying adds to the report (`receipts+<token>@`, d48), as in ExpenseOS — but
+ *     the threaded address is the acknowledgement's Reply-To, not its From, and it is the
+ *     tenant's: `receipts+<token>@<tenant>.<inbound domain>` (see `receiptsReplyAddress`);
  *   · a report's number comes from the tenant's sequence (`nextReportNumber`), and the plan's
  *     yearly expense cap is checked on the same transaction, as the browser's paths do;
  *   · a receipt is written STORED with its size, under the tenant's key prefix, and its
@@ -78,7 +85,6 @@ import {
  *  an HMAC over the ROW id, so a receipts thread gets its own address and a `reply+` token can
  *  never be spent here. */
 export const RECEIPTS_SUBJECT_TYPE = 'EXPENSE_REPORT_RECEIPTS';
-// VeloExpense: kept for w5-01, which brings the thread table it names (d48).
 
 /** Attachments accepted from one email. Beyond this somebody is forwarding a mailbox, not
  *  filing an expense claim. */
@@ -101,9 +107,9 @@ const MIN_IMAGE_BYTES = 10 * 1024;
  *  `expenses.startExtraction`. */
 const BATCH_THRESHOLD_FILES = 5;
 
-// VeloExpense: ExpenseOS's `EDITABLE` (DRAFT, RETURNED — a report accepts new expenses only
-// while its submitter can still edit it) is read only by the threaded path, so it returns
-// with it (w5-01).
+/** A report accepts new expenses only while its submitter can still edit it. VeloExpense: the
+ *  statuses are text (ExpenseOS's enum values). */
+const EDITABLE: readonly string[] = ['DRAFT', 'RETURNED'];
 
 const MAX_TITLE = 200;
 const MAX_PURPOSE = 2000;
@@ -205,9 +211,9 @@ export async function handleIngestReceiptEmail(
   // attributions; what is left is what the person actually typed this time.
   const purpose = stripSignature(parsed.text ?? '').slice(0, MAX_PURPOSE) || null;
 
-  // VeloExpense: every email starts a new report until reply threads arrive (w5-01, d48);
-  // `data.token` is carried but not read.
-  const target = { kind: 'new' } as Target;
+  const target: Target = data.token
+    ? await resolveThreadedReport(data.token, user.id)
+    : { kind: 'new' };
 
   if (target.kind === 'refused') {
     await reply(
@@ -240,8 +246,7 @@ export async function handleIngestReceiptEmail(
   const stored = await storeAttachments(filed.reportId, filed.expenseIds, attachments, actor);
   if (stored.length > 0) await startExtraction(stored);
 
-  // VeloExpense: sent from the ordinary address — no threaded reply address until w5-01.
-  const replyAddress = undefined as string | undefined;
+  const replyAddress = await receiptsReplyAddress(db, filed.reportId, user.id);
   // The acknowledgement waits for the reading: until then the total is 0.00 and there is no
   // approver to name. If the summary cannot even be queued, the plain line goes out now —
   // a person who emailed receipts must hear back either way.
@@ -268,7 +273,10 @@ export async function handleIngestReceiptEmail(
     await reply(
       fromAddr,
       strings.filedSubject(filed.number, title),
-      strings.filedBody(stored.length, filed.number),
+      // VeloExpense: the "reply to add more" line only when there is an address to reply to;
+      // ExpenseOS's catalog sentence always carries it.
+      strings.filedBody(stored.length, filed.number) +
+        (replyAddress ? `\n\n${strings.replyToAdd}` : ''),
       replyAddress,
       threadHeaders,
     );
@@ -353,9 +361,30 @@ type Target =
   | { kind: 'existing'; reportId: string; currencyId: string }
   | { kind: 'refused' };
 
-// VeloExpense: ExpenseOS's `resolveThreadedReport` (the report a `receipts+<token>@` reply
-// belongs to: a RECEIPTS thread, the sender's own report, still editable) returns with reply
-// threads (w5-01, d48). `addToReport` below is what it hands to, kept for it.
+/**
+ * The report a `receipts+<token>@` reply belongs to.
+ *
+ * Three separate checks, none redundant: the token has to resolve to a RECEIPTS thread (a
+ * comment token must not file expenses), the report has to belong to the person who sent the
+ * email (a token that leaked is not authority over somebody else's claim), and the report has
+ * to still be editable (a submitted report needs recalling, which is the submitter's decision
+ * to make, not ours).
+ *
+ * VeloExpense: inside the tenant the address named (the job runs as it), so a token from
+ * another tenant finds nothing.
+ */
+async function resolveThreadedReport(token: string, userId: string): Promise<Target> {
+  const thread = await findThreadByEmailToken(db, token);
+  if (!thread || thread.subjectType !== RECEIPTS_SUBJECT_TYPE) return { kind: 'new' };
+  if (thread.recipientId !== userId) return { kind: 'new' };
+  const report = await db.expenseReport.findUnique({
+    where: { id: thread.subjectId },
+    select: { id: true, submitterId: true, status: true, currencyId: true },
+  });
+  if (!report || report.submitterId !== userId) return { kind: 'new' };
+  if (!EDITABLE.includes(report.status)) return { kind: 'refused' };
+  return { kind: 'existing', reportId: report.id, currencyId: report.currencyId };
+}
 
 interface Filed {
   reportId: string;
@@ -556,9 +585,42 @@ async function startExtraction(receiptIds: readonly string[]): Promise<void> {
   }
 }
 
-// VeloExpense: ExpenseOS's `receiptsReplyAddress` (the `receipts+<token>@` address an
-// acknowledgement is sent from, so a reply lands back on its report) returns with reply
-// threads (w5-01, d48).
+/**
+ * The address a reply to this report's acknowledgement goes to, so a reply lands back on it.
+ *
+ * The token is derived from the thread row's id and is stable for the report's life, which is
+ * what lets somebody reply to the oldest message in the thread and still hit the right report.
+ *
+ * VeloExpense, two changes:
+ *   · the address is the TENANT's, `receipts+<token>@<tenant>.<inbound domain>` (d47) — the
+ *     mailbox is the first of `INBOUND_RECEIPTS_MAILBOXES`, where ExpenseOS reads
+ *     `PUBLIC_RECEIPTS_MAILBOX` on its forwarding domain;
+ *   · it is the message's Reply-To and NOT its From (`reply` below, and the summary). ExpenseOS
+ *     sends from it; VeloExpense sends through the suite's Workspace SMTP account, which
+ *     cannot send as an address on the inbound domain, and a From the sending service does
+ *     not authenticate fails DMARC.
+ */
+export async function receiptsReplyAddress(
+  database: typeof db,
+  reportId: string,
+  userId: string,
+): Promise<string | undefined> {
+  const mailbox = process.env.INBOUND_RECEIPTS_MAILBOXES?.split(',')[0]?.trim();
+  const domain = process.env.INBOUND_EMAIL_DOMAIN?.trim().toLowerCase();
+  if (!mailbox || !domain) return undefined;
+  const slug = await database.$transaction(async (tx) => {
+    const r = await queryRunnerOf(tx).query(`SELECT slug FROM organization WHERE id = ${ORG}`);
+    return (r.rows[0]?.slug as string | undefined) ?? '';
+  });
+  if (!slug) return undefined;
+  const thread = await ensureReplyThread(database, {
+    subjectType: RECEIPTS_SUBJECT_TYPE,
+    subjectId: reportId,
+    recipientId: userId,
+  });
+  const token = await issueEmailReplyToken(database, thread.id);
+  return `${mailbox}+${token}@${slug}.${domain}`;
+}
 
 /** Send one acknowledgement. Never throws: the report is already filed, and a bounced
  *  acknowledgement must not look like a failed submission. */
@@ -566,7 +628,7 @@ async function reply(
   to: string,
   subject: string,
   body: string,
-  from: string | undefined,
+  replyAddress: string | undefined,
   headers: { inReplyTo?: string; references?: string },
 ): Promise<void> {
   try {
@@ -575,7 +637,8 @@ async function reply(
       subject,
       text: body,
       html: `<p>${escapeHtml(body).replace(/\n/g, '<br>')}</p>`,
-      ...(from ? { from, replyTo: from } : {}),
+      // VeloExpense: the threaded address is the Reply-To only — see `receiptsReplyAddress`.
+      ...(replyAddress ? { replyTo: replyAddress } : {}),
       ...headers,
       // RFC 3834: tell other responders this is a machine reply, so they do not answer it.
       // The other half of the loop guard — `isAutoSubmitted` is what stops us answering them.
@@ -682,6 +745,8 @@ interface ReceiptStrings {
   untitled: string;
   filedSubject: (number: string, title: string) => string;
   filedBody: (count: number, number: string) => string;
+  /** VeloExpense (w5-01b): the summary's reply line, appended to `filedBody` when replyable. */
+  replyToAdd: string;
   noAccountSubject: string;
   noAccountBody: string;
   noReceiptsSubject: string;
@@ -713,9 +778,13 @@ async function receiptStrings(locale: 'en' | 'fr-CA'): Promise<ReceiptStrings> {
       fill(
         s?.filedBody,
         { count: String(count), number },
-        // VeloExpense: no "reply to add more" until reply threads (w5-01, d48).
+        // VeloExpense: without ExpenseOS's "Reply to this email…" — that line is `replyToAdd`,
+        // added only when the acknowledgement carries a reply address (w5-01b).
         `${count} receipt(s) filed on ${number}. VeloExpense is reading them now — the merchant, date, amount and tax will fill in shortly.`,
       ),
+    replyToAdd:
+      (s as { summary?: Record<string, string> } | undefined)?.summary?.replyToAdd ??
+      'Reply to this email to add more receipts to the same report.',
     noAccountSubject: s?.noAccountSubject ?? 'No VeloExpense account for this address',
     noAccountBody:
       s?.noAccountBody ??

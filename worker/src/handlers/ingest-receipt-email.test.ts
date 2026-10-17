@@ -20,8 +20,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
  * are VeloExpense's modules (`@/lib/db/prisma`, `@/lib/storage`, `@/lib/notifications/email`,
  * the catalogue loader, the plan cap); a person has one display name and no role relation;
  * every job names its tenant. The NetSuite coding case and the threaded-reply cases are
- * skipped, marked: there is no NetSuite here, and replying to add receipts arrives with reply
- * threads (w5-01, d48). VeloExpense's own cases close the file: the plan cap, a deactivated
+ * skipped, marked: there is no NetSuite here. Replying to add receipts (w5-01b, d48) runs, with
+ * the threaded address as Reply-To on the tenant's domain. VeloExpense's own cases close the
+ * file: the plan cap, a deactivated
  * person, the stored row and the tenant on each extraction job.
  */
 
@@ -30,6 +31,9 @@ const h = vi.hoisted(() => ({
     user: { findFirst: vi.fn(), findUnique: vi.fn() },
     expenseReport: { findUnique: vi.fn() },
     receipt: { create: vi.fn() },
+    // VeloExpense (w5-01b): the tenant's slug for the threaded address, read on a transaction.
+    query: vi.fn(),
+    $transaction: vi.fn(),
   },
   withAudit: vi.fn(),
   storage: {
@@ -98,6 +102,12 @@ vi.mock('./receipts-summary-email', () => ({
 }));
 vi.mock('@expenseos/jobs', () => ({ enqueue: h.enqueue }));
 vi.mock('@/lib/notifications/email', () => ({ sendEmail: h.sendEmail }));
+// VeloExpense: the reply threads are `lib/notifications/replyThreads.ts` (w5-01).
+vi.mock('@/lib/notifications/replyThreads', () => ({
+  findThreadByEmailToken: h.findThreadByEmailToken,
+  ensureReplyThread: h.ensureReplyThread,
+  issueEmailReplyToken: h.issueEmailReplyToken,
+}));
 // VeloExpense: the catalogue loader, empty, so the handler's own English copy is what is sent.
 vi.mock('@expenseos/i18n/load', () => ({ loadCatalog: async () => ({}) }));
 
@@ -201,8 +211,11 @@ beforeEach(() => {
     }),
   );
   process.env.S3_INBOUND_MAIL_BUCKET = 'inbound-bucket';
-  process.env.INBOUND_PUBLIC_EMAIL_DOMAIN = 'e.inc';
-  process.env.PUBLIC_RECEIPTS_MAILBOX = 'receipts-dev';
+  // VeloExpense: the tenant's address — `<mailbox>+<token>@<tenant>.<inbound domain>` (d47).
+  process.env.INBOUND_EMAIL_DOMAIN = 'e.inc';
+  process.env.INBOUND_RECEIPTS_MAILBOXES = 'receipts-dev,receipts';
+  h.db.$transaction.mockImplementation(async (fn: (tx: unknown) => unknown) => fn(h.db));
+  h.db.query.mockResolvedValue({ rows: [{ slug: 'northwind' }] });
   h.db.user.findFirst.mockResolvedValue(USER);
   // The filer's own coding, copied onto every expense created from the email.
   // VeloExpense: a business unit and a department; no class.
@@ -408,10 +421,7 @@ describe('a new report from an email', () => {
     );
   });
 
-  // VeloExpense: skipped — the threaded address needs reply threads (w5-01, d48). The
-  // summary is queued, and the fallback sent, from the ordinary address; see the VeloExpense
-  // cases below.
-  it.skip('queues the summary instead of acknowledging before anything has been read', async () => {
+  it('queues the summary instead of acknowledging before anything has been read', async () => {
     /**
      * An acknowledgement sent now would say "total 0.00, no approver": nothing is read yet.
      * So the reply is the summary job, delayed, carrying everything it needs to answer on
@@ -430,7 +440,8 @@ describe('a new report from an email', () => {
         receiptIds: ['receipt-1'],
         userId: 'u1',
         to: 'claimant@e.inc',
-        replyAddress: 'receipts-dev+tok123@e.inc',
+        // VeloExpense: on the tenant's domain.
+        replyAddress: 'receipts-dev+tok123@northwind.e.inc',
         inReplyTo: '<orig-1@mail.test>',
         sesMessageId: 'ses-1',
         attempt: 0,
@@ -440,8 +451,7 @@ describe('a new report from an email', () => {
     expect(h.sendEmail).not.toHaveBeenCalled();
   });
 
-  // VeloExpense: skipped, as the case above (w5-01, d48).
-  it.skip('acknowledges at once, from the threaded address, when the summary cannot be queued', async () => {
+  it('acknowledges at once, replying to the threaded address, when the summary cannot be queued', async () => {
     // Somebody who emailed receipts hears back either way: the plain line is the fallback.
     h.enqueue.mockImplementation(async (name: string) => {
       if (name === 'email.receiptsSummary') throw new Error('redis down');
@@ -452,7 +462,8 @@ describe('a new report from an email', () => {
     expect(h.sendEmail).toHaveBeenCalledWith(
       expect.objectContaining({
         to: 'claimant@e.inc',
-        from: 'receipts-dev+tok123@e.inc',
+        // VeloExpense: Reply-To, not From — the suite's SMTP account cannot send as it.
+        replyTo: 'receipts-dev+tok123@northwind.e.inc',
         // Threaded onto the original so it lands in the same conversation.
         inReplyTo: '<orig-1@mail.test>',
       }),
@@ -677,9 +688,7 @@ describe('reading the raw message within the inbound-mail cap', () => {
   });
 });
 
-// VeloExpense: skipped — adding to a report by replying arrives with reply threads (w5-01,
-// d48). Until then a token is carried and not read; see the VeloExpense cases below.
-describe.skip('a threaded reply', () => {
+describe('a threaded reply', () => {
   const threaded = { ...JOB, token: 'tok-existing' };
 
   it('adds to the report the token names', async () => {
@@ -708,7 +717,8 @@ describe.skip('a threaded reply', () => {
         // A reply's own body, not the first email's, on the expenses the reply adds.
         purpose: 'Dinner with Acme after the Q3 review.',
         explanation: 'Dinner with Acme after the Q3 review.',
-        coding: { businessUnitId: 'bu-1', departmentId: 'dept-1', nsClassId: 'cls-1' },
+        // VeloExpense: a business unit and a department; no class.
+        coding: { businessUnitId: 'bu-1', departmentId: 'dept-1' },
         businessUnitSource: 'EXPENSEOS',
       }),
     );
@@ -897,8 +907,8 @@ describe('VeloExpense', () => {
   });
 
   it('queues the summary, as the tenant, instead of acknowledging before anything is read (#567)', async () => {
-    // ExpenseOS's "queues the summary instead of acknowledging…", without the threaded
-    // address (w5-01, d48): no `replyAddress`, and the tenant named for the job's scope.
+    // ExpenseOS's "queues the summary instead of acknowledging…", with the tenant named for
+    // the job's scope, and the threaded address on the tenant's domain (w5-01b).
     // `clearAllMocks` keeps an implementation, and two cases above make the summary's
     // enqueue throw; this one needs it to succeed.
     h.enqueue.mockResolvedValue(undefined);
@@ -915,13 +925,27 @@ describe('VeloExpense', () => {
       attempt: 0,
       organizationId: 'org-1',
     });
-    expect(call?.[1]).not.toHaveProperty('replyAddress');
+    expect(call?.[1]).toHaveProperty('replyAddress', 'receipts-dev+tok123@northwind.e.inc');
     expect(call?.[2]).toEqual({ jobId: 'sum-ses-1-0', delayMs: 20_000 });
     expect(h.sendEmail).not.toHaveBeenCalled();
   });
 
-  it('acknowledges from the ordinary address and does not offer a reply it cannot take (d48)', async () => {
-    // #567: the plain line is now the fallback, sent when the summary cannot be queued.
+  it('offers the reply line, and replies to the threaded address, when it has one (w5-01b)', async () => {
+    // #567: the plain line is the fallback, sent when the summary cannot be queued.
+    h.enqueue.mockImplementation(async (name: string) => {
+      if (name === 'email.receiptsSummary') throw new Error('redis down');
+    });
+    serveMessage(mime({ parts: [RECEIPT_PART] }));
+    await handleIngestReceiptEmail(JOB);
+    const sent = h.sendEmail.mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(sent.from).toBeUndefined();
+    expect(sent.replyTo).toBe('receipts-dev+tok123@northwind.e.inc');
+    expect(String(sent.text)).toContain('Reply to this email to add more receipts to the same report.');
+  });
+
+  it('acknowledges from the ordinary address, offering no reply, without an inbound domain (d48)', async () => {
+    // An invitation to reply into a mailbox nothing reads is worse than none.
+    delete process.env.INBOUND_EMAIL_DOMAIN;
     h.enqueue.mockImplementation(async (name: string) => {
       if (name === 'email.receiptsSummary') throw new Error('redis down');
     });
@@ -932,12 +956,16 @@ describe('VeloExpense', () => {
     expect(sent.from).toBeUndefined();
     expect(sent.replyTo).toBeUndefined();
     expect(String(sent.text)).not.toMatch(/reply/i);
+    expect(h.ensureReplyThread).not.toHaveBeenCalled();
   });
 
-  it('starts a new report even when the address carried a token, until w5-01', async () => {
+  it('starts a new report when the token finds no thread in this tenant', async () => {
+    // The job runs as the tenant the address named, so another tenant's token finds nothing
+    // here — and nothing of anybody's is touched.
+    h.findThreadByEmailToken.mockResolvedValue(null);
     serveMessage(mime({ parts: [RECEIPT_PART] }));
-    await handleIngestReceiptEmail({ ...JOB, token: 'tok-existing' });
-    expect(h.findThreadByEmailToken).not.toHaveBeenCalled();
+    await handleIngestReceiptEmail({ ...JOB, token: 'tok-elsewhere' });
+    expect(h.findThreadByEmailToken).toHaveBeenCalledWith(h.db, 'tok-elsewhere');
     expect(h.createBlankExpensesForReceipts).not.toHaveBeenCalled();
     expect(h.createReportFromReceipts).toHaveBeenCalledTimes(1);
   });
