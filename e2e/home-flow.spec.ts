@@ -35,7 +35,7 @@ const HEADING: Record<SetupItem, string> = {
  *  used to open the wrong screen (categories → spend rules, structure → employees); this
  *  map is what the checklist promises, and the test below holds the page to it. */
 const ACTION: Record<SetupItem, { cta: string; href: string }> = {
-  APPROVER: { cta: 'Invite someone', href: '/admin/employees/invite' },
+  APPROVER: { cta: 'Invite someone', href: '/users/invite' },
   CATEGORIES: { cta: 'Review categories', href: '/admin/expense-categories' },
   APPROVAL_FLOW: { cta: 'Review approvals', href: '/admin/approval-workflows' },
   SPEND_POLICY: { cta: 'Add a rule', href: '/admin/policy-rules' },

@@ -18,7 +18,7 @@ const routeExists = (href: string) =>
   ['app', join('app', '(app)')].some((base) => existsSync(join(ROOT, base, href, 'page.tsx')));
 
 const SCREEN: Record<(typeof SETUP_ITEMS)[number], string> = {
-  APPROVER: '/admin/employees/invite',
+  APPROVER: '/users/invite',
   CATEGORIES: '/admin/expense-categories',
   APPROVAL_FLOW: '/admin/approval-workflows',
   SPEND_POLICY: '/admin/policy-rules',

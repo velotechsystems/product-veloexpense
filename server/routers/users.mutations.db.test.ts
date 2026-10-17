@@ -15,9 +15,7 @@ import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
  *   · a status that means leaving stamps `deleted_at` through `update`, so the person stops
  *     being a member (and a seat), and setting them back clears it;
  *   · writing first and last name recomposes `display_name` (0072's trigger);
- *   · an external id already held in the tenant is refused naming its holder;
- *   · `create` (People 3) sends an invitation and makes nobody; somebody already here is
- *     reported, not invited again.
+ *   · an external id already held in the tenant is refused naming its holder.
  *
  * Calls go through the app router as a request does, as users.db.test.ts does. The seat
  * count's push to the platform is stubbed: it is fire-and-forget network, not this test's.
@@ -150,78 +148,6 @@ describe.skipIf(!process.env.DATABASE_URL)('users router writes (integration)', 
     // And the refused write left the leaver's aliases as they were.
     const held = await admin.query('SELECT user_id FROM user_external_id');
     expect(held.rows.map((r) => r.user_id)).toEqual([ids.manager]);
-  });
-
-  describe('create (People 3): adding a person sends an invitation', () => {
-    const mailbox = async () => {
-      const sent: Array<{ to: string; subject: string }> = [];
-      const email = await import('@/lib/notifications/email');
-      const spy = vi.spyOn(email, 'sendEmail').mockImplementation(async (msg) => {
-        sent.push(msg as (typeof sent)[number]);
-      });
-      return { sent, restore: () => spy.mockRestore() };
-    };
-
-    it('invites a new address, normalised, with the default role, and creates nobody', async () => {
-      const box = await mailbox();
-      try {
-        const out = await usersAs('boss@people-w.test').create({ email: '  New.Person@People-W.test ' });
-        expect(out).toEqual({ status: 'invited', email: 'new.person@people-w.test', resent: false });
-      } finally {
-        box.restore();
-      }
-      expect(box.sent.map((m) => m.to)).toEqual(['new.person@people-w.test']);
-      const invite = (await admin.query('SELECT email, role_id FROM invite')).rows;
-      expect(invite).toEqual([{ email: 'new.person@people-w.test', role_id: SYSTEM_ROLE_IDS.employee }]);
-      // Their row is made when they accept, not now: no seat is taken by asking.
-      expect(
-        (await admin.query(`SELECT count(*)::int AS n FROM app_user WHERE email = 'new.person@people-w.test'`)).rows[0].n,
-      ).toBe(0);
-      expect(
-        (await admin.query(`SELECT action FROM audit_entry WHERE action LIKE 'INVITE_%'`)).rows.map((r) => r.action),
-      ).toEqual(['INVITE_SENT']);
-    });
-
-    it('says so when the address was already invited', async () => {
-      const box = await mailbox();
-      try {
-        await usersAs('boss@people-w.test').create({ email: 'again@people-w.test' });
-        const second = await usersAs('boss@people-w.test').create({ email: 'again@people-w.test' });
-        expect(second).toMatchObject({ status: 'invited', resent: true });
-      } finally {
-        box.restore();
-      }
-      expect((await admin.query('SELECT count(*)::int AS n FROM invite')).rows[0].n).toBe(1);
-    });
-
-    it('reports somebody already here instead of inviting them, and whether they left', async () => {
-      const box = await mailbox();
-      try {
-        expect(await usersAs('boss@people-w.test').create({ email: 'MGR@people-w.test' })).toEqual({
-          status: 'exists',
-          userId: ids.manager,
-          deactivated: false,
-          name: 'Margaret Hamilton',
-        });
-        await usersAs('boss@people-w.test').deactivate({ id: ids.leaver });
-        expect(await usersAs('boss@people-w.test').create({ email: 'leaver@people-w.test' })).toMatchObject({
-          status: 'exists',
-          userId: ids.leaver,
-          deactivated: true,
-        });
-      } finally {
-        box.restore();
-      }
-      expect(box.sent).toEqual([]);
-      expect((await admin.query('SELECT count(*)::int AS n FROM invite')).rows[0].n).toBe(0);
-    });
-
-    it('refuses somebody without the permission to add people', async () => {
-      await expect(usersAs('mgr@people-w.test').create({ email: 'x@people-w.test' })).rejects.toMatchObject({
-        code: 'FORBIDDEN',
-      });
-      expect((await admin.query('SELECT count(*)::int AS n FROM invite')).rows[0].n).toBe(0);
-    });
   });
 
   it("changes a person's role, refusing the last admin's own demotion", async () => {

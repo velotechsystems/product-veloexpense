@@ -10,6 +10,7 @@
     "self": "Just me"
   },
   "addUser": "Add user",
+  "pendingInvites": "{count} invited",
   "comingSoon": "Not available yet",
   "search": {
     "placeholder": "Search by name or email…",
@@ -166,18 +167,6 @@
     "selected": "Selected {n}",
     "loading": "Loading…",
     "endOfList": "End of list"
-  },
-  "add": {
-    "title": "Add user",
-    "description": "Enter their work email. We send them an invitation; they appear here once they accept it by signing in with that address.",
-    "emailLabel": "Work email",
-    "emailPlaceholder": "name@company.com",
-    "submit": "Send invitation",
-    "adding": "Sending…",
-    "exists": "{name} is already in the directory.",
-    "existsDeactivated": "{name} is already in the directory, deactivated. Reactivate them rather than adding them again.",
-    "invited": "Invitation sent to {email}. They appear here once they accept it.",
-    "reinvited": "{email} already had an invitation waiting. A fresh one has been sent, and the old link no longer works."
   },
   "access": {
     "granted": "Can sign in",

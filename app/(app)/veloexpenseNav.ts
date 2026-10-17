@@ -10,7 +10,6 @@ import {
   IconPalette,
   IconSend,
   IconShieldCheck,
-  IconUsers,
   type Icon as TablerIcon,
 } from '@tabler/icons-react';
 
@@ -152,7 +151,8 @@ export const VELOEXPENSE_ITEMS: Readonly<Record<string, readonly VeloExpenseNavI
     },
   ],
   administration: [
-    { key: 'employees', icon: IconUsers, to: '/admin/employees', requires: VELOEXPENSE_ADMIN },
+    // People 4: no `employees` item. /admin/employees retired; People (/users) is in the
+    // ported nav, and its invite form and pending list sit under it.
     { key: 'chartOfAccounts', icon: IconListNumbers, to: '/admin/chart-of-accounts', requires: VELOEXPENSE_ADMIN },
     { key: 'ledgerQueue', icon: IconBook, to: '/admin/ledger-queue', requires: VELOEXPENSE_ADMIN },
     { key: 'branding', icon: IconPalette, to: '/admin/branding', requires: VELOEXPENSE_ADMIN },

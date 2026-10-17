@@ -94,7 +94,6 @@ describe("an admin's menu", () => {
         '/admin/analytics',
         '/admin/budgets',
         '/admin/compliance',
-        '/admin/employees',
         '/admin/chart-of-accounts',
         '/admin/ledger-queue',
         '/admin/branding',

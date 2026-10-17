@@ -57,7 +57,7 @@ test.describe('as an admin', () => {
     const id = rows[0].id as string;
 
     // The invite form gives the tenant's roles by name (w4-10b), the new one among them.
-    await page.goto('/admin/employees/invite');
+    await page.goto('/users/invite');
     await expect(page.getByLabel('Role').locator('option', { hasText: NAME })).toHaveCount(1);
 
     await page.goto('/admin/roles');

@@ -130,6 +130,22 @@ async function employeeDeactivated() {
     .toBe(true);
 }
 
+/**
+ * Deactivate `employee@demo.test` through People, the way an admin does since People 4
+ * retired `/admin/employees`: tick the row, then Deactivate from the selection's actions.
+ * That runs `users.deactivate`, which pushes the seat count after its transaction commits.
+ */
+async function deactivateEmployeeThroughPeople(page: import('@playwright/test').Page) {
+  await page.goto('/users');
+  const row = page.getByRole('row').filter({ hasText: 'Demo Employee' }).first();
+  await expect(row).toBeVisible({ timeout: 30_000 });
+  await row.getByRole('checkbox', { name: 'Select row' }).check();
+  await page.getByRole('button', { name: /1 selected/ }).click();
+  // By text: the bulk menu's items are not exposed as `menuitem` (as ExpenseOS's own
+  // People spec notes of its row menus).
+  await page.getByText('Deactivate', { exact: true }).click();
+}
+
 async function employeeIsActive() {
   await withAdminPool((pool) =>
     pool.query(
@@ -198,11 +214,10 @@ test.describe('the seat count reaches the platform', () => {
 
     await resetPlatformSink(request);
 
-    // Deactivate somebody through the real screen. `employee@demo.test` is the
-    // seed's plain employee and is nobody's manager, so no reassignment is needed.
-    await page.goto('/admin/employees');
-    await page.getByRole('link', { name: /Demo Employee/i }).click();
-    await page.getByRole('button', { name: /Deactivate/i }).click();
+    // Deactivate somebody through the real screen (People, since People 4).
+    // `employee@demo.test` is the seed's plain employee and is nobody's manager, so the
+    // router's "reassign their reports first" refusal does not apply.
+    await deactivateEmployeeThroughPeople(page);
 
     const reports = await waitForSeatReports(request, 1);
     const [pushed] = reports;
@@ -223,17 +238,18 @@ test.describe('the seat count reaches the platform', () => {
     // as it does when the platform is healthy — that is the claim
     // `lib/billing/seats.ts` makes at length, and it would be embarrassing to
     // have wrong.
-    await page.goto('/admin/employees');
-    await page.getByRole('link', { name: /Demo Employee/i }).click();
-    await page.getByRole('button', { name: /Deactivate/i }).click();
+    await deactivateEmployeeThroughPeople(page);
     await employeeDeactivated();
 
     // The product succeeded. No error banner, and the person is gone from the
-    // directory — which is what deactivation means here, since `listEmployees`
-    // hides deactivated people by default.
+    // directory — which is what deactivation means here, since People opens on
+    // "Current employees", which leaves deactivated people out.
     await expect(page.getByText(/something went wrong/i)).toHaveCount(0);
-    await page.goto('/admin/employees');
-    await expect(page.getByRole('link', { name: /Demo Employee/i })).toHaveCount(0);
+    await page.goto('/users');
+    await expect(page.getByRole('row').filter({ hasText: 'Demo Admin' }).first()).toBeVisible({
+      timeout: 30_000,
+    });
+    await expect(page.getByRole('row').filter({ hasText: 'Demo Employee' })).toHaveCount(0);
 
     // And the refused push left nothing behind. The sink discards a refused
     // report, so an empty list here is the refusal having been swallowed exactly
