@@ -244,8 +244,8 @@ export interface BuildColumnsArgs {
   onEdit: (user: PeopleRow) => void;
   /** Opens the existing detail drawer from the row kebab's 'View'. */
   onView: (user: PeopleRow) => void;
-  /** NetSuite integration active — gates the NetSuite Class column. */
-  netsuiteActive: boolean;
+  /** The accounting integration's class dimension is on — gates the Class column (ExpenseOS: `netsuiteActive`). */
+  accountingClassActive: boolean;
 }
 
 export function buildPeopleColumns({
@@ -265,7 +265,7 @@ export function buildPeopleColumns({
   canEdit,
   onEdit,
   onView,
-  netsuiteActive,
+  accountingClassActive,
 }: BuildColumnsArgs): ColumnDef<PeopleRow, PeopleColumnId>[] {
   return [
     {
@@ -337,7 +337,7 @@ export function buildPeopleColumns({
       ),
     },
     // NetSuite Class — only when the NetSuite integration is active.
-    ...(netsuiteActive
+    ...(accountingClassActive
       ? [
           {
             id: 'nsClass' as const,

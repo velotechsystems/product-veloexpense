@@ -61,8 +61,13 @@ interface UserDetailDrawerProps {
    * the SERVER gates the mutation regardless. This only decides whether the button is drawn.
    */
   canSetAccess?: boolean;
-  /** Whether the viewer may rule on a People ↔ NetSuite disagreement (shows the review link). */
-  canReviewSync?: boolean;
+  /**
+   * Where the integration's People review lives (ExpenseOS: `/netsuite/people`), for a viewer
+   * who may rule on a People ↔ integration disagreement; absent, there is no review link.
+   * VeloExpense: a path handed in rather than a vendor route written here
+   * (scripts/check-vendor-neutral.mjs) — Wave 5's integration supplies it.
+   */
+  syncReviewPath?: string;
 }
 
 export function UserDetailDrawer({
@@ -71,7 +76,7 @@ export function UserDetailDrawer({
   locale,
   onOpenUser,
   canSetAccess = false,
-  canReviewSync = false,
+  syncReviewPath,
 }: UserDetailDrawerProps) {
   const tStatus = useTranslations('people.status');
   const tCols = useTranslations('people.columns');
@@ -134,7 +139,7 @@ export function UserDetailDrawer({
             tAccess={tAccess}
             locale={locale}
             canSetAccess={canSetAccess}
-            canReviewSync={canReviewSync}
+            syncReviewPath={syncReviewPath}
             settingAccess={setAccess.isPending}
             onSetAccess={(hasAccess) =>
               userQuery.data && setAccess.mutate({ id: userQuery.data.id, hasAccess })
@@ -161,7 +166,7 @@ function DrawerContents({
   locale,
   onOpenUser,
   canSetAccess,
-  canReviewSync = false,
+  syncReviewPath,
   onSetAccess,
   settingAccess,
 }: {
@@ -174,7 +179,7 @@ function DrawerContents({
   tAccess: ReturnType<typeof useTranslations<'people.access'>>;
   locale: Locale;
   canSetAccess: boolean;
-  canReviewSync?: boolean;
+  syncReviewPath?: string;
   onSetAccess: (hasAccess: boolean) => void;
   settingAccess: boolean;
   onOpenUser?: (id: string) => void;
@@ -372,9 +377,9 @@ function DrawerContents({
                   ))}
                 </ul>
                 <p className="mt-2 text-muted-foreground text-xs">{tSync('explain')}</p>
-                {canReviewSync && (
+                {syncReviewPath && (
                   <LocaleLink
-                    href={`/netsuite/people?q=${encodeURIComponent(user.email)}`}
+                    href={`${syncReviewPath}?q=${encodeURIComponent(user.email)}`}
                     className="mt-2 inline-block text-primary text-sm underline-offset-4 hover:underline"
                   >
                     {tSync('review')}

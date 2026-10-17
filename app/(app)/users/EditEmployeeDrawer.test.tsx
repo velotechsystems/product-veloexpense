@@ -499,7 +499,7 @@ describe('People ↔ NetSuite notice', () => {
     const contested = person({
       syncDiscrepancies: [{ field: 'DEPARTMENT', divergesFromDirectory: false }],
     });
-    render(<EditEmployeeDrawer user={contested} onClose={onClose} canReviewSync />);
+    render(<EditEmployeeDrawer user={contested} onClose={onClose} syncReviewPath="/netsuite/people" />);
     const notice = screen.getByTestId('people-sync-notice');
     expect(notice).toHaveTextContent('people.sync.editNotice');
     expect(notice).toHaveTextContent('people.sync.field.DEPARTMENT');

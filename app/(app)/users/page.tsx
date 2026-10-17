@@ -63,10 +63,10 @@ export default async function PeoplePage() {
       isAdmin={isAdmin}
       canSetRole={canSetRole}
       canEdit={canEdit}
-      // VeloExpense: no NetSuite until Wave 5 (w5-03), no virtual cards (out of scope).
-      netsuiteActive={false}
+      // VeloExpense: no NetSuite until Wave 5 (w5-03), so no Class column and no sync-review
+      // link (`syncReviewPath` unset); no virtual cards (out of scope).
+      accountingClassActive={false}
       vccActive={false}
-      canReviewSync={false}
     />
   );
 }

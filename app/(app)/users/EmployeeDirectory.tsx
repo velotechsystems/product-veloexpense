@@ -63,12 +63,21 @@ interface EmployeeDirectoryProps {
   canSetRole: boolean;
   /** Whether the viewer holds P.user.update (enables the Edit action). */
   canEdit: boolean;
-  /** NetSuite integration active — gates the NetSuite Class column. */
-  netsuiteActive: boolean;
+  /**
+   * The accounting integration's class dimension is on — gates the Class column (ExpenseOS:
+   * `accountingClassActive`, the NetSuite Class). VeloExpense: named for what it gates, not the vendor
+   * (scripts/check-vendor-neutral.mjs).
+   */
+  accountingClassActive: boolean;
   /** Virtual-cards module active — gates the VCC section in the detail drawer. */
   vccActive: boolean;
-  /** Whether the viewer may rule on People ↔ NetSuite disagreements (shows the review link). */
-  canReviewSync?: boolean;
+  /**
+   * Where the integration's People review lives (ExpenseOS: `/netsuite/people`), for a viewer
+   * who may rule on a People ↔ integration disagreement; absent, there is no review link.
+   * VeloExpense: a path handed in rather than a vendor route written here
+   * (scripts/check-vendor-neutral.mjs) — Wave 5's integration supplies it.
+   */
+  syncReviewPath?: string;
 }
 
 /**
@@ -219,9 +228,9 @@ export function EmployeeDirectory({
   isAdmin,
   canSetRole,
   canEdit,
-  netsuiteActive,
+  accountingClassActive,
   vccActive,
-  canReviewSync = false,
+  syncReviewPath,
 }: EmployeeDirectoryProps) {
   const toolbarLabels = useToolbarLabels();
   const t = useTranslations('people');
@@ -332,7 +341,7 @@ export function EmployeeDirectory({
       onEdit: setEditUser,
       // 'View' was enabled and inert; the drawer it should open already existed (F40).
       onView: (u) => setDetailUserId(u.id),
-      netsuiteActive,
+      accountingClassActive,
     });
     // Plain-text export accessors, mirroring each column's rendered
     // `cell`. Kept here (not in the cells file) so the whole export
@@ -376,7 +385,7 @@ export function EmployeeDirectory({
     canSetRole,
     setAccessOne,
     canEdit,
-    netsuiteActive,
+    accountingClassActive,
     tSync,
   ]);
 
@@ -962,14 +971,14 @@ export function EmployeeDirectory({
         locale={locale}
         vccActive={vccActive}
         canSetAccess={canSetRole}
-        canReviewSync={canReviewSync}
+        syncReviewPath={syncReviewPath}
       />
 
       <SetRoleDrawer user={roleUser} onClose={() => setRoleUser(null)} />
       <EditEmployeeDrawer
         user={editUser}
         onClose={() => setEditUser(null)}
-        canReviewSync={canReviewSync}
+        syncReviewPath={syncReviewPath}
       />
       {addOpen && (
         <AddUserDialog

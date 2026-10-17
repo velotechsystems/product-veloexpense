@@ -192,7 +192,7 @@ const PROPS = {
   isAdmin: true,
   canSetRole: true,
   canEdit: true,
-  netsuiteActive: false,
+  accountingClassActive: false,
   vccActive: false,
 };
 
@@ -295,7 +295,7 @@ describe('the directory', () => {
     expect(screen.queryByText('people.columns.nsClass')).not.toBeInTheDocument();
 
     cleanup();
-    show([person()], { netsuiteActive: true });
+    show([person()], { accountingClassActive: true });
     expect(screen.getByText('people.columns.nsClass')).toBeInTheDocument();
   });
 

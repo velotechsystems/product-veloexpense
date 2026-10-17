@@ -51,16 +51,21 @@ import type { PeopleRow } from './EmployeeDirectory.cells';
 export function EditEmployeeDrawer({
   user,
   onClose,
-  canReviewSync = false,
+  syncReviewPath,
 }: {
   user: PeopleRow | null;
   onClose: () => void;
-  /** Whether the viewer may rule on a People ↔ NetSuite disagreement (shows the review link). */
-  canReviewSync?: boolean;
+  /**
+   * Where the integration's People review lives (ExpenseOS: `/netsuite/people`), for a viewer
+   * who may rule on a People ↔ integration disagreement; absent, there is no review link.
+   * VeloExpense: a path handed in rather than a vendor route written here
+   * (scripts/check-vendor-neutral.mjs) — Wave 5's integration supplies it.
+   */
+  syncReviewPath?: string;
 }) {
   return (
     <Drawer open={user !== null} onOpenChange={(o) => !o && onClose()}>
-      {user && <EditBody user={user} onClose={onClose} canReviewSync={canReviewSync} />}
+      {user && <EditBody user={user} onClose={onClose} syncReviewPath={syncReviewPath} />}
     </Drawer>
   );
 }
@@ -70,11 +75,11 @@ type OrgOption = { id: string; label: unknown };
 function EditBody({
   user,
   onClose,
-  canReviewSync,
+  syncReviewPath,
 }: {
   user: PeopleRow;
   onClose: () => void;
-  canReviewSync: boolean;
+  syncReviewPath: string | undefined;
 }) {
   const t = useTranslations('people.edit');
   const tSync = useTranslations('people.sync');
@@ -167,18 +172,18 @@ function EditBody({
       <DrawerBody className="space-y-4">
         {/* NetSuite disagrees about one of the fields below. Said here, once, because this
             is the form that would otherwise change that field without knowing it was
-            contested — the ruling itself lives on /netsuite/people. */}
+            contested — the ruling itself lives on the integration's review (`syncReviewPath`). */}
         {(user.syncDiscrepancies?.length ?? 0) > 0 && (
           <Alert data-testid="people-sync-notice">
             <AlertDescription>
               {tSync('editNotice', {
                 fields: user.syncDiscrepancies.map((d) => tSync(`field.${d.field}`)).join(', '),
               })}
-              {canReviewSync && (
+              {syncReviewPath && (
                 <>
                   {' '}
                   <LocaleLink
-                    href={`/netsuite/people?q=${encodeURIComponent(user.email)}`}
+                    href={`${syncReviewPath}?q=${encodeURIComponent(user.email)}`}
                     className="text-primary underline-offset-4 hover:underline"
                   >
                     {tSync('review')}

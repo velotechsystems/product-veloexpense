@@ -565,7 +565,7 @@ describe('People ↔ NetSuite section', () => {
 
   it('offers the review link only to somebody who may rule', () => {
     setTrpc({ user: disagreeing() });
-    show({ canReviewSync: true });
+    show({ syncReviewPath: '/netsuite/people' });
     expect(screen.getByText('people.sync.review').closest('a')?.getAttribute('href')).toBe(
       '/netsuite/people?q=dana%40e.inc',
     );
@@ -573,11 +573,11 @@ describe('People ↔ NetSuite section', () => {
 
   it('shows no link, and no section at all, when there is nothing to review', () => {
     setTrpc({ user: disagreeing() });
-    show({ canReviewSync: false });
+    show({ syncReviewPath: undefined });
     expect(screen.queryByText('people.sync.review')).not.toBeInTheDocument();
     cleanup();
     setTrpc({ user: user() });
-    show({ canReviewSync: true });
+    show({ syncReviewPath: '/netsuite/people' });
     expect(screen.queryByTestId('people-sync-section')).not.toBeInTheDocument();
   });
 });
