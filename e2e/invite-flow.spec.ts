@@ -129,7 +129,7 @@ test.describe('inviting somebody', () => {
     page,
     request,
   }) => {
-    await page.goto('/admin/employees/invite');
+    await page.goto('/users/invite');
     await expect(page.getByRole('heading', { name: 'Invite someone' })).toBeVisible();
 
     // Status is not asked for: an invited person has not arrived, so ON_LEAVE and
@@ -175,7 +175,7 @@ test.describe('inviting somebody', () => {
 
   test('withdrawing kills the link', async ({ page, request }) => {
     const email = `withdrawn-${RUN}@invite.e2e`;
-    await page.goto('/admin/employees/invite');
+    await page.goto('/users/invite');
     await page.getByLabel('Email').fill(email);
     await page.getByRole('button', { name: 'Send the invitation' }).click();
     await expect(page.getByText('Invitation sent.')).toBeVisible();
@@ -184,7 +184,7 @@ test.describe('inviting somebody', () => {
     await page.goto(link);
     await expect(page.getByRole('heading', { name: /invited to Demo Co/ })).toBeVisible();
 
-    await page.goto('/admin/employees');
+    await page.goto('/users/invitations');
     await page
       .getByRole('row', { name: new RegExp(email) })
       .getByRole('button', { name: 'Withdraw' })
@@ -199,7 +199,7 @@ test.describe('inviting somebody', () => {
   test('asking again resends rather than making a second invitation', async ({ page, request }) => {
     const email = `resend-${RUN}@invite.e2e`;
     for (let i = 0; i < 2; i += 1) {
-      await page.goto('/admin/employees/invite');
+      await page.goto('/users/invite');
       await page.getByLabel('Email').fill(email);
       await page.getByRole('button', { name: 'Send the invitation' }).click();
     }
@@ -221,7 +221,7 @@ test.describe('inviting somebody', () => {
   });
 
   test('somebody already in the directory cannot be invited again', async ({ page }) => {
-    await page.goto('/admin/employees/invite');
+    await page.goto('/users/invite');
     await page.getByLabel('Email').fill('employee@demo.test');
     await page.getByRole('button', { name: 'Send the invitation' }).click();
     await expect(page.getByTestId('error-banner')).toContainText('already in your organization');
@@ -242,7 +242,7 @@ test.describe('inviting somebody', () => {
     const email = `branded-${RUN}@invite.e2e`;
     await setDemoBranding();
 
-    await page.goto('/admin/employees/invite');
+    await page.goto('/users/invite');
     await page.getByLabel('Email').fill(email);
     await page.getByRole('button', { name: 'Send the invitation' }).click();
     await expect(page.getByText('Invitation sent.')).toBeVisible();
@@ -284,12 +284,12 @@ test.describe('inviting somebody', () => {
   }) => {
     const email = `dead-brand-${RUN}@invite.e2e`;
     await setDemoBranding();
-    await page.goto('/admin/employees/invite');
+    await page.goto('/users/invite');
     await page.getByLabel('Email').fill(email);
     await page.getByRole('button', { name: 'Send the invitation' }).click();
     const link = await waitForInviteLink(request, email);
 
-    await page.goto('/admin/employees');
+    await page.goto('/users/invitations');
     await page
       .getByRole('row', { name: new RegExp(email) })
       .getByRole('button', { name: 'Withdraw' })
@@ -334,24 +334,23 @@ test.describe('inviting somebody', () => {
     }
   });
 
-  test('the old create-an-employee page is gone, not merely unlinked', async ({ page }) => {
-    // It was the second door: it wrote an `app_user` row, which IS the grant of
-    // access. A route left in place and taken off the nav is still a route.
+  test('the old employee screens are gone, not merely unlinked', async ({ page }) => {
+    // `/admin/employees/new` was the second door: it wrote an `app_user` row, which IS the
+    // grant of access. A route left in place and taken off the nav is still a route.
     //
-    // This asserted 404 and got 500 on its first run, which turned out to be a
-    // defect older than this ticket: with the static route gone the path falls
-    // through to `/admin/employees/[employeeId]` with the id `new`, and Postgres
-    // answered `invalid input syntax for type uuid`. Any hand-edited id in that
-    // URL had done the same since VX1-2 — the static route was hiding it.
-    // `getEmployee` now treats a non-uuid id as not found; see its comment.
-    const res = await page.goto('/admin/employees/new');
-    expect(res!.status(), '/admin/employees/new must not exist').toBe(404);
-  });
-
-  test('a hand-edited employee id is not found, rather than a 500', async ({ page }) => {
-    for (const id of ['not-a-uuid', '../../etc', '1', '%20']) {
-      const res = await page.goto(`/admin/employees/${id}`);
-      expect(res!.status(), `/admin/employees/${id} should be a 404`).toBe(404);
+    // People 4 retired the rest of that screen too — the list, the invite form (now
+    // `/users/invite`) and the per-person page, whose edits wrote no audit row. The ids
+    // below once fell through to `/admin/employees/[employeeId]` and answered 500 on a
+    // non-uuid (fixed in `getEmployee`); with the route gone they are 404 like the rest.
+    for (const path of [
+      '/admin/employees',
+      '/admin/employees/invite',
+      '/admin/employees/new',
+      '/admin/employees/not-a-uuid',
+      '/admin/employees/019e3000-0000-7000-8000-000000000004',
+    ]) {
+      const res = await page.goto(path);
+      expect(res!.status(), `${path} must not exist`).toBe(404);
     }
   });
 });

@@ -61,9 +61,11 @@ const PAGES = [
   // People 3: ExpenseOS's People directory. Every member may open it — what they see is
   // scoped (themselves and their reporting chain; everyone for an admin), so not ADMIN_ONLY.
   '/users',
+  // People 4: the invite form and the pending invitations, moved from /admin/employees.
+  // Admin only (see ADMIN_ONLY).
+  '/users/invite',
+  '/users/invitations',
   '/admin/modules',
-  '/admin/employees',
-  '/admin/employees/invite',
   '/admin/budgets',
   '/admin/chart-of-accounts',
   '/admin/compliance',
@@ -110,8 +112,8 @@ const PAGES = [
  *   `/signup`, `/signup/verify`, `/invite/accept` — same reason: reached with no
  *                   session, from a link in a mailbox. `signup-flow.spec.ts` and
  *                   `invite-flow.spec.ts` own them.
- *   `/expenses/[reportId]`, `/admin/employees/[employeeId]` — need an id, so
- *                   they are crawled below from what each role can actually see,
+ *   `/expenses/[reportId]` — needs an id, so
+ *                   reports are crawled below from what each role can actually see,
  *                   which is a better test than a fixture id anyway.
  */
 
@@ -127,7 +129,12 @@ const ROLES = [
 
 // w2-06: `/expenses/all` too. It crosses submitters, so it needs `expense.report.read.all`
 // or `expense.report.reimburse` — held by the admin role and by neither of the others.
-const ADMIN_ONLY = (path: string) => path.startsWith('/admin/') || path === '/expenses/all';
+// People 4: `/users` is every member's, but inviting is an admin's.
+const ADMIN_ONLY = (path: string) =>
+  path.startsWith('/admin/') ||
+  path === '/expenses/all' ||
+  path === '/users/invite' ||
+  path === '/users/invitations';
 
 /**
  * ── WHAT THIS SPEC FOUND ON ITS FIRST RUN, AND WHAT VX4-9 DID ABOUT IT ─────

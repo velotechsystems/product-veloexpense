@@ -190,6 +190,9 @@ export const UI_COPY = {
   'title.expenses': { 'en-CA': 'Expense reports' },
   // People 3: ExpenseOS's directory (/users), named as ExpenseOS's menu names it.
   'title.people': { 'en-CA': 'People' },
+  // People 4: the invite form and the pending list, moved from /admin/employees.
+  'title.people.invite': { 'en-CA': 'Invite someone' },
+  'title.people.invitations': { 'en-CA': 'Invitations' },
   // The fallback when a report cannot be named — see `dataTitle`. A report's own
   // title is the CUSTOMER's words and is never catalogued.
   'title.expenses.report': { 'en-CA': 'Expense report' },
@@ -224,11 +227,8 @@ export const UI_COPY = {
   'title.admin.policy.rules': { 'en-CA': 'Policy rules' },
   'title.admin.policy.violations': { 'en-CA': 'Policy violations' },
   'title.admin.policies': { 'en-CA': 'Expense policies' },
-  'title.admin.employees': { 'en-CA': 'Employees' },
-  'title.admin.employees.invite': { 'en-CA': 'Invite someone' },
   // Fallback for the employee detail page, which titles itself by the person's
   // name. Same rule as a report title.
-  'title.admin.employees.one': { 'en-CA': 'Employee' },
   'title.admin.integrations': { 'en-CA': 'Accounting integrations' },
   'title.admin.legal.entities': { 'en-CA': 'Legal entities' },
   'title.admin.ledger.queue': { 'en-CA': 'Ledger queue' },

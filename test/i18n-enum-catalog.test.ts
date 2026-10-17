@@ -34,7 +34,6 @@ import {
   CONTROL_RUN_STATUS_COPY,
   CONTROL_SEVERITY_COPY,
   DELEGATION_SCOPE_COPY,
-  EMPLOYEE_STATUS_COPY,
   EVENT_TYPE_COPY,
   FRAUD_FLAG_STATUS_COPY,
   FRAUD_SEVERITY_COPY,
@@ -47,7 +46,6 @@ import {
 
 /* The runtime arrays, from the modules that OWN each enum. */
 import { REPORT_STATUSES } from '@/lib/expenses/service';
-import { ALL_EMPLOYEE_STATUSES } from '@/lib/employees/service';
 import { CHANNELS, EVENT_TYPES } from '@/lib/notifications/catalog';
 import { CAPABILITIES } from '@/lib/integrations/contract';
 import { POST_STATUSES } from '@/lib/integrations/post-outbox';
@@ -80,7 +78,6 @@ const CATALOGUES: {
   { name: 'ReportStatus', members: REPORT_STATUSES, copy: REPORT_STATUS_COPY, fromArray: true },
   // w4-10b: EmployeeRole left with the text role (0069); a role is a row with its own label.
   // People 1: every value the column holds (TERMINATED, 0072), not only the old form's.
-  { name: 'EmployeeStatus', members: ALL_EMPLOYEE_STATUSES, copy: EMPLOYEE_STATUS_COPY, fromArray: true },
   // w4-02d: `Severity`, `RuleKind` and the rule descriptions went with VeloExpense's v1 policy
   // engine; ExpenseOS's are next-intl copy (`policyRules.*`).
   { name: 'Channel', members: CHANNELS, copy: CHANNEL_COPY, fromArray: true },
@@ -155,7 +152,6 @@ describe('every rendered enum member has copy, in every locale we ship', () => {
     // into the catalogue-vs-catalogue comparison UD-5 req 2 forbids.
     const owned: Record<string, readonly string[]> = {
       ReportStatus: REPORT_STATUSES,
-      EmployeeStatus: ALL_EMPLOYEE_STATUSES,
       Channel: CHANNELS,
       EventType: EVENT_TYPES,
       Capability: CAPABILITIES,

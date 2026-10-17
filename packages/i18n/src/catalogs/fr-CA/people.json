@@ -10,6 +10,7 @@
     "self": "Moi seul"
   },
   "addUser": "Ajouter un utilisateur",
+  "pendingInvites": "{count, plural, one {# invitation en attente} other {# invitations en attente}}",
   "comingSoon": "Pas encore disponible",
   "search": {
     "placeholder": "Rechercher par nom ou courriel…",
@@ -166,18 +167,6 @@
     "selected": "Sélectionné {n}",
     "loading": "Chargement…",
     "endOfList": "Fin de la liste"
-  },
-  "add": {
-    "title": "Ajouter un utilisateur",
-    "description": "Saisissez son adresse courriel professionnelle. Nous lui envoyons une invitation; la personne apparaît ici dès qu’elle l’accepte en se connectant avec cette adresse.",
-    "emailLabel": "Courriel professionnel",
-    "emailPlaceholder": "nom@entreprise.com",
-    "submit": "Envoyer l’invitation",
-    "adding": "Envoi…",
-    "exists": "{name} est déjà dans le répertoire.",
-    "existsDeactivated": "{name} est déjà dans le répertoire, mais désactivé. Réactivez cette personne plutôt que de l’ajouter de nouveau.",
-    "invited": "Invitation envoyée à {email}. La personne apparaîtra ici dès qu’elle l’aura acceptée.",
-    "reinvited": "{email} avait déjà une invitation en attente. Une nouvelle a été envoyée, et l’ancien lien ne fonctionne plus."
   },
   "access": {
     "granted": "Peut se connecter",

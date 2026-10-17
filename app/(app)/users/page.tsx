@@ -1,6 +1,9 @@
 import { permissions as P } from '@expenseos/rbac';
 import { forbidden } from 'next/navigation';
-import { withTenantDb } from '@/lib/db/prisma';
+import { VELOEXPENSE_ADMIN_PERMISSION } from '@/lib/auth/actor';
+import { type TenantDb, withTenantDb } from '@/lib/db/prisma';
+import { queryRunnerOf } from '@/lib/db/prisma-pg-bridge';
+import { countLiveInvites } from '@/lib/invites/service';
 import { pageTitle } from '@/lib/i18n/page-title';
 import type { DirectoryScope } from '@/server/lib/userScope';
 import { shellContext } from '@/server/shell';
@@ -37,9 +40,14 @@ export default async function PeoplePage() {
   const isAdmin = rbac.permissions.includes(P.user.readAll);
   const canSetRole = rbac.permissions.includes(P.user.setRole);
   const canEdit = rbac.permissions.includes(P.user.update);
-  const reportCount = await withTenantDb(user.organizationId, (tx) =>
-    tx.user.count({ where: { managerId: rbac.id, deletedAt: null } }),
-  );
+  // VeloExpense: inviting needs VeloExpense's admin permission (the invite actions'
+  // `asAdmin`), so Add user and the pending count are offered on that, not on `readAll`.
+  const canInvite = (rbac.permissions as readonly string[]).includes(VELOEXPENSE_ADMIN_PERMISSION);
+  const [reportCount, pendingInviteCount] = await withTenantDb(user.organizationId, async (tx) => [
+    await tx.user.count({ where: { managerId: rbac.id, deletedAt: null } }),
+    // Live only, counted as the list it links to lists them (lib/invites/service.ts).
+    canInvite ? await countLiveInvites(queryRunnerOf(tx as TenantDb)) : 0,
+  ]);
   const hasReports = reportCount > 0;
 
   // Available scopes shown as chips:
@@ -67,6 +75,8 @@ export default async function PeoplePage() {
       // link (`syncReviewPath` unset); no virtual cards (out of scope).
       accountingClassActive={false}
       vccActive={false}
+      canInvite={canInvite}
+      pendingInviteCount={pendingInviteCount}
     />
   );
 }

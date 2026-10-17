@@ -40,6 +40,8 @@ const h = vi.hoisted(() => ({
   fetchNextPage: vi.fn(),
   /** What the export menu handed to the browser. */
   downloads: [] as Array<{ filename: string; csv: string }>,
+  /** VeloExpense: what the page put in the top bar's right slot, captured to render it. */
+  topBarRight: null as React.ReactNode,
 }));
 
 /** One stable `t` per namespace: an unstable identity re-runs memos and effects. */
@@ -63,7 +65,13 @@ vi.mock('next-intl', () => ({
   },
 }));
 
-vi.mock('../TopBar', () => ({ useTopBarSlots: () => {} }));
+// VeloExpense: captures the right slot (Add user and the invitations link) so it can be
+// rendered and asserted on; ExpenseOS's mock discarded it.
+vi.mock('../TopBar', () => ({
+  useTopBarSlots: (make: () => { right?: React.ReactNode }) => {
+    h.topBarRight = make().right ?? null;
+  },
+}));
 // The export menu's real builder runs; only the browser download is intercepted, so the
 // assertions read the actual CSV the accessors produced.
 vi.mock('@/lib/exportCsv', async (importOriginal) => ({
@@ -194,6 +202,7 @@ const PROPS = {
   canEdit: true,
   accountingClassActive: false,
   vccActive: false,
+  canInvite: true,
 };
 
 type DirectoryProps = React.ComponentProps<typeof EmployeeDirectory>;
@@ -1252,5 +1261,44 @@ describe('People ↔ NetSuite badge', () => {
   it('shows nothing when the two systems agree', () => {
     show([person()]);
     expect(screen.queryByTestId('people-sync-badge')).not.toBeInTheDocument();
+  });
+});
+
+// ── VeloExpense: Add user and the invitations link ────────────────────────────
+
+/**
+ * Decided 17 Oct 2026: Add user opens the invite form at /users/invite (role, manager and the
+ * rest set before the person arrives) instead of ExpenseOS's email-only dialog, and the
+ * invitations still waiting are one click away beside it.
+ */
+describe('Add user and pending invitations (VeloExpense)', () => {
+  const topBar = () => render(<>{h.topBarRight}</>);
+
+  it('sends an admin to the invite form', () => {
+    show();
+    cleanup();
+    topBar();
+    expect(screen.getByRole('link', { name: 'people.addUser' }).getAttribute('href')).toBe('/users/invite');
+  });
+
+  it('links to the invitations still waiting, with their count', () => {
+    show([person()], { pendingInviteCount: 3 });
+    cleanup();
+    topBar();
+    expect(screen.getByRole('link', { name: 'people.pendingInvites:3' }).getAttribute('href')).toBe(
+      '/users/invitations',
+    );
+  });
+
+  it('offers no invitations link when none are waiting', () => {
+    show([person()], { pendingInviteCount: 0 });
+    cleanup();
+    topBar();
+    expect(screen.queryByRole('link', { name: /pendingInvites/ })).not.toBeInTheDocument();
+  });
+
+  it('offers neither to somebody who may not invite, even one who reads everybody', () => {
+    show([person()], { isAdmin: true, canInvite: false, pendingInviteCount: 3 });
+    expect(h.topBarRight).toBeNull();
   });
 });

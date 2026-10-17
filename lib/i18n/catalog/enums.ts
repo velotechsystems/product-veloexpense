@@ -42,7 +42,6 @@
  * page. "This report is REIMBURSED and can no longer be edited" was on a screen
  * an employee reads.
  */
-import type { EmployeeStatus } from '@/lib/employees/service';
 import type { ReportStatus } from '@/lib/expenses/service';
 import type { PostStatus } from '@/lib/integrations/post-outbox';
 import type { FraudSeverity } from '@/lib/fraud/rules';
@@ -100,13 +99,8 @@ export const DELEGATION_SCOPE_COPY: EnumCopy<DelegationScope> = {
 
 // w4-10b: no role copy here any more — a role is a row with its own label (0068).
 
-export const EMPLOYEE_STATUS_COPY: EnumCopy<EmployeeStatus> = {
-  ACTIVE: { 'en-CA': 'Active' },
-  ON_LEAVE: { 'en-CA': 'On leave' },
-  DEACTIVATED: { 'en-CA': 'Deactivated' },
-  // People 1 (0072): ExpenseOS's fourth status.
-  TERMINATED: { 'en-CA': 'Terminated' },
-};
+// People 4: no EMPLOYEE_STATUS_COPY. Its readers were /admin/employees' badge and filter,
+// retired with that screen; People labels statuses from its own catalog (`people.status.*`).
 
 /* ── the ledger queue ─────────────────────────────────────────────────────── */
 

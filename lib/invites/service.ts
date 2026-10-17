@@ -291,6 +291,22 @@ function escapeHtml(s: string): string {
 
 /** The pending list an admin sees. Live only — accepted invites are people now,
  *  and revoked ones are a decision already taken. */
+/**
+ * How many invitations are live — the same rows `listLiveInvites` returns, counted. People 4:
+ * People's header shows it as a link to the list, so the two share one definition of "live".
+ */
+export async function countLiveInvites(tx: QueryRunner): Promise<number> {
+  const r = await tx.query(
+    `SELECT count(*)::int AS n FROM invite i
+      WHERE ${LIVE_INVITE}`,
+  );
+  return r.rows[0].n as number;
+}
+
+/** A live invitation: not accepted, not withdrawn, not expired. */
+const LIVE_INVITE =
+  'i.accepted_at IS NULL AND i.revoked_at IS NULL AND i.expires_at > clock_timestamp()';
+
 export async function listLiveInvites(tx: QueryRunner): Promise<InviteRow[]> {
   const r = await tx.query(
     `SELECT i.id, i.email, i.role_id, r.label ->> 'en' AS role_name, i.display_name,
@@ -299,8 +315,7 @@ export async function listLiveInvites(tx: QueryRunner): Promise<InviteRow[]> {
        FROM invite i
        LEFT JOIN role r ON r.organization_id = i.organization_id AND r.id = i.role_id
        LEFT JOIN app_user u ON u.id = i.invited_by_id
-      WHERE i.accepted_at IS NULL AND i.revoked_at IS NULL
-        AND i.expires_at > clock_timestamp()
+      WHERE ${LIVE_INVITE}
       ORDER BY i.created_at DESC`,
   );
   return r.rows.map((row) => ({

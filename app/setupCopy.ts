@@ -14,7 +14,8 @@ export const SETUP_COPY: Record<SetupItem, { title: string; why: string; href: s
     // submitted in a tenant of one: the submitter would be the only eligible
     // approver, and self-approval is off by default and stays off.
     why: 'Nothing can be submitted while you are the only person here — an expense report cannot be approved by the person who filed it.',
-    href: '/admin/employees/invite',
+    // People 4: the invite form, under People since /admin/employees retired.
+    href: '/users/invite',
     cta: 'Invite someone',
   },
   CATEGORIES: {

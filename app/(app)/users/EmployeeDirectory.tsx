@@ -3,23 +3,15 @@
 /*
  * The People directory (/users). Ported from ExpenseOS (1e682dd6), People 3; each change is
  * marked "VeloExpense:". In short: no MFA column and no Reset password (Google sign-in only),
- * access is `hasAccess`, and Add user sends an invitation (decided 16 Oct 2026).
+ * access is `hasAccess`, and Add user opens the invite form (decided 17 Oct 2026).
  */
 
 import {
-  Alert,
-  AlertDescription,
   Button,
   type ColumnFilter,
   DataTableToolbar,
   type Density,
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
   externalIdEntries,
-  Input,
   TableSettingsButton,
 } from '@expenseos/design-system';
 import { getLocalized } from '@expenseos/i18n';
@@ -46,6 +38,7 @@ import {
   ViewsBar,
 } from '@/components/data-view';
 import { EMPLOYEE_STATUSES, type EmployeeStatus } from '@/lib/employeeStatus';
+import { Link as LocaleLink } from '@/i18n/navigation';
 import { trpc } from '@/lib/trpc/client';
 import type { DirectoryScope } from '@/server/lib/userScope';
 import { useTopBarSlots } from '../TopBar';
@@ -78,6 +71,16 @@ interface EmployeeDirectoryProps {
    * (scripts/check-vendor-neutral.mjs) — Wave 5's integration supplies it.
    */
   syncReviewPath?: string;
+  /**
+   * VeloExpense: invitations sent and not yet accepted, shown beside Add user as a link to
+   * /users/invitations. Counted for admins only; 0 hides it.
+   */
+  pendingInviteCount?: number;
+  /**
+   * VeloExpense: may send and withdraw invitations — VeloExpense's admin permission, which
+   * the invite form's server actions require (`asAdmin`). Gates Add user and the link.
+   */
+  canInvite?: boolean;
 }
 
 /**
@@ -231,6 +234,8 @@ export function EmployeeDirectory({
   accountingClassActive,
   vccActive,
   syncReviewPath,
+  pendingInviteCount = 0,
+  canInvite = false,
 }: EmployeeDirectoryProps) {
   const toolbarLabels = useToolbarLabels();
   const t = useTranslations('people');
@@ -258,7 +263,6 @@ export function EmployeeDirectory({
   const [detailUserId, setDetailUserId] = useState<string | null>(null);
   const [roleUser, setRoleUser] = useState<PeopleRow | null>(null);
   const [editUser, setEditUser] = useState<PeopleRow | null>(null);
-  const [addOpen, setAddOpen] = useState(false);
   const utils = trpc.useUtils();
 
   // Grant / revoke sign-in from a row's menu. `mutate` is stable, so the column memo below
@@ -787,13 +791,27 @@ export function EmployeeDirectory({
   // ─── TopBar ───────────────────────────────────────────────────
   useTopBarSlots(
     () => ({
-      right: isAdmin ? (
-        <Button variant="default" size="sm" onClick={() => setAddOpen(true)}>
-          {t('addUser')}
-        </Button>
+      // VeloExpense: Add user opens the invite form (/users/invite), which sets the person's
+      // role and manager before they arrive, where ExpenseOS opens an email-only dialog
+      // (decided 17 Oct 2026). Beside it, the invitations still waiting, when there are any.
+      // Shown to whoever may invite (`canInvite`) rather than to every `readAll` holder, since
+      // the invite form refuses anybody else.
+      right: canInvite ? (
+        <div className="flex items-center gap-2">
+          {pendingInviteCount > 0 && (
+            <Button asChild variant="outline" size="sm">
+              <LocaleLink href="/users/invitations">
+                {t('pendingInvites', { count: pendingInviteCount })}
+              </LocaleLink>
+            </Button>
+          )}
+          <Button asChild variant="default" size="sm">
+            <LocaleLink href="/users/invite">{t('addUser')}</LocaleLink>
+          </Button>
+        </div>
       ) : null,
     }),
-    [isAdmin, t],
+    [canInvite, pendingInviteCount, t],
   );
 
   // ─── Reset for ColumnsGear ────────────────────────────────────
@@ -980,107 +998,7 @@ export function EmployeeDirectory({
         onClose={() => setEditUser(null)}
         syncReviewPath={syncReviewPath}
       />
-      {addOpen && (
-        <AddUserDialog
-          onClose={() => setAddOpen(false)}
-          onAdded={() => void utils.users.listDirectory.invalidate()}
-        />
-      )}
     </div>
-  );
-}
-
-/**
- * Add one person from an email address alone.
- *
- * Every profile field ExpenseOS holds about an employee — name, department, business unit,
- * legal entity, title, country, manager — is OWNED by Google Workspace and reconciled from
- * it on every sign-in and by the daily sync. A form asking for any of it would be asking an
- * admin to type data the next sync overwrites, and to guess at fields whose wrong value
- * misroutes approvals. So it asks for the one thing Google keys on.
- *
- * The outcome is four distinct sentences, not a toast. "Added" alone would be true and
- * useless when Google has no such account yet — the row exists, the profile does not, and
- * the person reading this needs to know which. *
- * VeloExpense (decided 16 Oct 2026): submitting sends an INVITATION — the person joins when
- * they accept it (VX5-3) — so the outcome is "invited" (or re-invited) or "already here",
- * and the copy says so (`people.add.*`).
- */
-export function AddUserDialog({ onClose, onAdded }: { onClose: () => void; onAdded: () => void }) {
-  const t = useTranslations('people.add');
-  const tc = useTranslations('common');
-  const [email, setEmail] = useState('');
-  const create = trpc.users.create.useMutation({ onSuccess: onAdded });
-
-  const trimmed = email.trim();
-  // Deliberately not a full RFC check — the server validates, and a client-side regex that
-  // disagrees with it would refuse addresses the server would accept.
-  const looksLikeEmail = /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(trimmed);
-  const result = create.data;
-
-  return (
-    <Dialog open onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="max-w-md">
-        <DialogHeader>
-          <DialogTitle>{t('title')}</DialogTitle>
-        </DialogHeader>
-        <div className="flex flex-col gap-3 py-1">
-          <p className="text-muted-foreground text-xs">{t('description')}</p>
-          {/* biome-ignore lint/a11y/noLabelWithoutControl: control nested as children */}
-          <label className="flex flex-col gap-1">
-            <span className="text-muted-foreground text-xs">{t('emailLabel')}</span>
-            <Input
-              autoFocus
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder={t('emailPlaceholder')}
-              disabled={create.isPending || !!result}
-            />
-          </label>
-
-          {create.error && (
-            <Alert variant="destructive">
-              <AlertDescription>{create.error.message}</AlertDescription>
-            </Alert>
-          )}
-
-          {/* VeloExpense: adding sends an invitation (users.create), so there is one outcome
-              where ExpenseOS has three Google-directory ones. */}
-          {result?.status === 'invited' && (
-            <Alert>
-              <AlertDescription>
-                {result.resent
-                  ? t('reinvited', { email: result.email })
-                  : t('invited', { email: result.email })}
-              </AlertDescription>
-            </Alert>
-          )}
-          {result?.status === 'exists' && (
-            <Alert variant="destructive">
-              <AlertDescription>
-                {result.deactivated
-                  ? t('existsDeactivated', { name: result.name })
-                  : t('exists', { name: result.name })}
-              </AlertDescription>
-            </Alert>
-          )}
-        </div>
-        <DialogFooter>
-          <Button variant="ghost" onClick={onClose}>
-            {result ? tc('close') : tc('cancel')}
-          </Button>
-          {!result && (
-            <Button
-              disabled={!looksLikeEmail || create.isPending}
-              onClick={() => create.mutate({ email: trimmed })}
-            >
-              {create.isPending ? t('adding') : t('submit')}
-            </Button>
-          )}
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
   );
 }
 

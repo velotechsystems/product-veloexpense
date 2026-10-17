@@ -12,7 +12,7 @@ describe('shellFree', () => {
     ['/', false],
     ['/loginx', false],
     ['/expenses', false],
-    ['/admin/employees/invite', false],
+    ['/users/invite', false],
   ])('%s → %s', (path, want) => {
     expect(shellFree(path)).toBe(want);
   });
