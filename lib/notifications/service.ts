@@ -39,6 +39,7 @@ import {
   CHANNELS,
   DEFAULT_LOCALE,
   isChannel,
+  isDigestType,
   isEventType,
   localized,
   placeholderValuesFrom,
@@ -244,7 +245,14 @@ export async function notifyRecipients(
     // adding it now is a queue full of work that gets sent down the wrong pipe.
     // `drainOutbox` refuses a non-EMAIL channel anyway, in case a row appears by
     // some other route.
-    if (channels.EMAIL) await enqueueDelivery(tx, ins.rows[0].id as string, 'EMAIL');
+    //
+    // w5-00: a digest-type event's email is held for the digest (`isDigestType`), so a
+    // burst of comments reaches somebody as one message rather than one each.
+    if (channels.EMAIL) {
+      await enqueueDelivery(tx, ins.rows[0].id as string, 'EMAIL', {
+        digest: isDigestType(eventType),
+      });
+    }
   }
   return written;
 }

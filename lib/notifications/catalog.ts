@@ -163,6 +163,25 @@ export type EventType = (typeof EVENT_TYPES)[number];
 export const CHANNELS = ['IN_APP', 'EMAIL', 'SLACK'] as const;
 export type Channel = (typeof CHANNELS)[number];
 
+/**
+ * w5-00 — the events whose email waits for the digest rather than going out on its own.
+ *
+ * ExpenseOS's `DIGEST_TYPES` (`apps/worker/src/handlers/channels.ts`, 1e682dd6), whose job is
+ * to coalesce "comment / informational bursts" into one email per person: `COMMENT`,
+ * `ADJUSTED` and `CARD_STATUS`. VeloExpense: `COMMENT` only — the other two are virtual-card
+ * events, and virtual cards are out of scope (7 Oct 2026).
+ *
+ * The two rules compose as ExpenseOS's do: COMMENT is digest-eligible (it never emails on
+ * its own) AND defaults to email off (`EVENT_CHANNEL_DEFAULTS`), so a comment reaches
+ * somebody's inbox only when they asked for comment emails — and then in the digest.
+ */
+export const DIGEST_EVENT_TYPES: ReadonlySet<string> = new Set<string>(['COMMENT']);
+
+/** True when `eventType`'s email waits for the digest rather than sending on its own. */
+export function isDigestType(eventType: string): boolean {
+  return DIGEST_EVENT_TYPES.has(eventType);
+}
+
 export function isEventType(value: string): value is EventType {
   return (EVENT_TYPES as readonly string[]).includes(value);
 }

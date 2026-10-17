@@ -107,7 +107,8 @@ export default async function NotificationDeliveryPage({
         </p>
         <p className="mt-1 text-muted-foreground">
           <strong>Waiting</strong> means nothing has picked it up yet; if that number keeps growing,
-          the scheduled send is not running and the button above will clear it.{' '}
+          the scheduled send is not running and the button above will clear it. Comment emails
+          wait up to 15 minutes on purpose, so several go out together as one digest.{' '}
           <strong>Failed</strong> will be tried again automatically. <strong>Dead</strong> has run
           out of attempts and needs somebody. <strong>Nothing to send</strong> means there never was
           anything — usually a recipient with no email address.
@@ -190,6 +191,14 @@ export default async function NotificationDeliveryPage({
                     {row.status === 'FAILED' ? (
                       <p className="mt-0.5 text-xs text-muted-foreground">
                         next try {formatInstant(row.nextAttemptAt, prefs)}
+                      </p>
+                    ) : null}
+                    {/* w5-00: a digest-type email waits for the next quarter hour, so a
+                        burst goes out as one message. Said, so a held row is not read as
+                        a stuck one. */}
+                    {row.heldForDigest ? (
+                      <p className="mt-0.5 text-xs text-muted-foreground">
+                        held for the digest until {formatInstant(row.nextAttemptAt, prefs)}
                       </p>
                     ) : null}
                     {row.claimedAt ? (
