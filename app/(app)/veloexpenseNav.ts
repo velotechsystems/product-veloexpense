@@ -55,7 +55,6 @@ export const VELOEXPENSE_ROUTES: Readonly<Record<string, string | null>> = {
   // VeloExpense's are admin screens, so they are VeloExpense items below until ported.
   '/analytics': null,
   '/budgets': null,
-  '/admin/audit-trail': null,
   '/admin/fraud-detection': null,
   '/admin/control-evaluation': null,
   '/admin/api-keys': null,

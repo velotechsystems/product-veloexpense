@@ -99,6 +99,8 @@ const PAGES = [
   '/admin/policies',
   // w4-02e: ExpenseOS's policy-violation register.
   '/admin/policy-violations',
+  // w5-06: ExpenseOS's audit trail. audit.read (System and Expense Administrator).
+  '/admin/audit-trail',
   // w4-10c: ExpenseOS's Role Builder.
   '/admin/roles',
 ] as const;

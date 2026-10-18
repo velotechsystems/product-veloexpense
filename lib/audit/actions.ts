@@ -236,6 +236,10 @@ export const AUDIT_ACTIONS = [
   'INVITE_REFUSED',
   'SIGN_IN_DENIED',
 
+  /* the audit trail itself — w5-06: somebody verified the chain (ExpenseOS's
+   * `audit.chain.verify`). For SOX, "who checked, and when" is part of the evidence. */
+  'AUDIT_CHAIN_VERIFIED',
+
   /* branding — VX4-3. The odd family; see the header. */
   'BRANDING_COLOR_SET',
   'BRANDING_COLOR_CLEARED',
