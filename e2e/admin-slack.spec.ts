@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { connectionAudits } from './helpers';
 
 /**
  * w5-02a — /admin/slack: an administrator connects the organization's own Slack app, and
@@ -14,6 +15,7 @@ import { expect, test } from '@playwright/test';
  * storage state is the admin's.
  */
 test('an admin connects Slack, people can choose it, and disconnecting takes it away', async ({ page }) => {
+  const since = new Date(Date.now() - 5_000);
   await page.goto('/admin/slack');
   await expect(page.getByRole('heading', { name: 'Connect Slack' })).toBeVisible();
   // ExpenseOS's setup steps, before anything is pasted.
@@ -52,6 +54,11 @@ test('an admin connects Slack, people can choose it, and disconnecting takes it 
   }
   await expect(page.getByText(/Disconnected, and the stored token/)).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Connect Slack' })).toBeVisible();
+
+  // f50: connecting and disconnecting are in the audit chain — and the token is not.
+  const rows = await connectionAudits('demo', 'slack', since);
+  expect(rows.map((r) => r.action)).toEqual(['INTEGRATION_REMOVED', 'INTEGRATION_INSTALLED']);
+  for (const r of rows) expect(r.raw).not.toContain('xoxb-e2e-not-a-real-token');
 
   await page.goto('/notifications/preferences');
   await expect(page.getByRole('heading', { name: 'Slack account' })).toHaveCount(0);

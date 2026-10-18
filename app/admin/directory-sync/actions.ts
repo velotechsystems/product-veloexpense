@@ -21,6 +21,8 @@ import { enqueue } from '@expenseos/jobs';
 import { verifyDirectoryAccess } from '@expenseos/integrations-google';
 import { errorParam } from '@/lib/errors/domain';
 import { asAdmin, asAdminPage } from '@/lib/auth/admin-guard';
+import { auditActorOf } from '@/lib/audit/service';
+import { auditConnection } from '@/lib/audit/connections';
 import { ORG } from '@/lib/tenant/sql';
 import {
   DirectoryConnectionError,
@@ -71,10 +73,23 @@ export async function saveDirectoryFromForm(form: FormData) {
   try {
     created = await asAdmin(async (tx, actor) => {
       const before = await getDirectoryConnection(tx);
-      await saveDirectoryConnection(tx, actor.id, {
+      const input = {
         serviceAccountJson: text(form, 'serviceAccountJson'),
         impersonateEmail: text(form, 'impersonateEmail'),
-      });
+      };
+      await saveDirectoryConnection(tx, actor.id, input);
+      // f50: ExpenseOS's install / configUpdate rows, under its slug for this integration
+      // ('google-workspace') — the field names that changed, never the key.
+      const changed: string[] = [];
+      if (input.serviceAccountJson.trim() !== '') changed.push('serviceAccountJson');
+      if (input.impersonateEmail.trim().toLowerCase() !== (before.impersonateEmail ?? '')) {
+        changed.push('impersonateEmail');
+      }
+      if (!before.connected) {
+        await auditConnection(tx, auditActorOf(actor), 'installed', { slug: 'google-workspace' });
+      } else if (changed.length > 0) {
+        await auditConnection(tx, auditActorOf(actor), 'updated', { slug: 'google-workspace', changed });
+      }
       return !before.connected;
     });
   } catch (err) {
@@ -140,7 +155,14 @@ export async function syncDirectoryNowFromForm() {
 
 export async function disconnectDirectoryFromForm() {
   try {
-    await asAdmin((tx) => disconnectDirectory(tx));
+    await asAdmin(async (tx, actor) => {
+      const before = await getDirectoryConnection(tx);
+      await disconnectDirectory(tx);
+      // f50: ExpenseOS's `admin.integration.remove`.
+      if (before.connected) {
+        await auditConnection(tx, auditActorOf(actor), 'removed', { slug: 'google-workspace' });
+      }
+    });
   } catch (err) {
     if (isRedirect(err)) throw err;
     fail(err);

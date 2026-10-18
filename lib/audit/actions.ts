@@ -126,6 +126,17 @@ export const AUDIT_ACTIONS = [
   /* money out — VX2-7 */
   'REPORT_REIMBURSED',
 
+  /* connections — f50: ExpenseOS's `admin.integration.install` / `.configUpdate` / `.remove`
+   * (its platform router, 1e682dd6), for every place a tenant hands VeloExpense a
+   * credential: the accounting ledger (/admin/integrations), Slack (/admin/slack) and Google
+   * Workspace (/admin/directory-sync). Who connected, changed or removed a credential — never
+   * the credential. INTEGRATION_AUTHORISED is VeloExpense's: an OAuth callback is where a
+   * ledger's credential actually arrives, and ExpenseOS has no OAuth ledger. */
+  'INTEGRATION_INSTALLED',
+  'INTEGRATION_CONFIG_UPDATED',
+  'INTEGRATION_REMOVED',
+  'INTEGRATION_AUTHORISED',
+
   /* the ledger queue — VX3-6 / UD-8 */
   'LEDGER_POSTING_TRIGGER_CHANGED',
   'LEDGER_POST_RELEASED',

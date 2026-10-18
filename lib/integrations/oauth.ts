@@ -27,6 +27,8 @@
  *    statement with the flag-clearing, and a failure leaves the previous token in
  *    place rather than a half-updated row.
  */
+import { auditActorOf } from '@/lib/audit/service';
+import { auditConnection } from '@/lib/audit/connections';
 import { createHash, randomBytes } from 'node:crypto';
 import { withOrg, withPlatformRead } from '@/lib/tenant/context';
 import { decryptSecret, encryptSecret } from '@/lib/crypto/secrets';
@@ -282,6 +284,32 @@ export async function completeAuthorisation(input: {
     // missed the one path where the wait is longest — the admin has just come back
     // from a far end and is watching the screen.
     await requeueWaitingPosts(tx);
+
+    // f50: who authorised the connection — the administrator who started it (the state's
+    // creator), since the callback itself carries no session. Never a token.
+    const who = await tx.query(
+      `SELECT u.id, u.email, u.display_name, r.label ->> 'en' AS role_label
+         FROM integration_oauth_state s
+         JOIN app_user u ON u.id = s.created_by_id
+         JOIN role r ON r.organization_id = u.organization_id AND r.id = u.role_id
+        WHERE s.id = $1`,
+      [state.id],
+    );
+    const inst = await tx.query('SELECT code FROM integration_installation WHERE id = $1', [
+      state.installation_id,
+    ]);
+    if (who.rows[0]) {
+      await auditConnection(
+        tx,
+        auditActorOf(who.rows[0] as { id: string; email: string; display_name: string | null; role_label: string }),
+        'authorised',
+        {
+          slug: claimed.inst!.integration_slug,
+          code: (inst.rows[0]?.code as string | undefined) ?? undefined,
+          installationId: state.installation_id,
+        },
+      );
+    }
   });
 
   return {

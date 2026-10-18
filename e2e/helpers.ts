@@ -498,3 +498,32 @@ export async function decideOnWorkbench(
       'server refused it (its reason is in the top bar)',
   ).toHaveURL(QUEUE_URL, { timeout: 30_000 });
 }
+
+/**
+ * f50 — the connection audit rows a spec just caused, newest first: `action` and `details`
+ * for every `INTEGRATION_*` row with this slug, written since `since`. Superuser, as
+ * `wipeIntegrations` — the rows are the tenant's, and the spec only reads them.
+ */
+export async function connectionAudits(
+  orgSlug: string,
+  slug: string,
+  since: Date,
+): Promise<Array<{ action: string; details: Record<string, unknown>; raw: string }>> {
+  const pool = new Pool({
+    connectionString: process.env.ADMIN_DATABASE_URL ?? process.env.DATABASE_URL,
+  });
+  try {
+    const r = await pool.query(
+      `SELECT action, details, details::text AS raw FROM audit_entry
+        WHERE organization_id = (SELECT id FROM organization WHERE slug = $1)
+          AND action LIKE 'INTEGRATION\\_%'
+          AND details->>'slug' = $2
+          AND occurred_at >= $3
+        ORDER BY sequence DESC`,
+      [orgSlug, slug, since],
+    );
+    return r.rows as Array<{ action: string; details: Record<string, unknown>; raw: string }>;
+  } finally {
+    await pool.end();
+  }
+}

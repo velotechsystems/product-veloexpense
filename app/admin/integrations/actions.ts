@@ -34,6 +34,8 @@ import { beginAuthorisation } from '@/lib/integrations/oauth';
 import { appOrigin } from '@/lib/notifications/email';
 import { isModuleEnabled } from '@/lib/modules/service';
 import { asAdmin, asAdminPage } from '@/lib/auth/admin-guard';
+import { auditActorOf } from '@/lib/audit/service';
+import { auditConnection } from '@/lib/audit/connections';
 
 const PAGE = '/admin/integrations';
 
@@ -142,8 +144,8 @@ export async function authoriseFromForm(form: FormData) {
 export async function connectFromForm(form: FormData) {
   try {
     const slug = required(form, 'slug');
-    await asAdmin((tx, actor) =>
-      installIntegration(
+    await asAdmin(async (tx, actor) => {
+      const installed = await installIntegration(
         tx,
         {
           slug,
@@ -152,8 +154,14 @@ export async function connectFromForm(form: FormData) {
           config: configFrom(form),
         },
         actor.id,
-      ),
-    );
+      );
+      // f50: ExpenseOS's `admin.integration.install`, on the same transaction.
+      await auditConnection(tx, auditActorOf(actor), 'installed', {
+        slug: installed.integration_slug,
+        code: installed.code,
+        installationId: installed.id,
+      });
+    });
   } catch (err) {
     if (isRedirect(err)) throw err;
     fail(err);
@@ -164,12 +172,24 @@ export async function connectFromForm(form: FormData) {
 
 export async function updateFromForm(form: FormData) {
   try {
-    await asAdmin((tx) =>
-      updateInstallation(tx, required(form, 'id'), {
-        label: text(form, 'label'),
-        config: configFrom(form),
-      }),
-    );
+    await asAdmin(async (tx, actor) => {
+      const id = required(form, 'id');
+      const before = await getInstallation(tx, id);
+      const label = text(form, 'label');
+      const config = configFrom(form);
+      const updated = await updateInstallation(tx, id, { label, config });
+      // f50: ExpenseOS's `admin.integration.configUpdate` — naming the fields that changed,
+      // never their values. A re-save that changed nothing records nothing.
+      const changed = changedFields(before, label, config);
+      if (changed.length > 0) {
+        await auditConnection(tx, auditActorOf(actor), 'updated', {
+          slug: updated.integration_slug,
+          code: updated.code,
+          installationId: updated.id,
+          changed,
+        });
+      }
+    });
   } catch (err) {
     if (isRedirect(err)) throw err;
     fail(err);
@@ -198,11 +218,48 @@ export async function testFromForm(form: FormData) {
 
 export async function disconnectFromForm(form: FormData) {
   try {
-    await asAdmin((tx) => disconnect(tx, required(form, 'id')));
+    await asAdmin(async (tx, actor) => {
+      const id = required(form, 'id');
+      const before = await getInstallation(tx, id);
+      await disconnect(tx, id);
+      // f50: ExpenseOS's `admin.integration.remove`.
+      if (before) {
+        await auditConnection(tx, auditActorOf(actor), 'removed', {
+          slug: before.integration_slug,
+          code: before.code,
+          installationId: before.id,
+        });
+      }
+    });
   } catch (err) {
     if (isRedirect(err)) throw err;
     fail(err);
   }
   revalidatePath(PAGE);
   redirect(`${PAGE}?disconnected=1`);
+}
+
+/**
+ * f50: which fields an update changed, by NAME. A secret field arrives blank unless somebody
+ * typed a new one (blank keeps the stored value), so a non-blank secret is a change; any other
+ * field is compared with what the screen showed.
+ */
+function changedFields(
+  before: Awaited<ReturnType<typeof getInstallation>>,
+  label: string,
+  config: Record<string, string>,
+): string[] {
+  if (!before) return [];
+  const changed: string[] = [];
+  if (label.trim() !== '' && label.trim() !== before.label) changed.push('label');
+  for (const field of before.adapter?.configFields ?? []) {
+    const submitted = config[field.name];
+    if (submitted === undefined) continue;
+    if (field.type === 'secret') {
+      if (submitted.trim() !== '') changed.push(field.name);
+    } else if (submitted.trim() !== (before.config[field.name] ?? '').trim()) {
+      changed.push(field.name);
+    }
+  }
+  return changed;
 }
