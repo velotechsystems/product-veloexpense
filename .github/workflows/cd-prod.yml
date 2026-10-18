@@ -195,9 +195,15 @@ jobs:
           fi
 
           echo "${SRC} -> ${DST} (${SRC_DIGEST})"
-          docker pull "${SRC}"
-          docker tag "${SRC}" "${DST}"
-          docker push "${DST}"
+          # VeloExpense (18 Oct 2026, the second production run): NOT `docker pull/tag/push`,
+          # ExpenseOS's copy. Dev's image is an OCI manifest (buildx), and a plain `docker push`
+          # re-wrote it as a Docker v2 manifest — same layers, a DIFFERENT digest — which the
+          # check below refused, correctly. `buildx imagetools create` copies the manifest
+          # byte for byte (blobs mounted or copied within the registry), so the digest is
+          # preserved and prod runs exactly what dev ran. `--prefer-index=false` is what makes
+          # it a carbon copy: by default a single source is wrapped in a new image index,
+          # which would be a different digest again.
+          docker buildx imagetools create --prefer-index=false --tag "${DST}" "${SRC}"
 
           # VeloExpense: prove the promise — prod's copy is the digest dev ran.
           NEW_DIGEST=$(aws ecr describe-images --repository-name "${DST_REPOSITORY}" \
