@@ -34,7 +34,12 @@ export async function inTenant<T>(data: unknown, run: () => Promise<T>): Promise
  * Returns how many jobs it queued.
  */
 export async function fanOutToTenants<
-  N extends 'expense.receiptChase' | 'approval.sweepExpired' | 'notification.prune' | 'audit.purge',
+  N extends
+    | 'expense.receiptChase'
+    | 'approval.sweepExpired'
+    | 'notification.prune'
+    | 'audit.purge'
+    | 'integration.google.directorySync',
 >(
   job: N,
   data: Omit<JobMap[N], 'organizationId'>,

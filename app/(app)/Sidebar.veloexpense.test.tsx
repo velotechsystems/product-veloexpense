@@ -100,6 +100,7 @@ describe("an admin's menu", () => {
         '/admin/locale',
         '/admin/notification-delivery',
         '/admin/slack',
+        '/admin/directory-sync',
         '/admin/billing',
         '/admin/notification-templates',
         '/admin/modules',

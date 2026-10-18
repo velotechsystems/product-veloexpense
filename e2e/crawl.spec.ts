@@ -80,6 +80,8 @@ const PAGES = [
   '/admin/notification-delivery',
   // w5-02a: the tenant's own Slack app.
   '/admin/slack',
+  // w5-04: the tenant's own Google Workspace directory sync.
+  '/admin/directory-sync',
   '/admin/reimbursements',
   '/admin/analytics',
   // Wave 0: the first ExpenseOS screen ported to its own path (app/(app)/admin/).

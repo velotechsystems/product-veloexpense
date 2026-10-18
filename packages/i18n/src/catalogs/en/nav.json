@@ -79,6 +79,7 @@
     "branding": "Branding",
     "defaultLanguage": "Default language",
     "slack": "Slack",
+    "directorySync": "Directory sync",
     "emailDelivery": "Email delivery",
     "billing": "Billing"
   },

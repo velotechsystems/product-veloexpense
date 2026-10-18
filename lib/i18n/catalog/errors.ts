@@ -225,6 +225,12 @@ export const USER_MESSAGE_CODES = [
   'SLACK_TOKEN_REQUIRED',
   'SLACK_NOT_CONNECTED',
 
+  /* Google Workspace directory sync (w5-04, lib/directory/googleConnection.ts) ─ */
+  'DIRECTORY_KEY_REQUIRED',
+  'DIRECTORY_KEY_INVALID',
+  'DIRECTORY_ADMIN_EMAIL_INVALID',
+  'DIRECTORY_NOT_CONNECTED',
+
   /* receipts (lib/receipts/service.ts) ─────────────────────────────────── */
   'RECEIPT_TYPE_UNSUPPORTED',
   'RECEIPT_TOO_LARGE',
@@ -1024,6 +1030,21 @@ export const ERROR_COPY: Record<UserMessageCode, Copy> = {
   },
   SLACK_NOT_CONNECTED: {
     'en-CA': 'Slack is not connected, so there is nothing to test.',
+  },
+
+  /* ── Google Workspace directory sync ───────────────────────────────────── */
+  DIRECTORY_KEY_REQUIRED: {
+    'en-CA': 'Paste the service account key file (JSON) to connect Google Workspace.',
+  },
+  DIRECTORY_KEY_INVALID: {
+    'en-CA':
+      'That is not a service account key file. Paste the whole JSON file Google downloaded, from the opening brace to the closing one.',
+  },
+  DIRECTORY_ADMIN_EMAIL_INVALID: {
+    'en-CA': 'Enter the email address of a Google Workspace administrator.',
+  },
+  DIRECTORY_NOT_CONNECTED: {
+    'en-CA': 'Google Workspace is not connected, so there is nothing to test or sync.',
   },
 
   /* ── receipts ──────────────────────────────────────────────────────────── */

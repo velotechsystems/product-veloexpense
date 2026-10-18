@@ -1846,6 +1846,63 @@ describe('RLS tenant isolation', () => {
     await admin.query('DELETE FROM slack_connection');
   });
 
+  /* w5-04 (0076) — each tenant's own Google Workspace connection: a service-account key. The
+   * same three properties as `slack_connection`: per tenant with no hatch, the composite FK,
+   * and ciphertext only. */
+  it("google_directory_connection is per tenant, with no hatch, and cannot name another tenant's user", async () => {
+    await admin.query('DELETE FROM google_directory_connection');
+    const userOf = async (org: string) =>
+      (
+        await withOrg(org, (tx) =>
+          tx.query('SELECT id FROM app_user WHERE organization_id = $1 LIMIT 1', [org]),
+        )
+      ).rows[0].id as string;
+    const [userA, userB] = [await userOf(orgA), await userOf(orgB)];
+    const connect = async (org: string, user: string, key: string) =>
+      withOrg(org, (tx) =>
+        tx.query(
+          `INSERT INTO google_directory_connection
+             (organization_id, service_account_json, client_email, impersonate_email, connected_by_id)
+           VALUES ($1, $2, 'svc@p.iam.gserviceaccount.com', 'admin@example.test', $3)`,
+          [org, key, user],
+        ),
+      );
+    await connect(orgA, userA, 'enc:v1:a');
+    await connect(orgB, userB, 'enc:v1:b');
+    for (const [org, expected] of [
+      [orgA, 'enc:v1:a'],
+      [orgB, 'enc:v1:b'],
+    ] as const) {
+      const seen = await withOrg(org, (tx) =>
+        tx.query('SELECT service_account_json FROM google_directory_connection'),
+      );
+      expect(seen.rows.map((r) => r.service_account_json)).toEqual([expected]);
+    }
+    await expect(connect(orgB, userB, 'enc:v1:x')).rejects.toThrow(/duplicate|unique/i);
+    await admin.query('DELETE FROM google_directory_connection WHERE organization_id = $1', [orgA]);
+    await expect(
+      withOrg(orgB, (tx) =>
+        tx.query(
+          `INSERT INTO google_directory_connection
+             (organization_id, service_account_json, client_email, impersonate_email, connected_by_id)
+           VALUES ($1, 'enc:v1:x', 'svc@p.iam.gserviceaccount.com', 'admin@example.test', $2)`,
+          [orgA, userA],
+        ),
+      ),
+    ).rejects.toThrow(/row-level security|violates/i);
+    await expect(connect(orgA, userB, 'enc:v1:x')).rejects.toThrow(/foreign key|violates/i);
+    await expect(connect(orgA, userA, '{"private_key":"plaintext"}')).rejects.toThrow(
+      /check constraint|violates/i,
+    );
+    expect(
+      (await withPlatformRead((tx) => tx.query('SELECT * FROM google_directory_connection'))).rows,
+    ).toHaveLength(0);
+    expect(
+      (await withoutOrg((tx) => tx.query('SELECT * FROM google_directory_connection'))).rows,
+    ).toHaveLength(0);
+    await admin.query('DELETE FROM google_directory_connection');
+  });
+
   /* ── External IDs (the Wave 1 business-unit port, migration 0047) ─────────
    *
    * ExpenseOS's `ExternalIdSource` and `BusinessUnitExternalId`, made per tenant.

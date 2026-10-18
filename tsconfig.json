@@ -38,6 +38,7 @@
       "@expenseos/receipt-extraction": ["./packages/receipt-extraction/src/index.ts"],
       "@expenseos/jobs": ["./packages/jobs/src/index.ts"],
       "@expenseos/db": ["./packages/db/src/index.ts"],
+      "@expenseos/integrations-google": ["./packages/integrations-google/src/index.ts"],
       "@expenseos/predicate": ["./packages/predicate/src/index.ts"],
       "@expenseos/approvals": ["./packages/approvals/src/index.ts"],
       "@expenseos/approvals/engine": ["./packages/approvals/src/engine.ts"]
