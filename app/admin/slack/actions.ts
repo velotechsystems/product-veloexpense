@@ -17,6 +17,8 @@ import { redirect } from 'next/navigation';
 import { revalidatePath } from 'next/cache';
 import { errorParam } from '@/lib/errors/domain';
 import { asAdmin, asAdminPage } from '@/lib/auth/admin-guard';
+import { auditActorOf } from '@/lib/audit/service';
+import { auditConnection } from '@/lib/audit/connections';
 import { verifySlackToken } from '@/lib/notifications/slack';
 import { originForTenant } from '@/lib/notifications/email';
 import { candidateSlugFromHost } from '@/lib/tenant/host';
@@ -90,10 +92,16 @@ export async function saveSlackFromForm(form: FormData) {
   try {
     created = await asAdmin(async (tx, actor) => {
       const before = await getSlackConnection(tx);
-      await saveSlackConnection(tx, actor.id, {
-        botToken: text(form, 'botToken'),
-        signingSecret: text(form, 'signingSecret'),
-      });
+      const input = { botToken: text(form, 'botToken'), signingSecret: text(form, 'signingSecret') };
+      await saveSlackConnection(tx, actor.id, input);
+      // f50: ExpenseOS's install / configUpdate rows — which secret changed, never its value.
+      // A save with both fields blank changes nothing and records nothing.
+      const changed = (['botToken', 'signingSecret'] as const).filter((k) => input[k].trim() !== '');
+      if (!before.connected) {
+        await auditConnection(tx, auditActorOf(actor), 'installed', { slug: 'slack' });
+      } else if (changed.length > 0) {
+        await auditConnection(tx, auditActorOf(actor), 'updated', { slug: 'slack', changed: [...changed] });
+      }
       return !before.connected;
     });
   } catch (err) {
@@ -128,7 +136,12 @@ export async function testSlackFromForm() {
 
 export async function disconnectSlackFromForm() {
   try {
-    await asAdmin((tx) => disconnectSlack(tx));
+    await asAdmin(async (tx, actor) => {
+      const before = await getSlackConnection(tx);
+      await disconnectSlack(tx);
+      // f50: ExpenseOS's `admin.integration.remove`.
+      if (before.connected) await auditConnection(tx, auditActorOf(actor), 'removed', { slug: 'slack' });
+    });
   } catch (err) {
     if (isRedirect(err)) throw err;
     fail(err);

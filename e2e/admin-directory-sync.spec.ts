@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { connectionAudits } from './helpers';
 
 /**
  * w5-04 — /admin/directory-sync: an administrator connects the organization's own Google
@@ -21,6 +22,7 @@ const FAKE_KEY = JSON.stringify({
 });
 
 test('an admin connects Google Workspace, the key is never shown, and disconnecting deletes it', async ({ page }) => {
+  const since = new Date(Date.now() - 5_000);
   await page.goto('/admin/directory-sync');
   await expect(page.getByRole('heading', { name: 'Connect Google Workspace' })).toBeVisible();
   // The setup steps, and what the sync will and will not do, before anything is pasted.
@@ -53,6 +55,17 @@ test('an admin connects Google Workspace, the key is never shown, and disconnect
   }
   await expect(page.getByText(/Disconnected, and the stored key was deleted/)).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Connect Google Workspace' })).toBeVisible();
+
+  // f50: connect, the admin change (by field name), and disconnect are in the audit chain —
+  // and the key is not.
+  const rows = await connectionAudits('demo', 'google-workspace', since);
+  expect(rows.map((r) => r.action)).toEqual([
+    'INTEGRATION_REMOVED',
+    'INTEGRATION_CONFIG_UPDATED',
+    'INTEGRATION_INSTALLED',
+  ]);
+  expect(rows[1].details.changed).toEqual(['impersonateEmail']);
+  for (const r of rows) expect(r.raw).not.toContain('not-a-real-key-e2e');
 });
 
 test('a paste that is not a key file says so, without echoing it', async ({ page }) => {

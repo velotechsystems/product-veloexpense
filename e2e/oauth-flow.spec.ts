@@ -36,6 +36,7 @@ import {
   LEDGER,
   authorizationsAtSink,
   billsAtSink,
+  connectionAudits,
   drainLedger,
   drainNotifications,
   resetSink,
@@ -103,6 +104,7 @@ test.describe('connecting a ledger by authorisation', () => {
   });
 
   test('the admin consents at the far end and comes back connected', async ({ page, request }) => {
+    const since = new Date(Date.now() - 5_000);
     await page.goto('/admin/integrations');
     await ourRow(page).getByRole('button', { name: 'Connect', exact: true }).click();
 
@@ -143,6 +145,12 @@ test.describe('connecting a ledger by authorisation', () => {
     await ourRow(page).getByRole('button', { name: 'Test' }).click();
     await expect(page.getByText('The connection works.')).toBeVisible();
     await expect(page.getByText(/access-1/)).toBeVisible();
+
+    // f50: the callback has no session, and the authorisation is still in the audit chain,
+    // as the admin who started it — and no token is.
+    const [row] = await connectionAudits('demo', 'stub-oauth', since);
+    expect(row.action).toBe('INTEGRATION_AUTHORISED');
+    expect(row.raw).not.toContain('access-1');
   });
 
   test('an approved report posts with the token that authorisation produced', async ({
@@ -248,6 +256,10 @@ test.describe('connecting a ledger by authorisation', () => {
     await expect(page.getByText('Disconnected, and the stored credentials were deleted.'))
       .toBeVisible();
     await expect(ourRow(page)).toContainText('disconnected');
+    // f50: and the removal is audited.
+    expect((await connectionAudits('demo', 'stub-oauth', new Date(Date.now() - 30_000)))[0].action).toBe(
+      'INTEGRATION_REMOVED',
+    );
 
     // AC-21: the token is gone, so the Test button can no longer authenticate.
     await ourRow(page).getByRole('button', { name: 'Test' }).click();

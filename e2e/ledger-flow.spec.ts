@@ -44,6 +44,7 @@ import {
   LEDGER,
   billsAtSink,
   connectLedger,
+  connectionAudits,
   drainLedger,
   drainNotifications,
   resetSink,
@@ -104,6 +105,7 @@ test.describe('two tenants, two ledgers', () => {
     page,
     browser,
   }) => {
+    const since = new Date(Date.now() - 5_000);
     // Tenant A (demo) → the real VeloLedger adapter, pointed at the sink.
     await connectLedger(page, 'VeloLedger', LABEL_A, {
       baseUrl: LEDGER,
@@ -135,6 +137,16 @@ test.describe('two tenants, two ledgers', () => {
     await page.goto('/admin/integrations');
     await expect(page.getByText(LABEL_A, { exact: true })).toBeVisible();
     await expect(page.getByText(LABEL_B, { exact: true })).toHaveCount(0);
+
+    // f50: each connection is in its own tenant's audit chain, and the API key is not.
+    const rows = await connectionAudits('demo', 'veloledger', since);
+    expect(rows.map((r) => r.action)).toEqual(['INTEGRATION_INSTALLED']);
+    expect(rows[0].raw).not.toContain('e2e-only-not-a-real-key');
+    // The second tenant's stub connection is in the second tenant's chain, not demo's.
+    expect(await connectionAudits('demo', 'stub-ledger', since)).toHaveLength(0);
+    const second_ = await connectionAudits('second', 'stub-ledger', since);
+    expect(second_.map((r) => r.action)).toEqual(['INTEGRATION_INSTALLED']);
+    expect(second_[0].raw).not.toContain('e2e-only-not-a-real-token');
 
     await second.close();
   });
