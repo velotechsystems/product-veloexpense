@@ -12,6 +12,7 @@ import {
 } from '@expenseos/jobs';
 import { type ConnectionOptions, type Job, Worker } from 'bullmq';
 import { handleApprovalSweep } from './handlers/approval-sweep';
+import { handleAuditPurge } from './handlers/audit-purge';
 import { handleDetermineExpense } from './handlers/determine-expense';
 import { handleExamplePing } from './handlers/example';
 import { handleExpenseReceiptChase } from './handlers/expense-receipt-chase';
@@ -19,6 +20,7 @@ import { handleExtractReceipt } from './handlers/extract-receipt';
 import { handleExtractReceiptBatch } from './handlers/extract-receipt-batch';
 import { handleIngestReceiptEmail } from './handlers/ingest-receipt-email';
 import { handleIngestReplyEmail } from './handlers/ingest-reply-email';
+import { handleNotificationPrune } from './handlers/notification-prune';
 import { handleReceiptsSummaryEmail } from './handlers/receipts-summary-email';
 // VeloExpense: ExpenseOS's other handlers are not imported — their jobs are not in the job
 // map (packages/jobs/src/jobs.ts says where each went).
@@ -57,6 +59,16 @@ const HANDLERS: { [N in JobName]?: (data: unknown, job: Job) => Promise<unknown>
       : fanOutToTenants('approval.sweepExpired', {
           trigger: (data as { trigger?: 'cron' | 'manual' | 'boot' } | null)?.trigger ?? 'cron',
         }),
+  // w5-07: ExpenseOS's housekeeping — as `expense.receiptChase`, the schedule's run fans out
+  // per tenant and each tenant's job runs as that tenant.
+  'notification.prune': (data) =>
+    (data as { organizationId?: string } | null)?.organizationId
+      ? inTenant(data, () => handleNotificationPrune(data as never))
+      : fanOutToTenants('notification.prune', { trigger: 'cron' }),
+  'audit.purge': (data) =>
+    (data as { organizationId?: string } | null)?.organizationId
+      ? inTenant(data, () => handleAuditPurge(data as never))
+      : fanOutToTenants('audit.purge', { trigger: 'cron' }),
   // VeloExpense (w3-06): as the tenant whose address the email was sent to (d47).
   'email.ingestReceipts': (data) => inTenant(data, () => handleIngestReceiptEmail(data as never)),
   // w5-01: a reply to a notification email, as a comment.
@@ -80,7 +92,8 @@ interface RecurringJob {
 }
 
 /**
- * VeloExpense: ExpenseOS's receipt chase and approval sweep, so far. Every other ExpenseOS
+ * VeloExpense: ExpenseOS's receipt chase, approval sweep, and (w5-07) notification prune and
+ * audit purge, so far. Every other ExpenseOS
  * schedule here runs a job VeloExpense does not route through this worker — its notification,
  * ledger and compliance passes are the `/api/internal/*` routes EventBridge Scheduler calls
  * (infrastructure/cdk config.ts `schedules`).
@@ -103,6 +116,21 @@ const RECURRING_JOBS: RecurringJob[] = [
     // mid-morning gets acted on; one that lands overnight is buried by the
     // time anyone reads it.
     pattern: '0 13 * * *',
+    tz: 'UTC',
+  },
+  // w5-07: ExpenseOS's two housekeeping schedules, at ExpenseOS's times.
+  {
+    name: 'notification.prune',
+    data: { trigger: 'cron' },
+    jobId: 'notification-prune-daily',
+    pattern: '0 2 * * *',
+    tz: 'UTC',
+  },
+  {
+    name: 'audit.purge',
+    data: { trigger: 'cron' },
+    jobId: 'audit-purge-daily',
+    pattern: '30 3 * * *',
     tz: 'UTC',
   },
 ];

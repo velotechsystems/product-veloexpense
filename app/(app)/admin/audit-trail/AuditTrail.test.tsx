@@ -24,9 +24,8 @@ import { createTrpcMock, type TrpcMockConfig } from '@/test-utils/trpc';
  *
  * w5-06 — ported from ExpenseOS (1e682dd6). VeloExpense: the TopBar's path; the purge stat
  * names the entry the purge reached (VeloExpense's watermark has no count or run time); an
- * entry may carry no expiry; and the retention SETTING's cases are not here — retention is
- * shown, not set, until the purge job that honours it (w5-07, decided 17 Oct 2026). The
- * cases that remain are ExpenseOS's.
+ * entry may carry no expiry; and the retention window is the tenant's own (w5-07, d82). The
+ * cases are ExpenseOS's.
  */
 
 const h = vi.hoisted(() => ({
@@ -101,7 +100,13 @@ const STATS = {
   oldestAt: new Date('2024-01-01T00:00:00Z'),
   newestAt: AT,
   retentionYears: 7,
-  lastPurge: { purgedThroughSequence: '400', lastPurgedEntryHash: 'f'.repeat(64) },
+  // VeloExpense: the watermark's shape (server/routers/audit.ts `PurgeWatermark`).
+  lastPurge: {
+    purgedThroughSequence: '9001',
+    lastPurgedEntryHash: 'f'.repeat(64),
+    runAt: new Date('2026-07-01T00:00:00Z'),
+    purgedCount: 400,
+  },
 };
 
 function setTrpc(over: TrpcMockConfig = {}, rows = [entry()]) {
@@ -114,6 +119,7 @@ function setTrpc(over: TrpcMockConfig = {}, rows = [entry()]) {
         data: { pages: [{ items: rows, nextCursor: null }] },
         onCall: (input: unknown) => h.listInputs.push(input),
       },
+      'audit.retention': { data: { years: 7, isDefault: false } },
       ...over.queries,
     },
   });
@@ -121,7 +127,7 @@ function setTrpc(over: TrpcMockConfig = {}, rows = [entry()]) {
 
 type TrailProps = React.ComponentProps<typeof AuditTrail>;
 const show = (props: Partial<TrailProps> = {}) =>
-  render(<AuditTrail canVerify {...props} />);
+  render(<AuditTrail canVerify canConfigure {...props} />);
 const showTopBar = () => render(<div>{h.topBar.right}</div>);
 
 const rowTexts = () =>
@@ -160,7 +166,7 @@ describe('the stats', () => {
     setTrpc();
     show();
     expect(screen.getByText('admin.auditTrail.years:7')).toBeInTheDocument();
-    expect(screen.getByText(/admin.auditTrail.purgedThrough:400/)).toBeInTheDocument();
+    expect(screen.getByText(/admin.auditTrail.lastPurge:400/)).toBeInTheDocument();
   });
 
   it('says so when nothing has ever been purged', () => {
@@ -458,16 +464,89 @@ describe('filtering', () => {
 
 // ── Retention ─────────────────────────────────────────────────────────────────
 
-/**
- * VeloExpense: ExpenseOS's retention SETTING (its six cases) arrives with the purge job that
- * honours it (w5-07). What is pinned now is that there is no control to mistake for one.
- */
 describe('retention', () => {
-  it('is shown, and offers nothing to change', () => {
+  it('shows the configured window', () => {
     setTrpc();
     show();
-    expect(screen.getByText('admin.auditTrail.years:7')).toBeInTheDocument();
-    expect(screen.queryByLabelText(/admin\.auditTrail\.retentionLabel/)).toBeNull();
+    expect(screen.getByLabelText(/admin\.auditTrail\.retentionLabel/)).toHaveValue(7);
+  });
+
+  it('says when the window is the default rather than a choice', () => {
+    // "7 years" chosen and "7 years because nobody chose" are different facts to an
+    // auditor asking why.
+    setTrpc({ queries: { 'audit.retention': { data: { years: 7, isDefault: true } } } });
+    show();
+    expect(screen.getByText('admin.auditTrail.retentionDefault')).toBeInTheDocument();
+  });
+
+  it('will not save the value that is already set', async () => {
+    // A write that changes nothing still invalidates two queries and re-renders.
+    setTrpc();
+    show();
+    expect(screen.getByRole('button', { name: 'admin.common.save' })).toBeDisabled();
+  });
+
+  it('saves a changed window', async () => {
+    const onCall = vi.fn();
+    const user = userEvent.setup();
+    setTrpc({ mutations: { 'audit.setRetention': { onCall } } });
+    show();
+    fireEvent.change(screen.getByLabelText(/admin\.auditTrail\.retentionLabel/), {
+      target: { value: '10' },
+    });
+    await user.click(screen.getByRole('button', { name: 'admin.common.save' }));
+    expect(onCall).toHaveBeenCalledWith({ years: 10 });
+  });
+
+  it('refuses a non-integer window', async () => {
+    // Retention is whole years; "7.5" is not a policy anybody wrote.
+    const onCall = vi.fn();
+    const user = userEvent.setup();
+    setTrpc({ mutations: { 'audit.setRetention': { onCall } } });
+    show();
+    fireEvent.change(screen.getByLabelText(/admin\.auditTrail\.retentionLabel/), {
+      target: { value: '7.5' },
+    });
+    await user.click(screen.getByRole('button', { name: 'admin.common.save' }));
+    expect(await screen.findByText('admin.auditTrail.retentionInvalid')).toBeInTheDocument();
+    expect(onCall).not.toHaveBeenCalled();
+  });
+
+  it('reports a refused change', async () => {
+    const user = userEvent.setup();
+    setTrpc({
+      mutations: {
+        'audit.setRetention': {
+          outcome: 'error',
+          error: { message: 'Retention cannot be shortened below the legal minimum' },
+        },
+      },
+    });
+    show();
+    fireEvent.change(screen.getByLabelText(/admin\.auditTrail\.retentionLabel/), {
+      target: { value: '8' },
+    });
+    await user.click(screen.getByRole('button', { name: 'admin.common.save' }));
+    expect(
+      await screen.findByText('Retention cannot be shortened below the legal minimum'),
+    ).toBeInTheDocument();
+  });
+});
+
+describe('a purge recorded before 0075 (VeloExpense)', () => {
+  it('names the entry it purged through, having no count or date to give', () => {
+    setTrpc({
+      queries: {
+        'audit.stats': {
+          data: {
+            ...STATS,
+            lastPurge: { ...STATS.lastPurge, runAt: null, purgedCount: null },
+          },
+        },
+      },
+    });
+    show();
+    expect(screen.getByText(/admin.auditTrail.purgedThrough:9001/)).toBeInTheDocument();
   });
 });
 

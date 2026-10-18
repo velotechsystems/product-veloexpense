@@ -20,13 +20,17 @@ export function generateMetadata() {
  * w5-06 — ported from ExpenseOS (1e682dd6). VeloExpense: the session and `RbacUser` come from
  * the request's shell context (server/shell.ts), and a reader without the permission is
  * REFUSED (`forbidden()`, a 403 that says why) where ExpenseOS answers 404 — as every ported
- * admin screen. Retention is not set here yet (decided 17 Oct 2026, w5-07), so there is no
- * `canConfigure`.
+ * admin screen. Retention is the tenant's own (w5-07, d82).
  */
 export default async function AuditTrailPage() {
   const shell = await shellContext();
   if (!shell) forbidden();
   const { rbac } = shell;
   if (!rbac.permissions.includes(P.audit.read)) forbidden();
-  return <AuditTrail canVerify={rbac.permissions.includes(P.audit.chainVerify)} />;
+  return (
+    <AuditTrail
+      canVerify={rbac.permissions.includes(P.audit.chainVerify)}
+      canConfigure={rbac.permissions.includes(P.admin.appSettings.update)}
+    />
+  );
 }

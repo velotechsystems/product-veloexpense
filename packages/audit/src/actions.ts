@@ -59,10 +59,12 @@ const adminAndOthers = {
     update: 'SAVED_VIEW_UPDATED',
     delete: 'SAVED_VIEW_DELETED',
   },
-  /** ExpenseOS's `audit.*` key (w5-06, server/routers/audit.ts). `audit.retentionUpdate`
-   *  arrives with the retention setting (w5-07). */
+  /** ExpenseOS's `audit.*` keys: verification (w5-06, server/routers/audit.ts), the
+   *  retention setting and the purge job (w5-07, worker/src/handlers/audit-purge.ts). */
   audit: {
     chainVerify: 'AUDIT_CHAIN_VERIFIED',
+    retentionUpdate: 'AUDIT_RETENTION_CHANGED',
+    retentionPurge: 'AUDIT_PURGED',
   },
   /** ExpenseOS's `workflow.*` key (w4-00c, server/lib/workflowEffects). */
   workflow: {

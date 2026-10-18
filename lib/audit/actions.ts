@@ -239,6 +239,11 @@ export const AUDIT_ACTIONS = [
   /* the audit trail itself — w5-06: somebody verified the chain (ExpenseOS's
    * `audit.chain.verify`). For SOX, "who checked, and when" is part of the evidence. */
   'AUDIT_CHAIN_VERIFIED',
+  /* w5-07: the tenant's retention window changed, and a retention purge ran (ExpenseOS's
+   * `audit.retention.update` / `audit.retention.purge`). A deletion in a compliance log that
+   * leaves no trace of itself is exactly what an auditor asks about. */
+  'AUDIT_RETENTION_CHANGED',
+  'AUDIT_PURGED',
 
   /* branding — VX4-3. The odd family; see the header. */
   'BRANDING_COLOR_SET',
