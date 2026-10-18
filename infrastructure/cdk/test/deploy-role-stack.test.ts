@@ -46,7 +46,8 @@ function grants(template: Template): Array<{ Sid?: string; Action: string | stri
   return policies.flatMap((p) => p.Properties.PolicyDocument.Statement);
 }
 
-const STAGES: Stage[] = ['dev'];
+// w5-08: production too — its role is held to every rule dev's is.
+const STAGES: Stage[] = ['dev', 'prod'];
 
 describe.each(STAGES)('DeployRoleStack (%s)', (stage) => {
   it('creates no OIDC provider — Terraform owns it', () => {
@@ -149,5 +150,31 @@ describe.each(STAGES)('DeployRoleStack (%s)', (stage) => {
     const [pass] = grants(synth(stage)).filter((s) => s.Action === 'iam:PassRole');
     expect(JSON.stringify(pass.Resource)).toContain(`role/veloexpense-${stage}-*`);
     expect(pass.Condition).toEqual({ StringEquals: { 'iam:PassedToService': 'ecs-tasks.amazonaws.com' } });
+  });
+});
+
+// w5-08: production builds nothing; it promotes dev's image. Only its role may read dev's
+// repository, and only to pull — never push.
+describe('promotion (w5-08)', () => {
+  const pull = (stage: Stage) => grants(synth(stage)).filter((g) => g.Sid === 'PullDevImagesForPromotion');
+
+  it("lets prod's role pull from dev's repository, and nothing more there", () => {
+    const [g] = pull('prod');
+    expect(JSON.stringify(g.Resource)).toContain('repository/veloexpense-dev/web');
+    expect([g.Action].flat().sort()).toEqual([
+      'ecr:BatchCheckLayerAvailability',
+      'ecr:BatchGetImage',
+      'ecr:DescribeImages',
+      'ecr:GetDownloadUrlForLayer',
+    ]);
+    // Pushing to dev's repository is not among prod's grants in any statement.
+    const pushes = grants(synth('prod')).filter(
+      (s) => [s.Action].flat().includes('ecr:PutImage') && JSON.stringify(s.Resource).includes('veloexpense-dev/'),
+    );
+    expect(pushes).toHaveLength(0);
+  });
+
+  it("gives dev's role no such grant", () => {
+    expect(pull('dev')).toHaveLength(0);
   });
 });

@@ -26,8 +26,8 @@
  *     routes a scheduled task calls; the worker runs only the jobs ported with it.
  */
 
-/** VeloExpense environments. Production is added when it is built, not before. */
-export type Stage = 'dev';
+/** VeloExpense environments. w5-08 (d86): production, released by Cut Release. */
+export type Stage = 'dev' | 'prod';
 
 /** The velotech-<sharedStage> infrastructure an environment runs on. */
 export type SharedStage = 'dev' | 'prod';
@@ -43,8 +43,14 @@ export interface VeloExpenseConfig {
   /** `veloexpense/<stage>` — Secrets Manager path prefix. */
   secretPrefix: string;
 
-  /** The ONE host this environment answers on. */
+  /** The host this environment's links, sign-in and OAuth callbacks are built on. */
   domainName: string;
+  /**
+   * w5-08: further `Host` patterns the shared listener sends here — the tenant subdomains
+   * (`*.veloexpense.ai`) where `authCookieDomain` turns them on. The certificate must cover
+   * them too. Absent: `domainName` alone, as on dev.
+   */
+  extraHosts?: string[];
   /**
    * `AUTH_COOKIE_DOMAIN`. Undefined means TENANT SUBDOMAINS ARE OFF: every tenant
    * signs in at `domainName` itself. Dev runs this way so the free one-level
@@ -198,7 +204,68 @@ const STAGES: Record<Stage, Omit<VeloExpenseConfig, 'resourcePrefix' | 'secretPr
       activateRuleSet: true,
     },
   },
+  /**
+   * w5-08 — production (d86, 18 Oct 2026). On the shared velotech-prod infrastructure.
+   *
+   *   · app.veloexpense.ai, and every tenant at <slug>.veloexpense.ai (AUTH_COOKIE_DOMAIN):
+   *     Slack replies and receipts by email both need a tenant's own address.
+   *   · Released, not deployed on merge: .github/workflows/cd-prod.yml runs when Cut Release
+   *     completes, and promotes the image dev already ran.
+   *   · No receipts by email yet (d86). SES allows ONE active receiving rule set per account
+   *     and region, and dev's holds it (d49); moving both to one shared rule set is its own
+   *     change. Absent `inboundEmail` means no Mail stack and the app ignores the endpoint.
+   *   · Small but protected: two web tasks so a deploy or a task restart is not an outage,
+   *     Aurora deletion protection and 14 days of backups.
+   */
+  prod: {
+    stage: 'prod',
+    sharedStage: 'prod',
+    accountId: ACCOUNT_ID,
+    region: REGION,
+    domainName: 'app.veloexpense.ai',
+    authCookieDomain: 'veloexpense.ai',
+    extraHosts: ['*.veloexpense.ai'],
+    // ACM, ca-central-1, for app.veloexpense.ai AND *.veloexpense.ai — not requested yet.
+    // Until it is committed here (or ALB_CERTIFICATE_ARN is set), building the prod config
+    // fails with a sentence saying so, and nothing is deployed (docs/runbooks/production.md).
+    albCertificateArn: '',
+    // The shared prod listener is velotech-prod's own, so the band starts again at 100.
+    listenerPriority: 100,
+    rds: {
+      databaseName: 'veloexpense',
+      minAcu: 0.5,
+      maxAcu: 4,
+      backupRetentionDays: 14,
+      deletionProtection: true,
+    },
+    web: { cpu: 512, memoryMiB: 1024, desiredCount: 2, pgPoolMax: 10 },
+    valkey: { nodeType: 'cache.t4g.micro', numReplicas: 0, engineVersion: '8.0', snapshotRetentionDays: 7 },
+    worker: { cpu: 512, memoryMiB: 1024, desiredCount: 1 },
+    schedules: [
+      { name: 'notifications', path: '/api/internal/notifications/drain', rate: { minutes: 2 } },
+      { name: 'ledger', path: '/api/internal/ledger/drain', rate: { minutes: 5 } },
+      { name: 'compliance-scan', path: '/api/internal/compliance/scan', rate: { minutes: 1440 } },
+      { name: 'compliance-evaluate', path: '/api/internal/compliance/evaluate', rate: { minutes: 1440 } },
+    ],
+    smtpSecretName: 'velocrm/smtp-credentials',
+  },
 };
+
+/** Every host the listener sends here: `domainName`, then `extraHosts`. */
+export function hostsOf(config: VeloExpenseConfig): string[] {
+  return [config.domainName, ...(config.extraHosts ?? [])];
+}
+
+/**
+ * Browser origins that load pages from this environment — for the receipts bucket's CORS.
+ * With tenant subdomains on, a receipt is uploaded from `<tenant>.<apex>`, not `domainName`.
+ */
+export function browserOriginsOf(config: VeloExpenseConfig): string[] {
+  return [
+    `https://${config.domainName}`,
+    ...(config.authCookieDomain ? [`https://*.${config.authCookieDomain.replace(/^\./, '')}`] : []),
+  ];
+}
 
 export function buildConfig(stage: Stage, overrides: { albCertificateArn?: string } = {}): VeloExpenseConfig {
   const base = STAGES[stage];
