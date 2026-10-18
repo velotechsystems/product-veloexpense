@@ -55,6 +55,10 @@ esac
 # deployment.
 : "${APP_URL:=http://localhost:3000}"
 export APP_URL
+# 18 Oct 2026: /signup is closed unless SIGNUP_ENABLED=true (lib/onboarding/signupGate.ts).
+# Local development keeps it open, as dev does; production does not.
+: "${SIGNUP_ENABLED:=true}"
+export SIGNUP_ENABLED
 : "${WORKER_SECRET:=dev-only-not-a-secret}"
 export WORKER_SECRET
 # SMTP_HOST is deliberately NOT defaulted: unset means the console transport, so

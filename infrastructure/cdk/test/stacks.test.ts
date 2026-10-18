@@ -545,3 +545,28 @@ describe('production (w5-08)', () => {
     expect(dev.authCookieDomain).toBeUndefined();
   });
 });
+
+// ── 18 Oct 2026: how tenants are created, per stage ─────────────────────────────
+describe('tenant creation per stage', () => {
+  const webEnv = (tpl: Template) => {
+    const [[, td]] = resources(tpl, 'AWS::ECS::TaskDefinition').filter(([, t]) =>
+      String((t.Properties as { Family?: string }).Family).endsWith('-web'),
+    );
+    const [c] = (td.Properties as { ContainerDefinitions: Array<{ Environment: Array<{ Name: string; Value: string }>; Secrets: Array<{ Name: string; ValueFrom: unknown }> }> }).ContainerDefinitions;
+    return { env: c.Environment.map((e) => e.Name), secrets: c.Secrets.map((x) => x.Name) };
+  };
+
+  it('dev: self-serve signup on, no platform token', () => {
+    const { env, secrets } = webEnv(s.compute);
+    expect(env).toContain('SIGNUP_ENABLED');
+    expect(secrets).not.toContain('PLATFORM_INBOUND_TOKEN');
+  });
+
+  it('prod: signup closed, and the platform token reaches the web task', () => {
+    const p = synth('prod');
+    const { env, secrets } = webEnv(p.compute);
+    expect(env).not.toContain('SIGNUP_ENABLED');
+    expect(secrets).toContain('PLATFORM_INBOUND_TOKEN');
+    expect(JSON.stringify(p.compute.toJSON())).toContain('veloexpense/prod/platform-inbound-token');
+  });
+});

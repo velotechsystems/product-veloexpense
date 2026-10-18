@@ -139,6 +139,19 @@ export interface VeloExpenseConfig {
     restoreRuleSetNameOnDelete?: string;
   };
 
+  /**
+   * Whether anybody may create an organization at /signup (SIGNUP_ENABLED). Decided 18 Oct
+   * 2026: dev keeps it on; production is platform-only. The app is closed when it is unset
+   * (lib/onboarding/signupGate.ts), so leaving this false is the safe default.
+   */
+  selfServeSignup: boolean;
+  /**
+   * Whether the platform may create tenants here (`POST /api/platform/provision`). On, the
+   * web task gets PLATFORM_INBOUND_TOKEN from `<secretPrefix>/platform-inbound-token`, a
+   * secret a person creates before the deploy (MANUAL_SECRETS). Off, the route answers 503.
+   */
+  platformProvisioning: boolean;
+
   tags: Record<string, string>;
 }
 
@@ -193,6 +206,9 @@ const STAGES: Record<Stage, Omit<VeloExpenseConfig, 'resourcePrefix' | 'secretPr
       { name: 'compliance-evaluate', path: '/api/internal/compliance/evaluate', rate: { minutes: 1440 } },
     ],
     smtpSecretName: 'velocrm/smtp-credentials',
+    // Dev keeps self-serve signup (18 Oct 2026); the platform does not provision here yet.
+    selfServeSignup: true,
+    platformProvisioning: false,
     inboundEmail: {
       domain: 'mail.dev.veloexpense.ai',
       webhookUrl: 'https://dev.veloexpense.ai/api/email/inbound',
@@ -248,6 +264,10 @@ const STAGES: Record<Stage, Omit<VeloExpenseConfig, 'resourcePrefix' | 'secretPr
       { name: 'compliance-evaluate', path: '/api/internal/compliance/evaluate', rate: { minutes: 1440 } },
     ],
     smtpSecretName: 'velocrm/smtp-credentials',
+    // Decided 18 Oct 2026: production is platform-only. No public /signup; tenants come from
+    // `/api/platform/provision`, which needs `veloexpense/prod/platform-inbound-token`.
+    selfServeSignup: false,
+    platformProvisioning: true,
   },
 };
 

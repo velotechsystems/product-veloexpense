@@ -24,6 +24,7 @@
  * round would have said.
  */
 import { redirect } from 'next/navigation';
+import { signupOpen } from '@/lib/onboarding/signupGate';
 import { errorParam } from '@/lib/errors/domain';
 import { verifySignup } from '@/lib/onboarding/signup';
 
@@ -43,6 +44,8 @@ function rethrowRedirect(err: unknown): void {
 }
 
 export async function confirmSignupFromForm(form: FormData): Promise<never> {
+  // A link mailed before signup was closed must not create an organization after it.
+  if (!signupOpen()) redirect(`${PAGE}?error=SIGNUP_CLOSED`);
   const token = String(form.get('token') ?? '');
 
   let slug: string;
