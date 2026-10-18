@@ -71,6 +71,21 @@ export interface JobMap {
    *  tenant, which the worker runs under that tenant's RLS scope like every other job. */
   'expense.receiptChase': { trigger?: 'cron' | 'manual'; organizationId?: string };
 
+  /** Daily prune: delete Notification rows older than the configured retention
+   *  window. Activities are kept (the request/card history).
+   *
+   *  w5-07 — ExpenseOS's job, plus `organizationId`, as `expense.receiptChase`: the schedule's
+   *  run names no tenant and only fans out, one job per tenant. */
+  'notification.prune': { trigger?: 'cron' | 'manual'; organizationId?: string };
+
+  /** Daily purge of Audit rows past the retention window (default 7y, SOX).
+   *  Records a chain watermark so integrity verification reconciles the gap the
+   *  deletion leaves at the head of the hash chain.
+   *
+   *  w5-07 — ExpenseOS's job, plus `organizationId` (fanned out per tenant, as above): the
+   *  chain, the retention window and the watermark are all the tenant's (0010, 0075). */
+  'audit.purge': { trigger?: 'cron' | 'manual'; organizationId?: string };
+
   /** Turn one inbound receipt email into an expense report.
    *
    *  Enqueued by POST /api/email/inbound after the SNS signature, the topic and the SES
@@ -179,6 +194,8 @@ export const JOB_QUEUES: Record<JobName, QueueName> = {
   'expense.determineExpense': 'integrations',
   'approval.sweepExpired': 'housekeeping',
   'expense.receiptChase': 'housekeeping',
+  'notification.prune': 'housekeeping',
+  'audit.purge': 'housekeeping',
   'email.ingestReceipts': 'integrations',
   'email.ingestReply': 'notifications',
   'email.receiptsSummary': 'notifications',

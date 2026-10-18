@@ -23,9 +23,10 @@
  *   · the verifier is VeloExpense's `lib/audit/verify.ts`, which already reconciles a purge
  *     from the tenant's own watermark (`organization.audit_purged_*`), where ExpenseOS's
  *     router re-runs its verifier against a SystemFlag watermark;
- *   · RETENTION IS READ-ONLY for now (decided 17 Oct 2026): the 7-year floor, shown on the
- *     screen. ExpenseOS's `retention` / `setRetention` arrive with the purge job that honours
- *     them (w5-07), stored per tenant — a setting nothing acts on would be a dead control.
+ *   · RETENTION IS PER TENANT (w5-07, d82): `organization.audit_retention_years` (0075, NULL =
+ *     the floor), read by the purge job (worker/src/handlers/audit-purge.ts), where ExpenseOS
+ *     keeps one platform-wide SystemFlag. It arrived with that job, so the setting has always
+ *     done what it says.
  */
 import { auditActions, withAudit } from '@expenseos/audit';
 import { Prisma } from '@expenseos/db';
@@ -37,18 +38,25 @@ import { router, withPermission } from '@/server/trpc';
 
 const auditReadProcedure = withPermission(P.audit.read);
 const auditVerifyProcedure = withPermission(P.audit.chainVerify);
+/** Retention is platform configuration, not an audit read — same gate as the
+ *  rest of Platform Settings. */
+const retentionProcedure = withPermission(P.admin.appSettings.update);
 
-/** SOX. VeloExpense: the floor every tenant's chain is kept for (read-only until w5-07). */
+/** SOX. Also what `@expenseos/audit` stamps into `Audit.expiresAt` on write.
+ *  VeloExpense: the floor, and a tenant's window when it has not chosen one. */
 export const DEFAULT_RETENTION_YEARS = 7;
 
 /**
- * What the last purge removed, from the tenant's watermark. VeloExpense: the sequence it
- * purged through and that row's hash (0010) — the facts the verifier needs. ExpenseOS's
- * watermark also carries a count and a run time, which VeloExpense's purge (w5-07) will add.
+ * What the last purge removed, from the tenant's watermark (0010, 0075): the sequence and
+ * hash it purged through — what the verifier needs — and how many rows the run removed, and
+ * when. ExpenseOS's watermark names the purged row by id and its time; VeloExpense's by
+ * sequence, the chain's order.
  */
 export interface PurgeWatermark {
   purgedThroughSequence: string;
   lastPurgedEntryHash: string;
+  purgedCount: number | null;
+  runAt: Date | null;
 }
 
 const FILTER_FIELDS = ['actor', 'action', 'entityType', 'entityId', 'ipAddress', 'date'] as const;
@@ -221,20 +229,35 @@ export const auditRouter = router({
       ctx.db.$queryRaw<{ total: bigint; oldestAt: Date | null; newestAt: Date | null }[]>`
         SELECT count(*) AS total, min(occurred_at) AS "oldestAt", max(occurred_at) AS "newestAt"
           FROM audit_entry`,
-      ctx.db.$queryRaw<{ through: string | null; hash: string | null }[]>`
-        SELECT audit_purged_through_sequence::text AS through, audit_purged_head_hash AS hash
+      ctx.db.$queryRaw<
+        {
+          through: string | null;
+          hash: string | null;
+          count: number | null;
+          at: Date | null;
+          years: number | null;
+        }[]
+      >`
+        SELECT audit_purged_through_sequence::text AS through, audit_purged_head_hash AS hash,
+               audit_purged_count AS count, audit_purged_at AS at,
+               audit_retention_years AS years
           FROM organization
          WHERE id = NULLIF(current_setting('app.current_org', true), '')::uuid`,
     ]);
     const lastPurge: PurgeWatermark | null =
       org?.through && org.hash
-        ? { purgedThroughSequence: org.through, lastPurgedEntryHash: org.hash }
+        ? {
+            purgedThroughSequence: org.through,
+            lastPurgedEntryHash: org.hash,
+            purgedCount: org.count,
+            runAt: org.at,
+          }
         : null;
     return {
       total: Number(span?.total ?? 0),
       oldestAt: span?.oldestAt ?? null,
       newestAt: span?.newestAt ?? null,
-      retentionYears: DEFAULT_RETENTION_YEARS,
+      retentionYears: org?.years ?? DEFAULT_RETENTION_YEARS,
       lastPurge,
     };
   }),
@@ -323,5 +346,53 @@ export const auditRouter = router({
       );
 
       return { ...result, purgeAware };
+    }),
+
+  /** Read the retention window. Separate from `stats` so the settings form can
+   *  refetch it alone. */
+  retention: retentionProcedure.query(async ({ ctx }) => {
+    const [org] = await ctx.db.$queryRaw<{ years: number | null; updatedAt: Date | null }[]>`
+      SELECT audit_retention_years AS years, audit_retention_updated_at AS "updatedAt"
+        FROM organization
+       WHERE id = NULLIF(current_setting('app.current_org', true), '')::uuid`;
+    return {
+      years: org?.years ?? DEFAULT_RETENTION_YEARS,
+      isDefault: org?.years == null,
+      updatedAt: org?.updatedAt ?? null,
+    };
+  }),
+
+  /**
+   * Set the retention window.
+   *
+   * Floor of 7 years, because that's the SOX requirement this module exists to
+   * satisfy — a shorter window would silently destroy evidence the company is
+   * obliged to keep, and nothing about that should be one form field away.
+   * Longer is allowed.
+   *
+   * VeloExpense: the tenant's own (0075), and the database refuses a value outside 7–50 too.
+   */
+  setRetention: retentionProcedure
+    .input(z.object({ years: z.number().int().min(DEFAULT_RETENTION_YEARS).max(50) }))
+    .mutation(async ({ ctx, input }) => {
+      await withAudit(
+        ctx.db,
+        {
+          action: auditActions.audit.retentionUpdate,
+          entityType: 'SystemFlag',
+          actor: {
+            kind: 'user',
+            id: ctx.rbac.id,
+            name: ctx.session.user.name || ctx.session.user.email || ctx.rbac.id,
+            roleLabel: ctx.rbac.roleLabel,
+          },
+          details: { key: 'auditRetentionYears', years: input.years },
+        },
+        (tx) => tx.$executeRaw`
+          UPDATE organization
+             SET audit_retention_years = ${input.years}, audit_retention_updated_at = now()
+           WHERE id = NULLIF(current_setting('app.current_org', true), '')::uuid`,
+      );
+      return { years: input.years };
     }),
 });

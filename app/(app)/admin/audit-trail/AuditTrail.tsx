@@ -17,8 +17,8 @@
  * w5-06 — ported from ExpenseOS `app/[locale]/(app)/admin/audit-trail/AuditTrail.tsx`
  * (1e682dd6). VeloExpense, each marked below: rows are VeloExpense's per-tenant
  * `audit_entry` chain (server/routers/audit.ts); an entry may have no expiry (VeloExpense's
- * writer stamps none — retention is the purge, w5-07); and retention is shown, not set
- * (decided 17 Oct 2026: the setting arrives with the purge job that honours it).
+ * writer stamps none — retention is the purge); and the retention window is the tenant's own
+ * (w5-07, d82).
  */
 import {
   Alert,
@@ -31,6 +31,8 @@ import {
   DrawerHeader,
   DrawerTitle,
   FilterPillBar,
+  Field as FormField,
+  Input,
   resolveDateFilter,
   StatCard,
   TableSettingsButton,
@@ -83,7 +85,13 @@ function fmtTs(value: Date | string): string {
   return new Date(value).toLocaleString();
 }
 
-export function AuditTrail({ canVerify }: { canVerify: boolean }) {
+export function AuditTrail({
+  canVerify,
+  canConfigure,
+}: {
+  canVerify: boolean;
+  canConfigure: boolean;
+}) {
   const toolbarLabels = useToolbarLabels();
   const ta = useTranslations('admin.auditTrail');
   const tableLabels = useTableLabels();
@@ -298,10 +306,15 @@ export function AuditTrail({ canVerify }: { canVerify: boolean }) {
           label={ta('statRetention')}
           value={s ? ta('years', { years: s.retentionYears }) : '—'}
           secondaryValue={
-            // VeloExpense: the watermark records the entry purged through, not a count and
-            // a date (server/routers/audit.ts, `PurgeWatermark`).
+            // VeloExpense: a watermark from before 0075 has no count or run time, so it
+            // names the entry it purged through instead.
             s?.lastPurge
-              ? ta('purgedThrough', { sequence: s.lastPurge.purgedThroughSequence })
+              ? s.lastPurge.runAt && s.lastPurge.purgedCount != null
+                ? ta('lastPurge', {
+                    count: s.lastPurge.purgedCount,
+                    date: new Date(s.lastPurge.runAt).toLocaleDateString(),
+                  })
+                : ta('purgedThrough', { sequence: s.lastPurge.purgedThroughSequence })
               : ta('neverPurged')
           }
           icon={IconShieldCheck}
@@ -340,8 +353,7 @@ export function AuditTrail({ canVerify }: { canVerify: boolean }) {
         </Alert>
       )}
 
-      {/* VeloExpense: no RetentionCard yet — retention is shown above, and set with the
-          purge job that honours it (w5-07, decided 17 Oct 2026). */}
+      {canConfigure && <RetentionCard />}
 
       <div className="rounded-md border border-border bg-card">
         <FilterPillBar<ColumnId>
@@ -475,6 +487,75 @@ export function AuditTrail({ canVerify }: { canVerify: boolean }) {
           )}
         </DrawerContent>
       </Drawer>
+    </div>
+  );
+}
+
+// ── Retention ──────────────────────────────────────────────────────
+
+function RetentionCard() {
+  const ta = useTranslations('admin.auditTrail');
+  const tc = useTranslations('admin.common');
+  const utils = trpc.useUtils();
+  const current = trpc.audit.retention.useQuery();
+  const [draft, setDraft] = useState<string>('');
+  const [error, setError] = useState<string | null>(null);
+  const [savedAt, setSavedAt] = useState<Date | null>(null);
+
+  const save = trpc.audit.setRetention.useMutation({
+    onSuccess: () => {
+      utils.audit.retention.invalidate();
+      utils.audit.stats.invalidate();
+      setSavedAt(new Date());
+      setError(null);
+    },
+    onError: (e) => setError(e.message),
+  });
+
+  const value = draft !== '' ? draft : String(current.data?.years ?? '');
+
+  return (
+    <div className="rounded-md border border-border bg-card p-4">
+      <div className="flex flex-wrap items-end gap-3">
+        <FormField
+          htmlFor="audit-retention"
+          label={ta('retentionLabel')}
+          description={ta('retentionHelp')}
+        >
+          <Input
+            id="audit-retention"
+            type="number"
+            min={7}
+            max={50}
+            className="w-28"
+            value={value}
+            onChange={(e) => setDraft(e.target.value)}
+          />
+        </FormField>
+        <Button
+          size="sm"
+          disabled={save.isPending || value === '' || Number(value) === current.data?.years}
+          onClick={() => {
+            const years = Number(value);
+            if (!Number.isInteger(years)) {
+              setError(ta('retentionInvalid'));
+              return;
+            }
+            save.mutate({ years });
+          }}
+        >
+          {save.isPending ? tc('saving') : tc('save')}
+        </Button>
+        {savedAt && (
+          <span className="text-muted-foreground text-xs">
+            {tc('savedAt', { time: savedAt.toLocaleTimeString() })}
+          </span>
+        )}
+      </div>
+      {error && <p className="mt-2 text-destructive text-sm">{error}</p>}
+      {current.data?.isDefault && (
+        <p className="mt-2 text-muted-foreground text-xs">{ta('retentionDefault')}</p>
+      )}
     </div>
   );
 }

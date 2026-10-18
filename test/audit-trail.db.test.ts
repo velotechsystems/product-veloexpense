@@ -9,8 +9,8 @@
  *   · two tenants, called as a request does (`caller`, by email and organization), so every
  *     read runs under the tenant's RLS — one tenant's chain is invisible to another;
  *   · pages on `sequence`, the chain's own order, where ExpenseOS pages on its UUIDv7 id;
- *   · no retention cases: the setting arrives with the purge job (w5-07, decided 17 Oct
- *     2026), so what is pinned is the 7-year floor the stats report;
+ *   · retention is the tenant's own (w5-07, d82): read, set, refused below the floor, and
+ *     gated on platform settings, as ExpenseOS's `retention` / `setRetention`;
  *   · a purge is simulated as VeloExpense's purge will make one — rows removed under
  *     `app.audit_purge` and the tenant's watermark set — and the verify still passes, and
  *     says so.
@@ -260,9 +260,36 @@ describe('a purged head', () => {
 
     const caller = as('boss@audit-b.test', B);
     const s = await caller.stats();
-    expect(s.lastPurge).toEqual({ purgedThroughSequence: cut.sequence, lastPurgedEntryHash: cut.entry_hash });
+    // A watermark written by hand here, as one from before 0075 would be: no count, no time.
+    expect(s.lastPurge).toEqual({
+      purgedThroughSequence: cut.sequence,
+      lastPurgedEntryHash: cut.entry_hash,
+      purgedCount: null,
+      runAt: null,
+    });
     const r = await caller.verify({});
     expect(r).toMatchObject({ ok: true, purgeAware: true });
+  });
+});
+
+describe('retention', () => {
+  it('reads the floor as the default until the tenant chooses', async () => {
+    await expect(boss().retention()).resolves.toMatchObject({ years: 7, isDefault: true });
+  });
+
+  it("sets the tenant's own window, audits the change, and the stats report it", async () => {
+    await expect(boss().setRetention({ years: 10 })).resolves.toEqual({ years: 10 });
+    await expect(boss().retention()).resolves.toMatchObject({ years: 10, isDefault: false });
+    expect((await boss().stats()).retentionYears).toBe(10);
+    const [newest] = (await boss().list({ limit: 1 })).items;
+    expect(newest.action).toBe('AUDIT_RETENTION_CHANGED');
+    expect(newest.details).toMatchObject({ years: 10 });
+    // Another tenant is untouched.
+    await expect(as('boss@audit-b.test', B).retention()).resolves.toMatchObject({ years: 7, isDefault: true });
+  });
+
+  it('refuses to shorten retention below the SOX floor', async () => {
+    await expect(boss().setRetention({ years: 6 })).rejects.toMatchObject({ code: 'BAD_REQUEST' });
   });
 });
 
@@ -272,6 +299,8 @@ describe('who may do what', () => {
     await expect(emp.list({})).rejects.toMatchObject({ code: 'FORBIDDEN' });
     await expect(emp.stats()).rejects.toMatchObject({ code: 'FORBIDDEN' });
     await expect(emp.verify({})).rejects.toMatchObject({ code: 'FORBIDDEN' });
+    await expect(emp.retention()).rejects.toMatchObject({ code: 'FORBIDDEN' });
+    await expect(emp.setRetention({ years: 9 })).rejects.toMatchObject({ code: 'FORBIDDEN' });
     // The permissions are the ones named, not a role check by another name.
     expect(P.audit.read).toBe('audit.read');
     expect(P.audit.chainVerify).toBe('audit.chain.verify');
