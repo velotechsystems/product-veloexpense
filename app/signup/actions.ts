@@ -40,6 +40,7 @@
  * separate decision, not a side effect of this ticket.
  */
 import { redirect } from 'next/navigation';
+import { signupOpen } from '@/lib/onboarding/signupGate';
 import { errorParam } from '@/lib/errors/domain';
 import { startSignup } from '@/lib/onboarding/signup';
 import { slugify } from '@/lib/onboarding/slug';
@@ -64,6 +65,9 @@ function rethrowRedirect(err: unknown): void {
 }
 
 export async function startSignupFromForm(form: FormData): Promise<never> {
+  // Closed deployments (production) refuse here too, not only on the page: a form can be
+  // posted without the page that renders it.
+  if (!signupOpen()) redirect(`${PAGE}?error=SIGNUP_CLOSED`);
   const email = String(form.get('email') ?? '');
   const organizationName = String(form.get('organizationName') ?? '');
   const typedSlug = String(form.get('slug') ?? '').trim();

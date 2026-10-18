@@ -17,6 +17,8 @@
  * can tell this page apart from a phishing copy of it.
  */
 import Link from 'next/link';
+import { signupOpen } from '@/lib/onboarding/signupGate';
+import { SignupClosed } from '../closed';
 import { Button } from '@/components/ui/button';
 import { ErrorBanner } from '@/app/expenses/ui';
 import { peekSignup } from '@/lib/onboarding/signup';
@@ -40,6 +42,9 @@ export default async function VerifySignupPage({
   searchParams: Promise<{ token?: string; created?: string; error?: string }>;
 }) {
   const { token, created, error } = await searchParams;
+
+  // Closed on this deployment: no organization is created from a link, however it arrived.
+  if (!signupOpen()) return <SignupClosed />;
 
   /* ── done ──────────────────────────────────────────────────────────────── */
   // `checkSlug` before rendering: `created` arrives from a URL, so it is

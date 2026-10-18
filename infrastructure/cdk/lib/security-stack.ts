@@ -54,6 +54,13 @@ export interface SecurityStackProps extends StackProps {
 /** Secrets a person creates before the first deploy. Name suffix under `secretPrefix`. */
 export const MANUAL_SECRETS = ['secret-encryption-key', 'google-oauth', 'anthropic-api-key'] as const;
 
+/**
+ * 18 Oct 2026: the token the platform presents to `/api/platform/provision`, made by a person
+ * where `platformProvisioning` is on (production). 48+ random characters. Not in
+ * MANUAL_SECRETS because dev does not need it.
+ */
+export const PLATFORM_INBOUND_TOKEN_SECRET = 'platform-inbound-token';
+
 /** The Anthropic key's name under `secretPrefix` (MANUAL_SECRETS). */
 export const ANTHROPIC_API_KEY_SECRET = 'anthropic-api-key';
 

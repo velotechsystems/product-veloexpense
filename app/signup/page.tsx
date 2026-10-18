@@ -18,7 +18,9 @@ import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { ErrorBanner } from '@/app/expenses/ui';
 import { SIGNUP_TTL_MINUTES } from '@/lib/onboarding/signup';
+import { signupOpen } from '@/lib/onboarding/signupGate';
 import { startSignupFromForm } from './actions';
+import { SignupClosed } from './closed';
 import { Card, Field, Lede, Shell, Title } from '@/app/pre-auth';
 
 import { pageTitle } from '@/lib/i18n/page-title';
@@ -38,6 +40,10 @@ export default async function SignupPage({
   searchParams: Promise<{ error?: string; sent?: string }>;
 }) {
   const { error, sent } = await searchParams;
+
+  // Closed on this deployment (production: tenants come from the platform). Said plainly,
+  // with the way in for somebody who already has an organization.
+  if (!signupOpen()) return <SignupClosed />;
 
   if (sent === 'first' || sent === 'again') {
     return (
@@ -111,3 +117,4 @@ export default async function SignupPage({
     </Shell>
   );
 }
+

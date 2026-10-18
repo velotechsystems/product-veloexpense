@@ -51,7 +51,7 @@ import {
 import type { Construct } from 'constructs';
 import { REDIS_URL_SECRET } from './cache-stack';
 import { INBOUND_OBJECT_PREFIX, inboundMailBucketName, inboundMailTopicName } from './mail-stack';
-import { ANTHROPIC_API_KEY_SECRET } from './security-stack';
+import { ANTHROPIC_API_KEY_SECRET, PLATFORM_INBOUND_TOKEN_SECRET } from './security-stack';
 import { hostsOf, type VeloExpenseConfig } from './config';
 import { SHARED_APP_PORT, importShared } from './shared';
 
@@ -140,6 +140,8 @@ export class ComputeStack extends Stack {
       nameArn(config.smtpSecretName),
       // The web app enqueues (receipt extraction, w3-02).
       nameArn(`${config.secretPrefix}/${REDIS_URL_SECRET}`),
+      // Platform provisioning, where it is on (config.ts `platformProvisioning`).
+      ...(config.platformProvisioning ? [nameArn(`${config.secretPrefix}/${PLATFORM_INBOUND_TOKEN_SECRET}`)] : []),
     ]);
     // The worker: the queue's URL; and, with receipt reading (w3-02a), veloapp's login —
     // the same RLS-bound role the web app uses — and the Anthropic key. And the mail relay:
@@ -258,6 +260,8 @@ export class ComputeStack extends Stack {
         // forwarded one. AUTH_URL above pins what Auth.js builds links on.
         AUTH_TRUST_HOST: 'true',
         ...(config.authCookieDomain ? { AUTH_COOKIE_DOMAIN: config.authCookieDomain } : {}),
+        // Self-serve /signup — closed unless this says otherwise (lib/onboarding/signupGate.ts).
+        ...(config.selfServeSignup ? { SIGNUP_ENABLED: 'true' } : {}),
         STORAGE_DRIVER: 's3',
         STORAGE_BUCKET: `${prefix}-receipts-${config.accountId}`,
         STORAGE_REGION: config.region,
@@ -291,6 +295,15 @@ export class ComputeStack extends Stack {
         SMTP_PASS: ecs.Secret.fromSecretsManager(smtp, 'SMTP_PASSWORD'),
         EMAIL_FROM: ecs.Secret.fromSecretsManager(smtp, 'SMTP_FROM_ADDRESS'),
         REDIS_URL: ecs.Secret.fromSecretsManager(redisUrl),
+        // The token the platform presents to create a tenant here — the INBOUND one, never
+        // the outbound PLATFORM_SERVICE_TOKEN (app/api/platform/provision/route.ts).
+        ...(config.platformProvisioning
+          ? {
+              PLATFORM_INBOUND_TOKEN: ecs.Secret.fromSecretsManager(
+                byName('PlatformInboundToken', `${config.secretPrefix}/${PLATFORM_INBOUND_TOKEN_SECRET}`),
+              ),
+            }
+          : {}),
       },
       logging: ecs.LogDrivers.awsLogs({ logGroup: logGroup('WebLogs', 'web'), streamPrefix: 'web' }),
       healthCheck: {

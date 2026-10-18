@@ -100,6 +100,10 @@ const APP_ENV = {
   // being off.
   PLATFORM_INBOUND_TOKEN: 'e2e-inbound-token-not-a-real-secret',
 
+  // 18 Oct 2026: /signup is CLOSED unless this is set (lib/onboarding/signupGate.ts) —
+  // production runs closed. The e2e drives the open flow (e2e/signup-flow.spec.ts), as dev.
+  SIGNUP_ENABLED: 'true',
+
   // VX5-5. The apex tenant subdomains live under, which `lib/tenant/host.ts`
   // reads from this one variable — the same one that makes a session usable
   // across subdomains at all (`auth.ts` has the measurement).

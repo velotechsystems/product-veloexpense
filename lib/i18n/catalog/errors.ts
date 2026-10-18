@@ -62,6 +62,7 @@ export const USER_MESSAGE_CODES = [
   /* VX5-1: creating an organization. VX5-2: getting there. */
   'SIGNUP_EMAIL',
   'SIGNUP_LINK_DEAD',
+  'SIGNUP_CLOSED',
   'ORG_NAME_REQUIRED',
   'ORG_SLUG_SHAPE',
   'ORG_SLUG_RESERVED',
@@ -382,6 +383,9 @@ export const ERROR_COPY: Record<UserMessageCode, Copy> = {
     'en-CA':
       'That confirmation link is no longer valid — it may have expired or already been used. ' +
       'Start again and we will send a new one.',
+  },
+  SIGNUP_CLOSED: {
+    'en-CA': 'Sign-up is by invitation here. Ask your organization\'s administrator to invite you.',
   },
   ORG_NAME_REQUIRED: {
     'en-CA': 'Give your organization a name — it is what your people will see when they sign in.',

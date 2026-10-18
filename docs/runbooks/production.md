@@ -43,6 +43,8 @@ In order. Each step says what proves it is done.
    - `google-oauth`: JSON `{"clientId": …, "clientSecret": …}` for a Google OAuth client
      whose redirect URI is `https://app.veloexpense.ai/api/auth/callback/google`.
    - `anthropic-api-key`: the key receipt extraction uses.
+   - `platform-inbound-token` (18 Oct 2026): 48+ random characters, generated. The token the
+     platform presents to `/api/platform/provision`. Production only (`platformProvisioning`).
    Everything else (auth, worker, database, Valkey) the stacks generate.
 5. **The `prod` GitHub Environment**, restricted to the `main` branch. The deploy role
    trusts `repo:velotechsystems/product-veloexpense:environment:prod` and nothing else.
@@ -65,6 +67,22 @@ In order. Each step says what proves it is done.
 
    It refuses to deploy a commit dev never built. Dev's repository keeps the last 20 images,
    so release within about 20 merges of the commit.
+
+## 2a. Creating a tenant
+
+Production has **no self-serve sign-up** (decided 18 Oct 2026): `/signup` says sign-up is by
+invitation, and a verification link mailed elsewhere creates nothing. `SIGNUP_ENABLED` is
+unset there; dev sets it (`config.ts` `selfServeSignup`).
+
+A tenant is created by the platform, through `POST https://app.veloexpense.ai/api/platform/provision`
+with the `x-platform-key` header set to `veloexpense/prod/platform-inbound-token`. The body is
+the suite's provision contract (`accountId`, `product: "veloexpense"`, `plan`, `adminEmail`,
+`adminName`, `companyName`, `slug`, `idempotencyKey`). It is idempotent on `accountId`: asking
+twice returns the first tenant. The admin it names signs in with Google at
+`https://<slug>.veloexpense.ai` and invites everybody else.
+
+Until VeloCRM's platform calls it, a person calls it with the same body — that is how
+Velotech's own tenant (the first) is created.
 
 ## 3. Rolling back
 
