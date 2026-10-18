@@ -29,8 +29,9 @@ In order. Each step says what proves it is done.
    prod shared stacks need a deploy first.
 2. **One certificate for both hosts.** ACM in `ca-central-1`, for `app.veloexpense.ai` and
    `*.veloexpense.ai`, DNS-validated. Its validation CNAME goes in Cloudflare as **DNS only**
-   (keep it; renewal uses it). When it is ISSUED, its ARN goes into `config.ts` `prod.albCertificateArn`.
-   Until then the prod config refuses to build, so nothing deploys.
+   (keep it; renewal uses it). Its ARN is committed in `config.ts` `prod.albCertificateArn`
+   (requested 18 Oct 2026, `…/6cddefb8-7f13-4ffb-82af-d185f56a8488`). A release before it is
+   ISSUED fails at the listener certificate, so check its status first.
 3. **DNS.** In Cloudflare, `app` and `*` as CNAMEs to the velotech-prod ALB's DNS name
    (`/velotech/prod/shared/alb-dns-name`), **proxied**, SSL mode Full (strict). Cloudflare's
    free certificate covers one level of subdomain, which is exactly `*.veloexpense.ai`.
