@@ -53,7 +53,9 @@ In order. Each step says what proves it is done.
 
 1. Merge to main as usual. Dev deploys, as always.
 2. When dev is the release you want: Actions → **Cut Release** → Run workflow.
-3. **CD (production)** starts when Cut Release completes:
+3. **CD (production)** starts when Cut Release completes. It first deploys the Security and
+   Storage stacks on their own, because prod's image repository lives in Storage and the copy
+   needs it (on a first release it does not exist yet). Then it:
    - copies dev's image for that commit into `veloexpense-prod/web`;
    - checks the copy has the same digest dev ran;
    - `cdk deploy`s the prod stacks;

@@ -97,11 +97,56 @@ jobs:
           { echo "git_sha=${SHA}"; echo "image_tag=${SHA::7}"; } >> "$GITHUB_OUTPUT"
           echo "Releasing ${SHA} (image ${SHA::7}) to production."
 
-  # -- 2. Copy the image (dev → prod; no rebuild) ----------------------------------
+  # -- 2. The repository the image is copied INTO ------------------------------------
+  # VeloExpense (found on the first production run, 18 Oct 2026): prod's image repository,
+  # `veloexpense-prod/web`, belongs to the Storage stack, which the full `cdk deploy` below
+  # creates — AFTER the copy that needs it. So the very first release had nowhere to push.
+  # ExpenseOS never hit this because its prod repositories pre-existed in their own account.
+  # Here the Storage stack (and the Security stack its KMS key comes from) is deployed first,
+  # on its own; on every later release it has no changes and takes seconds. Compute is not
+  # touched, so nothing is started before the image exists.
+  base-stacks:
+    name: Image repository (prod)
+    timeout-minutes: 30
+    needs: [resolve]
+    runs-on: ubuntu-24.04
+    environment: prod
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.resolve.outputs.git_sha }}
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ env.CD_ROLE_ARN }}
+          role-skip-session-tagging: true
+          aws-region: ${{ env.AWS_REGION }}
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: infrastructure/cdk/package-lock.json
+
+      - name: Install CDK dependencies
+        working-directory: infrastructure/cdk
+        run: npm ci --no-audit --no-fund
+
+      - name: Deploy Security and Storage only
+        working-directory: infrastructure/cdk
+        env:
+          VELOEXPENSE_STAGE: ${{ env.STAGE }}
+          IMAGE_TAG: ${{ needs.resolve.outputs.image_tag }}
+        # Naming the Storage stack deploys it and the stack it depends on (Security), and
+        # nothing else: no database, cache or services yet.
+        run: npx cdk deploy VeloExpense-Prod-Storage --require-approval never
+
+  # -- 3. Copy the image (dev → prod; no rebuild) ----------------------------------
   copy-image:
     name: Copy image (prod)
     timeout-minutes: 30
-    needs: [resolve]
+    needs: [resolve, base-stacks]
     runs-on: ubuntu-24.04-arm
     environment: prod
     steps:
@@ -162,7 +207,7 @@ jobs:
             exit 1
           fi
 
-  # -- 3. CDK deploy ---------------------------------------------------------------
+  # -- 4. CDK deploy ---------------------------------------------------------------
   cdk-deploy:
     name: CDK Deploy (prod)
     timeout-minutes: 60
@@ -214,7 +259,7 @@ jobs:
           path: infrastructure/cdk/cdk-outputs.json
           retention-days: 30
 
-  # -- 4. Database (bootstrap + migrations; never a seed) ----------------------------
+  # -- 5. Database (bootstrap + migrations; never a seed) ----------------------------
   db-migrate:
     name: DB Migrate (prod)
     timeout-minutes: 30
@@ -263,7 +308,7 @@ jobs:
             exit 1
           fi
 
-  # -- 5. Verify -------------------------------------------------------------------
+  # -- 6. Verify -------------------------------------------------------------------
   verify-deploy:
     name: Verify Deploy (prod)
     timeout-minutes: 25
