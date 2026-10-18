@@ -195,7 +195,11 @@ export async function issueInvite(
                          manager_id, department_id, business_unit_id, legal_entity_id,
                          invited_by_id, expires_at)
      VALUES (${ORG}, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
-             clock_timestamp() + ($11 || ' days')::interval)
+             -- f54: a whole number of 24-hour days, not calendar days. '14 days' is calendar
+             -- arithmetic in the session's time zone, so across a daylight-saving change it is
+             -- 14 days and an hour (or less an hour) — which the invite test caught on a
+             -- Toronto-zoned database on 18 Oct, two weeks before the clocks went back.
+             clock_timestamp() + ($11::int * interval '24 hours'))
      ON CONFLICT (organization_id, lower(email)) WHERE accepted_at IS NULL AND revoked_at IS NULL
      DO UPDATE SET token_hash       = EXCLUDED.token_hash,
                    expires_at       = EXCLUDED.expires_at,
