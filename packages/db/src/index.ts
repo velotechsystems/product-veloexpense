@@ -121,3 +121,6 @@ export { cacheNamespace } from './cacheNamespace';
 export { homeCurrencyCode, LAST_RESORT_CURRENCY } from './homeCurrency';
 // People 2: ExpenseOS's offboarding roll-up, reports half (`@expenseos/db/offboarding` there).
 export { type OffboardRollupSummary, rollUpOnOffboard } from './offboarding';
+// w5-04: the directory sync's title → job-level mapping (ExpenseOS's `@expenseos/db/jobLevels`
+// subpath; VeloExpense's barrel builds no client at load, so it is exported here).
+export { titleToJobLevelCode, type JobLevelCode } from './jobLevels';

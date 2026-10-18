@@ -245,6 +245,12 @@ export const AUDIT_ACTIONS = [
   'AUDIT_RETENTION_CHANGED',
   'AUDIT_PURGED',
 
+  /* w5-04: a Google Workspace directory sync ran for the tenant — ExpenseOS's
+   * `integration.google.directory.synced`, one summary row per run, naming whom it
+   * offboarded. The name leaves the vendor out: an action string is permanent once rows
+   * carry it, and the next directory may not be Google's. */
+  'DIRECTORY_SYNCED',
+
   /* branding — VX4-3. The odd family; see the header. */
   'BRANDING_COLOR_SET',
   'BRANDING_COLOR_CLEARED',

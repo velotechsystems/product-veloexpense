@@ -23,6 +23,7 @@ export default defineConfig({
       { find: /^@expenseos\/receipt-extraction$/, replacement: r('packages/receipt-extraction/src/index.ts') },
       { find: /^@expenseos\/jobs$/, replacement: r('packages/jobs/src/index.ts') },
       { find: /^@expenseos\/db$/, replacement: r('packages/db/src/index.ts') },
+      { find: /^@expenseos\/integrations-google$/, replacement: r('packages/integrations-google/src/index.ts') },
       { find: /^@expenseos\/predicate$/, replacement: r('packages/predicate/src/index.ts') },
       { find: /^@expenseos\/approvals$/, replacement: r('packages/approvals/src/index.ts') },
       { find: /^@expenseos\/approvals\/engine$/, replacement: r('packages/approvals/src/engine.ts') },

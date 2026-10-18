@@ -13,6 +13,7 @@ import {
 import { type ConnectionOptions, type Job, Worker } from 'bullmq';
 import { handleApprovalSweep } from './handlers/approval-sweep';
 import { handleAuditPurge } from './handlers/audit-purge';
+import { handleDirectorySync } from './handlers/directory-sync';
 import { handleDetermineExpense } from './handlers/determine-expense';
 import { handleExamplePing } from './handlers/example';
 import { handleExpenseReceiptChase } from './handlers/expense-receipt-chase';
@@ -69,6 +70,12 @@ const HANDLERS: { [N in JobName]?: (data: unknown, job: Job) => Promise<unknown>
     (data as { organizationId?: string } | null)?.organizationId
       ? inTenant(data, () => handleAuditPurge(data as never))
       : fanOutToTenants('audit.purge', { trigger: 'cron' }),
+  // w5-04: ExpenseOS's directory sync, as `audit.purge` — the schedule's run fans out per
+  // tenant; each tenant's job (or an admin's "Sync now") runs as that tenant.
+  'integration.google.directorySync': (data) =>
+    (data as { organizationId?: string } | null)?.organizationId
+      ? inTenant(data, () => handleDirectorySync(data as never))
+      : fanOutToTenants('integration.google.directorySync', { trigger: 'cron' }),
   // VeloExpense (w3-06): as the tenant whose address the email was sent to (d47).
   'email.ingestReceipts': (data) => inTenant(data, () => handleIngestReceiptEmail(data as never)),
   // w5-01: a reply to a notification email, as a comment.
@@ -92,8 +99,8 @@ interface RecurringJob {
 }
 
 /**
- * VeloExpense: ExpenseOS's receipt chase, approval sweep, and (w5-07) notification prune and
- * audit purge, so far. Every other ExpenseOS
+ * VeloExpense: ExpenseOS's receipt chase, approval sweep, (w5-07) notification prune and
+ * audit purge, and (w5-04) directory sync, so far. Every other ExpenseOS
  * schedule here runs a job VeloExpense does not route through this worker — its notification,
  * ledger and compliance passes are the `/api/internal/*` routes EventBridge Scheduler calls
  * (infrastructure/cdk config.ts `schedules`).
@@ -131,6 +138,14 @@ const RECURRING_JOBS: RecurringJob[] = [
     data: { trigger: 'cron' },
     jobId: 'audit-purge-daily',
     pattern: '30 3 * * *',
+    tz: 'UTC',
+  },
+  // w5-04: ExpenseOS's directory sync, at ExpenseOS's time.
+  {
+    name: 'integration.google.directorySync',
+    data: { trigger: 'cron' },
+    jobId: 'directory-sync-daily',
+    pattern: '0 3 * * *', // every day at 03:00 UTC
     tz: 'UTC',
   },
 ];

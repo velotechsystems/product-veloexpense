@@ -1,5 +1,6 @@
 import { type Permission, permissions as P } from '@expenseos/rbac';
 import {
+  IconAddressBook,
   IconBook,
   IconBrandSlack,
   IconBuildingBank,
@@ -160,6 +161,8 @@ export const VELOEXPENSE_ITEMS: Readonly<Record<string, readonly VeloExpenseNavI
     { key: 'emailDelivery', icon: IconSend, to: '/admin/notification-delivery', requires: VELOEXPENSE_ADMIN },
     // w5-02a: the tenant's own Slack app (its own page, decided 17 Oct 2026).
     { key: 'slack', icon: IconBrandSlack, to: '/admin/slack', requires: VELOEXPENSE_ADMIN },
+    // w5-04: the tenant's own Google Workspace directory sync (d84).
+    { key: 'directorySync', icon: IconAddressBook, to: '/admin/directory-sync', requires: VELOEXPENSE_ADMIN },
     { key: 'billing', icon: IconCreditCard, to: '/admin/billing', requires: VELOEXPENSE_ADMIN },
   ],
 };

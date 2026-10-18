@@ -79,6 +79,7 @@
     "branding": "Image de marque",
     "defaultLanguage": "Langue par défaut",
     "slack": "Slack",
+    "directorySync": "Synchronisation de l’annuaire",
     "emailDelivery": "Envoi des courriels",
     "billing": "Facturation"
   },

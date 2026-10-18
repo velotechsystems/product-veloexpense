@@ -66,6 +66,10 @@ const adminAndOthers = {
     retentionUpdate: 'AUDIT_RETENTION_CHANGED',
     retentionPurge: 'AUDIT_PURGED',
   },
+  /** w5-04: ExpenseOS's `integration.google.directory.synced` (the directory-sync job). */
+  integration: {
+    googleDirectorySynced: 'DIRECTORY_SYNCED',
+  },
   /** ExpenseOS's `workflow.*` key (w4-00c, server/lib/workflowEffects). */
   workflow: {
     actionFired: 'WORKFLOW_ACTION_FIRED',

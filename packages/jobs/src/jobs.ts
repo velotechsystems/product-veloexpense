@@ -86,6 +86,14 @@ export interface JobMap {
    *  chain, the retention window and the watermark are all the tenant's (0010, 0075). */
   'audit.purge': { trigger?: 'cron' | 'manual'; organizationId?: string };
 
+  /** Reconcile the entire Workspace directory into the User table.
+   *  Runs daily on cron; can be triggered manually for ad-hoc syncs.
+   *
+   *  w5-04 — ExpenseOS's job, plus `organizationId` (fanned out per tenant, as above): each
+   *  tenant syncs its own Workspace with its own key (d84). A `manual` run is the admin
+   *  screen's "Sync now", which names its tenant itself. */
+  'integration.google.directorySync': { trigger?: 'cron' | 'manual'; organizationId?: string };
+
   /** Turn one inbound receipt email into an expense report.
    *
    *  Enqueued by POST /api/email/inbound after the SNS signature, the topic and the SES
@@ -196,6 +204,8 @@ export const JOB_QUEUES: Record<JobName, QueueName> = {
   'expense.receiptChase': 'housekeeping',
   'notification.prune': 'housekeeping',
   'audit.purge': 'housekeeping',
+  // w5-04: ExpenseOS's queue for it.
+  'integration.google.directorySync': 'integrations',
   'email.ingestReceipts': 'integrations',
   'email.ingestReply': 'notifications',
   'email.receiptsSummary': 'notifications',

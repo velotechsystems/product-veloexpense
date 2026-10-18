@@ -205,6 +205,16 @@ export const EXPORTED: Readonly<Record<string, ExportedTable>> = {
         'the encrypted signing secret of the tenant\'s Slack app, for the same reason.',
     },
   },
+  // w5-04 (0076): the tenant's own Google Workspace connection. Exported for who connected
+  // it, the account and admin it uses, and what the last sync did; the key is withheld.
+  google_directory_connection: {
+    file: 'google-directory-connection.csv',
+    redact: {
+      service_account_json:
+        'an encrypted Google service-account key file, private key included — ciphertext ' +
+        'under the SERVER\'s key, useless outside it, and a live credential inside it.',
+    },
+  },
 
   /* ── budgets and spend ────────────────────────────────────────────────── */
   budget: { file: 'budgets.csv' },
