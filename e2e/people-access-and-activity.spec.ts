@@ -156,7 +156,10 @@ test.describe('the activity section', () => {
      * arranged — one draft, through the workbench, as `support/seed-activity.ts` builds the
      * phone specs' rows. On a fresh database this file found "No expense reports." otherwise.
      */
-    await createReport(page, `People activity ${Date.now()}`);
+    // Not "…activity…": the title is listed in the drawer, and ExpenseOS's `getByText('Activity')`
+    // below then matched the report's link as well as the heading — a strict-mode failure
+    // whenever the list loaded first (found on a full run, 17 Oct).
+    await createReport(page, `People drawer ${Date.now()}`);
     const drawer = await openPerson(page, 'Demo Admin', 'admin@demo.test');
 
     await expect(drawer.getByText('Activity')).toBeVisible({ timeout: 20_000 });

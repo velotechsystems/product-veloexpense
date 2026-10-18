@@ -16,10 +16,10 @@ app.
 >   channel `SLACK`: a failure is recorded and retried, and a DM that cannot be sent is
 >   CANCELLED with the reason. Both show on **/admin/notification-delivery**.
 >
-> **Not built yet: replies in Slack (w5-02b).** The events route
-> (`/api/slack/events`), and a reply in a DM thread becoming a comment, come next. Until
-> then nothing inbound exists: do not set an Event Subscriptions Request URL (§3), and §7
-> describes the design rather than running code.
+> - **The Request URL is the organization's own address** (w5-02b),
+>   `https://<tenant>.<app domain>/api/slack/events`. That is how the events route knows whose
+>   Slack app is calling, and so whose signing secret verifies it. /admin/slack shows the exact
+>   URL to paste.
 
 Everything below is derived from the code that actually runs:
 
@@ -33,6 +33,7 @@ Everything below is derived from the code that actually runs:
 | Which subjects have a discussion | `hasCommentThread` in `server/lib/threadParticipants.ts` |
 | The admin screen (fields, steps, test, disconnect) | `app/admin/slack/`, `lib/notifications/slackConnection.ts` |
 | A person's "Slack account" check | `app/notifications/preferences/page.tsx` (`SlackLink`) |
+| Inbound replies → comments | `app/api/slack/events/route.ts`, `server/lib/slackTenant.ts` |
 
 Where a statement below could **not** be established from this repository, it says so.
 
@@ -59,7 +60,7 @@ chat.postMessage(channel = U…, blocks)                    ← a DM
   │    recipient can decide now, "View expense report" otherwise; nothing is posted back
   └─ first message for the report becomes the THREAD ROOT (reply_thread.slack_thread_ts)
        │
-       └─ a human replies in that thread ─────────────────► (w5-02b) POST /api/slack/events
+       └─ a human replies in that thread ─────────────────► POST <tenant address>/api/slack/events
                                                               → COMMENT on the report
 ```
 
@@ -97,10 +98,7 @@ them:
 | `chat:write` | `chat.postMessage` — every notification DM | `sendSlack`, `lib/notifications/slack.ts` |
 | `users:read.email` | `users.lookupByEmail` — matches a VeloExpense person to a Slack account by email | `lookupSlackUser`, same file |
 | `users:read` | Paired with `users:read.email`; Slack's app-config UI adds it alongside | listed in the setup steps on /admin/slack |
-| `im:history` | Receiving the `message.im` events the inbound reply path will consume (w5-02b) | — |
-
-`im:history` is in the list now although nothing inbound exists yet, so that nobody has to
-reinstall the app — which changes the token — when replies arrive.
+| `im:history` | Receiving the `message.im` events the inbound reply path consumes | `app/api/slack/events/route.ts` (`event.type === 'message'` in a DM) |
 
 One call needs **no** scope: `auth.test`, the **Test connection** button on /admin/slack
 (`verifySlackToken`).
@@ -129,10 +127,39 @@ bot token changes.** Paste the new one at /admin/slack, or every call starts fai
 | Slack setting | Value |
 |---|---|
 | **Interactivity & Shortcuts** | **Off**. Nothing is decided in Slack (§6). |
-| **Event Subscriptions** | **Leave off until w5-02b ships.** The Request URL will be the organization's own address, `https://<tenant>.<app domain>/api/slack/events`, subscribed to `message.im`. |
+| **Event Subscriptions** → Request URL | `https://<tenant>.<app domain>/api/slack/events` — copy it from /admin/slack |
+| **Event Subscriptions** → Subscribe to bot events | `message.im` |
 
 VeloExpense never had in-Slack approvals, so there is no Interactivity URL to switch off.
 (ExpenseOS removed its own on 2026-10-07; its runbook keeps the migration steps.)
+
+Copy the URL from /admin/slack rather than typing it. It must be the organization's own
+address: the route reads the tenant from the host, and a host that names no active tenant is
+answered `404` before anything else. A deployment with no tenant subdomains
+(`AUTH_COOKIE_DOMAIN` unset) has no such address, and /admin/slack says so instead of showing
+a URL — DMs still go out, and replies cannot come back.
+
+The events endpoint must be reachable from the public internet; it is the only URL Slack
+itself calls. It is public in `proxy.ts` (no session cookie), like the inbound-mail route.
+
+### The events URL verifies even when nothing else works
+
+`POST /api/slack/events` answers `url_verification` by echoing the challenge **before it
+checks any signature**, and it has to: Slack sends the handshake while the app is being
+created, so there may be no signing secret saved yet to verify it with. Refusing it would make
+the endpoint impossible to register at all.
+
+So Slack's green "Verified" tick proves the URL is reachable and nothing more. The handshake
+says so in the server log, at the moment the tick appears, naming what is missing:
+
+```
+[slack:events] Slack has verified this URL, but Slack has no SIGNING SECRET saved, so an
+inbound Slack request cannot be verified — … See docs/runbooks/slack-setup.md. Until then
+every real event is refused with 503 — the green tick proves the URL is reachable and
+nothing more.
+```
+
+Nothing is logged when the connection is complete.
 
 The link button is opened by the person's own browser, like any other link to the app.
 
@@ -150,8 +177,22 @@ The link button is opened by the person's own browser, like any other link to th
 3. `v0=HMAC-SHA256(signingSecret, "v0:" + timestamp + ":" + rawBody)` equals the header,
    compared with `timingSafeEqual` after a length check.
 
-It is ported and tested, and nothing calls it yet: its caller is the events route (w5-02b).
-`slackInboundGate` is ported with it and names four states, each with its own sentence:
+The body is hashed **raw** — the events route calls `await req.text()` first and parses
+afterwards, precisely so the bytes Slack signed are the bytes we verify. The secret is the
+TENANT's (the one the host names), so a request signed by one organization's app is `401` at
+another's address.
+
+| Condition | Response |
+|---|---|
+| The host names no active tenant | **`404`** |
+| Signature absent, stale, or wrong | **`401 unauthorized`** |
+| The connection cannot be used | **`503`** — `Slack events refused — <reason>` |
+| Body is not JSON | `400 bad payload` |
+
+The `503` body names the reason, because Slack shows the response text back in the Event
+Subscriptions console. `slackInboundGate` names four states, each with its own sentence, and
+the same sentence is logged once per reason per process (`[slack:events] refusing the request
+— …`):
 
 | State | What it means |
 |---|---|
@@ -172,7 +213,7 @@ Two, and **both are secret**, entered at /admin/slack:
 | Signing Secret | no | Basic Information → App Credentials → Signing Secret. |
 
 The signing secret is optional to save so a connection can be made before the Slack app is
-finished — but it will be required for anything inbound (w5-02b). Outbound DMs are unaffected
+finished — but it is required for anything inbound: without it `/api/slack/events` answers `503`. Outbound DMs are unaffected
 by it: the link button is the same with or without it (§6).
 
 The same three rules as ExpenseOS's secret fields, in `lib/notifications/slackConnection.ts`:
@@ -231,14 +272,33 @@ disguised link. ExpenseOS posts a template body unescaped.
 
 ---
 
-## 7. Inbound replies → comments (w5-02b — not built yet)
+## 7. Inbound replies → comments
 
-The outbound half is in place: the **first** DM about a report is remembered as the thread
-root (`setSlackThread`, `reply_thread.slack_channel_id` / `slack_thread_ts`), and later DMs
-about the same report post with `thread_ts` = that root. A reply in that thread will map back
-to the report through `findThreadBySlack(channel, thread_ts)`.
+The mechanism:
+
+1. the **first** DM about a report is remembered as the thread root
+   (`setSlackThread`, `reply_thread.slack_channel_id` / `slack_thread_ts`);
+2. later DMs about the same report post with `thread_ts` = that root;
+3. a human reply carries the same `thread_ts`, so `findThreadBySlack(channel, thread_ts)` —
+   inside the tenant the host named — resolves it back to (report, recipient).
+
+The signature only proves the request came from Slack. The thread mapping proves the message
+belongs to a report we know, and the sender must equal the thread recipient's cached
+`slack_user_id`. The comment is always attributed to the recipient, never to whoever sent the
+message — which is exactly why that check has to hold. `ingestReplyComment` then refuses
+anybody not on the report's discussion, strips quoted text, and caps the body.
 
 Only expense reports have a discussion in VeloExpense (`hasCommentThread`).
+
+The events handler ignores, by design: bot posts including our own (`event.bot_id`), edits and
+joins (`event.subtype`), top-level messages with no `thread_ts`, and any reply whose sender is
+not the thread's recipient. Each is a `return` with a `200`.
+
+Delivery is **idempotent and durable**: the Slack `event_id` is claimed once in Redis
+(`claimOnce`, keyed by tenant and event), processing is synchronous inside Slack's ~3s window,
+and a failure releases the claim and returns `500` so Slack **retries**. The lookup, the
+sender check and the comment run in one tenant transaction, so a reply is posted with its
+notifications or not at all.
 
 ---
 
@@ -257,6 +317,8 @@ Only expense reports have a discussion in VeloExpense (`hasCommentThread`).
 5. **Press the button.** The browser opens the report, after the sign-in page if signed out.
 6. **The next notification about the same report** arrives as a reply in the first one's
    thread.
+7. **Reply in the thread.** The reply appears as a comment on the report, marked as having
+   arrived from Slack.
 
 ---
 
@@ -277,6 +339,13 @@ Slack user id they went to.
 | An approver's button says "View expense report" | They could not decide a task on the report when the DM was sent. The button opens the same report either way. |
 | Everything worked, then stopped after a scope change | Reinstalling issues a **new** bot token. Paste it at /admin/slack. |
 | One person stopped receiving DMs after changing their Slack account | Their cached id is cleared the first time Slack refuses it, and the retry looks the address up again (§10). |
+| Events Request URL verified, but replies never become comments | The tick only proves reachability. Grep the log for `[slack:events] Slack has verified this URL, but …`. Otherwise confirm the `message.im` subscription exists and the app was reinstalled after `im:history` was added. |
+| `/api/slack/events` returns `503` | The body names the reason — usually no signing secret saved at /admin/slack. |
+| `/api/slack/events` returns `401` for every event | The signing secret at /admin/slack is not this app's — often two organizations' apps mixed up, or a dev/prod mix-up. |
+| `/api/slack/events` returns `404` | The Request URL is not this organization's address. Copy it from /admin/slack. |
+| Slack disabled the event subscription ("failing too often") | Sustained `401`, `404` or `503`. Fix the config, then re-enable in the Slack app. |
+| A reply from a colleague in a shared thread does nothing | Expected. Only the thread's own recipient can comment through it. |
+| Same comment posted twice | Should not happen — the event is claimed once in Redis. Check whether Redis was unavailable. |
 
 ---
 

@@ -87,6 +87,14 @@ import { NextResponse, type NextRequest } from 'next/server';
 //                                       delivery, retried and then dropped. EXACT path,
 //                                       in both places.
 //
+// w5-02b adds an eighth, the same kind of SERVICE:
+//   /api/slack/events                   Slack's Event Subscriptions, on the tenant's own
+//                                       address. Authenticated by that tenant's Slack
+//                                       signing secret over the raw body (ExpenseOS's
+//                                       route). Slack sends no cookie, and it retries a
+//                                       307 and then disables the subscription. EXACT
+//                                       path, in both places.
+//
 // TWO PLACES, AND EITHER ONE ALONE IS ENOUGH — MEASURED, NOT ASSUMED. The
 // `matcher` decides whether middleware runs at all; `PUBLIC` is what runs when
 // it does. `/signup` is in both, as `/login` and `/approve` already were, and a
@@ -110,6 +118,7 @@ const PUBLIC = [
   /^\/api\/platform\//,
   /^\/api\/health$/,
   /^\/api\/email\/inbound$/,
+  /^\/api\/slack\/events$/,
   /^\/_next\//,
   /^\/favicon\.ico$/,
   // 2026 brand: the wordmark and the favicon render BEFORE anyone signs in — on
@@ -146,5 +155,5 @@ export function proxy(req: NextRequest) {
 }
 
 export const config = {
-  matcher: ['/((?!api/auth|api/internal|api/platform|api/health$|api/email/inbound$|_next/static|_next/image|favicon.ico|brand/|apple-touch-icon.png|login|approve|signup|invite).*)'],
+  matcher: ['/((?!api/auth|api/internal|api/platform|api/health$|api/email/inbound$|api/slack/events$|_next/static|_next/image|favicon.ico|brand/|apple-touch-icon.png|login|approve|signup|invite).*)'],
 };

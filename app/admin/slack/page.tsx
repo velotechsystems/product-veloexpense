@@ -39,15 +39,15 @@ export const dynamic = 'force-dynamic';
  * ExpenseOS's setup steps for its Slack entry, in English (VeloExpense: English only for now).
  *
  * VeloExpense: "an ExpenseOS person" reads "a VeloExpense person", and the Event Subscriptions
- * step is held back until replies in Slack arrive (w5-02b) — the events URL does not exist
- * yet, and Slack would refuse to verify it. The `im:history` scope stays in the list now, so
- * nobody has to reinstall the app (which changes the token) when replies arrive.
+ * step (w5-02b) names THIS organization's Request URL, which the page shows beside the steps
+ * (ExpenseOS's `callbackUrls`).
  */
 const SETUP_STEPS = [
   'api.slack.com/apps → Create New App → From scratch, and pick your workspace.',
   'OAuth & Permissions → Bot Token Scopes: add chat:write, users:read, users:read.email and im:history. The email scope is what matches a Slack user to a VeloExpense person — without it nobody can be reached; im:history is what lets the app receive the message.im events that turn a reply into a comment.',
   'Install to Workspace, then copy the Bot User OAuth Token (xoxb-…) into the field below.',
   'Basic Information → App Credentials: copy the Signing Secret. It is REQUIRED for events — inbound replies are rejected without it, since every request Slack sends is signature-verified.',
+  'Event Subscriptions: enable events, set the Request URL below, and subscribe to message.im so a reply to a notification becomes a comment. Slack shows the URL as "Verified" as soon as it is reachable — that tick does NOT mean events work; it is answered before the signing secret is read.',
   'Reinstall to the workspace after any scope change — the Bot User OAuth Token changes, and the old one starts failing with missing_scope.',
   'Each person still opts in from their own notification preferences — connecting Slack does not start messaging anyone.',
 ];
@@ -66,7 +66,7 @@ export default async function SlackPage({
 }) {
   const prefs = await readerPrefs();
   const { error, connected, saved, disconnected, tested, detail } = await searchParams;
-  const { connection, keyConfigured } = await getSlackPage();
+  const { connection, keyConfigured, events } = await getSlackPage();
 
   return (
     <Screen>
@@ -113,6 +113,8 @@ export default async function SlackPage({
           <code>openssl rand -base64 32</code> and set it before continuing.
         </div>
       ) : null}
+
+      <EventsUrl events={events} />
 
       {connection.connected ? (
         <section className="flex flex-col gap-3 rounded-lg border border-border p-4">
@@ -244,5 +246,33 @@ export default async function SlackPage({
         </form>
       </section>
     </Screen>
+  );
+}
+
+/**
+ * The Events Request URL, to copy into Slack — ExpenseOS's `callbackUrls` entry ("Events
+ * Request URL", `/api/slack/events`). VeloExpense: this organization's own address, since that
+ * is how the route knows whose Slack app is calling; and said plainly when this deployment has
+ * no tenant addresses, because then nothing Slack sends can reach the right organization.
+ */
+function EventsUrl({ events }: { events: { url: string | null; reachable: boolean } }) {
+  return (
+    <section className="flex flex-col gap-1 rounded-lg border border-border p-4 text-sm">
+      <h2 className="text-lg leading-7 font-semibold">Events Request URL</h2>
+      {events.url && events.reachable ? (
+        <>
+          <code className="w-fit rounded bg-muted px-2 py-1 break-all">{events.url}</code>
+          <p className="text-xs text-muted-foreground">
+            Paste this into Event Subscriptions → Request URL in your Slack app, and subscribe to
+            message.im. A reply in a notification&apos;s thread then becomes a comment on the report.
+          </p>
+        </>
+      ) : (
+        <p className="text-destructive">
+          This deployment has no per-organization address, so replies in Slack cannot reach your
+          organization. Notifications still arrive in Slack; replying there does nothing.
+        </p>
+      )}
+    </section>
   );
 }
