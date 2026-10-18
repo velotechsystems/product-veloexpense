@@ -26,6 +26,7 @@ import {
 import { quickBooksAdapter } from '@/lib/integrations/quickbooks';
 import { stubAdapter, stubOAuthAdapter } from '@/lib/integrations/stub';
 import { veloLedgerAdapter } from '@/lib/integrations/veloledger';
+import { xeroAdapter } from '@/lib/integrations/xero';
 
 /**
  * Every adapter this build contains, enabled or not.
@@ -44,6 +45,8 @@ import { veloLedgerAdapter } from '@/lib/integrations/veloledger';
 const ALL_ADAPTERS: AccountingAdapter[] = [
   veloLedgerAdapter,
   quickBooksAdapter,
+  // w5-03 (d80): dormant until the platform has a Xero app, as QuickBooks is.
+  xeroAdapter,
   stubAdapter,
   stubOAuthAdapter,
 ];

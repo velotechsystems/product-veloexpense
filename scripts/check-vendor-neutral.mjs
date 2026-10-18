@@ -168,6 +168,7 @@ function vendorsIn(text) {
 const ALLOWED = new Set([
   'lib/integrations/veloledger.ts', // the adapter itself
   'lib/integrations/quickbooks.ts', // ditto (VX3-8)
+  'lib/integrations/xero.ts', // ditto (w5-03, d80)
   'lib/integrations/stub.ts', // the test double
   'lib/integrations/registry.ts', // imports the adapters; that is its job
   'scripts/check-vendor-neutral.mjs', // this file names them all
