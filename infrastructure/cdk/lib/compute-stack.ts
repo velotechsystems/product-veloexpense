@@ -52,7 +52,7 @@ import type { Construct } from 'constructs';
 import { REDIS_URL_SECRET } from './cache-stack';
 import { INBOUND_OBJECT_PREFIX, inboundMailBucketName, inboundMailTopicName } from './mail-stack';
 import { ANTHROPIC_API_KEY_SECRET } from './security-stack';
-import type { VeloExpenseConfig } from './config';
+import { hostsOf, type VeloExpenseConfig } from './config';
 import { SHARED_APP_PORT, importShared } from './shared';
 
 export interface ComputeStackProps extends StackProps {
@@ -350,7 +350,8 @@ export class ComputeStack extends Stack {
     new elbv2.ApplicationListenerRule(this, 'HostRule', {
       listener,
       priority: config.listenerPriority,
-      conditions: [elbv2.ListenerCondition.hostHeaders([config.domainName])],
+      // w5-08: plus the tenant subdomains where they are on (config.ts `extraHosts`).
+      conditions: [elbv2.ListenerCondition.hostHeaders(hostsOf(config))],
       action: elbv2.ListenerAction.forward([targetGroup]),
     });
     // ECS refuses a service whose target group is not yet attached to a load

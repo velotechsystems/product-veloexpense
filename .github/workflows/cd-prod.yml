@@ -1,0 +1,342 @@
+# =============================================================================
+# VeloExpense — CD to PRODUCTION (app.veloexpense.ai, every tenant)
+#
+# w5-08 (d86). Ported from ExpenseOS `.github/workflows/cd.yml` (1e682dd6): its release
+# path, "copy dev images to prod → cdk deploy → migrate → verify". VeloExpense's dev CD
+# (cd.yml) left that path out until there was a production stage; this is it, in a file of
+# its own, as VeloLedger's and VeloCRM's `cd-prod.yml` are. The VeloExpense changes are
+# marked "VeloExpense:"; the summary:
+#
+#   · THE TRIGGER is Cut Release completing (workflow_run), not `release: published`.
+#     ExpenseOS's publish event fires because a person publishes in the UI; here Cut Release
+#     publishes with GITHUB_TOKEN unless a release App is configured, and GitHub suppresses
+#     events raised by GITHUB_TOKEN — VeloLedger found its prod CD never ran (CUTREL-2,
+#     10 Oct 2026). workflow_run is not suppressed. The release IS the gate: there is no
+#     reviewer step.
+#   · ONE account. ExpenseOS copies across accounts with `docker pull/tag/push`; here dev's
+#     and prod's repositories are in the same account, and the copy is the same three
+#     commands, so prod runs the exact image digest dev ran. Nothing is rebuilt.
+#   · The image tag is the commit's 7 characters, the tag cd.yml gave it on dev.
+#   · The database step is the image's own database task (bootstrap + migrations), as on
+#     dev. NO seed, ever: prod holds customers' records.
+#   · ROLLBACK: dispatch this workflow with the SHA of an earlier release. Its image is
+#     already in prod's repository and is redeployed as it was. Migrations only go forward,
+#     so the older code runs on the newer schema: roll back across a migration only when
+#     it is additive (docs/runbooks/production.md).
+#
+# Auth to AWS: GitHub OIDC on the `prod` Environment, which the prod deploy role
+# (veloexpense-prod-deploy-role, deploy-role-stack.ts) trusts and nothing else does. The
+# Environment admits `main` only. Application secrets are in Secrets Manager under
+# veloexpense/prod/ and reach the tasks natively; this pipeline never sees them.
+#
+# Before the first run, see docs/runbooks/production.md: the certificate, DNS, the three
+# hand-made secrets, the `prod` Environment, and the deploy role's one-time deploy.
+# =============================================================================
+
+name: CD (production)
+
+on:
+  workflow_run:
+    workflows: ['Cut Release']
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      git_sha:
+        description: 'Full 40-character SHA of a commit dev already built and ran. Defaults to main. Also the rollback: give it the SHA prod should go back to.'
+        required: false
+        default: ''
+
+# One production deploy at a time, in order, never cancelled (cd.yml's incident note).
+concurrency:
+  group: cd-prod
+  cancel-in-progress: false
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  NODE_VERSION: "22"
+  AWS_REGION: ca-central-1
+  STAGE: prod
+  CD_ROLE_ARN: arn:aws:iam::535079144866:role/veloexpense-prod-deploy-role
+  SRC_REPOSITORY: veloexpense-dev/web
+  DST_REPOSITORY: veloexpense-prod/web
+  COMPUTE_STACK: VeloExpense-Prod-Compute
+  DB_LOG_GROUP: /ecs/veloexpense-prod/db
+  DOMAIN_NAME: app.veloexpense.ai
+
+jobs:
+  # -- 1. Resolve the commit ----------------------------------------------------
+  resolve:
+    name: Resolve release
+    timeout-minutes: 10
+    # A failed or cancelled Cut Release deploys nothing. A dispatch must come from main.
+    if: >-
+      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success') ||
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
+    runs-on: ubuntu-24.04
+    outputs:
+      git_sha: ${{ steps.r.outputs.git_sha }}
+      image_tag: ${{ steps.r.outputs.image_tag }}
+    steps:
+      - id: r
+        env:
+          EVENT: ${{ github.event_name }}
+          # workflow_run: github.sha is main's CURRENT head; the release is the commit Cut
+          # Release ran on.
+          RUN_SHA: ${{ github.event.workflow_run.head_sha }}
+          INPUT_SHA: ${{ github.event.inputs.git_sha }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT" = "workflow_run" ]; then SHA="$RUN_SHA"; else SHA="${INPUT_SHA:-$GITHUB_SHA}"; fi
+          if ! [[ "$SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::git_sha must be a full 40-character commit SHA, got: ${SHA}"
+            exit 1
+          fi
+          { echo "git_sha=${SHA}"; echo "image_tag=${SHA::7}"; } >> "$GITHUB_OUTPUT"
+          echo "Releasing ${SHA} (image ${SHA::7}) to production."
+
+  # -- 2. Copy the image (dev → prod; no rebuild) ----------------------------------
+  copy-image:
+    name: Copy image (prod)
+    timeout-minutes: 30
+    needs: [resolve]
+    runs-on: ubuntu-24.04-arm
+    environment: prod
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ env.CD_ROLE_ARN }}
+          role-skip-session-tagging: true
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: ecr-login
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Copy dev's image to prod
+        env:
+          REGISTRY: ${{ steps.ecr-login.outputs.registry }}
+          TAG: ${{ needs.resolve.outputs.image_tag }}
+          SHA: ${{ needs.resolve.outputs.git_sha }}
+        run: |
+          set -euo pipefail
+          SRC="${REGISTRY}/${SRC_REPOSITORY}:${TAG}"
+          DST="${REGISTRY}/${DST_REPOSITORY}:${TAG}"
+
+          # Pre-flight: the commit must have been built and deployed by dev's CD, or there is
+          # nothing to promote — say so plainly instead of failing inside `docker pull`.
+          if ! aws ecr describe-images --repository-name "${SRC_REPOSITORY}" \
+               --image-ids imageTag="${TAG}" >/dev/null 2>&1; then
+            echo "::error::${SRC} does not exist. ${SHA} was never built by dev's CD (or dev's repository has since expired it — it keeps the last 20). Let CD run for it on main, then release again."
+            exit 1
+          fi
+
+          # Idempotent: both repositories are IMMUTABLE, so a re-run (or a rollback to an
+          # image prod already has) must not push again. Same digest → move on.
+          SRC_DIGEST=$(aws ecr describe-images --repository-name "${SRC_REPOSITORY}" \
+            --image-ids imageTag="${TAG}" --query 'imageDetails[0].imageDigest' --output text)
+          DST_DIGEST=$(aws ecr describe-images --repository-name "${DST_REPOSITORY}" \
+            --image-ids imageTag="${TAG}" --query 'imageDetails[0].imageDigest' --output text 2>/dev/null || true)
+          if [ -n "${DST_DIGEST}" ] && [ "${DST_DIGEST}" != "None" ]; then
+            if [ "${DST_DIGEST}" = "${SRC_DIGEST}" ]; then
+              echo "${DST} already present with the same digest — skipping."
+              exit 0
+            fi
+            echo "::error::${DST} already exists with a DIFFERENT digest (${DST_DIGEST} vs dev ${SRC_DIGEST}). Tags are immutable; this needs a person to look."
+            exit 1
+          fi
+
+          echo "${SRC} -> ${DST} (${SRC_DIGEST})"
+          docker pull "${SRC}"
+          docker tag "${SRC}" "${DST}"
+          docker push "${DST}"
+
+          # VeloExpense: prove the promise — prod's copy is the digest dev ran.
+          NEW_DIGEST=$(aws ecr describe-images --repository-name "${DST_REPOSITORY}" \
+            --image-ids imageTag="${TAG}" --query 'imageDetails[0].imageDigest' --output text)
+          if [ "${NEW_DIGEST}" != "${SRC_DIGEST}" ]; then
+            echo "::error::prod's copy has digest ${NEW_DIGEST}, dev ran ${SRC_DIGEST}. Not deploying an image dev did not run."
+            exit 1
+          fi
+
+  # -- 3. CDK deploy ---------------------------------------------------------------
+  cdk-deploy:
+    name: CDK Deploy (prod)
+    timeout-minutes: 60
+    needs: [resolve, copy-image]
+    runs-on: ubuntu-24.04
+    environment: prod
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.resolve.outputs.git_sha }}
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ env.CD_ROLE_ARN }}
+          role-skip-session-tagging: true
+          role-duration-seconds: 7200
+          aws-region: ${{ env.AWS_REGION }}
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: infrastructure/cdk/package-lock.json
+
+      - name: Install CDK dependencies
+        working-directory: infrastructure/cdk
+        run: npm ci --no-audit --no-fund
+
+      - name: CDK diff
+        working-directory: infrastructure/cdk
+        env:
+          VELOEXPENSE_STAGE: ${{ env.STAGE }}
+          IMAGE_TAG: ${{ needs.resolve.outputs.image_tag }}
+        run: npx cdk diff --all 2>&1 || true
+
+      - name: CDK deploy
+        working-directory: infrastructure/cdk
+        env:
+          VELOEXPENSE_STAGE: ${{ env.STAGE }}
+          IMAGE_TAG: ${{ needs.resolve.outputs.image_tag }}
+        run: npx cdk deploy --all --require-approval never --outputs-file cdk-outputs.json
+
+      - name: Upload CDK outputs
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: cdk-outputs-prod
+          path: infrastructure/cdk/cdk-outputs.json
+          retention-days: 30
+
+  # -- 4. Database (bootstrap + migrations; never a seed) ----------------------------
+  db-migrate:
+    name: DB Migrate (prod)
+    timeout-minutes: 30
+    needs: [cdk-deploy]
+    runs-on: ubuntu-24.04
+    environment: prod
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ env.CD_ROLE_ARN }}
+          role-skip-session-tagging: true
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Run the database task
+        run: |
+          set -euo pipefail
+          output() {
+            aws cloudformation describe-stacks --stack-name "$COMPUTE_STACK" \
+              --query "Stacks[0].Outputs[?OutputKey=='$1'].OutputValue" --output text
+          }
+          CLUSTER="$(output ClusterName)"
+          FAMILY="$(output DbTaskFamily)"
+          SUBNETS="$(output TaskSubnets)"
+          SG="$(output TaskSecurityGroup)"
+          if [ -z "$CLUSTER" ] || [ -z "$FAMILY" ] || [ -z "$SUBNETS" ] || [ -z "$SG" ]; then
+            echo "::error::could not read the $COMPUTE_STACK outputs"
+            exit 1
+          fi
+          TASK="$(aws ecs run-task --cluster "$CLUSTER" --launch-type FARGATE \
+            --task-definition "$FAMILY" \
+            --network-configuration "awsvpcConfiguration={subnets=[${SUBNETS}],securityGroups=[${SG}],assignPublicIp=DISABLED}" \
+            --query 'tasks[0].taskArn' --output text)"
+          if [ -z "$TASK" ] || [ "$TASK" = "None" ]; then
+            echo "::error::the database task did not start"
+            exit 1
+          fi
+          echo "$TASK"
+          aws ecs wait tasks-stopped --cluster "$CLUSTER" --tasks "$TASK"
+          EXIT_CODE="$(aws ecs describe-tasks --cluster "$CLUSTER" --tasks "$TASK" \
+            --query 'tasks[0].containers[0].exitCode' --output text)"
+          aws logs tail "$DB_LOG_GROUP" --since 15m \
+            --log-stream-name-prefix "db/db/${TASK##*/}" || true
+          if [ "$EXIT_CODE" != "0" ]; then
+            echo "::error::the database task exited ${EXIT_CODE}; nothing after it was done"
+            exit 1
+          fi
+
+  # -- 5. Verify -------------------------------------------------------------------
+  verify-deploy:
+    name: Verify Deploy (prod)
+    timeout-minutes: 25
+    needs: [resolve, db-migrate]
+    runs-on: ubuntu-24.04
+    environment: prod
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ env.CD_ROLE_ARN }}
+          role-skip-session-tagging: true
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Read the cluster name
+        run: |
+          set -euo pipefail
+          CLUSTER="$(aws cloudformation describe-stacks --stack-name "$COMPUTE_STACK" \
+            --query "Stacks[0].Outputs[?OutputKey=='ClusterName'].OutputValue" --output text)"
+          [ -n "$CLUSTER" ] && [ "$CLUSTER" != "None" ] || { echo "::error::no ClusterName output"; exit 1; }
+          echo "CLUSTER=${CLUSTER}" >> "$GITHUB_ENV"
+
+      # VeloExpense: always restart both services after the database task, so no task is
+      # left running the previous image against a migrated schema longer than a rollout.
+      # (cd.yml restarts only when CDK did not; a release is rare enough to pay for it.)
+      - name: Roll both services
+        run: |
+          for svc in web worker; do
+            aws ecs update-service --cluster "${CLUSTER}" --service "veloexpense-prod-${svc}" \
+              --force-new-deployment --no-cli-pager > /dev/null
+            echo "${svc}: rolling."
+          done
+
+      - name: Wait for ECS services to stabilize
+        run: |
+          for svc in web worker; do
+            echo "Waiting for ${svc} to stabilize..."
+            if ! aws ecs wait services-stable --cluster "${CLUSTER}" --services "veloexpense-prod-${svc}"; then
+              echo "::error::${svc} failed to stabilize:"
+              aws ecs describe-services --cluster "${CLUSTER}" --services "veloexpense-prod-${svc}" \
+                --query 'services[0].events[:5]' --output table --no-cli-pager
+              exit 1
+            fi
+          done
+          echo "All services stable."
+
+      - name: Smoke test
+        run: |
+          TARGET="https://${DOMAIN_NAME}"
+          for i in $(seq 1 10); do
+            STATUS=$(curl -sf -o /dev/null -w "%{http_code}" "${TARGET}/api/health" || true)
+            if [ "$STATUS" = "200" ]; then
+              echo "Health check passed (attempt ${i})."
+              exit 0
+            fi
+            echo "Attempt ${i}: HTTP ${STATUS}, retrying in 15s..."
+            sleep 15
+          done
+          echo "::error::Health check did not pass after 10 attempts against ${TARGET}."
+          exit 1
+
+      - name: Summary
+        if: always()
+        env:
+          SHA: ${{ needs.resolve.outputs.git_sha }}
+          TAG: ${{ needs.resolve.outputs.image_tag }}
+        run: |
+          {
+            echo "### Production release"
+            echo ""
+            echo "- Commit: \`${SHA}\`"
+            echo "- Image: \`${DST_REPOSITORY}:${TAG}\` (the digest dev ran)"
+            echo "- URL: https://${DOMAIN_NAME}"
+            echo "- Rollback: run **CD (production)** from main with \`git_sha\` = the previous release's SHA"
+            echo "- Status: ${{ job.status }}"
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -3,10 +3,9 @@
 #
 # Ported from ExpenseOS `.github/workflows/cd.yml` (1e682dd6). The VeloExpense changes
 # are marked "VeloExpense:"; the summary:
-#   · ONE stage, dev (dev.veloexpense.ai). ExpenseOS's release → prod path, and the
-#     copy-images job that promotes dev's images to prod's account, are left out until
-#     VeloExpense has a production stage (config.ts: "Production is added when it is
-#     built, not before").
+#   · This file deploys dev (dev.veloexpense.ai) on every green push to main. ExpenseOS's
+#     release → prod path, and the copy-images job that promotes dev's images, are in
+#     cd-prod.yml (w5-08), which runs when Cut Release completes.
 #   · GitHub-hosted runners, not CodeBuild runners inside a VPC. The database step runs
 #     as the ECS database task (as scripts/deploy-dev.sh does), so no runner needs a
 #     route to Aurora, and no database credential ever reaches a runner.

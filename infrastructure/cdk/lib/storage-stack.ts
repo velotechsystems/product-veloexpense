@@ -34,7 +34,7 @@ import {
   aws_s3 as s3,
 } from 'aws-cdk-lib';
 import type { Construct } from 'constructs';
-import type { VeloExpenseConfig } from './config';
+import { browserOriginsOf, type VeloExpenseConfig } from './config';
 
 export interface StorageStackProps extends StackProps {
   config: VeloExpenseConfig;
@@ -78,7 +78,8 @@ export class StorageStack extends Stack {
       cors: [
         {
           allowedMethods: [s3.HttpMethods.GET, s3.HttpMethods.PUT, s3.HttpMethods.HEAD],
-          allowedOrigins: [`https://${config.domainName}`],
+          // w5-08: with tenant subdomains on, a receipt is uploaded from <tenant>.<apex>.
+          allowedOrigins: browserOriginsOf(config),
           allowedHeaders: ['*'],
           maxAge: 3600,
         },

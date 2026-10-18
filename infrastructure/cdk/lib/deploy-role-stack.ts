@@ -202,6 +202,19 @@ export class DeployRoleStack extends Stack {
         resources: [arn('logs', `log-group:/ecs/${prefix}/*`)],
       }),
     ];
+    // w5-08: production runs no build. cd-prod.yml copies the image dev already built and
+    // ran, from dev's repository into this one (ExpenseOS's copy-images job), so the prod role
+    // may READ dev's repository — pull and describe, nothing else. Same account, so no
+    // repository policy is needed; ECR decrypts the KMS-encrypted layers for the puller.
+    if (config.stage === 'prod') {
+      statements.push(
+        new iam.PolicyStatement({
+          sid: 'PullDevImagesForPromotion',
+          actions: ['ecr:DescribeImages', 'ecr:BatchGetImage', 'ecr:GetDownloadUrlForLayer', 'ecr:BatchCheckLayerAvailability'],
+          resources: [arn('ecr', 'repository/veloexpense-dev/web')],
+        }),
+      );
+    }
     for (const statement of statements) this.deployRole.addToPolicy(statement);
 
     new CfnOutput(this, 'DeployRoleArn', {

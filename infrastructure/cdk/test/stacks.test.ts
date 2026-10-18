@@ -9,7 +9,7 @@ import { App } from 'aws-cdk-lib';
 import { Template } from 'aws-cdk-lib/assertions';
 import { describe, expect, it } from 'vitest';
 import { CacheStack } from '../lib/cache-stack';
-import { buildConfig } from '../lib/config';
+import { buildConfig, type Stage } from '../lib/config';
 import { ComputeStack } from '../lib/compute-stack';
 import { DataStack } from '../lib/data-stack';
 import { MailStack } from '../lib/mail-stack';
@@ -19,9 +19,9 @@ import { StorageStack } from '../lib/storage-stack';
 
 const CERT = 'arn:aws:acm:ca-central-1:535079144866:certificate/11111111-2222-3333-4444-555555555555';
 
-function synth() {
+function synth(stage: Stage = 'dev') {
   const app = new App();
-  const config = buildConfig('dev', { albCertificateArn: CERT });
+  const config = buildConfig(stage, { albCertificateArn: CERT });
   const env = { account: config.accountId, region: config.region };
   const security = new SecurityStack(app, 'Sec', { env, config });
   const network = new NetworkStack(app, 'Net', { env, config });
@@ -50,7 +50,8 @@ function synth() {
     appDbSecretArn: security.appDbSecret.secretArn,
     masterDbSecretArn: data.cluster.secret!.secretArn,
   });
-  const mail = new MailStack(app, 'Mal', { env, config });
+  // w5-08: prod has no receipts by email, so no Mail stack (bin/app.ts creates it only then).
+  const mail = config.inboundEmail ? new MailStack(app, 'Mal', { env, config }) : undefined;
   const t = (
     s: SecurityStack | NetworkStack | StorageStack | DataStack | CacheStack | ComputeStack | MailStack,
   ) => Template.fromStack(s);
@@ -62,8 +63,9 @@ function synth() {
     data: t(data),
     cache: t(cache),
     compute: t(compute),
-    mail: t(mail),
-    all: [security, network, storage, data, cache, compute, mail].map(t),
+    // Dev always has one; every dev case below reads it.
+    mail: mail ? t(mail) : (undefined as unknown as Template),
+    all: [security, network, storage, data, cache, compute, ...(mail ? [mail] : [])].map(t),
   };
 }
 
@@ -477,5 +479,68 @@ describe('receipts by email (w3-06)', () => {
       'arn:aws:s3:::veloexpense-dev-inbound-mail-535079144866',
       'arn:aws:s3:::veloexpense-dev-inbound-mail-535079144866/inbound/*',
     ]);
+  });
+});
+
+// ── w5-08: production (d86) ────────────────────────────────────────────────────
+describe('production (w5-08)', () => {
+  const p = synth('prod');
+  const rule = () => {
+    const [[, r]] = resources(p.compute, 'AWS::ElasticLoadBalancingV2::ListenerRule');
+    return r.Properties as { Conditions: Array<{ Field: string; HostHeaderConfig?: { Values: string[] } }> };
+  };
+
+  it('answers on app.veloexpense.ai and every tenant subdomain, with the apex as the cookie domain', () => {
+    const hosts = rule().Conditions.find((c) => c.Field === 'host-header')!.HostHeaderConfig!.Values;
+    expect(hosts).toEqual(['app.veloexpense.ai', '*.veloexpense.ai']);
+    expect(JSON.stringify(p.compute.toJSON())).toContain('"AUTH_COOKIE_DOMAIN","Value":"veloexpense.ai"');
+  });
+
+  it('lets a browser upload a receipt from a tenant subdomain', () => {
+    const cors = resources(p.storage, 'AWS::S3::Bucket')
+      .map(([, b]) => b.Properties.CorsConfiguration as { CorsRules: Array<{ AllowedOrigins: string[] }> } | undefined)
+      .filter(Boolean);
+    expect(cors[0]!.CorsRules.map((r) => r.AllowedOrigins)).toEqual([
+      ['https://app.veloexpense.ai', 'https://*.veloexpense.ai'],
+    ]);
+  });
+
+  it('protects the database: deletion protection, 14 days of backups, up to 4 ACU', () => {
+    p.data.hasResourceProperties('AWS::RDS::DBCluster', {
+      DeletionProtection: true,
+      BackupRetentionPeriod: 14,
+      ServerlessV2ScalingConfiguration: { MinCapacity: 0.5, MaxCapacity: 4 },
+    });
+  });
+
+  it('runs two web tasks, so a deploy or a restart is not an outage', () => {
+    const services = resources(p.compute, 'AWS::ECS::Service').map(([, sv]) => sv.Properties);
+    const web = services.find((sv) => String(sv.ServiceName).endsWith('-web'));
+    expect(web?.DesiredCount).toBe(2);
+  });
+
+  it('names everything veloexpense-prod and reads velotech-prod\'s shared parameters', () => {
+    const json = JSON.stringify(p.all.map((t) => t.toJSON()));
+    expect(json).toContain('veloexpense-prod');
+    expect(json).not.toContain('veloexpense-dev');
+    expect(json).toContain('/velotech/prod/shared/');
+    expect(json).not.toContain('/velotech/dev/shared/');
+  });
+
+  it('has no receipts by email yet (d86): no inbound settings on the app', () => {
+    expect(p.config.inboundEmail).toBeUndefined();
+    expect(JSON.stringify(p.compute.toJSON())).not.toContain('INBOUND_EMAIL_DOMAIN');
+  });
+
+  it('will not build without its certificate, and says why', () => {
+    // Not requested yet (docs/runbooks/production.md): nothing deploys until it is.
+    expect(() => buildConfig('prod')).toThrow(/No ACM certificate for app\.veloexpense\.ai/);
+    expect(buildConfig('prod', { albCertificateArn: CERT }).albCertificateArn).toBe(CERT);
+  });
+
+  it('leaves dev exactly as it was: one host, its own origin, no cookie domain', () => {
+    const dev = buildConfig('dev');
+    expect(dev.extraHosts).toBeUndefined();
+    expect(dev.authCookieDomain).toBeUndefined();
   });
 });

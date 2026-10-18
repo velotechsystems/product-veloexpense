@@ -1,7 +1,9 @@
 # ===========================================================================
 # Cut Release — caller stub. Copy to .github/workflows/cut-release.yml.
-# Manual trigger only. Promotes the current draft release to a pre-release,
-# which fires the release event that the CD workflow listens for.
+# Manual trigger only. Promotes the current draft release to a pre-release.
+# VeloExpense (w5-08): cd-prod.yml runs when THIS workflow completes (workflow_run), not
+# on the release event, which GitHub suppresses when the release is published with
+# GITHUB_TOKEN — so a release reaches production whether or not the App is wired.
 # ===========================================================================
 name: Cut Release
 
