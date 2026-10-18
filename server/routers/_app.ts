@@ -1,6 +1,7 @@
 import { router } from '@/server/trpc';
 import { appSettingsRouter } from './appSettings';
 import { approvalWorkflowsRouter } from './approvalWorkflows';
+import { auditRouter } from './audit';
 import { businessUnitsRouter } from './businessUnits';
 import { commentsRouter } from './comments';
 import { departmentsRouter } from './departments';
@@ -27,6 +28,8 @@ export const appRouter = router({
   appSettings: appSettingsRouter,
   // w4-01: ExpenseOS's workflow builder (d55: lands before the cutover).
   approvalWorkflows: approvalWorkflowsRouter,
+  // w5-06: ExpenseOS's audit trail (`/admin/audit-trail`).
+  audit: auditRouter,
   businessUnits: businessUnitsRouter,
   // w2-02a: the discussion on a report (d37).
   comments: commentsRouter,

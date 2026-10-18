@@ -121,6 +121,8 @@ describe("an admin's menu", () => {
         '/admin/policy-rules',
         '/admin/policies',
         '/admin/policy-violations',
+        // w5-06: ExpenseOS's audit trail.
+        '/admin/audit-trail',
         // w4-10c (d74).
         '/admin/roles',
         // Ported in Wave 2 (w2-06).

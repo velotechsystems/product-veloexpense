@@ -507,6 +507,7 @@
     "years": "{years} ans",
     "lastPurge": "La dernière purge a supprimé {count} entrées le {date}",
     "neverPurged": "Aucune purge effectuée",
+    "purgedThrough": "Purgé jusqu’à l’entrée {sequence}",
     "verifyDays": "Vérifier {days} j",
     "verifyOk": "Chaîne intacte — {scanned} entrées vérifiées sur les {days} derniers jours.",
     "verifyPurgeAware": "L'écart laissé par une purge de conservation se réconcilie avec le repère enregistré.",

@@ -507,6 +507,7 @@
     "years": "{years} years",
     "lastPurge": "Last purge removed {count} on {date}",
     "neverPurged": "Nothing purged yet",
+    "purgedThrough": "Purged through entry {sequence}",
     "verifyDays": "Verify {days}d",
     "verifyOk": "Chain intact — {scanned} entries verified over the last {days} days.",
     "verifyPurgeAware": "The gap left by a retention purge reconciles against the recorded watermark.",
