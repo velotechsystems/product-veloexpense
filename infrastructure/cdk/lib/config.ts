@@ -225,10 +225,10 @@ const STAGES: Record<Stage, Omit<VeloExpenseConfig, 'resourcePrefix' | 'secretPr
     domainName: 'app.veloexpense.ai',
     authCookieDomain: 'veloexpense.ai',
     extraHosts: ['*.veloexpense.ai'],
-    // ACM, ca-central-1, for app.veloexpense.ai AND *.veloexpense.ai — not requested yet.
-    // Until it is committed here (or ALB_CERTIFICATE_ARN is set), building the prod config
-    // fails with a sentence saying so, and nothing is deployed (docs/runbooks/production.md).
-    albCertificateArn: '',
+    // ACM, ca-central-1, for app.veloexpense.ai AND *.veloexpense.ai — requested 18 Oct 2026,
+    // DNS-validated by two CNAMEs in Cloudflare (DNS only; keep them, renewal uses them).
+    // ALB_CERTIFICATE_ARN in the environment still overrides (bin/app.ts).
+    albCertificateArn: 'arn:aws:acm:ca-central-1:535079144866:certificate/6cddefb8-7f13-4ffb-82af-d185f56a8488',
     // The shared prod listener is velotech-prod's own, so the band starts again at 100.
     listenerPriority: 100,
     rds: {

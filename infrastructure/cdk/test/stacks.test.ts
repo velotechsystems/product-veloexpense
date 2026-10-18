@@ -532,9 +532,10 @@ describe('production (w5-08)', () => {
     expect(JSON.stringify(p.compute.toJSON())).not.toContain('INBOUND_EMAIL_DOMAIN');
   });
 
-  it('will not build without its certificate, and says why', () => {
-    // Not requested yet (docs/runbooks/production.md): nothing deploys until it is.
-    expect(() => buildConfig('prod')).toThrow(/No ACM certificate for app\.veloexpense\.ai/);
+  it('carries its committed certificate (app + *.veloexpense.ai); the environment can override it', () => {
+    expect(buildConfig('prod').albCertificateArn).toBe(
+      'arn:aws:acm:ca-central-1:535079144866:certificate/6cddefb8-7f13-4ffb-82af-d185f56a8488',
+    );
     expect(buildConfig('prod', { albCertificateArn: CERT }).albCertificateArn).toBe(CERT);
   });
 
