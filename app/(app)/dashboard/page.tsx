@@ -8,8 +8,7 @@ import Link from 'next/link';
 import { pageTitle } from '@/lib/i18n/page-title';
 import { shellContext } from '@/server/shell';
 import { MyExpenseReportsCard } from './cards/MyExpenseReportsCard';
-// VeloExpense: no `MyTravelRequestsCard` until travel is ported (w6): `showTravel` needs the
-// travel module, which no VeloExpense tenant has.
+import { MyTravelRequestsCard } from './cards/MyTravelRequestsCard';
 import { ReportsToApproveCard } from './cards/ReportsToApproveCard';
 import { IdentityChips } from './IdentityChips';
 import { SmallScreenNotice } from './SmallScreenNotice';
@@ -55,7 +54,7 @@ export function generateMetadata() {
  * `canSeeOthers` come from the request's shell context (server/shell.ts), which has resolved
  * them all; the face has no photo (VeloExpense keeps none) and the band's link is
  * VeloExpense's `/preferences` (ExpenseOS's `/profile`); VeloExpense's setup checklist sits
- * above the cards (`SetupChecklist`, d72); no travel card until travel is ported.
+ * above the cards (`SetupChecklist`, d72); the travel card since w6-02.
  */
 export default async function DashboardPage({
   searchParams,
@@ -314,9 +313,18 @@ export default async function DashboardPage({
         </PanelBoundary>
       )}
 
-      {/* VeloExpense: ExpenseOS's travel card (gated on `showTravel`) is not here until travel
-          is ported (w6); `showTravel` is false on every VeloExpense tenant, which has no travel
-          module, and `data-dashboard-travel` above still publishes that decision. */}
+      {/* The travel card IS gated, on both halves of `showTravel` — module active AND a
+          travel permission. Not because its rows would leak anything (every travel
+          procedure re-authorizes, and `listOwn` is narrowed to `submitterId`), but
+          because those procedures sit behind `moduleActive('travel')`, which THROWS
+          rather than returning empty: mounted on a travel-off workspace the card would
+          paint an error panel on the first screen after sign-in. The gate is decided on
+          the server, so a reader who fails it is never sent the card's data at all. */}
+      {cards.showTravel && (
+        <PanelBoundary>
+          <MyTravelRequestsCard />
+        </PanelBoundary>
+      )}
     </div>
   );
 }

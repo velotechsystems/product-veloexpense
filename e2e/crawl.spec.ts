@@ -105,6 +105,11 @@ const PAGES = [
   '/admin/audit-trail',
   // w4-10c: ExpenseOS's Role Builder.
   '/admin/roles',
+  // VeloExpense (w6-02): Travel 3 of 3. Every member plans their own trips; the travel
+  // categories are an admin's (ADMIN_ONLY by its `/admin/` prefix). The demo tenant has
+  // the travel module on (scripts/seed.mjs), so neither is the module gate's 404 here.
+  '/travel',
+  '/admin/travel-categories',
 ] as const;
 
 /**

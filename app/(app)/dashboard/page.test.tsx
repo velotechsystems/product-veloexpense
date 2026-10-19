@@ -583,7 +583,7 @@ describe('the dashboard', () => {
     });
   });
 
-  it('mounts no travel card even when the server says travel is on', async () => {
+  it('mounts the travel card only when the server says travel is on', async () => {
     /**
      * The gate is not cosmetic here. Every travel procedure sits behind
      * `moduleActive('travel')`, which THROWS `FORBIDDEN` rather than returning empty —
@@ -592,13 +592,8 @@ describe('the dashboard', () => {
      */
     signedIn();
     h.activeModules = new Set(['travel', 'expense-management']);
-    // VeloExpense: `readOwn` too, for the positive control below.
-    h.permissions = [P.travel.request.createOwn, P.expense.report.readOwn];
-    // VeloExpense: travel is not ported (w6), so the card is not shipped at all; the gate is
-    // still published (`data-dashboard-travel`, above), and still decided by the server.
-    const names = componentNames(await DashboardPage(noParams));
-    expect(names).not.toContain('MyTravelRequestsCard');
-    expect(names).toContain('MyExpenseReportsCard');
+    h.permissions = [P.travel.request.createOwn];
+    expect(componentNames(await DashboardPage(noParams))).toContain('MyTravelRequestsCard');
   });
 
   it('leaves the travel card out entirely for a workspace without travel', async () => {

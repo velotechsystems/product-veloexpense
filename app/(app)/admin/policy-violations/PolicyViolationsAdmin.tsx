@@ -11,7 +11,7 @@
  *
  * Ported from ExpenseOS (550b2945) with `policyRule.violations` / `resolveViolation`
  * (w4-02e, d63). VeloExpense: the drawer restates the resolved sentence rather than the
- * stored key (below); the rows carry no travel subject yet (the router's note).
+ * stored key (below). Rows carry ExpenseOS's travel subject since w6-01.
  */
 import {
   Button,

@@ -390,14 +390,12 @@ describe('what it reports back', () => {
         'approvalWorkflows.simulate': { data: undefined, isError: true },
       },
     });
-    // VeloExpense: on a report — no travel subject yet. The error state is the same for any.
-    show();
+    show('TRAVEL_REQUEST');
     await run(user);
     expect(await screen.findByText('sim.failed')).toBeInTheDocument();
   });
 
-  // VeloExpense: no travel subject yet (lib/approvalSubjects).
-  it.skip('simulates a travel workflow — the subject that used to be rejected', async () => {
+  it('simulates a travel workflow — the subject that used to be rejected', async () => {
     /**
      * `TRAVEL_REQUEST` was absent from the router's input enum, so this exact render +
      * Run produced a validation error and a blank dialog. Asserted with a real result so
@@ -405,7 +403,7 @@ describe('what it reports back', () => {
      */
     const user = userEvent.setup();
     setTrpc();
-    show('TRAVEL_REQUEST' as never);
+    show('TRAVEL_REQUEST');
     await run(user);
     expect(await screen.findByText('Above $10k')).toBeInTheDocument();
   });

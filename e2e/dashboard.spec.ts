@@ -15,13 +15,18 @@
  *     and deep-link cases make their own draft — the one thing this file creates — and the
  *     empty-state persona case is not here: no seeded VeloExpense reader is guaranteed empty
  *     once the other specs have run;
- *   · no travel (w6): the three travel deep-link cases are not here, and the travel card is
- *     asserted absent for everybody;
+ *   · VeloExpense (w6-02): travel is on for the demo tenant (`scripts/seed.mjs`), so the travel
+ *     card is asserted against its gate and ExpenseOS's three travel deep-link cases are here.
+ *     Their trips are DRAFTs this file writes (`seedDraftTrip`), where ExpenseOS reads six
+ *     from its QA seed; the "somebody else's trip" needle is the admin's, read by the
+ *     employee, where ExpenseOS's reader is a US employee VeloExpense does not seed;
  *   · `/` redirects here (d72), which ExpenseOS has no need to assert;
  *   · VeloExpense's setup checklist (d72) is `home-flow.spec.ts`'s.
  */
 import { expect, type Locator, type Page, test } from '@playwright/test';
 import { ADMIN_STATE, APPROVER_STATE, createDraftReport, EMPLOYEE_STATE, MANAGER_STATE } from './helpers';
+import { seedDraftTrip } from './support/seed-activity';
+import { closeTestDb } from './support/test-db';
 
 /** ── What the app says ─────────────────────────────────────────────────────────────────
  *
@@ -37,7 +42,10 @@ const COPY = {
   panelFailed: 'This section could not be loaded.',
   /** `common.errorBoundary` — the whole page went down. */
   errorBoundary: 'Something went wrong.',
-  /** `nav.items.*` — the TopBar `h1` for the approvals deep-link destination. */
+  /** `nav.items.*` — the TopBar `h1` for the two deep-link destinations. */
+  travelPageTitle: 'Travel Requests',
+  /** `travel.empty` — `/travel`'s "My requests" section, once its query has resolved. */
+  travelListEmpty: 'No travel requests yet.',
   approvalsPageTitle: 'Approvals',
   /** `expenses.list.loading` — the approver drawer's body while its by-id query is pending. */
   reportLoading: 'Loading reports…',
@@ -76,6 +84,7 @@ const PREVIEW_ROWS = 5;
  */
 const REPORT_LINK = /^\/expenses\/[0-9a-f-]{36}$/;
 const APPROVAL_LINK = /^\/expenses\/approvals\?report=[0-9a-f-]{36}$/;
+const TRIP_LINK = /^\/travel\?request=[0-9a-f-]{36}$/;
 
 /**
  * A value nobody meant to type. Deliberately NOT a UUID and deliberately distinctive: the
@@ -119,6 +128,9 @@ async function anchors(root: Locator): Promise<{ name: string; href: string }[]>
 }
 
 test.describe('dashboard', () => {
+  // VeloExpense (w6-02): the pool `seedDraftTrip` opens.
+  test.afterAll(closeTestDb);
+
   /**
    * The blast-radius test, one per actor. Card presence is asserted against the SERVER'S OWN
    * DECISION (the `data-dashboard-*` attributes `selectDashboardCards` published), so this
@@ -152,10 +164,15 @@ test.describe('dashboard', () => {
 
       const approvalsGate = await root.getAttribute('data-dashboard-approvals');
       const expensesGate = await root.getAttribute('data-dashboard-expenses');
+      const travelGate = await root.getAttribute('data-dashboard-travel');
       expect(
-        [approvalsGate, expensesGate],
+        [approvalsGate, expensesGate, travelGate],
         'the server did not publish its gating decision — selectDashboardCards is not being read',
-      ).toEqual([expect.stringMatching(/^(true|false)$/), expect.stringMatching(/^(true|false)$/)]);
+      ).toEqual([
+        expect.stringMatching(/^(true|false)$/),
+        expect.stringMatching(/^(true|false)$/),
+        expect.stringMatching(/^(true|false)$/),
+      ]);
 
       await expect(
         root.getByRole('heading', { name: COPY.approvalsTitle, exact: true }),
@@ -167,8 +184,11 @@ test.describe('dashboard', () => {
       ).toHaveCount(expensesGate === 'true' ? 1 : 0);
       // VeloExpense: every seeded reader holds read-own on an installed expense module.
       expect(expensesGate).toBe('true');
-      // VeloExpense: no travel until w6, so no travel card for anybody.
-      await expect(root.getByRole('heading', { name: COPY.travelTitle, exact: true })).toHaveCount(0);
+      // VeloExpense (w6-02): the travel card against its gate, as ExpenseOS asserts it.
+      await expect(
+        root.getByRole('heading', { name: COPY.travelTitle, exact: true }),
+        `data-dashboard-travel=${travelGate} but the card says otherwise`,
+      ).toHaveCount(travelGate === 'true' ? 1 : 0);
 
       // Containment, in both directions: no panel fell back to its placeholder, and the page
       // did not go down as a whole.
@@ -191,6 +211,9 @@ test.describe('dashboard', () => {
       // VeloExpense: a draft of its own, so the card has at least one row whatever ran first.
       const title = `E2E dashboard row ${Date.now()}`;
       await createDraftReport(page, title);
+      // VeloExpense (w6-02): and a trip of its own, for the travel card.
+      const destination = `E2E Dashboard Row ${Date.now()}`;
+      await seedDraftTrip(destination);
       await page.goto('/dashboard');
       const root = home(page);
       await settled(page);
@@ -206,9 +229,30 @@ test.describe('dashboard', () => {
         `the draft just made is not among the card's rows. Anchors found:${found()}`,
       ).toBe(true);
 
-      const names = reportRows.map((l) => l.name);
-      expect(names.filter((n) => n.length === 0), 'a row link rendered with no name at all').toEqual([]);
-      expect(new Set(names).size, `two row links share a name: ${JSON.stringify(names)}`).toBe(names.length);
+      // VeloExpense (w6-02): ExpenseOS's travel half. Its count is the QA seed's six trips at
+      // the five-row cap; here the trip is this test's own DRAFT, so the claim is the one the
+      // report half above makes: record links, within the cap, and ours among them.
+      const tripRows = links.filter((l) => TRIP_LINK.test(l.href));
+      expect(tripRows.length, `the travel card drew no record links. Anchors found:${found()}`).toBeGreaterThan(0);
+      expect(tripRows.length).toBeLessThanOrEqual(PREVIEW_ROWS);
+      expect(
+        tripRows.some((l) => l.name.includes(destination)),
+        `the trip just made is not among the travel card's rows. Anchors found:${found()}`,
+      ).toBe(true);
+
+      for (const [card, rows] of [
+        ['expenses', reportRows],
+        ['travel', tripRows],
+      ] as const) {
+        const names = rows.map((l) => l.name);
+        expect(names.filter((n) => n.length === 0), `a row link in the ${card} card rendered with no name at all`).toEqual(
+          [],
+        );
+        expect(
+          new Set(names).size,
+          `two row links in the ${card} card share a name, so neither names its record: ${JSON.stringify(names)}`,
+        ).toBe(names.length);
+      }
     });
 
     test('the expense-report deep link opens the report it names', async ({ page }) => {
@@ -229,6 +273,77 @@ test.describe('dashboard', () => {
         COPY.recordNotFound,
       );
       await expect(page.locator('body')).not.toContainText(COPY.errorBoundary);
+    });
+  });
+
+  /**
+   * VeloExpense (w6-02): ExpenseOS's three travel deep-link cases, restored with the module.
+   *
+   * Following the travel link opens the trip. `/travel` reads `?request=` through
+   * `useDeepLink('request', { uuid: true })` and matches it against the three lists it already
+   * loaded — own, awaiting-my-decision, my team's — which is exactly the set this reader may
+   * open.
+   *
+   * And the security half (MUST-9 malformed, MUST-10 well-formed but not yours): the value is
+   * never rendered, and a refusal looks exactly like a typo. Asserted on `innerText`, and every
+   * negative waits for a positive first — the drawer is opened by an effect after the lists
+   * resolve. ExpenseOS's positive is its reader's empty own-list copy; the employee here may
+   * own trips by now, so it is that copy OR a row of the list.
+   */
+  test.describe('travel deep links, as the employee', () => {
+    test.use({ storageState: EMPLOYEE_STATE });
+
+    /** VeloExpense (w6-02): the reader's trips may be empty or not; either is settled. */
+    const listSettled = (page: Page) =>
+      page.getByText(COPY.travelListEmpty).or(page.locator('#main-content a[href^="/travel?request="], [data-dt-row-key]')).first();
+
+    test('the travel deep link opens the trip it names', async ({ page }) => {
+      const destination = `E2E Deep Link ${Date.now()}`;
+      const id = await seedDraftTrip(destination);
+      await page.goto(`/travel?request=${id}`);
+
+      const drawer = page.getByRole('dialog');
+      await expect(drawer, 'the deep link landed on the list instead of opening the trip').toBeVisible({
+        timeout: 20_000,
+      });
+      await expect(drawer).toContainText(destination);
+    });
+
+    test('a malformed travel deep link renders the list and echoes nothing', async ({ page }) => {
+      await page.goto(`/travel?request=${MALFORMED}`);
+
+      await expect(
+        page.getByRole('heading', { level: 1, name: COPY.travelPageTitle, includeHidden: true }),
+      ).toBeVisible({ timeout: 20_000 });
+      await expect(listSettled(page)).toBeVisible({ timeout: 20_000 });
+
+      await expect(page.getByRole('dialog'), 'a drawer opened on a malformed id').toHaveCount(0);
+
+      const shown = await page.locator('body').innerText();
+      expect(shown, 'the malformed id was reflected into the page').not.toContain(MALFORMED);
+      expect(shown).not.toContain(COPY.errorBoundary);
+    });
+
+    test('a travel deep link to somebody else’s trip is indistinguishable from a typo', async ({ page }) => {
+      // VeloExpense (w6-02): the admin's draft — the employee neither manages nor decides it.
+      const destination = `E2E Not Mine ${Date.now()}`;
+      const notMine = await seedDraftTrip(destination, 'admin');
+      await page.goto(`/travel?request=${notMine}`);
+
+      await expect(
+        page.getByRole('heading', { level: 1, name: COPY.travelPageTitle, includeHidden: true }),
+      ).toBeVisible({ timeout: 20_000 });
+      await expect(listSettled(page)).toBeVisible({ timeout: 20_000 });
+
+      await expect(
+        page.getByRole('dialog'),
+        "a drawer opened on another reader's trip — the deep link is matching outside the loaded lists",
+      ).toHaveCount(0);
+
+      const shown = await page.locator('body').innerText();
+      expect(shown, "another reader's id was reflected into the page").not.toContain(notMine);
+      expect(shown, 'the destination of a trip this reader may not see was disclosed').not.toContain(destination);
+      expect(shown).not.toContain(COPY.errorBoundary);
     });
   });
 

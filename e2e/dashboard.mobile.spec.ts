@@ -2,7 +2,8 @@ import { readFileSync } from 'node:fs';
 import { expect, type Locator, type Page, test } from '@playwright/test';
 import { type Actor, signIn } from './support/actors';
 import { PHONE_PROJECTS } from './support/phone-projects';
-import { seedEmployeeActivity } from './support/seed-activity';
+import { seedDraftTrip, seedEmployeeActivity } from './support/seed-activity';
+import { closeTestDb } from './support/test-db';
 import { assertCoarsePointer, assertProject } from './support/tap-targets';
 import { reportTag } from './support/workbench';
 
@@ -17,10 +18,11 @@ import { reportTag } from './support/workbench';
  *     every reader (`i18n/request.ts`, decided 7 Oct: the fr-CA catalogs are ported but not
  *     offered). There is no FR-CA page to run against. `LOCALES` keeps ExpenseOS's shape with
  *     one entry; the day French is offered, its second entry comes back.
- *   · NO TRAVEL. VeloExpense ships no travel module, so the "My travel requests" assertions
- *     are gone; the card's gate is still read, and must say `false` with no card on screen.
+ *   · VeloExpense (w6-02): TRAVEL IS ON for the demo tenant (`scripts/seed.mjs`), so ExpenseOS's
+ *     "My travel requests" assertions are back. Its six seeded trips are one DRAFT here,
+ *     written by `seedDraftTrip` beside the two reports below.
  *   · `/preferences` IS `/profile`, as the identity band's own comment records.
- *   · IT CREATES TWO REPORTS. VeloExpense has no QA activity seed, so `seedEmployeeActivity`
+ *   · IT CREATES TWO REPORTS (AND, SINCE w6-02, ONE TRIP). VeloExpense has no QA activity seed, so `seedEmployeeActivity`
  *     builds the employee's draft and a submitted report in the manager's queue once per
  *     worker. Every assertion stays a read and a shape claim, as ExpenseOS's are, so the
  *     concurrency argument below holds for everything after that.
@@ -424,7 +426,10 @@ for (const locale of LOCALES) {
         draftTitle: reportTag('dashboard draft'),
         queuedTitle: reportTag('dashboard queue'),
       });
+      // VeloExpense (w6-02): the employee's trip, for "My travel requests".
+      await seedDraftTrip(reportTag('Dashboard Trip'));
     });
+    test.afterAll(closeTestDb);
 
     // Fails in ~0ms and names the project, rather than after a sign-in and a navigation.
     // `page` is destructured only so `beforeEach` receives `testInfo` in the second position.
@@ -472,8 +477,17 @@ for (const locale of LOCALES) {
         `"${copy.expensesTitle}" drew rows but offers no way to the full list`,
       ).toHaveLength(1);
 
-      // VeloExpense: ExpenseOS's "My travel requests" rows and footer are not asserted — no
-      // travel module. `assertCardsSettled` above still requires that card to be ABSENT.
+      // VeloExpense (w6-02): ExpenseOS's travel rows and footer, restored with the module.
+      const tripRows = hrefs.filter((h) => RECORD.trip.test(h));
+      expect(
+        tripRows.length,
+        `no row of "${copy.travelTitle}" links at a trip for the employee, who has one from ` +
+          '`seedDraftTrip`',
+      ).toBeGreaterThan(0);
+      expect(
+        hrefs.filter((h) => LISTING.trips.test(h)),
+        `"${copy.travelTitle}" drew rows but offers no way to the full list`,
+      ).toHaveLength(1);
 
       /**
        * And a TAP gets there, which is the part an `href` cannot establish.

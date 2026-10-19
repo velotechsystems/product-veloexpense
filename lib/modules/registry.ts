@@ -252,18 +252,41 @@ const COMPLIANCE: ModuleDefinition = {
 };
 
 /**
- * The two the Plan names and nothing implements. Declared, unavailable, and
- * gating nothing — see the header on why they are here at all.
+ * TRAVEL — ExpenseOS's travel module (Wave 6, d88): pre-trip requests with a composed
+ * estimate, approved through the workflow engine, and the expense report a trip becomes.
+ *
+ * Made available by w6-02, when its screens arrived (the tables came with w6-00, the
+ * routers with w6-01). Off for every tenant until an administrator switches it on here.
+ *
+ * NOTHING IS LISTED IN `gates`, and that is not a missing gate. The gate list enumerates
+ * `lib/` SERVICE functions that call `requireModule`; travel has none. ExpenseOS gates
+ * travel at its router, and the port keeps that: `server/routers/travelRequests.ts`
+ * shadows its base procedures with `moduleActive('travel')`, so EVERY procedure, present
+ * and future, refuses while the module is off — there is no per-function list to forget.
+ * `travelCategories.ts` is ExpenseOS's admin taxonomy router, held to its admin
+ * permissions only (as ExpenseOS has it): editing the category list is configuration, not
+ * travel. The two screens (`/travel`, `/admin/travel-categories`) call
+ * `requireActiveModule('travel')`, and the sidebar hides both. The approval engine's
+ * TRAVEL_REQUEST adapter is deliberately ungated in the same way `submitReport`'s budget
+ * rollup is: it only ever runs on a request the gated router created.
+ */
+const TRAVEL: ModuleDefinition = {
+  code: 'travel',
+  name: 'Travel',
+  description:
+    'Travel requests with an estimate an approver can judge — flights, lodging, per-diem ' +
+    'and ground transport — approved through your workflows, and turned into an expense ' +
+    'report after the trip.',
+  available: true,
+  gates: [],
+  ungated: {},
+};
+
+/**
+ * The one the Plan names and nothing implements. Declared, unavailable, and
+ * gating nothing — see the header on why it is here at all.
  */
 const DECLARED_ONLY: ModuleDefinition[] = [
-  {
-    code: 'travel',
-    name: 'Travel',
-    description: 'Travel requests, itineraries and trip-linked expenses.',
-    available: false,
-    gates: [],
-    ungated: {},
-  },
   {
     code: 'virtual_cards',
     name: 'Virtual cards',
@@ -274,7 +297,14 @@ const DECLARED_ONLY: ModuleDefinition[] = [
   },
 ];
 
-const MODULES: ModuleDefinition[] = [ACCOUNTING, BUDGETS, ANALYTICS, COMPLIANCE, ...DECLARED_ONLY];
+const MODULES: ModuleDefinition[] = [
+  ACCOUNTING,
+  BUDGETS,
+  ANALYTICS,
+  COMPLIANCE,
+  TRAVEL,
+  ...DECLARED_ONLY,
+];
 
 /** Every declared module, available or not. Stable order, for a screen. */
 export function listModules(): ModuleDefinition[] {
