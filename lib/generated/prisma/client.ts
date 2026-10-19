@@ -300,3 +300,19 @@ export type TravelCategory = Prisma.TravelCategoryModel
  * ExpenseOS's TravelBudgetLine: one line of a request's estimate.
  */
 export type TravelBudgetLine = Prisma.TravelBudgetLineModel
+/**
+ * Model AssistantConversation
+ * ExpenseOS's AssistantConversation: one chat thread, owned by the person who started it.
+ */
+export type AssistantConversation = Prisma.AssistantConversationModel
+/**
+ * Model AssistantMessage
+ * ExpenseOS's AssistantMessage: one turn, its content block array stored verbatim.
+ */
+export type AssistantMessage = Prisma.AssistantMessageModel
+/**
+ * Model AssistantFeedback
+ * ExpenseOS's AssistantFeedback: a rating on one assistant turn, or a flag the assistant
+ * raised about itself.
+ */
+export type AssistantFeedback = Prisma.AssistantFeedbackModel

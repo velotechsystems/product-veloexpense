@@ -185,6 +185,14 @@ export const EXPORTED: Readonly<Record<string, ExportedTable>> = {
   travel_category: { file: 'travel-categories.csv' },
   travel_place: { file: 'travel-places.csv' },
 
+  /* ── the assistant ────────────────────────────────────────────────────── */
+  // w6-03 (0078): ExpenseOS's assistant — the conversations people had with it, every turn
+  // as sent and received, and the ratings and flags on those turns. Conversation content is
+  // the tenant's own words about its own spending, exported as comments are.
+  assistant_conversation: { file: 'assistant-conversations.csv' },
+  assistant_message: { file: 'assistant-messages.csv' },
+  assistant_feedback: { file: 'assistant-feedback.csv' },
+
   /* ── accounting ───────────────────────────────────────────────────────── */
   gl_account: { file: 'gl-accounts.csv' },
   integration_installation: {

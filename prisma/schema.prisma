@@ -531,6 +531,9 @@ model User {
   externalIds           UserExternalId[]
   /// w6-00: travel requests this person submitted (0077).
   travelRequests        TravelRequest[] @relation("TravelSubmitter")
+  /// w6-03: the person's assistant conversations and the feedback they gave (0078).
+  assistantConversations AssistantConversation[] @relation("AssistantConversationUser")
+  assistantFeedback      AssistantFeedback[]     @relation("AssistantFeedbackUser")
 
   @@map("app_user")
 }
@@ -1452,4 +1455,81 @@ model TravelBudgetLine {
   @@index([glAccountId])
   @@index([categoryId])
   @@map("travel_budget_line")
+}
+
+// ── Assistant (Wave 6, w6-03, migration 0078) ────────────────────────────────
+// ExpenseOS's `AssistantConversation`, `AssistantMessage` and `AssistantFeedback`
+// (1e682dd6), field for field. VeloExpense differences, as the travel models have them:
+//   · per tenant: composite keys in SQL; relations here name the id alone;
+//   · `reviewedBy` is a composite key to the person in SQL (ExpenseOS: a bare uuid); only the
+//     scalar is described, as ExpenseOS's model has it.
+
+/// ExpenseOS's AssistantConversation: one chat thread, owned by the person who started it.
+model AssistantConversation {
+  id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String    @default(dbgenerated("(NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid")) @map("organization_id") @db.Uuid
+  userId         String    @map("user_id") @db.Uuid
+  user           User      @relation("AssistantConversationUser", fields: [userId], references: [id], onDelete: Cascade)
+  /// Model-generated after the first exchange; null until then.
+  title          String?
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  archivedAt     DateTime? @map("archived_at") @db.Timestamptz(6)
+
+  messages AssistantMessage[]
+  feedback AssistantFeedback[]
+
+  @@unique([organizationId, id])
+  @@index([userId, updatedAt])
+  @@map("assistant_conversation")
+}
+
+/// ExpenseOS's AssistantMessage: one turn, its content block array stored verbatim.
+model AssistantMessage {
+  id             String                @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String                @default(dbgenerated("(NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid")) @map("organization_id") @db.Uuid
+  conversationId String                @map("conversation_id") @db.Uuid
+  conversation   AssistantConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  /// 'user' | 'assistant', mirroring the Messages API role (a CHECK).
+  role           String
+  /// The content block array exactly as sent to / received from the API.
+  content        Json
+  createdAt      DateTime              @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  feedback AssistantFeedback[]
+
+  @@unique([organizationId, id])
+  @@index([conversationId, createdAt])
+  @@map("assistant_message")
+}
+
+/// ExpenseOS's AssistantFeedback: a rating on one assistant turn, or a flag the assistant
+/// raised about itself.
+model AssistantFeedback {
+  id             String                @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String                @default(dbgenerated("(NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid")) @map("organization_id") @db.Uuid
+  conversationId String                @map("conversation_id") @db.Uuid
+  conversation   AssistantConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  /// The assistant turn being rated.
+  messageId      String                @map("message_id") @db.Uuid
+  message        AssistantMessage      @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  /// Denormalised from the conversation so the review queue can filter by person.
+  userId         String                @map("user_id") @db.Uuid
+  user           User                  @relation("AssistantFeedbackUser", fields: [userId], references: [id], onDelete: Cascade)
+  /// 1–5. Nullable so a turn can be flagged without being scored.
+  rating         Int?
+  comment        String?
+  /// Set by the ASSISTANT: OFF_TOPIC | NO_ANSWER_FOUND | UNSUPPORTED_CLAIM | null (a CHECK).
+  flag           String?
+  /// PENDING | REVIEWED | PROMOTED | DISMISSED (a CHECK).
+  status         String                @default("PENDING")
+  createdAt      DateTime              @default(now()) @map("created_at") @db.Timestamptz(6)
+  reviewedAt     DateTime?             @map("reviewed_at") @db.Timestamptz(6)
+  reviewedBy     String?               @map("reviewed_by") @db.Uuid
+
+  @@unique([organizationId, id])
+  @@index([organizationId, status, createdAt])
+  @@index([rating])
+  @@index([userId, createdAt])
+  @@map("assistant_feedback")
 }
