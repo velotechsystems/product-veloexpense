@@ -7,10 +7,9 @@ import { APPROVAL_SUBJECT_TYPES } from '@/lib/approvalSubjects';
 
 /*
  * VeloExpense (w4-01): there is no Prisma enum to compare against — `subject_type` is text
- * under a CHECK in 0058 — and the list is deliberately narrower than the CHECK: travel is
- * reserved there until the travel wave (see `@/lib/approvalSubjects`). So the parity test
- * asserts the list against the engine's live subjects, and that every member is one the
- * database accepts, read from the migration itself. ExpenseOS's travel case is skipped.
+ * under a CHECK in 0058. So the parity test asserts the list against the engine's live
+ * subjects, and that every member is one the database accepts, read from the migration
+ * itself. Travel joined in w6-02; the virtual-card subjects are out of scope (d50).
  */
 function checkedSubjects(): string[] {
   const sql = readFileSync(
@@ -51,16 +50,17 @@ const SUBJECT_TYPES = z.enum(APPROVAL_SUBJECT_TYPES);
 describe('approval-workflow subject coverage', () => {
   it('accepts every subject the engine routes, and only ones the database accepts', () => {
     // VeloExpense: the engine's live subjects (packages/approvals/src/engine.ts).
-    expect([...SUBJECT_TYPES.options].sort()).toEqual(['EXPENSE_REPORT']);
+    expect([...SUBJECT_TYPES.options].sort()).toEqual(['EXPENSE_REPORT', 'TRAVEL_REQUEST']);
     const allowed = new Set(checkedSubjects());
     for (const s of SUBJECT_TYPES.options) expect(allowed.has(s)).toBe(true);
   });
 
-  // VeloExpense: no travel or virtual-card subjects yet (see the note at the top).
-  it.skip('parses the subject the travel workflow actually sends', () => {
+  it('parses the subject the travel workflow actually sends', () => {
     // The specific value whose rejection produced the finding.
     expect(SUBJECT_TYPES.safeParse('TRAVEL_REQUEST').success).toBe(true);
-    expect(SUBJECT_TYPES.safeParse('VIRTUAL_CARD_LIMIT_INCREASE').success).toBe(true);
+    // VeloExpense (w6-02): ExpenseOS also accepts VIRTUAL_CARD_LIMIT_INCREASE here; the
+    // virtual-card subjects are out of scope (d50), so it is refused.
+    expect(SUBJECT_TYPES.safeParse('VIRTUAL_CARD_LIMIT_INCREASE').success).toBe(false);
   });
 
   it('still refuses a subject the model does not declare', () => {

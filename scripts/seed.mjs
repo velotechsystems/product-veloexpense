@@ -329,6 +329,69 @@ async function seedDefaultApprovalWorkflow(orgId) {
 }
 
 /**
+ * w6-02 — ExpenseOS's seeded per-diem rates (`packages/db/prisma/seed.ts`, `SEED_PER_DIEM` and
+ * `seedPerDiemRates`, 1e682dd6): six cities, a meals allowance and a lodging allowance each,
+ * in CAD, from 1 Jan 2026. Travel pricing derives a meals or hotel line from these, and the
+ * travel e2e prices its trips to Toronto against them — without them nothing prices in a
+ * fresh environment.
+ *
+ * VeloExpense (w6-02): per tenant, for the demo tenant only. ExpenseOS keys them on its
+ * `travelMeals` / `travelHotel` expense categories; the demo tenant has VeloExpense's starter
+ * six, so the same two are `meals` and `travel_lodging` — the categories its travel
+ * categories map to (0077's `seed_travel_defaults`). Created, never updated, as ExpenseOS's:
+ * an administrator who has tuned a rate keeps it.
+ */
+const SEED_PER_DIEM = [
+  { country: 'CA', city: 'Toronto', meals: 8000, lodging: 25000 },
+  { country: 'CA', city: 'Vancouver', meals: 8000, lodging: 26000 },
+  { country: 'CA', city: 'Montreal', meals: 7500, lodging: 22000 },
+  { country: 'CA', city: 'Calgary', meals: 7500, lodging: 21000 },
+  { country: 'US', city: 'New York', meals: 11000, lodging: 40000 },
+  { country: 'US', city: 'San Francisco', meals: 11000, lodging: 38000 },
+];
+
+async function seedPerDiemRates(orgId) {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query("SELECT set_config('app.current_org', $1, true)", [orgId]);
+    const cat = async (code) =>
+      (await client.query('SELECT id FROM expense_category WHERE code = $1', [code])).rows[0]?.id ?? null;
+    const [meals, lodging] = [await cat('meals'), await cat('travel_lodging')];
+    if (!meals || !lodging) {
+      console.warn('  per-diem rates skipped: meals / travel_lodging not found');
+    } else {
+      for (const place of SEED_PER_DIEM) {
+        // Meals halve on the travel days, the GSA convention the engine already knows;
+        // a hotel night is a whole night or none.
+        for (const [categoryId, amount, firstLastDay] of [
+          [meals, place.meals, true],
+          [lodging, place.lodging, false],
+        ]) {
+          await client.query(
+            `INSERT INTO per_diem_rate
+                 (organization_id, country, city, category_id, amount_minor, first_last_day,
+                  effective_from, currency_code)
+             SELECT $1, $2, $3, $4, $5, $6, '2026-01-01T00:00:00Z', 'CAD'
+              WHERE NOT EXISTS (
+                SELECT 1 FROM per_diem_rate
+                 WHERE country = $2 AND city = $3 AND category_id = $4
+                   AND effective_from = '2026-01-01T00:00:00Z')`,
+            [orgId, place.country, place.city, categoryId, amount, firstLastDay],
+          );
+        }
+      }
+    }
+    await client.query('COMMIT');
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+/**
  * w6-00 (d88) — travel's category list and its default approval flow, from migration 0077's
  * `seed_travel_defaults()`: the one copy `createOrganization` also calls. After the reference
  * data, whose expense categories the travel list maps onto. Idempotent.
@@ -653,6 +716,10 @@ async function main() {
   // VX4-8 part 4. The demo tenant gets compliance so `/admin/compliance` has
   // something to show and `e2e/compliance-flow.spec.ts` has a tenant to sweep.
   await seedModule(demoId, 'compliance');
+  // w6-02 (d88): travel, available as of its screens. On for the demo tenant so `/travel`
+  // and `/admin/travel-categories` have a tenant to run in, and so `e2e/travel-request.spec.ts`
+  // and `travel.mobile.spec.ts` can file, price and decide a trip.
+  await seedModule(demoId, 'travel');
   await seedReferenceData(demoId);
   // FOUR users, not three. `owner@demo.test` was added when VX2-3 made a submit
   // open an approval run: submitting routed the ladder (the engine's default flow since
@@ -680,6 +747,7 @@ async function main() {
   await seedReportingLine(demoId);
   await seedDefaultApprovalWorkflow(demoId);
   await seedTravelDefaults(demoId);
+  await seedPerDiemRates(demoId);
 
   // ── VX3-9a: a SECOND populated tenant, on a DIFFERENT ledger ───────────────
   //

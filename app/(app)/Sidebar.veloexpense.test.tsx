@@ -130,6 +130,9 @@ describe("an admin's menu", () => {
         '/expenses/all',
         // People 3: ExpenseOS's People directory.
         '/users',
+        // w6-02: ExpenseOS's travel screens (ALL_ON has the travel module).
+        '/travel',
+        '/admin/travel-categories',
       ].sort(),
     );
   });
@@ -137,10 +140,16 @@ describe("an admin's menu", () => {
   it('offers no ExpenseOS screen that is not ported yet', () => {
     show('admin');
     // `/expenses/all` left this list with w2-06, which ported it; `/admin/roles` with w4-10c;
-    // `/users` with People 3.
-    for (const unported of ['/travel']) {
+    // `/users` with People 3; `/travel` and `/admin/travel-categories` with w6-02.
+    for (const unported of ['/virtual-cards', '/virtual-cards/requests']) {
       expect(hrefs()).not.toContain(unported);
     }
+  });
+
+  it('offers the travel screens only while the travel module is on (w6-02)', () => {
+    show('admin', new Set(['expense-management']));
+    expect(hrefs()).not.toContain('/travel');
+    expect(hrefs()).not.toContain('/admin/travel-categories');
   });
 
   it("drops a VeloExpense screen when VeloExpense's module for it is off", () => {
@@ -170,6 +179,8 @@ describe("an employee's menu", () => {
       '/expenses',
       '/expenses/approvals',
       '/notifications',
+      // w6-02: an employee plans trips (travel.request.create.own) when the module is on.
+      '/travel',
     ]);
   });
 });
@@ -242,6 +253,9 @@ describe('isPortedScreen', () => {
       '/dashboard',
       '/admin/roles',
       '/users',
+      // w6-02.
+      '/travel',
+      '/admin/travel-categories',
     ]);
   });
 });

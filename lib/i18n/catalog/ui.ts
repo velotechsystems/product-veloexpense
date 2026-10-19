@@ -242,6 +242,9 @@ export const UI_COPY = {
   'title.admin.audit.trail': { 'en-CA': 'Audit trail' },
   'title.admin.slack': { 'en-CA': 'Slack' },
   'title.admin.directory.sync': { 'en-CA': 'Directory sync' },
+  // w6-02: ExpenseOS's travel module.
+  'title.admin.travel.categories': { 'en-CA': 'Travel categories' },
+  'title.travel': { 'en-CA': 'Travel' },
 
   /* ── shared navigation, on more than one screen ─────────────────────────── */
   //

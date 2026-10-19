@@ -25,12 +25,12 @@
  * Every member has a `workflows.subject.<VALUE>` label in both catalogues.
  */
 /*
- * VeloExpense (w4-01): the subjects VeloExpense's engine routes — the expense report only.
- * The virtual-card subjects are out of scope (d50), and TRAVEL_REQUEST, which 0058's CHECK
- * reserves, joins this list with the travel wave: offering it now would let an admin author
- * a workflow nothing ever runs, the very half-wiring this list exists to prevent. The
- * parity test is VeloExpense's (approvalWorkflows.subjects.test.ts).
+ * VeloExpense (w4-01, w6-02): the subjects VeloExpense's engine routes — ExpenseOS's list
+ * minus the two virtual-card subjects, which are out of scope (d50). TRAVEL_REQUEST joined
+ * with the travel screens (w6-02), when the module became available: before that an admin
+ * could have authored a travel workflow nothing ever ran, the very half-wiring this list
+ * exists to prevent. The parity test is VeloExpense's (approvalWorkflows.subjects.test.ts).
  */
-export const APPROVAL_SUBJECT_TYPES = ['EXPENSE_REPORT'] as const;
+export const APPROVAL_SUBJECT_TYPES = ['EXPENSE_REPORT', 'TRAVEL_REQUEST'] as const;
 
 export type ApprovalSubjectTypeValue = (typeof APPROVAL_SUBJECT_TYPES)[number];

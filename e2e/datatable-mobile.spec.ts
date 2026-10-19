@@ -1,14 +1,16 @@
 import { expect, type Page, test } from '@playwright/test';
 import { signIn } from './support/actors';
-import { seedEmployeeActivity } from './support/seed-activity';
+import { seedDraftTrip, seedEmployeeActivity } from './support/seed-activity';
+import { closeTestDb } from './support/test-db';
 import { reportTag } from './support/workbench';
 
 /**
  * VeloExpense: ExpenseOS's `e2e/datatable-mobile.spec.ts` (1e682dd6), ported with its phone
  * specs. `/expenses`' list and the dashboard's cards are ExpenseOS's, and so is `DataTable`'s
- * card tree. Two changes, marked where they are made: VeloExpense has no QA activity seed, so
- * `seedEmployeeActivity` builds the rows the tests measure; and it has no travel module, so
- * the dashboard holds two `<DataTable>`s rather than three.
+ * card tree. One change, marked where it is made: VeloExpense has no QA activity seed, so
+ * `seedEmployeeActivity` builds the rows the tests measure — and, since w6-02 turned travel on
+ * for the demo tenant, `seedDraftTrip` the employee's trip, so the dashboard's third
+ * `<DataTable>` ("My travel requests") has rows to measure, as ExpenseOS's does.
  *
  * Nothing may paint past the right edge of a phone.
  *
@@ -93,7 +95,10 @@ test.beforeAll(async ({ browser }) => {
     draftTitle: reportTag('datatable draft'),
     queuedTitle: reportTag('datatable queue'),
   });
+  // VeloExpense (w6-02): the employee's trip, so "My travel requests" draws rows (see header).
+  await seedDraftTrip(reportTag('Datatable Trip'));
 });
+test.afterAll(closeTestDb);
 
 /** The two widths the epic committed to. */
 const PHONES = [

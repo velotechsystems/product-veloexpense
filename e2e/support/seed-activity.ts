@@ -1,6 +1,7 @@
 import { type Browser, expect, type Page } from '@playwright/test';
 import { stateFileFor } from './actors';
 import { addExpense, createReport } from './workbench';
+import { testDb } from './test-db';
 
 /**
  * VeloExpense: the rows ExpenseOS's phone specs read out of its QA seed
@@ -41,6 +42,35 @@ export async function submitQueuedReport(browser: Browser, title: string): Promi
     id = await submitTaxiReport(desk, title);
   });
   return id;
+}
+
+/**
+ * VeloExpense (w6-02): a DRAFT travel request of `actor`'s, and its id — the trips
+ * ExpenseOS's QA seed gives `qa.employee` (`qa-activity.json`), one at a time and only where
+ * a spec reads them. Written with SQL, as `e2e/travel.mobile.spec.ts` writes its own: the
+ * generated Prisma client cannot load in the Playwright process (`test-db.ts`). A DRAFT is
+ * the traveller's alone — no workflow starts — so nothing else in the run sees it but the
+ * traveller's own lists.
+ */
+export async function seedDraftTrip(
+  destination: string,
+  actor: 'employee' | 'admin' | 'manager' = 'employee',
+): Promise<string> {
+  const db = await testDb('seedDraftTrip');
+  const day = (n: number) => new Date(Date.now() + n * 86_400_000).toISOString().slice(0, 10);
+  const row = (
+    await db.query(
+      `INSERT INTO travel_request
+           (organization_id, submitter_id, purpose, destination_label, destination_city,
+            depart_date, return_date, status, currency_code)
+       SELECT u.organization_id, u.id, $2, $3, $3, $4, $5, 'DRAFT', 'CAD'
+         FROM app_user u WHERE lower(u.email) = lower($1)
+       RETURNING id`,
+      [`${actor}@demo.test`, `e2e fixture — ${destination}`, destination, `${day(30)}T00:00:00.000Z`, `${day(34)}T00:00:00.000Z`],
+    )
+  ).rows[0] as { id: string } | undefined;
+  if (!row) throw new Error(`seedDraftTrip: no seeded ${actor}@demo.test — run the seed (scripts/seed.mjs).`);
+  return row.id;
 }
 
 /** The vendor on the queued report's one line, for a spec that wants to find it on screen. */

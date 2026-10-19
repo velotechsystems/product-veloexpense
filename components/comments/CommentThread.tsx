@@ -33,8 +33,8 @@ import { displayName } from '@/lib/format';
 import { trpc } from '@/lib/trpc/client';
 
 /** The subjects this thread serves. Mirrors the router's own list.
- *  VeloExpense: the expense report only, until travel (ExpenseOS: and 'TRAVEL_REQUEST'). */
-export type CommentSubject = 'EXPENSE_REPORT';
+ *  VeloExpense (w6-02): ExpenseOS's two — travel requests joined with the travel wave. */
+export type CommentSubject = 'EXPENSE_REPORT' | 'TRAVEL_REQUEST';
 
 /** Event types worth a line in the stream. Anything else — internal bookkeeping, task
  *  assignment noise — is skipped rather than rendered as a bare type name. */

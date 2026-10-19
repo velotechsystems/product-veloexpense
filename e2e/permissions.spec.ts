@@ -14,7 +14,7 @@ import { reportTag } from './support/workbench';
  *   · no locale in a URL, and `PROBES` are VeloExpense's routes for the same boundaries;
  *   · `card-administrator` has no person (no virtual-card screens), so its row, the
  *     `/virtual-cards` probe and the AP-clerk card test are not here;
- *   · no travel module, so every `travel` gate is `false` and no travel card renders;
+ *   · the travel module is on for the demo tenant (w6-02's seed), as in ExpenseOS's;
  *   · the AP clerk's report is one the employee really submits (`submitQueuedReport`), where
  *     ExpenseOS opens a QA-seeded one;
  *   · the open-redirect test is not here — see the note where it stood.
@@ -186,14 +186,12 @@ function renderedCardHeading(title: string): RegExp {
  * was never meant to close on — the regression a widened predicate would cause — while
  * `selectDashboardCards.test.ts` owns the false branches themselves.
  */
-// VeloExpense: `travel` is `false` for everybody — VeloExpense has no travel module, so the
-// module half of `showTravel` is the false branch this note says ExpenseOS cannot reach.
 const EXPECTED_CARDS: Record<string, { travel: boolean; approvals: boolean; expenses: boolean }> = {
-  admin: { travel: false, approvals: true, expenses: true },
-  'expense-administrator': { travel: false, approvals: true, expenses: true },
-  manager: { travel: false, approvals: true, expenses: true },
-  employee: { travel: false, approvals: true, expenses: true },
-  'ap-clerk': { travel: false, approvals: false, expenses: true },
+  admin: { travel: true, approvals: true, expenses: true },
+  'expense-administrator': { travel: true, approvals: true, expenses: true },
+  manager: { travel: true, approvals: true, expenses: true },
+  employee: { travel: true, approvals: true, expenses: true },
+  'ap-clerk': { travel: true, approvals: false, expenses: true },
 };
 
 /** What the dashboard's HTML said about itself, for one reader. */
