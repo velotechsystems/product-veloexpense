@@ -319,6 +319,7 @@ export type ExpenseCategoryWhereInput = {
   glAccount?: Prisma.XOR<Prisma.GlAccountNullableScalarRelationFilter, Prisma.GlAccountWhereInput> | null
   lineItems?: Prisma.ExpenseLineItemListRelationFilter
   policy?: Prisma.XOR<Prisma.ExpensePolicyNullableScalarRelationFilter, Prisma.ExpensePolicyWhereInput> | null
+  travelCategories?: Prisma.TravelCategoryListRelationFilter
 }
 
 export type ExpenseCategoryOrderByWithRelationInput = {
@@ -342,6 +343,7 @@ export type ExpenseCategoryOrderByWithRelationInput = {
   glAccount?: Prisma.GlAccountOrderByWithRelationInput
   lineItems?: Prisma.ExpenseLineItemOrderByRelationAggregateInput
   policy?: Prisma.ExpensePolicyOrderByWithRelationInput
+  travelCategories?: Prisma.TravelCategoryOrderByRelationAggregateInput
 }
 
 export type ExpenseCategoryWhereUniqueInput = Prisma.AtLeast<{
@@ -369,6 +371,7 @@ export type ExpenseCategoryWhereUniqueInput = Prisma.AtLeast<{
   glAccount?: Prisma.XOR<Prisma.GlAccountNullableScalarRelationFilter, Prisma.GlAccountWhereInput> | null
   lineItems?: Prisma.ExpenseLineItemListRelationFilter
   policy?: Prisma.XOR<Prisma.ExpensePolicyNullableScalarRelationFilter, Prisma.ExpensePolicyWhereInput> | null
+  travelCategories?: Prisma.TravelCategoryListRelationFilter
 }, "id" | "organizationId_id">
 
 export type ExpenseCategoryOrderByWithAggregationInput = {
@@ -438,6 +441,7 @@ export type ExpenseCategoryCreateInput = {
   glAccount?: Prisma.GlAccountCreateNestedOneWithoutExpenseCategoriesInput
   lineItems?: Prisma.ExpenseLineItemCreateNestedManyWithoutCategoryInput
   policy?: Prisma.ExpensePolicyCreateNestedOneWithoutCategoryInput
+  travelCategories?: Prisma.TravelCategoryCreateNestedManyWithoutExpenseCategoryInput
 }
 
 export type ExpenseCategoryUncheckedCreateInput = {
@@ -460,6 +464,7 @@ export type ExpenseCategoryUncheckedCreateInput = {
   updatedAt?: Date | string
   lineItems?: Prisma.ExpenseLineItemUncheckedCreateNestedManyWithoutCategoryInput
   policy?: Prisma.ExpensePolicyUncheckedCreateNestedOneWithoutCategoryInput
+  travelCategories?: Prisma.TravelCategoryUncheckedCreateNestedManyWithoutExpenseCategoryInput
 }
 
 export type ExpenseCategoryUpdateInput = {
@@ -481,6 +486,7 @@ export type ExpenseCategoryUpdateInput = {
   glAccount?: Prisma.GlAccountUpdateOneWithoutExpenseCategoriesNestedInput
   lineItems?: Prisma.ExpenseLineItemUpdateManyWithoutCategoryNestedInput
   policy?: Prisma.ExpensePolicyUpdateOneWithoutCategoryNestedInput
+  travelCategories?: Prisma.TravelCategoryUpdateManyWithoutExpenseCategoryNestedInput
 }
 
 export type ExpenseCategoryUncheckedUpdateInput = {
@@ -503,6 +509,7 @@ export type ExpenseCategoryUncheckedUpdateInput = {
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   lineItems?: Prisma.ExpenseLineItemUncheckedUpdateManyWithoutCategoryNestedInput
   policy?: Prisma.ExpensePolicyUncheckedUpdateOneWithoutCategoryNestedInput
+  travelCategories?: Prisma.TravelCategoryUncheckedUpdateManyWithoutExpenseCategoryNestedInput
 }
 
 export type ExpenseCategoryCreateManyInput = {
@@ -653,6 +660,11 @@ export type ExpenseCategoryScalarRelationFilter = {
   isNot?: Prisma.ExpenseCategoryWhereInput
 }
 
+export type ExpenseCategoryNullableScalarRelationFilter = {
+  is?: Prisma.ExpenseCategoryWhereInput | null
+  isNot?: Prisma.ExpenseCategoryWhereInput | null
+}
+
 export type StringFieldUpdateOperationsInput = {
   set?: string
 }
@@ -747,6 +759,22 @@ export type ExpenseCategoryUpdateOneRequiredWithoutPolicyNestedInput = {
   update?: Prisma.XOR<Prisma.XOR<Prisma.ExpenseCategoryUpdateToOneWithWhereWithoutPolicyInput, Prisma.ExpenseCategoryUpdateWithoutPolicyInput>, Prisma.ExpenseCategoryUncheckedUpdateWithoutPolicyInput>
 }
 
+export type ExpenseCategoryCreateNestedOneWithoutTravelCategoriesInput = {
+  create?: Prisma.XOR<Prisma.ExpenseCategoryCreateWithoutTravelCategoriesInput, Prisma.ExpenseCategoryUncheckedCreateWithoutTravelCategoriesInput>
+  connectOrCreate?: Prisma.ExpenseCategoryCreateOrConnectWithoutTravelCategoriesInput
+  connect?: Prisma.ExpenseCategoryWhereUniqueInput
+}
+
+export type ExpenseCategoryUpdateOneWithoutTravelCategoriesNestedInput = {
+  create?: Prisma.XOR<Prisma.ExpenseCategoryCreateWithoutTravelCategoriesInput, Prisma.ExpenseCategoryUncheckedCreateWithoutTravelCategoriesInput>
+  connectOrCreate?: Prisma.ExpenseCategoryCreateOrConnectWithoutTravelCategoriesInput
+  upsert?: Prisma.ExpenseCategoryUpsertWithoutTravelCategoriesInput
+  disconnect?: Prisma.ExpenseCategoryWhereInput | boolean
+  delete?: Prisma.ExpenseCategoryWhereInput | boolean
+  connect?: Prisma.ExpenseCategoryWhereUniqueInput
+  update?: Prisma.XOR<Prisma.XOR<Prisma.ExpenseCategoryUpdateToOneWithWhereWithoutTravelCategoriesInput, Prisma.ExpenseCategoryUpdateWithoutTravelCategoriesInput>, Prisma.ExpenseCategoryUncheckedUpdateWithoutTravelCategoriesInput>
+}
+
 export type ExpenseCategoryCreateWithoutGlAccountInput = {
   id?: string
   code?: string
@@ -765,6 +793,7 @@ export type ExpenseCategoryCreateWithoutGlAccountInput = {
   updatedAt?: Date | string
   lineItems?: Prisma.ExpenseLineItemCreateNestedManyWithoutCategoryInput
   policy?: Prisma.ExpensePolicyCreateNestedOneWithoutCategoryInput
+  travelCategories?: Prisma.TravelCategoryCreateNestedManyWithoutExpenseCategoryInput
 }
 
 export type ExpenseCategoryUncheckedCreateWithoutGlAccountInput = {
@@ -785,6 +814,7 @@ export type ExpenseCategoryUncheckedCreateWithoutGlAccountInput = {
   updatedAt?: Date | string
   lineItems?: Prisma.ExpenseLineItemUncheckedCreateNestedManyWithoutCategoryInput
   policy?: Prisma.ExpensePolicyUncheckedCreateNestedOneWithoutCategoryInput
+  travelCategories?: Prisma.TravelCategoryUncheckedCreateNestedManyWithoutExpenseCategoryInput
 }
 
 export type ExpenseCategoryCreateOrConnectWithoutGlAccountInput = {
@@ -854,6 +884,7 @@ export type ExpenseCategoryCreateWithoutLineItemsInput = {
   updatedAt?: Date | string
   glAccount?: Prisma.GlAccountCreateNestedOneWithoutExpenseCategoriesInput
   policy?: Prisma.ExpensePolicyCreateNestedOneWithoutCategoryInput
+  travelCategories?: Prisma.TravelCategoryCreateNestedManyWithoutExpenseCategoryInput
 }
 
 export type ExpenseCategoryUncheckedCreateWithoutLineItemsInput = {
@@ -875,6 +906,7 @@ export type ExpenseCategoryUncheckedCreateWithoutLineItemsInput = {
   createdAt?: Date | string
   updatedAt?: Date | string
   policy?: Prisma.ExpensePolicyUncheckedCreateNestedOneWithoutCategoryInput
+  travelCategories?: Prisma.TravelCategoryUncheckedCreateNestedManyWithoutExpenseCategoryInput
 }
 
 export type ExpenseCategoryCreateOrConnectWithoutLineItemsInput = {
@@ -911,6 +943,7 @@ export type ExpenseCategoryUpdateWithoutLineItemsInput = {
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   glAccount?: Prisma.GlAccountUpdateOneWithoutExpenseCategoriesNestedInput
   policy?: Prisma.ExpensePolicyUpdateOneWithoutCategoryNestedInput
+  travelCategories?: Prisma.TravelCategoryUpdateManyWithoutExpenseCategoryNestedInput
 }
 
 export type ExpenseCategoryUncheckedUpdateWithoutLineItemsInput = {
@@ -932,6 +965,7 @@ export type ExpenseCategoryUncheckedUpdateWithoutLineItemsInput = {
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   policy?: Prisma.ExpensePolicyUncheckedUpdateOneWithoutCategoryNestedInput
+  travelCategories?: Prisma.TravelCategoryUncheckedUpdateManyWithoutExpenseCategoryNestedInput
 }
 
 export type ExpenseCategoryCreateWithoutPolicyInput = {
@@ -952,6 +986,7 @@ export type ExpenseCategoryCreateWithoutPolicyInput = {
   updatedAt?: Date | string
   glAccount?: Prisma.GlAccountCreateNestedOneWithoutExpenseCategoriesInput
   lineItems?: Prisma.ExpenseLineItemCreateNestedManyWithoutCategoryInput
+  travelCategories?: Prisma.TravelCategoryCreateNestedManyWithoutExpenseCategoryInput
 }
 
 export type ExpenseCategoryUncheckedCreateWithoutPolicyInput = {
@@ -973,6 +1008,7 @@ export type ExpenseCategoryUncheckedCreateWithoutPolicyInput = {
   createdAt?: Date | string
   updatedAt?: Date | string
   lineItems?: Prisma.ExpenseLineItemUncheckedCreateNestedManyWithoutCategoryInput
+  travelCategories?: Prisma.TravelCategoryUncheckedCreateNestedManyWithoutExpenseCategoryInput
 }
 
 export type ExpenseCategoryCreateOrConnectWithoutPolicyInput = {
@@ -1009,6 +1045,7 @@ export type ExpenseCategoryUpdateWithoutPolicyInput = {
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   glAccount?: Prisma.GlAccountUpdateOneWithoutExpenseCategoriesNestedInput
   lineItems?: Prisma.ExpenseLineItemUpdateManyWithoutCategoryNestedInput
+  travelCategories?: Prisma.TravelCategoryUpdateManyWithoutExpenseCategoryNestedInput
 }
 
 export type ExpenseCategoryUncheckedUpdateWithoutPolicyInput = {
@@ -1030,6 +1067,109 @@ export type ExpenseCategoryUncheckedUpdateWithoutPolicyInput = {
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   lineItems?: Prisma.ExpenseLineItemUncheckedUpdateManyWithoutCategoryNestedInput
+  travelCategories?: Prisma.TravelCategoryUncheckedUpdateManyWithoutExpenseCategoryNestedInput
+}
+
+export type ExpenseCategoryCreateWithoutTravelCategoriesInput = {
+  id?: string
+  code?: string
+  label: Prisma.JsonNullValueInput | runtime.InputJsonValue
+  icon?: string | null
+  active?: boolean
+  sortOrder?: number
+  itcGstHstRate?: number
+  itcQstRate?: number
+  pstRecoverable?: boolean
+  requiresAttendees?: boolean
+  isMileage?: boolean
+  acceptsTip?: boolean
+  color?: string | null
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  glAccount?: Prisma.GlAccountCreateNestedOneWithoutExpenseCategoriesInput
+  lineItems?: Prisma.ExpenseLineItemCreateNestedManyWithoutCategoryInput
+  policy?: Prisma.ExpensePolicyCreateNestedOneWithoutCategoryInput
+}
+
+export type ExpenseCategoryUncheckedCreateWithoutTravelCategoriesInput = {
+  id?: string
+  organizationId?: string
+  code?: string
+  label: Prisma.JsonNullValueInput | runtime.InputJsonValue
+  glAccountId?: string | null
+  icon?: string | null
+  active?: boolean
+  sortOrder?: number
+  itcGstHstRate?: number
+  itcQstRate?: number
+  pstRecoverable?: boolean
+  requiresAttendees?: boolean
+  isMileage?: boolean
+  acceptsTip?: boolean
+  color?: string | null
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  lineItems?: Prisma.ExpenseLineItemUncheckedCreateNestedManyWithoutCategoryInput
+  policy?: Prisma.ExpensePolicyUncheckedCreateNestedOneWithoutCategoryInput
+}
+
+export type ExpenseCategoryCreateOrConnectWithoutTravelCategoriesInput = {
+  where: Prisma.ExpenseCategoryWhereUniqueInput
+  create: Prisma.XOR<Prisma.ExpenseCategoryCreateWithoutTravelCategoriesInput, Prisma.ExpenseCategoryUncheckedCreateWithoutTravelCategoriesInput>
+}
+
+export type ExpenseCategoryUpsertWithoutTravelCategoriesInput = {
+  update: Prisma.XOR<Prisma.ExpenseCategoryUpdateWithoutTravelCategoriesInput, Prisma.ExpenseCategoryUncheckedUpdateWithoutTravelCategoriesInput>
+  create: Prisma.XOR<Prisma.ExpenseCategoryCreateWithoutTravelCategoriesInput, Prisma.ExpenseCategoryUncheckedCreateWithoutTravelCategoriesInput>
+  where?: Prisma.ExpenseCategoryWhereInput
+}
+
+export type ExpenseCategoryUpdateToOneWithWhereWithoutTravelCategoriesInput = {
+  where?: Prisma.ExpenseCategoryWhereInput
+  data: Prisma.XOR<Prisma.ExpenseCategoryUpdateWithoutTravelCategoriesInput, Prisma.ExpenseCategoryUncheckedUpdateWithoutTravelCategoriesInput>
+}
+
+export type ExpenseCategoryUpdateWithoutTravelCategoriesInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  code?: Prisma.StringFieldUpdateOperationsInput | string
+  label?: Prisma.JsonNullValueInput | runtime.InputJsonValue
+  icon?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  active?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  sortOrder?: Prisma.IntFieldUpdateOperationsInput | number
+  itcGstHstRate?: Prisma.IntFieldUpdateOperationsInput | number
+  itcQstRate?: Prisma.IntFieldUpdateOperationsInput | number
+  pstRecoverable?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  requiresAttendees?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  isMileage?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  acceptsTip?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  color?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  glAccount?: Prisma.GlAccountUpdateOneWithoutExpenseCategoriesNestedInput
+  lineItems?: Prisma.ExpenseLineItemUpdateManyWithoutCategoryNestedInput
+  policy?: Prisma.ExpensePolicyUpdateOneWithoutCategoryNestedInput
+}
+
+export type ExpenseCategoryUncheckedUpdateWithoutTravelCategoriesInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  organizationId?: Prisma.StringFieldUpdateOperationsInput | string
+  code?: Prisma.StringFieldUpdateOperationsInput | string
+  label?: Prisma.JsonNullValueInput | runtime.InputJsonValue
+  glAccountId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  icon?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  active?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  sortOrder?: Prisma.IntFieldUpdateOperationsInput | number
+  itcGstHstRate?: Prisma.IntFieldUpdateOperationsInput | number
+  itcQstRate?: Prisma.IntFieldUpdateOperationsInput | number
+  pstRecoverable?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  requiresAttendees?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  isMileage?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  acceptsTip?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  color?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  lineItems?: Prisma.ExpenseLineItemUncheckedUpdateManyWithoutCategoryNestedInput
+  policy?: Prisma.ExpensePolicyUncheckedUpdateOneWithoutCategoryNestedInput
 }
 
 export type ExpenseCategoryCreateManyGlAccountInput = {
@@ -1068,6 +1208,7 @@ export type ExpenseCategoryUpdateWithoutGlAccountInput = {
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   lineItems?: Prisma.ExpenseLineItemUpdateManyWithoutCategoryNestedInput
   policy?: Prisma.ExpensePolicyUpdateOneWithoutCategoryNestedInput
+  travelCategories?: Prisma.TravelCategoryUpdateManyWithoutExpenseCategoryNestedInput
 }
 
 export type ExpenseCategoryUncheckedUpdateWithoutGlAccountInput = {
@@ -1088,6 +1229,7 @@ export type ExpenseCategoryUncheckedUpdateWithoutGlAccountInput = {
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   lineItems?: Prisma.ExpenseLineItemUncheckedUpdateManyWithoutCategoryNestedInput
   policy?: Prisma.ExpensePolicyUncheckedUpdateOneWithoutCategoryNestedInput
+  travelCategories?: Prisma.TravelCategoryUncheckedUpdateManyWithoutExpenseCategoryNestedInput
 }
 
 export type ExpenseCategoryUncheckedUpdateManyWithoutGlAccountInput = {
@@ -1115,10 +1257,12 @@ export type ExpenseCategoryUncheckedUpdateManyWithoutGlAccountInput = {
 
 export type ExpenseCategoryCountOutputType = {
   lineItems: number
+  travelCategories: number
 }
 
 export type ExpenseCategoryCountOutputTypeSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   lineItems?: boolean | ExpenseCategoryCountOutputTypeCountLineItemsArgs
+  travelCategories?: boolean | ExpenseCategoryCountOutputTypeCountTravelCategoriesArgs
 }
 
 /**
@@ -1136,6 +1280,13 @@ export type ExpenseCategoryCountOutputTypeDefaultArgs<ExtArgs extends runtime.Ty
  */
 export type ExpenseCategoryCountOutputTypeCountLineItemsArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   where?: Prisma.ExpenseLineItemWhereInput
+}
+
+/**
+ * ExpenseCategoryCountOutputType without action
+ */
+export type ExpenseCategoryCountOutputTypeCountTravelCategoriesArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  where?: Prisma.TravelCategoryWhereInput
 }
 
 
@@ -1160,6 +1311,7 @@ export type ExpenseCategorySelect<ExtArgs extends runtime.Types.Extensions.Inter
   glAccount?: boolean | Prisma.ExpenseCategory$glAccountArgs<ExtArgs>
   lineItems?: boolean | Prisma.ExpenseCategory$lineItemsArgs<ExtArgs>
   policy?: boolean | Prisma.ExpenseCategory$policyArgs<ExtArgs>
+  travelCategories?: boolean | Prisma.ExpenseCategory$travelCategoriesArgs<ExtArgs>
   _count?: boolean | Prisma.ExpenseCategoryCountOutputTypeDefaultArgs<ExtArgs>
 }, ExtArgs["result"]["expenseCategory"]>
 
@@ -1230,6 +1382,7 @@ export type ExpenseCategoryInclude<ExtArgs extends runtime.Types.Extensions.Inte
   glAccount?: boolean | Prisma.ExpenseCategory$glAccountArgs<ExtArgs>
   lineItems?: boolean | Prisma.ExpenseCategory$lineItemsArgs<ExtArgs>
   policy?: boolean | Prisma.ExpenseCategory$policyArgs<ExtArgs>
+  travelCategories?: boolean | Prisma.ExpenseCategory$travelCategoriesArgs<ExtArgs>
   _count?: boolean | Prisma.ExpenseCategoryCountOutputTypeDefaultArgs<ExtArgs>
 }
 export type ExpenseCategoryIncludeCreateManyAndReturn<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
@@ -1248,6 +1401,10 @@ export type $ExpenseCategoryPayload<ExtArgs extends runtime.Types.Extensions.Int
      * w4-02c: ExpenseOS's per-category policy (`expense_category_policy`, 0065).
      */
     policy: Prisma.$ExpensePolicyPayload<ExtArgs> | null
+    /**
+     * w6-00: travel categories that roll up to this one (0077).
+     */
+    travelCategories: Prisma.$TravelCategoryPayload<ExtArgs>[]
   }
   scalars: runtime.Types.Extensions.GetPayloadResult<{
     id: string
@@ -1669,6 +1826,7 @@ export interface Prisma__ExpenseCategoryClient<T, Null = never, ExtArgs extends 
   glAccount<T extends Prisma.ExpenseCategory$glAccountArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.ExpenseCategory$glAccountArgs<ExtArgs>>): Prisma.Prisma__GlAccountClient<runtime.Types.Result.GetResult<Prisma.$GlAccountPayload<ExtArgs>, T, "findUniqueOrThrow", GlobalOmitOptions> | null, null, ExtArgs, GlobalOmitOptions>
   lineItems<T extends Prisma.ExpenseCategory$lineItemsArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.ExpenseCategory$lineItemsArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$ExpenseLineItemPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
   policy<T extends Prisma.ExpenseCategory$policyArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.ExpenseCategory$policyArgs<ExtArgs>>): Prisma.Prisma__ExpensePolicyClient<runtime.Types.Result.GetResult<Prisma.$ExpensePolicyPayload<ExtArgs>, T, "findUniqueOrThrow", GlobalOmitOptions> | null, null, ExtArgs, GlobalOmitOptions>
+  travelCategories<T extends Prisma.ExpenseCategory$travelCategoriesArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.ExpenseCategory$travelCategoriesArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$TravelCategoryPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
   /**
    * Attaches callbacks for the resolution and/or rejection of the Promise.
    * @param onfulfilled The callback to execute when the Promise is resolved.
@@ -2175,6 +2333,30 @@ export type ExpenseCategory$policyArgs<ExtArgs extends runtime.Types.Extensions.
    */
   include?: Prisma.ExpensePolicyInclude<ExtArgs> | null
   where?: Prisma.ExpensePolicyWhereInput
+}
+
+/**
+ * ExpenseCategory.travelCategories
+ */
+export type ExpenseCategory$travelCategoriesArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  /**
+   * Select specific fields to fetch from the TravelCategory
+   */
+  select?: Prisma.TravelCategorySelect<ExtArgs> | null
+  /**
+   * Omit specific fields from the TravelCategory
+   */
+  omit?: Prisma.TravelCategoryOmit<ExtArgs> | null
+  /**
+   * Choose, which related nodes to fetch as well
+   */
+  include?: Prisma.TravelCategoryInclude<ExtArgs> | null
+  where?: Prisma.TravelCategoryWhereInput
+  orderBy?: Prisma.TravelCategoryOrderByWithRelationInput | Prisma.TravelCategoryOrderByWithRelationInput[]
+  cursor?: Prisma.TravelCategoryWhereUniqueInput
+  take?: number
+  skip?: number
+  distinct?: Prisma.TravelCategoryScalarFieldEnum | Prisma.TravelCategoryScalarFieldEnum[]
 }
 
 /**

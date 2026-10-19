@@ -1350,8 +1350,8 @@ describe.skipIf(!process.env.DATABASE_URL)('approval engine (integration)', () =
       });
     });
 
-    // VeloExpense: travel requests arrive with their own wave; no travel table yet.
-    describe.skip('a travel request', () => {
+    // VeloExpense (w6-00): ExpenseOS's travel cases, now that `travel_request` exists (0077).
+    describe('a travel request', () => {
       let categoryId: string;
 
       const makeTravel = async (

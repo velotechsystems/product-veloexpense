@@ -208,6 +208,14 @@ export async function createOrganization(
      * policy in starter.ts's sense — the absence is not benign. */
     await seedDefaultExpenseWorkflow(tx, adminUserId);
 
+    /* w6-00 (d88) — travel's own category list and its approval flow, from the one SQL
+     * function migration 0077 runs for the tenants that predate it (`seed_travel_defaults`).
+     * After the starter categories, which the travel list maps onto. In this transaction for
+     * the approval flow's reason above: a travel request nothing governs cannot be decided.
+     * Seeded whether or not the tenant has the travel module on, so switching it on later
+     * needs nothing else. */
+    await tx.query('SELECT seed_travel_defaults()');
+
     /* VX5-19 — NO TRIAL IS STARTED HERE, and its absence is the decision.
      *
      * VX5-8 called `startTrial` in this transaction, on the reasoning that a

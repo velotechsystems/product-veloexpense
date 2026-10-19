@@ -66,6 +66,44 @@ describe('createOrganization', () => {
     expect(result.adminUserId).toBe(users.rows[0].id);
   });
 
+  /* w6-00 (d88) — and travel works from the moment the module is switched on: its own
+   * category list, mapped onto the starter expense categories where they match, and a
+   * published travel approval flow (0077's `seed_travel_defaults`, the copy the migration
+   * used for the tenants that predate it). */
+  it("gives the tenant travel's categories and its travel approval flow", async () => {
+    const { organizationId } = await createOrganization(NEW);
+    const travel = await withOrg(organizationId, async (tx) => ({
+      categories: (
+        await tx.query(
+          `SELECT tc.code, tc.line_kind, ec.code AS expense_code
+             FROM travel_category tc LEFT JOIN expense_category ec ON ec.id = tc.expense_category_id
+            ORDER BY tc.sort_order`,
+        )
+      ).rows,
+      flow: (
+        await tx.query(
+          `SELECT w.subject_type, w.is_default, v.status, v.graph
+             FROM approval_workflow w JOIN approval_workflow_version v ON v.id = w.current_version_id
+            WHERE w.key = 'travel-request-default'`,
+        )
+      ).rows,
+    }));
+    expect(travel.categories).toHaveLength(15);
+    expect(travel.categories.slice(0, 3)).toEqual([
+      { code: 'travelAirfare', line_kind: 'AIRFARE', expense_code: 'travel_air' },
+      { code: 'travelHotel', line_kind: 'LODGING', expense_code: 'travel_lodging' },
+      { code: 'travelMeals', line_kind: 'STANDARD', expense_code: 'meals' },
+    ]);
+    // A code with no counterpart among the starter six stays unmapped rather than guessed.
+    expect(travel.categories.find((c) => c.code === 'travelMileage')?.expense_code).toBeNull();
+    expect(travel.flow).toHaveLength(1);
+    expect(travel.flow[0]).toMatchObject({ subject_type: 'TRAVEL_REQUEST', is_default: true, status: 'PUBLISHED' });
+    expect(travel.flow[0].graph.nodes[1].approver).toEqual({
+      kind: 'manager',
+      fallback: { kind: 'role', roleId: '019e3000-0000-7000-8000-000000000001' },
+    });
+  });
+
   /**
    * THE REASON THIS IS ONE TRANSACTION, and the test that says so.
    *

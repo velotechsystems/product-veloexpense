@@ -176,6 +176,15 @@ export const EXPORTED: Readonly<Record<string, ExportedTable>> = {
   approval_instance: { file: 'approval-instances.csv' },
   approval_instance_task: { file: 'approval-instance-tasks.csv' },
 
+  /* ── travel ───────────────────────────────────────────────────────────── */
+  // w6-00 (0077): ExpenseOS's travel module — the requests people made, their estimates,
+  // the tenant's travel categories, and the places their trips resolved to. The tenant's own
+  // records; nothing secret (a place is Google's id and the airports SerpApi listed).
+  travel_request: { file: 'travel-requests.csv' },
+  travel_budget_line: { file: 'travel-budget-lines.csv' },
+  travel_category: { file: 'travel-categories.csv' },
+  travel_place: { file: 'travel-places.csv' },
+
   /* ── accounting ───────────────────────────────────────────────────────── */
   gl_account: { file: 'gl-accounts.csv' },
   integration_installation: {

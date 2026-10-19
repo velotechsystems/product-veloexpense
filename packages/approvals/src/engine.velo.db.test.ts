@@ -391,11 +391,6 @@ describe.skipIf(!process.env.DATABASE_URL)('approval engine on VeloExpense table
     }
   });
 
-  describe('subjects not here yet', () => {
-    it('refuses a travel request rather than routing it on nothing', async () => {
-      await expect(
-        inTx((tx) => engine.startInstance(tx, 'TRAVEL_REQUEST', '00000000-0000-7000-8000-0000000000aa')),
-      ).rejects.toThrow(/travel requests are not available yet/);
-    });
-  });
+  // w6-00: travel requests route through the engine now; ExpenseOS's travel cases are in
+  // engine.db.test.ts ('a travel request'), including the one that refuses a missing trip.
 });

@@ -278,3 +278,25 @@ export type SavedView = Prisma.SavedViewModel
  * VeloExpense: per tenant, under RLS.
  */
 export type ReplyThread = Prisma.ReplyThreadModel
+/**
+ * Model TravelPlace
+ * ExpenseOS's TravelPlace: a Google place resolved once to the metro and airports SerpApi
+ * prices, reused for every trip to it.
+ */
+export type TravelPlace = Prisma.TravelPlaceModel
+/**
+ * Model TravelRequest
+ * ExpenseOS's TravelRequest: draft → an estimate the traveller composes → approval → a trip.
+ */
+export type TravelRequest = Prisma.TravelRequestModel
+/**
+ * Model TravelCategory
+ * ExpenseOS's TravelCategory: travel's own short taxonomy, with the `lineKind` that decides
+ * which editor block a budget line opens.
+ */
+export type TravelCategory = Prisma.TravelCategoryModel
+/**
+ * Model TravelBudgetLine
+ * ExpenseOS's TravelBudgetLine: one line of a request's estimate.
+ */
+export type TravelBudgetLine = Prisma.TravelBudgetLineModel

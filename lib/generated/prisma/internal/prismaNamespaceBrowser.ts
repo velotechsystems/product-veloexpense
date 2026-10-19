@@ -95,7 +95,11 @@ export const ModelName = {
   ExpensePolicy: 'ExpensePolicy',
   PolicyViolation: 'PolicyViolation',
   SavedView: 'SavedView',
-  ReplyThread: 'ReplyThread'
+  ReplyThread: 'ReplyThread',
+  TravelPlace: 'TravelPlace',
+  TravelRequest: 'TravelRequest',
+  TravelCategory: 'TravelCategory',
+  TravelBudgetLine: 'TravelBudgetLine'
 } as const
 
 export type ModelName = (typeof ModelName)[keyof typeof ModelName]
@@ -171,7 +175,8 @@ export const ExpenseReportScalarFieldEnum = {
   updatedAt: 'updatedAt',
   submittedAt: 'submittedAt',
   approvedAt: 'approvedAt',
-  approvalInstanceId: 'approvalInstanceId'
+  approvalInstanceId: 'approvalInstanceId',
+  travelRequestId: 'travelRequestId'
 } as const
 
 export type ExpenseReportScalarFieldEnum = (typeof ExpenseReportScalarFieldEnum)[keyof typeof ExpenseReportScalarFieldEnum]
@@ -842,7 +847,9 @@ export const PolicyViolationScalarFieldEnum = {
   resolvedAt: 'resolvedAt',
   resolvedBy: 'resolvedBy',
   resolveNote: 'resolveNote',
-  createdAt: 'createdAt'
+  createdAt: 'createdAt',
+  travelRequestId: 'travelRequestId',
+  travelLineId: 'travelLineId'
 } as const
 
 export type PolicyViolationScalarFieldEnum = (typeof PolicyViolationScalarFieldEnum)[keyof typeof PolicyViolationScalarFieldEnum]
@@ -877,6 +884,103 @@ export const ReplyThreadScalarFieldEnum = {
 } as const
 
 export type ReplyThreadScalarFieldEnum = (typeof ReplyThreadScalarFieldEnum)[keyof typeof ReplyThreadScalarFieldEnum]
+
+
+export const TravelPlaceScalarFieldEnum = {
+  id: 'id',
+  organizationId: 'organizationId',
+  placeId: 'placeId',
+  label: 'label',
+  city: 'city',
+  country: 'country',
+  serpPlaceId: 'serpPlaceId',
+  airports: 'airports',
+  resolvedAt: 'resolvedAt',
+  pinnedById: 'pinnedById',
+  pinnedAt: 'pinnedAt',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+} as const
+
+export type TravelPlaceScalarFieldEnum = (typeof TravelPlaceScalarFieldEnum)[keyof typeof TravelPlaceScalarFieldEnum]
+
+
+export const TravelRequestScalarFieldEnum = {
+  id: 'id',
+  organizationId: 'organizationId',
+  number: 'number',
+  submitterId: 'submitterId',
+  purpose: 'purpose',
+  notes: 'notes',
+  destinationPlaceId: 'destinationPlaceId',
+  destinationLabel: 'destinationLabel',
+  destinationCity: 'destinationCity',
+  destinationCountry: 'destinationCountry',
+  destinationSerpId: 'destinationSerpId',
+  destinationAirports: 'destinationAirports',
+  destinationAirport: 'destinationAirport',
+  originPlaceId: 'originPlaceId',
+  originLabel: 'originLabel',
+  originCity: 'originCity',
+  originCountry: 'originCountry',
+  originSerpId: 'originSerpId',
+  originAirports: 'originAirports',
+  originAirport: 'originAirport',
+  tripType: 'tripType',
+  departDate: 'departDate',
+  returnDate: 'returnDate',
+  includeCar: 'includeCar',
+  status: 'status',
+  approvalInstanceId: 'approvalInstanceId',
+  submittedAt: 'submittedAt',
+  approvedAt: 'approvedAt',
+  currencyId: 'currencyId',
+  approvedTotalMinor: 'approvedTotalMinor',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+} as const
+
+export type TravelRequestScalarFieldEnum = (typeof TravelRequestScalarFieldEnum)[keyof typeof TravelRequestScalarFieldEnum]
+
+
+export const TravelCategoryScalarFieldEnum = {
+  id: 'id',
+  organizationId: 'organizationId',
+  code: 'code',
+  label: 'label',
+  icon: 'icon',
+  color: 'color',
+  active: 'active',
+  sortOrder: 'sortOrder',
+  lineKind: 'lineKind',
+  expenseCategoryId: 'expenseCategoryId',
+  glAccountId: 'glAccountId',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+} as const
+
+export type TravelCategoryScalarFieldEnum = (typeof TravelCategoryScalarFieldEnum)[keyof typeof TravelCategoryScalarFieldEnum]
+
+
+export const TravelBudgetLineScalarFieldEnum = {
+  id: 'id',
+  organizationId: 'organizationId',
+  travelRequestId: 'travelRequestId',
+  categoryId: 'categoryId',
+  kind: 'kind',
+  payload: 'payload',
+  glAccountId: 'glAccountId',
+  amountMinor: 'amountMinor',
+  basis: 'basis',
+  confidence: 'confidence',
+  notes: 'notes',
+  derivedAmountMinor: 'derivedAmountMinor',
+  sortOrder: 'sortOrder',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+} as const
+
+export type TravelBudgetLineScalarFieldEnum = (typeof TravelBudgetLineScalarFieldEnum)[keyof typeof TravelBudgetLineScalarFieldEnum]
 
 
 export const SortOrder = {

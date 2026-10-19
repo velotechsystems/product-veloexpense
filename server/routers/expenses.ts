@@ -1624,7 +1624,8 @@ export const expensesRouter = router({
         select: { id: true, severity: true, reportId: true },
       });
       // VeloExpense: no `report` relation on the model; the submitter is read beside it.
-      const report = v
+      // VeloExpense (w6-00): `reportId` is null on a travel violation since 0077 — no report.
+      const report = v?.reportId
         ? await ctx.db.expenseReport.findUnique({ where: { id: v.reportId }, select: { submitterId: true } })
         : null;
       // `report` is null on a TRAVEL violation — those go through

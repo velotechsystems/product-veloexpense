@@ -81,10 +81,12 @@ describe.skipIf(!process.env.DATABASE_URL)('the default approval workflow (integ
       await h.admin.query(
         `SELECT w.key, w.subject_type, w.is_default, w.active, v.status, v.graph
            FROM approval_workflow w JOIN approval_workflow_version v ON v.id = w.current_version_id
-          WHERE w.organization_id = $1`,
+          WHERE w.organization_id = $1 AND w.subject_type = 'EXPENSE_REPORT'`,
         [h.orgId],
       )
     ).rows;
+    // w6-00: the tenant also gets a travel flow (0077's `seed_travel_defaults`), asserted in
+    // test/onboarding-provision.db.test.ts; this one is about expense reports.
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({
       key: 'expense-report-default',

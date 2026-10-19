@@ -329,6 +329,26 @@ async function seedDefaultApprovalWorkflow(orgId) {
 }
 
 /**
+ * w6-00 (d88) — travel's category list and its default approval flow, from migration 0077's
+ * `seed_travel_defaults()`: the one copy `createOrganization` also calls. After the reference
+ * data, whose expense categories the travel list maps onto. Idempotent.
+ */
+async function seedTravelDefaults(orgId) {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query("SELECT set_config('app.current_org', $1, true)", [orgId]);
+    await client.query('SELECT seed_travel_defaults()');
+    await client.query('COMMIT');
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+/**
  * VX1-2 — give the demo tenant a reporting line and org placement so the admin
  * directory has something to show: employee → manager → admin, all placed in
  * the seeded department / business unit / legal entity. Idempotent.
@@ -659,6 +679,7 @@ async function main() {
   await seedUser(demoId, 'executive@demo.test', 'Demo Executive', { roleKind: 'executive', title: 'Executive' });
   await seedReportingLine(demoId);
   await seedDefaultApprovalWorkflow(demoId);
+  await seedTravelDefaults(demoId);
 
   // ── VX3-9a: a SECOND populated tenant, on a DIFFERENT ledger ───────────────
   //
@@ -700,6 +721,7 @@ async function main() {
     chain: [['admin@second.test', 'owner@second.test']],
   });
   await seedDefaultApprovalWorkflow(secondId);
+  await seedTravelDefaults(secondId);
 
   // ── NO LEDGER IS SEEDED, and the reason is worth writing down ──────────────
   //

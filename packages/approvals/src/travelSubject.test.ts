@@ -17,10 +17,7 @@ function stubDb(travelRequest: { submitterId: string } | null) {
   } as never;
 }
 
-// VeloExpense: travel requests arrive with their own wave; there is no travel table yet, so
-// ExpenseOS's travel cases are skipped and the subject refuses (below) rather than answering
-// "nobody" — the requester is what blocks self-approval.
-describe.skip('loadRequesterId · TRAVEL_REQUEST', () => {
+describe('loadRequesterId · TRAVEL_REQUEST', () => {
   it('resolves the submitter, which is who may not approve their own trip', async () => {
     const db = stubDb({ submitterId: 'u-ada' });
     expect(await loadRequesterId(db, 'TRAVEL_REQUEST', 'trv-1')).toBe('u-ada');
@@ -40,14 +37,5 @@ describe.skip('loadRequesterId · TRAVEL_REQUEST', () => {
       (db as unknown as { travelRequest: { findUnique: ReturnType<typeof vi.fn> } }).travelRequest
         .findUnique,
     ).toHaveBeenCalledWith({ where: { id: 'trv-1' }, select: { submitterId: true } });
-  });
-});
-
-describe('loadRequesterId · TRAVEL_REQUEST (VeloExpense, before travel)', () => {
-  it('refuses rather than reporting no requester', async () => {
-    const db = stubDb({ submitterId: 'u-ada' });
-    await expect(loadRequesterId(db, 'TRAVEL_REQUEST', 'trv-1')).rejects.toThrow(
-      /travel requests are not available yet/,
-    );
   });
 });

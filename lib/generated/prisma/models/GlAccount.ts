@@ -216,6 +216,8 @@ export type GlAccountWhereInput = {
   updatedAt?: Prisma.DateTimeFilter<"GlAccount"> | Date | string
   expenseLines?: Prisma.ExpenseLineItemListRelationFilter
   expenseCategories?: Prisma.ExpenseCategoryListRelationFilter
+  travelCategories?: Prisma.TravelCategoryListRelationFilter
+  travelBudgetLines?: Prisma.TravelBudgetLineListRelationFilter
 }
 
 export type GlAccountOrderByWithRelationInput = {
@@ -230,6 +232,8 @@ export type GlAccountOrderByWithRelationInput = {
   updatedAt?: Prisma.SortOrder
   expenseLines?: Prisma.ExpenseLineItemOrderByRelationAggregateInput
   expenseCategories?: Prisma.ExpenseCategoryOrderByRelationAggregateInput
+  travelCategories?: Prisma.TravelCategoryOrderByRelationAggregateInput
+  travelBudgetLines?: Prisma.TravelBudgetLineOrderByRelationAggregateInput
 }
 
 export type GlAccountWhereUniqueInput = Prisma.AtLeast<{
@@ -248,6 +252,8 @@ export type GlAccountWhereUniqueInput = Prisma.AtLeast<{
   updatedAt?: Prisma.DateTimeFilter<"GlAccount"> | Date | string
   expenseLines?: Prisma.ExpenseLineItemListRelationFilter
   expenseCategories?: Prisma.ExpenseCategoryListRelationFilter
+  travelCategories?: Prisma.TravelCategoryListRelationFilter
+  travelBudgetLines?: Prisma.TravelBudgetLineListRelationFilter
 }, "id" | "organizationId_id">
 
 export type GlAccountOrderByWithAggregationInput = {
@@ -292,6 +298,8 @@ export type GlAccountCreateInput = {
   updatedAt?: Date | string
   expenseLines?: Prisma.ExpenseLineItemCreateNestedManyWithoutGlAccountInput
   expenseCategories?: Prisma.ExpenseCategoryCreateNestedManyWithoutGlAccountInput
+  travelCategories?: Prisma.TravelCategoryCreateNestedManyWithoutGlAccountInput
+  travelBudgetLines?: Prisma.TravelBudgetLineCreateNestedManyWithoutGlAccountInput
 }
 
 export type GlAccountUncheckedCreateInput = {
@@ -306,6 +314,8 @@ export type GlAccountUncheckedCreateInput = {
   updatedAt?: Date | string
   expenseLines?: Prisma.ExpenseLineItemUncheckedCreateNestedManyWithoutGlAccountInput
   expenseCategories?: Prisma.ExpenseCategoryUncheckedCreateNestedManyWithoutGlAccountInput
+  travelCategories?: Prisma.TravelCategoryUncheckedCreateNestedManyWithoutGlAccountInput
+  travelBudgetLines?: Prisma.TravelBudgetLineUncheckedCreateNestedManyWithoutGlAccountInput
 }
 
 export type GlAccountUpdateInput = {
@@ -320,6 +330,8 @@ export type GlAccountUpdateInput = {
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   expenseLines?: Prisma.ExpenseLineItemUpdateManyWithoutGlAccountNestedInput
   expenseCategories?: Prisma.ExpenseCategoryUpdateManyWithoutGlAccountNestedInput
+  travelCategories?: Prisma.TravelCategoryUpdateManyWithoutGlAccountNestedInput
+  travelBudgetLines?: Prisma.TravelBudgetLineUpdateManyWithoutGlAccountNestedInput
 }
 
 export type GlAccountUncheckedUpdateInput = {
@@ -334,6 +346,8 @@ export type GlAccountUncheckedUpdateInput = {
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   expenseLines?: Prisma.ExpenseLineItemUncheckedUpdateManyWithoutGlAccountNestedInput
   expenseCategories?: Prisma.ExpenseCategoryUncheckedUpdateManyWithoutGlAccountNestedInput
+  travelCategories?: Prisma.TravelCategoryUncheckedUpdateManyWithoutGlAccountNestedInput
+  travelBudgetLines?: Prisma.TravelBudgetLineUncheckedUpdateManyWithoutGlAccountNestedInput
 }
 
 export type GlAccountCreateManyInput = {
@@ -450,6 +464,38 @@ export type GlAccountUpdateOneWithoutExpenseLinesNestedInput = {
   update?: Prisma.XOR<Prisma.XOR<Prisma.GlAccountUpdateToOneWithWhereWithoutExpenseLinesInput, Prisma.GlAccountUpdateWithoutExpenseLinesInput>, Prisma.GlAccountUncheckedUpdateWithoutExpenseLinesInput>
 }
 
+export type GlAccountCreateNestedOneWithoutTravelCategoriesInput = {
+  create?: Prisma.XOR<Prisma.GlAccountCreateWithoutTravelCategoriesInput, Prisma.GlAccountUncheckedCreateWithoutTravelCategoriesInput>
+  connectOrCreate?: Prisma.GlAccountCreateOrConnectWithoutTravelCategoriesInput
+  connect?: Prisma.GlAccountWhereUniqueInput
+}
+
+export type GlAccountUpdateOneWithoutTravelCategoriesNestedInput = {
+  create?: Prisma.XOR<Prisma.GlAccountCreateWithoutTravelCategoriesInput, Prisma.GlAccountUncheckedCreateWithoutTravelCategoriesInput>
+  connectOrCreate?: Prisma.GlAccountCreateOrConnectWithoutTravelCategoriesInput
+  upsert?: Prisma.GlAccountUpsertWithoutTravelCategoriesInput
+  disconnect?: Prisma.GlAccountWhereInput | boolean
+  delete?: Prisma.GlAccountWhereInput | boolean
+  connect?: Prisma.GlAccountWhereUniqueInput
+  update?: Prisma.XOR<Prisma.XOR<Prisma.GlAccountUpdateToOneWithWhereWithoutTravelCategoriesInput, Prisma.GlAccountUpdateWithoutTravelCategoriesInput>, Prisma.GlAccountUncheckedUpdateWithoutTravelCategoriesInput>
+}
+
+export type GlAccountCreateNestedOneWithoutTravelBudgetLinesInput = {
+  create?: Prisma.XOR<Prisma.GlAccountCreateWithoutTravelBudgetLinesInput, Prisma.GlAccountUncheckedCreateWithoutTravelBudgetLinesInput>
+  connectOrCreate?: Prisma.GlAccountCreateOrConnectWithoutTravelBudgetLinesInput
+  connect?: Prisma.GlAccountWhereUniqueInput
+}
+
+export type GlAccountUpdateOneWithoutTravelBudgetLinesNestedInput = {
+  create?: Prisma.XOR<Prisma.GlAccountCreateWithoutTravelBudgetLinesInput, Prisma.GlAccountUncheckedCreateWithoutTravelBudgetLinesInput>
+  connectOrCreate?: Prisma.GlAccountCreateOrConnectWithoutTravelBudgetLinesInput
+  upsert?: Prisma.GlAccountUpsertWithoutTravelBudgetLinesInput
+  disconnect?: Prisma.GlAccountWhereInput | boolean
+  delete?: Prisma.GlAccountWhereInput | boolean
+  connect?: Prisma.GlAccountWhereUniqueInput
+  update?: Prisma.XOR<Prisma.XOR<Prisma.GlAccountUpdateToOneWithWhereWithoutTravelBudgetLinesInput, Prisma.GlAccountUpdateWithoutTravelBudgetLinesInput>, Prisma.GlAccountUncheckedUpdateWithoutTravelBudgetLinesInput>
+}
+
 export type GlAccountCreateWithoutExpenseCategoriesInput = {
   id?: string
   organizationId?: string
@@ -461,6 +507,8 @@ export type GlAccountCreateWithoutExpenseCategoriesInput = {
   createdAt?: Date | string
   updatedAt?: Date | string
   expenseLines?: Prisma.ExpenseLineItemCreateNestedManyWithoutGlAccountInput
+  travelCategories?: Prisma.TravelCategoryCreateNestedManyWithoutGlAccountInput
+  travelBudgetLines?: Prisma.TravelBudgetLineCreateNestedManyWithoutGlAccountInput
 }
 
 export type GlAccountUncheckedCreateWithoutExpenseCategoriesInput = {
@@ -474,6 +522,8 @@ export type GlAccountUncheckedCreateWithoutExpenseCategoriesInput = {
   createdAt?: Date | string
   updatedAt?: Date | string
   expenseLines?: Prisma.ExpenseLineItemUncheckedCreateNestedManyWithoutGlAccountInput
+  travelCategories?: Prisma.TravelCategoryUncheckedCreateNestedManyWithoutGlAccountInput
+  travelBudgetLines?: Prisma.TravelBudgetLineUncheckedCreateNestedManyWithoutGlAccountInput
 }
 
 export type GlAccountCreateOrConnectWithoutExpenseCategoriesInput = {
@@ -503,6 +553,8 @@ export type GlAccountUpdateWithoutExpenseCategoriesInput = {
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   expenseLines?: Prisma.ExpenseLineItemUpdateManyWithoutGlAccountNestedInput
+  travelCategories?: Prisma.TravelCategoryUpdateManyWithoutGlAccountNestedInput
+  travelBudgetLines?: Prisma.TravelBudgetLineUpdateManyWithoutGlAccountNestedInput
 }
 
 export type GlAccountUncheckedUpdateWithoutExpenseCategoriesInput = {
@@ -516,6 +568,8 @@ export type GlAccountUncheckedUpdateWithoutExpenseCategoriesInput = {
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   expenseLines?: Prisma.ExpenseLineItemUncheckedUpdateManyWithoutGlAccountNestedInput
+  travelCategories?: Prisma.TravelCategoryUncheckedUpdateManyWithoutGlAccountNestedInput
+  travelBudgetLines?: Prisma.TravelBudgetLineUncheckedUpdateManyWithoutGlAccountNestedInput
 }
 
 export type GlAccountCreateWithoutExpenseLinesInput = {
@@ -529,6 +583,8 @@ export type GlAccountCreateWithoutExpenseLinesInput = {
   createdAt?: Date | string
   updatedAt?: Date | string
   expenseCategories?: Prisma.ExpenseCategoryCreateNestedManyWithoutGlAccountInput
+  travelCategories?: Prisma.TravelCategoryCreateNestedManyWithoutGlAccountInput
+  travelBudgetLines?: Prisma.TravelBudgetLineCreateNestedManyWithoutGlAccountInput
 }
 
 export type GlAccountUncheckedCreateWithoutExpenseLinesInput = {
@@ -542,6 +598,8 @@ export type GlAccountUncheckedCreateWithoutExpenseLinesInput = {
   createdAt?: Date | string
   updatedAt?: Date | string
   expenseCategories?: Prisma.ExpenseCategoryUncheckedCreateNestedManyWithoutGlAccountInput
+  travelCategories?: Prisma.TravelCategoryUncheckedCreateNestedManyWithoutGlAccountInput
+  travelBudgetLines?: Prisma.TravelBudgetLineUncheckedCreateNestedManyWithoutGlAccountInput
 }
 
 export type GlAccountCreateOrConnectWithoutExpenseLinesInput = {
@@ -571,6 +629,8 @@ export type GlAccountUpdateWithoutExpenseLinesInput = {
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   expenseCategories?: Prisma.ExpenseCategoryUpdateManyWithoutGlAccountNestedInput
+  travelCategories?: Prisma.TravelCategoryUpdateManyWithoutGlAccountNestedInput
+  travelBudgetLines?: Prisma.TravelBudgetLineUpdateManyWithoutGlAccountNestedInput
 }
 
 export type GlAccountUncheckedUpdateWithoutExpenseLinesInput = {
@@ -584,6 +644,160 @@ export type GlAccountUncheckedUpdateWithoutExpenseLinesInput = {
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   expenseCategories?: Prisma.ExpenseCategoryUncheckedUpdateManyWithoutGlAccountNestedInput
+  travelCategories?: Prisma.TravelCategoryUncheckedUpdateManyWithoutGlAccountNestedInput
+  travelBudgetLines?: Prisma.TravelBudgetLineUncheckedUpdateManyWithoutGlAccountNestedInput
+}
+
+export type GlAccountCreateWithoutTravelCategoriesInput = {
+  id?: string
+  organizationId?: string
+  number: string
+  name: string
+  type: string
+  isPostable?: boolean
+  isActive?: boolean
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  expenseLines?: Prisma.ExpenseLineItemCreateNestedManyWithoutGlAccountInput
+  expenseCategories?: Prisma.ExpenseCategoryCreateNestedManyWithoutGlAccountInput
+  travelBudgetLines?: Prisma.TravelBudgetLineCreateNestedManyWithoutGlAccountInput
+}
+
+export type GlAccountUncheckedCreateWithoutTravelCategoriesInput = {
+  id?: string
+  organizationId?: string
+  number: string
+  name: string
+  type: string
+  isPostable?: boolean
+  isActive?: boolean
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  expenseLines?: Prisma.ExpenseLineItemUncheckedCreateNestedManyWithoutGlAccountInput
+  expenseCategories?: Prisma.ExpenseCategoryUncheckedCreateNestedManyWithoutGlAccountInput
+  travelBudgetLines?: Prisma.TravelBudgetLineUncheckedCreateNestedManyWithoutGlAccountInput
+}
+
+export type GlAccountCreateOrConnectWithoutTravelCategoriesInput = {
+  where: Prisma.GlAccountWhereUniqueInput
+  create: Prisma.XOR<Prisma.GlAccountCreateWithoutTravelCategoriesInput, Prisma.GlAccountUncheckedCreateWithoutTravelCategoriesInput>
+}
+
+export type GlAccountUpsertWithoutTravelCategoriesInput = {
+  update: Prisma.XOR<Prisma.GlAccountUpdateWithoutTravelCategoriesInput, Prisma.GlAccountUncheckedUpdateWithoutTravelCategoriesInput>
+  create: Prisma.XOR<Prisma.GlAccountCreateWithoutTravelCategoriesInput, Prisma.GlAccountUncheckedCreateWithoutTravelCategoriesInput>
+  where?: Prisma.GlAccountWhereInput
+}
+
+export type GlAccountUpdateToOneWithWhereWithoutTravelCategoriesInput = {
+  where?: Prisma.GlAccountWhereInput
+  data: Prisma.XOR<Prisma.GlAccountUpdateWithoutTravelCategoriesInput, Prisma.GlAccountUncheckedUpdateWithoutTravelCategoriesInput>
+}
+
+export type GlAccountUpdateWithoutTravelCategoriesInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  organizationId?: Prisma.StringFieldUpdateOperationsInput | string
+  number?: Prisma.StringFieldUpdateOperationsInput | string
+  name?: Prisma.StringFieldUpdateOperationsInput | string
+  type?: Prisma.StringFieldUpdateOperationsInput | string
+  isPostable?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  isActive?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  expenseLines?: Prisma.ExpenseLineItemUpdateManyWithoutGlAccountNestedInput
+  expenseCategories?: Prisma.ExpenseCategoryUpdateManyWithoutGlAccountNestedInput
+  travelBudgetLines?: Prisma.TravelBudgetLineUpdateManyWithoutGlAccountNestedInput
+}
+
+export type GlAccountUncheckedUpdateWithoutTravelCategoriesInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  organizationId?: Prisma.StringFieldUpdateOperationsInput | string
+  number?: Prisma.StringFieldUpdateOperationsInput | string
+  name?: Prisma.StringFieldUpdateOperationsInput | string
+  type?: Prisma.StringFieldUpdateOperationsInput | string
+  isPostable?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  isActive?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  expenseLines?: Prisma.ExpenseLineItemUncheckedUpdateManyWithoutGlAccountNestedInput
+  expenseCategories?: Prisma.ExpenseCategoryUncheckedUpdateManyWithoutGlAccountNestedInput
+  travelBudgetLines?: Prisma.TravelBudgetLineUncheckedUpdateManyWithoutGlAccountNestedInput
+}
+
+export type GlAccountCreateWithoutTravelBudgetLinesInput = {
+  id?: string
+  organizationId?: string
+  number: string
+  name: string
+  type: string
+  isPostable?: boolean
+  isActive?: boolean
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  expenseLines?: Prisma.ExpenseLineItemCreateNestedManyWithoutGlAccountInput
+  expenseCategories?: Prisma.ExpenseCategoryCreateNestedManyWithoutGlAccountInput
+  travelCategories?: Prisma.TravelCategoryCreateNestedManyWithoutGlAccountInput
+}
+
+export type GlAccountUncheckedCreateWithoutTravelBudgetLinesInput = {
+  id?: string
+  organizationId?: string
+  number: string
+  name: string
+  type: string
+  isPostable?: boolean
+  isActive?: boolean
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  expenseLines?: Prisma.ExpenseLineItemUncheckedCreateNestedManyWithoutGlAccountInput
+  expenseCategories?: Prisma.ExpenseCategoryUncheckedCreateNestedManyWithoutGlAccountInput
+  travelCategories?: Prisma.TravelCategoryUncheckedCreateNestedManyWithoutGlAccountInput
+}
+
+export type GlAccountCreateOrConnectWithoutTravelBudgetLinesInput = {
+  where: Prisma.GlAccountWhereUniqueInput
+  create: Prisma.XOR<Prisma.GlAccountCreateWithoutTravelBudgetLinesInput, Prisma.GlAccountUncheckedCreateWithoutTravelBudgetLinesInput>
+}
+
+export type GlAccountUpsertWithoutTravelBudgetLinesInput = {
+  update: Prisma.XOR<Prisma.GlAccountUpdateWithoutTravelBudgetLinesInput, Prisma.GlAccountUncheckedUpdateWithoutTravelBudgetLinesInput>
+  create: Prisma.XOR<Prisma.GlAccountCreateWithoutTravelBudgetLinesInput, Prisma.GlAccountUncheckedCreateWithoutTravelBudgetLinesInput>
+  where?: Prisma.GlAccountWhereInput
+}
+
+export type GlAccountUpdateToOneWithWhereWithoutTravelBudgetLinesInput = {
+  where?: Prisma.GlAccountWhereInput
+  data: Prisma.XOR<Prisma.GlAccountUpdateWithoutTravelBudgetLinesInput, Prisma.GlAccountUncheckedUpdateWithoutTravelBudgetLinesInput>
+}
+
+export type GlAccountUpdateWithoutTravelBudgetLinesInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  organizationId?: Prisma.StringFieldUpdateOperationsInput | string
+  number?: Prisma.StringFieldUpdateOperationsInput | string
+  name?: Prisma.StringFieldUpdateOperationsInput | string
+  type?: Prisma.StringFieldUpdateOperationsInput | string
+  isPostable?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  isActive?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  expenseLines?: Prisma.ExpenseLineItemUpdateManyWithoutGlAccountNestedInput
+  expenseCategories?: Prisma.ExpenseCategoryUpdateManyWithoutGlAccountNestedInput
+  travelCategories?: Prisma.TravelCategoryUpdateManyWithoutGlAccountNestedInput
+}
+
+export type GlAccountUncheckedUpdateWithoutTravelBudgetLinesInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  organizationId?: Prisma.StringFieldUpdateOperationsInput | string
+  number?: Prisma.StringFieldUpdateOperationsInput | string
+  name?: Prisma.StringFieldUpdateOperationsInput | string
+  type?: Prisma.StringFieldUpdateOperationsInput | string
+  isPostable?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  isActive?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  expenseLines?: Prisma.ExpenseLineItemUncheckedUpdateManyWithoutGlAccountNestedInput
+  expenseCategories?: Prisma.ExpenseCategoryUncheckedUpdateManyWithoutGlAccountNestedInput
+  travelCategories?: Prisma.TravelCategoryUncheckedUpdateManyWithoutGlAccountNestedInput
 }
 
 
@@ -594,11 +808,15 @@ export type GlAccountUncheckedUpdateWithoutExpenseLinesInput = {
 export type GlAccountCountOutputType = {
   expenseLines: number
   expenseCategories: number
+  travelCategories: number
+  travelBudgetLines: number
 }
 
 export type GlAccountCountOutputTypeSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   expenseLines?: boolean | GlAccountCountOutputTypeCountExpenseLinesArgs
   expenseCategories?: boolean | GlAccountCountOutputTypeCountExpenseCategoriesArgs
+  travelCategories?: boolean | GlAccountCountOutputTypeCountTravelCategoriesArgs
+  travelBudgetLines?: boolean | GlAccountCountOutputTypeCountTravelBudgetLinesArgs
 }
 
 /**
@@ -625,6 +843,20 @@ export type GlAccountCountOutputTypeCountExpenseCategoriesArgs<ExtArgs extends r
   where?: Prisma.ExpenseCategoryWhereInput
 }
 
+/**
+ * GlAccountCountOutputType without action
+ */
+export type GlAccountCountOutputTypeCountTravelCategoriesArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  where?: Prisma.TravelCategoryWhereInput
+}
+
+/**
+ * GlAccountCountOutputType without action
+ */
+export type GlAccountCountOutputTypeCountTravelBudgetLinesArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  where?: Prisma.TravelBudgetLineWhereInput
+}
+
 
 export type GlAccountSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetSelect<{
   id?: boolean
@@ -638,6 +870,8 @@ export type GlAccountSelect<ExtArgs extends runtime.Types.Extensions.InternalArg
   updatedAt?: boolean
   expenseLines?: boolean | Prisma.GlAccount$expenseLinesArgs<ExtArgs>
   expenseCategories?: boolean | Prisma.GlAccount$expenseCategoriesArgs<ExtArgs>
+  travelCategories?: boolean | Prisma.GlAccount$travelCategoriesArgs<ExtArgs>
+  travelBudgetLines?: boolean | Prisma.GlAccount$travelBudgetLinesArgs<ExtArgs>
   _count?: boolean | Prisma.GlAccountCountOutputTypeDefaultArgs<ExtArgs>
 }, ExtArgs["result"]["glAccount"]>
 
@@ -681,6 +915,8 @@ export type GlAccountOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs 
 export type GlAccountInclude<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   expenseLines?: boolean | Prisma.GlAccount$expenseLinesArgs<ExtArgs>
   expenseCategories?: boolean | Prisma.GlAccount$expenseCategoriesArgs<ExtArgs>
+  travelCategories?: boolean | Prisma.GlAccount$travelCategoriesArgs<ExtArgs>
+  travelBudgetLines?: boolean | Prisma.GlAccount$travelBudgetLinesArgs<ExtArgs>
   _count?: boolean | Prisma.GlAccountCountOutputTypeDefaultArgs<ExtArgs>
 }
 export type GlAccountIncludeCreateManyAndReturn<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {}
@@ -691,6 +927,11 @@ export type $GlAccountPayload<ExtArgs extends runtime.Types.Extensions.InternalA
   objects: {
     expenseLines: Prisma.$ExpenseLineItemPayload<ExtArgs>[]
     expenseCategories: Prisma.$ExpenseCategoryPayload<ExtArgs>[]
+    /**
+     * w6-00 (0077).
+     */
+    travelCategories: Prisma.$TravelCategoryPayload<ExtArgs>[]
+    travelBudgetLines: Prisma.$TravelBudgetLinePayload<ExtArgs>[]
   }
   scalars: runtime.Types.Extensions.GetPayloadResult<{
     id: string
@@ -1098,6 +1339,8 @@ export interface Prisma__GlAccountClient<T, Null = never, ExtArgs extends runtim
   readonly [Symbol.toStringTag]: "PrismaPromise"
   expenseLines<T extends Prisma.GlAccount$expenseLinesArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.GlAccount$expenseLinesArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$ExpenseLineItemPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
   expenseCategories<T extends Prisma.GlAccount$expenseCategoriesArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.GlAccount$expenseCategoriesArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$ExpenseCategoryPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
+  travelCategories<T extends Prisma.GlAccount$travelCategoriesArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.GlAccount$travelCategoriesArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$TravelCategoryPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
+  travelBudgetLines<T extends Prisma.GlAccount$travelBudgetLinesArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.GlAccount$travelBudgetLinesArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$TravelBudgetLinePayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
   /**
    * Attaches callbacks for the resolution and/or rejection of the Promise.
    * @param onfulfilled The callback to execute when the Promise is resolved.
@@ -1574,6 +1817,54 @@ export type GlAccount$expenseCategoriesArgs<ExtArgs extends runtime.Types.Extens
   take?: number
   skip?: number
   distinct?: Prisma.ExpenseCategoryScalarFieldEnum | Prisma.ExpenseCategoryScalarFieldEnum[]
+}
+
+/**
+ * GlAccount.travelCategories
+ */
+export type GlAccount$travelCategoriesArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  /**
+   * Select specific fields to fetch from the TravelCategory
+   */
+  select?: Prisma.TravelCategorySelect<ExtArgs> | null
+  /**
+   * Omit specific fields from the TravelCategory
+   */
+  omit?: Prisma.TravelCategoryOmit<ExtArgs> | null
+  /**
+   * Choose, which related nodes to fetch as well
+   */
+  include?: Prisma.TravelCategoryInclude<ExtArgs> | null
+  where?: Prisma.TravelCategoryWhereInput
+  orderBy?: Prisma.TravelCategoryOrderByWithRelationInput | Prisma.TravelCategoryOrderByWithRelationInput[]
+  cursor?: Prisma.TravelCategoryWhereUniqueInput
+  take?: number
+  skip?: number
+  distinct?: Prisma.TravelCategoryScalarFieldEnum | Prisma.TravelCategoryScalarFieldEnum[]
+}
+
+/**
+ * GlAccount.travelBudgetLines
+ */
+export type GlAccount$travelBudgetLinesArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  /**
+   * Select specific fields to fetch from the TravelBudgetLine
+   */
+  select?: Prisma.TravelBudgetLineSelect<ExtArgs> | null
+  /**
+   * Omit specific fields from the TravelBudgetLine
+   */
+  omit?: Prisma.TravelBudgetLineOmit<ExtArgs> | null
+  /**
+   * Choose, which related nodes to fetch as well
+   */
+  include?: Prisma.TravelBudgetLineInclude<ExtArgs> | null
+  where?: Prisma.TravelBudgetLineWhereInput
+  orderBy?: Prisma.TravelBudgetLineOrderByWithRelationInput | Prisma.TravelBudgetLineOrderByWithRelationInput[]
+  cursor?: Prisma.TravelBudgetLineWhereUniqueInput
+  take?: number
+  skip?: number
+  distinct?: Prisma.TravelBudgetLineScalarFieldEnum | Prisma.TravelBudgetLineScalarFieldEnum[]
 }
 
 /**

@@ -1903,6 +1903,137 @@ describe('RLS tenant isolation', () => {
     await admin.query('DELETE FROM google_directory_connection');
   });
 
+  /* w6-00 (0077) — travel: the request, its budget lines, travel's own categories and the
+   * resolved places. A trip is where somebody is going and when, so the same three properties
+   * as everything else: per tenant with no hatch, WITH CHECK refuses naming another tenant,
+   * and every reference between tenant rows is composite. Also pinned here: each tenant's
+   * numbers start at TRV-000001 (0077's trigger), and `seed_travel_defaults()` writes only
+   * for the tenant in scope. */
+  it("travel requests, budget lines, categories and places are per tenant, and cannot name another tenant's rows", async () => {
+    await admin.query('DELETE FROM travel_budget_line');
+    await admin.query('DELETE FROM travel_request');
+    await admin.query('DELETE FROM travel_place');
+    await admin.query('DELETE FROM travel_category');
+    await admin.query("DELETE FROM approval_workflow WHERE key = 'travel-request-default'");
+    await admin.query('UPDATE organization SET travel_request_seq = 0');
+    const seed = async (org: string, city: string) =>
+      withOrg(org, async (tx) => {
+        await tx.query('SELECT seed_travel_defaults()');
+        const user = (await tx.query('SELECT id FROM app_user LIMIT 1')).rows[0].id as string;
+        const category = (
+          await tx.query("SELECT id FROM travel_category WHERE code = 'travelAirfare'")
+        ).rows[0].id as string;
+        await tx.query(
+          `INSERT INTO travel_place (place_id, label, city, airports) VALUES ('g-1', $1, $1, '{YYZ}')`,
+          [city],
+        );
+        const request = (
+          await tx.query(
+            `INSERT INTO travel_request (submitter_id, purpose, destination_label, destination_city,
+                                         depart_date, currency_code)
+             VALUES ($1, 'Client visit', $2, $2, now(), 'CAD') RETURNING id, number`,
+            [user, city],
+          )
+        ).rows[0] as { id: string; number: string };
+        await tx.query(
+          `INSERT INTO travel_budget_line (travel_request_id, category_id, kind, amount_minor, basis)
+           VALUES ($1, $2, 'AIRFARE', 45000, 'MANUAL')`,
+          [request.id, category],
+        );
+        return { user, category, request };
+      });
+    const a = await seed(orgA, 'Toronto');
+    const b = await seed(orgB, 'Calgary');
+    expect([a.request.number, b.request.number]).toEqual(['TRV-000001', 'TRV-000001']);
+
+    for (const [org, city] of [
+      [orgA, 'Toronto'],
+      [orgB, 'Calgary'],
+    ] as const) {
+      const seen = await withOrg(org, async (tx) => ({
+        requests: (await tx.query('SELECT destination_city FROM travel_request')).rows.map(
+          (r) => r.destination_city,
+        ),
+        lines: (await tx.query('SELECT amount_minor FROM travel_budget_line')).rows.length,
+        categories: (await tx.query('SELECT count(*)::int AS n FROM travel_category')).rows[0].n,
+        places: (await tx.query('SELECT city FROM travel_place')).rows.map((r) => r.city),
+        flows: (
+          await tx.query(
+            "SELECT count(*)::int AS n FROM approval_workflow WHERE key = 'travel-request-default'",
+          )
+        ).rows[0].n,
+      }));
+      expect(seen).toEqual({ requests: [city], lines: 1, categories: 15, places: [city], flows: 1 });
+    }
+
+    // WITH CHECK: naming another tenant does not write there.
+    await expect(
+      withOrg(orgB, (tx) =>
+        tx.query(
+          `INSERT INTO travel_request (organization_id, submitter_id, purpose, destination_label,
+                                       depart_date, currency_code)
+           VALUES ($1, $2, 'x', 'x', now(), 'CAD')`,
+          [orgA, a.user],
+        ),
+      ),
+    ).rejects.toThrow(/row-level security|violates/i);
+    // Composite keys: a request cannot name another tenant's traveller, a line cannot name
+    // another tenant's request or category, a place cannot be pinned by another tenant's user.
+    await expect(
+      withOrg(orgA, (tx) =>
+        tx.query(
+          `INSERT INTO travel_request (submitter_id, purpose, destination_label, depart_date, currency_code)
+           VALUES ($1, 'x', 'x', now(), 'CAD')`,
+          [b.user],
+        ),
+      ),
+    ).rejects.toThrow(/foreign key|violates/i);
+    await expect(
+      withOrg(orgA, (tx) =>
+        tx.query(
+          `INSERT INTO travel_budget_line (travel_request_id, category_id, amount_minor, basis)
+           VALUES ($1, $2, 1, 'MANUAL')`,
+          [b.request.id, a.category],
+        ),
+      ),
+    ).rejects.toThrow(/foreign key|violates/i);
+    await expect(
+      withOrg(orgA, (tx) =>
+        tx.query(
+          `INSERT INTO travel_budget_line (travel_request_id, category_id, amount_minor, basis)
+           VALUES ($1, $2, 1, 'MANUAL')`,
+          [a.request.id, b.category],
+        ),
+      ),
+    ).rejects.toThrow(/foreign key|violates/i);
+    await expect(
+      withOrg(orgA, (tx) =>
+        tx.query(`UPDATE travel_place SET pinned_by_id = $1, pinned_at = now()`, [b.user]),
+      ),
+    ).rejects.toThrow(/foreign key|violates/i);
+    // A violation is about a report OR a trip, never neither.
+    await expect(
+      withOrg(orgA, (tx) =>
+        tx.query(
+          `INSERT INTO policy_violation (organization_id, rule_code, severity, message)
+           VALUES ($1, 'x', 'WARNING', 'x')`,
+          [orgA],
+        ),
+      ),
+    ).rejects.toThrow(/check constraint|violates/i);
+
+    // No hatch reads them.
+    for (const table of ['travel_request', 'travel_budget_line', 'travel_category', 'travel_place']) {
+      expect((await withPlatformRead((tx) => tx.query(`SELECT * FROM ${table}`))).rows).toHaveLength(0);
+      expect((await withoutOrg((tx) => tx.query(`SELECT * FROM ${table}`))).rows).toHaveLength(0);
+    }
+    await admin.query('DELETE FROM travel_budget_line');
+    await admin.query('DELETE FROM travel_request');
+    await admin.query('DELETE FROM travel_place');
+    await admin.query('DELETE FROM travel_category');
+    await admin.query("DELETE FROM approval_workflow WHERE key = 'travel-request-default'");
+  });
+
   /* ── External IDs (the Wave 1 business-unit port, migration 0047) ─────────
    *
    * ExpenseOS's `ExternalIdSource` and `BusinessUnitExternalId`, made per tenant.

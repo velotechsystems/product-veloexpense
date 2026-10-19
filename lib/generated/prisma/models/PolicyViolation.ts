@@ -37,6 +37,8 @@ export type PolicyViolationMinAggregateOutputType = {
   resolvedBy: string | null
   resolveNote: string | null
   createdAt: Date | null
+  travelRequestId: string | null
+  travelLineId: string | null
 }
 
 export type PolicyViolationMaxAggregateOutputType = {
@@ -52,6 +54,8 @@ export type PolicyViolationMaxAggregateOutputType = {
   resolvedBy: string | null
   resolveNote: string | null
   createdAt: Date | null
+  travelRequestId: string | null
+  travelLineId: string | null
 }
 
 export type PolicyViolationCountAggregateOutputType = {
@@ -68,6 +72,8 @@ export type PolicyViolationCountAggregateOutputType = {
   resolvedBy: number
   resolveNote: number
   createdAt: number
+  travelRequestId: number
+  travelLineId: number
   _all: number
 }
 
@@ -85,6 +91,8 @@ export type PolicyViolationMinAggregateInputType = {
   resolvedBy?: true
   resolveNote?: true
   createdAt?: true
+  travelRequestId?: true
+  travelLineId?: true
 }
 
 export type PolicyViolationMaxAggregateInputType = {
@@ -100,6 +108,8 @@ export type PolicyViolationMaxAggregateInputType = {
   resolvedBy?: true
   resolveNote?: true
   createdAt?: true
+  travelRequestId?: true
+  travelLineId?: true
 }
 
 export type PolicyViolationCountAggregateInputType = {
@@ -116,6 +126,8 @@ export type PolicyViolationCountAggregateInputType = {
   resolvedBy?: true
   resolveNote?: true
   createdAt?: true
+  travelRequestId?: true
+  travelLineId?: true
   _all?: true
 }
 
@@ -194,7 +206,7 @@ export type PolicyViolationGroupByArgs<ExtArgs extends runtime.Types.Extensions.
 export type PolicyViolationGroupByOutputType = {
   id: string
   organizationId: string
-  reportId: string
+  reportId: string | null
   expenseId: string | null
   lineItemId: string | null
   ruleCode: string
@@ -205,6 +217,8 @@ export type PolicyViolationGroupByOutputType = {
   resolvedBy: string | null
   resolveNote: string | null
   createdAt: Date
+  travelRequestId: string | null
+  travelLineId: string | null
   _count: PolicyViolationCountAggregateOutputType | null
   _min: PolicyViolationMinAggregateOutputType | null
   _max: PolicyViolationMaxAggregateOutputType | null
@@ -231,7 +245,7 @@ export type PolicyViolationWhereInput = {
   NOT?: Prisma.PolicyViolationWhereInput | Prisma.PolicyViolationWhereInput[]
   id?: Prisma.UuidFilter<"PolicyViolation"> | string
   organizationId?: Prisma.UuidFilter<"PolicyViolation"> | string
-  reportId?: Prisma.UuidFilter<"PolicyViolation"> | string
+  reportId?: Prisma.UuidNullableFilter<"PolicyViolation"> | string | null
   expenseId?: Prisma.UuidNullableFilter<"PolicyViolation"> | string | null
   lineItemId?: Prisma.UuidNullableFilter<"PolicyViolation"> | string | null
   ruleCode?: Prisma.StringFilter<"PolicyViolation"> | string
@@ -242,12 +256,16 @@ export type PolicyViolationWhereInput = {
   resolvedBy?: Prisma.UuidNullableFilter<"PolicyViolation"> | string | null
   resolveNote?: Prisma.StringNullableFilter<"PolicyViolation"> | string | null
   createdAt?: Prisma.DateTimeFilter<"PolicyViolation"> | Date | string
+  travelRequestId?: Prisma.UuidNullableFilter<"PolicyViolation"> | string | null
+  travelLineId?: Prisma.UuidNullableFilter<"PolicyViolation"> | string | null
+  travelRequest?: Prisma.XOR<Prisma.TravelRequestNullableScalarRelationFilter, Prisma.TravelRequestWhereInput> | null
+  travelLine?: Prisma.XOR<Prisma.TravelBudgetLineNullableScalarRelationFilter, Prisma.TravelBudgetLineWhereInput> | null
 }
 
 export type PolicyViolationOrderByWithRelationInput = {
   id?: Prisma.SortOrder
   organizationId?: Prisma.SortOrder
-  reportId?: Prisma.SortOrder
+  reportId?: Prisma.SortOrderInput | Prisma.SortOrder
   expenseId?: Prisma.SortOrderInput | Prisma.SortOrder
   lineItemId?: Prisma.SortOrderInput | Prisma.SortOrder
   ruleCode?: Prisma.SortOrder
@@ -258,6 +276,10 @@ export type PolicyViolationOrderByWithRelationInput = {
   resolvedBy?: Prisma.SortOrderInput | Prisma.SortOrder
   resolveNote?: Prisma.SortOrderInput | Prisma.SortOrder
   createdAt?: Prisma.SortOrder
+  travelRequestId?: Prisma.SortOrderInput | Prisma.SortOrder
+  travelLineId?: Prisma.SortOrderInput | Prisma.SortOrder
+  travelRequest?: Prisma.TravelRequestOrderByWithRelationInput
+  travelLine?: Prisma.TravelBudgetLineOrderByWithRelationInput
 }
 
 export type PolicyViolationWhereUniqueInput = Prisma.AtLeast<{
@@ -266,7 +288,7 @@ export type PolicyViolationWhereUniqueInput = Prisma.AtLeast<{
   OR?: Prisma.PolicyViolationWhereInput[]
   NOT?: Prisma.PolicyViolationWhereInput | Prisma.PolicyViolationWhereInput[]
   organizationId?: Prisma.UuidFilter<"PolicyViolation"> | string
-  reportId?: Prisma.UuidFilter<"PolicyViolation"> | string
+  reportId?: Prisma.UuidNullableFilter<"PolicyViolation"> | string | null
   expenseId?: Prisma.UuidNullableFilter<"PolicyViolation"> | string | null
   lineItemId?: Prisma.UuidNullableFilter<"PolicyViolation"> | string | null
   ruleCode?: Prisma.StringFilter<"PolicyViolation"> | string
@@ -277,12 +299,16 @@ export type PolicyViolationWhereUniqueInput = Prisma.AtLeast<{
   resolvedBy?: Prisma.UuidNullableFilter<"PolicyViolation"> | string | null
   resolveNote?: Prisma.StringNullableFilter<"PolicyViolation"> | string | null
   createdAt?: Prisma.DateTimeFilter<"PolicyViolation"> | Date | string
+  travelRequestId?: Prisma.UuidNullableFilter<"PolicyViolation"> | string | null
+  travelLineId?: Prisma.UuidNullableFilter<"PolicyViolation"> | string | null
+  travelRequest?: Prisma.XOR<Prisma.TravelRequestNullableScalarRelationFilter, Prisma.TravelRequestWhereInput> | null
+  travelLine?: Prisma.XOR<Prisma.TravelBudgetLineNullableScalarRelationFilter, Prisma.TravelBudgetLineWhereInput> | null
 }, "id">
 
 export type PolicyViolationOrderByWithAggregationInput = {
   id?: Prisma.SortOrder
   organizationId?: Prisma.SortOrder
-  reportId?: Prisma.SortOrder
+  reportId?: Prisma.SortOrderInput | Prisma.SortOrder
   expenseId?: Prisma.SortOrderInput | Prisma.SortOrder
   lineItemId?: Prisma.SortOrderInput | Prisma.SortOrder
   ruleCode?: Prisma.SortOrder
@@ -293,6 +319,8 @@ export type PolicyViolationOrderByWithAggregationInput = {
   resolvedBy?: Prisma.SortOrderInput | Prisma.SortOrder
   resolveNote?: Prisma.SortOrderInput | Prisma.SortOrder
   createdAt?: Prisma.SortOrder
+  travelRequestId?: Prisma.SortOrderInput | Prisma.SortOrder
+  travelLineId?: Prisma.SortOrderInput | Prisma.SortOrder
   _count?: Prisma.PolicyViolationCountOrderByAggregateInput
   _max?: Prisma.PolicyViolationMaxOrderByAggregateInput
   _min?: Prisma.PolicyViolationMinOrderByAggregateInput
@@ -304,7 +332,7 @@ export type PolicyViolationScalarWhereWithAggregatesInput = {
   NOT?: Prisma.PolicyViolationScalarWhereWithAggregatesInput | Prisma.PolicyViolationScalarWhereWithAggregatesInput[]
   id?: Prisma.UuidWithAggregatesFilter<"PolicyViolation"> | string
   organizationId?: Prisma.UuidWithAggregatesFilter<"PolicyViolation"> | string
-  reportId?: Prisma.UuidWithAggregatesFilter<"PolicyViolation"> | string
+  reportId?: Prisma.UuidNullableWithAggregatesFilter<"PolicyViolation"> | string | null
   expenseId?: Prisma.UuidNullableWithAggregatesFilter<"PolicyViolation"> | string | null
   lineItemId?: Prisma.UuidNullableWithAggregatesFilter<"PolicyViolation"> | string | null
   ruleCode?: Prisma.StringWithAggregatesFilter<"PolicyViolation"> | string
@@ -315,12 +343,14 @@ export type PolicyViolationScalarWhereWithAggregatesInput = {
   resolvedBy?: Prisma.UuidNullableWithAggregatesFilter<"PolicyViolation"> | string | null
   resolveNote?: Prisma.StringNullableWithAggregatesFilter<"PolicyViolation"> | string | null
   createdAt?: Prisma.DateTimeWithAggregatesFilter<"PolicyViolation"> | Date | string
+  travelRequestId?: Prisma.UuidNullableWithAggregatesFilter<"PolicyViolation"> | string | null
+  travelLineId?: Prisma.UuidNullableWithAggregatesFilter<"PolicyViolation"> | string | null
 }
 
 export type PolicyViolationCreateInput = {
   id?: string
   organizationId?: string
-  reportId: string
+  reportId?: string | null
   expenseId?: string | null
   lineItemId?: string | null
   ruleCode: string
@@ -331,12 +361,14 @@ export type PolicyViolationCreateInput = {
   resolvedBy?: string | null
   resolveNote?: string | null
   createdAt?: Date | string
+  travelRequest?: Prisma.TravelRequestCreateNestedOneWithoutPolicyViolationsInput
+  travelLine?: Prisma.TravelBudgetLineCreateNestedOneWithoutPolicyViolationsInput
 }
 
 export type PolicyViolationUncheckedCreateInput = {
   id?: string
   organizationId?: string
-  reportId: string
+  reportId?: string | null
   expenseId?: string | null
   lineItemId?: string | null
   ruleCode: string
@@ -347,12 +379,14 @@ export type PolicyViolationUncheckedCreateInput = {
   resolvedBy?: string | null
   resolveNote?: string | null
   createdAt?: Date | string
+  travelRequestId?: string | null
+  travelLineId?: string | null
 }
 
 export type PolicyViolationUpdateInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
   organizationId?: Prisma.StringFieldUpdateOperationsInput | string
-  reportId?: Prisma.StringFieldUpdateOperationsInput | string
+  reportId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   expenseId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   lineItemId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   ruleCode?: Prisma.StringFieldUpdateOperationsInput | string
@@ -363,12 +397,14 @@ export type PolicyViolationUpdateInput = {
   resolvedBy?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   resolveNote?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  travelRequest?: Prisma.TravelRequestUpdateOneWithoutPolicyViolationsNestedInput
+  travelLine?: Prisma.TravelBudgetLineUpdateOneWithoutPolicyViolationsNestedInput
 }
 
 export type PolicyViolationUncheckedUpdateInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
   organizationId?: Prisma.StringFieldUpdateOperationsInput | string
-  reportId?: Prisma.StringFieldUpdateOperationsInput | string
+  reportId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   expenseId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   lineItemId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   ruleCode?: Prisma.StringFieldUpdateOperationsInput | string
@@ -379,12 +415,14 @@ export type PolicyViolationUncheckedUpdateInput = {
   resolvedBy?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   resolveNote?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  travelRequestId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  travelLineId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
 }
 
 export type PolicyViolationCreateManyInput = {
   id?: string
   organizationId?: string
-  reportId: string
+  reportId?: string | null
   expenseId?: string | null
   lineItemId?: string | null
   ruleCode: string
@@ -395,12 +433,14 @@ export type PolicyViolationCreateManyInput = {
   resolvedBy?: string | null
   resolveNote?: string | null
   createdAt?: Date | string
+  travelRequestId?: string | null
+  travelLineId?: string | null
 }
 
 export type PolicyViolationUpdateManyMutationInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
   organizationId?: Prisma.StringFieldUpdateOperationsInput | string
-  reportId?: Prisma.StringFieldUpdateOperationsInput | string
+  reportId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   expenseId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   lineItemId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   ruleCode?: Prisma.StringFieldUpdateOperationsInput | string
@@ -416,7 +456,7 @@ export type PolicyViolationUpdateManyMutationInput = {
 export type PolicyViolationUncheckedUpdateManyInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
   organizationId?: Prisma.StringFieldUpdateOperationsInput | string
-  reportId?: Prisma.StringFieldUpdateOperationsInput | string
+  reportId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   expenseId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   lineItemId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   ruleCode?: Prisma.StringFieldUpdateOperationsInput | string
@@ -427,6 +467,8 @@ export type PolicyViolationUncheckedUpdateManyInput = {
   resolvedBy?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   resolveNote?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  travelRequestId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  travelLineId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
 }
 
 export type PolicyViolationCountOrderByAggregateInput = {
@@ -443,6 +485,8 @@ export type PolicyViolationCountOrderByAggregateInput = {
   resolvedBy?: Prisma.SortOrder
   resolveNote?: Prisma.SortOrder
   createdAt?: Prisma.SortOrder
+  travelRequestId?: Prisma.SortOrder
+  travelLineId?: Prisma.SortOrder
 }
 
 export type PolicyViolationMaxOrderByAggregateInput = {
@@ -458,6 +502,8 @@ export type PolicyViolationMaxOrderByAggregateInput = {
   resolvedBy?: Prisma.SortOrder
   resolveNote?: Prisma.SortOrder
   createdAt?: Prisma.SortOrder
+  travelRequestId?: Prisma.SortOrder
+  travelLineId?: Prisma.SortOrder
 }
 
 export type PolicyViolationMinOrderByAggregateInput = {
@@ -473,6 +519,379 @@ export type PolicyViolationMinOrderByAggregateInput = {
   resolvedBy?: Prisma.SortOrder
   resolveNote?: Prisma.SortOrder
   createdAt?: Prisma.SortOrder
+  travelRequestId?: Prisma.SortOrder
+  travelLineId?: Prisma.SortOrder
+}
+
+export type PolicyViolationListRelationFilter = {
+  every?: Prisma.PolicyViolationWhereInput
+  some?: Prisma.PolicyViolationWhereInput
+  none?: Prisma.PolicyViolationWhereInput
+}
+
+export type PolicyViolationOrderByRelationAggregateInput = {
+  _count?: Prisma.SortOrder
+}
+
+export type PolicyViolationCreateNestedManyWithoutTravelRequestInput = {
+  create?: Prisma.XOR<Prisma.PolicyViolationCreateWithoutTravelRequestInput, Prisma.PolicyViolationUncheckedCreateWithoutTravelRequestInput> | Prisma.PolicyViolationCreateWithoutTravelRequestInput[] | Prisma.PolicyViolationUncheckedCreateWithoutTravelRequestInput[]
+  connectOrCreate?: Prisma.PolicyViolationCreateOrConnectWithoutTravelRequestInput | Prisma.PolicyViolationCreateOrConnectWithoutTravelRequestInput[]
+  createMany?: Prisma.PolicyViolationCreateManyTravelRequestInputEnvelope
+  connect?: Prisma.PolicyViolationWhereUniqueInput | Prisma.PolicyViolationWhereUniqueInput[]
+}
+
+export type PolicyViolationUncheckedCreateNestedManyWithoutTravelRequestInput = {
+  create?: Prisma.XOR<Prisma.PolicyViolationCreateWithoutTravelRequestInput, Prisma.PolicyViolationUncheckedCreateWithoutTravelRequestInput> | Prisma.PolicyViolationCreateWithoutTravelRequestInput[] | Prisma.PolicyViolationUncheckedCreateWithoutTravelRequestInput[]
+  connectOrCreate?: Prisma.PolicyViolationCreateOrConnectWithoutTravelRequestInput | Prisma.PolicyViolationCreateOrConnectWithoutTravelRequestInput[]
+  createMany?: Prisma.PolicyViolationCreateManyTravelRequestInputEnvelope
+  connect?: Prisma.PolicyViolationWhereUniqueInput | Prisma.PolicyViolationWhereUniqueInput[]
+}
+
+export type PolicyViolationUpdateManyWithoutTravelRequestNestedInput = {
+  create?: Prisma.XOR<Prisma.PolicyViolationCreateWithoutTravelRequestInput, Prisma.PolicyViolationUncheckedCreateWithoutTravelRequestInput> | Prisma.PolicyViolationCreateWithoutTravelRequestInput[] | Prisma.PolicyViolationUncheckedCreateWithoutTravelRequestInput[]
+  connectOrCreate?: Prisma.PolicyViolationCreateOrConnectWithoutTravelRequestInput | Prisma.PolicyViolationCreateOrConnectWithoutTravelRequestInput[]
+  upsert?: Prisma.PolicyViolationUpsertWithWhereUniqueWithoutTravelRequestInput | Prisma.PolicyViolationUpsertWithWhereUniqueWithoutTravelRequestInput[]
+  createMany?: Prisma.PolicyViolationCreateManyTravelRequestInputEnvelope
+  set?: Prisma.PolicyViolationWhereUniqueInput | Prisma.PolicyViolationWhereUniqueInput[]
+  disconnect?: Prisma.PolicyViolationWhereUniqueInput | Prisma.PolicyViolationWhereUniqueInput[]
+  delete?: Prisma.PolicyViolationWhereUniqueInput | Prisma.PolicyViolationWhereUniqueInput[]
+  connect?: Prisma.PolicyViolationWhereUniqueInput | Prisma.PolicyViolationWhereUniqueInput[]
+  update?: Prisma.PolicyViolationUpdateWithWhereUniqueWithoutTravelRequestInput | Prisma.PolicyViolationUpdateWithWhereUniqueWithoutTravelRequestInput[]
+  updateMany?: Prisma.PolicyViolationUpdateManyWithWhereWithoutTravelRequestInput | Prisma.PolicyViolationUpdateManyWithWhereWithoutTravelRequestInput[]
+  deleteMany?: Prisma.PolicyViolationScalarWhereInput | Prisma.PolicyViolationScalarWhereInput[]
+}
+
+export type PolicyViolationUncheckedUpdateManyWithoutTravelRequestNestedInput = {
+  create?: Prisma.XOR<Prisma.PolicyViolationCreateWithoutTravelRequestInput, Prisma.PolicyViolationUncheckedCreateWithoutTravelRequestInput> | Prisma.PolicyViolationCreateWithoutTravelRequestInput[] | Prisma.PolicyViolationUncheckedCreateWithoutTravelRequestInput[]
+  connectOrCreate?: Prisma.PolicyViolationCreateOrConnectWithoutTravelRequestInput | Prisma.PolicyViolationCreateOrConnectWithoutTravelRequestInput[]
+  upsert?: Prisma.PolicyViolationUpsertWithWhereUniqueWithoutTravelRequestInput | Prisma.PolicyViolationUpsertWithWhereUniqueWithoutTravelRequestInput[]
+  createMany?: Prisma.PolicyViolationCreateManyTravelRequestInputEnvelope
+  set?: Prisma.PolicyViolationWhereUniqueInput | Prisma.PolicyViolationWhereUniqueInput[]
+  disconnect?: Prisma.PolicyViolationWhereUniqueInput | Prisma.PolicyViolationWhereUniqueInput[]
+  delete?: Prisma.PolicyViolationWhereUniqueInput | Prisma.PolicyViolationWhereUniqueInput[]
+  connect?: Prisma.PolicyViolationWhereUniqueInput | Prisma.PolicyViolationWhereUniqueInput[]
+  update?: Prisma.PolicyViolationUpdateWithWhereUniqueWithoutTravelRequestInput | Prisma.PolicyViolationUpdateWithWhereUniqueWithoutTravelRequestInput[]
+  updateMany?: Prisma.PolicyViolationUpdateManyWithWhereWithoutTravelRequestInput | Prisma.PolicyViolationUpdateManyWithWhereWithoutTravelRequestInput[]
+  deleteMany?: Prisma.PolicyViolationScalarWhereInput | Prisma.PolicyViolationScalarWhereInput[]
+}
+
+export type PolicyViolationCreateNestedManyWithoutTravelLineInput = {
+  create?: Prisma.XOR<Prisma.PolicyViolationCreateWithoutTravelLineInput, Prisma.PolicyViolationUncheckedCreateWithoutTravelLineInput> | Prisma.PolicyViolationCreateWithoutTravelLineInput[] | Prisma.PolicyViolationUncheckedCreateWithoutTravelLineInput[]
+  connectOrCreate?: Prisma.PolicyViolationCreateOrConnectWithoutTravelLineInput | Prisma.PolicyViolationCreateOrConnectWithoutTravelLineInput[]
+  createMany?: Prisma.PolicyViolationCreateManyTravelLineInputEnvelope
+  connect?: Prisma.PolicyViolationWhereUniqueInput | Prisma.PolicyViolationWhereUniqueInput[]
+}
+
+export type PolicyViolationUncheckedCreateNestedManyWithoutTravelLineInput = {
+  create?: Prisma.XOR<Prisma.PolicyViolationCreateWithoutTravelLineInput, Prisma.PolicyViolationUncheckedCreateWithoutTravelLineInput> | Prisma.PolicyViolationCreateWithoutTravelLineInput[] | Prisma.PolicyViolationUncheckedCreateWithoutTravelLineInput[]
+  connectOrCreate?: Prisma.PolicyViolationCreateOrConnectWithoutTravelLineInput | Prisma.PolicyViolationCreateOrConnectWithoutTravelLineInput[]
+  createMany?: Prisma.PolicyViolationCreateManyTravelLineInputEnvelope
+  connect?: Prisma.PolicyViolationWhereUniqueInput | Prisma.PolicyViolationWhereUniqueInput[]
+}
+
+export type PolicyViolationUpdateManyWithoutTravelLineNestedInput = {
+  create?: Prisma.XOR<Prisma.PolicyViolationCreateWithoutTravelLineInput, Prisma.PolicyViolationUncheckedCreateWithoutTravelLineInput> | Prisma.PolicyViolationCreateWithoutTravelLineInput[] | Prisma.PolicyViolationUncheckedCreateWithoutTravelLineInput[]
+  connectOrCreate?: Prisma.PolicyViolationCreateOrConnectWithoutTravelLineInput | Prisma.PolicyViolationCreateOrConnectWithoutTravelLineInput[]
+  upsert?: Prisma.PolicyViolationUpsertWithWhereUniqueWithoutTravelLineInput | Prisma.PolicyViolationUpsertWithWhereUniqueWithoutTravelLineInput[]
+  createMany?: Prisma.PolicyViolationCreateManyTravelLineInputEnvelope
+  set?: Prisma.PolicyViolationWhereUniqueInput | Prisma.PolicyViolationWhereUniqueInput[]
+  disconnect?: Prisma.PolicyViolationWhereUniqueInput | Prisma.PolicyViolationWhereUniqueInput[]
+  delete?: Prisma.PolicyViolationWhereUniqueInput | Prisma.PolicyViolationWhereUniqueInput[]
+  connect?: Prisma.PolicyViolationWhereUniqueInput | Prisma.PolicyViolationWhereUniqueInput[]
+  update?: Prisma.PolicyViolationUpdateWithWhereUniqueWithoutTravelLineInput | Prisma.PolicyViolationUpdateWithWhereUniqueWithoutTravelLineInput[]
+  updateMany?: Prisma.PolicyViolationUpdateManyWithWhereWithoutTravelLineInput | Prisma.PolicyViolationUpdateManyWithWhereWithoutTravelLineInput[]
+  deleteMany?: Prisma.PolicyViolationScalarWhereInput | Prisma.PolicyViolationScalarWhereInput[]
+}
+
+export type PolicyViolationUncheckedUpdateManyWithoutTravelLineNestedInput = {
+  create?: Prisma.XOR<Prisma.PolicyViolationCreateWithoutTravelLineInput, Prisma.PolicyViolationUncheckedCreateWithoutTravelLineInput> | Prisma.PolicyViolationCreateWithoutTravelLineInput[] | Prisma.PolicyViolationUncheckedCreateWithoutTravelLineInput[]
+  connectOrCreate?: Prisma.PolicyViolationCreateOrConnectWithoutTravelLineInput | Prisma.PolicyViolationCreateOrConnectWithoutTravelLineInput[]
+  upsert?: Prisma.PolicyViolationUpsertWithWhereUniqueWithoutTravelLineInput | Prisma.PolicyViolationUpsertWithWhereUniqueWithoutTravelLineInput[]
+  createMany?: Prisma.PolicyViolationCreateManyTravelLineInputEnvelope
+  set?: Prisma.PolicyViolationWhereUniqueInput | Prisma.PolicyViolationWhereUniqueInput[]
+  disconnect?: Prisma.PolicyViolationWhereUniqueInput | Prisma.PolicyViolationWhereUniqueInput[]
+  delete?: Prisma.PolicyViolationWhereUniqueInput | Prisma.PolicyViolationWhereUniqueInput[]
+  connect?: Prisma.PolicyViolationWhereUniqueInput | Prisma.PolicyViolationWhereUniqueInput[]
+  update?: Prisma.PolicyViolationUpdateWithWhereUniqueWithoutTravelLineInput | Prisma.PolicyViolationUpdateWithWhereUniqueWithoutTravelLineInput[]
+  updateMany?: Prisma.PolicyViolationUpdateManyWithWhereWithoutTravelLineInput | Prisma.PolicyViolationUpdateManyWithWhereWithoutTravelLineInput[]
+  deleteMany?: Prisma.PolicyViolationScalarWhereInput | Prisma.PolicyViolationScalarWhereInput[]
+}
+
+export type PolicyViolationCreateWithoutTravelRequestInput = {
+  id?: string
+  organizationId?: string
+  reportId?: string | null
+  expenseId?: string | null
+  lineItemId?: string | null
+  ruleCode: string
+  severity: $Enums.PolicyViolationSeverity
+  message: string
+  data?: Prisma.JsonNullValueInput | runtime.InputJsonValue
+  resolvedAt?: Date | string | null
+  resolvedBy?: string | null
+  resolveNote?: string | null
+  createdAt?: Date | string
+  travelLine?: Prisma.TravelBudgetLineCreateNestedOneWithoutPolicyViolationsInput
+}
+
+export type PolicyViolationUncheckedCreateWithoutTravelRequestInput = {
+  id?: string
+  organizationId?: string
+  reportId?: string | null
+  expenseId?: string | null
+  lineItemId?: string | null
+  ruleCode: string
+  severity: $Enums.PolicyViolationSeverity
+  message: string
+  data?: Prisma.JsonNullValueInput | runtime.InputJsonValue
+  resolvedAt?: Date | string | null
+  resolvedBy?: string | null
+  resolveNote?: string | null
+  createdAt?: Date | string
+  travelLineId?: string | null
+}
+
+export type PolicyViolationCreateOrConnectWithoutTravelRequestInput = {
+  where: Prisma.PolicyViolationWhereUniqueInput
+  create: Prisma.XOR<Prisma.PolicyViolationCreateWithoutTravelRequestInput, Prisma.PolicyViolationUncheckedCreateWithoutTravelRequestInput>
+}
+
+export type PolicyViolationCreateManyTravelRequestInputEnvelope = {
+  data: Prisma.PolicyViolationCreateManyTravelRequestInput | Prisma.PolicyViolationCreateManyTravelRequestInput[]
+  skipDuplicates?: boolean
+}
+
+export type PolicyViolationUpsertWithWhereUniqueWithoutTravelRequestInput = {
+  where: Prisma.PolicyViolationWhereUniqueInput
+  update: Prisma.XOR<Prisma.PolicyViolationUpdateWithoutTravelRequestInput, Prisma.PolicyViolationUncheckedUpdateWithoutTravelRequestInput>
+  create: Prisma.XOR<Prisma.PolicyViolationCreateWithoutTravelRequestInput, Prisma.PolicyViolationUncheckedCreateWithoutTravelRequestInput>
+}
+
+export type PolicyViolationUpdateWithWhereUniqueWithoutTravelRequestInput = {
+  where: Prisma.PolicyViolationWhereUniqueInput
+  data: Prisma.XOR<Prisma.PolicyViolationUpdateWithoutTravelRequestInput, Prisma.PolicyViolationUncheckedUpdateWithoutTravelRequestInput>
+}
+
+export type PolicyViolationUpdateManyWithWhereWithoutTravelRequestInput = {
+  where: Prisma.PolicyViolationScalarWhereInput
+  data: Prisma.XOR<Prisma.PolicyViolationUpdateManyMutationInput, Prisma.PolicyViolationUncheckedUpdateManyWithoutTravelRequestInput>
+}
+
+export type PolicyViolationScalarWhereInput = {
+  AND?: Prisma.PolicyViolationScalarWhereInput | Prisma.PolicyViolationScalarWhereInput[]
+  OR?: Prisma.PolicyViolationScalarWhereInput[]
+  NOT?: Prisma.PolicyViolationScalarWhereInput | Prisma.PolicyViolationScalarWhereInput[]
+  id?: Prisma.UuidFilter<"PolicyViolation"> | string
+  organizationId?: Prisma.UuidFilter<"PolicyViolation"> | string
+  reportId?: Prisma.UuidNullableFilter<"PolicyViolation"> | string | null
+  expenseId?: Prisma.UuidNullableFilter<"PolicyViolation"> | string | null
+  lineItemId?: Prisma.UuidNullableFilter<"PolicyViolation"> | string | null
+  ruleCode?: Prisma.StringFilter<"PolicyViolation"> | string
+  severity?: Prisma.EnumPolicyViolationSeverityFilter<"PolicyViolation"> | $Enums.PolicyViolationSeverity
+  message?: Prisma.StringFilter<"PolicyViolation"> | string
+  data?: Prisma.JsonFilter<"PolicyViolation">
+  resolvedAt?: Prisma.DateTimeNullableFilter<"PolicyViolation"> | Date | string | null
+  resolvedBy?: Prisma.UuidNullableFilter<"PolicyViolation"> | string | null
+  resolveNote?: Prisma.StringNullableFilter<"PolicyViolation"> | string | null
+  createdAt?: Prisma.DateTimeFilter<"PolicyViolation"> | Date | string
+  travelRequestId?: Prisma.UuidNullableFilter<"PolicyViolation"> | string | null
+  travelLineId?: Prisma.UuidNullableFilter<"PolicyViolation"> | string | null
+}
+
+export type PolicyViolationCreateWithoutTravelLineInput = {
+  id?: string
+  organizationId?: string
+  reportId?: string | null
+  expenseId?: string | null
+  lineItemId?: string | null
+  ruleCode: string
+  severity: $Enums.PolicyViolationSeverity
+  message: string
+  data?: Prisma.JsonNullValueInput | runtime.InputJsonValue
+  resolvedAt?: Date | string | null
+  resolvedBy?: string | null
+  resolveNote?: string | null
+  createdAt?: Date | string
+  travelRequest?: Prisma.TravelRequestCreateNestedOneWithoutPolicyViolationsInput
+}
+
+export type PolicyViolationUncheckedCreateWithoutTravelLineInput = {
+  id?: string
+  organizationId?: string
+  reportId?: string | null
+  expenseId?: string | null
+  lineItemId?: string | null
+  ruleCode: string
+  severity: $Enums.PolicyViolationSeverity
+  message: string
+  data?: Prisma.JsonNullValueInput | runtime.InputJsonValue
+  resolvedAt?: Date | string | null
+  resolvedBy?: string | null
+  resolveNote?: string | null
+  createdAt?: Date | string
+  travelRequestId?: string | null
+}
+
+export type PolicyViolationCreateOrConnectWithoutTravelLineInput = {
+  where: Prisma.PolicyViolationWhereUniqueInput
+  create: Prisma.XOR<Prisma.PolicyViolationCreateWithoutTravelLineInput, Prisma.PolicyViolationUncheckedCreateWithoutTravelLineInput>
+}
+
+export type PolicyViolationCreateManyTravelLineInputEnvelope = {
+  data: Prisma.PolicyViolationCreateManyTravelLineInput | Prisma.PolicyViolationCreateManyTravelLineInput[]
+  skipDuplicates?: boolean
+}
+
+export type PolicyViolationUpsertWithWhereUniqueWithoutTravelLineInput = {
+  where: Prisma.PolicyViolationWhereUniqueInput
+  update: Prisma.XOR<Prisma.PolicyViolationUpdateWithoutTravelLineInput, Prisma.PolicyViolationUncheckedUpdateWithoutTravelLineInput>
+  create: Prisma.XOR<Prisma.PolicyViolationCreateWithoutTravelLineInput, Prisma.PolicyViolationUncheckedCreateWithoutTravelLineInput>
+}
+
+export type PolicyViolationUpdateWithWhereUniqueWithoutTravelLineInput = {
+  where: Prisma.PolicyViolationWhereUniqueInput
+  data: Prisma.XOR<Prisma.PolicyViolationUpdateWithoutTravelLineInput, Prisma.PolicyViolationUncheckedUpdateWithoutTravelLineInput>
+}
+
+export type PolicyViolationUpdateManyWithWhereWithoutTravelLineInput = {
+  where: Prisma.PolicyViolationScalarWhereInput
+  data: Prisma.XOR<Prisma.PolicyViolationUpdateManyMutationInput, Prisma.PolicyViolationUncheckedUpdateManyWithoutTravelLineInput>
+}
+
+export type PolicyViolationCreateManyTravelRequestInput = {
+  id?: string
+  organizationId?: string
+  reportId?: string | null
+  expenseId?: string | null
+  lineItemId?: string | null
+  ruleCode: string
+  severity: $Enums.PolicyViolationSeverity
+  message: string
+  data?: Prisma.JsonNullValueInput | runtime.InputJsonValue
+  resolvedAt?: Date | string | null
+  resolvedBy?: string | null
+  resolveNote?: string | null
+  createdAt?: Date | string
+  travelLineId?: string | null
+}
+
+export type PolicyViolationUpdateWithoutTravelRequestInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  organizationId?: Prisma.StringFieldUpdateOperationsInput | string
+  reportId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  expenseId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  lineItemId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  ruleCode?: Prisma.StringFieldUpdateOperationsInput | string
+  severity?: Prisma.EnumPolicyViolationSeverityFieldUpdateOperationsInput | $Enums.PolicyViolationSeverity
+  message?: Prisma.StringFieldUpdateOperationsInput | string
+  data?: Prisma.JsonNullValueInput | runtime.InputJsonValue
+  resolvedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  resolvedBy?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  resolveNote?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  travelLine?: Prisma.TravelBudgetLineUpdateOneWithoutPolicyViolationsNestedInput
+}
+
+export type PolicyViolationUncheckedUpdateWithoutTravelRequestInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  organizationId?: Prisma.StringFieldUpdateOperationsInput | string
+  reportId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  expenseId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  lineItemId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  ruleCode?: Prisma.StringFieldUpdateOperationsInput | string
+  severity?: Prisma.EnumPolicyViolationSeverityFieldUpdateOperationsInput | $Enums.PolicyViolationSeverity
+  message?: Prisma.StringFieldUpdateOperationsInput | string
+  data?: Prisma.JsonNullValueInput | runtime.InputJsonValue
+  resolvedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  resolvedBy?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  resolveNote?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  travelLineId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+}
+
+export type PolicyViolationUncheckedUpdateManyWithoutTravelRequestInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  organizationId?: Prisma.StringFieldUpdateOperationsInput | string
+  reportId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  expenseId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  lineItemId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  ruleCode?: Prisma.StringFieldUpdateOperationsInput | string
+  severity?: Prisma.EnumPolicyViolationSeverityFieldUpdateOperationsInput | $Enums.PolicyViolationSeverity
+  message?: Prisma.StringFieldUpdateOperationsInput | string
+  data?: Prisma.JsonNullValueInput | runtime.InputJsonValue
+  resolvedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  resolvedBy?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  resolveNote?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  travelLineId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+}
+
+export type PolicyViolationCreateManyTravelLineInput = {
+  id?: string
+  organizationId?: string
+  reportId?: string | null
+  expenseId?: string | null
+  lineItemId?: string | null
+  ruleCode: string
+  severity: $Enums.PolicyViolationSeverity
+  message: string
+  data?: Prisma.JsonNullValueInput | runtime.InputJsonValue
+  resolvedAt?: Date | string | null
+  resolvedBy?: string | null
+  resolveNote?: string | null
+  createdAt?: Date | string
+  travelRequestId?: string | null
+}
+
+export type PolicyViolationUpdateWithoutTravelLineInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  organizationId?: Prisma.StringFieldUpdateOperationsInput | string
+  reportId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  expenseId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  lineItemId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  ruleCode?: Prisma.StringFieldUpdateOperationsInput | string
+  severity?: Prisma.EnumPolicyViolationSeverityFieldUpdateOperationsInput | $Enums.PolicyViolationSeverity
+  message?: Prisma.StringFieldUpdateOperationsInput | string
+  data?: Prisma.JsonNullValueInput | runtime.InputJsonValue
+  resolvedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  resolvedBy?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  resolveNote?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  travelRequest?: Prisma.TravelRequestUpdateOneWithoutPolicyViolationsNestedInput
+}
+
+export type PolicyViolationUncheckedUpdateWithoutTravelLineInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  organizationId?: Prisma.StringFieldUpdateOperationsInput | string
+  reportId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  expenseId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  lineItemId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  ruleCode?: Prisma.StringFieldUpdateOperationsInput | string
+  severity?: Prisma.EnumPolicyViolationSeverityFieldUpdateOperationsInput | $Enums.PolicyViolationSeverity
+  message?: Prisma.StringFieldUpdateOperationsInput | string
+  data?: Prisma.JsonNullValueInput | runtime.InputJsonValue
+  resolvedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  resolvedBy?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  resolveNote?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  travelRequestId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+}
+
+export type PolicyViolationUncheckedUpdateManyWithoutTravelLineInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  organizationId?: Prisma.StringFieldUpdateOperationsInput | string
+  reportId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  expenseId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  lineItemId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  ruleCode?: Prisma.StringFieldUpdateOperationsInput | string
+  severity?: Prisma.EnumPolicyViolationSeverityFieldUpdateOperationsInput | $Enums.PolicyViolationSeverity
+  message?: Prisma.StringFieldUpdateOperationsInput | string
+  data?: Prisma.JsonNullValueInput | runtime.InputJsonValue
+  resolvedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  resolvedBy?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  resolveNote?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  travelRequestId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
 }
 
 
@@ -491,6 +910,10 @@ export type PolicyViolationSelect<ExtArgs extends runtime.Types.Extensions.Inter
   resolvedBy?: boolean
   resolveNote?: boolean
   createdAt?: boolean
+  travelRequestId?: boolean
+  travelLineId?: boolean
+  travelRequest?: boolean | Prisma.PolicyViolation$travelRequestArgs<ExtArgs>
+  travelLine?: boolean | Prisma.PolicyViolation$travelLineArgs<ExtArgs>
 }, ExtArgs["result"]["policyViolation"]>
 
 export type PolicyViolationSelectCreateManyAndReturn<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetSelect<{
@@ -507,6 +930,10 @@ export type PolicyViolationSelectCreateManyAndReturn<ExtArgs extends runtime.Typ
   resolvedBy?: boolean
   resolveNote?: boolean
   createdAt?: boolean
+  travelRequestId?: boolean
+  travelLineId?: boolean
+  travelRequest?: boolean | Prisma.PolicyViolation$travelRequestArgs<ExtArgs>
+  travelLine?: boolean | Prisma.PolicyViolation$travelLineArgs<ExtArgs>
 }, ExtArgs["result"]["policyViolation"]>
 
 export type PolicyViolationSelectUpdateManyAndReturn<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetSelect<{
@@ -523,6 +950,10 @@ export type PolicyViolationSelectUpdateManyAndReturn<ExtArgs extends runtime.Typ
   resolvedBy?: boolean
   resolveNote?: boolean
   createdAt?: boolean
+  travelRequestId?: boolean
+  travelLineId?: boolean
+  travelRequest?: boolean | Prisma.PolicyViolation$travelRequestArgs<ExtArgs>
+  travelLine?: boolean | Prisma.PolicyViolation$travelLineArgs<ExtArgs>
 }, ExtArgs["result"]["policyViolation"]>
 
 export type PolicyViolationSelectScalar = {
@@ -539,17 +970,37 @@ export type PolicyViolationSelectScalar = {
   resolvedBy?: boolean
   resolveNote?: boolean
   createdAt?: boolean
+  travelRequestId?: boolean
+  travelLineId?: boolean
 }
 
-export type PolicyViolationOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "organizationId" | "reportId" | "expenseId" | "lineItemId" | "ruleCode" | "severity" | "message" | "data" | "resolvedAt" | "resolvedBy" | "resolveNote" | "createdAt", ExtArgs["result"]["policyViolation"]>
+export type PolicyViolationOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "organizationId" | "reportId" | "expenseId" | "lineItemId" | "ruleCode" | "severity" | "message" | "data" | "resolvedAt" | "resolvedBy" | "resolveNote" | "createdAt" | "travelRequestId" | "travelLineId", ExtArgs["result"]["policyViolation"]>
+export type PolicyViolationInclude<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  travelRequest?: boolean | Prisma.PolicyViolation$travelRequestArgs<ExtArgs>
+  travelLine?: boolean | Prisma.PolicyViolation$travelLineArgs<ExtArgs>
+}
+export type PolicyViolationIncludeCreateManyAndReturn<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  travelRequest?: boolean | Prisma.PolicyViolation$travelRequestArgs<ExtArgs>
+  travelLine?: boolean | Prisma.PolicyViolation$travelLineArgs<ExtArgs>
+}
+export type PolicyViolationIncludeUpdateManyAndReturn<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  travelRequest?: boolean | Prisma.PolicyViolation$travelRequestArgs<ExtArgs>
+  travelLine?: boolean | Prisma.PolicyViolation$travelLineArgs<ExtArgs>
+}
 
 export type $PolicyViolationPayload<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   name: "PolicyViolation"
-  objects: {}
+  objects: {
+    travelRequest: Prisma.$TravelRequestPayload<ExtArgs> | null
+    travelLine: Prisma.$TravelBudgetLinePayload<ExtArgs> | null
+  }
   scalars: runtime.Types.Extensions.GetPayloadResult<{
     id: string
     organizationId: string
-    reportId: string
+    /**
+     * Nullable since 0077: a violation is about a report OR a travel request (a CHECK).
+     */
+    reportId: string | null
     /**
      * Optional expense-scope anchor (entry-level rules).
      */
@@ -574,6 +1025,11 @@ export type $PolicyViolationPayload<ExtArgs extends runtime.Types.Extensions.Int
     resolvedBy: string | null
     resolveNote: string | null
     createdAt: Date
+    /**
+     * w6-00: ExpenseOS's travel subject (0077).
+     */
+    travelRequestId: string | null
+    travelLineId: string | null
   }, ExtArgs["result"]["policyViolation"]>
   composites: {}
 }
@@ -968,6 +1424,8 @@ readonly fields: PolicyViolationFieldRefs;
  */
 export interface Prisma__PolicyViolationClient<T, Null = never, ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs, GlobalOmitOptions = {}> extends Prisma.PrismaPromise<T> {
   readonly [Symbol.toStringTag]: "PrismaPromise"
+  travelRequest<T extends Prisma.PolicyViolation$travelRequestArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.PolicyViolation$travelRequestArgs<ExtArgs>>): Prisma.Prisma__TravelRequestClient<runtime.Types.Result.GetResult<Prisma.$TravelRequestPayload<ExtArgs>, T, "findUniqueOrThrow", GlobalOmitOptions> | null, null, ExtArgs, GlobalOmitOptions>
+  travelLine<T extends Prisma.PolicyViolation$travelLineArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.PolicyViolation$travelLineArgs<ExtArgs>>): Prisma.Prisma__TravelBudgetLineClient<runtime.Types.Result.GetResult<Prisma.$TravelBudgetLinePayload<ExtArgs>, T, "findUniqueOrThrow", GlobalOmitOptions> | null, null, ExtArgs, GlobalOmitOptions>
   /**
    * Attaches callbacks for the resolution and/or rejection of the Promise.
    * @param onfulfilled The callback to execute when the Promise is resolved.
@@ -1010,6 +1468,8 @@ export interface PolicyViolationFieldRefs {
   readonly resolvedBy: Prisma.FieldRef<"PolicyViolation", 'String'>
   readonly resolveNote: Prisma.FieldRef<"PolicyViolation", 'String'>
   readonly createdAt: Prisma.FieldRef<"PolicyViolation", 'DateTime'>
+  readonly travelRequestId: Prisma.FieldRef<"PolicyViolation", 'String'>
+  readonly travelLineId: Prisma.FieldRef<"PolicyViolation", 'String'>
 }
     
 
@@ -1026,6 +1486,10 @@ export type PolicyViolationFindUniqueArgs<ExtArgs extends runtime.Types.Extensio
    * Omit specific fields from the PolicyViolation
    */
   omit?: Prisma.PolicyViolationOmit<ExtArgs> | null
+  /**
+   * Choose, which related nodes to fetch as well
+   */
+  include?: Prisma.PolicyViolationInclude<ExtArgs> | null
   /**
    * Filter, which PolicyViolation to fetch.
    */
@@ -1045,6 +1509,10 @@ export type PolicyViolationFindUniqueOrThrowArgs<ExtArgs extends runtime.Types.E
    */
   omit?: Prisma.PolicyViolationOmit<ExtArgs> | null
   /**
+   * Choose, which related nodes to fetch as well
+   */
+  include?: Prisma.PolicyViolationInclude<ExtArgs> | null
+  /**
    * Filter, which PolicyViolation to fetch.
    */
   where: Prisma.PolicyViolationWhereUniqueInput
@@ -1062,6 +1530,10 @@ export type PolicyViolationFindFirstArgs<ExtArgs extends runtime.Types.Extension
    * Omit specific fields from the PolicyViolation
    */
   omit?: Prisma.PolicyViolationOmit<ExtArgs> | null
+  /**
+   * Choose, which related nodes to fetch as well
+   */
+  include?: Prisma.PolicyViolationInclude<ExtArgs> | null
   /**
    * Filter, which PolicyViolation to fetch.
    */
@@ -1111,6 +1583,10 @@ export type PolicyViolationFindFirstOrThrowArgs<ExtArgs extends runtime.Types.Ex
    */
   omit?: Prisma.PolicyViolationOmit<ExtArgs> | null
   /**
+   * Choose, which related nodes to fetch as well
+   */
+  include?: Prisma.PolicyViolationInclude<ExtArgs> | null
+  /**
    * Filter, which PolicyViolation to fetch.
    */
   where?: Prisma.PolicyViolationWhereInput
@@ -1158,6 +1634,10 @@ export type PolicyViolationFindManyArgs<ExtArgs extends runtime.Types.Extensions
    * Omit specific fields from the PolicyViolation
    */
   omit?: Prisma.PolicyViolationOmit<ExtArgs> | null
+  /**
+   * Choose, which related nodes to fetch as well
+   */
+  include?: Prisma.PolicyViolationInclude<ExtArgs> | null
   /**
    * Filter, which PolicyViolations to fetch.
    */
@@ -1207,6 +1687,10 @@ export type PolicyViolationCreateArgs<ExtArgs extends runtime.Types.Extensions.I
    */
   omit?: Prisma.PolicyViolationOmit<ExtArgs> | null
   /**
+   * Choose, which related nodes to fetch as well
+   */
+  include?: Prisma.PolicyViolationInclude<ExtArgs> | null
+  /**
    * The data needed to create a PolicyViolation.
    */
   data: Prisma.XOR<Prisma.PolicyViolationCreateInput, Prisma.PolicyViolationUncheckedCreateInput>
@@ -1240,6 +1724,10 @@ export type PolicyViolationCreateManyAndReturnArgs<ExtArgs extends runtime.Types
    */
   data: Prisma.PolicyViolationCreateManyInput | Prisma.PolicyViolationCreateManyInput[]
   skipDuplicates?: boolean
+  /**
+   * Choose, which related nodes to fetch as well
+   */
+  include?: Prisma.PolicyViolationIncludeCreateManyAndReturn<ExtArgs> | null
 }
 
 /**
@@ -1254,6 +1742,10 @@ export type PolicyViolationUpdateArgs<ExtArgs extends runtime.Types.Extensions.I
    * Omit specific fields from the PolicyViolation
    */
   omit?: Prisma.PolicyViolationOmit<ExtArgs> | null
+  /**
+   * Choose, which related nodes to fetch as well
+   */
+  include?: Prisma.PolicyViolationInclude<ExtArgs> | null
   /**
    * The data needed to update a PolicyViolation.
    */
@@ -1306,6 +1798,10 @@ export type PolicyViolationUpdateManyAndReturnArgs<ExtArgs extends runtime.Types
    * Limit how many PolicyViolations to update.
    */
   limit?: number
+  /**
+   * Choose, which related nodes to fetch as well
+   */
+  include?: Prisma.PolicyViolationIncludeUpdateManyAndReturn<ExtArgs> | null
 }
 
 /**
@@ -1320,6 +1816,10 @@ export type PolicyViolationUpsertArgs<ExtArgs extends runtime.Types.Extensions.I
    * Omit specific fields from the PolicyViolation
    */
   omit?: Prisma.PolicyViolationOmit<ExtArgs> | null
+  /**
+   * Choose, which related nodes to fetch as well
+   */
+  include?: Prisma.PolicyViolationInclude<ExtArgs> | null
   /**
    * The filter to search for the PolicyViolation to update in case it exists.
    */
@@ -1347,6 +1847,10 @@ export type PolicyViolationDeleteArgs<ExtArgs extends runtime.Types.Extensions.I
    */
   omit?: Prisma.PolicyViolationOmit<ExtArgs> | null
   /**
+   * Choose, which related nodes to fetch as well
+   */
+  include?: Prisma.PolicyViolationInclude<ExtArgs> | null
+  /**
    * Filter which PolicyViolation to delete.
    */
   where: Prisma.PolicyViolationWhereUniqueInput
@@ -1367,6 +1871,44 @@ export type PolicyViolationDeleteManyArgs<ExtArgs extends runtime.Types.Extensio
 }
 
 /**
+ * PolicyViolation.travelRequest
+ */
+export type PolicyViolation$travelRequestArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  /**
+   * Select specific fields to fetch from the TravelRequest
+   */
+  select?: Prisma.TravelRequestSelect<ExtArgs> | null
+  /**
+   * Omit specific fields from the TravelRequest
+   */
+  omit?: Prisma.TravelRequestOmit<ExtArgs> | null
+  /**
+   * Choose, which related nodes to fetch as well
+   */
+  include?: Prisma.TravelRequestInclude<ExtArgs> | null
+  where?: Prisma.TravelRequestWhereInput
+}
+
+/**
+ * PolicyViolation.travelLine
+ */
+export type PolicyViolation$travelLineArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  /**
+   * Select specific fields to fetch from the TravelBudgetLine
+   */
+  select?: Prisma.TravelBudgetLineSelect<ExtArgs> | null
+  /**
+   * Omit specific fields from the TravelBudgetLine
+   */
+  omit?: Prisma.TravelBudgetLineOmit<ExtArgs> | null
+  /**
+   * Choose, which related nodes to fetch as well
+   */
+  include?: Prisma.TravelBudgetLineInclude<ExtArgs> | null
+  where?: Prisma.TravelBudgetLineWhereInput
+}
+
+/**
  * PolicyViolation without action
  */
 export type PolicyViolationDefaultArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
@@ -1378,4 +1920,8 @@ export type PolicyViolationDefaultArgs<ExtArgs extends runtime.Types.Extensions.
    * Omit specific fields from the PolicyViolation
    */
   omit?: Prisma.PolicyViolationOmit<ExtArgs> | null
+  /**
+   * Choose, which related nodes to fetch as well
+   */
+  include?: Prisma.PolicyViolationInclude<ExtArgs> | null
 }
