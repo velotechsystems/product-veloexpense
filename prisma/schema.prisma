@@ -64,6 +64,8 @@ model ExpenseCategory {
   lineItems ExpenseLineItem[]
   /// w4-02c: ExpenseOS's per-category policy (`expense_category_policy`, 0065).
   policy    ExpensePolicy?
+  /// w6-00: travel categories that roll up to this one (0077).
+  travelCategories TravelCategory[] @relation("TravelCategoryExpense")
 
   @@unique([organizationId, id])
   @@map("expense_category")
@@ -85,6 +87,9 @@ model GlAccount {
 
   expenseLines      ExpenseLineItem[] @relation("ExpenseLineGlAccount")
   expenseCategories ExpenseCategory[]
+  /// w6-00 (0077).
+  travelCategories  TravelCategory[]   @relation("TravelCategoryGlAccount")
+  travelBudgetLines TravelBudgetLine[] @relation("TravelBudgetGlAccount")
 
   @@unique([organizationId, id])
   @@map("gl_account")
@@ -102,7 +107,7 @@ model GlAccount {
 //     `String` — except the report status, which VeloExpense already had as an enum;
 //   · only the relations the ported code reaches are described. ExpenseOS's
 //     violations, fraud flags, determinations, external ids, approval instance and
-//     travel request arrive with their own waves; VeloExpense's own columns on these
+//     travel request (w6-00) arrive with their own waves; VeloExpense's own columns on these
 //     tables (the report's business unit, department and reimbursement stamp, the
 //     expense's notes, the line's tax_minor, the receipt's upload status) are left
 //     to VeloExpense's SQL readers.
@@ -145,6 +150,9 @@ model ExpenseReport {
   /// ExpenseOS's `approvalInstanceId`: the approval run deciding the report (0059). The
   /// database's key is composite; only the scalar is described.
   approvalInstanceId     String?             @map("approval_instance_id") @db.Uuid
+  /// w6-00: ExpenseOS's `travelRequestId` — the trip this report was built from (0077).
+  travelRequestId        String?             @map("travel_request_id") @db.Uuid
+  travelRequest          TravelRequest?      @relation("ExpenseReportTravel", fields: [travelRequestId], references: [id], onDelete: SetNull)
 
   expenses Expense[]
 
@@ -521,6 +529,8 @@ model User {
   delegationsTo         Delegation[]   @relation("DelegationTo")
   /// People 1: ExpenseOS's `UserExternalId` (0072).
   externalIds           UserExternalId[]
+  /// w6-00: travel requests this person submitted (0077).
+  travelRequests        TravelRequest[] @relation("TravelSubmitter")
 
   @@map("app_user")
 }
@@ -827,6 +837,7 @@ model Currency {
   reports       ExpenseReport[] @relation("ExpenseReportCurrency")
   expenses      Expense[]       @relation("ExpenseCurrency")
   legalEntities LegalEntity[]
+  travelRequests TravelRequest[] @relation("TravelRequestCurrency")
 
   @@map("currency")
 }
@@ -1107,8 +1118,8 @@ enum PolicyViolationSeverity {
 
 // ExpenseOS's `PolicyRule` (w4-02b, d63), on `policy_rule` (0064): one row per rule
 // instance of a kind from the registry (server/policy/kinds.ts). VeloExpense differences:
-//   · `scope` is text under a CHECK, LINE | REPORT | AGGREGATE (ExpenseOS's enum adds
-//     TRAVEL_REQUEST; travel is out of scope);
+//   · `scope` is text under a CHECK: LINE | REPORT | AGGREGATE, and ExpenseOS's
+//     TRAVEL_REQUEST since 0077 (w6-00);
 //   · the six scope columns are scalars only. The database's keys are composite (0064),
 //     ON DELETE RESTRICT; ported code reads and writes the ids and never walks the
 //     relations. `roleId` names a role of the tenant since 0070 (w4-10c, d64).
@@ -1177,15 +1188,17 @@ model ExpensePolicy {
 
 // ExpenseOS's `PolicyViolation` (w4-02d), on VeloExpense's `policy_violation` (0006, reshaped
 // to this by 0066): one finding of a rule instance against a report, on a line or an
-// expense or the whole report. VeloExpense differences:
-//   · no travel subject (ExpenseOS's `travelRequestId` / `travelLineId`): travel is out of
-//     scope, so `reportId` is required;
-//   · scalars only; the database's keys are composite (0006, 0019, 0066);
+// expense or the whole report — or, since 0077 (w6-00), against a travel request or one of its
+// lines (ExpenseOS's `travelRequestId` / `travelLineId`; never both subjects, a CHECK).
+// VeloExpense differences:
+//   · scalars only for the report side; the database's keys are composite (0006, 0019,
+//     0066, 0077);
 //   · `data` is never null (the column's default is `{}`).
 model PolicyViolation {
   id             String                  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   organizationId String                  @default(dbgenerated("(NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid")) @map("organization_id") @db.Uuid
-  reportId       String                  @map("report_id") @db.Uuid
+  /// Nullable since 0077: a violation is about a report OR a travel request (a CHECK).
+  reportId       String?                 @map("report_id") @db.Uuid
   /// Optional expense-scope anchor (entry-level rules).
   expenseId      String?                 @map("expense_id") @db.Uuid
   lineItemId     String?                 @map("line_item_id") @db.Uuid
@@ -1202,8 +1215,14 @@ model PolicyViolation {
   resolvedBy     String?                 @map("resolved_by_id") @db.Uuid
   resolveNote    String?                 @map("resolve_note")
   createdAt      DateTime                @default(now()) @map("created_at") @db.Timestamptz(6)
+  /// w6-00: ExpenseOS's travel subject (0077).
+  travelRequestId String?                @map("travel_request_id") @db.Uuid
+  travelRequest   TravelRequest?         @relation(fields: [travelRequestId], references: [id], onDelete: Cascade)
+  travelLineId    String?                @map("travel_line_id") @db.Uuid
+  travelLine      TravelBudgetLine?      @relation(fields: [travelLineId], references: [id], onDelete: Cascade)
 
   @@index([reportId])
+  @@index([travelRequestId])
   @@map("policy_violation")
 }
 
@@ -1253,4 +1272,184 @@ model ReplyThread {
   @@index([organizationId])
   @@index([slackChannelId, slackThreadTs])
   @@map("reply_thread")
+}
+
+// ── Travel (Wave 6, w6-00, migration 0077) ───────────────────────────────────
+// ExpenseOS's `TravelPlace`, `TravelRequest`, `TravelCategory` and `TravelBudgetLine`
+// (1e682dd6), field for field. VeloExpense differences, as the Wave 2 models have them:
+//   · per tenant: composite keys in SQL; relations here name the id alone;
+//   · ExpenseOS's enums (TravelRequestStatus, TravelTripType, TravelLineKind,
+//     TravelPriceBasis, TravelPriceConfidence) are text under CHECKs, so those fields are
+//     `String`;
+//   · `currencyId` is the ISO code in `currency_code`;
+//   · ExpenseOS's `NetSuiteAccount` is VeloExpense's `GlAccount`;
+//   · `number` is minted per tenant by a trigger (0077), so a create omits it as ExpenseOS's
+//     does — `dbgenerated` tells the client the database supplies it;
+//   · `TravelPlace` is per tenant, so `placeId` is unique within the tenant.
+
+/// ExpenseOS's TravelPlace: a Google place resolved once to the metro and airports SerpApi
+/// prices, reused for every trip to it.
+model TravelPlace {
+  id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String    @default(dbgenerated("(NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid")) @map("organization_id") @db.Uuid
+  /// Google's durable handle — the exact key.
+  placeId        String    @map("place_id")
+  label          String
+  city           String?
+  country        String?
+  /// SerpApi city kgmid, passed as departure_id/arrival_id.
+  serpPlaceId    String?   @map("serp_place_id")
+  airports       String[]  @default([])
+  resolvedAt     DateTime  @default(now()) @map("resolved_at") @db.Timestamptz(6)
+  /// Set when an admin corrects a mapping by hand, so a refresh cannot clobber it.
+  pinnedById     String?   @map("pinned_by_id") @db.Uuid
+  pinnedAt       DateTime? @map("pinned_at") @db.Timestamptz(6)
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@unique([organizationId, id])
+  @@unique([organizationId, placeId])
+  @@index([organizationId, city, country])
+  @@index([resolvedAt])
+  @@map("travel_place")
+}
+
+/// ExpenseOS's TravelRequest: draft → an estimate the traveller composes → approval → a trip.
+model TravelRequest {
+  id                  String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId      String    @default(dbgenerated("(NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid")) @map("organization_id") @db.Uuid
+  /// 'TRV-000001', per tenant, minted by the database (0077's trigger).
+  number              String    @default(dbgenerated("NULL"))
+
+  submitterId         String    @map("submitter_id") @db.Uuid
+  submitter           User      @relation("TravelSubmitter", fields: [submitterId], references: [id], onDelete: Restrict)
+
+  purpose             String
+  notes               String?
+
+  destinationPlaceId  String?   @map("destination_place_id")
+  destinationLabel    String    @map("destination_label")
+  /// Free text — matches a PerDiemRate's city and seeds the hotel query.
+  destinationCity     String?   @map("destination_city")
+  destinationCountry  String?   @map("destination_country")
+  /// SerpApi metro id, snapshotted at resolution.
+  destinationSerpId   String?   @map("destination_serp_id")
+  destinationAirports String[]  @default([]) @map("destination_airports")
+  /// Set only when the traveller pinned one; overrides the metro id in the flight query.
+  destinationAirport  String?   @map("destination_airport")
+
+  originPlaceId       String?   @map("origin_place_id")
+  originLabel         String?   @map("origin_label")
+  originCity          String?   @map("origin_city")
+  originCountry       String?   @map("origin_country")
+  originSerpId        String?   @map("origin_serp_id")
+  originAirports      String[]  @default([]) @map("origin_airports")
+  originAirport       String?   @map("origin_airport")
+
+  /// ROUND_TRIP | ONE_WAY | MULTI_CITY (a CHECK in the table).
+  tripType            String    @default("ROUND_TRIP") @map("trip_type")
+  departDate          DateTime  @map("depart_date") @db.Timestamptz(6)
+  returnDate          DateTime? @map("return_date") @db.Timestamptz(6)
+  includeCar          Boolean   @default(false) @map("include_car")
+
+  /// DRAFT | SUBMITTED | APPROVED | REJECTED | RETURNED | CANCELLED (a CHECK in the table).
+  status              String    @default("DRAFT")
+  /// Loose in ExpenseOS (no relation, to keep the engine and its subjects apart); the
+  /// database's key here is composite (0077), and only the scalar is described.
+  approvalInstanceId  String?   @map("approval_instance_id") @db.Uuid
+  submittedAt         DateTime? @map("submitted_at") @db.Timestamptz(6)
+  approvedAt          DateTime? @map("approved_at") @db.Timestamptz(6)
+
+  /// VeloExpense: the ISO code (`currency_code`), not a uuid.
+  currencyId          String    @map("currency_code")
+  currency            Currency  @relation("TravelRequestCurrency", fields: [currencyId], references: [code], onDelete: Restrict)
+  /// The total AS APPROVED.
+  approvedTotalMinor  BigInt?   @map("approved_total_minor")
+
+  createdAt           DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt           DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  budgetLines         TravelBudgetLine[]
+  /// Reports built from this request.
+  reports             ExpenseReport[]   @relation("ExpenseReportTravel")
+  /// Policy violations raised against this estimate.
+  policyViolations    PolicyViolation[]
+
+  @@unique([organizationId, id])
+  @@unique([organizationId, number])
+  @@index([submitterId, status])
+  @@index([organizationId, status])
+  @@index([departDate])
+  @@map("travel_request")
+}
+
+/// ExpenseOS's TravelCategory: travel's own short taxonomy, with the `lineKind` that decides
+/// which editor block a budget line opens.
+model TravelCategory {
+  id                String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId    String           @default(dbgenerated("(NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid")) @map("organization_id") @db.Uuid
+  /// Stable machine key; null for a category an admin created by hand.
+  code              String?
+  /// Locale-keyed display name. { en, fr-CA }
+  label             Json
+  icon              String?
+  color             String?
+  active            Boolean          @default(true)
+  sortOrder         Int              @default(0) @map("sort_order")
+  /// STANDARD | AIRFARE | LODGING | DEPARTMENT_MEAL | CAR_RENTAL | GROUND (a CHECK).
+  lineKind          String           @default("STANDARD") @map("line_kind")
+  /// The expense category this maps to, when there is one.
+  expenseCategoryId String?          @map("expense_category_id") @db.Uuid
+  expenseCategory   ExpenseCategory? @relation("TravelCategoryExpense", fields: [expenseCategoryId], references: [id], onDelete: SetNull)
+  /// Null falls back to the MAPPED expense category's account.
+  glAccountId       String?          @map("gl_account_id") @db.Uuid
+  glAccount         GlAccount?       @relation("TravelCategoryGlAccount", fields: [glAccountId], references: [id], onDelete: SetNull)
+  createdAt         DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime         @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  budgetLines       TravelBudgetLine[] @relation("TravelBudgetCategory")
+
+  @@unique([organizationId, id])
+  @@unique([organizationId, code])
+  @@index([expenseCategoryId])
+  @@index([glAccountId])
+  @@map("travel_category")
+}
+
+/// ExpenseOS's TravelBudgetLine: one line of a request's estimate.
+model TravelBudgetLine {
+  id                 String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId     String          @default(dbgenerated("(NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid")) @map("organization_id") @db.Uuid
+  travelRequestId    String          @map("travel_request_id") @db.Uuid
+  travelRequest      TravelRequest   @relation(fields: [travelRequestId], references: [id], onDelete: Cascade)
+  categoryId         String          @map("category_id") @db.Uuid
+  category           TravelCategory  @relation("TravelBudgetCategory", fields: [categoryId], references: [id], onDelete: Restrict)
+  /// STANDARD | AIRFARE | LODGING | DEPARTMENT_MEAL | CAR_RENTAL | GROUND (a CHECK).
+  kind               String          @default("STANDARD")
+  /// The kind's own fields (@expenseos/travel-lines). Minor amounts ride as digit strings.
+  payload            Json?
+  glAccountId        String?         @map("gl_account_id") @db.Uuid
+  glAccount          GlAccount?      @relation("TravelBudgetGlAccount", fields: [glAccountId], references: [id], onDelete: SetNull)
+  amountMinor        BigInt          @map("amount_minor")
+  /// QUOTE | POLICY_CAP | PER_DIEM | MANUAL (a CHECK).
+  basis              String
+  /// BELOW_TYPICAL | TYPICAL | ABOVE_TYPICAL | UNKNOWN (a CHECK).
+  confidence         String?
+  /// The traveller's own words.
+  notes              String?
+  /// What the policy derived, when a human replaced it with their own figure.
+  derivedAmountMinor BigInt?         @map("derived_amount_minor")
+  /// Itinerary order.
+  sortOrder          Int             @default(0) @map("sort_order")
+
+  policyViolations   PolicyViolation[]
+
+  createdAt          DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt          DateTime        @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@unique([organizationId, id])
+  @@index([travelRequestId])
+  @@index([glAccountId])
+  @@index([categoryId])
+  @@map("travel_budget_line")
 }

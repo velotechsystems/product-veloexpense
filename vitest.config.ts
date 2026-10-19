@@ -24,6 +24,8 @@ export default defineConfig({
       { find: /^@expenseos\/jobs$/, replacement: r('packages/jobs/src/index.ts') },
       { find: /^@expenseos\/db$/, replacement: r('packages/db/src/index.ts') },
       { find: /^@expenseos\/integrations-google$/, replacement: r('packages/integrations-google/src/index.ts') },
+      { find: /^@expenseos\/travel-lines$/, replacement: r('packages/travel-lines/src/index.ts') },
+      { find: /^@expenseos\/travel-search$/, replacement: r('packages/travel-search/src/index.ts') },
       { find: /^@expenseos\/predicate$/, replacement: r('packages/predicate/src/index.ts') },
       { find: /^@expenseos\/approvals$/, replacement: r('packages/approvals/src/index.ts') },
       { find: /^@expenseos\/approvals\/engine$/, replacement: r('packages/approvals/src/engine.ts') },

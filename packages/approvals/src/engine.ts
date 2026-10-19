@@ -14,7 +14,7 @@
  *   · PER TENANT. Every query runs inside the caller's tenant transaction
  *     (`withTenantDb` / `inTenant`), so RLS confines each `findMany` to one organization.
  *     Nothing here names an organization; the sweep is called once per tenant (w4-00c).
- *   · Subjects: EXPENSE_REPORT, and TRAVEL_REQUEST reserved (no travel table yet, d50).
+ *   · Subjects: EXPENSE_REPORT and TRAVEL_REQUEST (w6-00 restored ExpenseOS's travel adapters).
  *     The two virtual-card subjects and their adapters are out of scope and removed.
  *   · People: a person's `Role` is their tenant's row (0068, w4-10a), as in ExpenseOS. Its
  *     offboarded status is DEACTIVATED (ExpenseOS: TERMINATED).
@@ -91,10 +91,83 @@ async function loadSubject(
 ): Promise<SubjectContext> {
   // VeloExpense: ExpenseOS's VIRTUAL_CARD_REQUEST and VIRTUAL_CARD_LIMIT_INCREASE adapters
   // are out of scope (d50).
+  // VeloExpense (w6-00): ExpenseOS's travel adapter, now that `travel_request` exists (0077).
   if (subjectType === 'TRAVEL_REQUEST') {
-    // VeloExpense: travel requests arrive with their own wave; ExpenseOS's adapter reads
-    // `travelRequest` and its budget lines, which do not exist here yet.
-    throw new Error('approval: travel requests are not available yet');
+    const r = await db.travelRequest.findUnique({
+      where: { id: subjectId },
+      select: {
+        submitterId: true,
+        approvedTotalMinor: true,
+        currency: { select: { code: true } },
+        currencyId: true,
+        budgetLines: { select: { amountMinor: true, categoryId: true } },
+        submitter: {
+          select: {
+            departmentId: true,
+            jobLevelId: true,
+            legalEntityId: true,
+            businessUnitId: true,
+            employeeStatus: true,
+          },
+        },
+      },
+    });
+    if (!r) throw new Error(`approval: TravelRequest ${subjectId} not found`);
+
+    // Normalized to the org base currency, exactly as the report and VCC branches
+    // do — an amount-tiered workflow must compare like with like whatever the trip
+    // was priced in.
+    const { baseCode, rates } = await fxContext(db);
+    const toBase = (amountMinor: bigint) =>
+      Number(
+        (
+          convertMoney({ amountMinor, currencyCode: r.currency.code }, baseCode, rates) ?? {
+            amountMinor,
+          }
+        ).amountMinor,
+      );
+
+    // Approved on its TOTAL, like a report. Prefer the approved snapshot; before
+    // approval, the live budget.
+    const totalMinor =
+      r.approvedTotalMinor ?? r.budgetLines.reduce((a, l) => a + l.amountMinor, 0n);
+    const maxLineMinor = r.budgetLines.reduce(
+      (m, l) => (l.amountMinor > m ? l.amountMinor : m),
+      0n,
+    );
+
+    return {
+      requesterId: r.submitterId,
+      subjectType,
+      facts: {
+        amount: toBase(totalMinor),
+        currency: r.currencyId,
+        // VCC-only concepts.
+        interval: null,
+        vendorId: null,
+        departmentId: r.submitter.departmentId,
+        jobLevelId: r.submitter.jobLevelId,
+        legalEntityId: r.submitter.legalEntityId,
+        businessUnitId: r.submitter.businessUnitId,
+        employeeStatus: r.submitter.employeeStatus,
+        userId: r.submitterId,
+        // The budget's buckets, so a workflow can route on "any travel involving
+        // airfare" the way it already routes on a report's categories.
+        categoryIds: [...new Set(r.budgetLines.map((l) => l.categoryId))],
+        requiresApproval: 'true',
+        // Pre-trip: nothing has been spent, so nothing can have violated policy and
+        // there are no expense lines to measure. Stated rather than omitted — a
+        // predicate should read a definite "no", not an absence.
+        hasPolicyViolation: 'false',
+        lineCount: r.budgetLines.length,
+        maxLineAmount: toBase(maxLineMinor),
+        overPerDiem: 'false',
+        perDiemOverageMinor: 0,
+        // A travel request is a plan, not spend: nothing has hit a budget yet.
+        overBudget: 'false',
+        budgetOverageMinor: 0,
+      },
+    };
   }
   if (subjectType === 'EXPENSE_REPORT') {
     const r = await db.expenseReport.findUnique({
@@ -277,9 +350,13 @@ export async function loadRequesterId(
     return r?.submitterId ?? null;
   }
   if (subjectType === 'TRAVEL_REQUEST') {
-    // VeloExpense: no travel table yet. This is what blocks self-approval, so it refuses
-    // rather than answering "nobody".
-    throw new Error('approval: travel requests are not available yet');
+    const r = await db.travelRequest.findUnique({
+      where: { id: subjectId },
+      select: { submitterId: true },
+    });
+    // This is what blocks self-approval. The prototype checked it in the browser
+    // (`handleTravelApprove`), which is to say it did not check it.
+    return r?.submitterId ?? null;
   }
   throw new Error(`approval: unsupported subjectType ${subjectType}`);
 }
@@ -308,8 +385,24 @@ async function applyTerminal(
     return;
   }
   if (subjectType === 'TRAVEL_REQUEST') {
-    // VeloExpense: no travel table yet.
-    throw new Error('approval: travel requests are not available yet');
+    const req = await db.travelRequest.findUnique({
+      where: { id: subjectId },
+      select: { budgetLines: { select: { amountMinor: true } } },
+    });
+    await db.travelRequest.update({
+      where: { id: subjectId },
+      data: {
+        status,
+        approvedAt: status === 'APPROVED' ? new Date() : null,
+        // Snapshot the total AT APPROVAL. A fare that moves next week, or a per-diem
+        // an admin edits next month, must not restate what was authorised.
+        approvedTotalMinor:
+          status === 'APPROVED'
+            ? (req?.budgetLines ?? []).reduce((a, l) => a + l.amountMinor, 0n)
+            : null,
+      },
+    });
+    return;
   }
   throw new Error(`approval: unsupported subjectType ${subjectType}`);
 }
@@ -832,8 +925,11 @@ async function requesterRows(
     return rs.map((r) => ({ id: r.id, requesterId: r.submitterId }));
   }
   if (subjectType === 'TRAVEL_REQUEST') {
-    // VeloExpense: no travel table yet.
-    throw new Error('approval: travel requests are not available yet');
+    const rs = await db.travelRequest.findMany({
+      where: { id: { in: [...ids] } },
+      select: { id: true, submitterId: true },
+    });
+    return rs.map((r) => ({ id: r.id, requesterId: r.submitterId }));
   }
   throw new Error(`approval: unsupported subjectType ${subjectType}`);
 }

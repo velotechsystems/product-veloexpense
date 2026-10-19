@@ -1319,7 +1319,7 @@ export const policiesRouter = router({
         });
         const kindById = new Map(kinds.map((k) => [k.id, k.kindCode]));
         return rows.map((r) => {
-          const report = reportById.get(r.reportId) ?? null;
+          const report = r.reportId ? (reportById.get(r.reportId) ?? null) : null;
           const s = report ? (userById.get(report.submitterId) ?? null) : null;
           const name = s
             ? s.name?.trim() || s.email
