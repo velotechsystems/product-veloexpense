@@ -1,5 +1,5 @@
 // Ported from ExpenseOS `apps/web/src/server/policy/budgetOverage.test.ts` (550b2945), w4-02a (d63). Each adaptation is
-// marked "VeloExpense:"; travel, which is out of VeloExpense's scope, is the main one.
+// marked "VeloExpense:". Its travel cases were left out then and restored by w6-01.
 import { describe, expect, it } from 'vitest';
 import { type PolicyContext, runRules } from './engine';
 import { buildFacts } from './facts';
@@ -50,6 +50,7 @@ function run(budgetImpacts: readonly BudgetImpact[] | null) {
     id: 'rep1',
     submittedAt: null,
     submitter: { id: 'u1', homeCurrency: 'CAD', localePref: 'en', jobLevelId: null },
+    travelApproved: false,
     lineItems: [],
   };
   const ctx: PolicyContext = {
@@ -61,6 +62,7 @@ function run(budgetImpacts: readonly BudgetImpact[] | null) {
     perDiemEnabled: false,
     perDiem: null,
     budgetImpacts,
+    travelBudget: null,
     rules: [INSTANCE],
     facts: buildFacts({
       now: new Date('2026-07-01T00:00:00Z'),

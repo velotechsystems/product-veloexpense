@@ -1,5 +1,5 @@
 // Ported from ExpenseOS `apps/web/src/server/policy/facts.ts` (550b2945), w4-02a (d63). Each adaptation is
-// marked "VeloExpense:"; travel, which is out of VeloExpense's scope, is the main one.
+// marked "VeloExpense:". The travel fact was left out at w4-02a and restored by w6-01.
 /**
  * Policy-engine fact model (v2). Policy owns its OWN flat fact enums — LINE
  * (per line item) and REPORT (per report) — deliberately separate from the
@@ -36,8 +36,25 @@ export const REPORT_FIELDS = [
   'submitterLegalEntityId',
   'submitterBusinessUnitId',
   'submitterHomeCurrency',
-  // VeloExpense: ExpenseOS's `travelApprovedTotal` (the linked travel request's approved
-  // total) is not a field here — travel is out of VeloExpense's scope.
+  /**
+   * The linked travel request's APPROVED total, in the policy currency.
+   *
+   * Absent when the report has no travel request, or the linked one is not APPROVED — the
+   * same reading `travelApproved` already takes, because the point of pre-approval is that
+   * the approval happened BEFORE the spend. Absent rather than zero: zero is a real
+   * approved figure (an estimate whose lines were all removed), and anything dividing by it
+   * must be able to tell the two apart.
+   *
+   * NOT read by `TRAVEL_OVERRUN` any more, and the reason is worth keeping. That rule
+   * compared report total against this figure, which reported an overrun for money nobody
+   * claimed was in the estimate: a report legitimately carries spend the trip never
+   * budgeted — an unexpected client meeting, a category with no travel counterpart. The
+   * comparison is per-category now, over a map this flat fact set cannot hold.
+   *
+   * Kept because it is a sensible thing for an ADMIN to write a predicate against. The
+   * REPORT field list is the authoring vocabulary, not an index of what code consumes.
+   */
+  'travelApprovedTotal',
 ] as const;
 export type ReportField = (typeof REPORT_FIELDS)[number];
 
@@ -77,6 +94,10 @@ export interface FactSource {
     homeCurrency: string | null;
   };
   lines: FactLine[];
+  /** The linked travel request's approved figure and its OWN currency — a request is
+   *  denominated independently of the report built from it, so it is converted here
+   *  rather than assumed commensurable. Null when there is no approved request. */
+  travelApproved?: { totalMinor: bigint; currencyCode: string } | null;
   /** When provided, `lineAmount` / `maxLineAmount` / `reportTotal` are converted
    *  into `policyCurrency` (via `fxRates`, keys `from->to`) so numeric amount
    *  predicates compare in ONE currency — otherwise a multi-currency report
@@ -180,6 +201,19 @@ export function buildFacts(src: FactSource): BuiltFacts {
     submitterLegalEntityId: src.submitter.legalEntityId,
     submitterBusinessUnitId: src.submitter.businessUnitId,
     submitterHomeCurrency: src.submitter.homeCurrency,
+    // Left OUT of the object entirely when there is no approved request, so the fact is
+    // `undefined` rather than null — a rule tests `typeof === 'number'` and both read
+    // the same, but an absent key is what "this report has no authorised figure" means.
+    //
+    // VeloExpense (w6-01, PE-7): an approved total with no rate into the policy currency is
+    // `null` (unknown), as every other converted fact here is, rather than the raw figure.
+    ...(src.travelApproved
+      ? {
+          travelApprovedTotal: asFact(
+            toPolicyMinor(src.travelApproved.totalMinor, src.travelApproved.currencyCode),
+          ),
+        }
+      : {}),
   };
 
   return { report, lines, ...(reportFxGap ? { reportFxGap } : {}) };

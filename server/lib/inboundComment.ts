@@ -16,15 +16,16 @@
  *   · it runs on the TENANT's transaction, which the caller passes — the `email.ingestReply`
  *     job's (`inTenant`) — so `db` is required where ExpenseOS defaults it;
  *   · the comment is recorded as `comments.post` records one here (server/routers/comments.ts):
- *     VeloExpense's activity service on that transaction, with the report placeholders
- *     (`reportPayload`) its notification's `{report}` needs;
+ *     VeloExpense's activity service on that transaction, with the subject's placeholders
+ *     (`subjectPayload`: a report's, or a travel request's since w6-01);
  *   · the fan-out is not caught. See it.
  */
 import type { TenantDb } from '@/lib/db/prisma';
 import { queryRunnerOf } from '@/lib/db/prisma-pg-bridge';
-import { notifyRecipients, recordActivity, reportPayload } from '@/lib/notifications/service';
+import { notifyRecipients, recordActivity } from '@/lib/notifications/service';
+import { subjectPayload } from './subjectPayload';
 import { stripQuotedReply } from './snsEmail';
-import { threadParticipants } from './threadParticipants';
+import { type CommentThreadSubject, threadParticipants } from './threadParticipants';
 
 const MAX_BODY = 4000;
 
@@ -59,28 +60,20 @@ export async function ingestReplyComment(input: ReplyInput): Promise<boolean> {
   const participants = await threadParticipants(db, input.subjectType, input.subjectId);
   if (!participants.includes(input.actorId)) return false;
 
-  // VeloExpense: the report's placeholders, as `comments.post` records them. A participant
-  // was found above, so the report exists in this tenant.
-  const report = await db.expenseReport.findUniqueOrThrow({
-    where: { id: input.subjectId },
-    select: { title: true, number: true, totalMinor: true, currencyId: true },
-  });
+  // VeloExpense: the subject's placeholders, as `comments.post` records them — a report's or,
+  // w6-01, a travel request's. A participant was found above, so the subject exists here.
+  const subjectValues = await subjectPayload(db, input.subjectType, input.subjectId);
   const tx = queryRunnerOf(db);
   const activityId = await recordActivity(tx, {
     // The subject the reply arrived on, not a constant. This line used to be
     // hardcoded to VIRTUAL_CARD_REQUEST, which — combined with a gate above it —
     // meant a reply on any other subject was dropped.
-    subjectType: input.subjectType as 'EXPENSE_REPORT',
+    subjectType: input.subjectType as CommentThreadSubject,
     subjectId: input.subjectId,
     eventType: 'COMMENT',
     actorId: input.actorId,
     payload: {
-      ...reportPayload({
-        title: report.title,
-        number: report.number,
-        totalMinor: report.totalMinor,
-        currencyCode: report.currencyId,
-      }),
+      ...subjectValues,
       body,
       via: input.via,
     },

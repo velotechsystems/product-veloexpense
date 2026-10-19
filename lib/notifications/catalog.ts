@@ -51,9 +51,12 @@ export { DEFAULT_LOCALE };
  * and any later travel or card subject route through the same machinery.
  * 'BUDGET' arrives with VX4-5 part 3a — a threshold alert is about the BUDGET, not
  * about the report whose spend crossed it, and addressing it to the report would
- * put it in the submitter's bell instead of the owner's. VCC/Travel are off for MVP.
+ * put it in the submitter's bell instead of the owner's. VCC is out of scope.
+ *
+ * VeloExpense (w6-01): 'TRAVEL_REQUEST' — ExpenseOS's `ACTIVITY_SUBJECT.TRAVEL_REQUEST`
+ * (`packages/notifications/src/activity.ts`, 1e682dd6), with travel.
  */
-export const SUBJECT_TYPES = ['EXPENSE_REPORT', 'BUDGET'] as const;
+export const SUBJECT_TYPES = ['EXPENSE_REPORT', 'BUDGET', 'TRAVEL_REQUEST'] as const;
 export type SubjectType = (typeof SUBJECT_TYPES)[number];
 
 /**
@@ -290,7 +293,7 @@ export const TEMPLATE_KEY_PATTERN =
  * The list lives here and NOT in `0011`'s CHECK constraint on purpose: adding a
  * module must not need a migration.
  */
-export const TEMPLATE_KEY_OWNERS = ['expense_management', 'budgets'] as const;
+export const TEMPLATE_KEY_OWNERS = ['expense_management', 'budgets', 'travel'] as const;
 export type TemplateKeyOwner = (typeof TEMPLATE_KEY_OWNERS)[number];
 
 /** True when `key` is well-formed AND owned by a known part of the product. */
@@ -500,6 +503,73 @@ export const TEMPLATE_KEYS: readonly TemplateKeyDef[] = [
     events: [['DEADLINE_NEAR', 'EXPENSE_REPORT']],
     shipped: { 'en-CA': 'The approval of {report} is due soon.' },
   },
+
+  // -- travel (w6-01) -------------------------------------------------------
+  // ExpenseOS's keys, names and descriptions (`packages/notifications/src/templateKeys.ts`,
+  // 1e682dd6). VeloExpense (w6-01):
+  //   · no `travel.request_submitted` / `(SUBMITTED, TRAVEL_REQUEST)`. VeloExpense has no
+  //     SUBMITTED event (see EVENT_TYPES): the approvers of a submitted trip are told by
+  //     TASK_ASSIGNED, as the approvers of a submitted report are;
+  //   · the shipped copy is ExpenseOS's catalog sentence for each event
+  //     (`notifications.json`, TRAVEL_REQUEST), with the trip named through
+  //     `travelPayload`'s placeholders, as the report sentences name the report.
+  {
+    key: 'travel.request_awaiting_approval',
+    name: 'Travel request awaiting approval',
+    description: 'An approval task on a travel request was assigned to the recipient.',
+    events: [['TASK_ASSIGNED', 'TRAVEL_REQUEST']],
+    shipped: { 'en-CA': '{actor} needs your approval on a travel request: {request} ({total}).' },
+  },
+  {
+    key: 'travel.request_approved',
+    name: 'Travel request approved',
+    description: 'A travel request cleared its approval workflow.',
+    events: [['APPROVED', 'TRAVEL_REQUEST']],
+    shipped: { 'en-CA': 'Your travel request {request} ({number}) was approved.' },
+  },
+  {
+    key: 'travel.request_rejected',
+    name: 'Travel request declined',
+    description: 'An approver declined a travel request.',
+    events: [['REJECTED', 'TRAVEL_REQUEST']],
+    shipped: { 'en-CA': 'Your travel request {request} ({number}) was declined.' },
+  },
+  {
+    key: 'travel.request_returned',
+    name: 'Travel request returned',
+    description: 'An approver returned a travel request for edits.',
+    events: [['RETURNED', 'TRAVEL_REQUEST']],
+    shipped: { 'en-CA': 'Your travel request {request} ({number}) was returned for edits.' },
+  },
+  {
+    key: 'travel.request_commented',
+    name: 'Comment on a travel request',
+    description: 'Someone commented on a travel request thread.',
+    events: [['COMMENT', 'TRAVEL_REQUEST']],
+    // `{body}` is the posted text, from the comment's payload, as on a report.
+    shipped: { 'en-CA': '{actor} commented on the travel request {request}: {body}' },
+  },
+  {
+    key: 'travel.request_approval_expired',
+    name: 'Travel request approval expired',
+    description: 'An approval task on a travel request passed its deadline without a decision.',
+    events: [['TASK_EXPIRED', 'TRAVEL_REQUEST']],
+    shipped: { 'en-CA': 'The approval of the travel request {request} expired.' },
+  },
+  {
+    key: 'travel.request_approval_due_soon',
+    name: 'Travel request approval due soon',
+    description: 'An approval task on a travel request is approaching its deadline.',
+    events: [['DEADLINE_NEAR', 'TRAVEL_REQUEST']],
+    shipped: { 'en-CA': 'The approval of the travel request {request} is due soon.' },
+  },
+  {
+    key: 'travel.request_update',
+    name: 'Travel request update',
+    description: 'A workflow Notify node sent an FYI about a travel request.',
+    events: [['NOTIFY', 'TRAVEL_REQUEST']],
+    shipped: { 'en-CA': 'You have an update on the travel request {request}.' },
+  },
 ];
 
 export const TEMPLATE_KEY_BY_KEY: ReadonlyMap<string, TemplateKeyDef> = new Map(
@@ -586,6 +656,40 @@ export type ReservedPlaceholder = (typeof RESERVED_PLACEHOLDERS)[number];
  * fourth spelling of "the report's title".
  */
 export const REPORT_PLACEHOLDERS = ['report', 'number', 'total'] as const;
+
+/**
+ * VeloExpense (w6-01): the names every TRAVEL_REQUEST event's payload carries, filled in
+ * one place (`travelPayload` in `service.ts`), the convention `REPORT_PLACEHOLDERS` sets.
+ * `{request}` names the trip by where it goes; `{total}` is its estimate (or the approved
+ * total, once there is one).
+ */
+export const TRAVEL_PLACEHOLDERS = ['request', 'number', 'destination', 'total'] as const;
+
+/* ── where a subject lives ────────────────────────────────────────────────── */
+
+/**
+ * VeloExpense (w6-01): ExpenseOS's `subjectPath` (`packages/notifications/src/subjectLinks.ts`,
+ * 1e682dd6) — the ONE map of where a notification's subject lives, shared by the bell and
+ * the email/Slack dispatch, because two maps drifted in ExpenseOS and notifications went out
+ * "with no link at all". Locale-relative; dispatch prefixes the tenant's origin.
+ *
+ * VeloExpense: an expense report is its own page (`/expenses/<id>`), as every surface here
+ * already links it; ExpenseOS opens a drawer from `?report=`. A budget lands on the budgets
+ * screen, which has no per-budget route (VX4-5 part 3b). A travel request deep-opens the
+ * travel page's drawer from `?request=`, ExpenseOS's param.
+ */
+export function subjectPath(subjectType: string, subjectId: string): string | null {
+  switch (subjectType) {
+    case 'EXPENSE_REPORT':
+      return `/expenses/${subjectId}`;
+    case 'BUDGET':
+      return '/admin/budgets';
+    case 'TRAVEL_REQUEST':
+      return `/travel?request=${encodeURIComponent(subjectId)}`;
+    default:
+      return null;
+  }
+}
 
 export type PlaceholderValues = Readonly<Record<string, string | number>>;
 

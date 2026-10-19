@@ -535,6 +535,58 @@ describe('composition', () => {
     expect(mail.sent[0].html).toContain('Bath &amp; Wells');
   });
 
+  /**
+   * w6-01 — a travel request is a subject an email can be about: its sentence names the trip,
+   * its subject line is the destination and number, and its link opens the travel page on
+   * the request (`subjectPath`), never `/expenses/<id>`. The link is not the decision button:
+   * a trip is decided on /travel, which the report's `resolveDecidableTask` cannot answer for.
+   */
+  it('renders a travel request: named, numbered, and linked to /travel', async () => {
+    const tripId = await withOrg(orgId, async (tx) => {
+      // `::text`: the function returns void, which the Prisma bridge cannot deserialize.
+      await tx.query('SELECT seed_travel_defaults()::text AS done');
+      const trip = await tx.query(
+        `INSERT INTO travel_request (submitter_id, purpose, destination_label, destination_city,
+                                     depart_date, currency_code)
+         VALUES ($1, 'Client visit', 'Montréal', 'Montréal', now(), 'CAD') RETURNING id, number`,
+        [submitter],
+      );
+      const category = await tx.query("SELECT id FROM travel_category WHERE code = 'travelAirfare'");
+      await tx.query(
+        `INSERT INTO travel_budget_line (travel_request_id, category_id, kind, amount_minor, basis)
+         VALUES ($1, $2, 'AIRFARE', 45000, 'MANUAL')`,
+        [trip.rows[0].id, category.rows[0].id],
+      );
+      const { notify, travelPayload } = await import('@/lib/notifications/service');
+      await notify(
+        tx,
+        {
+          subjectType: 'TRAVEL_REQUEST',
+          subjectId: trip.rows[0].id,
+          eventType: 'APPROVED',
+          actorId: manager,
+          payload: travelPayload({
+            number: trip.rows[0].number,
+            destinationLabel: 'Montréal',
+            totalMinor: 45000n,
+            currencyCode: 'CAD',
+          }),
+        },
+        [submitter],
+      );
+      return trip.rows[0].id as string;
+    });
+    await drainOutbox();
+    expect(mail.sent).toHaveLength(1);
+    const sent = mail.sent[0];
+    expect(sent.subject).toBe('Montréal (TRV-000001)');
+    expect(sent.text).toContain('Your travel request Montréal (TRV-000001) was approved.');
+    expect(sent.text).toContain(`Open the travel request: https://velo.test/travel?request=${tripId}`);
+    expect(sent.text).not.toContain('/expenses/');
+    expect(sent.text).not.toContain('Review and approve');
+    await admin.query('DELETE FROM travel_request');
+  });
+
   it('prepareEmail returns a reason rather than throwing on an unpreparable row', async () => {
     await submitted();
     const due = await withPlatformRead((tx) => dueDeliveries(tx, 10));

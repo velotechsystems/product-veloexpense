@@ -44,6 +44,11 @@ vi.mock('@/lib/notifications/service', () => ({
     return `act-${h.activities.length}`;
   },
   reportPayload: (r: { title: string }) => ({ report: r.title, number: '', total: '' }),
+  travelPayload: (t: { destinationLabel: string; number: string | null }) => ({
+    request: t.destinationLabel,
+    number: t.number ?? '',
+    total: '',
+  }),
   notifyRecipients: async (_db: unknown, activityId: string, recipients: string[]) => {
     if (h.notifyError) throw h.notifyError;
     h.notified.push({ activityId, recipients });
@@ -62,7 +67,7 @@ const reply = (over: Record<string, unknown> = {}) =>
     // VeloExpense: the tenant's transaction, with the report the payload is read from.
     db: {
       expenseReport: {
-        findUniqueOrThrow: async () => ({ title: 'Lisbon', number: 'R-1', totalMinor: 0n, currencyId: 'CAD' }),
+        findUnique: async () => ({ title: 'Lisbon', number: 'R-1', totalMinor: 0n, currencyId: 'CAD' }),
       },
     } as never,
     ...over,
@@ -92,9 +97,33 @@ describe('what it records', () => {
     });
   });
 
-  // VeloExpense: ExpenseOS's "works for a travel request, a card request, a limit increase" is
-  // not ported — the expense report is the only subject with a thread here (cards are out of
-  // scope; travel arrives in Wave 6, and its thread with it).
+  it('works for a travel request', async () => {
+    // VeloExpense (w6-01): ExpenseOS's "works for a travel request, a card request, a limit
+    // increase", for the travel request (cards are out of scope). The trip's placeholders
+    // ride on the comment, as the report's do.
+    await expect(
+      reply({
+        subjectType: 'TRAVEL_REQUEST',
+        subjectId: 't-1',
+        db: {
+          travelRequest: {
+            findUnique: async () => ({
+              number: 'TRV-000001',
+              destinationLabel: 'Montréal',
+              currencyId: 'CAD',
+              approvedTotalMinor: null,
+              budgetLines: [{ amountMinor: 45000n }],
+            }),
+          },
+        } as never,
+      }),
+    ).resolves.toBe(true);
+    expect(h.activities[0]).toMatchObject({
+      subjectType: 'TRAVEL_REQUEST',
+      subjectId: 't-1',
+      payload: { body: 'Looks fine to me.', request: 'Montréal', number: 'TRV-000001' },
+    });
+  });
 
   it('records which channel it came from', async () => {
     /** A Slack reply and an email reply render differently in the timeline, and "where did

@@ -1,5 +1,5 @@
 // Ported from ExpenseOS `apps/web/src/server/policy/messageKeys.test.ts` (550b2945), w4-02a (d63). Each adaptation is
-// marked "VeloExpense:"; travel, which is out of VeloExpense's scope, is the main one.
+// marked "VeloExpense:". Its travel cases were left out then and restored by w6-01.
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';

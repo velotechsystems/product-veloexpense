@@ -31,7 +31,12 @@ import { escapeHtml } from '@/lib/notifications/html';
 import type { QueryRunner } from '@/lib/db/client';
 import { formatMinor } from '@/lib/money';
 import { resolveReaderPrefs } from '@/lib/i18n/resolve';
-import { DIGEST_EVENT_TYPES, isDigestType, placeholderValuesFrom } from '@/lib/notifications/catalog';
+import {
+  DIGEST_EVENT_TYPES,
+  isDigestType,
+  placeholderValuesFrom,
+  subjectPath,
+} from '@/lib/notifications/catalog';
 import { buildDigest, ctaFor, type DigestLine } from '@/lib/notifications/digest';
 import { loadCatalog } from '@expenseos/i18n/load';
 import { renderMessage } from '@/lib/notifications/service';
@@ -97,6 +102,11 @@ interface Row {
   report_number: string | null;
   report_total_minor: string | null;
   report_currency: string | null;
+  /** VeloExpense (w6-01): a TRAVEL_REQUEST subject's own facts, as the report's above. */
+  travel_number: string | null;
+  travel_destination: string | null;
+  travel_total_minor: string | null;
+  travel_currency: string | null;
 }
 
 /**
@@ -132,7 +142,15 @@ async function loadForDelivery(tx: QueryRunner, notificationId: string): Promise
             rep.title  AS report_title,
             rep.number AS report_number,
             rep.total_minor AS report_total_minor,
-            rep.currency_code AS report_currency
+            rep.currency_code AS report_currency,
+            -- VeloExpense (w6-01): a travel request, joined the way the report is. Its
+            -- total is the approved one once there is one, else the estimate's lines.
+            trv.number            AS travel_number,
+            trv.destination_label AS travel_destination,
+            COALESCE(trv.approved_total_minor,
+                     (SELECT sum(l.amount_minor) FROM travel_budget_line l
+                       WHERE l.travel_request_id = trv.id), 0)::text AS travel_total_minor,
+            trv.currency_code     AS travel_currency
        FROM notification n
        JOIN activity a   ON a.id = n.activity_id
        JOIN app_user u   ON u.id = n.recipient_id
@@ -140,6 +158,8 @@ async function loadForDelivery(tx: QueryRunner, notificationId: string): Promise
        LEFT JOIN app_user act ON act.id = a.actor_id
        LEFT JOIN expense_report rep
               ON rep.id = a.subject_id AND a.subject_type = 'EXPENSE_REPORT'
+       LEFT JOIN travel_request trv
+              ON trv.id = a.subject_id AND a.subject_type = 'TRAVEL_REQUEST'
       WHERE n.id = $1`,
     [notificationId],
   );
@@ -170,7 +190,7 @@ export async function prepareEmail(
   if (!row.recipient_email) {
     return { kind: 'CANCEL', reason: 'the recipient has no email address' };
   }
-  if (row.subject_type !== 'EXPENSE_REPORT' || row.report_title === null) {
+  if (!subjectExists(row)) {
     return {
       kind: 'CANCEL',
       reason: `nothing to link to for ${row.subject_type} ${row.subject_id}`,
@@ -211,7 +231,10 @@ export async function prepareEmail(
   // tenant-scoped statement in this file does rather than threading an id in.
   const slugRow = await tx.query(`SELECT slug FROM organization WHERE id = ${ORG}`);
   const origin = originForTenant((slugRow.rows[0]?.slug as string | undefined) ?? '');
-  const reportUrl = origin ? `${origin}/expenses/${row.subject_id}` : null;
+  // VeloExpense (w6-01): where the subject lives, from the one map (`subjectPath`) — the
+  // report's page, or the travel page opened on the request.
+  const path = subjectPath(row.subject_type, row.subject_id);
+  const reportUrl = origin && path ? `${origin}${path}` : null;
 
   // VX4-3 part 3. One extra read per email, in the SAME transaction — `prepareEmail`
   // already runs inside `withOrg(job.organizationId)`, so this is the tenant whose
@@ -228,7 +251,9 @@ export async function prepareEmail(
   // Prisma transaction — this one, when it is bridged, or a read of its own in the same
   // tenant.
   let decide = false;
-  if (reportUrl && ACTIONABLE_EVENTS.has(row.event_type)) {
+  // VeloExpense (w6-01): an expense report only. A travel request is decided on the travel
+  // page, which `resolveDecidableTask` (a report's question) cannot answer for.
+  if (reportUrl && row.subject_type === 'EXPENSE_REPORT' && ACTIONABLE_EVENTS.has(row.event_type)) {
     const decidable = (db: Parameters<typeof resolveDecidableTask>[0]) =>
       resolveDecidableTask(db, row.subject_id, row.recipient_id, false);
     const bridged = tenantDbOf(tx);
@@ -242,8 +267,7 @@ export async function prepareEmail(
     decide = taskId !== null;
   }
 
-  const subject =
-    rendered.subject ?? `${row.report_title}${row.report_number ? ` (${row.report_number})` : ''}`;
+  const subject = rendered.subject ?? defaultSubjectLine(row);
 
   // w5-01: a reply to this email becomes a comment, when the subject has a thread.
   const replyTo = await replyAddressFor(tx, row, (slugRow.rows[0]?.slug as string | undefined) ?? '');
@@ -256,8 +280,16 @@ export async function prepareEmail(
       to: row.recipient_email,
       subject,
       from: fromAddress(),
-      text: plainText(rendered.body, reportUrl, decide, replyLine),
-      html: htmlBody(branding.name, branding.brandColor, rendered.body, reportUrl, decide, replyLine),
+      text: plainText(rendered.body, reportUrl, decide, replyLine, row.subject_type),
+      html: htmlBody(
+        branding.name,
+        branding.brandColor,
+        rendered.body,
+        reportUrl,
+        decide,
+        replyLine,
+        row.subject_type,
+      ),
       ...(replyTo ? { replyTo } : {}),
       ...threadHeaders(claim.notificationId, row.subject_id, row.recipient_id),
       headers: {
@@ -321,10 +353,11 @@ export async function prepareDigest(
       values: messageValues(row, prefs.locale),
       locale: prefs.locale,
     });
-    const isReport = row.subject_type === 'EXPENSE_REPORT' && row.report_title !== null;
+    // VeloExpense (w6-01): a link for any subject that still exists and has a page.
+    const path = subjectExists(row) ? subjectPath(row.subject_type, row.subject_id) : null;
     lines.push({
       msg: rendered.body,
-      link: isReport && origin ? `${origin}/expenses/${row.subject_id}` : null,
+      link: path && origin ? `${origin}${path}` : null,
       cta: ctaFor(cat, row.subject_type),
     });
     included.push(claim);
@@ -373,6 +406,18 @@ export async function prepareDigest(
  * and the digest, so a line in the digest says what that event's own email would have.
  */
 function messageValues(row: Row, locale: string) {
+  // VeloExpense (w6-01): a travel request's own values (`TRAVEL_PLACEHOLDERS`), read now as
+  // the report's are, so the message names the trip as it stands.
+  if (row.subject_type === 'TRAVEL_REQUEST') {
+    return {
+      ...placeholderValuesFrom(row.payload),
+      actor: row.actor_name ?? 'Somebody',
+      request: row.travel_destination ?? '',
+      destination: row.travel_destination ?? '',
+      number: row.travel_number ?? '',
+      total: formatMinor(row.travel_total_minor ?? '0', row.travel_currency ?? 'CAD', undefined, locale),
+    };
+  }
   return {
     ...placeholderValuesFrom(row.payload),
     // Reserved names LAST, so a payload key cannot shadow them (NT-6 rule 4).
@@ -381,6 +426,22 @@ function messageValues(row: Row, locale: string) {
     number: row.report_number ?? '',
     total: formatMinor(row.report_total_minor ?? '0', row.report_currency ?? 'CAD', undefined, locale),
   };
+}
+
+/** VeloExpense (w6-01): whether the activity's subject still exists, for the subjects an
+ *  email can be about — an expense report or a travel request. */
+function subjectExists(row: Row): boolean {
+  if (row.subject_type === 'EXPENSE_REPORT') return row.report_title !== null;
+  if (row.subject_type === 'TRAVEL_REQUEST') return row.travel_destination !== null;
+  return false;
+}
+
+/** The subject line when no stored template supplies one: the thing, and its number. */
+function defaultSubjectLine(row: Row): string {
+  if (row.subject_type === 'TRAVEL_REQUEST') {
+    return `${row.travel_destination}${row.travel_number ? ` (${row.travel_number})` : ''}`;
+  }
+  return `${row.report_title}${row.report_number ? ` (${row.report_number})` : ''}`;
 }
 
 /**
@@ -421,7 +482,9 @@ function messageIdDomain(): string {
 }
 
 /** The report link's wording: the decision, when the recipient has one to make. */
-function reportLinkLabel(decide: boolean): string {
+function reportLinkLabel(decide: boolean, subjectType = 'EXPENSE_REPORT'): string {
+  // VeloExpense (w6-01): a travel request's link names the trip, never the decision.
+  if (subjectType === 'TRAVEL_REQUEST') return 'Open the travel request';
   return decide ? 'Review and approve' : 'Open the report';
 }
 
@@ -430,9 +493,10 @@ function plainText(
   reportUrl: string | null,
   decide: boolean,
   replyLine: string | null = null,
+  subjectType = 'EXPENSE_REPORT',
 ): string {
   const parts = [body, ''];
-  if (reportUrl) parts.push(`${reportLinkLabel(decide)}: ${reportUrl}`);
+  if (reportUrl) parts.push(`${reportLinkLabel(decide, subjectType)}: ${reportUrl}`);
   if (replyLine) parts.push('', replyLine);
   return parts.join('\n');
 }
@@ -455,8 +519,9 @@ function htmlBody(
   reportUrl: string | null,
   decide: boolean,
   replyLine: string | null = null,
+  subjectType = 'EXPENSE_REPORT',
 ): string {
-  const link = reportUrl ? { label: reportLinkLabel(decide), url: reportUrl } : null;
+  const link = reportUrl ? { label: reportLinkLabel(decide, subjectType), url: reportUrl } : null;
   return emailShell({
     organizationName,
     brandColor,

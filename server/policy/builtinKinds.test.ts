@@ -1,5 +1,5 @@
 // Ported from ExpenseOS `apps/web/src/server/policy/builtinKinds.test.ts` (550b2945), w4-02a (d63). Each adaptation is
-// marked "VeloExpense:"; travel, which is out of VeloExpense's scope, is the main one.
+// marked "VeloExpense:". Its travel cases were left out then and restored by w6-01.
 // @vitest-environment node
 import type { ExpensePolicy } from '@expenseos/db';
 import { describe, expect, it } from 'vitest';
@@ -7,8 +7,12 @@ import { type PolicyContext, runRules } from './engine';
 import { buildFacts } from './facts';
 import type { HydratedReport, PolicyRuleInstance, Severity } from './types';
 
-// VeloExpense: ExpenseOS's three uuid fixtures (UUID_USER, UUID_LEVEL, UUID_OTHER_LEVEL)
-// sit here for REQUIRES_APPROVED_TRAVEL's exemptions; that kind is travel and not carried.
+// The exemption params are uuid-validated (they are ids, and a typo that silently
+// exempts nobody is the worst outcome for a BLOCK rule), so the fixtures use real
+// ones rather than 'u1'.
+const UUID_USER = '019e65ed-2c53-76c9-b268-000000000001';
+const UUID_LEVEL = '019e65ed-2c53-76c9-b268-000000000002';
+const UUID_OTHER_LEVEL = '019e65ed-2c53-76c9-b268-000000000003';
 
 /** Behavioral parity tests for the built-in kinds migrated from the legacy
  *  hardcoded rules (R1–R12). Each seeded instance is modelled here; we run the
@@ -96,6 +100,7 @@ function run(opts: {
   fiscalCloseDate?: Date | null;
   homeCurrency?: string | null;
   jobLevelId?: string | null;
+  travelApproved?: boolean;
   submitterId?: string;
 }) {
   const lineItems: HydratedReport['lineItems'] = opts.lines.map((l) => ({
@@ -125,6 +130,7 @@ function run(opts: {
       localePref: 'en',
       jobLevelId: opts.jobLevelId ?? null,
     },
+    travelApproved: opts.travelApproved ?? false,
     lineItems,
   };
   const ctx: PolicyContext = {
@@ -135,6 +141,7 @@ function run(opts: {
     fiscalCloseDate: opts.fiscalCloseDate ?? null,
     perDiemEnabled: false,
     budgetImpacts: null,
+    travelBudget: null,
     perDiem: null,
     rules: opts.instances,
     facts: buildFacts({
@@ -636,10 +643,74 @@ describe('MILEAGE_MAX (R7)', () => {
   });
 });
 
-// VeloExpense: ExpenseOS's `describe('REQUIRES_APPROVED_TRAVEL')` (7 cases: fires without an
-// approved trip, silent once approved, category scoping, and the job-level and named-user
-// exemptions) is not carried with its kind — travel is out of VeloExpense's scope.
+/**
+ * Pre-approval. The legacy app hardcoded who was exempt; the point of the rule kind
+ * is that all three questions — which categories, how hard, and who is above it —
+ * are the admin's, so these tests are about the exemptions and the scoping working
+ * as PARAMS rather than as a deploy.
+ */
+describe('REQUIRES_APPROVED_TRAVEL', () => {
+  const instance = (params: Record<string, unknown> = {}, categoryId: string | null = 'c-air') =>
+    ({
+      id: 'r-travel',
+      kindCode: 'REQUIRES_APPROVED_TRAVEL',
+      scope: 'AGGREGATE',
+      severity: 'BLOCK',
+      condition: null,
+      params,
+      messageKey: 'requiresApprovedTravel',
+      categoryId,
+    }) as PolicyRuleInstance;
 
+  const airfare = { id: 'li-air', categoryId: 'c-air', amountMinor: 74200n };
+  const dinner = { id: 'li-food', categoryId: 'c-meals', amountMinor: 6000n };
+
+  it('fires on unapproved travel spend', () => {
+    const out = run({ lines: [airfare], instances: [instance()] });
+    expect(out.map((v) => v.lineItemId)).toEqual(['li-air']);
+  });
+
+  it('is silent once the trip is approved', () => {
+    expect(run({ lines: [airfare], instances: [instance()], travelApproved: true })).toEqual([]);
+  });
+
+  it('only touches the category the instance is scoped to', () => {
+    const out = run({ lines: [airfare, dinner], instances: [instance()] });
+    expect(out.map((v) => v.lineItemId)).toEqual(['li-air']);
+  });
+
+  it('covers every line when the instance is scoped to no category', () => {
+    const out = run({ lines: [airfare, dinner], instances: [instance({}, null)] });
+    expect(out.map((v) => v.lineItemId)).toEqual(['li-air', 'li-food']);
+  });
+
+  it('exempts a named individual', () => {
+    const out = run({
+      lines: [airfare],
+      instances: [instance({ exemptUserIds: [UUID_USER] })],
+      submitterId: UUID_USER,
+    });
+    expect(out).toEqual([]);
+  });
+
+  it('exempts a job level', () => {
+    const out = run({
+      lines: [airfare],
+      instances: [instance({ exemptJobLevelIds: [UUID_LEVEL] })],
+      jobLevelId: UUID_LEVEL,
+    });
+    expect(out).toEqual([]);
+  });
+
+  it('does not exempt a different job level', () => {
+    const out = run({
+      lines: [airfare],
+      instances: [instance({ exemptJobLevelIds: [UUID_LEVEL] })],
+      jobLevelId: UUID_OTHER_LEVEL,
+    });
+    expect(out).toHaveLength(1);
+  });
+});
 
 describe('AUDIT_THRESHOLD — documentation required on a large claim', () => {
   /**

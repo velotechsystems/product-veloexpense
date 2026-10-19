@@ -287,6 +287,8 @@ export interface QueueRow extends DeliveryRow {
   recipientName: string;
   recipientEmail: string;
   subjectId: string;
+  /** VeloExpense (w6-01): so the screen links a travel request to /travel, not /expenses. */
+  subjectType: string;
 }
 
 export interface QueueSummary {
@@ -324,7 +326,7 @@ export async function listQueue(
   const r = await tx.query(
     `SELECT d.id, d.notification_id, d.channel, d.status, d.attempts, d.next_attempt_at,
             d.claimed_at, d.claimed_by, d.sent_at, d.last_error, d.destination, d.created_at,
-            a.event_type, a.subject_id,
+            a.event_type, a.subject_id, a.subject_type,
             (d.status = 'PENDING' AND d.next_attempt_at > clock_timestamp()) AS held,
             COALESCE(u.display_name, u.email) AS recipient_name, u.email AS recipient_email
        FROM notification_delivery d
@@ -358,6 +360,7 @@ export async function listQueue(
     eventType: row.event_type as string,
     heldForDigest: row.held as boolean,
     subjectId: row.subject_id as string,
+    subjectType: row.subject_type as string,
     recipientName: row.recipient_name as string,
     recipientEmail: row.recipient_email as string,
   }));

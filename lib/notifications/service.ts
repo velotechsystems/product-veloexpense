@@ -701,6 +701,31 @@ export async function listSubjectActivity(
   }));
 }
 
+/* ── the values a travel event renders from ───────────────────────────────── */
+
+/**
+ * VeloExpense (w6-01): the placeholder values every TRAVEL_REQUEST event carries
+ * (`TRAVEL_PLACEHOLDERS`), the counterpart of `reportPayload` below and for its reason — one
+ * place, so `{request}` and `{total}` mean the same thing in every travel template.
+ *
+ * `totalMinor` is what the trip is for: the approved total once there is one, else the sum
+ * of the estimate's lines. The caller passes whichever it has; nothing here reads the
+ * database.
+ */
+export function travelPayload(request: {
+  number: string | null;
+  destinationLabel: string;
+  totalMinor: string | number | bigint;
+  currencyCode: string;
+}): Record<string, string> {
+  return {
+    request: request.destinationLabel,
+    destination: request.destinationLabel,
+    number: request.number ?? '',
+    total: formatMinor(request.totalMinor, request.currencyCode),
+  };
+}
+
 /* ── the values a report event renders from ───────────────────────────────── */
 
 /**

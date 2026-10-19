@@ -1,5 +1,5 @@
 // Ported from ExpenseOS `apps/web/src/server/policy/facts.test.ts` (550b2945), w4-02a (d63). Each adaptation is
-// marked "VeloExpense:"; travel, which is out of VeloExpense's scope, is the main one.
+// marked "VeloExpense:". Its travel cases were left out then and restored by w6-01.
 import { describe, expect, it } from 'vitest';
 import { buildFacts, type FactSource } from './facts';
 
@@ -73,6 +73,50 @@ describe('buildFacts amount facts', () => {
   });
 });
 
-// VeloExpense: ExpenseOS's `describe('travelApprovedTotal')` (3 cases: absent without an
-// approved travel request, zero kept as zero, converted from the request's own currency)
-// is not carried — travel is out of VeloExpense's scope, and so is the fact.
+describe('travelApprovedTotal', () => {
+  const base = {
+    now: new Date('2026-09-10'),
+    reportTotalMinor: 600_000n,
+    reportCurrencyCode: 'CAD',
+    submitter: {
+      jobLevelId: null,
+      departmentId: null,
+      legalEntityId: null,
+      businessUnitId: null,
+      homeCurrency: 'CAD',
+    },
+    lines: [],
+  };
+
+  it('is ABSENT, not zero, when there is no approved travel request', () => {
+    /**
+     * Zero is a real approved figure — an approved request whose budget lines were all
+     * removed — and `TRAVEL_OVERRUN` divides by it. The two must be distinguishable.
+     */
+    const f = buildFacts({ ...base, travelApproved: null }).report;
+    expect('travelApprovedTotal' in f).toBe(false);
+  });
+
+  it('is present and zero when the approved figure genuinely is zero', () => {
+    const f = buildFacts({
+      ...base,
+      travelApproved: { totalMinor: 0n, currencyCode: 'CAD' },
+    }).report;
+    expect(f.travelApprovedTotal).toBe(0);
+  });
+
+  it('converts the request’s OWN currency into the policy currency', () => {
+    /**
+     * A travel request is denominated independently of the report built from it, so
+     * comparing the two raw would be comparing incommensurable minor units — a USD
+     * estimate against a CAD claim reads as a 35% overrun that never happened.
+     */
+    const f = buildFacts({
+      ...base,
+      travelApproved: { totalMinor: 400_000n, currencyCode: 'USD' },
+      fxRates: new Map([['USD->CAD', '1.35']]),
+      policyCurrency: 'CAD',
+    }).report;
+    expect(f.travelApprovedTotal).toBe(540_000);
+  });
+});

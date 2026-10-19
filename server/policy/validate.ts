@@ -1,5 +1,5 @@
 // Ported from ExpenseOS `apps/web/src/server/policy/validate.ts` (550b2945), w4-02d (d63). Each adaptation is
-// marked "VeloExpense:"; travel, which is out of VeloExpense's scope, is the main one.
+// marked "VeloExpense:". The travel inputs were left out at w4-02d and restored by w6-01.
 /**
  * Policy engine orchestrator — the only function the tRPC layer calls.
  *
@@ -22,17 +22,16 @@
 
 // VeloExpense: no ExpenseOS `evaluateReportAgainstBudgets` and no budget-alert markers
 // (VeloExpense's alerts are lib/budgets/alerts.ts); the budget impacts come from VeloExpense's
-// budgets through ./budgetBridge (d66), which the approval engine reads too (w4-04). No `convertMoney`: it served
-// the travel budget only.
-import type { RuleScope } from '@expenseos/db';
+// budgets through ./budgetBridge (d66), which the approval engine reads too (w4-04).
 import { tipMinorOf } from '@expenseos/expense-lines';
-import { fxRateMapFrom } from '@expenseos/money';
+import { convertMoney, fxRateMapFrom } from '@expenseos/money';
 import type { Prisma, TenantDb } from '@/lib/db/prisma';
 import { DEFAULT_LOCALE } from '@/lib/i18n/locales';
 import { budgetImpactsFor } from './budgetBridge';
 import { type PolicyContext, runRules } from './engine';
 import { buildFacts } from './facts';
-import type { PolicyRuleInstance, RuleTranslator, Violation } from './types';
+// VeloExpense (w6-01): `RuleScope` from ./types (text under a CHECK, TRAVEL_REQUEST included).
+import type { PolicyRuleInstance, RuleScope, RuleTranslator, Violation } from './types';
 
 export interface ValidateOpts {
   /** VeloExpense: the tenant-scoped client (lib/db/prisma), already inside the request's
@@ -86,7 +85,34 @@ export async function validateReport(opts: ValidateOpts): Promise<ValidateResult
       submittedAt: true,
       totalMinor: true,
       currency: { select: { code: true } },
-      // VeloExpense: no `travelRequest` (travel is out of scope).
+      /// Pre-approval rules ask whether the spend was authorised in advance, so
+      /// what matters is the linked request's STATUS, not merely that one exists.
+      /// `approvedTotalMinor` + its own currency feed the TRAVEL_OVERRUN fact — a
+      /// request is denominated independently of the report built from it.
+      travelRequest: {
+        select: {
+          status: true,
+          approvedTotalMinor: true,
+          currency: { select: { code: true } },
+          /**
+           * The budget, per travel category, with the expense category it maps to.
+           *
+           * `TRAVEL_OVERRUN` compares the INTERSECTION — a travel category that maps to an
+           * expense category, against the claims coded to that expense category. A total
+           * comparison was wrong: a report legitimately holds spend the trip never
+           * budgeted (an unexpected client meeting), and comparing totals reports an
+           * overrun for money nobody said was in the estimate.
+           */
+          budgetLines: {
+            select: {
+              amountMinor: true,
+              category: {
+                select: { label: true, code: true, expenseCategoryId: true },
+              },
+            },
+          },
+        },
+      },
       submitter: {
         select: {
           id: true,
@@ -170,7 +196,7 @@ export async function validateReport(opts: ValidateOpts): Promise<ValidateResult
       localePref: DEFAULT_LOCALE,
       jobLevelId: loaded.submitter.jobLevelId,
     },
-    // VeloExpense: no `travelApproved` (travel is out of scope).
+    travelApproved: loaded.travelRequest?.status === 'APPROVED',
     lineItems: loaded.expenses.flatMap((e) =>
       e.lineItems.map((li) => ({
         id: li.id,
@@ -254,7 +280,10 @@ export async function validateReport(opts: ValidateOpts): Promise<ValidateResult
   const ruleRows = await db.policyRule.findMany({
     where: {
       enabled: true,
-      // VeloExpense: no TRAVEL_REQUEST scope to exclude (the table's CHECK has none).
+      // Travel-scope instances are the other validator's business. `runRules` would skip
+      // them anyway (it dispatches on the KIND's scope), but loading them here would
+      // make `rules.some(...)` checks below answer about rules this subject never runs.
+      scope: { not: 'TRAVEL_REQUEST' },
       AND: [
         { effectiveFrom: { lte: now } },
         { OR: [{ effectiveTo: null }, { effectiveTo: { gte: now } }] },
@@ -355,13 +384,61 @@ export async function validateReport(opts: ValidateOpts): Promise<ValidateResult
         hasReceipt: e.receipts.length > 0,
       })),
     ),
-    // VeloExpense: no `travelApproved` (travel is out of scope).
+    // Only an APPROVED request has an authorised figure. A pending one is "I filed a
+    // request this morning", which is precisely not pre-approval — the same reading
+    // `travelApproved` above already takes.
+    travelApproved:
+      loaded.travelRequest?.status === 'APPROVED' && loaded.travelRequest.approvedTotalMinor != null
+        ? {
+            totalMinor: loaded.travelRequest.approvedTotalMinor,
+            currencyCode: loaded.travelRequest.currency.code,
+          }
+        : null,
     fxRates,
     policyCurrency,
   });
 
-  // VeloExpense: ExpenseOS's travel budget (TRAVEL_OVERRUN's input) is not loaded — travel
-  // is out of scope.
+  /**
+   * The travel budget, bucketed by mapped expense category and converted into the policy
+   * currency.
+   *
+   * Only when a TRAVEL_OVERRUN instance is enabled, and only for an APPROVED request — the
+   * same two gates the rest of this loader applies. A pending request is "I filed one this
+   * morning", which is precisely not an authorised figure.
+   *
+   * Unmapped travel categories are dropped here rather than in the kind: they generate no
+   * expense lines at all (`buildReportFromTravel` skips them), so there is nothing on the
+   * claim side for their budget to be compared against.
+   */
+  let travelBudget: PolicyContext['travelBudget'] = null;
+  const linkedTravel = loaded.travelRequest;
+  if (rules.some((r) => r.kindCode === 'TRAVEL_OVERRUN') && linkedTravel?.status === 'APPROVED') {
+    const budgeted = new Map<string, bigint>();
+    const labels = new Map<string, string[]>();
+    const requestCurrency = linkedTravel.currency.code;
+    for (const line of linkedTravel.budgetLines) {
+      const mapped = line.category.expenseCategoryId;
+      if (!mapped) continue;
+      const inPolicy =
+        requestCurrency === policyCurrency
+          ? line.amountMinor
+          : (convertMoney(
+              { amountMinor: line.amountMinor, currencyCode: requestCurrency },
+              policyCurrency,
+              fxRates,
+            )?.amountMinor ?? line.amountMinor);
+      budgeted.set(mapped, (budgeted.get(mapped) ?? 0n) + inPolicy);
+      // The travel category's own name, so the finding speaks in travel's vocabulary even
+      // though the bucket key has to be the expense category both sides share.
+      const name = line.category.code ?? categoryCode(line.category.label);
+      const held = labels.get(mapped) ?? [];
+      if (name && !held.includes(name)) held.push(name);
+      labels.set(mapped, held);
+    }
+    if (budgeted.size > 0) {
+      travelBudget = { budgetedByExpenseCategoryId: budgeted, travelLabels: labels };
+    }
+  }
 
   // Budget impacts. Only when a BUDGET_OVERAGE instance is actually enabled —
   // the scan is the expensive part of this loader, and a deployment with no
@@ -386,6 +463,7 @@ export async function validateReport(opts: ValidateOpts): Promise<ValidateResult
     perDiemEnabled,
     perDiem,
     budgetImpacts,
+    travelBudget,
     rules,
     facts,
     t,

@@ -30,6 +30,7 @@ import { resolveReaderPrefs } from '@/lib/i18n/resolve';
 import { renderMessage } from '@/lib/notifications/service';
 import { originForTenant } from '@/lib/notifications/email';
 import { ctaFor } from '@/lib/notifications/digest';
+import { subjectPath } from '@/lib/notifications/catalog';
 import { tenantDbOf } from '@/lib/db/prisma-pg-bridge';
 import { withTenantDb, type TenantDb } from '@/lib/db/prisma';
 import { ORG } from '@/lib/tenant/sql';
@@ -85,6 +86,11 @@ interface SlackRow {
   report_number: string | null;
   report_total_minor: string | null;
   report_currency: string | null;
+  /** VeloExpense (w6-01): a TRAVEL_REQUEST subject's facts, as dispatch.ts reads them. */
+  travel_number: string | null;
+  travel_destination: string | null;
+  travel_total_minor: string | null;
+  travel_currency: string | null;
 }
 
 /**
@@ -108,7 +114,13 @@ export async function prepareSlack(
             u.slack_user_id, u.slack_lookup_at,
             COALESCE(act.display_name, act.email) AS actor_name,
             rep.title AS report_title, rep.number AS report_number,
-            rep.total_minor AS report_total_minor, rep.currency_code AS report_currency
+            rep.total_minor AS report_total_minor, rep.currency_code AS report_currency,
+            -- VeloExpense (w6-01): a travel request, as dispatch.ts joins it.
+            trv.number AS travel_number, trv.destination_label AS travel_destination,
+            COALESCE(trv.approved_total_minor,
+                     (SELECT sum(l.amount_minor) FROM travel_budget_line l
+                       WHERE l.travel_request_id = trv.id), 0)::text AS travel_total_minor,
+            trv.currency_code AS travel_currency
        FROM notification n
        JOIN activity a     ON a.id = n.activity_id
        JOIN app_user u     ON u.id = n.recipient_id
@@ -116,6 +128,8 @@ export async function prepareSlack(
        LEFT JOIN app_user act ON act.id = a.actor_id
        LEFT JOIN expense_report rep
               ON rep.id = a.subject_id AND a.subject_type = 'EXPENSE_REPORT'
+       LEFT JOIN travel_request trv
+              ON trv.id = a.subject_id AND a.subject_type = 'TRAVEL_REQUEST'
       WHERE n.id = $1`,
     [notificationId],
   );
@@ -141,7 +155,12 @@ export async function prepareSlack(
     warnSlackGateOnce(cfg.state, detail);
     return { kind: 'CANCEL', reason: slackConfigProblem(cfg.state, detail) };
   }
-  if (row.subject_type !== 'EXPENSE_REPORT' || row.report_title === null) {
+  // VeloExpense (w6-01): an expense report or a travel request that still exists.
+  const exists =
+    row.subject_type === 'EXPENSE_REPORT'
+      ? row.report_title !== null
+      : row.subject_type === 'TRAVEL_REQUEST' && row.travel_destination !== null;
+  if (!exists) {
     return { kind: 'CANCEL', reason: `nothing to link to for ${row.subject_type} ${row.subject_id}` };
   }
 
@@ -165,13 +184,16 @@ export async function prepareSlack(
 
   const slugRow = await tx.query(`SELECT slug FROM organization WHERE id = ${ORG}`);
   const origin = originForTenant((slugRow.rows[0]?.slug as string | undefined) ?? '');
-  const link = origin ? `${origin}/expenses/${row.subject_id}` : null;
+  // VeloExpense (w6-01): from the one subject map (`subjectPath`), as the email's link.
+  const path = subjectPath(row.subject_type, row.subject_id);
+  const link = origin && path ? `${origin}${path}` : null;
 
   // Whether the recipient can decide the report right now — which only changes the LABEL of
   // the one button, never where it goes. VeloExpense: `resolveDecidableTask`, the question
   // the report page and the email ask (AP-15), where ExpenseOS asks `hasDecidableTask`.
   let canActNow = false;
-  if (link && ACTIONABLE_TYPES.has(row.event_type)) {
+  // VeloExpense (w6-01): a report's question only; a travel request is decided on /travel.
+  if (link && row.subject_type === 'EXPENSE_REPORT' && ACTIONABLE_TYPES.has(row.event_type)) {
     canActNow = (await onTenantDb(tx, (db) =>
       resolveDecidableTask(db, row.subject_id, row.recipient_id, false),
     )) !== null;

@@ -47,6 +47,7 @@ function ctx(rules: PolicyRuleInstance[], lines: Line[], fxRates = new Map<strin
       id: 'r1',
       submittedAt: null,
       submitter: { id: 'u1', homeCurrency: 'CAD', localePref: 'en', jobLevelId: null },
+      travelApproved: false,
       lineItems: lines,
     },
     policiesByCategoryId: new Map(),
@@ -56,6 +57,7 @@ function ctx(rules: PolicyRuleInstance[], lines: Line[], fxRates = new Map<strin
     perDiemEnabled: false,
     perDiem: null,
     budgetImpacts: null,
+    travelBudget: null,
     rules,
     facts: buildFacts({
       now: new Date('2026-07-02'),

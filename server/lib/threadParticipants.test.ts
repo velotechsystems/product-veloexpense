@@ -1,5 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
-import { COMMENT_THREAD_SUBJECTS, hasCommentThread, threadParticipants } from './threadParticipants';
+import {
+  COMMENT_THREAD_SUBJECTS,
+  hasCommentThread,
+  OWNER_RESOLVERS,
+  threadParticipants,
+} from './threadParticipants';
 
 /**
  * Who is on a subject's discussion thread.
@@ -14,8 +19,8 @@ import { COMMENT_THREAD_SUBJECTS, hasCommentThread, threadParticipants } from '.
  * people who have never touched it — mailing all of them about every comment is how a
  * channel gets muted, after which the authorization half stops mattering too.
  *
- * VeloExpense: ExpenseOS's `threadParticipants.test.ts` (550b2945), for the expense report —
- * the one subject with a thread here (w2-02a). The tasks come from SQL over every run of the
+ * VeloExpense: ExpenseOS's `threadParticipants.test.ts` (550b2945), for the expense report
+ * (w2-02a) and, since w6-01, the travel request (1e682dd6's cases). The tasks come from SQL over every run of the
  * report (`$queryRaw`), where ExpenseOS reads one instance's through Prisma; the cases are
  * ExpenseOS's, marked where that changes them.
  */
@@ -25,6 +30,7 @@ function makeDb(over: Record<string, unknown> = {}) {
   return {
     db: {
       expenseReport: { findUnique: vi.fn(async () => null as unknown) },
+      travelRequest: { findUnique: vi.fn(async () => null as unknown) },
       $queryRaw: tasks,
       ...over,
     } as never,
@@ -44,8 +50,22 @@ describe('the owner', () => {
     expect(await threadParticipants(db, 'EXPENSE_REPORT', 'r-1')).toEqual(['u-1']);
   });
 
-  // VeloExpense: "reads the owner from each subject's own column" covers the card request
-  // and the travel request, which arrive with their modules.
+  it('reads the owner from each subject’s own column', async () => {
+    /**
+     * `submitterId` on a report and a travel request. The registry is a field mapping
+     * precisely because the interesting half — walking the approval tasks — is identical,
+     * and a resolver per subject is how the copies drift.
+     *
+     * VeloExpense: ExpenseOS's case, without the card request (out of scope).
+     */
+    for (const [type, table, row] of [
+      ['EXPENSE_REPORT', 'expenseReport', { submitterId: 'u-9' }],
+      ['TRAVEL_REQUEST', 'travelRequest', { submitterId: 'u-9' }],
+    ] as const) {
+      const { db } = makeDb({ [table]: { findUnique: vi.fn(async () => row) } });
+      expect(await threadParticipants(db, type, 's-1')).toEqual(['u-9']);
+    }
+  });
 });
 
 describe('the approvers', () => {
@@ -109,10 +129,10 @@ describe('the approvers', () => {
   // finds no tasks (above).
 
   it('scopes the task query to that subject’s instance', async () => {
-    // VeloExpense: to the report, across its approval instances.
+    // VeloExpense: to the subject, across its approval instances — its type and its id.
     const { db, tasks } = makeDb(report());
     await threadParticipants(db, 'EXPENSE_REPORT', 'r-7');
-    expect(tasks.mock.calls[0]?.slice(1)).toEqual(['r-7']);
+    expect(tasks.mock.calls[0]?.slice(1)).toEqual(['EXPENSE_REPORT', 'r-7']);
   });
 });
 
@@ -130,14 +150,23 @@ describe('subjects with no thread', () => {
   });
 });
 
+/**
+ * The registry and the list of commentable subjects, kept in step — ExpenseOS's guard
+ * (1e682dd6). `OWNER_RESOLVERS` is a total `Record<CommentThreadSubject, …>`, so the compiler
+ * enforces one half; this catches an EXTRA key, which a `Record` accepts silently.
+ */
 describe('the shared list of commentable subjects', () => {
-  // VeloExpense: ExpenseOS keeps a resolver registry in step with the dispatch worker's
-  // list; VeloExpense has one subject and no worker copy, so the list and its guard are the
-  // whole of it.
+  it('has a participant resolver for exactly the subjects the list names', () => {
+    expect(new Set(Object.keys(OWNER_RESOLVERS))).toEqual(new Set(COMMENT_THREAD_SUBJECTS));
+  });
+
   it('answers for every subject the list names, and for nothing else', async () => {
     for (const subject of COMMENT_THREAD_SUBJECTS) {
       expect(hasCommentThread(subject)).toBe(true);
-      const { db } = makeDb(report());
+      const { db } = makeDb({
+        ...report(),
+        travelRequest: { findUnique: vi.fn(async () => ({ submitterId: 'u-1' })) },
+      });
       expect(await threadParticipants(db, subject, 's-1'), subject).toEqual(['u-1']);
     }
     expect(hasCommentThread('BUDGET')).toBe(false);

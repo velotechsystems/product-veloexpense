@@ -1,5 +1,5 @@
 // Ported from ExpenseOS `apps/web/src/server/policy/validate.test.ts` (550b2945), w4-02d (d63). Each adaptation is
-// marked "VeloExpense:"; travel, which is out of VeloExpense's scope, is the main one.
+// marked "VeloExpense:". Its travel case was left out then and restored by w6-01.
 /* eslint-disable @typescript-eslint/no-explicit-any -- VeloExpense: ExpenseOS's suite casts its db double and reads the rule context untyped (`as any`); Biome allows it there. */
 // @vitest-environment node
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -31,8 +31,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
  * impacts come from VeloExpense's budgets (./budgetBridge, d66) with no module check and
  * no alert markers, so ExpenseOS's two marker cases and its module case are not carried;
  * there are no system flags, so the per-diem cases with the flag on and the fiscal-close
- * case read as ExpenseOS's defaults; the policy currency is the organization's; and the
- * travel case is not carried (out of scope).
+ * case read as ExpenseOS's defaults; and the policy currency is the organization's.
  */
 
 const h = vi.hoisted(() => ({
@@ -109,8 +108,8 @@ const report = (over: Record<string, unknown> = {}) => ({
   submittedAt: null,
   totalMinor: 5000n,
   currency: { code: 'CAD' },
-  // VeloExpense: no travel request; the home currency is the legal entity's; no locale on
-  // the person.
+  travelRequest: null,
+  // VeloExpense: the home currency is the legal entity's; no locale on the person.
   submitter: {
     id: 'u-1',
     entity: { homeCurrency: { code: 'USD' } },
@@ -212,8 +211,16 @@ describe('what the rules are handed', () => {
     expect(ctx.report.submitter.homeCurrency).toBeNull();
   });
 
-  // VeloExpense: ExpenseOS's "reads travel as approved only when the linked request
-  // actually is" is not carried — travel is out of scope.
+  it('reads travel as approved only when the linked request actually is', async () => {
+    /** A pre-approval rule asks whether the spend was authorised in advance — merely
+     *  HAVING a request is not that. */
+    const approved = await run({ report: report({ travelRequest: { status: 'APPROVED' } }) });
+    expect(approved.ctx.report.travelApproved).toBe(true);
+    const submitted = await run({ report: report({ travelRequest: { status: 'SUBMITTED' } }) });
+    expect(submitted.ctx.report.travelApproved).toBe(false);
+    const none = await run();
+    expect(none.ctx.report.travelApproved).toBe(false);
+  });
 
   it('judges an undated draft expense as of when it was entered (VeloExpense)', async () => {
     // A null date would crash the date facts; the expense's creation time is the honest

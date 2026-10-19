@@ -12,6 +12,7 @@
  * important thing on it is the verbatim error text, not the counts.
  */
 import Link from 'next/link';
+import { subjectPath } from '@/lib/notifications/catalog';
 import { Button } from '@/components/ui/button';
 import { EmptyRow, ErrorBanner } from '@/app/expenses/ui';
 import { formatInstant } from '@/lib/i18n/format';
@@ -171,12 +172,17 @@ export default async function NotificationDeliveryPage({
                     </p>
                   </TableCell>
                   <TableCell>
-                    <Link
-                      href={`/expenses/${row.subjectId}`}
-                      className="underline underline-offset-4"
-                    >
-                      {row.eventType}
-                    </Link>
+                    {/* VeloExpense (w6-01): the subject's own page, from the one map. */}
+                    {subjectPath(row.subjectType, row.subjectId) ? (
+                      <Link
+                        href={subjectPath(row.subjectType, row.subjectId) as string}
+                        className="underline underline-offset-4"
+                      >
+                        {row.eventType}
+                      </Link>
+                    ) : (
+                      row.eventType
+                    )}
                     <p className="text-xs text-muted-foreground">{formatInstant(row.createdAt, prefs)}</p>
                   </TableCell>
                   <TableCell>

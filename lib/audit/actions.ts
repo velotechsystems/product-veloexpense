@@ -262,6 +262,19 @@ export const AUDIT_ACTIONS = [
    * carry it, and the next directory may not be Google's. */
   'DIRECTORY_SYNCED',
 
+  /* w6-01: travel — ExpenseOS's `travel.*` (server/routers/travelRequests.ts) and
+   * `admin.travelCategory.*` (server/routers/travelCategories.ts). A request's lifecycle as
+   * the traveller and the approval engine move it, and an admin changing travel's own
+   * category list. */
+  'TRAVEL_REQUEST_CREATED',
+  'TRAVEL_REQUEST_UPDATED',
+  'TRAVEL_REQUEST_SUBMITTED',
+  'TRAVEL_REQUEST_APPROVED',
+  'TRAVEL_REQUEST_REJECTED',
+  'TRAVEL_REQUEST_RETURNED',
+  'TRAVEL_CATEGORY_CREATED',
+  'TRAVEL_CATEGORY_UPDATED',
+
   /* branding — VX4-3. The odd family; see the header. */
   'BRANDING_COLOR_SET',
   'BRANDING_COLOR_CLEARED',

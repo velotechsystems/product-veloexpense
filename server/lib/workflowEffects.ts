@@ -28,7 +28,8 @@ import { auditActions, withAudit } from '@expenseos/audit';
 import type { Prisma } from '@expenseos/db';
 import type { TenantDb } from '@/lib/db/prisma';
 import { queryRunnerOf } from '@/lib/db/prisma-pg-bridge';
-import { notifyRecipients, recordActivity, reportPayload } from '@/lib/notifications/service';
+import { notifyRecipients, recordActivity } from '@/lib/notifications/service';
+import { subjectPayload } from '@/server/lib/subjectPayload';
 
 /** VeloExpense: the caller's tenant transaction. */
 type PrismaClient = TenantDb;
@@ -135,14 +136,15 @@ export async function executeWorkflowEffects(
           await resolveNotifyTarget(db, node.target, opts.subjectType, opts.subjectId)
         ).filter((id) => id !== opts.actorId);
         if (recipients.length === 0) continue;
-        // VeloExpense: a NOTIFY activity on this transaction, with the report's placeholders.
+        // VeloExpense: a NOTIFY activity on this transaction, with the subject's placeholders
+        // (a report's, or a travel request's since w6-01).
         const runner = queryRunnerOf(db);
         const activityId = await recordActivity(runner, {
-          subjectType: opts.subjectType as 'EXPENSE_REPORT',
+          subjectType: opts.subjectType,
           subjectId: opts.subjectId,
           eventType: 'NOTIFY',
           actorId: opts.actorId ?? null,
-          payload: await notifyPayload(db, opts.subjectId),
+          payload: await subjectPayload(db as TenantDb, opts.subjectType, opts.subjectId),
         });
         await notifyRecipients(runner, activityId, recipients);
       } else if (node.type === 'action') {
@@ -176,17 +178,6 @@ export async function executeWorkflowEffects(
       console.warn('[workflow] effect execution failed', e);
     },
   );
-}
-
-/** VeloExpense: the report placeholders a NOTIFY's template reads (`reportPayload`). */
-async function notifyPayload(db: PrismaClient, reportId: string): Promise<Record<string, string>> {
-  const r = await db.expenseReport.findUnique({
-    where: { id: reportId },
-    select: { title: true, number: true, totalMinor: true, currencyId: true },
-  });
-  return r
-    ? reportPayload({ title: r.title, number: r.number, totalMinor: r.totalMinor, currencyCode: r.currencyId })
-    : {};
 }
 
 /** Merge a workflow Action node's field-set patch into the subject's `metadata`

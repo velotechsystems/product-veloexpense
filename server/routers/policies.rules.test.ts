@@ -95,6 +95,9 @@ function makeDb(over: Record<string, unknown> = {}) {
     },
     // VeloExpense: the register's subject, expense, line and submitter lookups (w4-02e).
     expenseReport: { findMany: stubFn(async () => [] as unknown[]) },
+    // w6-01: the register's travel lookups (empty by default).
+    travelRequest: { findMany: stubFn(async () => [] as unknown[]) },
+    travelBudgetLine: { findMany: stubFn(async () => [] as unknown[]) },
     expense: { findMany: stubFn(async () => [] as unknown[]) },
     user: { findMany: stubFn(async () => [] as unknown[]) },
     expenseCategory: { findMany: stubFn(async () => [] as unknown[]) },
@@ -442,11 +445,10 @@ describe('policyRule.violations', () => {
    * would have hidden precisely the ones that BLOCK rather than warn. The subject is
    * projected to a neutral triple, which is the code these cases cover.
    *
-   * VeloExpense: no travel yet, so ExpenseOS's two travel cases ("projects a travel
-   * violation…", "lists both subjects in one page") wait for it; the row keeps the travel
-   * fields, null. The subject, expense, line and submitter are separate lookups here
-   * (PolicyViolation has no Prisma relations), so the fixture is four tables, not one
-   * nested row.
+   * VeloExpense: the subject, expense, line, travel request, travel line and submitter are
+   * separate lookups here (PolicyViolation has no Prisma relations on its report side), so
+   * the fixture is those tables, not one nested row. ExpenseOS's two travel cases came back
+   * with travel (w6-01).
    */
   const reportRow = {
     id: 'v-rep',
@@ -459,6 +461,19 @@ describe('policyRule.violations', () => {
     reportId: 'rep-1',
     lineItemId: 'li-1',
     expenseId: 'exp-1',
+    travelRequestId: null,
+    travelLineId: null,
+  };
+  const travelRow = {
+    ...reportRow,
+    id: 'v-trv',
+    severity: 'BLOCK',
+    message: 'travelCabinClass',
+    reportId: null,
+    lineItemId: null,
+    expenseId: null,
+    travelRequestId: 'trv-1',
+    travelLineId: 'tl-1',
   };
   const withSubject = (
     rows: unknown[],
@@ -482,7 +497,20 @@ describe('policyRule.violations', () => {
         count: stubFn(async () => 0),
         findMany: stubFn(async () => [{ id: 'li-1', category: { label: { en: 'Meals' } } }]),
       },
-      user: { findMany: stubFn(async () => [{ id: 'u-1', ...submitter }]) },
+      travelRequest: {
+        findMany: stubFn(async () => [
+          { id: 'trv-1', number: 'TRV-000007', destinationLabel: 'London, UK', submitterId: 'u-2' },
+        ]),
+      },
+      travelBudgetLine: {
+        findMany: stubFn(async () => [{ id: 'tl-1', category: { label: { en: 'Airfare' } } }]),
+      },
+      user: {
+        findMany: stubFn(async () => [
+          { id: 'u-1', ...submitter },
+          { id: 'u-2', name: 'Sam Okafor', email: 'sam@example.test' },
+        ]),
+      },
       policyRule: {
         findMany: stubFn(async () => [{ id: RULE, kindCode: 'PREDICATE_LINE' }]),
         findUnique: stubFn(async () => null as unknown),
@@ -505,8 +533,33 @@ describe('policyRule.violations', () => {
     });
   });
 
+  it('projects a travel violation, reading its destination as the title', async () => {
+    // A travel request has a destination where a report has a title, and both answer the
+    // same question for somebody scanning the register.
+    const c = await callerFor(withSubject([travelRow]), READ);
+    const [row] = await c.policyRule.violations();
+    expect(row).toMatchObject({
+      subjectKind: 'TRAVEL_REQUEST',
+      subjectNumber: 'TRV-000007',
+      subjectTitle: 'London, UK',
+      reportId: null,
+      travelRequestId: 'trv-1',
+      travelLineId: 'tl-1',
+      submitterName: 'Sam Okafor',
+      // Read off the TRAVEL line's category, not the expense one — which is null here.
+      categoryLabel: { en: 'Airfare' },
+    });
+    expect(row.merchant).toBeNull();
+  });
+
+  it('lists both subjects in one page', async () => {
+    const c = await callerFor(withSubject([reportRow, travelRow]), READ);
+    const rows = await c.policyRule.violations();
+    expect(rows.map((r) => r.subjectKind)).toEqual(['REPORT', 'TRAVEL_REQUEST']);
+  });
+
   it('falls back to an email when a submitter has no name', async () => {
-    // VeloExpense: on a report (no travel), and a blank display name rather than first/last.
+    // VeloExpense: a blank display name rather than first/last.
     for (const name of [null, '  ']) {
       const c = await callerFor(withSubject([reportRow], { name, email: 'nobody@e.inc' }), READ);
       const [row] = await c.policyRule.violations();
