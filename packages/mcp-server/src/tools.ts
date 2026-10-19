@@ -206,8 +206,9 @@ export const TOOLS: readonly ToolSpec[] = [
   {
     name: 'search_help_articles',
     description:
-      'Search the authored ExpenseOS guidance and read what matches. Call this BEFORE ' +
-      'describing any ExpenseOS procedure, rule or rate — how to do something, what happens ' +
+      // VeloExpense (w6-03): the product's name, which the model repeats to the reader.
+      'Search the authored VeloExpense guidance and read what matches. Call this BEFORE ' +
+      'describing any VeloExpense procedure, rule or rate — how to do something, what happens ' +
       'after an action, what a term means in this product. Explaining general background you ' +
       'already know (what an input tax credit is, in the abstract) does not need it; stating ' +
       'how THIS product behaves does. If it returns nothing, say you have no guidance on that ' +
@@ -255,7 +256,7 @@ export const TOOLS: readonly ToolSpec[] = [
       'photo", or any receipt the person has not filed yet — but see ' +
       '`add_receipts_to_expense_report` when they mean a report that already exists. ' +
       'Give the report a real title from what they told you, not "Untitled report". ' +
-      'You do NOT read the receipts: after each file is uploaded, ExpenseOS scans it and ' +
+      'You do NOT read the receipts: after each file is uploaded, VeloExpense scans it and ' +
       'extracts the merchant, date, amount and tax itself. Returns `uploads`, each with a ' +
       '`url` to PUT the file to and the `headers` to send with it; a caller that cannot ' +
       'make that PUT should give the person the `reportUrl` from the response and say the ' +

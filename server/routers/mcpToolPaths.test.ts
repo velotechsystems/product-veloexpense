@@ -43,26 +43,10 @@ describe('every MCP tool points at a real procedure', () => {
     expect(Object.keys(record).length).toBeGreaterThan(50);
   });
 
-  /**
-   * VeloExpense (w6-03): the assistant's own router (`assistant.*`, the help-article search)
-   * arrives with Assistant 2 of 3, the server. Until then a tool pointing into it is pending,
-   * not wrong. The case below retires the exemption: the moment the router is registered it
-   * fails, naming this set, so the exemption cannot outlive its reason.
-   */
-  const PENDING_ROUTERS = new Set(['assistant']);
-
-  it('pending routers are still pending', () => {
-    for (const router of PENDING_ROUTERS) {
-      expect(
-        Object.keys(record).some((p) => p.startsWith(`${router}.`)),
-        `the "${router}" router is registered now; remove it from PENDING_ROUTERS.`,
-      ).toBe(false);
-    }
-  });
-
+  // VeloExpense (w6-03): no tool is pending any more — the `assistant` router (and its
+  // `searchArticles`, which `search_help_articles` names) is registered with Assistant 2 of 3.
   for (const tool of TOOLS) {
-    const pending = PENDING_ROUTERS.has(tool.path.split('.')[0]!);
-    (pending ? it.skip : it)(`${tool.name} → ${tool.path}`, () => {
+    it(`${tool.name} → ${tool.path}`, () => {
       expect(
         record[tool.path],
         `${tool.name} points at "${tool.path}", which is not a procedure on appRouter. ` +

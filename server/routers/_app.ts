@@ -1,6 +1,7 @@
 import { router } from '@/server/trpc';
 import { appSettingsRouter } from './appSettings';
 import { approvalWorkflowsRouter } from './approvalWorkflows';
+import { assistantRouter } from './assistant';
 import { auditRouter } from './audit';
 import { businessUnitsRouter } from './businessUnits';
 import { commentsRouter } from './comments';
@@ -30,6 +31,10 @@ export const appRouter = router({
   appSettings: appSettingsRouter,
   // w4-01: ExpenseOS's workflow builder (d55: lands before the cutover).
   approvalWorkflows: approvalWorkflowsRouter,
+  // w6-03 (d88): ExpenseOS's assistant — conversations, ratings, the feedback review queue,
+  // and the help-article search the chat's `search_help_articles` tool calls. The turn
+  // itself is the chat route (app/api/assistant/chat/route.ts).
+  assistant: assistantRouter,
   // w5-06: ExpenseOS's audit trail (`/admin/audit-trail`).
   audit: auditRouter,
   businessUnits: businessUnitsRouter,

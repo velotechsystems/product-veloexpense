@@ -12,8 +12,14 @@
  * chooses which record an answer is about.
  */
 
-/** Reasoning about money. Overridable per deployment. */
-export const DEFAULT_MODEL = 'claude-opus-5';
+/**
+ * Reasoning about money. Overridable per deployment.
+ *
+ * VeloExpense (w6-03): Claude Sonnet (John, 10–11 Oct), the model receipt reading already runs
+ * (`@expenseos/receipt-extraction` DEFAULT_MODEL). ExpenseOS's default is `claude-opus-5`.
+ * ASSISTANT_MODEL on the web task still pins another.
+ */
+export const DEFAULT_MODEL = 'claude-sonnet-5';
 
 /** Mechanical sub-tasks. Never a source of financial truth. */
 export const DEFAULT_FAST_MODEL = 'claude-haiku-4-5';

@@ -20,14 +20,23 @@
  */
 import type { Prisma } from '@/lib/generated/prisma/client';
 
-/** Which feature drove a call. VeloLedger's union, VeloExpense's members. */
-export type AiFeature = 'receipt_extraction' | 'expense_determination';
+/**
+ * Which feature drove a call. VeloLedger's union, VeloExpense's members.
+ * w6-03: `assistant` — every Messages API call a chat turn makes (the answer's rounds, the
+ * title, the two reviews, the help-article reads), server/lib/assistantUsage.ts.
+ */
+export type AiFeature = 'receipt_extraction' | 'expense_determination' | 'assistant';
 
 /**
- * Features whose use spends a customer's AI credits (reported to the platform). Empty
- * today: receipt reading is included (d43). The analysis features join it when they land.
+ * Features whose use spends a customer's AI credits (reported to the platform). Receipt
+ * reading is included (d43), so it is not here.
+ *
+ * w6-03: the assistant is. It is always on (CORE, AI is native — John, 10–11 Oct), so
+ * nothing here refuses a turn when a tenant's credits run out: as with receipt reading, the
+ * call runs and is recorded, and the platform, which owns the allowance and the
+ * token→credit conversion, bills what is over it.
  */
-export const METERED_FEATURES: ReadonlySet<AiFeature> = new Set<AiFeature>();
+export const METERED_FEATURES: ReadonlySet<AiFeature> = new Set<AiFeature>(['assistant']);
 
 /**
  * Per-model rates in micro-USD per token (i.e. USD-per-million-tokens directly:
@@ -44,6 +53,8 @@ const RATES: Record<string, Rate> = {
   // 0 cost (informational only) — never a hard failure.
   'claude-sonnet-5': { inMicroUsdPerTok: 3, outMicroUsdPerTok: 15 },
   'claude-sonnet-4-6': { inMicroUsdPerTok: 3, outMicroUsdPerTok: 15 },
+  // w6-03: the assistant's fast model (titles, reviews, article reads). VERIFY.
+  'claude-haiku-4-5': { inMicroUsdPerTok: 1, outMicroUsdPerTok: 5 },
 };
 
 export function computeCostMicroUsd(

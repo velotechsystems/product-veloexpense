@@ -124,3 +124,5 @@ export { type OffboardRollupSummary, rollUpOnOffboard } from './offboarding';
 // w5-04: the directory sync's title → job-level mapping (ExpenseOS's `@expenseos/db/jobLevels`
 // subpath; VeloExpense's barrel builds no client at load, so it is exported here).
 export { titleToJobLevelCode, type JobLevelCode } from './jobLevels';
+// w6-03: the Claude credential, for the assistant (ExpenseOS's resolver, from the environment only).
+export { type AnthropicConfig, anthropicConfigured, resolveAnthropicConfig } from './anthropicConfig';

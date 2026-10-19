@@ -30,8 +30,11 @@ export const MODULE_FOR_SLUG: Readonly<Record<string, string | typeof CORE>> = {
   // VeloExpense-only slug: VeloExpense's budgets screen has a module of its own, where
   // ExpenseOS's budget tracking sits under finance-reporting (app/(app)/veloexpenseNav.ts).
   budgets: 'budgets',
+  // VeloExpense (w6-03): the assistant is CORE — always on, never a module a tenant switches
+  // on. AI is native to VeloExpense, not opt-in (John, 10–11 Oct), and every turn is metered
+  // as AI credits (lib/ai/usage.ts). ExpenseOS's permission gates inside it still apply.
+  assistant: CORE,
   // Out of scope (7 Oct): virtual cards. No entry, so OFF.
-  // Not yet a VeloExpense module: the assistant (Wave 6). No entry, so OFF.
 };
 
 export async function isModuleActive(_db: unknown, slug: string): Promise<boolean> {

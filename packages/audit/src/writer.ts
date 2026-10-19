@@ -15,13 +15,15 @@
  *
  * It runs on the Prisma transaction ported code holds (`ctx.db`, scoped by
  * `withTenantDb`), with tagged `$queryRaw` only, so the row commits or rolls back with
- * the change it records. Not ported: ExpenseOS's API-key delegation marker (VeloExpense
- * has no API keys yet) and the 7-year `expiresAt` (VeloExpense's retention is the purge
+ * the change it records. VeloExpense (w6-03): ExpenseOS's delegation marker is ported with
+ * the assistant (`delegation.ts`): a confirmed assistant action's row carries `viaAssistant`
+ * in `details`, inside the hash. Not ported: the 7-year `expiresAt` (VeloExpense's retention is the purge
  * watermark in lib/audit/verify.ts).
  */
 import { isAuditAction } from '@/lib/audit/actions';
 import { computeEntryHash, type HashPayload } from '@/lib/audit/chain';
 import type { TenantDb } from '@/lib/db/prisma';
+import { withDelegation } from './delegation';
 import { type AuditInput, resolveActor } from './types';
 
 /** lib/audit/chain.ts's lock class ('AUDT'); the second key is the tenant. */
@@ -93,10 +95,12 @@ export async function writeAudit(tx: TenantDb, input: AuditInput): Promise<void>
   // of many categories, say — so that type is kept in `details` rather than dropped.
   const entityId = input.entityId ?? null;
   const entityType = entityId === null ? null : (input.entityType ?? null);
-  const details =
+  const ownDetails =
     entityId === null && input.entityType
       ? { ...(input.details ?? {}), entityType: input.entityType }
       : (input.details ?? null);
+  // VeloExpense (w6-03): ExpenseOS's `withDelegation`, so the row says a model drafted it.
+  const details = withDelegation(ownDetails);
   const ipAddress = input.ip ?? null;
 
   const payload: HashPayload = {

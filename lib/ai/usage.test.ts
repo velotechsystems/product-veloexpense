@@ -50,6 +50,29 @@ describe('recordUsage', () => {
     expect(METERED_FEATURES.has('expense_determination')).toBe(false);
   });
 
+  // w6-03: the assistant spends AI credits.
+  it('the assistant is metered, and its row says so', async () => {
+    expect(METERED_FEATURES.has('assistant')).toBe(true);
+    const create = vi.fn(async () => ({}));
+    await recordUsage({ aiUsage: { create } } as never, {
+      feature: 'assistant',
+      model: 'claude-sonnet-5',
+      inputTokens: 2000,
+      outputTokens: 100,
+      requestId: 'msg_a',
+      actorUserId: 'u1',
+    });
+    expect(create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        feature: 'assistant',
+        metered: true,
+        costMicroUsd: 7500n,
+        receiptId: null,
+        actorUserId: 'u1',
+      }),
+    });
+  });
+
   it('writes one row, unmetered, with the batch-rate cost', async () => {
     const create = vi.fn(async () => ({}));
     await recordUsage({ aiUsage: { create } } as never, {
