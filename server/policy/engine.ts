@@ -1,5 +1,5 @@
 // Ported from ExpenseOS `apps/web/src/server/policy/engine.ts` (550b2945), w4-02a (d63). Each adaptation is
-// marked "VeloExpense:"; travel, which is out of VeloExpense's scope, is the main one.
+// marked "VeloExpense:". The travel entry point was left out at w4-02a and restored by w6-01.
 /**
  * Policy engine — 12 rules from docs/use-cases/09 implemented server-side.
  *
@@ -32,13 +32,15 @@ import type { ExpensePolicy, FxRate, PolicyViolationSeverity, Prisma } from '@ex
 import type { BuiltFacts, FxGap } from './facts';
 import { type Finding, RULE_KINDS } from './kinds';
 // VeloExpense: `BudgetImpact` from ./types (ExpenseOS imports it from its approvals engine's
-// budgets, which arrive with w4-04); no travel types (out of scope).
+// budgets, which arrive with w4-04).
 import type {
   AggregateContext,
   BudgetImpact,
   HydratedReport,
   PolicyRuleInstance,
   RuleTranslator,
+  TravelBudgetByCategory,
+  TravelRequestContext,
   Violation,
 } from './types';
 
@@ -84,6 +86,9 @@ export interface PolicyContext {
    *  nothing is budgeted). Hydrated by the loader, because the check needs the
    *  database and a kind's `evaluateAggregate` is synchronous. */
   budgetImpacts: readonly BudgetImpact[] | null;
+  /** What the linked APPROVED travel request budgeted, per expense category. Hydrated by
+   *  the loader for the same reason, and only when a TRAVEL_OVERRUN instance is enabled. */
+  travelBudget: TravelBudgetByCategory | null;
   /** Localized rule-message renderer. */
   t: RuleTranslator;
   /** v2: enabled, scope/date/dim-filtered admin-authored rule instances. */
@@ -215,6 +220,7 @@ export function runRules(ctx: PolicyContext): Violation[] {
     perDiemEnabled: ctx.perDiemEnabled,
     perDiem: ctx.perDiem,
     budgetImpacts: ctx.budgetImpacts,
+    travelBudget: ctx.travelBudget,
     t: ctx.t,
   };
 
@@ -266,9 +272,45 @@ export function runRules(ctx: PolicyContext): Violation[] {
   return keepMostSevere(dedupe(out));
 }
 
-// VeloExpense: ExpenseOS's fourth entry point, `runTravelRules` (with `TravelPolicyContext`),
-// runs the TRAVEL_REQUEST-scope kinds over a travel estimate. Travel is out of VeloExpense's
-// scope, so it is not carried.
+// ── Travel requests ──────────────────────────────────────────────────
+
+export interface TravelPolicyContext {
+  travel: TravelRequestContext;
+  /** Enabled, effective, dimension-filtered instances — the SAME query the report
+   *  validator runs. Non-travel scopes are simply skipped below, rather than filtered
+   *  out here, so one loader serves both subjects. */
+  rules: PolicyRuleInstance[];
+}
+
+/**
+ * Run the TRAVEL_REQUEST-scope rules over a travel estimate.
+ *
+ * A fourth entry point rather than a fifth branch inside `runRules`, because `runRules`
+ * needs a `HydratedReport` to build its `AggregateContext` and a travel request is not
+ * one. Faking a report to get here would put a lie in the shared context that every
+ * report kind would then have to defend against.
+ *
+ * The two collapse passes are shared verbatim, and that is the point of sharing them: a
+ * travel warn-and-block pair from two instances of one kind collapses exactly as it does
+ * on a report, so the submit gate cannot ask somebody to justify the warning about the
+ * very thing that is already blocking them.
+ *
+ * `Violation.lineItemId` here holds a `TravelBudgetLine` id. The engine only ever uses
+ * it as a grouping key; `validateTravelRequest` is what writes it into `travelLineId`.
+ */
+export function runTravelRules(ctx: TravelPolicyContext): Violation[] {
+  const out: Violation[] = [];
+  for (const inst of ctx.rules) {
+    if (inst.scope !== 'TRAVEL_REQUEST') continue;
+    const kind = RULE_KINDS[inst.kindCode];
+    // Scope is denormalized onto the row, so a kind re-scoped in code after an instance
+    // was authored would otherwise be handed the wrong context. The kind's own scope
+    // governs.
+    if (!kind || kind.scope !== 'TRAVEL_REQUEST' || !kind.evaluateTravel) continue;
+    for (const f of kind.evaluateTravel(inst, ctx.travel)) out.push(stamp(ctx.travel.t, inst, f));
+  }
+  return keepMostSevere(dedupe(out));
+}
 
 // ── Helpers re-exported for the orchestrator ─────────────────────────
 

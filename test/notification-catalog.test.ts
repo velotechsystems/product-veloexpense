@@ -37,6 +37,7 @@ import {
   resolveChannels,
   shippedBody,
   templateKeyFor,
+  subjectPath,
 } from '@/lib/notifications/catalog';
 import { missingCopyMarker } from '@/lib/i18n/catalog/enums';
 
@@ -179,8 +180,64 @@ describe('template keys', () => {
     // "Null is not an error. It means render the shipped string." Both null
     // paths: no subject at all, and a subject with no entry.
     expect(templateKeyFor('APPROVED', null)).toBeNull();
-    expect(templateKeyFor('APPROVED', 'TRAVEL_REQUEST')).toBeNull();
+    // w6-01: TRAVEL_REQUEST has its own keys now, so the "subject with no entry" control is a
+    // pair nothing claims — REIMBURSED on a trip (a trip is never reimbursed; its report is).
+    expect(templateKeyFor('REIMBURSED', 'TRAVEL_REQUEST')).toBeNull();
     expect(templateKeyFor('SOMETHING_NEW', 'EXPENSE_REPORT')).toBeNull();
+  });
+
+  /**
+   * w6-01 — ExpenseOS's travel keys (`templateKeys.ts`, 1e682dd6), each on the pair it
+   * claims there. No `travel.request_submitted`: VeloExpense has no SUBMITTED event, and a
+   * submitted trip's approvers hear of it through TASK_ASSIGNED, as a report's do.
+   */
+  it("maps the travel events onto ExpenseOS's travel keys", () => {
+    expect(
+      Object.fromEntries(
+        mappedEventPairs()
+          .filter((p) => p.subjectType === 'TRAVEL_REQUEST')
+          .map((p) => [p.eventType, p.key]),
+      ),
+    ).toEqual({
+      TASK_ASSIGNED: 'travel.request_awaiting_approval',
+      APPROVED: 'travel.request_approved',
+      REJECTED: 'travel.request_rejected',
+      RETURNED: 'travel.request_returned',
+      COMMENT: 'travel.request_commented',
+      TASK_EXPIRED: 'travel.request_approval_expired',
+      DEADLINE_NEAR: 'travel.request_approval_due_soon',
+      NOTIFY: 'travel.request_update',
+    });
+  });
+});
+
+/* ── where a subject lives (w6-01) ─────────────────────────────────────────── */
+
+/**
+ * ExpenseOS's `subjectLinks.test.ts` (1e682dd6), for VeloExpense's subjects: the one map the
+ * bell and the email/Slack dispatch share, so no surface can go out without a link the
+ * others have.
+ */
+describe('subjectPath', () => {
+  it('gives every subject the product notifies about a landing page', () => {
+    for (const subject of SUBJECT_TYPES) expect(subjectPath(subject, 's1'), subject).not.toBeNull();
+  });
+
+  it('deep-opens the trip, because /travel reads the param', () => {
+    expect(subjectPath('TRAVEL_REQUEST', 't1')).toBe('/travel?request=t1');
+  });
+
+  it('encodes the id, so an id can never break out of the query string', () => {
+    expect(subjectPath('TRAVEL_REQUEST', 'a&b=c')).toBe('/travel?request=a%26b%3Dc');
+  });
+
+  it('keeps the report on its own page, as every report link here is', () => {
+    // VeloExpense: ExpenseOS opens a drawer from `?report=`; a report here is a page.
+    expect(subjectPath('EXPENSE_REPORT', 'r1')).toBe('/expenses/r1');
+  });
+
+  it('has no landing page for a subject it does not know', () => {
+    expect(subjectPath('VIRTUAL_CARD', 'c1')).toBeNull();
   });
 });
 

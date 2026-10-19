@@ -1,5 +1,5 @@
 // Ported from ExpenseOS `apps/web/src/server/policy/engine.v2.test.ts` (550b2945), w4-02a (d63). Each adaptation is
-// marked "VeloExpense:"; travel, which is out of VeloExpense's scope, is the main one.
+// marked "VeloExpense:". Its travel cases were left out then and restored by w6-01.
 // @vitest-environment node
 import { describe, expect, it } from 'vitest';
 import { type PolicyContext, runRules } from './engine';
@@ -36,6 +36,7 @@ function ctxWith(
       id: 'r1',
       submittedAt: null,
       submitter: { id: 'u1', homeCurrency: 'USD', localePref: 'en', jobLevelId: null },
+      travelApproved: false,
       lineItems: [],
     },
     policiesByCategoryId: new Map(),
@@ -44,6 +45,7 @@ function ctxWith(
     fiscalCloseDate: null,
     perDiemEnabled: false,
     budgetImpacts: null,
+    travelBudget: null,
     perDiem: null,
     rules,
     facts,
@@ -156,6 +158,7 @@ function perDiemCtx(opts: { enabled: boolean; rules: PolicyRuleInstance[] }): Po
       id: 'r1',
       submittedAt: null,
       submitter: { id: 'u1', homeCurrency: 'USD', localePref: 'en', jobLevelId: null },
+      travelApproved: false,
       lineItems: [],
     },
     policiesByCategoryId: new Map(),
@@ -164,6 +167,7 @@ function perDiemCtx(opts: { enabled: boolean; rules: PolicyRuleInstance[] }): Po
     fiscalCloseDate: null,
     perDiemEnabled: opts.enabled,
     budgetImpacts: null,
+    travelBudget: null,
     perDiem: {
       expenses: [
         {

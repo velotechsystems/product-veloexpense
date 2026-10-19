@@ -1,5 +1,5 @@
 // Ported from ExpenseOS `apps/web/src/server/policy/paramsSpec.test.ts` (550b2945), w4-02a (d63). Each adaptation is
-// marked "VeloExpense:"; travel, which is out of VeloExpense's scope, is the main one.
+// marked "VeloExpense:". Its travel cases were left out then and restored by w6-01.
 // @vitest-environment node
 import { describe, expect, it } from 'vitest';
 import { RULE_KINDS } from './kinds';
@@ -22,11 +22,12 @@ import { RULE_KINDS } from './kinds';
 /**
  * Kinds allowed to accept params without a spec, each with the reason.
  *
- * ExpenseOS lists `REQUIRES_APPROVED_TRAVEL` here (two uuid-array params the editor
- * cannot render). VeloExpense: that kind is travel and is not carried, so nothing is
- * exempt; the list stays as the place a future exemption would be recorded.
+ * `REQUIRES_APPROVED_TRAVEL`'s two params are uuid ARRAYS — exempt job levels and
+ * named users — and the generic editor renders money / number / boolean only. Its
+ * exemptions stay API-authored, which is a decision rather than an oversight; this
+ * list is where that decision is recorded and where it stops being invisible.
  */
-const SPEC_EXEMPT = new Set<string>([]);
+const SPEC_EXEMPT = new Set(['REQUIRES_APPROVED_TRAVEL']);
 
 /** A probe carrying every param name any kind uses, plus a decoy. */
 const PROBE = {
@@ -37,8 +38,8 @@ const PROBE = {
   requireAttendees: true,
   exemptJobLevelIds: [],
   exemptUserIds: [],
-  // ExpenseOS's travel kinds' params. VeloExpense carries none of those kinds; the names
-  // stay in the probe so a kind that ever reuses one is still checked.
+  // The travel kinds. A probe that omits a kind's param names cannot detect a missing
+  // spec for it, so the pass would be a false negative rather than a check.
   cabin: 'BUSINESS',
   allowedJobLevelIds: [],
   tolerancePercent: 10,
@@ -134,8 +135,25 @@ describe('rule-kind params specs', () => {
     expect(offenders).toEqual([]);
   });
 
-  // VeloExpense: ExpenseOS's 'gives TRAVEL_CABIN_CLASS an editable cabin and job-level list'
-  // pins a travel kind, which is not carried.
+  it('gives TRAVEL_CABIN_CLASS an editable cabin and job-level list', () => {
+    /**
+     * The rule the whole `lookupIds` / `enum` addition exists for, pinned concretely.
+     *
+     * Its params were nearly shipped in `SPEC_EXEMPT` — the "API-authored only" hole
+     * `REQUIRES_APPROVED_TRAVEL` sits in — which would have made "business class needs
+     * VP+" a rule an admin could create and never configure. This asserts it stayed out.
+     */
+    const spec = RULE_KINDS.TRAVEL_CABIN_CLASS.paramsSpec ?? [];
+    expect(spec.find((f) => f.name === 'cabin')).toMatchObject({ kind: 'enum', required: true });
+    expect(spec.find((f) => f.name === 'allowedJobLevelIds')).toMatchObject({
+      kind: 'lookupIds',
+      entity: 'jobLevel',
+    });
+    // ECONOMY must NOT be offerable: a rule forbidding the cheapest cabin forbids travel.
+    const cabin = spec.find((f) => f.name === 'cabin');
+    expect(cabin?.kind === 'enum' ? cabin.options : []).not.toContain('ECONOMY');
+    expect(cabin?.kind === 'enum' ? cabin.options : []).toContain('BUSINESS');
+  });
 
   it('gives AUDIT_THRESHOLD a money threshold and two switches', () => {
     // The kind this work was for, pinned concretely so a refactor of the generic

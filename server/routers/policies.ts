@@ -1250,11 +1250,11 @@ export const policiesRouter = router({
      * kept so a row can still link to the right place.
      *
      * VeloExpense (w4-02e):
-     *   · no travel yet, so every subject is a REPORT and the travel fields are null — the
-     *     row keeps ExpenseOS's shape so the screen ports unchanged;
-     *   · `PolicyViolation` carries no Prisma relations here (its foreign keys are SQL's,
-     *     0066), so the report, expense, line and submitter are read in four batched
-     *     lookups rather than one nested select;
+     *   · both subjects since w6-01 (0077): a travel request and its line are looked up the
+     *     same way as the report side, below;
+     *   · `PolicyViolation` carries no Prisma relations to its report side here (its foreign
+     *     keys are SQL's, 0066), so the report, expense, line, travel request, travel line and
+     *     submitter are read in batched lookups rather than one nested select;
      *   · the submitter's name is the user's display name (VeloExpense has no first/last);
      *   · rows written before the cutover keep v1's kind NAME as `ruleCode`, not a rule id
      *     (0066). Only uuid-shaped codes are looked up — a v1 name in a uuid `IN` list is a
@@ -1285,11 +1285,17 @@ export const policiesRouter = router({
             reportId: true,
             lineItemId: true,
             expenseId: true,
+            // w6-01: ExpenseOS's travel subject — a violation on a travel estimate (0077).
+            travelRequestId: true,
+            travelLineId: true,
           },
         });
-        const ids = <K extends 'reportId' | 'expenseId' | 'lineItemId'>(k: K) =>
-          [...new Set(rows.map((r) => r[k]).filter((v): v is string => !!v))];
-        const [reports, expenses, lines] = await Promise.all([
+        const ids = <
+          K extends 'reportId' | 'expenseId' | 'lineItemId' | 'travelRequestId' | 'travelLineId',
+        >(
+          k: K,
+        ) => [...new Set(rows.map((r) => r[k]).filter((v): v is string => !!v))];
+        const [reports, expenses, lines, trips, tripLines] = await Promise.all([
           ctx.db.expenseReport.findMany({
             where: { id: { in: ids('reportId') } },
             select: { id: true, number: true, title: true, submitterId: true },
@@ -1302,11 +1308,29 @@ export const policiesRouter = router({
             where: { id: { in: ids('lineItemId') } },
             select: { id: true, category: { select: { label: true } } },
           }),
+          // w6-01: ExpenseOS reads the travel request and its line through relations on the
+          // violation; VeloExpense looks them up by id, as it does the report side.
+          ctx.db.travelRequest.findMany({
+            where: { id: { in: ids('travelRequestId') } },
+            select: { id: true, number: true, destinationLabel: true, submitterId: true },
+          }),
+          ctx.db.travelBudgetLine.findMany({
+            where: { id: { in: ids('travelLineId') } },
+            select: { id: true, category: { select: { label: true } } },
+          }),
         ]);
         const submitters = await ctx.db.user.findMany({
-          where: { id: { in: [...new Set(reports.map((r) => r.submitterId))] } },
+          where: {
+            id: {
+              in: [
+                ...new Set([...reports.map((r) => r.submitterId), ...trips.map((t) => t.submitterId)]),
+              ],
+            },
+          },
           select: { id: true, name: true, email: true },
         });
+        const tripById = new Map(trips.map((t) => [t.id, t]));
+        const tripLineById = new Map(tripLines.map((l) => [l.id, l]));
         const reportById = new Map(reports.map((r) => [r.id, r]));
         const expenseById = new Map(expenses.map((e) => [e.id, e]));
         const lineById = new Map(lines.map((l) => [l.id, l]));
@@ -1320,14 +1344,19 @@ export const policiesRouter = router({
         const kindById = new Map(kinds.map((k) => [k.id, k.kindCode]));
         return rows.map((r) => {
           const report = r.reportId ? (reportById.get(r.reportId) ?? null) : null;
-          const s = report ? (userById.get(report.submitterId) ?? null) : null;
+          const trip = r.travelRequestId ? (tripById.get(r.travelRequestId) ?? null) : null;
+          // Exactly one of the two is set — the `policy_violation_one_subject` CHECK (0077) is
+          // what makes that a fact rather than an expectation.
+          const submitterId = report?.submitterId ?? trip?.submitterId ?? null;
+          const s = submitterId ? (userById.get(submitterId) ?? null) : null;
           const name = s
             ? s.name?.trim() || s.email
-            : // Unreachable while the report's foreign keys hold; a dash beats a crash if
-              // it ever does not.
+            : // Unreachable while the CHECK and the foreign keys hold; a dash beats a crash
+              // if it ever does not.
               '—';
           const expense = r.expenseId ? (expenseById.get(r.expenseId) ?? null) : null;
           const line = r.lineItemId ? (lineById.get(r.lineItemId) ?? null) : null;
+          const tripLine = r.travelLineId ? (tripLineById.get(r.travelLineId) ?? null) : null;
           return {
             id: r.id,
             severity: r.severity,
@@ -1337,18 +1366,24 @@ export const policiesRouter = router({
             resolvedAt: r.resolvedAt,
             resolveNote: r.resolveNote,
             createdAt: r.createdAt,
-            subjectKind: 'REPORT' as 'TRAVEL_REQUEST' | 'REPORT',
-            subjectNumber: report?.number ?? '',
-            subjectTitle: report?.title ?? null,
+            subjectKind: (r.travelRequestId ? 'TRAVEL_REQUEST' : 'REPORT') as
+              | 'TRAVEL_REQUEST'
+              | 'REPORT',
+            subjectNumber: report?.number ?? trip?.number ?? '',
+            // A travel request has a destination where a report has a title, and both
+            // answer the same question for a reader scanning the register.
+            subjectTitle: report?.title ?? trip?.destinationLabel ?? null,
             reportId: r.reportId,
-            travelRequestId: null as string | null,
+            travelRequestId: r.travelRequestId,
             submitterName: name,
             lineItemId: r.lineItemId,
             expenseId: r.expenseId,
-            travelLineId: null as string | null,
+            travelLineId: r.travelLineId,
             merchant: expense?.merchant ?? null,
             expenseDate: expense?.date ?? null,
-            categoryLabel: (line?.category?.label as Record<string, string> | null) ?? null,
+            categoryLabel:
+              ((line?.category?.label ?? tripLine?.category?.label) as Record<string, string> | null) ??
+              null,
           };
         });
       }),

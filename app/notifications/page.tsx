@@ -33,6 +33,7 @@ import { formatInstant } from '@/lib/i18n/format';
 import { readerPrefs } from '@/lib/i18n/request';
 import { uiText, uiPlural, type UiKey } from '@/lib/i18n/catalog/ui';
 import { getInboxPage, markAllReadFromForm, markReadFromForm } from './actions';
+import { subjectPath } from '@/lib/notifications/catalog';
 
 import { pageTitle } from '@/lib/i18n/page-title';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -47,22 +48,14 @@ export function generateMetadata() {
 
 export const dynamic = 'force-dynamic';
 
-/** Where a subject lives. One table, so a new subject type is one line here and
- *  not a branch in three components (ExpenseOS learned this the hard way — a
- *  duplicated link table meant three subject types went out to email with no
- *  link at all, silently, "because each copy was only exercised by its own
- *  surface"). */
-const SUBJECT_PATH: Record<string, (id: string) => string> = {
-  EXPENSE_REPORT: (id) => `/expenses/${id}`,
-  // VX4-5 part 3b. The budgets screen has no per-budget route, so this lands on
-  // the list — which is still better than the alternative: `subjectHref` returns
-  // null for an unmapped type and the row renders as dead text, and "your budget
-  // is over" with nowhere to go is exactly the shape the comment above is about.
-  BUDGET: () => '/admin/budgets',
-};
-
+/** Where a subject lives. One table, so a new subject type is one line and not a branch in
+ *  three components (ExpenseOS learned this the hard way — a duplicated link table meant
+ *  three subject types went out to email with no link at all, silently, "because each copy
+ *  was only exercised by its own surface"). VeloExpense (w6-01): that table is now
+ *  `subjectPath` in lib/notifications/catalog.ts, which the email and Slack dispatch read
+ *  too — ExpenseOS's `subjectLinks.ts` — so the bell and the email cannot disagree. */
 function subjectHref(subjectType: string, subjectId: string): string | null {
-  return SUBJECT_PATH[subjectType]?.(subjectId) ?? null;
+  return subjectPath(subjectType, subjectId);
 }
 
 export default async function NotificationsPage({

@@ -16,9 +16,10 @@
  * pool of people who have never touched it — notifying them of every comment is how a
  * channel gets muted.
  *
- * VeloExpense: ExpenseOS's `server/lib/threadParticipants.ts` (550b2945), for the one subject
- * with a thread here — the expense report (w2-02a, d37). The card-request and travel
- * subjects arrive with their modules, and the inbound reply path with the email channel.
+ * VeloExpense: ExpenseOS's `server/lib/threadParticipants.ts` (550b2945), for the subjects
+ * with a thread here — the expense report (w2-02a, d37) and, since w6-01, the travel request
+ * (ExpenseOS's `OWNER_RESOLVERS` entry for it, 1e682dd6). The card-request subject is out of
+ * scope.
  * The tasks of EVERY approval of the report, where ExpenseOS reads its one current instance
  * (see `canViewReport`): the engine's instances (w4-00c). The ladder's runs went with its
  * tables (w4-00d, d61).
@@ -26,12 +27,41 @@
 import type { TenantDb } from '@/lib/db/prisma';
 
 /** The subjects with a thread. ExpenseOS's `COMMENT_THREAD_SUBJECTS`, for this module. */
-export const COMMENT_THREAD_SUBJECTS = ['EXPENSE_REPORT'] as const;
+export const COMMENT_THREAD_SUBJECTS = ['EXPENSE_REPORT', 'TRAVEL_REQUEST'] as const;
 export type CommentThreadSubject = (typeof COMMENT_THREAD_SUBJECTS)[number];
 
 export function hasCommentThread(subjectType: string): subjectType is CommentThreadSubject {
   return (COMMENT_THREAD_SUBJECTS as readonly string[]).includes(subjectType);
 }
+
+/**
+ * Who owns a commentable subject. ExpenseOS's `OWNER_RESOLVERS` (1e682dd6): adding a subject
+ * is one entry, and the `Record` is total over `CommentThreadSubject`, so this map and the
+ * list above cannot drift apart without failing to compile.
+ *
+ * VeloExpense (w6-01): only the owner is resolved — the approval tasks are read across EVERY
+ * instance of the subject (below), not ExpenseOS's one current instance, as the report's
+ * thread already was here (w4-00c).
+ */
+export const OWNER_RESOLVERS: Record<
+  CommentThreadSubject,
+  (db: TenantDb, subjectId: string) => Promise<string | null>
+> = {
+  EXPENSE_REPORT: async (db, id) => {
+    const r = await db.expenseReport.findUnique({
+      where: { id },
+      select: { submitterId: true },
+    });
+    return r?.submitterId ?? null;
+  },
+  TRAVEL_REQUEST: async (db, id) => {
+    const r = await db.travelRequest.findUnique({
+      where: { id },
+      select: { submitterId: true },
+    });
+    return r?.submitterId ?? null;
+  },
+};
 
 /**
  * Everyone on a subject's thread: its owner plus every task assignee / decider.
@@ -47,18 +77,15 @@ export async function threadParticipants(
   subjectId: string,
 ): Promise<string[]> {
   if (!hasCommentThread(subjectType)) return [];
-  const report = await db.expenseReport.findUnique({
-    where: { id: subjectId },
-    select: { submitterId: true },
-  });
-  if (!report) return [];
+  const ownerId = await OWNER_RESOLVERS[subjectType](db, subjectId);
+  if (!ownerId) return [];
 
-  const ids = new Set<string>([report.submitterId]);
+  const ids = new Set<string>([ownerId]);
   const tasks = await db.$queryRaw<Array<{ assigneeId: string | null; decidedById: string | null }>>`
     SELECT t.assignee_user_id AS "assigneeId", t.decided_by_id AS "decidedById"
       FROM approval_instance_task t
       JOIN approval_instance i ON i.id = t.instance_id
-     WHERE i.subject_type = 'EXPENSE_REPORT' AND i.subject_id = ${subjectId}::uuid`;
+     WHERE i.subject_type = ${subjectType} AND i.subject_id = ${subjectId}::uuid`;
   for (const t of tasks) {
     if (t.assigneeId) ids.add(t.assigneeId);
     if (t.decidedById) ids.add(t.decidedById);

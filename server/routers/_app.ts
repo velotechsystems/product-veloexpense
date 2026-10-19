@@ -14,6 +14,8 @@ import { pickersRouter } from './pickers';
 import { policiesRouter } from './policies';
 import { rolesRouter } from './roles';
 import { savedViewsRouter } from './savedViews';
+import { travelCategoriesRouter } from './travelCategories';
+import { travelRequestsRouter } from './travelRequests';
 import { usersRouter } from './users';
 
 /**
@@ -49,6 +51,10 @@ export const appRouter = router({
   roles: rolesRouter,
   // w4-08: a person's saved list views.
   savedViews: savedViewsRouter,
+  // w6-01 (d88): ExpenseOS's travel module — its own category list and the requests. Every
+  // procedure is gated on the `travel` module, which stays unavailable until Travel 3 of 3.
+  travelCategories: travelCategoriesRouter,
+  travelRequests: travelRequestsRouter,
   // People 1 (16 Oct 2026): the People screen's reads; its writes come with People 3.
   users: usersRouter,
 });

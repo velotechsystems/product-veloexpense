@@ -7,8 +7,9 @@ import type { EventType } from '@/lib/notifications/catalog';
 import {
   notifyRecipients as notifyServiceRecipients,
   recordActivity as recordServiceActivity,
-  reportPayload,
 } from '@/lib/notifications/service';
+import { subjectPayload } from '@/server/lib/subjectPayload';
+import type { SubjectType } from '@/lib/notifications/catalog';
 
 /**
  * Handler for `approval.sweepExpired`. Runs on a cron:
@@ -35,8 +36,8 @@ import {
  *     `system:approval.sweepExpired` — inside that task's savepoint, so the outcome and its
  *     consequences commit together. ExpenseOS posts after the fact and keeps a half-hourly
  *     sweep for a dropped post; VeloExpense queues the post on the transition and has none;
- *   · the activities carry the report's placeholders (`reportPayload`) and go through
- *     VeloExpense's notification service;
+ *   · the activities carry the report's placeholders (`reportPayload`) — or, w6-01, a travel
+ *     request's (`travelPayload`) — and go through VeloExpense's notification service;
  *   · the cutover's recall of reports the approval ladder left SUBMITTED (d52) ran here until
  *     the ladder's tables were dropped (w4-00d; migration 0062 refuses while one remains).
  */
@@ -130,7 +131,8 @@ async function sendDeadlineReminders(): Promise<number> {
 }
 
 /** VeloExpense: ExpenseOS's `recordActivity`, through VeloExpense's notification service, with
- *  an expense report's placeholders on every report activity. */
+ *  an expense report's placeholders on every report activity and, w6-01, a travel request's on
+ *  every travel activity. */
 async function recordActivity(
   client: TenantDb,
   entry: {
@@ -141,23 +143,12 @@ async function recordActivity(
     payload?: Record<string, unknown>;
   },
 ): Promise<{ id: string }> {
-  let placeholders: Record<string, string> = {};
-  if (entry.subjectType === 'EXPENSE_REPORT') {
-    const r = await client.expenseReport.findUnique({
-      where: { id: entry.subjectId },
-      select: { title: true, number: true, totalMinor: true, currencyId: true },
-    });
-    if (r) {
-      placeholders = reportPayload({
-        title: r.title,
-        number: r.number,
-        totalMinor: r.totalMinor,
-        currencyCode: r.currencyId,
-      });
-    }
-  }
+  // VeloExpense: the subject's placeholders — a report's, or a travel request's (w6-01).
+  const placeholders = await subjectPayload(client, entry.subjectType, entry.subjectId);
+  // VeloExpense (w6-01): the activity's own subject, as ExpenseOS records it. Until travel
+  // this was always a report, and the type was written as the literal.
   const id = await recordServiceActivity(queryRunnerOf(client), {
-    subjectType: 'EXPENSE_REPORT',
+    subjectType: entry.subjectType as SubjectType,
     subjectId: entry.subjectId,
     eventType: entry.type,
     actorId: entry.actorId,

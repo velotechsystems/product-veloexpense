@@ -1,5 +1,5 @@
 // Ported from ExpenseOS `apps/web/src/server/policy/builtinKinds.ts` (550b2945), w4-02a (d63). Each adaptation is
-// marked "VeloExpense:"; travel, which is out of VeloExpense's scope, is the main one.
+// marked "VeloExpense:". REQUIRES_APPROVED_TRAVEL was left out at w4-02a and restored by w6-01.
 /**
  * Built-in rule kinds — the pre-v2 hardcoded rules (R1–R12), migrated from the
  * `LEGACY_RULES` functions to first-class `RuleKind`s driven by seeded
@@ -532,9 +532,67 @@ function round1(n: number): number {
   return Math.round(n * 10) / 10;
 }
 
-// VeloExpense: ExpenseOS's REQUIRES_APPROVED_TRAVEL (spend in a pre-approved-travel category
-// filed without an approved trip) sits here. Travel is out of VeloExpense's scope, so it is
-// not carried, nor its registry entry below.
+/**
+ * Spend in a pre-approved-travel category, filed without an approved trip.
+ *
+ * The legacy app hardcoded two arrays — `travelExemptRoles` and
+ * `travelExemptEmployees` — and refused an airfare or hotel line unless the user
+ * held an approved request. Refusing was right; hardcoding who is exempt was not.
+ * Which categories need pre-approval, how hard the refusal is, and who is above it
+ * are three policy questions, and this codebase has a policy-rule registry for
+ * exactly that: an instance is scoped to a category by the admin, its severity is
+ * the admin's (WARNING to nudge, BLOCK to stop submission), and the exemptions are
+ * params rather than a deploy.
+ *
+ * `travelApproved` is deliberately false for a report linked to a request that is
+ * still pending. The whole point of pre-approval is that the approval happened
+ * BEFORE the spend, and "I filed a request this morning" is not that.
+ */
+const requiresApprovedTravelParams = z
+  .object({
+    /** Seniority above the rule — a VP who books their own flights. */
+    exemptJobLevelIds: z.array(z.string().uuid()).optional(),
+    /** Named individuals. A short list; a long one means the rule is wrong. */
+    exemptUserIds: z.array(z.string().uuid()).optional(),
+  })
+  .passthrough();
+
+const requiresApprovedTravelKind: RuleKind = {
+  code: 'REQUIRES_APPROVED_TRAVEL',
+  scope: 'AGGREGATE',
+  requires: [],
+  paramsSchema: requiresApprovedTravelParams,
+  // No paramsSpec: both params are uuid ARRAYS (job levels, named users) and the
+  // generic editor renders money / number / boolean only. Exemptions therefore stay
+  // API-authored for now — declared here so the omission is a stated decision rather
+  // than a gap, and so `policy.paramsSpec.test.ts` can allow it explicitly.
+  defaultSeverity: 'BLOCK',
+  messageKey: 'requiresApprovedTravel',
+  evaluateAggregate: (inst, ctx) => {
+    if (ctx.report.travelApproved) return [];
+    const params = requiresApprovedTravelParams.safeParse(inst.params ?? {});
+    if (!params.success) return [];
+    const { exemptJobLevelIds = [], exemptUserIds = [] } = params.data;
+    if (exemptUserIds.includes(ctx.report.submitter.id)) return [];
+    const jobLevelId = ctx.report.submitter.jobLevelId;
+    if (jobLevelId && exemptJobLevelIds.includes(jobLevelId)) return [];
+
+    // AGGREGATE kinds are not narrowed by the runner's category scoping (that is a
+    // LINE-scope behaviour), so an instance's categoryId is applied here. An
+    // instance with none covers every line, which is a legitimate — if aggressive —
+    // way to say "no unapproved travel spend at all".
+    const out: Finding[] = [];
+    for (const item of ctx.report.lineItems) {
+      if (inst.categoryId && item.category.id !== inst.categoryId) continue;
+      out.push({
+        lineItemId: item.id,
+        messageValues: { category: item.category.code },
+        data: { reason: 'noApprovedTravelRequest' },
+      });
+    }
+    return out;
+  },
+};
 
 /**
  * Documentation required above a money threshold — the "expense audit" rule.
@@ -662,5 +720,6 @@ export const BUILTIN_KINDS: readonly RuleKind[] = [
   currencyMismatchKind,
   fiscalCloseKind,
   mileageMaxKind,
+  requiresApprovedTravelKind,
   auditThresholdKind,
 ];

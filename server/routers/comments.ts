@@ -19,8 +19,8 @@
  *
  * Adding a subject is one registry entry pointing at that subject's existing access check.
  *
- * VeloExpense: ExpenseOS's router (550b2945), ported with w2-02a (d37) for the expense report
- * — the travel subject arrives with travel. Differences, each marked:
+ * VeloExpense: ExpenseOS's router (550b2945), ported with w2-02a (d37) for the expense report;
+ * the travel subject came with travel (w6-01, 1e682dd6). Differences, each marked:
  *   · the stream is VeloExpense's `activity` table, read with SQL (no Prisma model), and a
  *     comment is recorded through VeloExpense's notification service on the call's own
  *     transaction;
@@ -32,14 +32,17 @@ import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 import type { TenantDb } from '@/lib/db/prisma';
 import { queryRunnerOf } from '@/lib/db/prisma-pg-bridge';
-import { notifyRecipients, recordActivity, reportPayload } from '@/lib/notifications/service';
+import { notifyRecipients, recordActivity } from '@/lib/notifications/service';
+import { permissions as P } from '@expenseos/rbac';
 // VeloExpense (eos-573): the report read rule lives in server/lib/reportApproval.ts now, as in ExpenseOS.
 import { canViewReport } from '../lib/reportApproval';
+import { subjectPayload } from '../lib/subjectPayload';
 import { threadParticipants } from '../lib/threadParticipants';
 import { protectedProcedure, router } from '../trpc';
+import { canRead as canReadTravelRequest } from './travelRequests';
 
 /** Subjects this router serves. Card requests keep their own endpoint (see above). */
-const COMMENTABLE = ['EXPENSE_REPORT'] as const;
+const COMMENTABLE = ['EXPENSE_REPORT', 'TRAVEL_REQUEST'] as const;
 type Commentable = (typeof COMMENTABLE)[number];
 
 const MAX_BODY = 4000;
@@ -65,6 +68,11 @@ const CAN_VIEW: Record<Commentable, (ctx: Ctx, subjectId: string) => Promise<boo
     });
     if (!report) return false;
     return canViewReport(ctx.db, report, ctx.rbac.id, ctx.rbac.permissions);
+  },
+  // w6-01: ExpenseOS's entry — the travel request's own read rule (`canRead`).
+  TRAVEL_REQUEST: async (ctx, subjectId) => {
+    const isAdmin = ctx.rbac.permissions.includes(P.user.readAll);
+    return (await canReadTravelRequest(ctx.db, subjectId, ctx.rbac.id, isAdmin)) !== null;
   },
 };
 
@@ -165,12 +173,9 @@ export const commentsRouter = router({
       const body = input.body.trim();
       if (!body) throw new TRPCError({ code: 'BAD_REQUEST', message: 'Empty comment.' });
 
-      // VeloExpense: the report placeholders every EXPENSE_REPORT event carries
-      // (`reportPayload`), for the notification's `{report}`.
-      const report = await ctx.db.expenseReport.findUniqueOrThrow({
-        where: { id: input.subjectId },
-        select: { title: true, number: true, totalMinor: true, currencyId: true },
-      });
+      // VeloExpense: the placeholders every event on this subject carries — the report's
+      // (`reportPayload`) or, w6-01, the travel request's (`travelPayload`).
+      const subjectValues = await subjectPayload(ctx.db, input.subjectType, input.subjectId);
       const tx = queryRunnerOf(ctx.db);
       const activityId = await recordActivity(tx, {
         subjectType: input.subjectType,
@@ -178,12 +183,7 @@ export const commentsRouter = router({
         eventType: 'COMMENT',
         actorId: ctx.rbac.id,
         payload: {
-          ...reportPayload({
-            title: report.title,
-            number: report.number,
-            totalMinor: report.totalMinor,
-            currencyCode: report.currencyId,
-          }),
+          ...subjectValues,
           body,
           via: 'app',
         },

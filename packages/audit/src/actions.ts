@@ -45,6 +45,9 @@ const adminAndOthers = {
     userRoleChange: 'USER_ROLE_CHANGED',
     userDeactivate: 'USER_DEACTIVATED',
     userReactivate: 'USER_REACTIVATED',
+    /** w6-01: ExpenseOS's travel categories admin (`server/routers/travelCategories.ts`). */
+    travelCategoryCreate: 'TRAVEL_CATEGORY_CREATED',
+    travelCategoryUpdate: 'TRAVEL_CATEGORY_UPDATED',
   },
   /** ExpenseOS's `approvalWorkflow.*` keys (w4-01, the workflow builder). */
   approvalWorkflow: {
@@ -69,6 +72,15 @@ const adminAndOthers = {
   /** w5-04: ExpenseOS's `integration.google.directory.synced` (the directory-sync job). */
   integration: {
     googleDirectorySynced: 'DIRECTORY_SYNCED',
+  },
+  /** w6-01: ExpenseOS's `travel.*` keys (`server/routers/travelRequests.ts`). */
+  travel: {
+    create: 'TRAVEL_REQUEST_CREATED',
+    update: 'TRAVEL_REQUEST_UPDATED',
+    submit: 'TRAVEL_REQUEST_SUBMITTED',
+    approve: 'TRAVEL_REQUEST_APPROVED',
+    reject: 'TRAVEL_REQUEST_REJECTED',
+    return: 'TRAVEL_REQUEST_RETURNED',
   },
   /** ExpenseOS's `workflow.*` key (w4-00c, server/lib/workflowEffects). */
   workflow: {
