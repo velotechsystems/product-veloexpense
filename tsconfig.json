@@ -41,6 +41,9 @@
       "@expenseos/integrations-google": ["./packages/integrations-google/src/index.ts"],
       "@expenseos/travel-lines": ["./packages/travel-lines/src/index.ts"],
       "@expenseos/travel-search": ["./packages/travel-search/src/index.ts"],
+      "@expenseos/api-scopes": ["./packages/api-scopes/src/index.ts"],
+      "@expenseos/mcp-server": ["./packages/mcp-server/src/index.ts"],
+      "@expenseos/assistant": ["./packages/assistant/src/index.ts"],
       "@expenseos/predicate": ["./packages/predicate/src/index.ts"],
       "@expenseos/approvals": ["./packages/approvals/src/index.ts"],
       "@expenseos/approvals/engine": ["./packages/approvals/src/engine.ts"]

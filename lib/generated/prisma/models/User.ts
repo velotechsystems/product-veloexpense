@@ -351,6 +351,8 @@ export type UserWhereInput = {
   delegationsTo?: Prisma.DelegationListRelationFilter
   externalIds?: Prisma.UserExternalIdListRelationFilter
   travelRequests?: Prisma.TravelRequestListRelationFilter
+  assistantConversations?: Prisma.AssistantConversationListRelationFilter
+  assistantFeedback?: Prisma.AssistantFeedbackListRelationFilter
 }
 
 export type UserOrderByWithRelationInput = {
@@ -395,6 +397,8 @@ export type UserOrderByWithRelationInput = {
   delegationsTo?: Prisma.DelegationOrderByRelationAggregateInput
   externalIds?: Prisma.UserExternalIdOrderByRelationAggregateInput
   travelRequests?: Prisma.TravelRequestOrderByRelationAggregateInput
+  assistantConversations?: Prisma.AssistantConversationOrderByRelationAggregateInput
+  assistantFeedback?: Prisma.AssistantFeedbackOrderByRelationAggregateInput
 }
 
 export type UserWhereUniqueInput = Prisma.AtLeast<{
@@ -442,6 +446,8 @@ export type UserWhereUniqueInput = Prisma.AtLeast<{
   delegationsTo?: Prisma.DelegationListRelationFilter
   externalIds?: Prisma.UserExternalIdListRelationFilter
   travelRequests?: Prisma.TravelRequestListRelationFilter
+  assistantConversations?: Prisma.AssistantConversationListRelationFilter
+  assistantFeedback?: Prisma.AssistantFeedbackListRelationFilter
 }, "id">
 
 export type UserOrderByWithAggregationInput = {
@@ -539,6 +545,8 @@ export type UserCreateInput = {
   delegationsTo?: Prisma.DelegationCreateNestedManyWithoutToUserInput
   externalIds?: Prisma.UserExternalIdCreateNestedManyWithoutUserInput
   travelRequests?: Prisma.TravelRequestCreateNestedManyWithoutSubmitterInput
+  assistantConversations?: Prisma.AssistantConversationCreateNestedManyWithoutUserInput
+  assistantFeedback?: Prisma.AssistantFeedbackCreateNestedManyWithoutUserInput
 }
 
 export type UserUncheckedCreateInput = {
@@ -577,6 +585,8 @@ export type UserUncheckedCreateInput = {
   delegationsTo?: Prisma.DelegationUncheckedCreateNestedManyWithoutToUserInput
   externalIds?: Prisma.UserExternalIdUncheckedCreateNestedManyWithoutUserInput
   travelRequests?: Prisma.TravelRequestUncheckedCreateNestedManyWithoutSubmitterInput
+  assistantConversations?: Prisma.AssistantConversationUncheckedCreateNestedManyWithoutUserInput
+  assistantFeedback?: Prisma.AssistantFeedbackUncheckedCreateNestedManyWithoutUserInput
 }
 
 export type UserUpdateInput = {
@@ -614,6 +624,8 @@ export type UserUpdateInput = {
   delegationsTo?: Prisma.DelegationUpdateManyWithoutToUserNestedInput
   externalIds?: Prisma.UserExternalIdUpdateManyWithoutUserNestedInput
   travelRequests?: Prisma.TravelRequestUpdateManyWithoutSubmitterNestedInput
+  assistantConversations?: Prisma.AssistantConversationUpdateManyWithoutUserNestedInput
+  assistantFeedback?: Prisma.AssistantFeedbackUpdateManyWithoutUserNestedInput
 }
 
 export type UserUncheckedUpdateInput = {
@@ -652,6 +664,8 @@ export type UserUncheckedUpdateInput = {
   delegationsTo?: Prisma.DelegationUncheckedUpdateManyWithoutToUserNestedInput
   externalIds?: Prisma.UserExternalIdUncheckedUpdateManyWithoutUserNestedInput
   travelRequests?: Prisma.TravelRequestUncheckedUpdateManyWithoutSubmitterNestedInput
+  assistantConversations?: Prisma.AssistantConversationUncheckedUpdateManyWithoutUserNestedInput
+  assistantFeedback?: Prisma.AssistantFeedbackUncheckedUpdateManyWithoutUserNestedInput
 }
 
 export type UserCreateManyInput = {
@@ -1241,6 +1255,34 @@ export type UserUpdateOneRequiredWithoutTravelRequestsNestedInput = {
   update?: Prisma.XOR<Prisma.XOR<Prisma.UserUpdateToOneWithWhereWithoutTravelRequestsInput, Prisma.UserUpdateWithoutTravelRequestsInput>, Prisma.UserUncheckedUpdateWithoutTravelRequestsInput>
 }
 
+export type UserCreateNestedOneWithoutAssistantConversationsInput = {
+  create?: Prisma.XOR<Prisma.UserCreateWithoutAssistantConversationsInput, Prisma.UserUncheckedCreateWithoutAssistantConversationsInput>
+  connectOrCreate?: Prisma.UserCreateOrConnectWithoutAssistantConversationsInput
+  connect?: Prisma.UserWhereUniqueInput
+}
+
+export type UserUpdateOneRequiredWithoutAssistantConversationsNestedInput = {
+  create?: Prisma.XOR<Prisma.UserCreateWithoutAssistantConversationsInput, Prisma.UserUncheckedCreateWithoutAssistantConversationsInput>
+  connectOrCreate?: Prisma.UserCreateOrConnectWithoutAssistantConversationsInput
+  upsert?: Prisma.UserUpsertWithoutAssistantConversationsInput
+  connect?: Prisma.UserWhereUniqueInput
+  update?: Prisma.XOR<Prisma.XOR<Prisma.UserUpdateToOneWithWhereWithoutAssistantConversationsInput, Prisma.UserUpdateWithoutAssistantConversationsInput>, Prisma.UserUncheckedUpdateWithoutAssistantConversationsInput>
+}
+
+export type UserCreateNestedOneWithoutAssistantFeedbackInput = {
+  create?: Prisma.XOR<Prisma.UserCreateWithoutAssistantFeedbackInput, Prisma.UserUncheckedCreateWithoutAssistantFeedbackInput>
+  connectOrCreate?: Prisma.UserCreateOrConnectWithoutAssistantFeedbackInput
+  connect?: Prisma.UserWhereUniqueInput
+}
+
+export type UserUpdateOneRequiredWithoutAssistantFeedbackNestedInput = {
+  create?: Prisma.XOR<Prisma.UserCreateWithoutAssistantFeedbackInput, Prisma.UserUncheckedCreateWithoutAssistantFeedbackInput>
+  connectOrCreate?: Prisma.UserCreateOrConnectWithoutAssistantFeedbackInput
+  upsert?: Prisma.UserUpsertWithoutAssistantFeedbackInput
+  connect?: Prisma.UserWhereUniqueInput
+  update?: Prisma.XOR<Prisma.XOR<Prisma.UserUpdateToOneWithWhereWithoutAssistantFeedbackInput, Prisma.UserUpdateWithoutAssistantFeedbackInput>, Prisma.UserUncheckedUpdateWithoutAssistantFeedbackInput>
+}
+
 export type UserCreateWithoutReportsInput = {
   id?: string
   email: string
@@ -1275,6 +1317,8 @@ export type UserCreateWithoutReportsInput = {
   delegationsTo?: Prisma.DelegationCreateNestedManyWithoutToUserInput
   externalIds?: Prisma.UserExternalIdCreateNestedManyWithoutUserInput
   travelRequests?: Prisma.TravelRequestCreateNestedManyWithoutSubmitterInput
+  assistantConversations?: Prisma.AssistantConversationCreateNestedManyWithoutUserInput
+  assistantFeedback?: Prisma.AssistantFeedbackCreateNestedManyWithoutUserInput
 }
 
 export type UserUncheckedCreateWithoutReportsInput = {
@@ -1312,6 +1356,8 @@ export type UserUncheckedCreateWithoutReportsInput = {
   delegationsTo?: Prisma.DelegationUncheckedCreateNestedManyWithoutToUserInput
   externalIds?: Prisma.UserExternalIdUncheckedCreateNestedManyWithoutUserInput
   travelRequests?: Prisma.TravelRequestUncheckedCreateNestedManyWithoutSubmitterInput
+  assistantConversations?: Prisma.AssistantConversationUncheckedCreateNestedManyWithoutUserInput
+  assistantFeedback?: Prisma.AssistantFeedbackUncheckedCreateNestedManyWithoutUserInput
 }
 
 export type UserCreateOrConnectWithoutReportsInput = {
@@ -1364,6 +1410,8 @@ export type UserUpdateWithoutReportsInput = {
   delegationsTo?: Prisma.DelegationUpdateManyWithoutToUserNestedInput
   externalIds?: Prisma.UserExternalIdUpdateManyWithoutUserNestedInput
   travelRequests?: Prisma.TravelRequestUpdateManyWithoutSubmitterNestedInput
+  assistantConversations?: Prisma.AssistantConversationUpdateManyWithoutUserNestedInput
+  assistantFeedback?: Prisma.AssistantFeedbackUpdateManyWithoutUserNestedInput
 }
 
 export type UserUncheckedUpdateWithoutReportsInput = {
@@ -1401,6 +1449,8 @@ export type UserUncheckedUpdateWithoutReportsInput = {
   delegationsTo?: Prisma.DelegationUncheckedUpdateManyWithoutToUserNestedInput
   externalIds?: Prisma.UserExternalIdUncheckedUpdateManyWithoutUserNestedInput
   travelRequests?: Prisma.TravelRequestUncheckedUpdateManyWithoutSubmitterNestedInput
+  assistantConversations?: Prisma.AssistantConversationUncheckedUpdateManyWithoutUserNestedInput
+  assistantFeedback?: Prisma.AssistantFeedbackUncheckedUpdateManyWithoutUserNestedInput
 }
 
 export type UserCreateWithoutExpensesInput = {
@@ -1437,6 +1487,8 @@ export type UserCreateWithoutExpensesInput = {
   delegationsTo?: Prisma.DelegationCreateNestedManyWithoutToUserInput
   externalIds?: Prisma.UserExternalIdCreateNestedManyWithoutUserInput
   travelRequests?: Prisma.TravelRequestCreateNestedManyWithoutSubmitterInput
+  assistantConversations?: Prisma.AssistantConversationCreateNestedManyWithoutUserInput
+  assistantFeedback?: Prisma.AssistantFeedbackCreateNestedManyWithoutUserInput
 }
 
 export type UserUncheckedCreateWithoutExpensesInput = {
@@ -1474,6 +1526,8 @@ export type UserUncheckedCreateWithoutExpensesInput = {
   delegationsTo?: Prisma.DelegationUncheckedCreateNestedManyWithoutToUserInput
   externalIds?: Prisma.UserExternalIdUncheckedCreateNestedManyWithoutUserInput
   travelRequests?: Prisma.TravelRequestUncheckedCreateNestedManyWithoutSubmitterInput
+  assistantConversations?: Prisma.AssistantConversationUncheckedCreateNestedManyWithoutUserInput
+  assistantFeedback?: Prisma.AssistantFeedbackUncheckedCreateNestedManyWithoutUserInput
 }
 
 export type UserCreateOrConnectWithoutExpensesInput = {
@@ -1526,6 +1580,8 @@ export type UserUpdateWithoutExpensesInput = {
   delegationsTo?: Prisma.DelegationUpdateManyWithoutToUserNestedInput
   externalIds?: Prisma.UserExternalIdUpdateManyWithoutUserNestedInput
   travelRequests?: Prisma.TravelRequestUpdateManyWithoutSubmitterNestedInput
+  assistantConversations?: Prisma.AssistantConversationUpdateManyWithoutUserNestedInput
+  assistantFeedback?: Prisma.AssistantFeedbackUpdateManyWithoutUserNestedInput
 }
 
 export type UserUncheckedUpdateWithoutExpensesInput = {
@@ -1563,6 +1619,8 @@ export type UserUncheckedUpdateWithoutExpensesInput = {
   delegationsTo?: Prisma.DelegationUncheckedUpdateManyWithoutToUserNestedInput
   externalIds?: Prisma.UserExternalIdUncheckedUpdateManyWithoutUserNestedInput
   travelRequests?: Prisma.TravelRequestUncheckedUpdateManyWithoutSubmitterNestedInput
+  assistantConversations?: Prisma.AssistantConversationUncheckedUpdateManyWithoutUserNestedInput
+  assistantFeedback?: Prisma.AssistantFeedbackUncheckedUpdateManyWithoutUserNestedInput
 }
 
 export type UserCreateWithoutReceiptsInput = {
@@ -1599,6 +1657,8 @@ export type UserCreateWithoutReceiptsInput = {
   delegationsTo?: Prisma.DelegationCreateNestedManyWithoutToUserInput
   externalIds?: Prisma.UserExternalIdCreateNestedManyWithoutUserInput
   travelRequests?: Prisma.TravelRequestCreateNestedManyWithoutSubmitterInput
+  assistantConversations?: Prisma.AssistantConversationCreateNestedManyWithoutUserInput
+  assistantFeedback?: Prisma.AssistantFeedbackCreateNestedManyWithoutUserInput
 }
 
 export type UserUncheckedCreateWithoutReceiptsInput = {
@@ -1636,6 +1696,8 @@ export type UserUncheckedCreateWithoutReceiptsInput = {
   delegationsTo?: Prisma.DelegationUncheckedCreateNestedManyWithoutToUserInput
   externalIds?: Prisma.UserExternalIdUncheckedCreateNestedManyWithoutUserInput
   travelRequests?: Prisma.TravelRequestUncheckedCreateNestedManyWithoutSubmitterInput
+  assistantConversations?: Prisma.AssistantConversationUncheckedCreateNestedManyWithoutUserInput
+  assistantFeedback?: Prisma.AssistantFeedbackUncheckedCreateNestedManyWithoutUserInput
 }
 
 export type UserCreateOrConnectWithoutReceiptsInput = {
@@ -1688,6 +1750,8 @@ export type UserUpdateWithoutReceiptsInput = {
   delegationsTo?: Prisma.DelegationUpdateManyWithoutToUserNestedInput
   externalIds?: Prisma.UserExternalIdUpdateManyWithoutUserNestedInput
   travelRequests?: Prisma.TravelRequestUpdateManyWithoutSubmitterNestedInput
+  assistantConversations?: Prisma.AssistantConversationUpdateManyWithoutUserNestedInput
+  assistantFeedback?: Prisma.AssistantFeedbackUpdateManyWithoutUserNestedInput
 }
 
 export type UserUncheckedUpdateWithoutReceiptsInput = {
@@ -1725,6 +1789,8 @@ export type UserUncheckedUpdateWithoutReceiptsInput = {
   delegationsTo?: Prisma.DelegationUncheckedUpdateManyWithoutToUserNestedInput
   externalIds?: Prisma.UserExternalIdUncheckedUpdateManyWithoutUserNestedInput
   travelRequests?: Prisma.TravelRequestUncheckedUpdateManyWithoutSubmitterNestedInput
+  assistantConversations?: Prisma.AssistantConversationUncheckedUpdateManyWithoutUserNestedInput
+  assistantFeedback?: Prisma.AssistantFeedbackUncheckedUpdateManyWithoutUserNestedInput
 }
 
 export type UserCreateWithoutDirectReportsInput = {
@@ -1761,6 +1827,8 @@ export type UserCreateWithoutDirectReportsInput = {
   delegationsTo?: Prisma.DelegationCreateNestedManyWithoutToUserInput
   externalIds?: Prisma.UserExternalIdCreateNestedManyWithoutUserInput
   travelRequests?: Prisma.TravelRequestCreateNestedManyWithoutSubmitterInput
+  assistantConversations?: Prisma.AssistantConversationCreateNestedManyWithoutUserInput
+  assistantFeedback?: Prisma.AssistantFeedbackCreateNestedManyWithoutUserInput
 }
 
 export type UserUncheckedCreateWithoutDirectReportsInput = {
@@ -1798,6 +1866,8 @@ export type UserUncheckedCreateWithoutDirectReportsInput = {
   delegationsTo?: Prisma.DelegationUncheckedCreateNestedManyWithoutToUserInput
   externalIds?: Prisma.UserExternalIdUncheckedCreateNestedManyWithoutUserInput
   travelRequests?: Prisma.TravelRequestUncheckedCreateNestedManyWithoutSubmitterInput
+  assistantConversations?: Prisma.AssistantConversationUncheckedCreateNestedManyWithoutUserInput
+  assistantFeedback?: Prisma.AssistantFeedbackUncheckedCreateNestedManyWithoutUserInput
 }
 
 export type UserCreateOrConnectWithoutDirectReportsInput = {
@@ -1839,6 +1909,8 @@ export type UserCreateWithoutManagerInput = {
   delegationsTo?: Prisma.DelegationCreateNestedManyWithoutToUserInput
   externalIds?: Prisma.UserExternalIdCreateNestedManyWithoutUserInput
   travelRequests?: Prisma.TravelRequestCreateNestedManyWithoutSubmitterInput
+  assistantConversations?: Prisma.AssistantConversationCreateNestedManyWithoutUserInput
+  assistantFeedback?: Prisma.AssistantFeedbackCreateNestedManyWithoutUserInput
 }
 
 export type UserUncheckedCreateWithoutManagerInput = {
@@ -1876,6 +1948,8 @@ export type UserUncheckedCreateWithoutManagerInput = {
   delegationsTo?: Prisma.DelegationUncheckedCreateNestedManyWithoutToUserInput
   externalIds?: Prisma.UserExternalIdUncheckedCreateNestedManyWithoutUserInput
   travelRequests?: Prisma.TravelRequestUncheckedCreateNestedManyWithoutSubmitterInput
+  assistantConversations?: Prisma.AssistantConversationUncheckedCreateNestedManyWithoutUserInput
+  assistantFeedback?: Prisma.AssistantFeedbackUncheckedCreateNestedManyWithoutUserInput
 }
 
 export type UserCreateOrConnectWithoutManagerInput = {
@@ -1933,6 +2007,8 @@ export type UserUpdateWithoutDirectReportsInput = {
   delegationsTo?: Prisma.DelegationUpdateManyWithoutToUserNestedInput
   externalIds?: Prisma.UserExternalIdUpdateManyWithoutUserNestedInput
   travelRequests?: Prisma.TravelRequestUpdateManyWithoutSubmitterNestedInput
+  assistantConversations?: Prisma.AssistantConversationUpdateManyWithoutUserNestedInput
+  assistantFeedback?: Prisma.AssistantFeedbackUpdateManyWithoutUserNestedInput
 }
 
 export type UserUncheckedUpdateWithoutDirectReportsInput = {
@@ -1970,6 +2046,8 @@ export type UserUncheckedUpdateWithoutDirectReportsInput = {
   delegationsTo?: Prisma.DelegationUncheckedUpdateManyWithoutToUserNestedInput
   externalIds?: Prisma.UserExternalIdUncheckedUpdateManyWithoutUserNestedInput
   travelRequests?: Prisma.TravelRequestUncheckedUpdateManyWithoutSubmitterNestedInput
+  assistantConversations?: Prisma.AssistantConversationUncheckedUpdateManyWithoutUserNestedInput
+  assistantFeedback?: Prisma.AssistantFeedbackUncheckedUpdateManyWithoutUserNestedInput
 }
 
 export type UserUpsertWithWhereUniqueWithoutManagerInput = {
@@ -2052,6 +2130,8 @@ export type UserCreateWithoutExternalIdsInput = {
   delegationsFrom?: Prisma.DelegationCreateNestedManyWithoutFromUserInput
   delegationsTo?: Prisma.DelegationCreateNestedManyWithoutToUserInput
   travelRequests?: Prisma.TravelRequestCreateNestedManyWithoutSubmitterInput
+  assistantConversations?: Prisma.AssistantConversationCreateNestedManyWithoutUserInput
+  assistantFeedback?: Prisma.AssistantFeedbackCreateNestedManyWithoutUserInput
 }
 
 export type UserUncheckedCreateWithoutExternalIdsInput = {
@@ -2089,6 +2169,8 @@ export type UserUncheckedCreateWithoutExternalIdsInput = {
   delegationsFrom?: Prisma.DelegationUncheckedCreateNestedManyWithoutFromUserInput
   delegationsTo?: Prisma.DelegationUncheckedCreateNestedManyWithoutToUserInput
   travelRequests?: Prisma.TravelRequestUncheckedCreateNestedManyWithoutSubmitterInput
+  assistantConversations?: Prisma.AssistantConversationUncheckedCreateNestedManyWithoutUserInput
+  assistantFeedback?: Prisma.AssistantFeedbackUncheckedCreateNestedManyWithoutUserInput
 }
 
 export type UserCreateOrConnectWithoutExternalIdsInput = {
@@ -2141,6 +2223,8 @@ export type UserUpdateWithoutExternalIdsInput = {
   delegationsFrom?: Prisma.DelegationUpdateManyWithoutFromUserNestedInput
   delegationsTo?: Prisma.DelegationUpdateManyWithoutToUserNestedInput
   travelRequests?: Prisma.TravelRequestUpdateManyWithoutSubmitterNestedInput
+  assistantConversations?: Prisma.AssistantConversationUpdateManyWithoutUserNestedInput
+  assistantFeedback?: Prisma.AssistantFeedbackUpdateManyWithoutUserNestedInput
 }
 
 export type UserUncheckedUpdateWithoutExternalIdsInput = {
@@ -2178,6 +2262,8 @@ export type UserUncheckedUpdateWithoutExternalIdsInput = {
   delegationsFrom?: Prisma.DelegationUncheckedUpdateManyWithoutFromUserNestedInput
   delegationsTo?: Prisma.DelegationUncheckedUpdateManyWithoutToUserNestedInput
   travelRequests?: Prisma.TravelRequestUncheckedUpdateManyWithoutSubmitterNestedInput
+  assistantConversations?: Prisma.AssistantConversationUncheckedUpdateManyWithoutUserNestedInput
+  assistantFeedback?: Prisma.AssistantFeedbackUncheckedUpdateManyWithoutUserNestedInput
 }
 
 export type UserCreateWithoutRoleInput = {
@@ -2214,6 +2300,8 @@ export type UserCreateWithoutRoleInput = {
   delegationsTo?: Prisma.DelegationCreateNestedManyWithoutToUserInput
   externalIds?: Prisma.UserExternalIdCreateNestedManyWithoutUserInput
   travelRequests?: Prisma.TravelRequestCreateNestedManyWithoutSubmitterInput
+  assistantConversations?: Prisma.AssistantConversationCreateNestedManyWithoutUserInput
+  assistantFeedback?: Prisma.AssistantFeedbackCreateNestedManyWithoutUserInput
 }
 
 export type UserUncheckedCreateWithoutRoleInput = {
@@ -2250,6 +2338,8 @@ export type UserUncheckedCreateWithoutRoleInput = {
   delegationsTo?: Prisma.DelegationUncheckedCreateNestedManyWithoutToUserInput
   externalIds?: Prisma.UserExternalIdUncheckedCreateNestedManyWithoutUserInput
   travelRequests?: Prisma.TravelRequestUncheckedCreateNestedManyWithoutSubmitterInput
+  assistantConversations?: Prisma.AssistantConversationUncheckedCreateNestedManyWithoutUserInput
+  assistantFeedback?: Prisma.AssistantFeedbackUncheckedCreateNestedManyWithoutUserInput
 }
 
 export type UserCreateOrConnectWithoutRoleInput = {
@@ -2312,6 +2402,8 @@ export type UserCreateWithoutBusinessUnitInput = {
   delegationsTo?: Prisma.DelegationCreateNestedManyWithoutToUserInput
   externalIds?: Prisma.UserExternalIdCreateNestedManyWithoutUserInput
   travelRequests?: Prisma.TravelRequestCreateNestedManyWithoutSubmitterInput
+  assistantConversations?: Prisma.AssistantConversationCreateNestedManyWithoutUserInput
+  assistantFeedback?: Prisma.AssistantFeedbackCreateNestedManyWithoutUserInput
 }
 
 export type UserUncheckedCreateWithoutBusinessUnitInput = {
@@ -2349,6 +2441,8 @@ export type UserUncheckedCreateWithoutBusinessUnitInput = {
   delegationsTo?: Prisma.DelegationUncheckedCreateNestedManyWithoutToUserInput
   externalIds?: Prisma.UserExternalIdUncheckedCreateNestedManyWithoutUserInput
   travelRequests?: Prisma.TravelRequestUncheckedCreateNestedManyWithoutSubmitterInput
+  assistantConversations?: Prisma.AssistantConversationUncheckedCreateNestedManyWithoutUserInput
+  assistantFeedback?: Prisma.AssistantFeedbackUncheckedCreateNestedManyWithoutUserInput
 }
 
 export type UserCreateOrConnectWithoutBusinessUnitInput = {
@@ -2411,6 +2505,8 @@ export type UserCreateWithoutEntityInput = {
   delegationsTo?: Prisma.DelegationCreateNestedManyWithoutToUserInput
   externalIds?: Prisma.UserExternalIdCreateNestedManyWithoutUserInput
   travelRequests?: Prisma.TravelRequestCreateNestedManyWithoutSubmitterInput
+  assistantConversations?: Prisma.AssistantConversationCreateNestedManyWithoutUserInput
+  assistantFeedback?: Prisma.AssistantFeedbackCreateNestedManyWithoutUserInput
 }
 
 export type UserUncheckedCreateWithoutEntityInput = {
@@ -2448,6 +2544,8 @@ export type UserUncheckedCreateWithoutEntityInput = {
   delegationsTo?: Prisma.DelegationUncheckedCreateNestedManyWithoutToUserInput
   externalIds?: Prisma.UserExternalIdUncheckedCreateNestedManyWithoutUserInput
   travelRequests?: Prisma.TravelRequestUncheckedCreateNestedManyWithoutSubmitterInput
+  assistantConversations?: Prisma.AssistantConversationUncheckedCreateNestedManyWithoutUserInput
+  assistantFeedback?: Prisma.AssistantFeedbackUncheckedCreateNestedManyWithoutUserInput
 }
 
 export type UserCreateOrConnectWithoutEntityInput = {
@@ -2510,6 +2608,8 @@ export type UserCreateWithoutMileageRatesInput = {
   delegationsTo?: Prisma.DelegationCreateNestedManyWithoutToUserInput
   externalIds?: Prisma.UserExternalIdCreateNestedManyWithoutUserInput
   travelRequests?: Prisma.TravelRequestCreateNestedManyWithoutSubmitterInput
+  assistantConversations?: Prisma.AssistantConversationCreateNestedManyWithoutUserInput
+  assistantFeedback?: Prisma.AssistantFeedbackCreateNestedManyWithoutUserInput
 }
 
 export type UserUncheckedCreateWithoutMileageRatesInput = {
@@ -2547,6 +2647,8 @@ export type UserUncheckedCreateWithoutMileageRatesInput = {
   delegationsTo?: Prisma.DelegationUncheckedCreateNestedManyWithoutToUserInput
   externalIds?: Prisma.UserExternalIdUncheckedCreateNestedManyWithoutUserInput
   travelRequests?: Prisma.TravelRequestUncheckedCreateNestedManyWithoutSubmitterInput
+  assistantConversations?: Prisma.AssistantConversationUncheckedCreateNestedManyWithoutUserInput
+  assistantFeedback?: Prisma.AssistantFeedbackUncheckedCreateNestedManyWithoutUserInput
 }
 
 export type UserCreateOrConnectWithoutMileageRatesInput = {
@@ -2599,6 +2701,8 @@ export type UserUpdateWithoutMileageRatesInput = {
   delegationsTo?: Prisma.DelegationUpdateManyWithoutToUserNestedInput
   externalIds?: Prisma.UserExternalIdUpdateManyWithoutUserNestedInput
   travelRequests?: Prisma.TravelRequestUpdateManyWithoutSubmitterNestedInput
+  assistantConversations?: Prisma.AssistantConversationUpdateManyWithoutUserNestedInput
+  assistantFeedback?: Prisma.AssistantFeedbackUpdateManyWithoutUserNestedInput
 }
 
 export type UserUncheckedUpdateWithoutMileageRatesInput = {
@@ -2636,6 +2740,8 @@ export type UserUncheckedUpdateWithoutMileageRatesInput = {
   delegationsTo?: Prisma.DelegationUncheckedUpdateManyWithoutToUserNestedInput
   externalIds?: Prisma.UserExternalIdUncheckedUpdateManyWithoutUserNestedInput
   travelRequests?: Prisma.TravelRequestUncheckedUpdateManyWithoutSubmitterNestedInput
+  assistantConversations?: Prisma.AssistantConversationUncheckedUpdateManyWithoutUserNestedInput
+  assistantFeedback?: Prisma.AssistantFeedbackUncheckedUpdateManyWithoutUserNestedInput
 }
 
 export type UserCreateWithoutDepartmentInput = {
@@ -2672,6 +2778,8 @@ export type UserCreateWithoutDepartmentInput = {
   delegationsTo?: Prisma.DelegationCreateNestedManyWithoutToUserInput
   externalIds?: Prisma.UserExternalIdCreateNestedManyWithoutUserInput
   travelRequests?: Prisma.TravelRequestCreateNestedManyWithoutSubmitterInput
+  assistantConversations?: Prisma.AssistantConversationCreateNestedManyWithoutUserInput
+  assistantFeedback?: Prisma.AssistantFeedbackCreateNestedManyWithoutUserInput
 }
 
 export type UserUncheckedCreateWithoutDepartmentInput = {
@@ -2709,6 +2817,8 @@ export type UserUncheckedCreateWithoutDepartmentInput = {
   delegationsTo?: Prisma.DelegationUncheckedCreateNestedManyWithoutToUserInput
   externalIds?: Prisma.UserExternalIdUncheckedCreateNestedManyWithoutUserInput
   travelRequests?: Prisma.TravelRequestUncheckedCreateNestedManyWithoutSubmitterInput
+  assistantConversations?: Prisma.AssistantConversationUncheckedCreateNestedManyWithoutUserInput
+  assistantFeedback?: Prisma.AssistantFeedbackUncheckedCreateNestedManyWithoutUserInput
 }
 
 export type UserCreateOrConnectWithoutDepartmentInput = {
@@ -2771,6 +2881,8 @@ export type UserCreateWithoutJobLevelInput = {
   delegationsTo?: Prisma.DelegationCreateNestedManyWithoutToUserInput
   externalIds?: Prisma.UserExternalIdCreateNestedManyWithoutUserInput
   travelRequests?: Prisma.TravelRequestCreateNestedManyWithoutSubmitterInput
+  assistantConversations?: Prisma.AssistantConversationCreateNestedManyWithoutUserInput
+  assistantFeedback?: Prisma.AssistantFeedbackCreateNestedManyWithoutUserInput
 }
 
 export type UserUncheckedCreateWithoutJobLevelInput = {
@@ -2808,6 +2920,8 @@ export type UserUncheckedCreateWithoutJobLevelInput = {
   delegationsTo?: Prisma.DelegationUncheckedCreateNestedManyWithoutToUserInput
   externalIds?: Prisma.UserExternalIdUncheckedCreateNestedManyWithoutUserInput
   travelRequests?: Prisma.TravelRequestUncheckedCreateNestedManyWithoutSubmitterInput
+  assistantConversations?: Prisma.AssistantConversationUncheckedCreateNestedManyWithoutUserInput
+  assistantFeedback?: Prisma.AssistantFeedbackUncheckedCreateNestedManyWithoutUserInput
 }
 
 export type UserCreateOrConnectWithoutJobLevelInput = {
@@ -2870,6 +2984,8 @@ export type UserCreateWithoutApprovalTasksAssignedInput = {
   delegationsTo?: Prisma.DelegationCreateNestedManyWithoutToUserInput
   externalIds?: Prisma.UserExternalIdCreateNestedManyWithoutUserInput
   travelRequests?: Prisma.TravelRequestCreateNestedManyWithoutSubmitterInput
+  assistantConversations?: Prisma.AssistantConversationCreateNestedManyWithoutUserInput
+  assistantFeedback?: Prisma.AssistantFeedbackCreateNestedManyWithoutUserInput
 }
 
 export type UserUncheckedCreateWithoutApprovalTasksAssignedInput = {
@@ -2907,6 +3023,8 @@ export type UserUncheckedCreateWithoutApprovalTasksAssignedInput = {
   delegationsTo?: Prisma.DelegationUncheckedCreateNestedManyWithoutToUserInput
   externalIds?: Prisma.UserExternalIdUncheckedCreateNestedManyWithoutUserInput
   travelRequests?: Prisma.TravelRequestUncheckedCreateNestedManyWithoutSubmitterInput
+  assistantConversations?: Prisma.AssistantConversationUncheckedCreateNestedManyWithoutUserInput
+  assistantFeedback?: Prisma.AssistantFeedbackUncheckedCreateNestedManyWithoutUserInput
 }
 
 export type UserCreateOrConnectWithoutApprovalTasksAssignedInput = {
@@ -2948,6 +3066,8 @@ export type UserCreateWithoutApprovalTasksDecidedInput = {
   delegationsTo?: Prisma.DelegationCreateNestedManyWithoutToUserInput
   externalIds?: Prisma.UserExternalIdCreateNestedManyWithoutUserInput
   travelRequests?: Prisma.TravelRequestCreateNestedManyWithoutSubmitterInput
+  assistantConversations?: Prisma.AssistantConversationCreateNestedManyWithoutUserInput
+  assistantFeedback?: Prisma.AssistantFeedbackCreateNestedManyWithoutUserInput
 }
 
 export type UserUncheckedCreateWithoutApprovalTasksDecidedInput = {
@@ -2985,6 +3105,8 @@ export type UserUncheckedCreateWithoutApprovalTasksDecidedInput = {
   delegationsTo?: Prisma.DelegationUncheckedCreateNestedManyWithoutToUserInput
   externalIds?: Prisma.UserExternalIdUncheckedCreateNestedManyWithoutUserInput
   travelRequests?: Prisma.TravelRequestUncheckedCreateNestedManyWithoutSubmitterInput
+  assistantConversations?: Prisma.AssistantConversationUncheckedCreateNestedManyWithoutUserInput
+  assistantFeedback?: Prisma.AssistantFeedbackUncheckedCreateNestedManyWithoutUserInput
 }
 
 export type UserCreateOrConnectWithoutApprovalTasksDecidedInput = {
@@ -3037,6 +3159,8 @@ export type UserUpdateWithoutApprovalTasksAssignedInput = {
   delegationsTo?: Prisma.DelegationUpdateManyWithoutToUserNestedInput
   externalIds?: Prisma.UserExternalIdUpdateManyWithoutUserNestedInput
   travelRequests?: Prisma.TravelRequestUpdateManyWithoutSubmitterNestedInput
+  assistantConversations?: Prisma.AssistantConversationUpdateManyWithoutUserNestedInput
+  assistantFeedback?: Prisma.AssistantFeedbackUpdateManyWithoutUserNestedInput
 }
 
 export type UserUncheckedUpdateWithoutApprovalTasksAssignedInput = {
@@ -3074,6 +3198,8 @@ export type UserUncheckedUpdateWithoutApprovalTasksAssignedInput = {
   delegationsTo?: Prisma.DelegationUncheckedUpdateManyWithoutToUserNestedInput
   externalIds?: Prisma.UserExternalIdUncheckedUpdateManyWithoutUserNestedInput
   travelRequests?: Prisma.TravelRequestUncheckedUpdateManyWithoutSubmitterNestedInput
+  assistantConversations?: Prisma.AssistantConversationUncheckedUpdateManyWithoutUserNestedInput
+  assistantFeedback?: Prisma.AssistantFeedbackUncheckedUpdateManyWithoutUserNestedInput
 }
 
 export type UserUpsertWithoutApprovalTasksDecidedInput = {
@@ -3121,6 +3247,8 @@ export type UserUpdateWithoutApprovalTasksDecidedInput = {
   delegationsTo?: Prisma.DelegationUpdateManyWithoutToUserNestedInput
   externalIds?: Prisma.UserExternalIdUpdateManyWithoutUserNestedInput
   travelRequests?: Prisma.TravelRequestUpdateManyWithoutSubmitterNestedInput
+  assistantConversations?: Prisma.AssistantConversationUpdateManyWithoutUserNestedInput
+  assistantFeedback?: Prisma.AssistantFeedbackUpdateManyWithoutUserNestedInput
 }
 
 export type UserUncheckedUpdateWithoutApprovalTasksDecidedInput = {
@@ -3158,6 +3286,8 @@ export type UserUncheckedUpdateWithoutApprovalTasksDecidedInput = {
   delegationsTo?: Prisma.DelegationUncheckedUpdateManyWithoutToUserNestedInput
   externalIds?: Prisma.UserExternalIdUncheckedUpdateManyWithoutUserNestedInput
   travelRequests?: Prisma.TravelRequestUncheckedUpdateManyWithoutSubmitterNestedInput
+  assistantConversations?: Prisma.AssistantConversationUncheckedUpdateManyWithoutUserNestedInput
+  assistantFeedback?: Prisma.AssistantFeedbackUncheckedUpdateManyWithoutUserNestedInput
 }
 
 export type UserCreateWithoutDelegationsFromInput = {
@@ -3194,6 +3324,8 @@ export type UserCreateWithoutDelegationsFromInput = {
   delegationsTo?: Prisma.DelegationCreateNestedManyWithoutToUserInput
   externalIds?: Prisma.UserExternalIdCreateNestedManyWithoutUserInput
   travelRequests?: Prisma.TravelRequestCreateNestedManyWithoutSubmitterInput
+  assistantConversations?: Prisma.AssistantConversationCreateNestedManyWithoutUserInput
+  assistantFeedback?: Prisma.AssistantFeedbackCreateNestedManyWithoutUserInput
 }
 
 export type UserUncheckedCreateWithoutDelegationsFromInput = {
@@ -3231,6 +3363,8 @@ export type UserUncheckedCreateWithoutDelegationsFromInput = {
   delegationsTo?: Prisma.DelegationUncheckedCreateNestedManyWithoutToUserInput
   externalIds?: Prisma.UserExternalIdUncheckedCreateNestedManyWithoutUserInput
   travelRequests?: Prisma.TravelRequestUncheckedCreateNestedManyWithoutSubmitterInput
+  assistantConversations?: Prisma.AssistantConversationUncheckedCreateNestedManyWithoutUserInput
+  assistantFeedback?: Prisma.AssistantFeedbackUncheckedCreateNestedManyWithoutUserInput
 }
 
 export type UserCreateOrConnectWithoutDelegationsFromInput = {
@@ -3272,6 +3406,8 @@ export type UserCreateWithoutDelegationsToInput = {
   delegationsFrom?: Prisma.DelegationCreateNestedManyWithoutFromUserInput
   externalIds?: Prisma.UserExternalIdCreateNestedManyWithoutUserInput
   travelRequests?: Prisma.TravelRequestCreateNestedManyWithoutSubmitterInput
+  assistantConversations?: Prisma.AssistantConversationCreateNestedManyWithoutUserInput
+  assistantFeedback?: Prisma.AssistantFeedbackCreateNestedManyWithoutUserInput
 }
 
 export type UserUncheckedCreateWithoutDelegationsToInput = {
@@ -3309,6 +3445,8 @@ export type UserUncheckedCreateWithoutDelegationsToInput = {
   delegationsFrom?: Prisma.DelegationUncheckedCreateNestedManyWithoutFromUserInput
   externalIds?: Prisma.UserExternalIdUncheckedCreateNestedManyWithoutUserInput
   travelRequests?: Prisma.TravelRequestUncheckedCreateNestedManyWithoutSubmitterInput
+  assistantConversations?: Prisma.AssistantConversationUncheckedCreateNestedManyWithoutUserInput
+  assistantFeedback?: Prisma.AssistantFeedbackUncheckedCreateNestedManyWithoutUserInput
 }
 
 export type UserCreateOrConnectWithoutDelegationsToInput = {
@@ -3361,6 +3499,8 @@ export type UserUpdateWithoutDelegationsFromInput = {
   delegationsTo?: Prisma.DelegationUpdateManyWithoutToUserNestedInput
   externalIds?: Prisma.UserExternalIdUpdateManyWithoutUserNestedInput
   travelRequests?: Prisma.TravelRequestUpdateManyWithoutSubmitterNestedInput
+  assistantConversations?: Prisma.AssistantConversationUpdateManyWithoutUserNestedInput
+  assistantFeedback?: Prisma.AssistantFeedbackUpdateManyWithoutUserNestedInput
 }
 
 export type UserUncheckedUpdateWithoutDelegationsFromInput = {
@@ -3398,6 +3538,8 @@ export type UserUncheckedUpdateWithoutDelegationsFromInput = {
   delegationsTo?: Prisma.DelegationUncheckedUpdateManyWithoutToUserNestedInput
   externalIds?: Prisma.UserExternalIdUncheckedUpdateManyWithoutUserNestedInput
   travelRequests?: Prisma.TravelRequestUncheckedUpdateManyWithoutSubmitterNestedInput
+  assistantConversations?: Prisma.AssistantConversationUncheckedUpdateManyWithoutUserNestedInput
+  assistantFeedback?: Prisma.AssistantFeedbackUncheckedUpdateManyWithoutUserNestedInput
 }
 
 export type UserUpsertWithoutDelegationsToInput = {
@@ -3445,6 +3587,8 @@ export type UserUpdateWithoutDelegationsToInput = {
   delegationsFrom?: Prisma.DelegationUpdateManyWithoutFromUserNestedInput
   externalIds?: Prisma.UserExternalIdUpdateManyWithoutUserNestedInput
   travelRequests?: Prisma.TravelRequestUpdateManyWithoutSubmitterNestedInput
+  assistantConversations?: Prisma.AssistantConversationUpdateManyWithoutUserNestedInput
+  assistantFeedback?: Prisma.AssistantFeedbackUpdateManyWithoutUserNestedInput
 }
 
 export type UserUncheckedUpdateWithoutDelegationsToInput = {
@@ -3482,6 +3626,8 @@ export type UserUncheckedUpdateWithoutDelegationsToInput = {
   delegationsFrom?: Prisma.DelegationUncheckedUpdateManyWithoutFromUserNestedInput
   externalIds?: Prisma.UserExternalIdUncheckedUpdateManyWithoutUserNestedInput
   travelRequests?: Prisma.TravelRequestUncheckedUpdateManyWithoutSubmitterNestedInput
+  assistantConversations?: Prisma.AssistantConversationUncheckedUpdateManyWithoutUserNestedInput
+  assistantFeedback?: Prisma.AssistantFeedbackUncheckedUpdateManyWithoutUserNestedInput
 }
 
 export type UserCreateWithoutTravelRequestsInput = {
@@ -3518,6 +3664,8 @@ export type UserCreateWithoutTravelRequestsInput = {
   delegationsFrom?: Prisma.DelegationCreateNestedManyWithoutFromUserInput
   delegationsTo?: Prisma.DelegationCreateNestedManyWithoutToUserInput
   externalIds?: Prisma.UserExternalIdCreateNestedManyWithoutUserInput
+  assistantConversations?: Prisma.AssistantConversationCreateNestedManyWithoutUserInput
+  assistantFeedback?: Prisma.AssistantFeedbackCreateNestedManyWithoutUserInput
 }
 
 export type UserUncheckedCreateWithoutTravelRequestsInput = {
@@ -3555,6 +3703,8 @@ export type UserUncheckedCreateWithoutTravelRequestsInput = {
   delegationsFrom?: Prisma.DelegationUncheckedCreateNestedManyWithoutFromUserInput
   delegationsTo?: Prisma.DelegationUncheckedCreateNestedManyWithoutToUserInput
   externalIds?: Prisma.UserExternalIdUncheckedCreateNestedManyWithoutUserInput
+  assistantConversations?: Prisma.AssistantConversationUncheckedCreateNestedManyWithoutUserInput
+  assistantFeedback?: Prisma.AssistantFeedbackUncheckedCreateNestedManyWithoutUserInput
 }
 
 export type UserCreateOrConnectWithoutTravelRequestsInput = {
@@ -3607,6 +3757,8 @@ export type UserUpdateWithoutTravelRequestsInput = {
   delegationsFrom?: Prisma.DelegationUpdateManyWithoutFromUserNestedInput
   delegationsTo?: Prisma.DelegationUpdateManyWithoutToUserNestedInput
   externalIds?: Prisma.UserExternalIdUpdateManyWithoutUserNestedInput
+  assistantConversations?: Prisma.AssistantConversationUpdateManyWithoutUserNestedInput
+  assistantFeedback?: Prisma.AssistantFeedbackUpdateManyWithoutUserNestedInput
 }
 
 export type UserUncheckedUpdateWithoutTravelRequestsInput = {
@@ -3644,6 +3796,348 @@ export type UserUncheckedUpdateWithoutTravelRequestsInput = {
   delegationsFrom?: Prisma.DelegationUncheckedUpdateManyWithoutFromUserNestedInput
   delegationsTo?: Prisma.DelegationUncheckedUpdateManyWithoutToUserNestedInput
   externalIds?: Prisma.UserExternalIdUncheckedUpdateManyWithoutUserNestedInput
+  assistantConversations?: Prisma.AssistantConversationUncheckedUpdateManyWithoutUserNestedInput
+  assistantFeedback?: Prisma.AssistantFeedbackUncheckedUpdateManyWithoutUserNestedInput
+}
+
+export type UserCreateWithoutAssistantConversationsInput = {
+  id?: string
+  email: string
+  name?: string | null
+  firstName?: string | null
+  lastName?: string | null
+  hasAccess?: boolean
+  onLeaveAt?: Date | string | null
+  terminationDate?: Date | string | null
+  lastLoginAt?: Date | string | null
+  avatarUrl?: string | null
+  employeeStatus?: string
+  slackUserId?: string | null
+  slackLookupAt?: Date | string | null
+  country?: string | null
+  deletedAt?: Date | string | null
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  manager?: Prisma.UserCreateNestedOneWithoutDirectReportsInput
+  directReports?: Prisma.UserCreateNestedManyWithoutManagerInput
+  department?: Prisma.DepartmentCreateNestedOneWithoutUsersInput
+  businessUnit?: Prisma.BusinessUnitCreateNestedOneWithoutUsersInput
+  entity?: Prisma.LegalEntityCreateNestedOneWithoutUsersInput
+  jobLevel?: Prisma.JobLevelCreateNestedOneWithoutUsersInput
+  role?: Prisma.RoleCreateNestedOneWithoutUsersInput
+  reports?: Prisma.ExpenseReportCreateNestedManyWithoutSubmitterInput
+  expenses?: Prisma.ExpenseCreateNestedManyWithoutOwnerInput
+  receipts?: Prisma.ReceiptCreateNestedManyWithoutUploadedByInput
+  mileageRates?: Prisma.MileageRateSubjectCreateNestedManyWithoutUserInput
+  approvalTasksAssigned?: Prisma.ApprovalTaskCreateNestedManyWithoutAssigneeInput
+  approvalTasksDecided?: Prisma.ApprovalTaskCreateNestedManyWithoutDecidedByInput
+  delegationsFrom?: Prisma.DelegationCreateNestedManyWithoutFromUserInput
+  delegationsTo?: Prisma.DelegationCreateNestedManyWithoutToUserInput
+  externalIds?: Prisma.UserExternalIdCreateNestedManyWithoutUserInput
+  travelRequests?: Prisma.TravelRequestCreateNestedManyWithoutSubmitterInput
+  assistantFeedback?: Prisma.AssistantFeedbackCreateNestedManyWithoutUserInput
+}
+
+export type UserUncheckedCreateWithoutAssistantConversationsInput = {
+  id?: string
+  organizationId?: string
+  email: string
+  name?: string | null
+  firstName?: string | null
+  lastName?: string | null
+  hasAccess?: boolean
+  onLeaveAt?: Date | string | null
+  terminationDate?: Date | string | null
+  lastLoginAt?: Date | string | null
+  avatarUrl?: string | null
+  employeeStatus?: string
+  slackUserId?: string | null
+  slackLookupAt?: Date | string | null
+  country?: string | null
+  managerId?: string | null
+  departmentId?: string | null
+  businessUnitId?: string | null
+  legalEntityId?: string | null
+  jobLevelId?: string | null
+  roleId?: string
+  deletedAt?: Date | string | null
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  directReports?: Prisma.UserUncheckedCreateNestedManyWithoutManagerInput
+  reports?: Prisma.ExpenseReportUncheckedCreateNestedManyWithoutSubmitterInput
+  expenses?: Prisma.ExpenseUncheckedCreateNestedManyWithoutOwnerInput
+  receipts?: Prisma.ReceiptUncheckedCreateNestedManyWithoutUploadedByInput
+  mileageRates?: Prisma.MileageRateSubjectUncheckedCreateNestedManyWithoutUserInput
+  approvalTasksAssigned?: Prisma.ApprovalTaskUncheckedCreateNestedManyWithoutAssigneeInput
+  approvalTasksDecided?: Prisma.ApprovalTaskUncheckedCreateNestedManyWithoutDecidedByInput
+  delegationsFrom?: Prisma.DelegationUncheckedCreateNestedManyWithoutFromUserInput
+  delegationsTo?: Prisma.DelegationUncheckedCreateNestedManyWithoutToUserInput
+  externalIds?: Prisma.UserExternalIdUncheckedCreateNestedManyWithoutUserInput
+  travelRequests?: Prisma.TravelRequestUncheckedCreateNestedManyWithoutSubmitterInput
+  assistantFeedback?: Prisma.AssistantFeedbackUncheckedCreateNestedManyWithoutUserInput
+}
+
+export type UserCreateOrConnectWithoutAssistantConversationsInput = {
+  where: Prisma.UserWhereUniqueInput
+  create: Prisma.XOR<Prisma.UserCreateWithoutAssistantConversationsInput, Prisma.UserUncheckedCreateWithoutAssistantConversationsInput>
+}
+
+export type UserUpsertWithoutAssistantConversationsInput = {
+  update: Prisma.XOR<Prisma.UserUpdateWithoutAssistantConversationsInput, Prisma.UserUncheckedUpdateWithoutAssistantConversationsInput>
+  create: Prisma.XOR<Prisma.UserCreateWithoutAssistantConversationsInput, Prisma.UserUncheckedCreateWithoutAssistantConversationsInput>
+  where?: Prisma.UserWhereInput
+}
+
+export type UserUpdateToOneWithWhereWithoutAssistantConversationsInput = {
+  where?: Prisma.UserWhereInput
+  data: Prisma.XOR<Prisma.UserUpdateWithoutAssistantConversationsInput, Prisma.UserUncheckedUpdateWithoutAssistantConversationsInput>
+}
+
+export type UserUpdateWithoutAssistantConversationsInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  email?: Prisma.StringFieldUpdateOperationsInput | string
+  name?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  firstName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  lastName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hasAccess?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  onLeaveAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  terminationDate?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  lastLoginAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  avatarUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  employeeStatus?: Prisma.StringFieldUpdateOperationsInput | string
+  slackUserId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  slackLookupAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  country?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  deletedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  manager?: Prisma.UserUpdateOneWithoutDirectReportsNestedInput
+  directReports?: Prisma.UserUpdateManyWithoutManagerNestedInput
+  department?: Prisma.DepartmentUpdateOneWithoutUsersNestedInput
+  businessUnit?: Prisma.BusinessUnitUpdateOneWithoutUsersNestedInput
+  entity?: Prisma.LegalEntityUpdateOneWithoutUsersNestedInput
+  jobLevel?: Prisma.JobLevelUpdateOneWithoutUsersNestedInput
+  role?: Prisma.RoleUpdateOneRequiredWithoutUsersNestedInput
+  reports?: Prisma.ExpenseReportUpdateManyWithoutSubmitterNestedInput
+  expenses?: Prisma.ExpenseUpdateManyWithoutOwnerNestedInput
+  receipts?: Prisma.ReceiptUpdateManyWithoutUploadedByNestedInput
+  mileageRates?: Prisma.MileageRateSubjectUpdateManyWithoutUserNestedInput
+  approvalTasksAssigned?: Prisma.ApprovalTaskUpdateManyWithoutAssigneeNestedInput
+  approvalTasksDecided?: Prisma.ApprovalTaskUpdateManyWithoutDecidedByNestedInput
+  delegationsFrom?: Prisma.DelegationUpdateManyWithoutFromUserNestedInput
+  delegationsTo?: Prisma.DelegationUpdateManyWithoutToUserNestedInput
+  externalIds?: Prisma.UserExternalIdUpdateManyWithoutUserNestedInput
+  travelRequests?: Prisma.TravelRequestUpdateManyWithoutSubmitterNestedInput
+  assistantFeedback?: Prisma.AssistantFeedbackUpdateManyWithoutUserNestedInput
+}
+
+export type UserUncheckedUpdateWithoutAssistantConversationsInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  organizationId?: Prisma.StringFieldUpdateOperationsInput | string
+  email?: Prisma.StringFieldUpdateOperationsInput | string
+  name?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  firstName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  lastName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hasAccess?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  onLeaveAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  terminationDate?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  lastLoginAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  avatarUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  employeeStatus?: Prisma.StringFieldUpdateOperationsInput | string
+  slackUserId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  slackLookupAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  country?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  managerId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  departmentId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  businessUnitId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  legalEntityId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  jobLevelId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  roleId?: Prisma.StringFieldUpdateOperationsInput | string
+  deletedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  directReports?: Prisma.UserUncheckedUpdateManyWithoutManagerNestedInput
+  reports?: Prisma.ExpenseReportUncheckedUpdateManyWithoutSubmitterNestedInput
+  expenses?: Prisma.ExpenseUncheckedUpdateManyWithoutOwnerNestedInput
+  receipts?: Prisma.ReceiptUncheckedUpdateManyWithoutUploadedByNestedInput
+  mileageRates?: Prisma.MileageRateSubjectUncheckedUpdateManyWithoutUserNestedInput
+  approvalTasksAssigned?: Prisma.ApprovalTaskUncheckedUpdateManyWithoutAssigneeNestedInput
+  approvalTasksDecided?: Prisma.ApprovalTaskUncheckedUpdateManyWithoutDecidedByNestedInput
+  delegationsFrom?: Prisma.DelegationUncheckedUpdateManyWithoutFromUserNestedInput
+  delegationsTo?: Prisma.DelegationUncheckedUpdateManyWithoutToUserNestedInput
+  externalIds?: Prisma.UserExternalIdUncheckedUpdateManyWithoutUserNestedInput
+  travelRequests?: Prisma.TravelRequestUncheckedUpdateManyWithoutSubmitterNestedInput
+  assistantFeedback?: Prisma.AssistantFeedbackUncheckedUpdateManyWithoutUserNestedInput
+}
+
+export type UserCreateWithoutAssistantFeedbackInput = {
+  id?: string
+  email: string
+  name?: string | null
+  firstName?: string | null
+  lastName?: string | null
+  hasAccess?: boolean
+  onLeaveAt?: Date | string | null
+  terminationDate?: Date | string | null
+  lastLoginAt?: Date | string | null
+  avatarUrl?: string | null
+  employeeStatus?: string
+  slackUserId?: string | null
+  slackLookupAt?: Date | string | null
+  country?: string | null
+  deletedAt?: Date | string | null
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  manager?: Prisma.UserCreateNestedOneWithoutDirectReportsInput
+  directReports?: Prisma.UserCreateNestedManyWithoutManagerInput
+  department?: Prisma.DepartmentCreateNestedOneWithoutUsersInput
+  businessUnit?: Prisma.BusinessUnitCreateNestedOneWithoutUsersInput
+  entity?: Prisma.LegalEntityCreateNestedOneWithoutUsersInput
+  jobLevel?: Prisma.JobLevelCreateNestedOneWithoutUsersInput
+  role?: Prisma.RoleCreateNestedOneWithoutUsersInput
+  reports?: Prisma.ExpenseReportCreateNestedManyWithoutSubmitterInput
+  expenses?: Prisma.ExpenseCreateNestedManyWithoutOwnerInput
+  receipts?: Prisma.ReceiptCreateNestedManyWithoutUploadedByInput
+  mileageRates?: Prisma.MileageRateSubjectCreateNestedManyWithoutUserInput
+  approvalTasksAssigned?: Prisma.ApprovalTaskCreateNestedManyWithoutAssigneeInput
+  approvalTasksDecided?: Prisma.ApprovalTaskCreateNestedManyWithoutDecidedByInput
+  delegationsFrom?: Prisma.DelegationCreateNestedManyWithoutFromUserInput
+  delegationsTo?: Prisma.DelegationCreateNestedManyWithoutToUserInput
+  externalIds?: Prisma.UserExternalIdCreateNestedManyWithoutUserInput
+  travelRequests?: Prisma.TravelRequestCreateNestedManyWithoutSubmitterInput
+  assistantConversations?: Prisma.AssistantConversationCreateNestedManyWithoutUserInput
+}
+
+export type UserUncheckedCreateWithoutAssistantFeedbackInput = {
+  id?: string
+  organizationId?: string
+  email: string
+  name?: string | null
+  firstName?: string | null
+  lastName?: string | null
+  hasAccess?: boolean
+  onLeaveAt?: Date | string | null
+  terminationDate?: Date | string | null
+  lastLoginAt?: Date | string | null
+  avatarUrl?: string | null
+  employeeStatus?: string
+  slackUserId?: string | null
+  slackLookupAt?: Date | string | null
+  country?: string | null
+  managerId?: string | null
+  departmentId?: string | null
+  businessUnitId?: string | null
+  legalEntityId?: string | null
+  jobLevelId?: string | null
+  roleId?: string
+  deletedAt?: Date | string | null
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  directReports?: Prisma.UserUncheckedCreateNestedManyWithoutManagerInput
+  reports?: Prisma.ExpenseReportUncheckedCreateNestedManyWithoutSubmitterInput
+  expenses?: Prisma.ExpenseUncheckedCreateNestedManyWithoutOwnerInput
+  receipts?: Prisma.ReceiptUncheckedCreateNestedManyWithoutUploadedByInput
+  mileageRates?: Prisma.MileageRateSubjectUncheckedCreateNestedManyWithoutUserInput
+  approvalTasksAssigned?: Prisma.ApprovalTaskUncheckedCreateNestedManyWithoutAssigneeInput
+  approvalTasksDecided?: Prisma.ApprovalTaskUncheckedCreateNestedManyWithoutDecidedByInput
+  delegationsFrom?: Prisma.DelegationUncheckedCreateNestedManyWithoutFromUserInput
+  delegationsTo?: Prisma.DelegationUncheckedCreateNestedManyWithoutToUserInput
+  externalIds?: Prisma.UserExternalIdUncheckedCreateNestedManyWithoutUserInput
+  travelRequests?: Prisma.TravelRequestUncheckedCreateNestedManyWithoutSubmitterInput
+  assistantConversations?: Prisma.AssistantConversationUncheckedCreateNestedManyWithoutUserInput
+}
+
+export type UserCreateOrConnectWithoutAssistantFeedbackInput = {
+  where: Prisma.UserWhereUniqueInput
+  create: Prisma.XOR<Prisma.UserCreateWithoutAssistantFeedbackInput, Prisma.UserUncheckedCreateWithoutAssistantFeedbackInput>
+}
+
+export type UserUpsertWithoutAssistantFeedbackInput = {
+  update: Prisma.XOR<Prisma.UserUpdateWithoutAssistantFeedbackInput, Prisma.UserUncheckedUpdateWithoutAssistantFeedbackInput>
+  create: Prisma.XOR<Prisma.UserCreateWithoutAssistantFeedbackInput, Prisma.UserUncheckedCreateWithoutAssistantFeedbackInput>
+  where?: Prisma.UserWhereInput
+}
+
+export type UserUpdateToOneWithWhereWithoutAssistantFeedbackInput = {
+  where?: Prisma.UserWhereInput
+  data: Prisma.XOR<Prisma.UserUpdateWithoutAssistantFeedbackInput, Prisma.UserUncheckedUpdateWithoutAssistantFeedbackInput>
+}
+
+export type UserUpdateWithoutAssistantFeedbackInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  email?: Prisma.StringFieldUpdateOperationsInput | string
+  name?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  firstName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  lastName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hasAccess?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  onLeaveAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  terminationDate?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  lastLoginAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  avatarUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  employeeStatus?: Prisma.StringFieldUpdateOperationsInput | string
+  slackUserId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  slackLookupAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  country?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  deletedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  manager?: Prisma.UserUpdateOneWithoutDirectReportsNestedInput
+  directReports?: Prisma.UserUpdateManyWithoutManagerNestedInput
+  department?: Prisma.DepartmentUpdateOneWithoutUsersNestedInput
+  businessUnit?: Prisma.BusinessUnitUpdateOneWithoutUsersNestedInput
+  entity?: Prisma.LegalEntityUpdateOneWithoutUsersNestedInput
+  jobLevel?: Prisma.JobLevelUpdateOneWithoutUsersNestedInput
+  role?: Prisma.RoleUpdateOneRequiredWithoutUsersNestedInput
+  reports?: Prisma.ExpenseReportUpdateManyWithoutSubmitterNestedInput
+  expenses?: Prisma.ExpenseUpdateManyWithoutOwnerNestedInput
+  receipts?: Prisma.ReceiptUpdateManyWithoutUploadedByNestedInput
+  mileageRates?: Prisma.MileageRateSubjectUpdateManyWithoutUserNestedInput
+  approvalTasksAssigned?: Prisma.ApprovalTaskUpdateManyWithoutAssigneeNestedInput
+  approvalTasksDecided?: Prisma.ApprovalTaskUpdateManyWithoutDecidedByNestedInput
+  delegationsFrom?: Prisma.DelegationUpdateManyWithoutFromUserNestedInput
+  delegationsTo?: Prisma.DelegationUpdateManyWithoutToUserNestedInput
+  externalIds?: Prisma.UserExternalIdUpdateManyWithoutUserNestedInput
+  travelRequests?: Prisma.TravelRequestUpdateManyWithoutSubmitterNestedInput
+  assistantConversations?: Prisma.AssistantConversationUpdateManyWithoutUserNestedInput
+}
+
+export type UserUncheckedUpdateWithoutAssistantFeedbackInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  organizationId?: Prisma.StringFieldUpdateOperationsInput | string
+  email?: Prisma.StringFieldUpdateOperationsInput | string
+  name?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  firstName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  lastName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hasAccess?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  onLeaveAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  terminationDate?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  lastLoginAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  avatarUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  employeeStatus?: Prisma.StringFieldUpdateOperationsInput | string
+  slackUserId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  slackLookupAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  country?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  managerId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  departmentId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  businessUnitId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  legalEntityId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  jobLevelId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  roleId?: Prisma.StringFieldUpdateOperationsInput | string
+  deletedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  directReports?: Prisma.UserUncheckedUpdateManyWithoutManagerNestedInput
+  reports?: Prisma.ExpenseReportUncheckedUpdateManyWithoutSubmitterNestedInput
+  expenses?: Prisma.ExpenseUncheckedUpdateManyWithoutOwnerNestedInput
+  receipts?: Prisma.ReceiptUncheckedUpdateManyWithoutUploadedByNestedInput
+  mileageRates?: Prisma.MileageRateSubjectUncheckedUpdateManyWithoutUserNestedInput
+  approvalTasksAssigned?: Prisma.ApprovalTaskUncheckedUpdateManyWithoutAssigneeNestedInput
+  approvalTasksDecided?: Prisma.ApprovalTaskUncheckedUpdateManyWithoutDecidedByNestedInput
+  delegationsFrom?: Prisma.DelegationUncheckedUpdateManyWithoutFromUserNestedInput
+  delegationsTo?: Prisma.DelegationUncheckedUpdateManyWithoutToUserNestedInput
+  externalIds?: Prisma.UserExternalIdUncheckedUpdateManyWithoutUserNestedInput
+  travelRequests?: Prisma.TravelRequestUncheckedUpdateManyWithoutSubmitterNestedInput
+  assistantConversations?: Prisma.AssistantConversationUncheckedUpdateManyWithoutUserNestedInput
 }
 
 export type UserCreateManyManagerInput = {
@@ -3706,6 +4200,8 @@ export type UserUpdateWithoutManagerInput = {
   delegationsTo?: Prisma.DelegationUpdateManyWithoutToUserNestedInput
   externalIds?: Prisma.UserExternalIdUpdateManyWithoutUserNestedInput
   travelRequests?: Prisma.TravelRequestUpdateManyWithoutSubmitterNestedInput
+  assistantConversations?: Prisma.AssistantConversationUpdateManyWithoutUserNestedInput
+  assistantFeedback?: Prisma.AssistantFeedbackUpdateManyWithoutUserNestedInput
 }
 
 export type UserUncheckedUpdateWithoutManagerInput = {
@@ -3743,6 +4239,8 @@ export type UserUncheckedUpdateWithoutManagerInput = {
   delegationsTo?: Prisma.DelegationUncheckedUpdateManyWithoutToUserNestedInput
   externalIds?: Prisma.UserExternalIdUncheckedUpdateManyWithoutUserNestedInput
   travelRequests?: Prisma.TravelRequestUncheckedUpdateManyWithoutSubmitterNestedInput
+  assistantConversations?: Prisma.AssistantConversationUncheckedUpdateManyWithoutUserNestedInput
+  assistantFeedback?: Prisma.AssistantFeedbackUncheckedUpdateManyWithoutUserNestedInput
 }
 
 export type UserUncheckedUpdateManyWithoutManagerInput = {
@@ -3830,6 +4328,8 @@ export type UserUpdateWithoutRoleInput = {
   delegationsTo?: Prisma.DelegationUpdateManyWithoutToUserNestedInput
   externalIds?: Prisma.UserExternalIdUpdateManyWithoutUserNestedInput
   travelRequests?: Prisma.TravelRequestUpdateManyWithoutSubmitterNestedInput
+  assistantConversations?: Prisma.AssistantConversationUpdateManyWithoutUserNestedInput
+  assistantFeedback?: Prisma.AssistantFeedbackUpdateManyWithoutUserNestedInput
 }
 
 export type UserUncheckedUpdateWithoutRoleInput = {
@@ -3866,6 +4366,8 @@ export type UserUncheckedUpdateWithoutRoleInput = {
   delegationsTo?: Prisma.DelegationUncheckedUpdateManyWithoutToUserNestedInput
   externalIds?: Prisma.UserExternalIdUncheckedUpdateManyWithoutUserNestedInput
   travelRequests?: Prisma.TravelRequestUncheckedUpdateManyWithoutSubmitterNestedInput
+  assistantConversations?: Prisma.AssistantConversationUncheckedUpdateManyWithoutUserNestedInput
+  assistantFeedback?: Prisma.AssistantFeedbackUncheckedUpdateManyWithoutUserNestedInput
 }
 
 export type UserUncheckedUpdateManyWithoutRoleInput = {
@@ -3953,6 +4455,8 @@ export type UserUpdateWithoutBusinessUnitInput = {
   delegationsTo?: Prisma.DelegationUpdateManyWithoutToUserNestedInput
   externalIds?: Prisma.UserExternalIdUpdateManyWithoutUserNestedInput
   travelRequests?: Prisma.TravelRequestUpdateManyWithoutSubmitterNestedInput
+  assistantConversations?: Prisma.AssistantConversationUpdateManyWithoutUserNestedInput
+  assistantFeedback?: Prisma.AssistantFeedbackUpdateManyWithoutUserNestedInput
 }
 
 export type UserUncheckedUpdateWithoutBusinessUnitInput = {
@@ -3990,6 +4494,8 @@ export type UserUncheckedUpdateWithoutBusinessUnitInput = {
   delegationsTo?: Prisma.DelegationUncheckedUpdateManyWithoutToUserNestedInput
   externalIds?: Prisma.UserExternalIdUncheckedUpdateManyWithoutUserNestedInput
   travelRequests?: Prisma.TravelRequestUncheckedUpdateManyWithoutSubmitterNestedInput
+  assistantConversations?: Prisma.AssistantConversationUncheckedUpdateManyWithoutUserNestedInput
+  assistantFeedback?: Prisma.AssistantFeedbackUncheckedUpdateManyWithoutUserNestedInput
 }
 
 export type UserUncheckedUpdateManyWithoutBusinessUnitInput = {
@@ -4078,6 +4584,8 @@ export type UserUpdateWithoutEntityInput = {
   delegationsTo?: Prisma.DelegationUpdateManyWithoutToUserNestedInput
   externalIds?: Prisma.UserExternalIdUpdateManyWithoutUserNestedInput
   travelRequests?: Prisma.TravelRequestUpdateManyWithoutSubmitterNestedInput
+  assistantConversations?: Prisma.AssistantConversationUpdateManyWithoutUserNestedInput
+  assistantFeedback?: Prisma.AssistantFeedbackUpdateManyWithoutUserNestedInput
 }
 
 export type UserUncheckedUpdateWithoutEntityInput = {
@@ -4115,6 +4623,8 @@ export type UserUncheckedUpdateWithoutEntityInput = {
   delegationsTo?: Prisma.DelegationUncheckedUpdateManyWithoutToUserNestedInput
   externalIds?: Prisma.UserExternalIdUncheckedUpdateManyWithoutUserNestedInput
   travelRequests?: Prisma.TravelRequestUncheckedUpdateManyWithoutSubmitterNestedInput
+  assistantConversations?: Prisma.AssistantConversationUncheckedUpdateManyWithoutUserNestedInput
+  assistantFeedback?: Prisma.AssistantFeedbackUncheckedUpdateManyWithoutUserNestedInput
 }
 
 export type UserUncheckedUpdateManyWithoutEntityInput = {
@@ -4203,6 +4713,8 @@ export type UserUpdateWithoutDepartmentInput = {
   delegationsTo?: Prisma.DelegationUpdateManyWithoutToUserNestedInput
   externalIds?: Prisma.UserExternalIdUpdateManyWithoutUserNestedInput
   travelRequests?: Prisma.TravelRequestUpdateManyWithoutSubmitterNestedInput
+  assistantConversations?: Prisma.AssistantConversationUpdateManyWithoutUserNestedInput
+  assistantFeedback?: Prisma.AssistantFeedbackUpdateManyWithoutUserNestedInput
 }
 
 export type UserUncheckedUpdateWithoutDepartmentInput = {
@@ -4240,6 +4752,8 @@ export type UserUncheckedUpdateWithoutDepartmentInput = {
   delegationsTo?: Prisma.DelegationUncheckedUpdateManyWithoutToUserNestedInput
   externalIds?: Prisma.UserExternalIdUncheckedUpdateManyWithoutUserNestedInput
   travelRequests?: Prisma.TravelRequestUncheckedUpdateManyWithoutSubmitterNestedInput
+  assistantConversations?: Prisma.AssistantConversationUncheckedUpdateManyWithoutUserNestedInput
+  assistantFeedback?: Prisma.AssistantFeedbackUncheckedUpdateManyWithoutUserNestedInput
 }
 
 export type UserUncheckedUpdateManyWithoutDepartmentInput = {
@@ -4328,6 +4842,8 @@ export type UserUpdateWithoutJobLevelInput = {
   delegationsTo?: Prisma.DelegationUpdateManyWithoutToUserNestedInput
   externalIds?: Prisma.UserExternalIdUpdateManyWithoutUserNestedInput
   travelRequests?: Prisma.TravelRequestUpdateManyWithoutSubmitterNestedInput
+  assistantConversations?: Prisma.AssistantConversationUpdateManyWithoutUserNestedInput
+  assistantFeedback?: Prisma.AssistantFeedbackUpdateManyWithoutUserNestedInput
 }
 
 export type UserUncheckedUpdateWithoutJobLevelInput = {
@@ -4365,6 +4881,8 @@ export type UserUncheckedUpdateWithoutJobLevelInput = {
   delegationsTo?: Prisma.DelegationUncheckedUpdateManyWithoutToUserNestedInput
   externalIds?: Prisma.UserExternalIdUncheckedUpdateManyWithoutUserNestedInput
   travelRequests?: Prisma.TravelRequestUncheckedUpdateManyWithoutSubmitterNestedInput
+  assistantConversations?: Prisma.AssistantConversationUncheckedUpdateManyWithoutUserNestedInput
+  assistantFeedback?: Prisma.AssistantFeedbackUncheckedUpdateManyWithoutUserNestedInput
 }
 
 export type UserUncheckedUpdateManyWithoutJobLevelInput = {
@@ -4410,6 +4928,8 @@ export type UserCountOutputType = {
   delegationsTo: number
   externalIds: number
   travelRequests: number
+  assistantConversations: number
+  assistantFeedback: number
 }
 
 export type UserCountOutputTypeSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
@@ -4424,6 +4944,8 @@ export type UserCountOutputTypeSelect<ExtArgs extends runtime.Types.Extensions.I
   delegationsTo?: boolean | UserCountOutputTypeCountDelegationsToArgs
   externalIds?: boolean | UserCountOutputTypeCountExternalIdsArgs
   travelRequests?: boolean | UserCountOutputTypeCountTravelRequestsArgs
+  assistantConversations?: boolean | UserCountOutputTypeCountAssistantConversationsArgs
+  assistantFeedback?: boolean | UserCountOutputTypeCountAssistantFeedbackArgs
 }
 
 /**
@@ -4513,6 +5035,20 @@ export type UserCountOutputTypeCountTravelRequestsArgs<ExtArgs extends runtime.T
   where?: Prisma.TravelRequestWhereInput
 }
 
+/**
+ * UserCountOutputType without action
+ */
+export type UserCountOutputTypeCountAssistantConversationsArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  where?: Prisma.AssistantConversationWhereInput
+}
+
+/**
+ * UserCountOutputType without action
+ */
+export type UserCountOutputTypeCountAssistantFeedbackArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  where?: Prisma.AssistantFeedbackWhereInput
+}
+
 
 export type UserSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetSelect<{
   id?: boolean
@@ -4556,6 +5092,8 @@ export type UserSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs = r
   delegationsTo?: boolean | Prisma.User$delegationsToArgs<ExtArgs>
   externalIds?: boolean | Prisma.User$externalIdsArgs<ExtArgs>
   travelRequests?: boolean | Prisma.User$travelRequestsArgs<ExtArgs>
+  assistantConversations?: boolean | Prisma.User$assistantConversationsArgs<ExtArgs>
+  assistantFeedback?: boolean | Prisma.User$assistantFeedbackArgs<ExtArgs>
   _count?: boolean | Prisma.UserCountOutputTypeDefaultArgs<ExtArgs>
 }, ExtArgs["result"]["user"]>
 
@@ -4671,6 +5209,8 @@ export type UserInclude<ExtArgs extends runtime.Types.Extensions.InternalArgs = 
   delegationsTo?: boolean | Prisma.User$delegationsToArgs<ExtArgs>
   externalIds?: boolean | Prisma.User$externalIdsArgs<ExtArgs>
   travelRequests?: boolean | Prisma.User$travelRequestsArgs<ExtArgs>
+  assistantConversations?: boolean | Prisma.User$assistantConversationsArgs<ExtArgs>
+  assistantFeedback?: boolean | Prisma.User$assistantFeedbackArgs<ExtArgs>
   _count?: boolean | Prisma.UserCountOutputTypeDefaultArgs<ExtArgs>
 }
 export type UserIncludeCreateManyAndReturn<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
@@ -4738,6 +5278,11 @@ export type $UserPayload<ExtArgs extends runtime.Types.Extensions.InternalArgs =
      * w6-00: travel requests this person submitted (0077).
      */
     travelRequests: Prisma.$TravelRequestPayload<ExtArgs>[]
+    /**
+     * w6-03: the person's assistant conversations and the feedback they gave (0078).
+     */
+    assistantConversations: Prisma.$AssistantConversationPayload<ExtArgs>[]
+    assistantFeedback: Prisma.$AssistantFeedbackPayload<ExtArgs>[]
   }
   scalars: runtime.Types.Extensions.GetPayloadResult<{
     id: string
@@ -5210,6 +5755,8 @@ export interface Prisma__UserClient<T, Null = never, ExtArgs extends runtime.Typ
   delegationsTo<T extends Prisma.User$delegationsToArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.User$delegationsToArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$DelegationPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
   externalIds<T extends Prisma.User$externalIdsArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.User$externalIdsArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$UserExternalIdPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
   travelRequests<T extends Prisma.User$travelRequestsArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.User$travelRequestsArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$TravelRequestPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
+  assistantConversations<T extends Prisma.User$assistantConversationsArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.User$assistantConversationsArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$AssistantConversationPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
+  assistantFeedback<T extends Prisma.User$assistantFeedbackArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.User$assistantFeedbackArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$AssistantFeedbackPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
   /**
    * Attaches callbacks for the resolution and/or rejection of the Promise.
    * @param onfulfilled The callback to execute when the Promise is resolved.
@@ -6020,6 +6567,54 @@ export type User$travelRequestsArgs<ExtArgs extends runtime.Types.Extensions.Int
   take?: number
   skip?: number
   distinct?: Prisma.TravelRequestScalarFieldEnum | Prisma.TravelRequestScalarFieldEnum[]
+}
+
+/**
+ * User.assistantConversations
+ */
+export type User$assistantConversationsArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  /**
+   * Select specific fields to fetch from the AssistantConversation
+   */
+  select?: Prisma.AssistantConversationSelect<ExtArgs> | null
+  /**
+   * Omit specific fields from the AssistantConversation
+   */
+  omit?: Prisma.AssistantConversationOmit<ExtArgs> | null
+  /**
+   * Choose, which related nodes to fetch as well
+   */
+  include?: Prisma.AssistantConversationInclude<ExtArgs> | null
+  where?: Prisma.AssistantConversationWhereInput
+  orderBy?: Prisma.AssistantConversationOrderByWithRelationInput | Prisma.AssistantConversationOrderByWithRelationInput[]
+  cursor?: Prisma.AssistantConversationWhereUniqueInput
+  take?: number
+  skip?: number
+  distinct?: Prisma.AssistantConversationScalarFieldEnum | Prisma.AssistantConversationScalarFieldEnum[]
+}
+
+/**
+ * User.assistantFeedback
+ */
+export type User$assistantFeedbackArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  /**
+   * Select specific fields to fetch from the AssistantFeedback
+   */
+  select?: Prisma.AssistantFeedbackSelect<ExtArgs> | null
+  /**
+   * Omit specific fields from the AssistantFeedback
+   */
+  omit?: Prisma.AssistantFeedbackOmit<ExtArgs> | null
+  /**
+   * Choose, which related nodes to fetch as well
+   */
+  include?: Prisma.AssistantFeedbackInclude<ExtArgs> | null
+  where?: Prisma.AssistantFeedbackWhereInput
+  orderBy?: Prisma.AssistantFeedbackOrderByWithRelationInput | Prisma.AssistantFeedbackOrderByWithRelationInput[]
+  cursor?: Prisma.AssistantFeedbackWhereUniqueInput
+  take?: number
+  skip?: number
+  distinct?: Prisma.AssistantFeedbackScalarFieldEnum | Prisma.AssistantFeedbackScalarFieldEnum[]
 }
 
 /**

@@ -432,7 +432,10 @@ export const ModelName = {
   TravelPlace: 'TravelPlace',
   TravelRequest: 'TravelRequest',
   TravelCategory: 'TravelCategory',
-  TravelBudgetLine: 'TravelBudgetLine'
+  TravelBudgetLine: 'TravelBudgetLine',
+  AssistantConversation: 'AssistantConversation',
+  AssistantMessage: 'AssistantMessage',
+  AssistantFeedback: 'AssistantFeedback'
 } as const
 
 export type ModelName = (typeof ModelName)[keyof typeof ModelName]
@@ -448,7 +451,7 @@ export type TypeMap<ExtArgs extends runtime.Types.Extensions.InternalArgs = runt
     omit: GlobalOmitOptions
   }
   meta: {
-    modelProps: "expenseCategory" | "glAccount" | "expenseReport" | "expense" | "expenseAllocation" | "expenseAttendee" | "expenseLineItem" | "receipt" | "documentExtraction" | "expenseDetermination" | "receiptExternalId" | "expenseExternalId" | "aiUsage" | "taxJurisdiction" | "user" | "userExternalId" | "role" | "roleExternalId" | "businessUnit" | "externalIdSource" | "businessUnitExternalId" | "legalEntity" | "legalEntityExternalId" | "fxRate" | "mileageRate" | "mileageRateTier" | "mileageRateSubject" | "perDiemRate" | "currency" | "department" | "departmentExternalId" | "jobLevel" | "jobLevelExternalId" | "fiscalYear" | "fiscalYearExternalId" | "approvalWorkflow" | "approvalWorkflowVersion" | "approvalInstance" | "approvalTask" | "delegation" | "policyRule" | "expensePolicy" | "policyViolation" | "savedView" | "replyThread" | "travelPlace" | "travelRequest" | "travelCategory" | "travelBudgetLine"
+    modelProps: "expenseCategory" | "glAccount" | "expenseReport" | "expense" | "expenseAllocation" | "expenseAttendee" | "expenseLineItem" | "receipt" | "documentExtraction" | "expenseDetermination" | "receiptExternalId" | "expenseExternalId" | "aiUsage" | "taxJurisdiction" | "user" | "userExternalId" | "role" | "roleExternalId" | "businessUnit" | "externalIdSource" | "businessUnitExternalId" | "legalEntity" | "legalEntityExternalId" | "fxRate" | "mileageRate" | "mileageRateTier" | "mileageRateSubject" | "perDiemRate" | "currency" | "department" | "departmentExternalId" | "jobLevel" | "jobLevelExternalId" | "fiscalYear" | "fiscalYearExternalId" | "approvalWorkflow" | "approvalWorkflowVersion" | "approvalInstance" | "approvalTask" | "delegation" | "policyRule" | "expensePolicy" | "policyViolation" | "savedView" | "replyThread" | "travelPlace" | "travelRequest" | "travelCategory" | "travelBudgetLine" | "assistantConversation" | "assistantMessage" | "assistantFeedback"
     txIsolationLevel: TransactionIsolationLevel
   }
   model: {
@@ -4078,6 +4081,228 @@ export type TypeMap<ExtArgs extends runtime.Types.Extensions.InternalArgs = runt
         }
       }
     }
+    AssistantConversation: {
+      payload: Prisma.$AssistantConversationPayload<ExtArgs>
+      fields: Prisma.AssistantConversationFieldRefs
+      operations: {
+        findUnique: {
+          args: Prisma.AssistantConversationFindUniqueArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$AssistantConversationPayload> | null
+        }
+        findUniqueOrThrow: {
+          args: Prisma.AssistantConversationFindUniqueOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$AssistantConversationPayload>
+        }
+        findFirst: {
+          args: Prisma.AssistantConversationFindFirstArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$AssistantConversationPayload> | null
+        }
+        findFirstOrThrow: {
+          args: Prisma.AssistantConversationFindFirstOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$AssistantConversationPayload>
+        }
+        findMany: {
+          args: Prisma.AssistantConversationFindManyArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$AssistantConversationPayload>[]
+        }
+        create: {
+          args: Prisma.AssistantConversationCreateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$AssistantConversationPayload>
+        }
+        createMany: {
+          args: Prisma.AssistantConversationCreateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        createManyAndReturn: {
+          args: Prisma.AssistantConversationCreateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$AssistantConversationPayload>[]
+        }
+        delete: {
+          args: Prisma.AssistantConversationDeleteArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$AssistantConversationPayload>
+        }
+        update: {
+          args: Prisma.AssistantConversationUpdateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$AssistantConversationPayload>
+        }
+        deleteMany: {
+          args: Prisma.AssistantConversationDeleteManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateMany: {
+          args: Prisma.AssistantConversationUpdateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateManyAndReturn: {
+          args: Prisma.AssistantConversationUpdateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$AssistantConversationPayload>[]
+        }
+        upsert: {
+          args: Prisma.AssistantConversationUpsertArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$AssistantConversationPayload>
+        }
+        aggregate: {
+          args: Prisma.AssistantConversationAggregateArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.AggregateAssistantConversation>
+        }
+        groupBy: {
+          args: Prisma.AssistantConversationGroupByArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.AssistantConversationGroupByOutputType>[]
+        }
+        count: {
+          args: Prisma.AssistantConversationCountArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.AssistantConversationCountAggregateOutputType> | number
+        }
+      }
+    }
+    AssistantMessage: {
+      payload: Prisma.$AssistantMessagePayload<ExtArgs>
+      fields: Prisma.AssistantMessageFieldRefs
+      operations: {
+        findUnique: {
+          args: Prisma.AssistantMessageFindUniqueArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$AssistantMessagePayload> | null
+        }
+        findUniqueOrThrow: {
+          args: Prisma.AssistantMessageFindUniqueOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$AssistantMessagePayload>
+        }
+        findFirst: {
+          args: Prisma.AssistantMessageFindFirstArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$AssistantMessagePayload> | null
+        }
+        findFirstOrThrow: {
+          args: Prisma.AssistantMessageFindFirstOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$AssistantMessagePayload>
+        }
+        findMany: {
+          args: Prisma.AssistantMessageFindManyArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$AssistantMessagePayload>[]
+        }
+        create: {
+          args: Prisma.AssistantMessageCreateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$AssistantMessagePayload>
+        }
+        createMany: {
+          args: Prisma.AssistantMessageCreateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        createManyAndReturn: {
+          args: Prisma.AssistantMessageCreateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$AssistantMessagePayload>[]
+        }
+        delete: {
+          args: Prisma.AssistantMessageDeleteArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$AssistantMessagePayload>
+        }
+        update: {
+          args: Prisma.AssistantMessageUpdateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$AssistantMessagePayload>
+        }
+        deleteMany: {
+          args: Prisma.AssistantMessageDeleteManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateMany: {
+          args: Prisma.AssistantMessageUpdateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateManyAndReturn: {
+          args: Prisma.AssistantMessageUpdateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$AssistantMessagePayload>[]
+        }
+        upsert: {
+          args: Prisma.AssistantMessageUpsertArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$AssistantMessagePayload>
+        }
+        aggregate: {
+          args: Prisma.AssistantMessageAggregateArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.AggregateAssistantMessage>
+        }
+        groupBy: {
+          args: Prisma.AssistantMessageGroupByArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.AssistantMessageGroupByOutputType>[]
+        }
+        count: {
+          args: Prisma.AssistantMessageCountArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.AssistantMessageCountAggregateOutputType> | number
+        }
+      }
+    }
+    AssistantFeedback: {
+      payload: Prisma.$AssistantFeedbackPayload<ExtArgs>
+      fields: Prisma.AssistantFeedbackFieldRefs
+      operations: {
+        findUnique: {
+          args: Prisma.AssistantFeedbackFindUniqueArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$AssistantFeedbackPayload> | null
+        }
+        findUniqueOrThrow: {
+          args: Prisma.AssistantFeedbackFindUniqueOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$AssistantFeedbackPayload>
+        }
+        findFirst: {
+          args: Prisma.AssistantFeedbackFindFirstArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$AssistantFeedbackPayload> | null
+        }
+        findFirstOrThrow: {
+          args: Prisma.AssistantFeedbackFindFirstOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$AssistantFeedbackPayload>
+        }
+        findMany: {
+          args: Prisma.AssistantFeedbackFindManyArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$AssistantFeedbackPayload>[]
+        }
+        create: {
+          args: Prisma.AssistantFeedbackCreateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$AssistantFeedbackPayload>
+        }
+        createMany: {
+          args: Prisma.AssistantFeedbackCreateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        createManyAndReturn: {
+          args: Prisma.AssistantFeedbackCreateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$AssistantFeedbackPayload>[]
+        }
+        delete: {
+          args: Prisma.AssistantFeedbackDeleteArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$AssistantFeedbackPayload>
+        }
+        update: {
+          args: Prisma.AssistantFeedbackUpdateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$AssistantFeedbackPayload>
+        }
+        deleteMany: {
+          args: Prisma.AssistantFeedbackDeleteManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateMany: {
+          args: Prisma.AssistantFeedbackUpdateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateManyAndReturn: {
+          args: Prisma.AssistantFeedbackUpdateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$AssistantFeedbackPayload>[]
+        }
+        upsert: {
+          args: Prisma.AssistantFeedbackUpsertArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$AssistantFeedbackPayload>
+        }
+        aggregate: {
+          args: Prisma.AssistantFeedbackAggregateArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.AggregateAssistantFeedback>
+        }
+        groupBy: {
+          args: Prisma.AssistantFeedbackGroupByArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.AssistantFeedbackGroupByOutputType>[]
+        }
+        count: {
+          args: Prisma.AssistantFeedbackCountArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.AssistantFeedbackCountAggregateOutputType> | number
+        }
+      }
+    }
   }
 } & {
   other: {
@@ -4982,6 +5207,49 @@ export const TravelBudgetLineScalarFieldEnum = {
 export type TravelBudgetLineScalarFieldEnum = (typeof TravelBudgetLineScalarFieldEnum)[keyof typeof TravelBudgetLineScalarFieldEnum]
 
 
+export const AssistantConversationScalarFieldEnum = {
+  id: 'id',
+  organizationId: 'organizationId',
+  userId: 'userId',
+  title: 'title',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt',
+  archivedAt: 'archivedAt'
+} as const
+
+export type AssistantConversationScalarFieldEnum = (typeof AssistantConversationScalarFieldEnum)[keyof typeof AssistantConversationScalarFieldEnum]
+
+
+export const AssistantMessageScalarFieldEnum = {
+  id: 'id',
+  organizationId: 'organizationId',
+  conversationId: 'conversationId',
+  role: 'role',
+  content: 'content',
+  createdAt: 'createdAt'
+} as const
+
+export type AssistantMessageScalarFieldEnum = (typeof AssistantMessageScalarFieldEnum)[keyof typeof AssistantMessageScalarFieldEnum]
+
+
+export const AssistantFeedbackScalarFieldEnum = {
+  id: 'id',
+  organizationId: 'organizationId',
+  conversationId: 'conversationId',
+  messageId: 'messageId',
+  userId: 'userId',
+  rating: 'rating',
+  comment: 'comment',
+  flag: 'flag',
+  status: 'status',
+  createdAt: 'createdAt',
+  reviewedAt: 'reviewedAt',
+  reviewedBy: 'reviewedBy'
+} as const
+
+export type AssistantFeedbackScalarFieldEnum = (typeof AssistantFeedbackScalarFieldEnum)[keyof typeof AssistantFeedbackScalarFieldEnum]
+
+
 export const SortOrder = {
   asc: 'asc',
   desc: 'desc'
@@ -5327,6 +5595,9 @@ export type GlobalOmitConfig = {
   travelRequest?: Prisma.TravelRequestOmit
   travelCategory?: Prisma.TravelCategoryOmit
   travelBudgetLine?: Prisma.TravelBudgetLineOmit
+  assistantConversation?: Prisma.AssistantConversationOmit
+  assistantMessage?: Prisma.AssistantMessageOmit
+  assistantFeedback?: Prisma.AssistantFeedbackOmit
 }
 
 /* Types for Logging */

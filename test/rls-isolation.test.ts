@@ -2034,6 +2034,126 @@ describe('RLS tenant isolation', () => {
     await admin.query("DELETE FROM approval_workflow WHERE key = 'travel-request-default'");
   });
 
+  /* ── The assistant (w6-03, migration 0078) ────────────────────────────────
+   *
+   * ExpenseOS's assistant persistence, made per tenant: a person's conversations, their
+   * turns, and the feedback on them. The ordinary claim, no hatch, and every composite key:
+   * a conversation cannot belong to another tenant's person, a turn cannot join another
+   * tenant's conversation, and feedback cannot name another tenant's conversation, turn,
+   * person or reviewer.
+   */
+  it("assistant conversations, messages and feedback are per tenant, and cannot name another tenant's rows", async () => {
+    await admin.query('DELETE FROM assistant_feedback');
+    await admin.query('DELETE FROM assistant_message');
+    await admin.query('DELETE FROM assistant_conversation');
+    const seed = async (org: string, title: string) =>
+      withOrg(org, async (tx) => {
+        const user = (await tx.query('SELECT id FROM app_user LIMIT 1')).rows[0].id as string;
+        const conversation = (
+          await tx.query(
+            'INSERT INTO assistant_conversation (user_id, title) VALUES ($1, $2) RETURNING id',
+            [user, title],
+          )
+        ).rows[0].id as string;
+        const message = (
+          await tx.query(
+            `INSERT INTO assistant_message (conversation_id, role, content)
+             VALUES ($1, 'assistant', '[{"type":"text","text":"Fictional answer."}]') RETURNING id`,
+            [conversation],
+          )
+        ).rows[0].id as string;
+        await tx.query(
+          `INSERT INTO assistant_feedback (conversation_id, message_id, user_id, rating)
+           VALUES ($1, $2, $3, 4)`,
+          [conversation, message, user],
+        );
+        return { user, conversation, message };
+      });
+    const a = await seed(orgA, 'Hotel limit in Toronto');
+    const b = await seed(orgB, 'Mileage to Calgary');
+
+    for (const [org, title] of [
+      [orgA, 'Hotel limit in Toronto'],
+      [orgB, 'Mileage to Calgary'],
+    ] as const) {
+      const seen = await withOrg(org, async (tx) => ({
+        conversations: (await tx.query('SELECT title FROM assistant_conversation')).rows.map(
+          (r) => r.title,
+        ),
+        messages: (await tx.query('SELECT count(*)::int AS n FROM assistant_message')).rows[0].n,
+        feedback: (await tx.query('SELECT rating FROM assistant_feedback')).rows.map((r) => r.rating),
+      }));
+      expect(seen).toEqual({ conversations: [title], messages: 1, feedback: [4] });
+    }
+
+    // WITH CHECK: naming another tenant does not write there.
+    await expect(
+      withOrg(orgB, (tx) =>
+        tx.query('INSERT INTO assistant_conversation (organization_id, user_id) VALUES ($1, $2)', [
+          orgA,
+          a.user,
+        ]),
+      ),
+    ).rejects.toThrow(/row-level security|violates/i);
+    // Composite keys, one per reference.
+    await expect(
+      withOrg(orgA, (tx) =>
+        tx.query('INSERT INTO assistant_conversation (user_id) VALUES ($1)', [b.user]),
+      ),
+    ).rejects.toThrow(/foreign key|violates/i);
+    await expect(
+      withOrg(orgA, (tx) =>
+        tx.query(
+          `INSERT INTO assistant_message (conversation_id, role, content) VALUES ($1, 'user', '[]')`,
+          [b.conversation],
+        ),
+      ),
+    ).rejects.toThrow(/foreign key|violates/i);
+    for (const [conversation, message, user] of [
+      [b.conversation, a.message, a.user],
+      [a.conversation, b.message, a.user],
+      [a.conversation, a.message, b.user],
+    ]) {
+      await expect(
+        withOrg(orgA, (tx) =>
+          tx.query(
+            'INSERT INTO assistant_feedback (conversation_id, message_id, user_id) VALUES ($1, $2, $3)',
+            [conversation, message, user],
+          ),
+        ),
+      ).rejects.toThrow(/foreign key|violates/i);
+    }
+    await expect(
+      withOrg(orgA, (tx) =>
+        tx.query(
+          "UPDATE assistant_feedback SET status = 'REVIEWED', reviewed_at = now(), reviewed_by = $1",
+          [b.user],
+        ),
+      ),
+    ).rejects.toThrow(/foreign key|violates/i);
+    // The value sets hold.
+    await expect(
+      withOrg(orgA, (tx) =>
+        tx.query(
+          `INSERT INTO assistant_message (conversation_id, role, content) VALUES ($1, 'system', '[]')`,
+          [a.conversation],
+        ),
+      ),
+    ).rejects.toThrow(/check constraint|violates/i);
+    await expect(
+      withOrg(orgA, (tx) => tx.query('UPDATE assistant_feedback SET rating = 6')),
+    ).rejects.toThrow(/check constraint|violates/i);
+
+    // No hatch reads them.
+    for (const table of ['assistant_conversation', 'assistant_message', 'assistant_feedback']) {
+      expect((await withPlatformRead((tx) => tx.query(`SELECT * FROM ${table}`))).rows).toHaveLength(0);
+      expect((await withoutOrg((tx) => tx.query(`SELECT * FROM ${table}`))).rows).toHaveLength(0);
+    }
+    await admin.query('DELETE FROM assistant_feedback');
+    await admin.query('DELETE FROM assistant_message');
+    await admin.query('DELETE FROM assistant_conversation');
+  });
+
   /* ── External IDs (the Wave 1 business-unit port, migration 0047) ─────────
    *
    * ExpenseOS's `ExternalIdSource` and `BusinessUnitExternalId`, made per tenant.

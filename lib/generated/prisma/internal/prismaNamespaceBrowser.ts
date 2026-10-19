@@ -99,7 +99,10 @@ export const ModelName = {
   TravelPlace: 'TravelPlace',
   TravelRequest: 'TravelRequest',
   TravelCategory: 'TravelCategory',
-  TravelBudgetLine: 'TravelBudgetLine'
+  TravelBudgetLine: 'TravelBudgetLine',
+  AssistantConversation: 'AssistantConversation',
+  AssistantMessage: 'AssistantMessage',
+  AssistantFeedback: 'AssistantFeedback'
 } as const
 
 export type ModelName = (typeof ModelName)[keyof typeof ModelName]
@@ -981,6 +984,49 @@ export const TravelBudgetLineScalarFieldEnum = {
 } as const
 
 export type TravelBudgetLineScalarFieldEnum = (typeof TravelBudgetLineScalarFieldEnum)[keyof typeof TravelBudgetLineScalarFieldEnum]
+
+
+export const AssistantConversationScalarFieldEnum = {
+  id: 'id',
+  organizationId: 'organizationId',
+  userId: 'userId',
+  title: 'title',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt',
+  archivedAt: 'archivedAt'
+} as const
+
+export type AssistantConversationScalarFieldEnum = (typeof AssistantConversationScalarFieldEnum)[keyof typeof AssistantConversationScalarFieldEnum]
+
+
+export const AssistantMessageScalarFieldEnum = {
+  id: 'id',
+  organizationId: 'organizationId',
+  conversationId: 'conversationId',
+  role: 'role',
+  content: 'content',
+  createdAt: 'createdAt'
+} as const
+
+export type AssistantMessageScalarFieldEnum = (typeof AssistantMessageScalarFieldEnum)[keyof typeof AssistantMessageScalarFieldEnum]
+
+
+export const AssistantFeedbackScalarFieldEnum = {
+  id: 'id',
+  organizationId: 'organizationId',
+  conversationId: 'conversationId',
+  messageId: 'messageId',
+  userId: 'userId',
+  rating: 'rating',
+  comment: 'comment',
+  flag: 'flag',
+  status: 'status',
+  createdAt: 'createdAt',
+  reviewedAt: 'reviewedAt',
+  reviewedBy: 'reviewedBy'
+} as const
+
+export type AssistantFeedbackScalarFieldEnum = (typeof AssistantFeedbackScalarFieldEnum)[keyof typeof AssistantFeedbackScalarFieldEnum]
 
 
 export const SortOrder = {
