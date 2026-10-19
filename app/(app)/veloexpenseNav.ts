@@ -57,7 +57,6 @@ export const VELOEXPENSE_ROUTES: Readonly<Record<string, string | null>> = {
   '/admin/fraud-detection': null,
   '/admin/control-evaluation': null,
   '/admin/api-keys': null,
-  '/admin/assistant-feedback': null,
   '/admin/authentication': null,
   '/admin/platform': null,
   '/ledger/sync': null,

@@ -52,6 +52,8 @@ const PORTED_FROM_EXPENSEOS = [
   "components/attachments/AttachmentViewer*.tsx",
   "components/policy/**",
   "components/ui/resizable-panels*.tsx",
+  // Wave 6 (w6-03): ExpenseOS's assistant panel, launcher and voice input.
+  "components/assistant/**",
 ];
 
 const eslintConfig = defineConfig([

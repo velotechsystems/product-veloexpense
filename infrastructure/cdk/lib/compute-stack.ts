@@ -104,7 +104,9 @@ export class ComputeStack extends Stack {
     const smtp = byName('Smtp', config.smtpSecretName);
     // Composed by CacheStack (rediss:// with the AUTH token); read by name, as ExpenseOS does.
     const redisUrl = byName('RedisUrl', `${config.secretPrefix}/${REDIS_URL_SECRET}`);
-    // Made by a person (MANUAL_SECRETS): the VeloExpense Anthropic key, worker only (d40).
+    // Made by a person (MANUAL_SECRETS): the VeloExpense Anthropic key. The worker reads it for
+    // receipt reading (d40); the web task reads it for the assistant, whose chat route calls
+    // Claude in the request (w6-03, d90 — reverses d40's worker-only rule; AI is native, d89).
     const anthropicKey = byName('AnthropicApiKey', `${config.secretPrefix}/${ANTHROPIC_API_KEY_SECRET}`);
 
     /** Partial-ARN wildcard for a secret imported by NAME (its ARN ends in a random suffix). */
@@ -140,6 +142,8 @@ export class ComputeStack extends Stack {
       nameArn(config.smtpSecretName),
       // The web app enqueues (receipt extraction, w3-02).
       nameArn(`${config.secretPrefix}/${REDIS_URL_SECRET}`),
+      // The assistant (w6-03, d90): the chat route calls Claude from the web task.
+      nameArn(`${config.secretPrefix}/${ANTHROPIC_API_KEY_SECRET}`),
       // Platform provisioning, where it is on (config.ts `platformProvisioning`).
       ...(config.platformProvisioning ? [nameArn(`${config.secretPrefix}/${PLATFORM_INBOUND_TOKEN_SECRET}`)] : []),
     ]);
@@ -295,6 +299,8 @@ export class ComputeStack extends Stack {
         SMTP_PASS: ecs.Secret.fromSecretsManager(smtp, 'SMTP_PASSWORD'),
         EMAIL_FROM: ecs.Secret.fromSecretsManager(smtp, 'SMTP_FROM_ADDRESS'),
         REDIS_URL: ecs.Secret.fromSecretsManager(redisUrl),
+        // The assistant (w6-03, d90). Without it the chat route answers 503 "not configured".
+        ANTHROPIC_API_KEY: ecs.Secret.fromSecretsManager(anthropicKey),
         // The token the platform presents to create a tenant here — the INBOUND one, never
         // the outbound PLATFORM_SERVICE_TOKEN (app/api/platform/provision/route.ts).
         ...(config.platformProvisioning

@@ -104,6 +104,12 @@ const APP_ENV = {
   // production runs closed. The e2e drives the open flow (e2e/signup-flow.spec.ts), as dev.
   SIGNUP_ENABLED: 'true',
 
+  // w6-03: the assistant reads its key from the environment (d40, d90). Passed through only
+  // when the shell has one, so the real-model specs (assistant-actions, assistant-new-journeys)
+  // can run; without it the server answers "not configured" and those specs skip, while
+  // assistant-panel.spec.ts drives the not-configured panel.
+  ...(process.env.ANTHROPIC_API_KEY ? { ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY } : {}),
+
   // VX5-5. The apex tenant subdomains live under, which `lib/tenant/host.ts`
   // reads from this one variable — the same one that makes a session usable
   // across subdomains at all (`auth.ts` has the measurement).

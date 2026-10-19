@@ -245,6 +245,8 @@ export const UI_COPY = {
   // w6-02: ExpenseOS's travel module.
   'title.admin.travel.categories': { 'en-CA': 'Travel categories' },
   'title.travel': { 'en-CA': 'Travel' },
+  // w6-03: ExpenseOS's assistant review queue.
+  'title.admin.assistant.feedback': { 'en-CA': 'Assistant feedback' },
 
   /* ── shared navigation, on more than one screen ─────────────────────────── */
   //
