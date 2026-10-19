@@ -31,7 +31,8 @@ const FLAG_TOOL: Anthropic.Tool = {
         type: ['string', 'null'],
         enum: ['OFF_TOPIC', 'NO_ANSWER_FOUND', null],
         description:
-          'OFF_TOPIC when the question was not about ExpenseOS or the expense, travel and ' +
+          // VeloExpense (w6-03): the product's name in every prompt string in this file.
+          'OFF_TOPIC when the question was not about VeloExpense or the expense, travel and ' +
           'tax domain it covers. NO_ANSWER_FOUND when the question was in scope but the ' +
           'answer did not actually answer it — a refusal, a deflection, or an admission of ' +
           'not knowing. Null when the answer addressed the question.',
@@ -89,7 +90,7 @@ export async function proposeTitle(
         {
           role: 'user',
           content:
-            'Title this ExpenseOS help conversation.\n\n' +
+            'Title this VeloExpense help conversation.\n\n' +
             `Question: ${exchange.question}\n\nAnswer: ${exchange.answer}`,
         },
       ],
@@ -130,7 +131,7 @@ export async function reviewTurn(
         {
           role: 'user',
           content:
-            'Review this exchange from the ExpenseOS assistant. Flag only what is clearly ' +
+            'Review this exchange from the VeloExpense assistant. Flag only what is clearly ' +
             'one of the two cases; when in doubt, flag nothing.\n\n' +
             `Question: ${exchange.question}\n\nAnswer: ${exchange.answer}`,
         },
@@ -152,7 +153,7 @@ const GROUNDING_TOOL: Anthropic.Tool = {
       unsupported: {
         type: 'boolean',
         description:
-          'True only when the answer describes how ExpenseOS BEHAVES — a procedure, a rule, a ' +
+          'True only when the answer describes how VeloExpense BEHAVES — a procedure, a rule, a ' +
           'setting, where something lives in the interface — and the guidance provided does not ' +
           'say it. False for everything else, including: general background about expenses, ' +
           'travel or tax that is true independently of this product; anything the answer ' +
@@ -212,7 +213,7 @@ export async function checkGrounding(
           role: 'user',
           content:
             'Check whether this answer stayed within the guidance it was given. Only flag a ' +
-            'claim about how ExpenseOS behaves that the guidance does not support. When in ' +
+            'claim about how VeloExpense behaves that the guidance does not support. When in ' +
             'doubt, do not flag.\n\n' +
             `Guidance provided:\n${exchange.guidance}\n\n---\n\n` +
             `Question: ${exchange.question}\n\nAnswer: ${exchange.answer}`,

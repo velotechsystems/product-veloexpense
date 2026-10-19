@@ -86,7 +86,8 @@ describe('buildSystemPrompt', () => {
 
   it('switches the whole rule set to French, not just the labels', () => {
     const [stable] = buildSystemPrompt({ ...base, locale: 'fr-CA' });
-    expect(stable.text).toMatch(/assistant ExpenseOS/);
+    // VeloExpense (w6-03): the product's own name.
+    expect(stable.text).toMatch(/assistant VeloExpense/);
     expect(stable.text).not.toMatch(/Never calculate/);
   });
 

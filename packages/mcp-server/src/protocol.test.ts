@@ -35,7 +35,8 @@ describe('handshake', () => {
   it('answers initialize with the protocol version and its own identity', async () => {
     const res = await handleRpc({ id: 1, method: 'initialize' }, ctx());
     expect((res as any).result.protocolVersion).toBe(PROTOCOL_VERSION);
-    expect((res as any).result.serverInfo.name).toBe('expenseos');
+    // VeloExpense (w6-03): renamed from `expenseos`.
+    expect((res as any).result.serverInfo.name).toBe('veloexpense');
   });
 
   it('returns nothing for the initialized notification', async () => {
