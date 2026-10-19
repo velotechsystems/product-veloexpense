@@ -275,6 +275,16 @@ export const AUDIT_ACTIONS = [
   'TRAVEL_CATEGORY_CREATED',
   'TRAVEL_CATEGORY_UPDATED',
 
+  /* w6-04: API keys — ExpenseOS's `apiKey.*` (server/routers/apiKeys.ts). Minting a
+   * credential that can act as somebody (a personal key for oneself, or a platform key that
+   * can name any active member), changing what one may do, replacing one with a fresh secret,
+   * and revoking one. Calls MADE with a key are not here: they go to `api_key_request`, and a
+   * mutation one performs writes its own action carrying the `viaApiKey` marker. */
+  'API_KEY_CREATED',
+  'API_KEY_UPDATED',
+  'API_KEY_ROTATED',
+  'API_KEY_REVOKED',
+
   /* branding — VX4-3. The odd family; see the header. */
   'BRANDING_COLOR_SET',
   'BRANDING_COLOR_CLEARED',

@@ -247,6 +247,8 @@ export const UI_COPY = {
   'title.travel': { 'en-CA': 'Travel' },
   // w6-03: ExpenseOS's assistant review queue.
   'title.admin.assistant.feedback': { 'en-CA': 'Assistant feedback' },
+  // w6-04: ExpenseOS's platform API keys and their request log.
+  'title.admin.api.keys': { 'en-CA': 'API keys' },
 
   /* ── shared navigation, on more than one screen ─────────────────────────── */
   //

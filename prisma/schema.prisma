@@ -534,6 +534,9 @@ model User {
   /// w6-03: the person's assistant conversations and the feedback they gave (0078).
   assistantConversations AssistantConversation[] @relation("AssistantConversationUser")
   assistantFeedback      AssistantFeedback[]     @relation("AssistantFeedbackUser")
+  /// w6-04: API keys acting as this person, and the ones they minted (0079).
+  apiKeys        ApiKey[] @relation("ApiKeyOwner")
+  apiKeysCreated ApiKey[] @relation("ApiKeyCreator")
 
   @@map("app_user")
 }
@@ -1532,4 +1535,102 @@ model AssistantFeedback {
   @@index([rating])
   @@index([userId, createdAt])
   @@map("assistant_feedback")
+}
+
+// ── API keys (Wave 6, w6-04, migration 0079) ─────────────────────────────────
+// ExpenseOS's `ApiKey`, `ApiKeyRequest` and `ApiKeyIdempotency` (1e682dd6), field for field.
+// VeloExpense differences, as the assistant models have them:
+//   · per tenant: composite keys in SQL; relations here name the id alone;
+//   · `kind` is text with a CHECK (USER | PLATFORM), not a Prisma enum;
+//   · the request log's coalescing key carries the tenant;
+//   · `api_key_lookup` (0079's header): the one hatch, answering which tenant a token is in.
+
+/// ExpenseOS's ApiKey: a credential that acts as a person. Only the token's hash is stored.
+model ApiKey {
+  id                 String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId     String    @default(dbgenerated("(NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid")) @map("organization_id") @db.Uuid
+  /// USER | PLATFORM (a CHECK).
+  kind               String
+  name               String
+  /// The token's public half: `vxe_u_<prefix>_<secret>`. Not secret.
+  prefix             String    @unique
+  /// SHA-256 of the full presented token.
+  tokenHash          String    @unique @map("token_hash") @db.Char(64)
+  userId             String?   @map("user_id") @db.Uuid
+  user               User?     @relation("ApiKeyOwner", fields: [userId], references: [id], onDelete: SetNull)
+  createdById        String    @map("created_by_id") @db.Uuid
+  createdBy          User      @relation("ApiKeyCreator", fields: [createdById], references: [id], onDelete: Restrict)
+  /// Scope strings from @expenseos/api-scopes. EMPTY MEANS NO ACTION PERMITTED.
+  scopes             String[]  @default([])
+  rateLimitPerMinute Int?      @map("rate_limit_per_minute")
+  allowedIps         String[]  @default([]) @map("allowed_ips")
+  lastUsedAt         DateTime? @map("last_used_at") @db.Timestamptz(6)
+  expiresAt          DateTime? @map("expires_at") @db.Timestamptz(6)
+  revokedAt          DateTime? @map("revoked_at") @db.Timestamptz(6)
+  createdAt          DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  requests    ApiKeyRequest[]
+  idempotency ApiKeyIdempotency[]
+
+  @@unique([organizationId, id])
+  @@index([userId])
+  @@index([kind])
+  @@index([createdById])
+  @@index([revokedAt])
+  @@map("api_key")
+}
+
+/// ExpenseOS's ApiKeyRequest: every call made with an API key, successful or not.
+model ApiKeyRequest {
+  id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String    @default(dbgenerated("(NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid")) @map("organization_id") @db.Uuid
+  apiKeyId       String?   @map("api_key_id") @db.Uuid
+  apiKey         ApiKey?   @relation(fields: [apiKeyId], references: [id], onDelete: SetNull)
+  prefixTried    String?   @map("prefix_tried")
+  actingUserId   String?   @map("acting_user_id") @db.Uuid
+  operation      String
+  toolName       String?   @map("tool_name")
+  scopeRequired  String?   @map("scope_required")
+  /// OK | DENIED_SCOPE | DENIED_PERMISSION | RATE_LIMITED | IP_BLOCKED | INVALID_KEY | EXPIRED
+  /// | REVOKED | SUBJECT_REQUIRED | SUBJECT_NOT_ALLOWED | SUBJECT_UNKNOWN | ERROR (a CHECK).
+  outcome        String
+  statusCode     Int?      @map("status_code")
+  durationMs     Int?      @map("duration_ms")
+  request        Json?
+  response       Json?
+  ip             String?
+  userAgent      String?   @map("user_agent")
+  count          Int       @default(1)
+  windowStart    DateTime? @map("window_start") @db.Timestamptz(6)
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  expiresAt      DateTime  @map("expires_at") @db.Timestamptz(6)
+
+  @@unique([organizationId, id])
+  /// The coalescing key (ExpenseOS's, with the tenant). NULLs stay distinct.
+  @@unique([organizationId, outcome, ip, operation, windowStart], map: "api_key_request_outcome_ip_operation_window_start_key")
+  @@index([apiKeyId, createdAt], map: "api_key_request_api_key_created_idx")
+  @@index([actingUserId, createdAt], map: "api_key_request_acting_user_created_idx")
+  @@index([outcome, createdAt], map: "api_key_request_outcome_created_idx")
+  @@index([expiresAt])
+  @@map("api_key_request")
+}
+
+/// ExpenseOS's ApiKeyIdempotency: replay protection for mutating API-key calls.
+model ApiKeyIdempotency {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String   @default(dbgenerated("(NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid")) @map("organization_id") @db.Uuid
+  apiKeyId       String   @map("api_key_id") @db.Uuid
+  apiKey         ApiKey   @relation(fields: [apiKeyId], references: [id], onDelete: Cascade)
+  key            String
+  requestHash    String   @map("request_hash") @db.Char(64)
+  response       Json?
+  /// IN_FLIGHT | COMPLETED (a CHECK).
+  status         String
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  expiresAt      DateTime @map("expires_at") @db.Timestamptz(6)
+
+  @@unique([organizationId, id])
+  @@unique([apiKeyId, key])
+  @@index([expiresAt])
+  @@map("api_key_idempotency")
 }

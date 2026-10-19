@@ -50,7 +50,7 @@ const ROLES = [
 /** Routes chosen to straddle the interesting boundaries. */
 // VeloExpense: VeloExpense's routes for the same boundaries — `/admin/analytics` for ExpenseOS's
 // `/analytics`. `/users` is ExpenseOS's own since People 3 (`/admin/employees` retired in
-// People 4). `/virtual-cards` and `/admin/api-keys` are not VeloExpense routes.
+// People 4). `/virtual-cards` is not a VeloExpense route; `/admin/api-keys` is since w6-04.
 const PROBES = [
   '/dashboard',
   '/expenses',
@@ -59,6 +59,8 @@ const PROBES = [
   '/admin/roles',
   '/admin/policies',
   '/admin/analytics',
+  // w6-04: ExpenseOS's probe — the AP clerk's reach, and the key surface an employee lacks.
+  '/admin/api-keys',
 ] as const;
 
 /**

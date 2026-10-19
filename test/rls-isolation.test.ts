@@ -11,6 +11,7 @@ import { Pool } from 'pg';
 import {
   withOrg,
   withoutOrg,
+  apiKeyTenantId,
   withInviteLookup,
   withPlatformRead,
   withSignupContext,
@@ -2152,6 +2153,146 @@ describe('RLS tenant isolation', () => {
     await admin.query('DELETE FROM assistant_feedback');
     await admin.query('DELETE FROM assistant_message');
     await admin.query('DELETE FROM assistant_conversation');
+  });
+
+  /* ── API keys (w6-04, migration 0079) ─────────────────────────────────────
+   *
+   * ExpenseOS's API keys, made per tenant: the keys, the log of calls made with them, and
+   * the replay store. The ordinary claim, every composite key — a key cannot act as or be
+   * minted by another tenant's person, and neither the log nor the replay store can name
+   * another tenant's key — and ONE hatch, `api_key_lookup`, which is the interesting half:
+   * it must show the one key whose hash the caller presented, in whichever tenant holds
+   * it, and nothing else — not another key, not with a prefix, not with a flag, and never
+   * for writing.
+   */
+  it("API keys, their request log and replay store are per tenant; the lookup hatch shows one key by its hash, read-only", async () => {
+    await admin.query('DELETE FROM api_key_idempotency');
+    await admin.query('DELETE FROM api_key_request');
+    await admin.query('DELETE FROM api_key');
+    const hashA = 'a'.repeat(64);
+    const hashB = 'b'.repeat(64);
+    const seed = async (org: string, name: string, prefix: string, hash: string) =>
+      withOrg(org, async (tx) => {
+        const user = (await tx.query('SELECT id FROM app_user LIMIT 1')).rows[0].id as string;
+        const key = (
+          await tx.query(
+            `INSERT INTO api_key (kind, name, prefix, token_hash, user_id, created_by_id)
+             VALUES ('USER', $1, $2, $3, $4, $4) RETURNING id`,
+            [name, prefix, hash, user],
+          )
+        ).rows[0].id as string;
+        await tx.query(
+          `INSERT INTO api_key_request (api_key_id, operation, outcome, expires_at)
+           VALUES ($1, 'tools/list', 'OK', now() + interval '1 day')`,
+          [key],
+        );
+        await tx.query(
+          `INSERT INTO api_key_idempotency (api_key_id, key, request_hash, status, expires_at)
+           VALUES ($1, 'idem', $2, 'IN_FLIGHT', now() + interval '1 day')`,
+          [key, 'c'.repeat(64)],
+        );
+        return { user, key };
+      });
+    const a = await seed(orgA, 'Fictional laptop key', '1'.repeat(16), hashA);
+    const b = await seed(orgB, 'Fictional sync key', '2'.repeat(16), hashB);
+
+    for (const [org, name] of [
+      [orgA, 'Fictional laptop key'],
+      [orgB, 'Fictional sync key'],
+    ] as const) {
+      const seen = await withOrg(org, async (tx) => ({
+        keys: (await tx.query('SELECT name FROM api_key')).rows.map((r) => r.name),
+        requests: (await tx.query('SELECT count(*)::int AS n FROM api_key_request')).rows[0].n,
+        replays: (await tx.query('SELECT count(*)::int AS n FROM api_key_idempotency')).rows[0].n,
+      }));
+      expect(seen).toEqual({ keys: [name], requests: 1, replays: 1 });
+    }
+
+    // WITH CHECK: naming another tenant does not write there.
+    await expect(
+      withOrg(orgB, (tx) =>
+        tx.query(
+          `INSERT INTO api_key (organization_id, kind, name, prefix, token_hash, created_by_id)
+           VALUES ($1, 'PLATFORM', 'x', $2, $3, $4)`,
+          [orgA, '3'.repeat(16), 'd'.repeat(64), a.user],
+        ),
+      ),
+    ).rejects.toThrow(/row-level security|violates/i);
+    // Composite keys, one per reference.
+    for (const [owner, minter] of [
+      [b.user, a.user],
+      [a.user, b.user],
+    ]) {
+      await expect(
+        withOrg(orgA, (tx) =>
+          tx.query(
+            `INSERT INTO api_key (kind, name, prefix, token_hash, user_id, created_by_id)
+             VALUES ('USER', 'x', $1, $2, $3, $4)`,
+            ['4'.repeat(16), 'e'.repeat(64), owner, minter],
+          ),
+        ),
+      ).rejects.toThrow(/foreign key|violates/i);
+    }
+    await expect(
+      withOrg(orgA, (tx) =>
+        tx.query(
+          `INSERT INTO api_key_request (api_key_id, operation, outcome, expires_at)
+           VALUES ($1, 'tools/list', 'OK', now())`,
+          [b.key],
+        ),
+      ),
+    ).rejects.toThrow(/foreign key|violates/i);
+    await expect(
+      withOrg(orgA, (tx) =>
+        tx.query(
+          `INSERT INTO api_key_idempotency (api_key_id, key, request_hash, status, expires_at)
+           VALUES ($1, 'idem-2', $2, 'IN_FLIGHT', now())`,
+          [b.key, 'c'.repeat(64)],
+        ),
+      ),
+    ).rejects.toThrow(/foreign key|violates/i);
+    // The value sets hold.
+    await expect(
+      withOrg(orgA, (tx) => tx.query("UPDATE api_key SET kind = 'ROBOT'")),
+    ).rejects.toThrow(/check constraint|violates/i);
+    await expect(
+      withOrg(orgA, (tx) => tx.query("UPDATE api_key_request SET outcome = 'MAYBE'")),
+    ).rejects.toThrow(/check constraint|violates/i);
+
+    // THE HATCH. With the right hash it shows that one key, from whichever tenant holds it —
+    // and `apiKeyTenantId` hands back nothing but its tenant.
+    expect(await apiKeyTenantId(hashA)).toBe(orgA);
+    expect(await apiKeyTenantId(hashB)).toBe(orgB);
+    const lookup = (hash: string, sql: string, params: unknown[] = []) =>
+      withoutOrg(async (tx) => {
+        await tx.query("SELECT set_config('app.api_key_lookup', $1, true)", [hash]);
+        return tx.query(sql, params);
+      });
+    // One row, not both: the GUC is the hash, not a flag.
+    expect((await lookup(hashA, 'SELECT organization_id FROM api_key')).rows).toEqual([
+      { organization_id: orgA },
+    ]);
+    // A wrong hash, an empty one, or none at all: nothing.
+    expect(await apiKeyTenantId('f'.repeat(64))).toBeNull();
+    expect(await apiKeyTenantId('not a hash')).toBeNull();
+    expect((await lookup('', 'SELECT * FROM api_key')).rows).toHaveLength(0);
+    // It opens api_key ONLY — not the log or the replay store of the key it shows.
+    expect((await lookup(hashA, 'SELECT * FROM api_key_request')).rows).toHaveLength(0);
+    expect((await lookup(hashA, 'SELECT * FROM api_key_idempotency')).rows).toHaveLength(0);
+    // AND IT CANNOT WRITE. FOR SELECT only, so an UPDATE falls to `tenant_isolation`, which
+    // matches nothing with no tenant — a silent no-op, so `rowCount` is the assertion.
+    expect(
+      (await lookup(hashA, 'UPDATE api_key SET revoked_at = NULL, scopes = $1', [['*']])).rowCount,
+    ).toBe(0);
+
+    // No other hatch reads them.
+    for (const table of ['api_key', 'api_key_request', 'api_key_idempotency']) {
+      expect((await withPlatformRead((tx) => tx.query(`SELECT * FROM ${table}`))).rows).toHaveLength(0);
+      expect((await withoutOrg((tx) => tx.query(`SELECT * FROM ${table}`))).rows).toHaveLength(0);
+    }
+    await admin.query('DELETE FROM api_key_idempotency');
+    await admin.query('DELETE FROM api_key_request');
+    await admin.query('DELETE FROM api_key');
   });
 
   /* ── External IDs (the Wave 1 business-unit port, migration 0047) ─────────

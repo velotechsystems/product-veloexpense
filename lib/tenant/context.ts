@@ -162,6 +162,31 @@ export async function withInviteLookup<T>(fn: (tx: QueryRunner) => Promise<T>): 
   });
 }
 
+/**
+ * w6-04 — which tenant is this API key in? The `api_key_lookup` hatch (0079).
+ *
+ * A call to `/api/mcp` carries a bearer token and no session, so nothing has set
+ * `app.current_org` and FORCE RLS shows it no key at all. This answers the one question
+ * that has to come first, and NOTHING ELSE: it returns the `organization_id` and no other
+ * column, so the rule every hatch states in a comment ("take nothing but the tenant") is
+ * the function's signature here. Everything after — verifying the secret, revoked and
+ * expired, scopes, the request log — happens inside the tenant under `tenant_isolation`,
+ * exactly as ExpenseOS does it with one tenant.
+ *
+ * The GUC is not a flag. It is the token's SHA-256, and 0079's policy shows only the row
+ * whose `token_hash` equals it, so the caller must already hold the key's full secret to
+ * see it: no prefix can be probed and nothing can be listed. Transaction-local, like the
+ * others. `null`: no such key, which the caller treats exactly as a wrong secret.
+ */
+export async function apiKeyTenantId(tokenHash: string): Promise<string | null> {
+  if (!/^[0-9a-f]{64}$/.test(tokenHash)) return null;
+  return transaction(async (tx) => {
+    await tx.query("SELECT set_config('app.api_key_lookup', $1, true)", [tokenHash]);
+    const r = await tx.query('SELECT organization_id FROM api_key WHERE token_hash = $1', [tokenHash]);
+    return (r.rows[0]?.organization_id as string | undefined) ?? null;
+  });
+}
+
 export async function withPlatformRead<T>(fn: (tx: QueryRunner) => Promise<T>): Promise<T> {
   return transaction(async (tx) => {
     await tx.query("SELECT set_config('app.platform_task', 'on', true)");

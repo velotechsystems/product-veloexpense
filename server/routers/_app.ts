@@ -1,4 +1,5 @@
 import { router } from '@/server/trpc';
+import { apiKeysRouter } from './apiKeys';
 import { appSettingsRouter } from './appSettings';
 import { approvalWorkflowsRouter } from './approvalWorkflows';
 import { assistantRouter } from './assistant';
@@ -35,6 +36,9 @@ export const appRouter = router({
   // and the help-article search the chat's `search_help_articles` tool calls. The turn
   // itself is the chat route (app/api/assistant/chat/route.ts).
   assistant: assistantRouter,
+  // w6-04 (d88): ExpenseOS's API keys — the personal key on /preferences, platform keys and
+  // the request log on /admin/api-keys. Calls MADE with a key arrive at app/api/mcp/route.ts.
+  apiKeys: apiKeysRouter,
   // w5-06: ExpenseOS's audit trail (`/admin/audit-trail`).
   audit: auditRouter,
   businessUnits: businessUnitsRouter,

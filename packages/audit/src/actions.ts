@@ -12,6 +12,13 @@
 import type { AuditAction } from '@/lib/audit/actions';
 
 const adminAndOthers = {
+  /** w6-04: ExpenseOS's `apiKey.*` keys (server/routers/apiKeys.ts). */
+  apiKey: {
+    create: 'API_KEY_CREATED',
+    update: 'API_KEY_UPDATED',
+    rotate: 'API_KEY_ROTATED',
+    revoke: 'API_KEY_REVOKED',
+  },
   admin: {
     expenseCategoryCreate: 'EXPENSE_CATEGORY_CREATED',
     expenseCategoryUpdate: 'EXPENSE_CATEGORY_UPDATED',

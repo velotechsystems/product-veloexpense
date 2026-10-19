@@ -110,6 +110,12 @@ const APP_ENV = {
   // assistant-panel.spec.ts drives the not-configured panel.
   ...(process.env.ANTHROPIC_API_KEY ? { ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY } : {}),
 
+  // w6-04: a personal API key is rate-limited, and the guard counts that in Redis
+  // (server/lib/rateLimit.ts, as ExpenseOS's). Passed through only when the shell has one,
+  // as the key above: CI's job has no Redis service, so e2e/api-keys-mcp.spec.ts runs a
+  // personal key's CALLS only where it is set; every other step runs either way.
+  ...(process.env.REDIS_URL ? { REDIS_URL: process.env.REDIS_URL } : {}),
+
   // VX5-5. The apex tenant subdomains live under, which `lib/tenant/host.ts`
   // reads from this one variable — the same one that makes a session usable
   // across subdomains at all (`auth.ts` has the measurement).
