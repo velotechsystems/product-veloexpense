@@ -15,11 +15,12 @@
  *
  *   · `meterTurn` — the chat route, which holds no transaction while the model streams, so
  *     each call's row is written in a tenant transaction of its own as the call completes.
- *   · `usageCollector` — a tRPC procedure (`assistant.searchArticles`), which runs inside
- *     the request's tenant transaction and calls the model concurrently. Rows written from
- *     concurrent calls onto one transaction could not each have a savepoint, so they are
- *     collected and written together afterwards, under one savepoint: a failed usage write
- *     rolls back to it and never undoes the procedure.
+ *   · `usageCollector` — a tRPC procedure (`assistant.searchArticles`), which calls the
+ *     model concurrently. The rows are collected while the calls run and written together
+ *     afterwards, under one savepoint, so a failed usage write never undoes the procedure.
+ *     f63: the procedure runs statement-at-a-time, so `flush` is handed the one short
+ *     transaction it opens for the rows (`ctx.db.$transaction`) — no transaction is open
+ *     while the model is.
  *
  * Token counts come from the response's own `usage`, and the request id is the response's
  * message id, so a row can be matched to Anthropic's own record of the call.

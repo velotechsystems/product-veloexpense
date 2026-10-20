@@ -308,6 +308,17 @@ describe('the queue (w3-00)', () => {
     expect(secretsOf('veloexpense-dev-web').secrets).toContain('ANTHROPIC_API_KEY');
   });
 
+  // f63: the streaming e2e points the assistant at a fake Messages API on loopback
+  // (server/lib/assistantClient.ts anthropicBaseUrl). No deployed task may name one, nor the
+  // SDK's own base-URL override.
+  it('no stage points the assistant anywhere but Anthropic', () => {
+    for (const stage of ['dev', 'prod'] as const) {
+      const text = JSON.stringify(synth(stage).compute.toJSON());
+      expect(text).not.toContain('ASSISTANT_FAKE_ANTHROPIC_URL');
+      expect(text).not.toContain('ANTHROPIC_BASE_URL');
+    }
+  });
+
   it('the web task can enqueue', () => {
     expect(secretsOf('veloexpense-dev-web').secrets).toContain('REDIS_URL');
   });

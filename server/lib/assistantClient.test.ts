@@ -19,6 +19,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const h = vi.hoisted(() => ({
   constructed: [] as string[],
+  baseURLs: [] as unknown[],
   streamCalls: [] as unknown[],
   createCalls: [] as unknown[],
 }));
@@ -49,17 +50,19 @@ vi.mock('@anthropic-ai/sdk', () => ({
       },
     };
     key: string;
-    constructor(opts: { apiKey: string }) {
+    constructor(opts: { apiKey: string; baseURL?: string }) {
       this.key = opts.apiKey;
       h.constructed.push(opts.apiKey);
+      h.baseURLs.push(opts.baseURL);
     }
   },
 }));
 
-import { fastClient, streamingClient } from './assistantClient';
+import { ANTHROPIC_API_ORIGIN, anthropicBaseUrl, fastClient, streamingClient } from './assistantClient';
 
 beforeEach(() => {
   h.constructed = [];
+  h.baseURLs = [];
   h.streamCalls = [];
   h.createCalls = [];
 });
@@ -172,5 +175,45 @@ describe('metering', () => {
     const stream = streamingClient('sk-m', (m) => void seen.push(m)).stream({ fail: true } as never);
     await expect(stream.finalMessage()).rejects.toThrow('overloaded');
     expect(seen).toEqual([]);
+  });
+});
+
+/**
+ * f63: the e2e's fake Messages API is reachable only on loopback, and nothing else can move
+ * the assistant's calls — the key and the transcript — off Anthropic's own origin.
+ */
+describe('where the calls go', () => {
+  it("is Anthropic's origin when nothing is set", () => {
+    expect(anthropicBaseUrl({})).toBe(ANTHROPIC_API_ORIGIN);
+  });
+
+  it("ignores the SDK's own ANTHROPIC_BASE_URL — the origin is passed explicitly", () => {
+    expect(anthropicBaseUrl({ ANTHROPIC_BASE_URL: 'https://proxy.example.com' })).toBe(ANTHROPIC_API_ORIGIN);
+  });
+
+  it('honours the fake only on a loopback http address', () => {
+    expect(anthropicBaseUrl({ ASSISTANT_FAKE_ANTHROPIC_URL: 'http://127.0.0.1:9631' })).toBe('http://127.0.0.1:9631');
+    expect(anthropicBaseUrl({ ASSISTANT_FAKE_ANTHROPIC_URL: 'http://localhost:9631/v1' })).toBe('http://localhost:9631');
+    expect(anthropicBaseUrl({ ASSISTANT_FAKE_ANTHROPIC_URL: 'http://[::1]:9631' })).toBe('http://[::1]:9631');
+  });
+
+  it('refuses anything else, and falls back to Anthropic', () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    for (const bad of [
+      'https://evil.example.com',
+      'http://10.0.0.5:9631',
+      'http://127.0.0.1.evil.example.com',
+      'https://127.0.0.1:9631',
+      'file:///etc/passwd',
+      'not a url',
+    ]) {
+      expect(anthropicBaseUrl({ ASSISTANT_FAKE_ANTHROPIC_URL: bad })).toBe(ANTHROPIC_API_ORIGIN);
+    }
+    expect(error).toHaveBeenCalled();
+  });
+
+  it('builds the SDK with that origin', () => {
+    streamingClient('sk-origin').stream({} as never);
+    expect(h.baseURLs.at(-1)).toBe(anthropicBaseUrl());
   });
 });

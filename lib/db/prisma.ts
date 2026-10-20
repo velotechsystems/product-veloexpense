@@ -161,6 +161,38 @@ export async function withTenantStatements<T>(orgId: string, fn: () => Promise<T
 
 const statements = new AsyncLocalStorage<{ orgId: string }>();
 
+/**
+ * f63: is this code inside a real tenant TRANSACTION (as opposed to statement-at-a-time, or no
+ * scope at all)? For tests and assertions that a long wait — a model call — holds no
+ * transaction open.
+ */
+export function inTenantTransaction(): boolean {
+  return scope.getStore() !== undefined;
+}
+
+/**
+ * f63: `withTenantStatements`, for a caller that may already be scoped to the same tenant —
+ * a tRPC procedure reached through the assistant's tool executor, which already runs
+ * statement-at-a-time (app/api/assistant/chat, app/api/mcp).
+ *
+ *   · no scope: statement-at-a-time for `orgId`;
+ *   · already statement-at-a-time for `orgId`: as it is;
+ *   · already inside a tenant TRANSACTION for `orgId`: inside it. A transaction cannot be left
+ *     part-way, so code that asked for statements runs on it — correct, only not short. Only
+ *     tests and nested callers reach this.
+ *
+ * Another organization's scope refuses, as `withTenantDb` does.
+ */
+export async function withTenantStatementsHere<T>(orgId: string, fn: () => Promise<T>): Promise<T> {
+  if (!ORG_UUID.test(orgId)) throw new TenantScopeError('withTenantStatementsHere: invalid organization id');
+  const current = scope.getStore()?.orgId ?? statements.getStore()?.orgId;
+  if (current === undefined) return withTenantStatements(orgId, fn);
+  if (current !== orgId) {
+    throw new TenantScopeError('withTenantStatementsHere: already scoped to a different organization');
+  }
+  return fn();
+}
+
 /** The organization the current scope belongs to, or null outside one. */
 export function currentTenantId(): string | null {
   return scope.getStore()?.orgId ?? statements.getStore()?.orgId ?? null;

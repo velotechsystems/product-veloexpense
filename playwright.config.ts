@@ -297,7 +297,8 @@ export default defineConfig({
   // normal server and pass by finding nothing bracketed anywhere — a spec that
   // reports success because it was pointed at the wrong build, which is the
   // failure mode part 2b's sabotage discipline exists for.
-  testIgnore: /pseudo-crawl\.spec\.ts/,
+  // f63: and the assistant's streaming spec, which needs its own server (playwright.assistant.config.ts).
+  testIgnore: [/pseudo-crawl\.spec\.ts/, /assistant-stream\.spec\.ts/],
   // The DB suites and the e2e share one database; never interleave them.
   fullyParallel: false,
   workers: 1,
@@ -324,7 +325,7 @@ export default defineConfig({
       // VeloExpense: and the pseudo crawl, as the root `testIgnore` says — a project's
       // `testIgnore` REPLACES the root one rather than adding to it.
       // VeloExpense: and the role-matrix specs, which are the `roles` project's.
-      testIgnore: [PHONE_ONLY_SPECS, /pseudo-crawl\.spec\.ts/, ROLE_MATRIX_SPECS],
+      testIgnore: [PHONE_ONLY_SPECS, /pseudo-crawl\.spec\.ts/, /assistant-stream\.spec\.ts/, ROLE_MATRIX_SPECS],
       use: { ...devices['Desktop Chrome'], storageState: 'e2e/.auth/state.json' },
       dependencies: ['setup'],
     },

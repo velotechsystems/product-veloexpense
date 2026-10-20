@@ -38,10 +38,42 @@ export type OnMessage = (message: Anthropic.Message) => Promise<void> | void;
  */
 const clients = new Map<string, Anthropic>();
 
+/** The Messages API's origin — where every assistant call goes outside a test run. */
+export const ANTHROPIC_API_ORIGIN = 'https://api.anthropic.com';
+
+const LOOPBACK_HOSTS = new Set(['127.0.0.1', 'localhost', '[::1]']);
+
+/**
+ * f63: where the SDK sends the assistant's calls.
+ *
+ * Always Anthropic's own origin, passed EXPLICITLY — so the SDK's own `ANTHROPIC_BASE_URL`
+ * fallback cannot redirect the key either — with one exception for the streaming e2e
+ * (`playwright.assistant.config.ts`): `ASSISTANT_FAKE_ANTHROPIC_URL` names the fake Messages API
+ * the test starts (`scripts/e2e-anthropic.mjs`).
+ *
+ * The exception is honoured ONLY for a plain-http LOOPBACK address. Set by mistake on a deployed
+ * task, nothing it can name is outside the container, so the worst it can do is make the
+ * assistant fail — it can never send the key or a transcript to another host. Anything else is
+ * refused, logged, and Anthropic is used. No stage sets it (test/stacks.test.ts pins that).
+ */
+export function anthropicBaseUrl(env: Readonly<Record<string, string | undefined>> = process.env): string {
+  const fake = env.ASSISTANT_FAKE_ANTHROPIC_URL?.trim();
+  if (!fake) return ANTHROPIC_API_ORIGIN;
+  let url: URL | null = null;
+  try {
+    url = new URL(fake);
+  } catch {
+    url = null;
+  }
+  if (url && url.protocol === 'http:' && LOOPBACK_HOSTS.has(url.hostname)) return url.origin;
+  console.error('[assistant] ASSISTANT_FAKE_ANTHROPIC_URL is not a loopback http address; ignored');
+  return ANTHROPIC_API_ORIGIN;
+}
+
 function sdk(apiKey: string): Anthropic {
   const existing = clients.get(apiKey);
   if (existing) return existing;
-  const created = new Anthropic({ apiKey });
+  const created = new Anthropic({ apiKey, baseURL: anthropicBaseUrl() });
   // Bounded: a key rotated repeatedly must not accumulate pools for keys nobody uses.
   if (clients.size >= 4) clients.clear();
   clients.set(apiKey, created);
