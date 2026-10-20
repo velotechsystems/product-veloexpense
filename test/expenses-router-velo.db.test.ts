@@ -678,6 +678,29 @@ describe('receipts — VeloExpense\'s storage rules (d29, d30)', () => {
     expect(shown).toEqual(['r.pdf']);
   });
 
+  // f19 — ExpenseOS signs the link whatever the scan said and gates only its viewer.
+  it('signs no view link, in the report or the list, until the malware scan is CLEAN', async () => {
+    const caller = h.makeCaller(RW, ownerId);
+    const urls = async () => ({
+      report: (await caller.report({ reportId })).expenses[0].receipts[0].url,
+      list: (await caller.receiptList({ expenseId })).items[0].url,
+    });
+    const receiptId = (await h.db.receipt.findFirst({ where: { expenseId, status: 'STORED' }, select: { id: true } }))!.id;
+    expect(await urls()).toEqual({ report: null, list: null });
+    for (const status of ['PENDING', 'SCANNING', 'INFECTED', 'FAILED']) {
+      await h.admin.query(
+        `INSERT INTO document_extraction (organization_id, receipt_id, scan_status) VALUES ($1, $2, $3)
+         ON CONFLICT (receipt_id) DO UPDATE SET scan_status = EXCLUDED.scan_status`,
+        [h.orgId, receiptId, status],
+      );
+      expect(await urls()).toEqual({ report: null, list: null });
+    }
+    await h.admin.query(`UPDATE document_extraction SET scan_status = 'CLEAN' WHERE receipt_id = $1`, [receiptId]);
+    const signed = await urls();
+    expect(signed.report).toMatch(/^memory:\/\/download\//);
+    expect(signed.list).toMatch(/^memory:\/\/download\//);
+  });
+
   it('signs the report\'s view link for an hour and the list\'s for five minutes', async () => {
     const caller = h.makeCaller(RW, ownerId);
     const [onReport] = (await caller.report({ reportId })).expenses[0].receipts;

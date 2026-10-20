@@ -1949,10 +1949,12 @@ export function ReceiptPane({
   // reloads (flickers) on every poll while "scanning". Same S3 object + content;
   // only the signature would differ.
   const urlCacheRef = useRef<Map<string, string>>(new Map());
-  const stableUrl = (r: { id: string; url: string }): string => {
+  // VeloExpense (f19): the server sends `url: null` until the scan is CLEAN, so only a
+  // real link is frozen — freezing the null would keep the viewer blank after the scan.
+  const stableUrl = (r: { id: string; url: string | null }): string => {
     const cache = urlCacheRef.current;
-    if (!cache.has(r.id)) cache.set(r.id, r.url);
-    return cache.get(r.id) as string;
+    if (!cache.has(r.id) && r.url) cache.set(r.id, r.url);
+    return cache.get(r.id) ?? r.url ?? '';
   };
 
   /**
@@ -1975,7 +1977,8 @@ export function ReceiptPane({
    * time the poll runs at all — during which the viewer is already showing "Scanning…"
    * rather than the document.
    */
-  const viewerUrl = (r: { id: string; url: string }): string => (sheetMode ? r.url : stableUrl(r));
+  const viewerUrl = (r: { id: string; url: string | null }): string =>
+    sheetMode ? (r.url ?? '') : stableUrl(r);
 
   /**
    * SEC-4, the other half: ask the server for a fresh signature whenever the sheet

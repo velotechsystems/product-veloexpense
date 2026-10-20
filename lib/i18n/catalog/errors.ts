@@ -238,6 +238,7 @@ export const USER_MESSAGE_CODES = [
   'RECEIPT_ALREADY_CONFIRMED',
   'RECEIPT_NOTHING_UPLOADED',
   'RECEIPT_UPLOAD_INCOMPLETE',
+  'RECEIPT_NOT_SCANNED',
   'RECEIPT_NONE_SELECTED',
   'RECEIPT_NOT_UPLOADED_YET',
 
@@ -1066,6 +1067,9 @@ export const ERROR_COPY: Record<UserMessageCode, Copy> = {
   },
   RECEIPT_UPLOAD_INCOMPLETE: {
     'en-CA': 'That receipt has not finished uploading.',
+  },
+  RECEIPT_NOT_SCANNED: {
+    'en-CA': 'That receipt can be opened once its security scan is clean.',
   },
   RECEIPT_NONE_SELECTED: {
     'en-CA': 'No receipts selected.',

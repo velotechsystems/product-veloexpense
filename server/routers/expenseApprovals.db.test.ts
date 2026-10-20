@@ -452,6 +452,31 @@ describe.skipIf(!process.env.DATABASE_URL)('expense approvals (integration)', ()
       await expect(approvals([], deputyId).report({ reportId })).rejects.toThrow(/FORBIDDEN/);
     });
 
+    // f19 — ExpenseOS's approver drawer links the receipt whatever its scan said.
+    it('report detail signs no receipt link until the malware scan is CLEAN', async () => {
+      const reportId = await submitted('Unscanned receipt');
+      const expenseId = (
+        await h.admin.query(`SELECT id FROM expense WHERE report_id = $1`, [reportId])
+      ).rows[0].id as string;
+      const receiptId = (
+        await h.admin.query(
+          `INSERT INTO receipt (organization_id, expense_id, s3_key, filename, content_type, status, uploaded_by_id)
+           VALUES ($1, $2, $3, 'scan.pdf', 'application/pdf', 'STORED', $4) RETURNING id`,
+          [h.orgId, expenseId, `org/${h.orgId}/receipts/${reportId}/scan.pdf`, ownerId],
+        )
+      ).rows[0].id as string;
+      const urlNow = async () =>
+        (await approvals(OWNER_PERMS, strangerId).report({ reportId })).expenses[0].receipts[0].url;
+      expect(await urlNow()).toBeNull();
+      await h.admin.query(
+        `INSERT INTO document_extraction (organization_id, receipt_id, scan_status) VALUES ($1, $2, 'INFECTED')`,
+        [h.orgId, receiptId],
+      );
+      expect(await urlNow()).toBeNull();
+      await h.admin.query(`UPDATE document_extraction SET scan_status = 'CLEAN' WHERE receipt_id = $1`, [receiptId]);
+      expect(await urlNow()).toEqual(expect.any(String));
+    });
+
     it('decideBulk is resilient: unknown/undecidable tasks are skipped, not thrown', async () => {
       // A random (non-existent) task id is reported as skipped rather than
       // failing the whole batch — the property that separates decideBulk from a

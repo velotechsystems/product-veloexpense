@@ -368,6 +368,24 @@ describe('what may be previewed', () => {
     );
   });
 
+  // VeloExpense (f19): the server sends `url: null` until the scan is CLEAN. The freeze
+  // must not keep that null, or the viewer would stay blank once the scan clears.
+  it('does not freeze the null link of an unscanned receipt', () => {
+    const view = show({
+      expense: expense({ receipts: [receipt({ url: null, extraction: extraction({ scanStatus: 'SCANNING' }) })] }),
+    });
+    expect(screen.queryByTestId('viewer')).toBeNull();
+    view.rerender(
+      <ReceiptPane
+        expense={expense({ receipts: [receipt({ url: 'https://files/canoe.jpg?sig=clean' })] })}
+        editable
+        reviewThreshold={0.8}
+        onChange={onChange}
+      />,
+    );
+    expect(screen.getByTestId('viewer')).toHaveAttribute('data-url', 'https://files/canoe.jpg?sig=clean');
+  });
+
   it('covers the pane while the receipt is still processing', () => {
     show({ locked: true });
     expect(screen.getByText('workbench.processingReceipt')).toBeInTheDocument();

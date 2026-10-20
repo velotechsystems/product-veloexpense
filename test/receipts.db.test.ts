@@ -73,6 +73,15 @@ async function upload(
   return { confirmed: await svc.confirmUpload(tx, receipt.id, storage), presigned };
 }
 
+/** f19: the worker's scan verdict on a receipt (its extraction row), as the worker writes it. */
+async function markScanned(tx: Parameters<typeof svc.createUploadIntent>[0], receiptId: string, scanStatus: string) {
+  await tx.query(
+    `INSERT INTO document_extraction (receipt_id, scan_status) VALUES ($1, $2)
+     ON CONFLICT (receipt_id) DO UPDATE SET scan_status = EXCLUDED.scan_status`,
+    [receiptId, scanStatus],
+  );
+}
+
 describe('receipt upload', () => {
   it('reserves a PENDING row and a tenant-prefixed key, then confirms with the real size', async () => {
     const result = await withOrg(orgA, async (tx) => {
@@ -162,6 +171,7 @@ describe('attach, download and remove', () => {
   it('signs a download only for a stored receipt', async () => {
     const result = await withOrg(orgA, async (tx) => {
       const { confirmed } = await upload(tx, 'dinner.png', 'image/png');
+      await markScanned(tx, confirmed.id, 'CLEAN');
       const url = await svc.getDownloadUrl(tx, confirmed.id, storage);
       const { receipt: pending } = await svc.createUploadIntent(
         tx,
@@ -176,6 +186,36 @@ describe('attach, download and remove', () => {
     await expect(
       withOrg(orgA, (tx) => svc.getDownloadUrl(tx, result.pendingId, storage)),
     ).rejects.toMatchObject({ code: 'NOT_STORED' });
+  });
+
+  // f19 — no link until the malware scan says CLEAN; no extraction row counts as unscanned.
+  it('refuses a download until the malware scan is CLEAN', async () => {
+    const verdicts = await withOrg(orgA, async (tx) => {
+      const { confirmed } = await upload(tx, 'unscanned.png', 'image/png');
+      const out: Record<string, string> = {};
+      const attempt = async (label: string) => {
+        try {
+          await svc.getDownloadUrl(tx, confirmed.id, storage);
+          out[label] = 'signed';
+        } catch (e) {
+          out[label] = (e as { code?: string }).code ?? 'error';
+        }
+      };
+      await attempt('no row');
+      for (const status of ['PENDING', 'SCANNING', 'INFECTED', 'FAILED', 'CLEAN']) {
+        await markScanned(tx, confirmed.id, status);
+        await attempt(status);
+      }
+      return out;
+    });
+    expect(verdicts).toEqual({
+      'no row': 'NOT_SCANNED',
+      PENDING: 'NOT_SCANNED',
+      SCANNING: 'NOT_SCANNED',
+      INFECTED: 'NOT_SCANNED',
+      FAILED: 'NOT_SCANNED',
+      CLEAN: 'signed',
+    });
   });
 
   it('removes the row and the object together', async () => {

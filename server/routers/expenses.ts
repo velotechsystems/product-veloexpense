@@ -90,6 +90,7 @@ import { afterCommit, currentTenantId, type TenantDb } from '@/lib/db/prisma';
 import { enqueue as enqueueJob } from '@expenseos/jobs';
 import { queryRunnerOf } from '@/lib/db/prisma-pg-bridge';
 import { getStorage } from '@/lib/storage';
+import { receiptViewUrl } from '@/lib/receipts/viewUrl';
 import { receiptKey, receiptPrefix } from '@/lib/storage/keys';
 import { RECEIPT_CAP_BYTES } from '@/lib/storage/limits';
 import { currencySymbol } from '@/server/lib/currencySymbol';
@@ -971,7 +972,11 @@ async function serializeExpense(e: ExpenseWithDetail, rawFor: boolean) {
         // session (switching between expenses reuses it); the 5-min default
         // expired mid-session and broke the viewer on revisit.
         // VeloExpense: VeloExpense's storage, inline (no filename), at ExpenseOS's TTL (d30).
-        url: await getStorage().presignDownload(r.s3Key, undefined, { expiresInSeconds: 3600 }),
+        // f19: null until the malware scan is CLEAN — ExpenseOS signs it regardless and
+        // leaves the gate to the viewer (`scanCleared`); here no unscanned link leaves.
+        url: await receiptViewUrl(r.s3Key, r.extraction?.scanStatus, {
+          download: { expiresInSeconds: 3600 },
+        }),
         // VeloExpense: typed as ExpenseOS's mapped reading (`ReceiptReading`) — the columns
         // are text under a CHECK (0056) where ExpenseOS's are enums.
         extraction: r.extraction
@@ -2535,13 +2540,16 @@ export const expensesRouter = router({
           sizeBytes: true,
           s3Key: true,
           uploadedAt: true,
+          // f19: the scan verdict decides whether a link is signed.
+          extraction: { select: { scanStatus: true } },
         },
       });
       const items = await Promise.all(
-        rows.map(async ({ s3Key, ...r }) => ({
+        rows.map(async ({ s3Key, extraction, ...r }) => ({
           ...r,
           // VeloExpense: VeloExpense's storage, inline, at its default TTL (ExpenseOS's 300s).
-          url: await getStorage().presignDownload(s3Key),
+          // f19: null until the malware scan is CLEAN.
+          url: await receiptViewUrl(s3Key, extraction?.scanStatus),
         })),
       );
       return { items };

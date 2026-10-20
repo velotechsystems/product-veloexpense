@@ -208,6 +208,14 @@ describe.skipIf(!process.env.DATABASE_URL)('expenses receipt endpoints (integrat
     const audit = await h.lastAudit('Expense', expenseId);
     expect(audit?.action).toBe('RECEIPT_ATTACHED');
 
+    // f19: no view link until the malware scan says CLEAN (the worker writes the verdict).
+    const unscanned = await caller.receiptList({ expenseId });
+    expect(unscanned.items.find((i: { id: string }) => i.id === created.id)?.url).toBeNull();
+    await h.admin.query(
+      `INSERT INTO document_extraction (organization_id, receipt_id, scan_status) VALUES ($1, $2, 'CLEAN')`,
+      [h.orgId, created.id],
+    );
+
     const listed = await caller.receiptList({ expenseId });
     expect(
       listed.items.some(
