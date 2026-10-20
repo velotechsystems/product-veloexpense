@@ -20,6 +20,7 @@ import { uiText, type UiKey } from '@/lib/i18n/catalog/ui';
 import { getPreferencesPage, savePreferencesFromForm } from './actions';
 import { PersonalApiKey } from './PersonalApiKey';
 import { ReceiptsEmailCard } from '@/components/receipts/ReceiptsEmailAddress';
+import { ConnectedApps } from '@/components/oauth/ConnectedApps';
 
 import { pageTitle } from '@/lib/i18n/page-title';
 import { NativeSelect } from '@/components/ui/native-select';
@@ -133,6 +134,10 @@ export default async function PreferencesPage({
           Last, as on ExpenseOS's profile: the section somebody visits once and then leaves
           alone for six months. It configures nothing; its procedures take no input. */}
       <PersonalApiKey />
+
+      {/* mcp-oauth: the Claude connectors this person has allowed to act as them (OAuth
+          grants), beside the key box — the same kind of credential, obtained another way. */}
+      <ConnectedApps />
     </Screen>
   );
 }

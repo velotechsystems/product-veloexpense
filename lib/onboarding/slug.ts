@@ -30,6 +30,8 @@
 export const RESERVED_SLUGS: readonly string[] = [
   // 1. ours
   'www', 'app', 'api', 'admin', 'login', 'auth', 'signup', 'status', 'docs', 'help',
+  // mcp-oauth: `mcp.<apex>` is the Claude connector's host (lib/mcpOauth/host.ts).
+  'mcp', 'oauth',
   'static', 'assets', 'cdn', 'files', 'public',
   // 2. infrastructure
   'mail', 'smtp', 'imap', 'ns', 'ns1', 'ns2', 'mx', 'ftp', 'vpn', 'test', 'staging',

@@ -35,6 +35,13 @@
  *   anthropic-api-key       The VeloExpense Anthropic API key (w3-02a, d40),
  *                           plain text. Read by the worker (receipt reading)
  *                           and, since w6-03 (d90), the web task (the assistant).
+ *   mcp-oauth-signing-key   mcp-oauth: the RSA-2048 private key (PKCS#8 PEM, plain text)
+ *                           that signs MCP access tokens for Claude connectors — VeloCRM's
+ *                           `velocrm/mcp/oauth-signing-key`, made the same way:
+ *                           `openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048`.
+ *                           Read by the web task only. Rotating it: put the old PEM in a
+ *                           `-previous` secret first (lib/mcpOauth/keys.ts); replacing it
+ *                           outright only signs every connector out (they reconnect).
  */
 import {
   Duration,
@@ -53,7 +60,12 @@ export interface SecurityStackProps extends StackProps {
 }
 
 /** Secrets a person creates before the first deploy. Name suffix under `secretPrefix`. */
-export const MANUAL_SECRETS = ['secret-encryption-key', 'google-oauth', 'anthropic-api-key'] as const;
+export const MANUAL_SECRETS = [
+  'secret-encryption-key',
+  'google-oauth',
+  'anthropic-api-key',
+  'mcp-oauth-signing-key',
+] as const;
 
 /**
  * 18 Oct 2026: the token the platform presents to `/api/platform/provision`, made by a person
@@ -61,6 +73,9 @@ export const MANUAL_SECRETS = ['secret-encryption-key', 'google-oauth', 'anthrop
  * MANUAL_SECRETS because dev does not need it.
  */
 export const PLATFORM_INBOUND_TOKEN_SECRET = 'platform-inbound-token';
+
+/** mcp-oauth: the MCP access-token signing key's name under `secretPrefix` (MANUAL_SECRETS). */
+export const MCP_OAUTH_SIGNING_KEY_SECRET = 'mcp-oauth-signing-key';
 
 /** The Anthropic key's name under `secretPrefix` (MANUAL_SECRETS). */
 export const ANTHROPIC_API_KEY_SECRET = 'anthropic-api-key';

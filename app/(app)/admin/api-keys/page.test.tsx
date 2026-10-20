@@ -43,12 +43,17 @@ vi.mock('./PlatformApiKeys', () => ({
 vi.mock('./ApiKeyRequestsAdmin', () => ({
   ApiKeyRequestsAdmin: () => <div>request-log</div>,
 }));
+// mcp-oauth: the connected-applications list rides with the request log (same permission).
+vi.mock('@/components/oauth/ConnectedApps', () => ({
+  AdminConnectedApps: () => <div>connected-apps</div>,
+}));
 
 import ApiKeysAdminPage from './page';
 
 const show = async () => render(await ApiKeysAdminPage());
 const mintForm = () => screen.queryByText('mint-form');
 const requestLog = () => screen.queryByText('request-log');
+const connectedApps = () => screen.queryByText('connected-apps');
 
 beforeEach(() => {
   h.session = { user: { id: 'u-1', roleId: 'role-1', roleLabel: { en: 'Admin' } } };
@@ -84,6 +89,7 @@ describe('/admin/api-keys', () => {
     await show();
     expect(mintForm()).toBeInTheDocument();
     expect(requestLog()).not.toBeInTheDocument();
+    expect(connectedApps()).not.toBeInTheDocument();
   });
 
   it('gives a list-only holder the request log, and no mint form', async () => {
@@ -91,6 +97,8 @@ describe('/admin/api-keys', () => {
     h.permissions = ['admin.apiKey.list'];
     await show();
     expect(requestLog()).toBeInTheDocument();
+    // mcp-oauth: and the connected applications, which answer to the same permission.
+    expect(connectedApps()).toBeInTheDocument();
     expect(mintForm()).not.toBeInTheDocument();
   });
 

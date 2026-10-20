@@ -105,7 +105,11 @@ export const ModelName = {
   AssistantFeedback: 'AssistantFeedback',
   ApiKey: 'ApiKey',
   ApiKeyRequest: 'ApiKeyRequest',
-  ApiKeyIdempotency: 'ApiKeyIdempotency'
+  ApiKeyIdempotency: 'ApiKeyIdempotency',
+  McpOauthClient: 'McpOauthClient',
+  McpOauthGrant: 'McpOauthGrant',
+  McpOauthCode: 'McpOauthCode',
+  McpOauthRefreshToken: 'McpOauthRefreshToken'
 } as const
 
 export type ModelName = (typeof ModelName)[keyof typeof ModelName]
@@ -1072,7 +1076,8 @@ export const ApiKeyRequestScalarFieldEnum = {
   count: 'count',
   windowStart: 'windowStart',
   createdAt: 'createdAt',
-  expiresAt: 'expiresAt'
+  expiresAt: 'expiresAt',
+  oauthGrantId: 'oauthGrantId'
 } as const
 
 export type ApiKeyRequestScalarFieldEnum = (typeof ApiKeyRequestScalarFieldEnum)[keyof typeof ApiKeyRequestScalarFieldEnum]
@@ -1091,6 +1096,67 @@ export const ApiKeyIdempotencyScalarFieldEnum = {
 } as const
 
 export type ApiKeyIdempotencyScalarFieldEnum = (typeof ApiKeyIdempotencyScalarFieldEnum)[keyof typeof ApiKeyIdempotencyScalarFieldEnum]
+
+
+export const McpOauthClientScalarFieldEnum = {
+  id: 'id',
+  clientId: 'clientId',
+  clientName: 'clientName',
+  redirectUris: 'redirectUris',
+  grantTypes: 'grantTypes',
+  responseTypes: 'responseTypes',
+  tokenEndpointAuthMethod: 'tokenEndpointAuthMethod',
+  createdAt: 'createdAt',
+  lastAuthorizedAt: 'lastAuthorizedAt'
+} as const
+
+export type McpOauthClientScalarFieldEnum = (typeof McpOauthClientScalarFieldEnum)[keyof typeof McpOauthClientScalarFieldEnum]
+
+
+export const McpOauthGrantScalarFieldEnum = {
+  id: 'id',
+  organizationId: 'organizationId',
+  clientId: 'clientId',
+  userId: 'userId',
+  scopes: 'scopes',
+  createdAt: 'createdAt',
+  activatedAt: 'activatedAt',
+  lastUsedAt: 'lastUsedAt',
+  revokedAt: 'revokedAt',
+  revokedById: 'revokedById',
+  revokeReason: 'revokeReason'
+} as const
+
+export type McpOauthGrantScalarFieldEnum = (typeof McpOauthGrantScalarFieldEnum)[keyof typeof McpOauthGrantScalarFieldEnum]
+
+
+export const McpOauthCodeScalarFieldEnum = {
+  id: 'id',
+  organizationId: 'organizationId',
+  grantId: 'grantId',
+  codeHash: 'codeHash',
+  codeChallenge: 'codeChallenge',
+  codeChallengeMethod: 'codeChallengeMethod',
+  redirectUri: 'redirectUri',
+  usedAt: 'usedAt',
+  expiresAt: 'expiresAt',
+  createdAt: 'createdAt'
+} as const
+
+export type McpOauthCodeScalarFieldEnum = (typeof McpOauthCodeScalarFieldEnum)[keyof typeof McpOauthCodeScalarFieldEnum]
+
+
+export const McpOauthRefreshTokenScalarFieldEnum = {
+  id: 'id',
+  organizationId: 'organizationId',
+  grantId: 'grantId',
+  tokenHash: 'tokenHash',
+  usedAt: 'usedAt',
+  expiresAt: 'expiresAt',
+  createdAt: 'createdAt'
+} as const
+
+export type McpOauthRefreshTokenScalarFieldEnum = (typeof McpOauthRefreshTokenScalarFieldEnum)[keyof typeof McpOauthRefreshTokenScalarFieldEnum]
 
 
 export const SortOrder = {

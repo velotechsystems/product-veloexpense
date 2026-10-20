@@ -12,6 +12,8 @@ import {
   withOrg,
   withoutOrg,
   apiKeyTenantId,
+  oauthCodeTenantId,
+  oauthRefreshTenantId,
   withInviteLookup,
   withPlatformRead,
   withSignupContext,
@@ -2293,6 +2295,141 @@ describe('RLS tenant isolation', () => {
     await admin.query('DELETE FROM api_key_idempotency');
     await admin.query('DELETE FROM api_key_request');
     await admin.query('DELETE FROM api_key');
+  });
+
+  /* ── MCP OAuth (mcp-oauth, migration 0080, ported from VeloCRM) ─────────────
+   *
+   * Clients are global (software, no tenant data, no RLS); grants, codes and refresh tokens
+   * are per tenant with composite keys. TWO hatches, `api_key_lookup`'s exact shape: the
+   * presented code's or refresh token's SHA-256 shows that one row, in whichever tenant holds
+   * it, read-only, and nothing else — not the grant it belongs to, not another row.
+   */
+  it('OAuth grants, codes and refresh tokens are per tenant; the two lookup hatches show one row by its hash, read-only', async () => {
+    await admin.query('DELETE FROM mcp_oauth_refresh_token');
+    await admin.query('DELETE FROM mcp_oauth_code');
+    await admin.query('DELETE FROM mcp_oauth_grant');
+    await admin.query('DELETE FROM mcp_oauth_client');
+    const client = (
+      await withoutOrg((tx) =>
+        tx.query(
+          `INSERT INTO mcp_oauth_client (client_id, client_name, redirect_uris)
+           VALUES (gen_random_uuid()::text, 'Fictional connector', ARRAY['https://example.test/cb'])
+           RETURNING id`,
+        ),
+      )
+    ).rows[0].id as string;
+    const seed = async (org: string, codeHash: string, refreshHash: string) =>
+      withOrg(org, async (tx) => {
+        const user = (await tx.query('SELECT id FROM app_user LIMIT 1')).rows[0].id as string;
+        const grant = (
+          await tx.query(
+            `INSERT INTO mcp_oauth_grant (client_id, user_id, scopes) VALUES ($1, $2, ARRAY['travel.travel_request']) RETURNING id`,
+            [client, user],
+          )
+        ).rows[0].id as string;
+        await tx.query(
+          `INSERT INTO mcp_oauth_code (grant_id, code_hash, code_challenge, redirect_uri, expires_at)
+           VALUES ($1, $2, 'c', 'https://example.test/cb', now() + interval '10 minutes')`,
+          [grant, codeHash],
+        );
+        await tx.query(
+          `INSERT INTO mcp_oauth_refresh_token (grant_id, token_hash, expires_at)
+           VALUES ($1, $2, now() + interval '30 days')`,
+          [grant, refreshHash],
+        );
+        return { user, grant };
+      });
+    const a = await seed(orgA, '1'.repeat(64), '3'.repeat(64));
+    const b = await seed(orgB, '2'.repeat(64), '4'.repeat(64));
+
+    for (const [org, grant] of [
+      [orgA, a.grant],
+      [orgB, b.grant],
+    ] as const) {
+      const seen = await withOrg(org, async (tx) => ({
+        grants: (await tx.query('SELECT id FROM mcp_oauth_grant')).rows.map((r) => r.id),
+        codes: (await tx.query('SELECT count(*)::int AS n FROM mcp_oauth_code')).rows[0].n,
+        refresh: (await tx.query('SELECT count(*)::int AS n FROM mcp_oauth_refresh_token')).rows[0].n,
+      }));
+      expect(seen).toEqual({ grants: [grant], codes: 1, refresh: 1 });
+    }
+    // The client table is global: either tenant (and no tenant) sees the one client.
+    expect((await withOrg(orgA, (tx) => tx.query('SELECT id FROM mcp_oauth_client'))).rows).toHaveLength(1);
+
+    // WITH CHECK, and every composite key.
+    await expect(
+      withOrg(orgB, (tx) =>
+        tx.query(`INSERT INTO mcp_oauth_grant (organization_id, client_id, user_id, scopes) VALUES ($1, $2, $3, '{}')`, [
+          orgA,
+          client,
+          a.user,
+        ]),
+      ),
+    ).rejects.toThrow(/row-level security|violates/i);
+    await expect(
+      withOrg(orgA, (tx) =>
+        tx.query(`INSERT INTO mcp_oauth_grant (client_id, user_id, scopes) VALUES ($1, $2, '{}')`, [client, b.user]),
+      ),
+    ).rejects.toThrow(/foreign key|violates/i);
+    await expect(
+      withOrg(orgA, (tx) =>
+        tx.query(
+          `INSERT INTO mcp_oauth_code (grant_id, code_hash, code_challenge, redirect_uri, expires_at)
+           VALUES ($1, $2, 'c', 'x', now())`,
+          [b.grant, '5'.repeat(64)],
+        ),
+      ),
+    ).rejects.toThrow(/foreign key|violates/i);
+    await expect(
+      withOrg(orgA, (tx) =>
+        tx.query(`INSERT INTO mcp_oauth_refresh_token (grant_id, token_hash, expires_at) VALUES ($1, $2, now())`, [
+          b.grant,
+          '6'.repeat(64),
+        ]),
+      ),
+    ).rejects.toThrow(/foreign key|violates/i);
+    await expect(
+      withOrg(orgA, (tx) => tx.query("UPDATE mcp_oauth_grant SET revoked_at = now(), revoke_reason = 'BORED'")),
+    ).rejects.toThrow(/check constraint|violates/i);
+
+    // THE HATCHES: the right hash shows that one row's tenant, wherever it is.
+    expect(await oauthCodeTenantId('1'.repeat(64))).toBe(orgA);
+    expect(await oauthCodeTenantId('2'.repeat(64))).toBe(orgB);
+    expect(await oauthRefreshTenantId('3'.repeat(64))).toBe(orgA);
+    expect(await oauthRefreshTenantId('4'.repeat(64))).toBe(orgB);
+    expect(await oauthCodeTenantId('f'.repeat(64))).toBeNull();
+    expect(await oauthRefreshTenantId('not a hash')).toBeNull();
+    // A code hash does not open the refresh table, nor the other way round.
+    expect(await oauthCodeTenantId('3'.repeat(64))).toBeNull();
+    expect(await oauthRefreshTenantId('1'.repeat(64))).toBeNull();
+    const lookup = (guc: string, hash: string, sql: string) =>
+      withoutOrg(async (tx) => {
+        await tx.query(`SELECT set_config('${guc}', $1, true)`, [hash]);
+        return tx.query(sql);
+      });
+    expect((await lookup('app.oauth_code_lookup', '1'.repeat(64), 'SELECT organization_id FROM mcp_oauth_code')).rows).toEqual([
+      { organization_id: orgA },
+    ]);
+    expect((await lookup('app.oauth_code_lookup', '', 'SELECT * FROM mcp_oauth_code')).rows).toHaveLength(0);
+    // It opens its own table only — not the grant behind the row.
+    expect((await lookup('app.oauth_code_lookup', '1'.repeat(64), 'SELECT * FROM mcp_oauth_grant')).rows).toHaveLength(0);
+    expect((await lookup('app.oauth_refresh_lookup', '3'.repeat(64), 'SELECT * FROM mcp_oauth_grant')).rows).toHaveLength(0);
+    // And neither can write: FOR SELECT only, so an UPDATE matches nothing.
+    expect(
+      (await lookup('app.oauth_code_lookup', '1'.repeat(64), 'UPDATE mcp_oauth_code SET used_at = NULL, expires_at = now() + interval \'1 year\'')).rowCount,
+    ).toBe(0);
+    expect(
+      (await lookup('app.oauth_refresh_lookup', '3'.repeat(64), 'UPDATE mcp_oauth_refresh_token SET used_at = NULL')).rowCount,
+    ).toBe(0);
+
+    for (const table of ['mcp_oauth_grant', 'mcp_oauth_code', 'mcp_oauth_refresh_token']) {
+      expect((await withPlatformRead((tx) => tx.query(`SELECT * FROM ${table}`))).rows).toHaveLength(0);
+      expect((await withoutOrg((tx) => tx.query(`SELECT * FROM ${table}`))).rows).toHaveLength(0);
+    }
+    await admin.query('DELETE FROM mcp_oauth_refresh_token');
+    await admin.query('DELETE FROM mcp_oauth_code');
+    await admin.query('DELETE FROM mcp_oauth_grant');
+    await admin.query('DELETE FROM mcp_oauth_client');
   });
 
   /* ── External IDs (the Wave 1 business-unit port, migration 0047) ─────────

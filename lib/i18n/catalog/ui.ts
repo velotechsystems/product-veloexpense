@@ -202,6 +202,8 @@ export const UI_COPY = {
   'title.expenses.approvals': { 'en-CA': 'Approvals' },
   'title.approvals.delegations': { 'en-CA': 'Delegations' },
   'title.approve': { 'en-CA': 'Approve a report' },
+  // mcp-oauth: the consent screen a Claude connector opens (app/oauth/authorize).
+  'title.oauth.authorize': { 'en-CA': 'Connect an application' },
   'title.notifications': { 'en-CA': 'Notifications' },
   'title.notifications.preferences': { 'en-CA': 'Notification preferences' },
   'title.preferences': { 'en-CA': 'Language and time' },

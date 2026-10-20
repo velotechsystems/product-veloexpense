@@ -1,5 +1,6 @@
 import { router } from '@/server/trpc';
 import { apiKeysRouter } from './apiKeys';
+import { oauthGrantsRouter } from './oauthGrants';
 import { appSettingsRouter } from './appSettings';
 import { approvalWorkflowsRouter } from './approvalWorkflows';
 import { assistantRouter } from './assistant';
@@ -40,6 +41,8 @@ export const appRouter = router({
   // w6-04 (d88): ExpenseOS's API keys — the personal key on /preferences, platform keys and
   // the request log on /admin/api-keys. Calls MADE with a key arrive at app/api/mcp/route.ts.
   apiKeys: apiKeysRouter,
+  // mcp-oauth: connected applications (OAuth grants), ported from VeloCRM.
+  oauthGrants: oauthGrantsRouter,
   // w5-06: ExpenseOS's audit trail (`/admin/audit-trail`).
   audit: auditRouter,
   businessUnits: businessUnitsRouter,

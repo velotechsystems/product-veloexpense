@@ -37,10 +37,16 @@ export interface DelegationContext {
    * `details`, different question answered.
    */
   readonly viaAssistant?: Record<string, unknown>;
+  /**
+   * VeloExpense (mcp-oauth): the request arrived with an OAuth access token — a Claude
+   * connector the person consented to — rather than an API key. Same mechanism, same hashed
+   * `details`: which grant, which client.
+   */
+  readonly viaOAuth?: Record<string, unknown>;
 }
 
 /** The markers this module merges. Adding one is a one-line change here and nowhere else. */
-const MARKERS = ['viaApiKey', 'viaAssistant'] as const;
+const MARKERS = ['viaApiKey', 'viaAssistant', 'viaOAuth'] as const;
 
 const storage = new AsyncLocalStorage<DelegationContext>();
 

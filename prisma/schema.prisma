@@ -1604,6 +1604,9 @@ model ApiKeyRequest {
   windowStart    DateTime? @map("window_start") @db.Timestamptz(6)
   createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
   expiresAt      DateTime  @map("expires_at") @db.Timestamptz(6)
+  /// 0080: the OAuth grant a call was made under, when it came with an access token.
+  oauthGrantId   String?   @map("oauth_grant_id") @db.Uuid
+  oauthGrant     McpOauthGrant? @relation(fields: [oauthGrantId], references: [id], onDelete: SetNull)
 
   @@unique([organizationId, id])
   /// The coalescing key (ExpenseOS's, with the tenant). NULLs stay distinct.
@@ -1611,6 +1614,7 @@ model ApiKeyRequest {
   @@index([apiKeyId, createdAt], map: "api_key_request_api_key_created_idx")
   @@index([actingUserId, createdAt], map: "api_key_request_acting_user_created_idx")
   @@index([outcome, createdAt], map: "api_key_request_outcome_created_idx")
+  @@index([oauthGrantId, createdAt], map: "api_key_request_oauth_grant_created_idx")
   @@index([expiresAt])
   @@map("api_key_request")
 }
@@ -1633,4 +1637,85 @@ model ApiKeyIdempotency {
   @@unique([apiKeyId, key])
   @@index([expiresAt])
   @@map("api_key_idempotency")
+}
+
+/// 0080 (ported from VeloCRM 59fce1c): an OAuth 2.1 client registered by Dynamic Client
+/// Registration. GLOBAL — software, not a tenant's data; it authorizes nothing until somebody
+/// consents (`McpOauthGrant`).
+model McpOauthClient {
+  id                      String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  clientId                String    @unique @map("client_id")
+  clientName              String    @map("client_name")
+  redirectUris            String[]  @map("redirect_uris")
+  grantTypes              String[]  @default(["authorization_code", "refresh_token"]) @map("grant_types")
+  responseTypes           String[]  @default(["code"]) @map("response_types")
+  tokenEndpointAuthMethod String    @default("none") @map("token_endpoint_auth_method")
+  createdAt               DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  lastAuthorizedAt        DateTime? @map("last_authorized_at") @db.Timestamptz(6)
+
+  grants McpOauthGrant[]
+
+  @@map("mcp_oauth_client")
+}
+
+/// 0080: one person's consent to one OAuth client, in their tenant.
+model McpOauthGrant {
+  id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String    @default(dbgenerated("(NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid")) @map("organization_id") @db.Uuid
+  clientId       String    @map("client_id") @db.Uuid
+  client         McpOauthClient @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  userId         String    @map("user_id") @db.Uuid
+  scopes         String[]
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  activatedAt    DateTime? @map("activated_at") @db.Timestamptz(6)
+  lastUsedAt     DateTime? @map("last_used_at") @db.Timestamptz(6)
+  revokedAt      DateTime? @map("revoked_at") @db.Timestamptz(6)
+  revokedById    String?   @map("revoked_by_id") @db.Uuid
+  /// USER | ADMIN | REPLAY | CLIENT (a CHECK).
+  revokeReason   String?   @map("revoke_reason")
+
+  codes         McpOauthCode[]
+  refreshTokens McpOauthRefreshToken[]
+  requests      ApiKeyRequest[]
+
+  @@unique([organizationId, id])
+  @@index([organizationId, userId], map: "mcp_oauth_grant_user_idx")
+  @@index([clientId], map: "mcp_oauth_grant_client_idx")
+  @@map("mcp_oauth_grant")
+}
+
+/// 0080: VeloCRM's single-use PKCE authorization code, stored as a SHA-256.
+model McpOauthCode {
+  id                  String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId      String    @default(dbgenerated("(NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid")) @map("organization_id") @db.Uuid
+  grantId             String    @map("grant_id") @db.Uuid
+  grant               McpOauthGrant @relation(fields: [grantId], references: [id], onDelete: Cascade)
+  codeHash            String    @unique @map("code_hash") @db.Char(64)
+  codeChallenge       String    @map("code_challenge")
+  codeChallengeMethod String    @default("S256") @map("code_challenge_method")
+  redirectUri         String    @map("redirect_uri")
+  usedAt              DateTime? @map("used_at") @db.Timestamptz(6)
+  expiresAt           DateTime  @map("expires_at") @db.Timestamptz(6)
+  createdAt           DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@unique([organizationId, id])
+  @@index([expiresAt])
+  @@map("mcp_oauth_code")
+}
+
+/// 0080: VeloCRM's rotating refresh token, hashed. A used one presented again revokes its grant.
+model McpOauthRefreshToken {
+  id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String    @default(dbgenerated("(NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid")) @map("organization_id") @db.Uuid
+  grantId        String    @map("grant_id") @db.Uuid
+  grant          McpOauthGrant @relation(fields: [grantId], references: [id], onDelete: Cascade)
+  tokenHash      String    @unique @map("token_hash") @db.Char(64)
+  usedAt         DateTime? @map("used_at") @db.Timestamptz(6)
+  expiresAt      DateTime  @map("expires_at") @db.Timestamptz(6)
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@unique([organizationId, id])
+  @@index([grantId], map: "mcp_oauth_refresh_token_grant_idx")
+  @@index([expiresAt])
+  @@map("mcp_oauth_refresh_token")
 }

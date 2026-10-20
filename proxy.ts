@@ -105,6 +105,17 @@ import { NextResponse, type NextRequest } from 'next/server';
 //                                       as a broken server rather than a refused key. EXACT
 //                                       path, in both places.
 //
+// mcp-oauth adds the OAuth 2.1 surface a Claude connector uses (ported from VeloCRM), and
+// none of it carries a session cookie except the consent screen, which handles its own:
+//   /.well-known/oauth-*                discovery (RFC 8414, RFC 9728). Public documents.
+//   /oauth/register, /token, /revoke,   Claude's servers calling from Anthropic's cloud: a 307
+//   /jwks                               to the login page would read to them as a broken server.
+//   /oauth/authorize                    the consent screen. It sends a signed-out person to
+//                                       /login ITSELF, with the whole authorization request
+//                                       in the callback; this middleware's redirect keeps the
+//                                       path only and would drop it.
+// PREFIXES, in both places: everything under /oauth/ and /.well-known/oauth- is this surface.
+//
 // TWO PLACES, AND EITHER ONE ALONE IS ENOUGH — MEASURED, NOT ASSUMED. The
 // `matcher` decides whether middleware runs at all; `PUBLIC` is what runs when
 // it does. `/signup` is in both, as `/login` and `/approve` already were, and a
@@ -130,6 +141,8 @@ const PUBLIC = [
   /^\/api\/email\/inbound$/,
   /^\/api\/slack\/events$/,
   /^\/api\/mcp$/,
+  /^\/oauth\//,
+  /^\/\.well-known\/oauth-/,
   /^\/_next\//,
   /^\/favicon\.ico$/,
   // 2026 brand: the wordmark and the favicon render BEFORE anyone signs in — on
@@ -166,5 +179,5 @@ export function proxy(req: NextRequest) {
 }
 
 export const config = {
-  matcher: ['/((?!api/auth|api/internal|api/platform|api/health$|api/email/inbound$|api/slack/events$|api/mcp$|_next/static|_next/image|favicon.ico|brand/|apple-touch-icon.png|login|approve|signup|invite).*)'],
+  matcher: ['/((?!api/auth|api/internal|api/platform|api/health$|api/email/inbound$|api/slack/events$|api/mcp$|oauth/|\\.well-known/oauth-|_next/static|_next/image|favicon.ico|brand/|apple-touch-icon.png|login|approve|signup|invite).*)'],
 };

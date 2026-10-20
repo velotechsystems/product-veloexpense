@@ -12,6 +12,8 @@ export type Catalog = Record<string, Record<string, unknown>>;
 
 const FEATURE_AREAS = [
   'apiKeys',
+  // mcp-oauth: the consent screen and connected applications (ported from VeloCRM).
+  'oauth',
   'assistant',
   'common',
   'table',

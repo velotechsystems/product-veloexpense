@@ -285,6 +285,15 @@ export const AUDIT_ACTIONS = [
   'API_KEY_ROTATED',
   'API_KEY_REVOKED',
 
+  /* mcp-oauth (0080, ported from VeloCRM): a person consenting to an OAuth client (a Claude
+   * connector) acting as them, that client's first token for the consent, and the consent
+   * ending — by the person, an admin, the client itself, or replay detection. Calls MADE under
+   * a grant go to `api_key_request` beside the key calls, and a mutation one performs carries
+   * the `viaOAuth` marker. Token refreshes are not audited: one every 15 minutes is noise. */
+  'OAUTH_GRANT_CREATED',
+  'OAUTH_TOKEN_ISSUED',
+  'OAUTH_GRANT_REVOKED',
+
   /* branding — VX4-3. The odd family; see the header. */
   'BRANDING_COLOR_SET',
   'BRANDING_COLOR_CLEARED',

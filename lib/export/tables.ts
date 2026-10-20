@@ -207,6 +207,10 @@ export const EXPORTED: Readonly<Record<string, ExportedTable>> = {
     },
   },
   api_key_request: { file: 'api-key-requests.csv' },
+  // mcp-oauth (0080): which person allowed which application (a Claude connector) to act as
+  // them, with what access, and when it ended. The tenant's own record of who reached its data
+  // and how, beside the API keys. Holds no secret.
+  mcp_oauth_grant: { file: 'connected-applications.csv' },
 
   /* ── accounting ───────────────────────────────────────────────────────── */
   gl_account: { file: 'gl-accounts.csv' },
@@ -322,6 +326,17 @@ export const EXCLUDED: Readonly<Record<string, string>> = {
     'result to hand back if it retries. It is how one retried call was recognised, not a',
     'record of anything the tenant did — the call itself is in the API key request export,',
     'and what it changed is in the activity export.',
+  ].join(' '),
+
+  // mcp-oauth (0080).
+  mcp_oauth_code: [
+    'A single-use authorization code with a ten-minute life: the hash of a secret that was',
+    'handed to a client once and exchanged once. It is how one consent became one token, not a',
+    'record of anything — the consent itself is the grant, which is exported.',
+  ].join(' '),
+  mcp_oauth_refresh_token: [
+    'Hashes of live credentials an OAuth client holds, rotated on every use. A copy of one is a',
+    'copy of the lock; the grant they belong to, which is the record, is exported.',
   ].join(' '),
 
   tenant_export: [

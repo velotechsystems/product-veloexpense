@@ -24,6 +24,7 @@
  * spec project reuses it via storageState. SSO is invite-only and redirects to
  * Google/Entra, which cannot run in CI.
  */
+import { generateKeyPairSync } from 'node:crypto';
 import { defineConfig, devices } from '@playwright/test';
 
 const PORT = Number(process.env.E2E_PORT ?? 3000);
@@ -109,6 +110,13 @@ const APP_ENV = {
   // can run; without it the server answers "not configured" and those specs skip, while
   // assistant-panel.spec.ts drives the not-configured panel.
   ...(process.env.ANTHROPIC_API_KEY ? { ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY } : {}),
+
+  // mcp-oauth: the server runs with NODE_ENV=production, where a missing signing key turns OAuth
+  // off (lib/mcpOauth/keys.ts) — so the e2e server gets a fresh RSA key of its own, made here,
+  // and e2e/mcp-oauth.spec.ts drives the whole connector flow against it.
+  MCP_OAUTH_SIGNING_KEY:
+    process.env.MCP_OAUTH_SIGNING_KEY ??
+    (generateKeyPairSync('rsa', { modulusLength: 2048 }).privateKey.export({ type: 'pkcs8', format: 'pem' }) as string),
 
   // w6-04: a personal API key is rate-limited, and the guard counts that in Redis
   // (server/lib/rateLimit.ts, as ExpenseOS's). Passed through only when the shell has one,
