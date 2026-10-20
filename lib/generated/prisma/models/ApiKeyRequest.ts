@@ -56,6 +56,7 @@ export type ApiKeyRequestMinAggregateOutputType = {
   windowStart: Date | null
   createdAt: Date | null
   expiresAt: Date | null
+  oauthGrantId: string | null
 }
 
 export type ApiKeyRequestMaxAggregateOutputType = {
@@ -76,6 +77,7 @@ export type ApiKeyRequestMaxAggregateOutputType = {
   windowStart: Date | null
   createdAt: Date | null
   expiresAt: Date | null
+  oauthGrantId: string | null
 }
 
 export type ApiKeyRequestCountAggregateOutputType = {
@@ -98,6 +100,7 @@ export type ApiKeyRequestCountAggregateOutputType = {
   windowStart: number
   createdAt: number
   expiresAt: number
+  oauthGrantId: number
   _all: number
 }
 
@@ -132,6 +135,7 @@ export type ApiKeyRequestMinAggregateInputType = {
   windowStart?: true
   createdAt?: true
   expiresAt?: true
+  oauthGrantId?: true
 }
 
 export type ApiKeyRequestMaxAggregateInputType = {
@@ -152,6 +156,7 @@ export type ApiKeyRequestMaxAggregateInputType = {
   windowStart?: true
   createdAt?: true
   expiresAt?: true
+  oauthGrantId?: true
 }
 
 export type ApiKeyRequestCountAggregateInputType = {
@@ -174,6 +179,7 @@ export type ApiKeyRequestCountAggregateInputType = {
   windowStart?: true
   createdAt?: true
   expiresAt?: true
+  oauthGrantId?: true
   _all?: true
 }
 
@@ -283,6 +289,7 @@ export type ApiKeyRequestGroupByOutputType = {
   windowStart: Date | null
   createdAt: Date
   expiresAt: Date
+  oauthGrantId: string | null
   _count: ApiKeyRequestCountAggregateOutputType | null
   _avg: ApiKeyRequestAvgAggregateOutputType | null
   _sum: ApiKeyRequestSumAggregateOutputType | null
@@ -328,7 +335,9 @@ export type ApiKeyRequestWhereInput = {
   windowStart?: Prisma.DateTimeNullableFilter<"ApiKeyRequest"> | Date | string | null
   createdAt?: Prisma.DateTimeFilter<"ApiKeyRequest"> | Date | string
   expiresAt?: Prisma.DateTimeFilter<"ApiKeyRequest"> | Date | string
+  oauthGrantId?: Prisma.UuidNullableFilter<"ApiKeyRequest"> | string | null
   apiKey?: Prisma.XOR<Prisma.ApiKeyNullableScalarRelationFilter, Prisma.ApiKeyWhereInput> | null
+  oauthGrant?: Prisma.XOR<Prisma.McpOauthGrantNullableScalarRelationFilter, Prisma.McpOauthGrantWhereInput> | null
 }
 
 export type ApiKeyRequestOrderByWithRelationInput = {
@@ -351,7 +360,9 @@ export type ApiKeyRequestOrderByWithRelationInput = {
   windowStart?: Prisma.SortOrderInput | Prisma.SortOrder
   createdAt?: Prisma.SortOrder
   expiresAt?: Prisma.SortOrder
+  oauthGrantId?: Prisma.SortOrderInput | Prisma.SortOrder
   apiKey?: Prisma.ApiKeyOrderByWithRelationInput
+  oauthGrant?: Prisma.McpOauthGrantOrderByWithRelationInput
 }
 
 export type ApiKeyRequestWhereUniqueInput = Prisma.AtLeast<{
@@ -379,7 +390,9 @@ export type ApiKeyRequestWhereUniqueInput = Prisma.AtLeast<{
   windowStart?: Prisma.DateTimeNullableFilter<"ApiKeyRequest"> | Date | string | null
   createdAt?: Prisma.DateTimeFilter<"ApiKeyRequest"> | Date | string
   expiresAt?: Prisma.DateTimeFilter<"ApiKeyRequest"> | Date | string
+  oauthGrantId?: Prisma.UuidNullableFilter<"ApiKeyRequest"> | string | null
   apiKey?: Prisma.XOR<Prisma.ApiKeyNullableScalarRelationFilter, Prisma.ApiKeyWhereInput> | null
+  oauthGrant?: Prisma.XOR<Prisma.McpOauthGrantNullableScalarRelationFilter, Prisma.McpOauthGrantWhereInput> | null
 }, "id" | "organizationId_id" | "organizationId_outcome_ip_operation_windowStart">
 
 export type ApiKeyRequestOrderByWithAggregationInput = {
@@ -402,6 +415,7 @@ export type ApiKeyRequestOrderByWithAggregationInput = {
   windowStart?: Prisma.SortOrderInput | Prisma.SortOrder
   createdAt?: Prisma.SortOrder
   expiresAt?: Prisma.SortOrder
+  oauthGrantId?: Prisma.SortOrderInput | Prisma.SortOrder
   _count?: Prisma.ApiKeyRequestCountOrderByAggregateInput
   _avg?: Prisma.ApiKeyRequestAvgOrderByAggregateInput
   _max?: Prisma.ApiKeyRequestMaxOrderByAggregateInput
@@ -432,6 +446,7 @@ export type ApiKeyRequestScalarWhereWithAggregatesInput = {
   windowStart?: Prisma.DateTimeNullableWithAggregatesFilter<"ApiKeyRequest"> | Date | string | null
   createdAt?: Prisma.DateTimeWithAggregatesFilter<"ApiKeyRequest"> | Date | string
   expiresAt?: Prisma.DateTimeWithAggregatesFilter<"ApiKeyRequest"> | Date | string
+  oauthGrantId?: Prisma.UuidNullableWithAggregatesFilter<"ApiKeyRequest"> | string | null
 }
 
 export type ApiKeyRequestCreateInput = {
@@ -454,6 +469,7 @@ export type ApiKeyRequestCreateInput = {
   createdAt?: Date | string
   expiresAt: Date | string
   apiKey?: Prisma.ApiKeyCreateNestedOneWithoutRequestsInput
+  oauthGrant?: Prisma.McpOauthGrantCreateNestedOneWithoutRequestsInput
 }
 
 export type ApiKeyRequestUncheckedCreateInput = {
@@ -476,6 +492,7 @@ export type ApiKeyRequestUncheckedCreateInput = {
   windowStart?: Date | string | null
   createdAt?: Date | string
   expiresAt: Date | string
+  oauthGrantId?: string | null
 }
 
 export type ApiKeyRequestUpdateInput = {
@@ -498,6 +515,7 @@ export type ApiKeyRequestUpdateInput = {
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   expiresAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   apiKey?: Prisma.ApiKeyUpdateOneWithoutRequestsNestedInput
+  oauthGrant?: Prisma.McpOauthGrantUpdateOneWithoutRequestsNestedInput
 }
 
 export type ApiKeyRequestUncheckedUpdateInput = {
@@ -520,6 +538,7 @@ export type ApiKeyRequestUncheckedUpdateInput = {
   windowStart?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   expiresAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  oauthGrantId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
 }
 
 export type ApiKeyRequestCreateManyInput = {
@@ -542,6 +561,7 @@ export type ApiKeyRequestCreateManyInput = {
   windowStart?: Date | string | null
   createdAt?: Date | string
   expiresAt: Date | string
+  oauthGrantId?: string | null
 }
 
 export type ApiKeyRequestUpdateManyMutationInput = {
@@ -585,6 +605,7 @@ export type ApiKeyRequestUncheckedUpdateManyInput = {
   windowStart?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   expiresAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  oauthGrantId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
 }
 
 export type ApiKeyRequestListRelationFilter = {
@@ -630,6 +651,7 @@ export type ApiKeyRequestCountOrderByAggregateInput = {
   windowStart?: Prisma.SortOrder
   createdAt?: Prisma.SortOrder
   expiresAt?: Prisma.SortOrder
+  oauthGrantId?: Prisma.SortOrder
 }
 
 export type ApiKeyRequestAvgOrderByAggregateInput = {
@@ -656,6 +678,7 @@ export type ApiKeyRequestMaxOrderByAggregateInput = {
   windowStart?: Prisma.SortOrder
   createdAt?: Prisma.SortOrder
   expiresAt?: Prisma.SortOrder
+  oauthGrantId?: Prisma.SortOrder
 }
 
 export type ApiKeyRequestMinOrderByAggregateInput = {
@@ -676,6 +699,7 @@ export type ApiKeyRequestMinOrderByAggregateInput = {
   windowStart?: Prisma.SortOrder
   createdAt?: Prisma.SortOrder
   expiresAt?: Prisma.SortOrder
+  oauthGrantId?: Prisma.SortOrder
 }
 
 export type ApiKeyRequestSumOrderByAggregateInput = {
@@ -726,6 +750,48 @@ export type ApiKeyRequestUncheckedUpdateManyWithoutApiKeyNestedInput = {
   deleteMany?: Prisma.ApiKeyRequestScalarWhereInput | Prisma.ApiKeyRequestScalarWhereInput[]
 }
 
+export type ApiKeyRequestCreateNestedManyWithoutOauthGrantInput = {
+  create?: Prisma.XOR<Prisma.ApiKeyRequestCreateWithoutOauthGrantInput, Prisma.ApiKeyRequestUncheckedCreateWithoutOauthGrantInput> | Prisma.ApiKeyRequestCreateWithoutOauthGrantInput[] | Prisma.ApiKeyRequestUncheckedCreateWithoutOauthGrantInput[]
+  connectOrCreate?: Prisma.ApiKeyRequestCreateOrConnectWithoutOauthGrantInput | Prisma.ApiKeyRequestCreateOrConnectWithoutOauthGrantInput[]
+  createMany?: Prisma.ApiKeyRequestCreateManyOauthGrantInputEnvelope
+  connect?: Prisma.ApiKeyRequestWhereUniqueInput | Prisma.ApiKeyRequestWhereUniqueInput[]
+}
+
+export type ApiKeyRequestUncheckedCreateNestedManyWithoutOauthGrantInput = {
+  create?: Prisma.XOR<Prisma.ApiKeyRequestCreateWithoutOauthGrantInput, Prisma.ApiKeyRequestUncheckedCreateWithoutOauthGrantInput> | Prisma.ApiKeyRequestCreateWithoutOauthGrantInput[] | Prisma.ApiKeyRequestUncheckedCreateWithoutOauthGrantInput[]
+  connectOrCreate?: Prisma.ApiKeyRequestCreateOrConnectWithoutOauthGrantInput | Prisma.ApiKeyRequestCreateOrConnectWithoutOauthGrantInput[]
+  createMany?: Prisma.ApiKeyRequestCreateManyOauthGrantInputEnvelope
+  connect?: Prisma.ApiKeyRequestWhereUniqueInput | Prisma.ApiKeyRequestWhereUniqueInput[]
+}
+
+export type ApiKeyRequestUpdateManyWithoutOauthGrantNestedInput = {
+  create?: Prisma.XOR<Prisma.ApiKeyRequestCreateWithoutOauthGrantInput, Prisma.ApiKeyRequestUncheckedCreateWithoutOauthGrantInput> | Prisma.ApiKeyRequestCreateWithoutOauthGrantInput[] | Prisma.ApiKeyRequestUncheckedCreateWithoutOauthGrantInput[]
+  connectOrCreate?: Prisma.ApiKeyRequestCreateOrConnectWithoutOauthGrantInput | Prisma.ApiKeyRequestCreateOrConnectWithoutOauthGrantInput[]
+  upsert?: Prisma.ApiKeyRequestUpsertWithWhereUniqueWithoutOauthGrantInput | Prisma.ApiKeyRequestUpsertWithWhereUniqueWithoutOauthGrantInput[]
+  createMany?: Prisma.ApiKeyRequestCreateManyOauthGrantInputEnvelope
+  set?: Prisma.ApiKeyRequestWhereUniqueInput | Prisma.ApiKeyRequestWhereUniqueInput[]
+  disconnect?: Prisma.ApiKeyRequestWhereUniqueInput | Prisma.ApiKeyRequestWhereUniqueInput[]
+  delete?: Prisma.ApiKeyRequestWhereUniqueInput | Prisma.ApiKeyRequestWhereUniqueInput[]
+  connect?: Prisma.ApiKeyRequestWhereUniqueInput | Prisma.ApiKeyRequestWhereUniqueInput[]
+  update?: Prisma.ApiKeyRequestUpdateWithWhereUniqueWithoutOauthGrantInput | Prisma.ApiKeyRequestUpdateWithWhereUniqueWithoutOauthGrantInput[]
+  updateMany?: Prisma.ApiKeyRequestUpdateManyWithWhereWithoutOauthGrantInput | Prisma.ApiKeyRequestUpdateManyWithWhereWithoutOauthGrantInput[]
+  deleteMany?: Prisma.ApiKeyRequestScalarWhereInput | Prisma.ApiKeyRequestScalarWhereInput[]
+}
+
+export type ApiKeyRequestUncheckedUpdateManyWithoutOauthGrantNestedInput = {
+  create?: Prisma.XOR<Prisma.ApiKeyRequestCreateWithoutOauthGrantInput, Prisma.ApiKeyRequestUncheckedCreateWithoutOauthGrantInput> | Prisma.ApiKeyRequestCreateWithoutOauthGrantInput[] | Prisma.ApiKeyRequestUncheckedCreateWithoutOauthGrantInput[]
+  connectOrCreate?: Prisma.ApiKeyRequestCreateOrConnectWithoutOauthGrantInput | Prisma.ApiKeyRequestCreateOrConnectWithoutOauthGrantInput[]
+  upsert?: Prisma.ApiKeyRequestUpsertWithWhereUniqueWithoutOauthGrantInput | Prisma.ApiKeyRequestUpsertWithWhereUniqueWithoutOauthGrantInput[]
+  createMany?: Prisma.ApiKeyRequestCreateManyOauthGrantInputEnvelope
+  set?: Prisma.ApiKeyRequestWhereUniqueInput | Prisma.ApiKeyRequestWhereUniqueInput[]
+  disconnect?: Prisma.ApiKeyRequestWhereUniqueInput | Prisma.ApiKeyRequestWhereUniqueInput[]
+  delete?: Prisma.ApiKeyRequestWhereUniqueInput | Prisma.ApiKeyRequestWhereUniqueInput[]
+  connect?: Prisma.ApiKeyRequestWhereUniqueInput | Prisma.ApiKeyRequestWhereUniqueInput[]
+  update?: Prisma.ApiKeyRequestUpdateWithWhereUniqueWithoutOauthGrantInput | Prisma.ApiKeyRequestUpdateWithWhereUniqueWithoutOauthGrantInput[]
+  updateMany?: Prisma.ApiKeyRequestUpdateManyWithWhereWithoutOauthGrantInput | Prisma.ApiKeyRequestUpdateManyWithWhereWithoutOauthGrantInput[]
+  deleteMany?: Prisma.ApiKeyRequestScalarWhereInput | Prisma.ApiKeyRequestScalarWhereInput[]
+}
+
 export type ApiKeyRequestCreateWithoutApiKeyInput = {
   id?: string
   organizationId?: string
@@ -745,6 +811,7 @@ export type ApiKeyRequestCreateWithoutApiKeyInput = {
   windowStart?: Date | string | null
   createdAt?: Date | string
   expiresAt: Date | string
+  oauthGrant?: Prisma.McpOauthGrantCreateNestedOneWithoutRequestsInput
 }
 
 export type ApiKeyRequestUncheckedCreateWithoutApiKeyInput = {
@@ -766,6 +833,7 @@ export type ApiKeyRequestUncheckedCreateWithoutApiKeyInput = {
   windowStart?: Date | string | null
   createdAt?: Date | string
   expiresAt: Date | string
+  oauthGrantId?: string | null
 }
 
 export type ApiKeyRequestCreateOrConnectWithoutApiKeyInput = {
@@ -817,6 +885,77 @@ export type ApiKeyRequestScalarWhereInput = {
   windowStart?: Prisma.DateTimeNullableFilter<"ApiKeyRequest"> | Date | string | null
   createdAt?: Prisma.DateTimeFilter<"ApiKeyRequest"> | Date | string
   expiresAt?: Prisma.DateTimeFilter<"ApiKeyRequest"> | Date | string
+  oauthGrantId?: Prisma.UuidNullableFilter<"ApiKeyRequest"> | string | null
+}
+
+export type ApiKeyRequestCreateWithoutOauthGrantInput = {
+  id?: string
+  organizationId?: string
+  prefixTried?: string | null
+  actingUserId?: string | null
+  operation: string
+  toolName?: string | null
+  scopeRequired?: string | null
+  outcome: string
+  statusCode?: number | null
+  durationMs?: number | null
+  request?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  response?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  ip?: string | null
+  userAgent?: string | null
+  count?: number
+  windowStart?: Date | string | null
+  createdAt?: Date | string
+  expiresAt: Date | string
+  apiKey?: Prisma.ApiKeyCreateNestedOneWithoutRequestsInput
+}
+
+export type ApiKeyRequestUncheckedCreateWithoutOauthGrantInput = {
+  id?: string
+  organizationId?: string
+  apiKeyId?: string | null
+  prefixTried?: string | null
+  actingUserId?: string | null
+  operation: string
+  toolName?: string | null
+  scopeRequired?: string | null
+  outcome: string
+  statusCode?: number | null
+  durationMs?: number | null
+  request?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  response?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  ip?: string | null
+  userAgent?: string | null
+  count?: number
+  windowStart?: Date | string | null
+  createdAt?: Date | string
+  expiresAt: Date | string
+}
+
+export type ApiKeyRequestCreateOrConnectWithoutOauthGrantInput = {
+  where: Prisma.ApiKeyRequestWhereUniqueInput
+  create: Prisma.XOR<Prisma.ApiKeyRequestCreateWithoutOauthGrantInput, Prisma.ApiKeyRequestUncheckedCreateWithoutOauthGrantInput>
+}
+
+export type ApiKeyRequestCreateManyOauthGrantInputEnvelope = {
+  data: Prisma.ApiKeyRequestCreateManyOauthGrantInput | Prisma.ApiKeyRequestCreateManyOauthGrantInput[]
+  skipDuplicates?: boolean
+}
+
+export type ApiKeyRequestUpsertWithWhereUniqueWithoutOauthGrantInput = {
+  where: Prisma.ApiKeyRequestWhereUniqueInput
+  update: Prisma.XOR<Prisma.ApiKeyRequestUpdateWithoutOauthGrantInput, Prisma.ApiKeyRequestUncheckedUpdateWithoutOauthGrantInput>
+  create: Prisma.XOR<Prisma.ApiKeyRequestCreateWithoutOauthGrantInput, Prisma.ApiKeyRequestUncheckedCreateWithoutOauthGrantInput>
+}
+
+export type ApiKeyRequestUpdateWithWhereUniqueWithoutOauthGrantInput = {
+  where: Prisma.ApiKeyRequestWhereUniqueInput
+  data: Prisma.XOR<Prisma.ApiKeyRequestUpdateWithoutOauthGrantInput, Prisma.ApiKeyRequestUncheckedUpdateWithoutOauthGrantInput>
+}
+
+export type ApiKeyRequestUpdateManyWithWhereWithoutOauthGrantInput = {
+  where: Prisma.ApiKeyRequestScalarWhereInput
+  data: Prisma.XOR<Prisma.ApiKeyRequestUpdateManyMutationInput, Prisma.ApiKeyRequestUncheckedUpdateManyWithoutOauthGrantInput>
 }
 
 export type ApiKeyRequestCreateManyApiKeyInput = {
@@ -838,6 +977,7 @@ export type ApiKeyRequestCreateManyApiKeyInput = {
   windowStart?: Date | string | null
   createdAt?: Date | string
   expiresAt: Date | string
+  oauthGrantId?: string | null
 }
 
 export type ApiKeyRequestUpdateWithoutApiKeyInput = {
@@ -859,6 +999,7 @@ export type ApiKeyRequestUpdateWithoutApiKeyInput = {
   windowStart?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   expiresAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  oauthGrant?: Prisma.McpOauthGrantUpdateOneWithoutRequestsNestedInput
 }
 
 export type ApiKeyRequestUncheckedUpdateWithoutApiKeyInput = {
@@ -880,11 +1021,101 @@ export type ApiKeyRequestUncheckedUpdateWithoutApiKeyInput = {
   windowStart?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   expiresAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  oauthGrantId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
 }
 
 export type ApiKeyRequestUncheckedUpdateManyWithoutApiKeyInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
   organizationId?: Prisma.StringFieldUpdateOperationsInput | string
+  prefixTried?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  actingUserId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  operation?: Prisma.StringFieldUpdateOperationsInput | string
+  toolName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  scopeRequired?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  outcome?: Prisma.StringFieldUpdateOperationsInput | string
+  statusCode?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  durationMs?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  request?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  response?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  ip?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  userAgent?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  count?: Prisma.IntFieldUpdateOperationsInput | number
+  windowStart?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  expiresAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  oauthGrantId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+}
+
+export type ApiKeyRequestCreateManyOauthGrantInput = {
+  id?: string
+  organizationId?: string
+  apiKeyId?: string | null
+  prefixTried?: string | null
+  actingUserId?: string | null
+  operation: string
+  toolName?: string | null
+  scopeRequired?: string | null
+  outcome: string
+  statusCode?: number | null
+  durationMs?: number | null
+  request?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  response?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  ip?: string | null
+  userAgent?: string | null
+  count?: number
+  windowStart?: Date | string | null
+  createdAt?: Date | string
+  expiresAt: Date | string
+}
+
+export type ApiKeyRequestUpdateWithoutOauthGrantInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  organizationId?: Prisma.StringFieldUpdateOperationsInput | string
+  prefixTried?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  actingUserId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  operation?: Prisma.StringFieldUpdateOperationsInput | string
+  toolName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  scopeRequired?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  outcome?: Prisma.StringFieldUpdateOperationsInput | string
+  statusCode?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  durationMs?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  request?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  response?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  ip?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  userAgent?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  count?: Prisma.IntFieldUpdateOperationsInput | number
+  windowStart?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  expiresAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  apiKey?: Prisma.ApiKeyUpdateOneWithoutRequestsNestedInput
+}
+
+export type ApiKeyRequestUncheckedUpdateWithoutOauthGrantInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  organizationId?: Prisma.StringFieldUpdateOperationsInput | string
+  apiKeyId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  prefixTried?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  actingUserId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  operation?: Prisma.StringFieldUpdateOperationsInput | string
+  toolName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  scopeRequired?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  outcome?: Prisma.StringFieldUpdateOperationsInput | string
+  statusCode?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  durationMs?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  request?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  response?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  ip?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  userAgent?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  count?: Prisma.IntFieldUpdateOperationsInput | number
+  windowStart?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  expiresAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+}
+
+export type ApiKeyRequestUncheckedUpdateManyWithoutOauthGrantInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  organizationId?: Prisma.StringFieldUpdateOperationsInput | string
+  apiKeyId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   prefixTried?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   actingUserId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   operation?: Prisma.StringFieldUpdateOperationsInput | string
@@ -925,7 +1156,9 @@ export type ApiKeyRequestSelect<ExtArgs extends runtime.Types.Extensions.Interna
   windowStart?: boolean
   createdAt?: boolean
   expiresAt?: boolean
+  oauthGrantId?: boolean
   apiKey?: boolean | Prisma.ApiKeyRequest$apiKeyArgs<ExtArgs>
+  oauthGrant?: boolean | Prisma.ApiKeyRequest$oauthGrantArgs<ExtArgs>
 }, ExtArgs["result"]["apiKeyRequest"]>
 
 export type ApiKeyRequestSelectCreateManyAndReturn<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetSelect<{
@@ -948,7 +1181,9 @@ export type ApiKeyRequestSelectCreateManyAndReturn<ExtArgs extends runtime.Types
   windowStart?: boolean
   createdAt?: boolean
   expiresAt?: boolean
+  oauthGrantId?: boolean
   apiKey?: boolean | Prisma.ApiKeyRequest$apiKeyArgs<ExtArgs>
+  oauthGrant?: boolean | Prisma.ApiKeyRequest$oauthGrantArgs<ExtArgs>
 }, ExtArgs["result"]["apiKeyRequest"]>
 
 export type ApiKeyRequestSelectUpdateManyAndReturn<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetSelect<{
@@ -971,7 +1206,9 @@ export type ApiKeyRequestSelectUpdateManyAndReturn<ExtArgs extends runtime.Types
   windowStart?: boolean
   createdAt?: boolean
   expiresAt?: boolean
+  oauthGrantId?: boolean
   apiKey?: boolean | Prisma.ApiKeyRequest$apiKeyArgs<ExtArgs>
+  oauthGrant?: boolean | Prisma.ApiKeyRequest$oauthGrantArgs<ExtArgs>
 }, ExtArgs["result"]["apiKeyRequest"]>
 
 export type ApiKeyRequestSelectScalar = {
@@ -994,23 +1231,28 @@ export type ApiKeyRequestSelectScalar = {
   windowStart?: boolean
   createdAt?: boolean
   expiresAt?: boolean
+  oauthGrantId?: boolean
 }
 
-export type ApiKeyRequestOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "organizationId" | "apiKeyId" | "prefixTried" | "actingUserId" | "operation" | "toolName" | "scopeRequired" | "outcome" | "statusCode" | "durationMs" | "request" | "response" | "ip" | "userAgent" | "count" | "windowStart" | "createdAt" | "expiresAt", ExtArgs["result"]["apiKeyRequest"]>
+export type ApiKeyRequestOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "organizationId" | "apiKeyId" | "prefixTried" | "actingUserId" | "operation" | "toolName" | "scopeRequired" | "outcome" | "statusCode" | "durationMs" | "request" | "response" | "ip" | "userAgent" | "count" | "windowStart" | "createdAt" | "expiresAt" | "oauthGrantId", ExtArgs["result"]["apiKeyRequest"]>
 export type ApiKeyRequestInclude<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   apiKey?: boolean | Prisma.ApiKeyRequest$apiKeyArgs<ExtArgs>
+  oauthGrant?: boolean | Prisma.ApiKeyRequest$oauthGrantArgs<ExtArgs>
 }
 export type ApiKeyRequestIncludeCreateManyAndReturn<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   apiKey?: boolean | Prisma.ApiKeyRequest$apiKeyArgs<ExtArgs>
+  oauthGrant?: boolean | Prisma.ApiKeyRequest$oauthGrantArgs<ExtArgs>
 }
 export type ApiKeyRequestIncludeUpdateManyAndReturn<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   apiKey?: boolean | Prisma.ApiKeyRequest$apiKeyArgs<ExtArgs>
+  oauthGrant?: boolean | Prisma.ApiKeyRequest$oauthGrantArgs<ExtArgs>
 }
 
 export type $ApiKeyRequestPayload<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   name: "ApiKeyRequest"
   objects: {
     apiKey: Prisma.$ApiKeyPayload<ExtArgs> | null
+    oauthGrant: Prisma.$McpOauthGrantPayload<ExtArgs> | null
   }
   scalars: runtime.Types.Extensions.GetPayloadResult<{
     id: string
@@ -1036,6 +1278,10 @@ export type $ApiKeyRequestPayload<ExtArgs extends runtime.Types.Extensions.Inter
     windowStart: Date | null
     createdAt: Date
     expiresAt: Date
+    /**
+     * 0080: the OAuth grant a call was made under, when it came with an access token.
+     */
+    oauthGrantId: string | null
   }, ExtArgs["result"]["apiKeyRequest"]>
   composites: {}
 }
@@ -1431,6 +1677,7 @@ readonly fields: ApiKeyRequestFieldRefs;
 export interface Prisma__ApiKeyRequestClient<T, Null = never, ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs, GlobalOmitOptions = {}> extends Prisma.PrismaPromise<T> {
   readonly [Symbol.toStringTag]: "PrismaPromise"
   apiKey<T extends Prisma.ApiKeyRequest$apiKeyArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.ApiKeyRequest$apiKeyArgs<ExtArgs>>): Prisma.Prisma__ApiKeyClient<runtime.Types.Result.GetResult<Prisma.$ApiKeyPayload<ExtArgs>, T, "findUniqueOrThrow", GlobalOmitOptions> | null, null, ExtArgs, GlobalOmitOptions>
+  oauthGrant<T extends Prisma.ApiKeyRequest$oauthGrantArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.ApiKeyRequest$oauthGrantArgs<ExtArgs>>): Prisma.Prisma__McpOauthGrantClient<runtime.Types.Result.GetResult<Prisma.$McpOauthGrantPayload<ExtArgs>, T, "findUniqueOrThrow", GlobalOmitOptions> | null, null, ExtArgs, GlobalOmitOptions>
   /**
    * Attaches callbacks for the resolution and/or rejection of the Promise.
    * @param onfulfilled The callback to execute when the Promise is resolved.
@@ -1479,6 +1726,7 @@ export interface ApiKeyRequestFieldRefs {
   readonly windowStart: Prisma.FieldRef<"ApiKeyRequest", 'DateTime'>
   readonly createdAt: Prisma.FieldRef<"ApiKeyRequest", 'DateTime'>
   readonly expiresAt: Prisma.FieldRef<"ApiKeyRequest", 'DateTime'>
+  readonly oauthGrantId: Prisma.FieldRef<"ApiKeyRequest", 'String'>
 }
     
 
@@ -1896,6 +2144,25 @@ export type ApiKeyRequest$apiKeyArgs<ExtArgs extends runtime.Types.Extensions.In
    */
   include?: Prisma.ApiKeyInclude<ExtArgs> | null
   where?: Prisma.ApiKeyWhereInput
+}
+
+/**
+ * ApiKeyRequest.oauthGrant
+ */
+export type ApiKeyRequest$oauthGrantArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  /**
+   * Select specific fields to fetch from the McpOauthGrant
+   */
+  select?: Prisma.McpOauthGrantSelect<ExtArgs> | null
+  /**
+   * Omit specific fields from the McpOauthGrant
+   */
+  omit?: Prisma.McpOauthGrantOmit<ExtArgs> | null
+  /**
+   * Choose, which related nodes to fetch as well
+   */
+  include?: Prisma.McpOauthGrantInclude<ExtArgs> | null
+  where?: Prisma.McpOauthGrantWhereInput
 }
 
 /**

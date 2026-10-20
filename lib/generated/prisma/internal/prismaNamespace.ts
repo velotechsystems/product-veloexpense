@@ -438,7 +438,11 @@ export const ModelName = {
   AssistantFeedback: 'AssistantFeedback',
   ApiKey: 'ApiKey',
   ApiKeyRequest: 'ApiKeyRequest',
-  ApiKeyIdempotency: 'ApiKeyIdempotency'
+  ApiKeyIdempotency: 'ApiKeyIdempotency',
+  McpOauthClient: 'McpOauthClient',
+  McpOauthGrant: 'McpOauthGrant',
+  McpOauthCode: 'McpOauthCode',
+  McpOauthRefreshToken: 'McpOauthRefreshToken'
 } as const
 
 export type ModelName = (typeof ModelName)[keyof typeof ModelName]
@@ -454,7 +458,7 @@ export type TypeMap<ExtArgs extends runtime.Types.Extensions.InternalArgs = runt
     omit: GlobalOmitOptions
   }
   meta: {
-    modelProps: "expenseCategory" | "glAccount" | "expenseReport" | "expense" | "expenseAllocation" | "expenseAttendee" | "expenseLineItem" | "receipt" | "documentExtraction" | "expenseDetermination" | "receiptExternalId" | "expenseExternalId" | "aiUsage" | "taxJurisdiction" | "user" | "userExternalId" | "role" | "roleExternalId" | "businessUnit" | "externalIdSource" | "businessUnitExternalId" | "legalEntity" | "legalEntityExternalId" | "fxRate" | "mileageRate" | "mileageRateTier" | "mileageRateSubject" | "perDiemRate" | "currency" | "department" | "departmentExternalId" | "jobLevel" | "jobLevelExternalId" | "fiscalYear" | "fiscalYearExternalId" | "approvalWorkflow" | "approvalWorkflowVersion" | "approvalInstance" | "approvalTask" | "delegation" | "policyRule" | "expensePolicy" | "policyViolation" | "savedView" | "replyThread" | "travelPlace" | "travelRequest" | "travelCategory" | "travelBudgetLine" | "assistantConversation" | "assistantMessage" | "assistantFeedback" | "apiKey" | "apiKeyRequest" | "apiKeyIdempotency"
+    modelProps: "expenseCategory" | "glAccount" | "expenseReport" | "expense" | "expenseAllocation" | "expenseAttendee" | "expenseLineItem" | "receipt" | "documentExtraction" | "expenseDetermination" | "receiptExternalId" | "expenseExternalId" | "aiUsage" | "taxJurisdiction" | "user" | "userExternalId" | "role" | "roleExternalId" | "businessUnit" | "externalIdSource" | "businessUnitExternalId" | "legalEntity" | "legalEntityExternalId" | "fxRate" | "mileageRate" | "mileageRateTier" | "mileageRateSubject" | "perDiemRate" | "currency" | "department" | "departmentExternalId" | "jobLevel" | "jobLevelExternalId" | "fiscalYear" | "fiscalYearExternalId" | "approvalWorkflow" | "approvalWorkflowVersion" | "approvalInstance" | "approvalTask" | "delegation" | "policyRule" | "expensePolicy" | "policyViolation" | "savedView" | "replyThread" | "travelPlace" | "travelRequest" | "travelCategory" | "travelBudgetLine" | "assistantConversation" | "assistantMessage" | "assistantFeedback" | "apiKey" | "apiKeyRequest" | "apiKeyIdempotency" | "mcpOauthClient" | "mcpOauthGrant" | "mcpOauthCode" | "mcpOauthRefreshToken"
     txIsolationLevel: TransactionIsolationLevel
   }
   model: {
@@ -4528,6 +4532,302 @@ export type TypeMap<ExtArgs extends runtime.Types.Extensions.InternalArgs = runt
         }
       }
     }
+    McpOauthClient: {
+      payload: Prisma.$McpOauthClientPayload<ExtArgs>
+      fields: Prisma.McpOauthClientFieldRefs
+      operations: {
+        findUnique: {
+          args: Prisma.McpOauthClientFindUniqueArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$McpOauthClientPayload> | null
+        }
+        findUniqueOrThrow: {
+          args: Prisma.McpOauthClientFindUniqueOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$McpOauthClientPayload>
+        }
+        findFirst: {
+          args: Prisma.McpOauthClientFindFirstArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$McpOauthClientPayload> | null
+        }
+        findFirstOrThrow: {
+          args: Prisma.McpOauthClientFindFirstOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$McpOauthClientPayload>
+        }
+        findMany: {
+          args: Prisma.McpOauthClientFindManyArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$McpOauthClientPayload>[]
+        }
+        create: {
+          args: Prisma.McpOauthClientCreateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$McpOauthClientPayload>
+        }
+        createMany: {
+          args: Prisma.McpOauthClientCreateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        createManyAndReturn: {
+          args: Prisma.McpOauthClientCreateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$McpOauthClientPayload>[]
+        }
+        delete: {
+          args: Prisma.McpOauthClientDeleteArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$McpOauthClientPayload>
+        }
+        update: {
+          args: Prisma.McpOauthClientUpdateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$McpOauthClientPayload>
+        }
+        deleteMany: {
+          args: Prisma.McpOauthClientDeleteManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateMany: {
+          args: Prisma.McpOauthClientUpdateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateManyAndReturn: {
+          args: Prisma.McpOauthClientUpdateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$McpOauthClientPayload>[]
+        }
+        upsert: {
+          args: Prisma.McpOauthClientUpsertArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$McpOauthClientPayload>
+        }
+        aggregate: {
+          args: Prisma.McpOauthClientAggregateArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.AggregateMcpOauthClient>
+        }
+        groupBy: {
+          args: Prisma.McpOauthClientGroupByArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.McpOauthClientGroupByOutputType>[]
+        }
+        count: {
+          args: Prisma.McpOauthClientCountArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.McpOauthClientCountAggregateOutputType> | number
+        }
+      }
+    }
+    McpOauthGrant: {
+      payload: Prisma.$McpOauthGrantPayload<ExtArgs>
+      fields: Prisma.McpOauthGrantFieldRefs
+      operations: {
+        findUnique: {
+          args: Prisma.McpOauthGrantFindUniqueArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$McpOauthGrantPayload> | null
+        }
+        findUniqueOrThrow: {
+          args: Prisma.McpOauthGrantFindUniqueOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$McpOauthGrantPayload>
+        }
+        findFirst: {
+          args: Prisma.McpOauthGrantFindFirstArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$McpOauthGrantPayload> | null
+        }
+        findFirstOrThrow: {
+          args: Prisma.McpOauthGrantFindFirstOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$McpOauthGrantPayload>
+        }
+        findMany: {
+          args: Prisma.McpOauthGrantFindManyArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$McpOauthGrantPayload>[]
+        }
+        create: {
+          args: Prisma.McpOauthGrantCreateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$McpOauthGrantPayload>
+        }
+        createMany: {
+          args: Prisma.McpOauthGrantCreateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        createManyAndReturn: {
+          args: Prisma.McpOauthGrantCreateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$McpOauthGrantPayload>[]
+        }
+        delete: {
+          args: Prisma.McpOauthGrantDeleteArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$McpOauthGrantPayload>
+        }
+        update: {
+          args: Prisma.McpOauthGrantUpdateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$McpOauthGrantPayload>
+        }
+        deleteMany: {
+          args: Prisma.McpOauthGrantDeleteManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateMany: {
+          args: Prisma.McpOauthGrantUpdateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateManyAndReturn: {
+          args: Prisma.McpOauthGrantUpdateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$McpOauthGrantPayload>[]
+        }
+        upsert: {
+          args: Prisma.McpOauthGrantUpsertArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$McpOauthGrantPayload>
+        }
+        aggregate: {
+          args: Prisma.McpOauthGrantAggregateArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.AggregateMcpOauthGrant>
+        }
+        groupBy: {
+          args: Prisma.McpOauthGrantGroupByArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.McpOauthGrantGroupByOutputType>[]
+        }
+        count: {
+          args: Prisma.McpOauthGrantCountArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.McpOauthGrantCountAggregateOutputType> | number
+        }
+      }
+    }
+    McpOauthCode: {
+      payload: Prisma.$McpOauthCodePayload<ExtArgs>
+      fields: Prisma.McpOauthCodeFieldRefs
+      operations: {
+        findUnique: {
+          args: Prisma.McpOauthCodeFindUniqueArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$McpOauthCodePayload> | null
+        }
+        findUniqueOrThrow: {
+          args: Prisma.McpOauthCodeFindUniqueOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$McpOauthCodePayload>
+        }
+        findFirst: {
+          args: Prisma.McpOauthCodeFindFirstArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$McpOauthCodePayload> | null
+        }
+        findFirstOrThrow: {
+          args: Prisma.McpOauthCodeFindFirstOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$McpOauthCodePayload>
+        }
+        findMany: {
+          args: Prisma.McpOauthCodeFindManyArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$McpOauthCodePayload>[]
+        }
+        create: {
+          args: Prisma.McpOauthCodeCreateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$McpOauthCodePayload>
+        }
+        createMany: {
+          args: Prisma.McpOauthCodeCreateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        createManyAndReturn: {
+          args: Prisma.McpOauthCodeCreateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$McpOauthCodePayload>[]
+        }
+        delete: {
+          args: Prisma.McpOauthCodeDeleteArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$McpOauthCodePayload>
+        }
+        update: {
+          args: Prisma.McpOauthCodeUpdateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$McpOauthCodePayload>
+        }
+        deleteMany: {
+          args: Prisma.McpOauthCodeDeleteManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateMany: {
+          args: Prisma.McpOauthCodeUpdateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateManyAndReturn: {
+          args: Prisma.McpOauthCodeUpdateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$McpOauthCodePayload>[]
+        }
+        upsert: {
+          args: Prisma.McpOauthCodeUpsertArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$McpOauthCodePayload>
+        }
+        aggregate: {
+          args: Prisma.McpOauthCodeAggregateArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.AggregateMcpOauthCode>
+        }
+        groupBy: {
+          args: Prisma.McpOauthCodeGroupByArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.McpOauthCodeGroupByOutputType>[]
+        }
+        count: {
+          args: Prisma.McpOauthCodeCountArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.McpOauthCodeCountAggregateOutputType> | number
+        }
+      }
+    }
+    McpOauthRefreshToken: {
+      payload: Prisma.$McpOauthRefreshTokenPayload<ExtArgs>
+      fields: Prisma.McpOauthRefreshTokenFieldRefs
+      operations: {
+        findUnique: {
+          args: Prisma.McpOauthRefreshTokenFindUniqueArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$McpOauthRefreshTokenPayload> | null
+        }
+        findUniqueOrThrow: {
+          args: Prisma.McpOauthRefreshTokenFindUniqueOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$McpOauthRefreshTokenPayload>
+        }
+        findFirst: {
+          args: Prisma.McpOauthRefreshTokenFindFirstArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$McpOauthRefreshTokenPayload> | null
+        }
+        findFirstOrThrow: {
+          args: Prisma.McpOauthRefreshTokenFindFirstOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$McpOauthRefreshTokenPayload>
+        }
+        findMany: {
+          args: Prisma.McpOauthRefreshTokenFindManyArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$McpOauthRefreshTokenPayload>[]
+        }
+        create: {
+          args: Prisma.McpOauthRefreshTokenCreateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$McpOauthRefreshTokenPayload>
+        }
+        createMany: {
+          args: Prisma.McpOauthRefreshTokenCreateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        createManyAndReturn: {
+          args: Prisma.McpOauthRefreshTokenCreateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$McpOauthRefreshTokenPayload>[]
+        }
+        delete: {
+          args: Prisma.McpOauthRefreshTokenDeleteArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$McpOauthRefreshTokenPayload>
+        }
+        update: {
+          args: Prisma.McpOauthRefreshTokenUpdateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$McpOauthRefreshTokenPayload>
+        }
+        deleteMany: {
+          args: Prisma.McpOauthRefreshTokenDeleteManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateMany: {
+          args: Prisma.McpOauthRefreshTokenUpdateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateManyAndReturn: {
+          args: Prisma.McpOauthRefreshTokenUpdateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$McpOauthRefreshTokenPayload>[]
+        }
+        upsert: {
+          args: Prisma.McpOauthRefreshTokenUpsertArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$McpOauthRefreshTokenPayload>
+        }
+        aggregate: {
+          args: Prisma.McpOauthRefreshTokenAggregateArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.AggregateMcpOauthRefreshToken>
+        }
+        groupBy: {
+          args: Prisma.McpOauthRefreshTokenGroupByArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.McpOauthRefreshTokenGroupByOutputType>[]
+        }
+        count: {
+          args: Prisma.McpOauthRefreshTokenCountArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.McpOauthRefreshTokenCountAggregateOutputType> | number
+        }
+      }
+    }
   }
 } & {
   other: {
@@ -5515,7 +5815,8 @@ export const ApiKeyRequestScalarFieldEnum = {
   count: 'count',
   windowStart: 'windowStart',
   createdAt: 'createdAt',
-  expiresAt: 'expiresAt'
+  expiresAt: 'expiresAt',
+  oauthGrantId: 'oauthGrantId'
 } as const
 
 export type ApiKeyRequestScalarFieldEnum = (typeof ApiKeyRequestScalarFieldEnum)[keyof typeof ApiKeyRequestScalarFieldEnum]
@@ -5534,6 +5835,67 @@ export const ApiKeyIdempotencyScalarFieldEnum = {
 } as const
 
 export type ApiKeyIdempotencyScalarFieldEnum = (typeof ApiKeyIdempotencyScalarFieldEnum)[keyof typeof ApiKeyIdempotencyScalarFieldEnum]
+
+
+export const McpOauthClientScalarFieldEnum = {
+  id: 'id',
+  clientId: 'clientId',
+  clientName: 'clientName',
+  redirectUris: 'redirectUris',
+  grantTypes: 'grantTypes',
+  responseTypes: 'responseTypes',
+  tokenEndpointAuthMethod: 'tokenEndpointAuthMethod',
+  createdAt: 'createdAt',
+  lastAuthorizedAt: 'lastAuthorizedAt'
+} as const
+
+export type McpOauthClientScalarFieldEnum = (typeof McpOauthClientScalarFieldEnum)[keyof typeof McpOauthClientScalarFieldEnum]
+
+
+export const McpOauthGrantScalarFieldEnum = {
+  id: 'id',
+  organizationId: 'organizationId',
+  clientId: 'clientId',
+  userId: 'userId',
+  scopes: 'scopes',
+  createdAt: 'createdAt',
+  activatedAt: 'activatedAt',
+  lastUsedAt: 'lastUsedAt',
+  revokedAt: 'revokedAt',
+  revokedById: 'revokedById',
+  revokeReason: 'revokeReason'
+} as const
+
+export type McpOauthGrantScalarFieldEnum = (typeof McpOauthGrantScalarFieldEnum)[keyof typeof McpOauthGrantScalarFieldEnum]
+
+
+export const McpOauthCodeScalarFieldEnum = {
+  id: 'id',
+  organizationId: 'organizationId',
+  grantId: 'grantId',
+  codeHash: 'codeHash',
+  codeChallenge: 'codeChallenge',
+  codeChallengeMethod: 'codeChallengeMethod',
+  redirectUri: 'redirectUri',
+  usedAt: 'usedAt',
+  expiresAt: 'expiresAt',
+  createdAt: 'createdAt'
+} as const
+
+export type McpOauthCodeScalarFieldEnum = (typeof McpOauthCodeScalarFieldEnum)[keyof typeof McpOauthCodeScalarFieldEnum]
+
+
+export const McpOauthRefreshTokenScalarFieldEnum = {
+  id: 'id',
+  organizationId: 'organizationId',
+  grantId: 'grantId',
+  tokenHash: 'tokenHash',
+  usedAt: 'usedAt',
+  expiresAt: 'expiresAt',
+  createdAt: 'createdAt'
+} as const
+
+export type McpOauthRefreshTokenScalarFieldEnum = (typeof McpOauthRefreshTokenScalarFieldEnum)[keyof typeof McpOauthRefreshTokenScalarFieldEnum]
 
 
 export const SortOrder = {
@@ -5887,6 +6249,10 @@ export type GlobalOmitConfig = {
   apiKey?: Prisma.ApiKeyOmit
   apiKeyRequest?: Prisma.ApiKeyRequestOmit
   apiKeyIdempotency?: Prisma.ApiKeyIdempotencyOmit
+  mcpOauthClient?: Prisma.McpOauthClientOmit
+  mcpOauthGrant?: Prisma.McpOauthGrantOmit
+  mcpOauthCode?: Prisma.McpOauthCodeOmit
+  mcpOauthRefreshToken?: Prisma.McpOauthRefreshTokenOmit
 }
 
 /* Types for Logging */

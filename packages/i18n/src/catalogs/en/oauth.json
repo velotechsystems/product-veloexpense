@@ -1,0 +1,54 @@
+{
+  "consent": {
+    "title": "Allow {client} to use VeloExpense as you?",
+    "lede": "{client} is asking to act as you in {company}.",
+    "claimed": "“{client}” is the name the application gave itself. Only allow it if you started this connection yourself.",
+    "signedInAs": "Signed in as {name}",
+    "scopesTitle": "It will be able to:",
+    "dataNote": "It can never do more than you can. What it reads may be sent to the application’s AI service to answer you. You can disconnect it at any time under Preferences.",
+    "returnsTo": "After you choose, you go back to {host}.",
+    "allow": "Allow",
+    "deny": "Deny"
+  },
+  "scope": {
+    "expense_management_expense_report": "Read and work on your expense reports",
+    "expense_management_expense_report_readonly": "See your expense reports",
+    "travel_travel_request": "Read and work on your travel requests",
+    "travel_travel_request_readonly": "See your travel requests",
+    "collaboration_discussion": "Read and post comments on your reports and trips",
+    "collaboration_discussion_readonly": "Read the comments on your reports and trips"
+  },
+  "error": {
+    "title": "This connection can’t continue",
+    "unknown_client": "This application isn’t registered here. Start the connection again from the application.",
+    "bad_redirect": "The application asked to return to an address it didn’t register, so nothing was sent to it.",
+    "missing_params": "The link is incomplete. Start the connection again from the application.",
+    "unavailable": "Connecting applications isn’t set up on this VeloExpense yet.",
+    "expired": "This page expired before you chose. Start the connection again from the application.",
+    "refused": "You can’t connect applications with this account."
+  },
+  "connected": {
+    "title": "Connected applications",
+    "description": "Applications you have allowed to act as you through VeloExpense’s MCP server, such as Claude.",
+    "empty": "No applications are connected.",
+    "since": "Connected {date}",
+    "lastUsed": "Last used {date}",
+    "neverUsed": "Not used yet",
+    "disconnect": "Disconnect",
+    "disconnecting": "Disconnecting…",
+    "confirmTitle": "Disconnect {client}?",
+    "confirmBody": "It stops working immediately. To use it again, connect it again from the application.",
+    "cancel": "Cancel",
+    "failed": "Could not disconnect. Try again."
+  },
+  "admin": {
+    "title": "Connected applications",
+    "description": "Every application a person in this company has allowed to act as them, through OAuth (a Claude connector, for example). Disconnecting one stops it immediately.",
+    "empty": "Nobody has connected an application.",
+    "person": "Person",
+    "application": "Application",
+    "access": "Access",
+    "connected": "Connected",
+    "lastUsed": "Last used"
+  }
+}

@@ -331,3 +331,25 @@ export type ApiKeyRequest = Prisma.ApiKeyRequestModel
  * ExpenseOS's ApiKeyIdempotency: replay protection for mutating API-key calls.
  */
 export type ApiKeyIdempotency = Prisma.ApiKeyIdempotencyModel
+/**
+ * Model McpOauthClient
+ * 0080 (ported from VeloCRM 59fce1c): an OAuth 2.1 client registered by Dynamic Client
+ * Registration. GLOBAL — software, not a tenant's data; it authorizes nothing until somebody
+ * consents (`McpOauthGrant`).
+ */
+export type McpOauthClient = Prisma.McpOauthClientModel
+/**
+ * Model McpOauthGrant
+ * 0080: one person's consent to one OAuth client, in their tenant.
+ */
+export type McpOauthGrant = Prisma.McpOauthGrantModel
+/**
+ * Model McpOauthCode
+ * 0080: VeloCRM's single-use PKCE authorization code, stored as a SHA-256.
+ */
+export type McpOauthCode = Prisma.McpOauthCodeModel
+/**
+ * Model McpOauthRefreshToken
+ * 0080: VeloCRM's rotating refresh token, hashed. A used one presented again revokes its grant.
+ */
+export type McpOauthRefreshToken = Prisma.McpOauthRefreshTokenModel

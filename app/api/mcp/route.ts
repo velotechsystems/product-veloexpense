@@ -28,6 +28,17 @@
  *   refused with ExpenseOS's 401 and one structured log line (`api_key.unknown`). ExpenseOS
  *   coalesces those attempts into its request table; there is no tenant table they could
  *   belong to here.
+ *
+ * mcp-oauth (ported from VeloCRM 59fce1c `middleware/mcpAuth.ts`): THE SECOND CREDENTIAL. A
+ * bearer token that is a JWT is an OAuth access token from a Claude connector: verified here
+ * (signature, issuer and audience for the host the request came to, expiry with 30 s of leeway),
+ * its `tenant_id` claim is the tenant — no hatch needed, nothing is read before it verifies — and
+ * `guardOAuthRequest` then checks its grant is still live and does what `guardApiRequest` does for
+ * a key. Anything else is an API key, exactly as before.
+ *
+ * And every 401 from this route carries `WWW-Authenticate: Bearer resource_metadata="…"`
+ * (RFC 9728 §5.1). VeloCRM's note on why: a connector's first request has no token, and without
+ * that header Claude cannot discover the authorization server and the connector fails.
  */
 
 import { runWithDelegation } from '@expenseos/audit';
@@ -42,6 +53,9 @@ import { completeRequestLog, guardApiRequest, outcomeForTrpcCode } from '@/serve
 import { bearerToken, hashToken, parseToken } from '@/server/lib/apiKeys';
 import { claim, complete, release } from '@/server/lib/idempotency';
 import { makeExecutor } from '@/server/lib/mcpExecutor';
+import { oauthBaseUrl, resourceMetadataUrl } from '@/lib/mcpOauth/host';
+import { looksLikeJwt, verifyAccessToken, type AccessClaims } from '@/lib/mcpOauth/tokens';
+import { guardOAuthRequest } from '@/server/lib/oauthGuard';
 import { ipFromHeaders } from '@/server/lib/rateLimit';
 import { type Context, resolveTenantMember } from '@/server/trpc';
 
@@ -58,9 +72,20 @@ export async function POST(request: Request) {
     return jsonRpcError(null, -32700, 'Parse error.', 400);
   }
 
+  const token = bearerToken(request.headers.get('authorization'));
+
+  // mcp-oauth: an OAuth access token (see the header).
+  if (token && looksLikeJwt(token)) {
+    const base = oauthBaseUrl(request.headers);
+    const claims = base ? await verifyAccessToken(base, token) : null;
+    if (!claims) return unauthorized(request, body.id, 'Invalid or expired access token.');
+    return withTenantStatements(claims.tenant_id, () =>
+      call(request, body, claims.tenant_id, { kind: 'oauth', claims }),
+    );
+  }
+
   // VeloExpense (w6-04): which tenant is this key in? See the header. A malformed token, an
   // unknown one and a wrong secret are one case, as ExpenseOS's resolution makes them.
-  const token = bearerToken(request.headers.get('authorization'));
   const organizationId =
     token && parseToken(token) ? await apiKeyTenantId(hashToken(token)) : null;
   if (!organizationId) {
@@ -72,13 +97,46 @@ export async function POST(request: Request) {
         ip: ipFromHeaders(request.headers),
       }),
     );
-    return jsonRpcError(body.id, -32001, 'Invalid API key.', 401);
+    return unauthorized(request, body.id, 'Invalid API key.');
   }
-  return withTenantStatements(organizationId, () => call(request, body, organizationId));
+  return withTenantStatements(organizationId, () => call(request, body, organizationId, { kind: 'key' }));
+}
+
+/** mcp-oauth: a 401 that tells an MCP client where to find the authorization server. */
+function unauthorized(request: Request, id: unknown, message: string, extra: Record<string, string> = {}): Response {
+  const base = oauthBaseUrl(request.headers);
+  return Response.json(
+    { jsonrpc: '2.0', id: id ?? null, error: { code: -32001, message } },
+    {
+      status: 401,
+      headers: {
+        ...extra,
+        ...(base ? { 'www-authenticate': `Bearer resource_metadata="${resourceMetadataUrl(base)}"` } : {}),
+      },
+    },
+  );
+}
+
+type Credential = { kind: 'key' } | { kind: 'oauth'; claims: AccessClaims };
+
+/** What `call` needs from either guard. */
+interface CallPrincipal {
+  readonly actingUserId: string;
+  readonly permissions: readonly string[];
+  readonly roleLabel: string;
+  readonly scopes: readonly string[];
+  /** The key whose idempotency records a replay is checked against; null for OAuth. */
+  readonly idempotencyKeyId: string | null;
+  readonly delegation: Parameters<typeof runWithDelegation>[0];
 }
 
 /** VeloExpense (w6-04): ExpenseOS's `POST` from the guard on, in the key's tenant. */
-async function call(request: Request, body: JsonRpcRequest, organizationId: string): Promise<Response> {
+async function call(
+  request: Request,
+  body: JsonRpcRequest,
+  organizationId: string,
+  credential: Credential,
+): Promise<Response> {
   const method = String(body.method ?? '');
   const toolName = method === 'tools/call' ? String(body.params?.name ?? '') : null;
   const spec = toolName ? toolByName(toolName) : undefined;
@@ -86,10 +144,7 @@ async function call(request: Request, body: JsonRpcRequest, organizationId: stri
   // The guard needs to know what scope this call requires so a refusal is logged with it.
   // For anything but `tools/call` there is no scope — listing what you may use is not itself
   // a scoped action.
-  const guard = await guardApiRequest(db, {
-    authorization: request.headers.get('authorization'),
-    // VeloExpense (w6-04): ExpenseOS's `X-ExpenseOS-On-Behalf-Of`, renamed.
-    onBehalfOf: request.headers.get('x-veloexpense-on-behalf-of'),
+  const common = {
     ip: ipFromHeaders(request.headers),
     userAgent: request.headers.get('user-agent'),
     operation: method || 'unknown',
@@ -97,20 +152,46 @@ async function call(request: Request, body: JsonRpcRequest, organizationId: stri
     requiredScope: spec?.scope ?? null,
     access: spec?.access,
     body: body.params,
-  });
+  };
+  const guard =
+    credential.kind === 'oauth'
+      ? await guardOAuthRequest(db, { ...common, claims: credential.claims })
+      : await guardApiRequest(db, {
+          ...common,
+          authorization: request.headers.get('authorization'),
+          // VeloExpense (w6-04): ExpenseOS's `X-ExpenseOS-On-Behalf-Of`, renamed.
+          onBehalfOf: request.headers.get('x-veloexpense-on-behalf-of'),
+        });
 
   if (!guard.ok) {
-    const headers =
-      guard.retryAfterSeconds === undefined
-        ? undefined
-        : { 'retry-after': String(guard.retryAfterSeconds) };
+    const headers: Record<string, string> =
+      guard.retryAfterSeconds === undefined ? {} : { 'retry-after': String(guard.retryAfterSeconds) };
+    if (guard.status === 401) return unauthorized(request, body.id, guard.message, headers);
     return Response.json(
       { jsonrpc: '2.0', id: body.id ?? null, error: { code: -32001, message: guard.message } },
       { status: guard.status, headers },
     );
   }
 
-  const { principal, requestLogId } = guard;
+  const { requestLogId } = guard;
+  const principal: CallPrincipal =
+    'grantId' in guard.principal
+      ? {
+          actingUserId: guard.principal.actingUserId,
+          permissions: guard.principal.permissions,
+          roleLabel: guard.principal.roleLabel,
+          scopes: guard.principal.scopes,
+          idempotencyKeyId: null,
+          delegation: { viaOAuth: guard.principal.auditDetails.viaOAuth },
+        }
+      : {
+          actingUserId: guard.principal.actingUserId,
+          permissions: guard.principal.permissions,
+          roleLabel: guard.principal.roleLabel,
+          scopes: guard.principal.resolved.key.scopes,
+          idempotencyKeyId: guard.principal.resolved.key.id,
+          delegation: { viaApiKey: guard.principal.auditDetails.viaApiKey as Record<string, unknown> },
+        };
 
   /**
    * The acting person's identity, for the audit actor.
@@ -166,10 +247,12 @@ async function call(request: Request, body: JsonRpcRequest, organizationId: stri
   // Only mutations are replay-protected: repeating a read is harmless, and covering reads
   // would mean storing their responses.
   let claimId: string | null = null;
-  if (idempotencyKey && spec?.kind === 'mutate') {
+  // mcp-oauth: replay protection is per API key (ExpenseOS's `api_key_idempotency`); an OAuth
+  // call's `Idempotency-Key` is not honoured. Claude's connectors do not send one.
+  if (idempotencyKey && spec?.kind === 'mutate' && principal.idempotencyKeyId) {
     const claimed = await claim(
       db,
-      principal.resolved.key.id,
+      principal.idempotencyKeyId,
       idempotencyKey,
       spec.name,
       body.params?.arguments ?? {},
@@ -201,11 +284,11 @@ async function call(request: Request, body: JsonRpcRequest, organizationId: stri
 
   try {
     const response = await runWithDelegation(
-      { viaApiKey: principal.auditDetails.viaApiKey as Record<string, unknown> },
+      principal.delegation,
       () =>
         handleRpc(body, {
           capabilities: { permissions: principal.permissions, activeModules: [...modules] },
-          scopes: principal.resolved.key.scopes,
+          scopes: [...principal.scopes],
           // VeloExpense (w6-04): English. ExpenseOS reads the person's stored `localePref`;
           // VeloExpense is English-only for now (decided 7 Oct) and stores no such column.
           execute: makeExecutor(ctx, DEFAULT_LOCALE),

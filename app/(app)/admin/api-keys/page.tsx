@@ -4,6 +4,7 @@ import { pageTitle } from '@/lib/i18n/page-title';
 import { shellContext } from '@/server/shell';
 import { ApiKeyRequestsAdmin } from './ApiKeyRequestsAdmin';
 import { PlatformApiKeys } from './PlatformApiKeys';
+import { AdminConnectedApps } from '@/components/oauth/ConnectedApps';
 
 // VeloExpense: UD-16 — every route names itself (scripts/check-page-titles.mjs).
 export function generateMetadata() {
@@ -48,6 +49,8 @@ export default async function ApiKeysAdminPage() {
     <div className="flex h-full min-h-0 flex-col gap-6">
       {canCreate && <PlatformApiKeys />}
       {canList && <ApiKeyRequestsAdmin />}
+      {/* mcp-oauth: Claude connectors people have authorized (OAuth grants). */}
+      {canList && <AdminConnectedApps />}
     </div>
   );
 }

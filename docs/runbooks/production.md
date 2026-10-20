@@ -35,7 +35,12 @@ In order. Each step says what proves it is done.
 3. **DNS.** In Cloudflare, `app` and `*` as CNAMEs to the velotech-prod ALB's DNS name
    (`/velotech/prod/shared/alb-dns-name`), **proxied**, SSL mode Full (strict). Cloudflare's
    free certificate covers one level of subdomain, which is exactly `*.veloexpense.ai`.
-4. **The three secrets a person creates** (`MANUAL_SECRETS`, security-stack.ts), under
+   **And `mcp` as a CNAME to the same ALB, DNS ONLY (grey cloud)** — the Claude connector's
+   host (lib/mcpOauth/host.ts). VeloCRM found Cloudflare's bot protection silently dropping
+   Anthropic's authenticated MCP calls through the proxy (its `MCP-Subdomain-Spec-Issue.md`);
+   a DNS-only `mcp.` host keeps the app proxied and the connector working. The ALB's
+   `*.veloexpense.ai` certificate and listener rule already cover it.
+4. **The four secrets a person creates** (`MANUAL_SECRETS`, security-stack.ts), under
    `veloexpense/prod/`:
    - `secret-encryption-key`: 32 random bytes, base64. Generated, never typed. **Never reuse
      dev's**: everything a tenant connects (Slack, Google Workspace, ledgers) is encrypted
@@ -43,6 +48,9 @@ In order. Each step says what proves it is done.
    - `google-oauth`: JSON `{"clientId": …, "clientSecret": …}` for a Google OAuth client
      whose redirect URI is `https://app.veloexpense.ai/api/auth/callback/google`.
    - `anthropic-api-key`: the key receipt extraction uses.
+   - `mcp-oauth-signing-key` (mcp-oauth): an RSA-2048 private key, PKCS#8 PEM, plain text —
+     `openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048`. Signs MCP access tokens
+     for Claude connectors. **Never reuse dev's.**
    - `platform-inbound-token` (18 Oct 2026): 48+ random characters, generated. The token the
      platform presents to `/api/platform/provision`. Production only (`platformProvisioning`).
    Everything else (auth, worker, database, Valkey) the stacks generate.

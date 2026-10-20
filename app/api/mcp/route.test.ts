@@ -23,6 +23,10 @@ const h = vi.hoisted(() => ({
   withTenantStatements: vi.fn(),
   resolveTenantMember: vi.fn(),
   hostTenantSlug: vi.fn(),
+  // mcp-oauth: the OAuth access-token branch.
+  oauthBaseUrl: vi.fn(),
+  verifyAccessToken: vi.fn(),
+  guardOAuthRequest: vi.fn(),
 }));
 
 vi.mock('@expenseos/audit', () => ({ runWithDelegation: h.runWithDelegation }));
@@ -52,6 +56,15 @@ vi.mock('@/server/lib/idempotency', () => ({
 }));
 vi.mock('@/server/lib/mcpExecutor', () => ({ makeExecutor: h.makeExecutor }));
 vi.mock('@/server/lib/rateLimit', () => ({ ipFromHeaders: h.ipFromHeaders }));
+vi.mock('@/lib/mcpOauth/host', () => ({
+  oauthBaseUrl: h.oauthBaseUrl,
+  resourceMetadataUrl: (base: string) => `${base}/.well-known/oauth-protected-resource/api/mcp`,
+}));
+vi.mock('@/lib/mcpOauth/tokens', () => ({
+  looksLikeJwt: (t: string) => t.startsWith('eyJ') && t.split('.').length === 3,
+  verifyAccessToken: h.verifyAccessToken,
+}));
+vi.mock('@/server/lib/oauthGuard', () => ({ guardOAuthRequest: h.guardOAuthRequest }));
 
 import { GET, POST } from './route';
 
@@ -139,6 +152,7 @@ beforeEach(() => {
   h.apiKeyTenantId.mockResolvedValue(ORG);
   h.withTenantStatements.mockImplementation((_org: string, fn: () => unknown) => fn());
   h.hostTenantSlug.mockResolvedValue(null);
+  h.oauthBaseUrl.mockReturnValue(null);
   h.resolveTenantMember.mockImplementation(async (_tx: unknown, caller: { email: string }) => ({
     session: { user: { id: 'u-1', name: 'Dana Patel', email: caller.email, organizationId: ORG } },
     rbac: { id: 'u-1', roleId: 'r-1', roleLabel: 'Admin', permissions: ['resolved.again'] },
@@ -564,5 +578,86 @@ describe('the key names its tenant', () => {
       operation: 'tools/call',
       outcome: 'SUBJECT_UNKNOWN',
     });
+  });
+});
+
+/* ── mcp-oauth: the second credential (ported from VeloCRM 59fce1c `middleware/mcpAuth.ts`) ──
+ *
+ * VeloCRM's `mcpAuth.test.ts` asserts the shape of the logic in isolation ("identifies JWT
+ * tokens by eyJ", "the audience must be the MCP resource"); these assert the route does it. */
+describe('an OAuth access token', () => {
+  const JWT = 'eyJhbGciOiJSUzI1NiJ9.eyJzdWIiOiJ4In0.sig';
+  const BASE = 'https://mcp.veloexpense.test';
+  const CLAIMS = { sub: 'u-1', tenant_id: ORG, scope: 'travel.travel_request', client_id: 'c-1', gid: 'g-1' };
+  const OAUTH_PRINCIPAL = {
+    grantId: 'g-1',
+    actingUserId: 'u-1',
+    permissions: ['expense.read'],
+    roleLabel: 'Admin',
+    scopes: ['travel.travel_request'],
+    auditDetails: { viaOAuth: { grantId: 'g-1', clientId: 'c-1', clientName: 'Claude' } },
+  };
+  const postJwt = (body: unknown) => post(body, { authorization: `Bearer ${JWT}` });
+
+  beforeEach(() => {
+    h.oauthBaseUrl.mockReturnValue(BASE);
+    h.verifyAccessToken.mockResolvedValue(CLAIMS);
+    h.guardOAuthRequest.mockResolvedValue({ ok: true, principal: OAUTH_PRINCIPAL, requestLogId: 'log-o' });
+  });
+
+  it('is verified for the host the request came to, and its tenant claim is the tenant — no key lookup', async () => {
+    await postJwt(call());
+    expect(h.verifyAccessToken).toHaveBeenCalledWith(BASE, JWT);
+    expect(h.apiKeyTenantId).not.toHaveBeenCalled();
+    expect(h.withTenantStatements).toHaveBeenCalledWith(ORG, expect.any(Function));
+    expect(h.guardOAuthRequest).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ claims: CLAIMS }));
+    expect(h.guardApiRequest).not.toHaveBeenCalled();
+  });
+
+  it('401s a token that does not verify, and says where the authorization server is (RFC 9728)', async () => {
+    h.verifyAccessToken.mockResolvedValue(null);
+    const res = await postJwt(call());
+    expect(res.status).toBe(401);
+    expect(res.headers.get('www-authenticate')).toBe(
+      `Bearer resource_metadata="${BASE}/.well-known/oauth-protected-resource/api/mcp"`,
+    );
+    expect(h.withTenantStatements).not.toHaveBeenCalled();
+  });
+
+  it('puts the resource metadata on a request with no token at all — the connector\'s first call', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const res = await POST(new Request('http://x/api/mcp', { method: 'POST', body: JSON.stringify(call()) }));
+    expect(res.status).toBe(401);
+    expect(res.headers.get('www-authenticate')).toContain('resource_metadata=');
+    warn.mockRestore();
+  });
+
+  it('runs the tools under the grant\'s scopes and marks audited changes as made through it', async () => {
+    await postJwt(call());
+    expect(h.handleRpc.mock.calls[0]?.[1].scopes).toEqual(['travel.travel_request']);
+    expect(h.runWithDelegation.mock.calls[0]?.[0]).toEqual({
+      viaOAuth: { grantId: 'g-1', clientId: 'c-1', clientName: 'Claude' },
+    });
+  });
+
+  it('a revoked grant is a 401 with the resource metadata, so the client re-authorizes', async () => {
+    h.guardOAuthRequest.mockResolvedValue({
+      ok: false,
+      outcome: 'REVOKED',
+      status: 401,
+      message: 'This connection has been revoked. Connect the application again.',
+      requestLogId: 'log-o',
+    });
+    const res = await postJwt(call());
+    expect(res.status).toBe(401);
+    expect(res.headers.get('www-authenticate')).toContain('resource_metadata=');
+    expect(h.handleRpc).not.toHaveBeenCalled();
+  });
+
+  it('does not honour Idempotency-Key — replay records belong to API keys', async () => {
+    h.toolByName.mockReturnValue(MUTATE_SPEC);
+    await post(call(), { authorization: `Bearer ${JWT}`, 'idempotency-key': 'k-1' });
+    expect(h.claim).not.toHaveBeenCalled();
+    expect(h.handleRpc).toHaveBeenCalled();
   });
 });

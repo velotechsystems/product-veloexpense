@@ -51,7 +51,11 @@ import {
 import type { Construct } from 'constructs';
 import { REDIS_URL_SECRET } from './cache-stack';
 import { INBOUND_OBJECT_PREFIX, inboundMailBucketName, inboundMailTopicName } from './mail-stack';
-import { ANTHROPIC_API_KEY_SECRET, PLATFORM_INBOUND_TOKEN_SECRET } from './security-stack';
+import {
+  ANTHROPIC_API_KEY_SECRET,
+  MCP_OAUTH_SIGNING_KEY_SECRET,
+  PLATFORM_INBOUND_TOKEN_SECRET,
+} from './security-stack';
 import { hostsOf, type VeloExpenseConfig } from './config';
 import { SHARED_APP_PORT, importShared } from './shared';
 
@@ -108,6 +112,9 @@ export class ComputeStack extends Stack {
     // receipt reading (d40); the web task reads it for the assistant, whose chat route calls
     // Claude in the request (w6-03, d90 — reverses d40's worker-only rule; AI is native, d89).
     const anthropicKey = byName('AnthropicApiKey', `${config.secretPrefix}/${ANTHROPIC_API_KEY_SECRET}`);
+    // Made by a person (MANUAL_SECRETS), mcp-oauth: the key that signs MCP access tokens for
+    // Claude connectors (ported from VeloCRM). Web only: the worker never sees an MCP request.
+    const mcpOauthSigningKey = byName('McpOauthSigningKey', `${config.secretPrefix}/${MCP_OAUTH_SIGNING_KEY_SECRET}`);
 
     /** Partial-ARN wildcard for a secret imported by NAME (its ARN ends in a random suffix). */
     const nameArn = (name: string) =>
@@ -144,6 +151,8 @@ export class ComputeStack extends Stack {
       nameArn(`${config.secretPrefix}/${REDIS_URL_SECRET}`),
       // The assistant (w6-03, d90): the chat route calls Claude from the web task.
       nameArn(`${config.secretPrefix}/${ANTHROPIC_API_KEY_SECRET}`),
+      // mcp-oauth: signing MCP access tokens for Claude connectors.
+      nameArn(`${config.secretPrefix}/${MCP_OAUTH_SIGNING_KEY_SECRET}`),
       // Platform provisioning, where it is on (config.ts `platformProvisioning`).
       ...(config.platformProvisioning ? [nameArn(`${config.secretPrefix}/${PLATFORM_INBOUND_TOKEN_SECRET}`)] : []),
     ]);
@@ -301,6 +310,9 @@ export class ComputeStack extends Stack {
         REDIS_URL: ecs.Secret.fromSecretsManager(redisUrl),
         // The assistant (w6-03, d90). Without it the chat route answers 503 "not configured".
         ANTHROPIC_API_KEY: ecs.Secret.fromSecretsManager(anthropicKey),
+        // mcp-oauth: signs MCP access tokens (lib/mcpOauth/keys.ts). Without it in production the
+        // OAuth endpoints answer 503 and API keys keep working.
+        MCP_OAUTH_SIGNING_KEY: ecs.Secret.fromSecretsManager(mcpOauthSigningKey),
         // The token the platform presents to create a tenant here — the INBOUND one, never
         // the outbound PLATFORM_SERVICE_TOKEN (app/api/platform/provision/route.ts).
         ...(config.platformProvisioning

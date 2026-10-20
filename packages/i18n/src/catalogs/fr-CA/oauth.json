@@ -1,0 +1,54 @@
+{
+  "consent": {
+    "title": "Autoriser {client} à utiliser VeloExpense en votre nom?",
+    "lede": "{client} demande à agir en votre nom dans {company}.",
+    "claimed": "« {client} » est le nom que l’application s’est donné. Ne l’autorisez que si vous avez vous-même lancé cette connexion.",
+    "signedInAs": "Connecté en tant que {name}",
+    "scopesTitle": "Elle pourra :",
+    "dataNote": "Elle ne pourra jamais faire plus que vous. Ce qu’elle lit peut être transmis au service d’IA de l’application pour vous répondre. Vous pouvez la déconnecter en tout temps dans Préférences.",
+    "returnsTo": "Après votre choix, vous retournerez à {host}.",
+    "allow": "Autoriser",
+    "deny": "Refuser"
+  },
+  "scope": {
+    "expense_management_expense_report": "Consulter et modifier vos rapports de dépenses",
+    "expense_management_expense_report_readonly": "Consulter vos rapports de dépenses",
+    "travel_travel_request": "Consulter et modifier vos demandes de voyage",
+    "travel_travel_request_readonly": "Consulter vos demandes de voyage",
+    "collaboration_discussion": "Lire et publier des commentaires sur vos rapports et vos voyages",
+    "collaboration_discussion_readonly": "Lire les commentaires sur vos rapports et vos voyages"
+  },
+  "error": {
+    "title": "Cette connexion ne peut pas continuer",
+    "unknown_client": "Cette application n’est pas inscrite ici. Relancez la connexion depuis l’application.",
+    "bad_redirect": "L’application a demandé de revenir à une adresse qu’elle n’a pas inscrite; rien ne lui a été envoyé.",
+    "missing_params": "Le lien est incomplet. Relancez la connexion depuis l’application.",
+    "unavailable": "La connexion d’applications n’est pas encore configurée sur ce VeloExpense.",
+    "expired": "Cette page a expiré avant votre choix. Relancez la connexion depuis l’application.",
+    "refused": "Vous ne pouvez pas connecter d’applications avec ce compte."
+  },
+  "connected": {
+    "title": "Applications connectées",
+    "description": "Les applications que vous avez autorisées à agir en votre nom par le serveur MCP de VeloExpense, comme Claude.",
+    "empty": "Aucune application n’est connectée.",
+    "since": "Connectée le {date}",
+    "lastUsed": "Dernière utilisation le {date}",
+    "neverUsed": "Pas encore utilisée",
+    "disconnect": "Déconnecter",
+    "disconnecting": "Déconnexion…",
+    "confirmTitle": "Déconnecter {client}?",
+    "confirmBody": "Elle cesse de fonctionner immédiatement. Pour l’utiliser de nouveau, reconnectez-la depuis l’application.",
+    "cancel": "Annuler",
+    "failed": "La déconnexion a échoué. Réessayez."
+  },
+  "admin": {
+    "title": "Applications connectées",
+    "description": "Toutes les applications qu’une personne de cette entreprise a autorisées à agir en son nom par OAuth (un connecteur Claude, par exemple). En déconnecter une l’arrête immédiatement.",
+    "empty": "Personne n’a connecté d’application.",
+    "person": "Personne",
+    "application": "Application",
+    "access": "Accès",
+    "connected": "Connectée",
+    "lastUsed": "Dernière utilisation"
+  }
+}

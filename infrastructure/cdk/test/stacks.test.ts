@@ -308,6 +308,24 @@ describe('the queue (w3-00)', () => {
     expect(secretsOf('veloexpense-dev-web').secrets).toContain('ANTHROPIC_API_KEY');
   });
 
+  // mcp-oauth (ported from VeloCRM): the MCP access-token signing key is the web task's alone,
+  // read by its execution role, and named for the stage — never the worker, never the db task.
+  it('only the web task receives the MCP OAuth signing key, and its execution role can read it', () => {
+    const holders = resources(s.compute, 'AWS::ECS::TaskDefinition')
+      .filter(([, r]) =>
+        json((r.Properties as { ContainerDefinitions: unknown }).ContainerDefinitions).includes('MCP_OAUTH_SIGNING_KEY'),
+      )
+      .map(([, r]) => (r.Properties as { Family: string }).Family)
+      .sort();
+    expect(holders).toEqual(['veloexpense-dev-web']);
+    expect(secretsOf('veloexpense-dev-web').secrets).toContain('MCP_OAUTH_SIGNING_KEY');
+    const [, web] = resources(s.compute, 'AWS::IAM::Policy').find(([id]) => id.startsWith('WebExecutionRole'))!;
+    expect(json(web.Properties)).toContain('veloexpense/dev/mcp-oauth-signing-key');
+    const [, worker] = resources(s.compute, 'AWS::IAM::Policy').find(([id]) => id.startsWith('WorkerExecutionRole'))!;
+    expect(json(worker.Properties)).not.toContain('mcp-oauth-signing-key');
+    expect(JSON.stringify(synth('prod').compute.toJSON())).toContain('veloexpense/prod/mcp-oauth-signing-key');
+  });
+
   // f63: the streaming e2e points the assistant at a fake Messages API on loopback
   // (server/lib/assistantClient.ts anthropicBaseUrl). No deployed task may name one, nor the
   // SDK's own base-URL override.

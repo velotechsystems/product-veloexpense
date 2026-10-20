@@ -56,7 +56,7 @@ const DNS_LABEL = /^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$/;
  * is a SUBSET of the real reserved list, so it can never claim something is
  * reserved when a customer could actually hold it.
  */
-const NEVER_A_TENANT = new Set(['www', 'app', 'api', 'localhost', 'veloexpense', 'velotech']);
+const NEVER_A_TENANT = new Set(['www', 'app', 'api', 'mcp', 'localhost', 'veloexpense', 'velotech']);
 
 /**
  * The apex this deployment serves tenants under, or '' when it serves none.

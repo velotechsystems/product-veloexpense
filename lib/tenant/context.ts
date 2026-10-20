@@ -187,6 +187,40 @@ export async function apiKeyTenantId(tokenHash: string): Promise<string | null> 
   });
 }
 
+/**
+ * mcp-oauth (0080) — which tenant is this authorization code in? The `mcp_oauth_code_lookup`
+ * hatch, `apiKeyTenantId`'s exact shape.
+ *
+ * The OAuth token endpoint receives a code from a client and no session. VeloCRM finds the
+ * tenant by reading its codes table through the owner pool (a carve-out in its apply-rls.ts);
+ * here the GUC is the code's SHA-256, the policy shows the one row whose `code_hash` equals it,
+ * and this returns its `organization_id` and nothing else. Everything after — the client, the
+ * redirect URI, PKCE, single use, expiry — happens inside the tenant.
+ */
+export async function oauthCodeTenantId(codeHash: string): Promise<string | null> {
+  if (!/^[0-9a-f]{64}$/.test(codeHash)) return null;
+  return transaction(async (tx) => {
+    await tx.query("SELECT set_config('app.oauth_code_lookup', $1, true)", [codeHash]);
+    const r = await tx.query('SELECT organization_id FROM mcp_oauth_code WHERE code_hash = $1', [codeHash]);
+    return (r.rows[0]?.organization_id as string | undefined) ?? null;
+  });
+}
+
+/**
+ * mcp-oauth (0080) — which tenant is this refresh token in? The `mcp_oauth_refresh_token_lookup`
+ * hatch, the same shape as `oauthCodeTenantId`, for the refresh grant and for /oauth/revoke.
+ */
+export async function oauthRefreshTenantId(tokenHash: string): Promise<string | null> {
+  if (!/^[0-9a-f]{64}$/.test(tokenHash)) return null;
+  return transaction(async (tx) => {
+    await tx.query("SELECT set_config('app.oauth_refresh_lookup', $1, true)", [tokenHash]);
+    const r = await tx.query('SELECT organization_id FROM mcp_oauth_refresh_token WHERE token_hash = $1', [
+      tokenHash,
+    ]);
+    return (r.rows[0]?.organization_id as string | undefined) ?? null;
+  });
+}
+
 export async function withPlatformRead<T>(fn: (tx: QueryRunner) => Promise<T>): Promise<T> {
   return transaction(async (tx) => {
     await tx.query("SELECT set_config('app.platform_task', 'on', true)");
