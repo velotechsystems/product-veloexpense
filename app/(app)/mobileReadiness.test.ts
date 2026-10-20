@@ -7,6 +7,7 @@ import { describe, expect, it } from 'vitest';
 import {
   DEFAULT_DISPOSITION,
   type Disposition,
+  type DispositionMatch,
   type DispositionTable,
   dispositionFor,
   MOBILE_READINESS,
@@ -273,76 +274,63 @@ describe('dispositionFor', () => {
       });
   });
 
-  it('resolves a REAL report url past the `[reportId]` row, onto `/expenses`', () => {
+  it('resolves a REAL report url through the [reportId] key itself, not /expenses (P17)', () => {
     /**
-     * The inertness of `'/expenses/[reportId]'`, written down as a claim instead of left as a
-     * silent no-op — because it is load-bearing for the disposition P06 wrote, and because
-     * the next reader's first instinct on seeing that key is that it matches something.
+     * `'/expenses/[reportId]'` is P06's ruling for every report, and since P17 it is also
+     * what answers for every report. `dispositionFor` matches segment by segment, and a key
+     * segment written as one `[name]` pair matches any one real segment. So
+     * `/expenses/<uuid>` is a hit for the report key, which beats P05's `/expenses` on
+     * segment count (two segments to one).
      *
-     * IT MATCHES NOTHING. `dispositionFor` compares literal path text: a key is a hit when it
-     * equals the target, or is a prefix of it ending on a segment boundary. No real URL
-     * contains a `[`, so `/expenses/<uuid>` neither equals `/expenses/[reportId]` nor starts
-     * with `/expenses/[reportId]/`, and it falls straight past this row.
+     * HISTORY, so the next reader knows why older notes call this key inert. Until P17 the
+     * matcher compared literal path text and no real URL contains a `[`, so the key matched
+     * only its own bracket spelling and a real report fell through to `/expenses` by longest
+     * prefix (before P05 ruled `/expenses`, it fell all the way to `DEFAULT_DISPOSITION` with
+     * `prefix: null`). P17 (ADR-0005 D2) taught the matcher placeholder segments. The answer
+     * stayed `limited` throughout; only its provenance moved, and it now names the report
+     * key itself.
      *
-     * WHAT IT FALLS ONTO IS `/expenses` — P05's key, by longest prefix — AND THAT IS A
-     * CHANGE FROM WHEN THIS CASE WAS WRITTEN. P06 shipped first, when `/expenses` was
-     * unruled and a real report url resolved with `prefix: null` off `DEFAULT_DISPOSITION`.
-     * P05 then ruled `/expenses` `limited`, so the ANSWER is unchanged and only its
-     * PROVENANCE moved: `limited` either way, now reported as `prefix: '/expenses'` instead
-     * of as nothing at all. The `prefix` is asserted rather than the disposition alone
-     * precisely because `limited` is also `DEFAULT_DISPOSITION` — a bare disposition check
-     * cannot tell "ruled by a parent key" from "nobody has ruled anything", and would have
-     * passed silently through this very change.
-     *
-     * WHY THAT STILL MAKES `limited` THE ONLY HONEST VALUE FOR THE ROW. Every
-     * `/expenses/<uuid>` answers `limited` whatever this row says — first off the default,
-     * now off P05's parent key. A `'ready'` in that row would leave this file declaring one
-     * thing in its table and telling every caller the opposite — the registry contradicting
-     * itself about its own most-visited route, with no test anywhere able to see it. That,
-     * and not the size of the phone work, is what settled the ruling.
-     *
-     * DO NOT "FIX" THE MATCHER TO MAKE THIS READ BETTER. Teaching `dispositionFor` dynamic
-     * segments is an ADR-0005 D2 change with eleven tasks' blast radius and it is P17, lane
-     * A. Doing it from a page task would flip this assertion, flip the row's meaning, and
-     * hand `/expenses`'s future ruling authority over every report by longest prefix — the
-     * P05 coordination note in `docs/design/pwa.md` is about exactly that.
+     * THE FULL PAIR IS ASSERTED, AND THE `prefix` HALF IS THE LOAD-BEARING ONE. `limited` is
+     * also `DEFAULT_DISPOSITION`, so a bare disposition check cannot tell "ruled by the report
+     * key" from "ruled by a parent key" or "nobody has ruled anything", and would pass silently
+     * through a regression of the matcher. The prefix is what tells them apart.
      *
      * The id below is shaped like a real one (UUIDv7, the `019…` block this app generates)
-     * rather than a token like `:id`, precisely so it cannot be read as a stand-in the
-     * matcher might be expected to understand.
+     * rather than a token like `:id`, so the case exercises the placeholder against a value a
+     * browser actually produces.
      */
-    const real = dispositionFor('/expenses/0199a4c1-7000-7000-8000-00000000000a');
     expect(
-      real.prefix,
-      "the `[reportId]` row is inert, so a real report url resolves through P05's " +
-        '`/expenses` key. If this reads `/expenses/[reportId]`, the matcher has been taught ' +
-        'dynamic segments from somewhere other than P17 — see the block above.',
-    ).toBe('/expenses');
-    expect(real.disposition).toBe('limited');
+      dispositionFor('/expenses/0199a4c1-7000-7000-8000-00000000000a'),
+      'P17 taught the matcher placeholder segments, so a real report url resolves through ' +
+        'the `/expenses/[reportId]` key itself. A prefix of `/expenses` means placeholder ' +
+        'matching or segment-count precedence has regressed; `null` means both expense keys ' +
+        'went.',
+    ).toEqual({ disposition: 'limited', prefix: '/expenses/[reportId]' });
     expect(
       DEFAULT_DISPOSITION,
-      'and the answer is the same word the default carried before `/expenses` was ruled, ' +
-        'which is why this case pins the prefix and not the disposition',
+      'the report key rules the same word the default carries, which is why this case ' +
+        'asserts the full pair and not the disposition alone',
     ).toBe('limited');
 
     /**
-     * The row IS in the shipped table and IS reachable — by the literal key, which is the only
-     * string that reaches it. Without this, everything above is equally satisfied by a
-     * registry that never had the row at all, and the claim would be about absence rather
-     * than about inertness.
+     * The literal bracket spelling still resolves through the key: since P17 it is just one
+     * more segment value the placeholder matches (FR-1 2.B), not the only string that reaches
+     * the row.
      *
      * The one case in this block that reads `MOBILE_READINESS` rather than an injected table,
      * for the same reason `reads the SHIPPED table when none is injected` above does: the
-     * claim is about this row existing, not about the matcher's arithmetic.
+     * claim is about this row, not about the matcher's arithmetic.
      */
     expect(dispositionFor('/expenses/[reportId]').prefix).toBe('/expenses/[reportId]');
     expect(dispositionFor('/expenses/[reportId]').disposition).toBe('limited');
-    // And the two rulings agree, which is what P06's Page-readiness row asked P05 for: the
-    // word this inert row carries is the word the inherited answer above reports. Promoting
-    // either one alone re-opens the gap — see the note on the row in `mobileReadiness.ts`.
-    expect(dispositionFor('/expenses').disposition).toBe(
-      dispositionFor('/expenses/[reportId]').disposition,
-    );
+    /**
+     * RETIRED 2026-10-15 (P17, operator round 1). This asserted that `/expenses` and
+     * `/expenses/[reportId]` carry the same word. It existed only because the report key
+     * could not answer for itself, so `/expenses`'s word was every report's word
+     * (`mobileReadiness.ts`, the note on the `/expenses/[reportId]` row). The report key now
+     * answers for every report, so the two rulings are independent; see the independence pin
+     * in `the shipped registry`. Neither word changed in P17.
+     */
   });
 
   it('is not fooled by an inherited Object property', () => {
@@ -469,79 +457,88 @@ describe('the shipped registry', () => {
     expect(dispositionFor('/admin/approval-workflows-archive').prefix).toBe(null);
   });
 
-  it("rules a REAL /expenses/<uuid> by INHERITANCE from P05, past P06's inert key", () => {
+  it("rules a REAL /expenses/<uuid> by P06's OWN key, and leaves /expenses/all and /expenses/approvals their own (P17)", () => {
     /**
-     * ── THE SECOND INHERITED ROUTE, AND THE FIRST WHERE THE PARENT IS SOMEBODY ELSE'S ───
+     * ── THE REPORT ROUTE, ANSWERED BY ITS OWN KEY ──────────────────────────────────────
      *
-     * P05 rules `/expenses` and `/expenses/approvals`. Every real `/expenses/<uuid>` gets
-     * its answer from P05's parent key whether anyone intended it or not — which is why P05
-     * ruled `/expenses` `limited` rather than the `ready` its own measurements would have
-     * supported. This case is where that ruling is enforceable.
+     * P05 rules `/expenses` and `/expenses/approvals`; P06 rules `/expenses/[reportId]`.
+     * Since P17 the matcher understands placeholder segments, so every real
+     * `/expenses/<uuid>` is answered by P06's key and no longer by P05's parent key.
      *
-     * WHAT CHANGED WHEN P06 MERGED FIRST, AND WHY THIS CASE NO LONGER ASSERTS AN ABSENCE.
-     * P05 was written against a table with no `/expenses/[reportId]` key at all, and held
-     * that absence as its first assertion. P06 (#519) then shipped that key, with a ruling
-     * of `limited`, and `docs/design/pwa.md`'s Page-readiness row for the route moved from
-     * `unruled` to `limited` with it — so the parity gate in this file now REQUIRES the key
-     * that P05 required to be missing. The key stays; the assertion is what gives way,
-     * because the thing it was protecting is untouched by the key's existence:
-     *
-     * A KEY ON THE CHILD IS STILL NOT A FIX, WHICH IS WHY IT COSTS P05 NOTHING TO KEEP IT.
-     * `dispositionFor` matches raw path strings. `/expenses/[reportId]` is neither equal to
-     * `/expenses/0199c7b4-…` nor a `key + '/'` prefix of it, so it matches ONLY the literal
-     * bracket string — which no browser ever requests — while every real report URL goes on
-     * resolving through `/expenses`. It is inert, and inert in the direction that hides a
-     * promotion, which is exactly why P06 gave it `limited` and not the `ready` the backlog
-     * proposed. The two rows agree, and the case below pins that agreement rather than the
-     * absence it used to pin.
+     * HISTORY, so older notes read correctly. P05 was written against a table with no report
+     * key and pinned that absence. P06 (#519) then shipped the key with a ruling of `limited`,
+     * and the parity gate began to require it. Until P17 the key matched only its own literal
+     * bracket spelling, so every real report kept resolving through `/expenses` by longest
+     * prefix. That is why P05 ruled `/expenses` `limited` rather than the `ready` its own
+     * measurements supported, and why this case used to pin the two rulings in lock-step.
+     * P17 retired that lock-step; the independence pin below replaces it.
      *
      * THE `prefix` IS THE LOAD-BEARING HALF OF ASSERTION ONE, NOT DECORATION. `limited` is
-     * also `DEFAULT_DISPOSITION`, so a bare `disposition: 'limited'` check is TRUE BEFORE
-     * THIS COMMIT AND TRUE AFTER IT, and would stay true if both P05 keys were deleted
-     * tomorrow — it cannot tell "ruled by a parent key" from "nobody has ruled anything",
-     * which is the whole distinction the inheritance exists to record. `prefix: '/expenses'`
-     * is what makes the case fail when the key it names goes away or is renamed, and what
-     * makes the failure message say which route's ruling the reader is standing in. P02 paid
-     * for this lesson: `reads the SHIPPED table` above records an assertion hollowed exactly
-     * this way, and a hollowed assertion is worse than a failing one because nothing
-     * announces it.
+     * also `DEFAULT_DISPOSITION`, so a bare `disposition: 'limited'` check would stay true
+     * if both expense keys were deleted tomorrow. It cannot tell "ruled by a key" from
+     * "nobody has ruled anything". `prefix: '/expenses/[reportId]'` is what makes the case
+     * fail when the key it names goes away, is renamed, or stops matching, and what makes the
+     * failure message say which route's ruling the reader is standing in. P02 paid for this
+     * lesson: `reads the SHIPPED table` above records an assertion hollowed exactly this way,
+     * and a hollowed assertion is worse than a failing one because nothing announces it.
      */
-    // A real report id, as `e2e/expenses.mobile.spec.ts` navigates one — resolved by P05's
-    // parent key, and the ONLY reason that key is `limited` rather than `ready`.
-    expect(dispositionFor('/expenses/0199c7b4-8f3a-7000-8000-000000000001')).toEqual({
+    // A real report id, as `e2e/expenses.mobile.spec.ts` navigates one — resolved by P06's key.
+    expect(
+      dispositionFor('/expenses/0199c7b4-8f3a-7000-8000-000000000001'),
+      'since P17 a real report url resolves through `/expenses/[reportId]` itself; a prefix ' +
+        'of `/expenses` means placeholder matching or segment-count precedence regressed',
+    ).toEqual({
       disposition: 'limited',
-      prefix: '/expenses',
+      prefix: '/expenses/[reportId]',
     });
+    // And the parent still answers for its own page (a placeholder never matches zero segments).
+    expect(dispositionFor('/expenses')).toEqual({ disposition: 'limited', prefix: '/expenses' });
 
-    /**
-     * P06's key is reachable by its own literal spelling and by nothing else, and it rules
-     * the same word the inheritance above reports. BOTH HALVES MATTER. The first says the
-     * key is inert — if a real uuid ever started reporting `/expenses/[reportId]`, the
-     * matcher has been taught dynamic segments outside P17 and the assertion above breaks
-     * with it. The second says the ruling and the behaviour agree, which is what P06's
-     * Page-readiness row asked P05 for in as many words: a `desktop` on `/expenses` would
-     * have mounted `DesktopOnlyNotice` over a report a submitter can in fact submit.
-     */
     expect(
       dispositionFor('/expenses/[reportId]').prefix,
-      "P06's key must still be reachable by its literal spelling — the parity gate " +
-        'requires it, because `docs/design/pwa.md` rules the route `limited` rather than ' +
-        'leaving it `unruled`',
+      "P06's key must still be reachable by its literal spelling. The parity gate requires " +
+        'the key, because `docs/design/pwa.md` rules the route `limited` rather than leaving ' +
+        'it `unruled`, and since P17 the key is also how every real report resolves',
     ).toBe('/expenses/[reportId]');
-    expect(
-      dispositionFor('/expenses/[reportId]').disposition,
-      'P05 and P06 must rule the same word: the inert key records the ruling, `/expenses` ' +
-        'is what the code answers, and promoting either alone re-opens the gap',
-    ).toBe(dispositionFor('/expenses').disposition);
+    // The P05/P06 lock-step assertion that stood here is RETIRED (2026-10-15, P17): see the
+    // dated note in `resolves a REAL report url through the [reportId] key itself` above.
 
-    // And the two siblings the new general key must NOT have swallowed. `/expenses/all` is
+    // And the two siblings the placeholder key must NOT have swallowed. `/expenses/all` is
     // P10's `desktop` and is the reason the longest-prefix rule exists at all;
-    // `/expenses/approvals` is P05's own and carries a key rather than inheriting one.
+    // `/expenses/approvals` is P05's own and carries a key rather than inheriting one. Since
+    // P17 they are also the FR-2 tie-break witnesses: each ties the report key on segment
+    // count and wins at segment 2 because a fixed word beats a placeholder, although
+    // `/expenses/all` is 13 characters to the report key's 20.
     expect(dispositionFor('/expenses/all')).toEqual({
       disposition: 'desktop',
       prefix: '/expenses/all',
     });
     expect(dispositionFor('/expenses/approvals')).toEqual({
+      disposition: 'limited',
+      prefix: '/expenses/approvals',
+    });
+  });
+
+  it('rules /expenses and /expenses/[reportId] independently: the P05/P06 lock-step is retired (P17)', () => {
+    /**
+     * P17 R7, the FR-5 independence pin. Two edited copies of the shipped table, one ruling
+     * changed in each. Table A proves `/expenses` no longer reaches a real report; table B
+     * proves a `desktop` report key swallows neither its parent nor a fixed `limited` sibling.
+     */
+    const REPORT = '/expenses/0199c7b4-8f3a-7000-8000-000000000001';
+    const A = Object.freeze({ ...MOBILE_READINESS, '/expenses': 'desktop' } as const);
+    expect(dispositionFor('/expenses', A)).toEqual({ disposition: 'desktop', prefix: '/expenses' }); // the edit took
+    expect(dispositionFor(REPORT, A)).toEqual({
+      disposition: 'limited',
+      prefix: '/expenses/[reportId]',
+    });
+    const B = Object.freeze({ ...MOBILE_READINESS, '/expenses/[reportId]': 'desktop' } as const);
+    expect(dispositionFor(REPORT, B)).toEqual({
+      disposition: 'desktop',
+      prefix: '/expenses/[reportId]',
+    });
+    expect(dispositionFor('/expenses', B)).toEqual({ disposition: 'limited', prefix: '/expenses' });
+    expect(dispositionFor('/expenses/approvals', B)).toEqual({
       disposition: 'limited',
       prefix: '/expenses/approvals',
     });
@@ -561,10 +558,10 @@ describe('the shipped registry', () => {
      * one static. ONE OF THEM STILL DOES:
      *
      *   · `/virtual-cards/[cardId]` — dynamic, and P07's own. Still keyless, still pinned
-     *     by inheritance. Spelled below as a CONCRETE URL, because that is the only
-     *     spelling that proves anything: a registry key `'/virtual-cards/[cardId]'` would
-     *     never match a path a browser produces, and would fail the registry->docs parity
-     *     check besides.
+     *     by inheritance. Spelled below as a CONCRETE URL, because that is what a browser
+     *     produces. Since P17 a registry key `'/virtual-cards/[cardId]'` WOULD match every
+     *     real card url and take its answer and prefix away from `/virtual-cards`, and it would
+     *     fail the registry->docs parity check besides.
      *   · `/virtual-cards/transactions` — static, and P08's route. IT NO LONGER INHERITS.
      *     P08 measured it and ruled it `limited`, so it carries a key of its own and is
      *     pinned below beside P10's three `desktop` children rather than here. What moved
@@ -578,9 +575,10 @@ describe('the shipped registry', () => {
      * who knows `ready` is a positive claim sees it reaching a route P07 never ruled and
      * writes a `limited` key to fence it off. Such a key would put a ruling nobody made
      * into a row that reads `unruled`; `parityDiff` compares key STRINGS to row STRINGS
-     * and resolves no paths, so it would go red in the registry->docs direction for a key
-     * that changes no behaviour at all. For `[cardId]` it would not even do that much —
-     * the key matches no path a browser produces, so it would fence nothing.
+     * and resolves no paths, so it would go red in the registry->docs direction whatever
+     * the key does. For `[cardId]` the key would do a great deal: since P17 a bracket key
+     * matches real card urls, so it would silently move every card url's answer and prefix
+     * while reading like a ruling somebody made.
      *
      * READ P08'S KEY AS THE OPPOSITE CASE RATHER THAN AS THAT EDIT LANDING ANYWAY. The
      * distinction is not the word in the key, it is whether a ruled row lands with it:
@@ -595,10 +593,10 @@ describe('the shipped registry', () => {
     const absent = '/virtual-cards/[cardId]';
     expect(
       keys,
-      `${absent} must carry NO key: it inherits from /virtual-cards, it has no ruled row ` +
-        'in docs/design/pwa.md for the parity check to pair with, and a bracket key is ' +
-        'structurally blind besides — it matches no path a browser produces, so it would ' +
-        'fence nothing while reading exactly like a ruling somebody made',
+      `${absent} must carry NO key: it inherits from /virtual-cards, and docs/design/pwa.md ` +
+        'has no ruled row for the parity check to pair with. Since P17 a bracket key DOES ' +
+        "match real card urls, so such a key would silently move every card url's answer " +
+        'and prefix while reading like a ruling somebody made.',
     ).not.toContain(absent);
 
     // A real card id, as `e2e/virtual-cards.mobile.spec.ts` navigates it (UUIDv7, per
@@ -840,7 +838,155 @@ describe('the shipped registry', () => {
       prefix: '/virtual-cards',
     });
   });
+
+  it('holds at least one placeholder key, so the two hygiene checks below are not vacuous (P17)', () => {
+    // Both checks below pass trivially on a table with no bracketed key at all.
+    expect(keys.filter((k) => k.split('/').some(isPlaceholderSegment)).length).toBeGreaterThan(0);
+  });
+
+  it('spells every bracketed key segment as one well-formed [name]: no [...x] or [[...x]] (P17)', () => {
+    // Catch-all keys are given no meaning by P17, so the registry refuses them outright
+    // rather than leaving their behaviour to whatever the placeholder test happens to do.
+    expect(
+      malformedBracketKeys(keys),
+      'every key segment containing [ or ] must be exactly one [name] pair, name not ' +
+        'starting with "." (catch-all [...x] and [[...x]] keys have no meaning)',
+    ).toEqual([]);
+  });
+
+  it('proves the bracket-hygiene check can fail (P17)', () => {
+    expect(
+      malformedBracketKeys([
+        '/a/[x]',
+        '/a/b',
+        '/a/[...x]',
+        '/a/[[...x]]',
+        '/a/b[x]',
+        '/a/[]',
+        '/a/[x',
+        '/a/x]',
+        '/a/[x]/[y]',
+      ]),
+    ).toEqual(['/a/[...x]', '/a/[[...x]]', '/a/b[x]', '/a/[]', '/a/[x', '/a/x]']);
+  });
+
+  it('holds no two keys that differ only in placeholder name (FR-2 2.B, P17)', () => {
+    // `/a/[x]` and `/a/[y]` match exactly the same addresses, so which one answers would be
+    // decided by the tie-break rather than by a ruling. Refused here instead of at runtime.
+    expect(
+      placeholderShapeCollisions(keys),
+      'keys of identical shape (same segments, placeholders renamed): keep one',
+    ).toEqual([]);
+  });
+
+  it('proves the shape-collision check can fail, and does not over-match (P17)', () => {
+    expect(placeholderShapeCollisions(['/a/[x]', '/a/[y]', '/a/b', '/c/[x]'])).toEqual([
+      ['/a/[x]', '/a/[y]'],
+    ]);
+    expect(placeholderShapeCollisions(['/a/[x]', '/a/[x]/b', '/b/[x]'])).toEqual([]);
+  });
+
+  it('answers no static page through a placeholder key (FR-6, P17)', () => {
+    const claimed = staticRoutesClaimedByPlaceholder(pageRoutes(), MOBILE_READINESS);
+    expect(
+      claimed.map(
+        (route) =>
+          `${route} is a static page answered by the placeholder key ` +
+          `${dispositionFor(route).prefix}. It needs a registry key of its own AND its ` +
+          'Page-readiness row in docs/design/pwa.md, in one commit.',
+      ),
+    ).toEqual([]);
+  });
+
+  it('has a placeholder key and a static sibling page, so the sibling guard is not vacuous (FR-6, P17)', () => {
+    const parentOf = (p: string) => p.slice(0, p.lastIndexOf('/')) || '/';
+    const placeholderKeys = keys.filter((k) => k.split('/').some(isPlaceholderSegment));
+    expect(placeholderKeys.length).toBeGreaterThan(0);
+    const staticSiblings = pageRoutes().filter(
+      (r) =>
+        !r.includes('[') && placeholderKeys.some((k) => k !== r && parentOf(k) === parentOf(r)),
+    );
+    expect(staticSiblings).toContain('/expenses/all');
+  });
+
+  it('proves the sibling guard can fail: an unkeyed static sibling is flagged until it has a key (FR-6, P17)', () => {
+    const routes = ['/expenses', '/expenses/[reportId]', '/expenses/all', '/expenses/drafts'];
+    const T = Object.freeze({
+      '/expenses': 'limited',
+      '/expenses/[reportId]': 'limited',
+      '/expenses/all': 'desktop',
+    } as const) as DispositionTable;
+    expect(staticRoutesClaimedByPlaceholder(routes, T)).toEqual(['/expenses/drafts']);
+    const keyed = Object.freeze({ ...T, '/expenses/drafts': 'limited' }) as DispositionTable;
+    expect(staticRoutesClaimedByPlaceholder(routes, keyed)).toEqual([]);
+  });
+
+  it('flags a deeper static page under an unkeyed sibling until it has its own key (FR-6, P17)', () => {
+    // No `/expenses/drafts` page exists here, so the key the guard asks for is the one a
+    // page can actually carry: `names only routes that exist` would refuse `/expenses/drafts`.
+    const routes = [
+      '/expenses',
+      '/expenses/[reportId]',
+      '/expenses/all',
+      '/expenses/drafts/archive',
+    ];
+    const T = Object.freeze({
+      '/expenses': 'limited',
+      '/expenses/[reportId]': 'limited',
+      '/expenses/all': 'desktop',
+    } as const) as DispositionTable;
+    expect(staticRoutesClaimedByPlaceholder(routes, T)).toEqual(['/expenses/drafts/archive']);
+    const keyed = Object.freeze({
+      ...T,
+      '/expenses/drafts/archive': 'limited',
+    }) as DispositionTable;
+    expect(staticRoutesClaimedByPlaceholder(routes, keyed)).toEqual([]);
+  });
+
+  it('proves the sibling guard reaches the real tree: dropping /expenses/all flags exactly it (FR-6, P17)', () => {
+    // The walker must reach `/expenses/all` through `(app)`; `/expenses/approvals` keeps its key.
+    const without = Object.freeze(
+      Object.fromEntries(Object.entries(MOBILE_READINESS).filter(([k]) => k !== '/expenses/all')),
+    ) as DispositionTable;
+    expect(Object.keys(without)).toHaveLength(keys.length - 1);
+    expect(staticRoutesClaimedByPlaceholder(pageRoutes(), without)).toEqual(['/expenses/all']);
+  });
 });
+
+/**
+ * The test's own copy of the placeholder predicate (P17): one bracket pair around a
+ * non-empty name that does not start with `.`. The baseline phase leaves
+ * `mobileReadiness.ts` untouched, so the copy lives here; the matcher phase spells the same
+ * rule in the module and the ADR records it, so the two can be compared.
+ */
+function isPlaceholderSegment(segment: string): boolean {
+  return /^\[(?!\.)[^[\]]+\]$/.test(segment);
+}
+
+/** Keys with any segment that contains `[` or `]` but is not a well-formed placeholder. */
+function malformedBracketKeys(keys: readonly string[]): string[] {
+  return keys.filter((key) =>
+    key
+      .split('/')
+      .some((seg) => (seg.includes('[') || seg.includes(']')) && !isPlaceholderSegment(seg)),
+  );
+}
+
+/**
+ * Groups of keys that are identical once every placeholder segment is replaced with `[]`.
+ * Only groups of two or more are returned, each in input order.
+ */
+function placeholderShapeCollisions(keys: readonly string[]): string[][] {
+  const byShape = new Map<string, string[]>();
+  for (const key of keys) {
+    const shape = key
+      .split('/')
+      .map((seg) => (isPlaceholderSegment(seg) ? '[]' : seg))
+      .join('/');
+    byShape.set(shape, [...(byShape.get(shape) ?? []), key]);
+  }
+  return [...byShape.values()].filter((group) => group.length > 1);
+}
 
 /**
  * Does `/a/b` exist as a page? Same walk as `Sidebar.nav.test.ts`'s, and deliberately a
@@ -869,6 +1015,797 @@ function routeExists(to: string): boolean {
   };
   return walk(LOCALE_ROOT, to.split('/').filter(Boolean));
 }
+
+/**
+ * How the page walker treats one directory name (P17). Interception folders (`(.)x`,
+ * `(..)x`, `(..)(..)x`, `(...)x`) are tested FIRST and explicitly: `(.)x` does not end in
+ * `)`, so the group test below would otherwise read it as a fixed segment.
+ */
+function routeDirKind(name: string): 'skip' | 'group' | 'segment' {
+  if (name.startsWith('_') || name.startsWith('@') || /^\(\.{1,3}\)/.test(name)) return 'skip';
+  if (name.startsWith('(') && name.endsWith(')')) return 'group';
+  return 'segment';
+}
+
+/**
+ * Every `page.tsx` under `root` as a locale-free address (P17): route groups are
+ * transparent, `_private`, `@slot` and interception folders are skipped, and `[x]` segments
+ * are KEPT in their bracket spelling — callers decide what to do with them. Sorted and
+ * de-duplicated, so the result is deterministic. The list-producing sibling of
+ * `routeExists`, which can only answer yes or no for one path.
+ */
+function pageRoutes(root: string = LOCALE_ROOT): string[] {
+  const found = new Set<string>();
+  const walk = (dir: string, segments: readonly string[]): void => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      if (entry.isFile() && entry.name === 'page.tsx')
+        found.add(segments.length === 0 ? '/' : `/${segments.join('/')}`);
+      if (!entry.isDirectory()) continue;
+      const kind = routeDirKind(entry.name);
+      if (kind === 'skip') continue;
+      walk(join(dir, entry.name), kind === 'group' ? segments : [...segments, entry.name]);
+    }
+  };
+  walk(root, []);
+  return [...found].sort();
+}
+
+/**
+ * The FR-6 sibling guard (P17): static page routes (no `[` segment) that the matcher answers
+ * through a placeholder key. A static page beside a placeholder, or under one of its
+ * siblings, needs a key of its own or it silently takes the placeholder's ruling.
+ * Behavioural, not structural: it asks the matcher, so it covers deeper pages, pages inside
+ * route groups and keys with a placeholder in any position. Pure.
+ */
+function staticRoutesClaimedByPlaceholder(
+  routes: readonly string[],
+  table: DispositionTable,
+): string[] {
+  return routes.filter(
+    (r) => !r.includes('[') && (dispositionFor(r, table).prefix ?? '').includes('['),
+  );
+}
+
+/**
+ * FROZEN: verbatim copy of `dispositionFor` as it was before P17 (then
+ * `mobileReadiness.ts:842-866`), the "before" oracle for P17's regression baseline. NEVER EDIT
+ * IT, not even to agree with a later ruling. The baseline runs it and the live matcher against
+ * the SAME frozen snapshot, `BASELINE_TABLE` below, never against the live `MOBILE_READINESS`:
+ * the old matcher cannot see placeholder keys, so against the live table it would compare
+ * `/expenses`'s word with `/expenses/[reportId]`'s for every report address, the lock-step P17
+ * retired. Against the snapshot the baseline checks matching SEMANTICS only: re-ruling a route
+ * or adding a key (placeholder or not) to the live table cannot redden it, and a change in how
+ * keys match does, which is the moment a reader should look. Re-rulings are caught by the pins
+ * that name a route (B5, the parity block). It still calls the module's `normalizePath`, which
+ * P17 does not change.
+ */
+function legacyDispositionFor(
+  path: string,
+  table: DispositionTable = MOBILE_READINESS,
+): DispositionMatch {
+  const target = normalizePath(path);
+  let best: string | null = null;
+
+  for (const rawKey of Object.keys(table)) {
+    const key = normalizePath(rawKey);
+    // Exact, or a prefix that ends on a segment boundary. `/travel` must not claim
+    // `/travel-agency`; a bare `startsWith` does, and does it silently.
+    const matches = target === key || (key === '/' ? true : target.startsWith(`${key}/`));
+    if (!matches) continue;
+    if (best === null || key.length > best.length) best = key;
+  }
+
+  if (best === null) return { disposition: DEFAULT_DISPOSITION, prefix: null };
+  // Non-null by construction: `best` is a normalized key, and every key normalizes to
+  // itself in a well-formed table (`mobileReadiness.test.ts` asserts that of the shipped
+  // one). An injected table with a denormalized key still resolves — the lookup is done
+  // against the raw keys below.
+  const raw = Object.keys(table).find((k) => normalizePath(k) === best) as string;
+  return { disposition: table[raw] as Disposition, prefix: best };
+}
+
+/**
+ * The table the regression baseline resolves against (P17): a literal snapshot of
+ * `MOBILE_READINESS` as the matcher phase shipped it, all sixty rows in the module's order.
+ * FROZEN like `legacyDispositionFor` and for the same reason: B1, B2, B4 and B6 compare two
+ * MATCHERS, so both must read one table that no later ruling touches. NEVER sync it with the
+ * live table. A re-ruling, a new route or a new placeholder key belongs in `MOBILE_READINESS`
+ * and is pinned by the parity block and the route-naming cases; editing this copy only
+ * changes what the baseline compares, never what ships.
+ */
+const BASELINE_TABLE: DispositionTable = Object.freeze({
+  '/admin/roles': 'desktop',
+  '/login': 'ready',
+  '/enroll-mfa': 'ready',
+  '/change-password': 'ready',
+  '/reset-password': 'ready',
+  '/notifications': 'ready',
+  '/dashboard': 'ready',
+  '/delegations': 'limited',
+  '/travel': 'limited',
+  '/profile': 'ready',
+  '/users': 'desktop',
+  '/admin/approval-workflows': 'desktop',
+  '/admin/api-keys': 'desktop',
+  '/admin/audit-trail': 'desktop',
+  '/admin/authentication': 'desktop',
+  '/admin/business-units': 'desktop',
+  '/admin/control-evaluation': 'desktop',
+  '/admin/departments': 'desktop',
+  '/admin/expense-categories': 'desktop',
+  '/admin/fiscal-years': 'desktop',
+  '/admin/fraud-detection': 'desktop',
+  '/admin/fx-rates': 'desktop',
+  '/admin/integrations': 'desktop',
+  '/admin/job-levels': 'desktop',
+  '/admin/legal-entities': 'desktop',
+  '/admin/mileage-rates': 'desktop',
+  '/admin/modules': 'desktop',
+  '/admin/notification-templates': 'desktop',
+  '/admin/per-diem-rates': 'desktop',
+  '/admin/platform': 'desktop',
+  '/admin/policies': 'desktop',
+  '/admin/policy-rules': 'desktop',
+  '/admin/policy-violations': 'desktop',
+  '/admin/travel-categories': 'desktop',
+  '/admin/assistant-feedback': 'desktop',
+  '/netsuite/business-units': 'desktop',
+  '/netsuite/classes': 'desktop',
+  '/netsuite/departments': 'desktop',
+  '/netsuite/expense-categories': 'desktop',
+  '/netsuite/gl-accounts': 'desktop',
+  '/netsuite/locations': 'desktop',
+  '/netsuite/posting': 'desktop',
+  '/netsuite/people': 'desktop',
+  '/netsuite/settings': 'desktop',
+  '/netsuite/subsidiaries': 'desktop',
+  '/netsuite/sync': 'desktop',
+  '/netsuite/tax-groups': 'desktop',
+  '/netsuite/vendors': 'desktop',
+  '/expenses/all': 'desktop',
+  '/virtual-cards/import': 'desktop',
+  '/virtual-cards/import-cards': 'desktop',
+  '/virtual-cards/statements': 'desktop',
+  '/expenses': 'limited',
+  '/expenses/approvals': 'limited',
+  '/expenses/[reportId]': 'limited',
+  '/virtual-cards': 'ready',
+  '/virtual-cards/requests': 'ready',
+  '/analytics': 'limited',
+  '/budgets': 'limited',
+  '/virtual-cards/transactions': 'limited',
+} as const);
+
+/* ─────────────────────────────────────────────────────────────────────────────────────────
+ * REGRESSION BASELINE (P17): every page route's answer, before and after.
+ * ────────────────────────────────────────────────────────────────────────────────────── */
+
+/** Fixed UUIDv7-shaped ids: no random ids and no clock, so the corpus is deterministic. */
+const CORPUS_ID = '0199c7b4-8f3a-7000-8000-0000000000f1';
+const CORPUS_CHILD_ID = '0199c7b4-8f3a-7000-8000-0000000000f2';
+
+/** One address the baseline resolves, and where it came from. */
+interface CorpusEntry {
+  /** The page route it was derived from, bracket spelling kept: `/expenses/[reportId]`. */
+  route: string;
+  /** `static` routes have no `[x]`; a dynamic route yields a `concrete` and a `literal` form. */
+  form: 'static' | 'concrete' | 'literal';
+  address: string;
+}
+
+/**
+ * Each route, its `[x]` segments made concrete (dynamic routes keep their literal spelling
+ * too), then × {itself, one segment deeper} × {bare, `/en…`, `/fr-CA…`}. The deeper child
+ * covers "Continue anyway covers everything under the prefix".
+ */
+function buildCorpus(routes: readonly string[]): CorpusEntry[] {
+  const under = (base: string, tail: string) => (base === '/' ? `/${tail}` : `${base}/${tail}`);
+  const entries: CorpusEntry[] = [];
+  for (const route of routes) {
+    const bases: Array<Pick<CorpusEntry, 'form' | 'address'>> = route.includes('[')
+      ? [
+          {
+            form: 'concrete',
+            address: route
+              .split('/')
+              .map((seg) => (seg.startsWith('[') ? CORPUS_ID : seg))
+              .join('/'),
+          },
+          { form: 'literal', address: route },
+        ]
+      : [{ form: 'static', address: route }];
+    for (const { form, address } of bases)
+      for (const depth of [address, under(address, CORPUS_CHILD_ID)])
+        for (const locale of ['', '/en', '/fr-CA'])
+          entries.push({ route, form, address: depth === '/' && locale ? locale : locale + depth });
+  }
+  return entries;
+}
+
+const PAGE_ROUTES = pageRoutes();
+const CORPUS: readonly CorpusEntry[] = buildCorpus(PAGE_ROUTES);
+
+type Resolver = (path: string) => DispositionMatch;
+
+interface AnswerDiff extends CorpusEntry {
+  a: DispositionMatch;
+  b: DispositionMatch;
+}
+
+function sameAnswer(x: DispositionMatch, y: DispositionMatch): boolean {
+  return x.disposition === y.disposition && x.prefix === y.prefix;
+}
+
+function showAnswer(m: DispositionMatch): string {
+  return `{${m.disposition}, ${m.prefix === null ? 'null' : `'${m.prefix}'`}}`;
+}
+
+/** Corpus entries on which two resolvers disagree. Pure. */
+function answerDiff(corpus: readonly CorpusEntry[], a: Resolver, b: Resolver): AnswerDiff[] {
+  const out: AnswerDiff[] = [];
+  for (const entry of corpus) {
+    const x = a(entry.address);
+    const y = b(entry.address);
+    if (!sameAnswer(x, y)) out.push({ ...entry, a: x, b: y });
+  }
+  return out;
+}
+
+/**
+ * The answers P17 is ALLOWED to move, keyed by page route. Empty in the baseline phase; the
+ * matcher phase (P17 R8) declares its one move: every real report address now answers
+ * through the report key itself.
+ *
+ * A declaration covers more than its route's own `concrete` corpus entries. The corpus also
+ * builds a "one segment deeper" child under every STATIC route, and the child of `/expenses`
+ * is `/expenses/<id>`: a report url by shape, so it moves with the reports. `moveViolations`
+ * therefore also excuses any moved address that is a concrete url of a declared route (see
+ * `isConcreteUrlOf`), is NOT itself a page route, AND lands on exactly the declared answer.
+ * The page-route exclusion keeps a static sibling (`/expenses/approvals`, or a future unkeyed
+ * `/expenses/drafts`) from sliding onto the report key unnoticed: it is report-shaped too.
+ * Only the route's own concrete entries are REQUIRED to move.
+ *
+ * The declared answer is what the live matcher gives against `BASELINE_TABLE`, not a pin of
+ * the live table: a later re-ruling of `/expenses/[reportId]` leaves this line alone.
+ */
+const INTENDED_MOVES: Readonly<Record<string, DispositionMatch>> = {
+  '/expenses/[reportId]': { disposition: 'limited', prefix: '/expenses/[reportId]' },
+};
+
+/**
+ * Is `address` a concrete url of page route `route`? After locale stripping and
+ * normalization it has EXACTLY the route's segment count, and every fixed route segment
+ * equals the address segment at the same position (a placeholder segment takes any value).
+ * Deliberately independent of `dispositionFor`, so B1 does not excuse a move by asking the
+ * matcher under test. `/expenses/<id>` is one of `/expenses/[reportId]`; `/expenses/all/<id>`
+ * (three segments) is not.
+ */
+function isConcreteUrlOf(route: string, address: string): boolean {
+  const routeSegs = route.split('/').filter(Boolean);
+  const addressSegs = normalizePath(address).split('/').filter(Boolean);
+  return (
+    routeSegs.length === addressSegs.length &&
+    routeSegs.every((seg, i) => isPlaceholderSegment(seg) || seg === addressSegs[i])
+  );
+}
+
+/**
+ * Everything wrong with `diff` (live `a` vs legacy `b`) given `intended`, one line per
+ * address: an undeclared move, a move to the wrong answer, or a declared move that did not
+ * happen. Empty means the diff is exactly what `intended` declares. A moved address outside
+ * a declared route's own concrete entries is excused only when it is a concrete url of that
+ * route, is not itself a page route in `corpus`, and lands on exactly the declared answer (see
+ * `INTENDED_MOVES`).
+ */
+function moveViolations(
+  corpus: readonly CorpusEntry[],
+  diff: readonly AnswerDiff[],
+  intended: Readonly<Record<string, DispositionMatch>>,
+): string[] {
+  const out: string[] = [];
+  for (const d of diff) {
+    const want = d.form === 'concrete' ? intended[d.route] : undefined;
+    if (want === undefined) {
+      const isPageRoute = corpus.some((e) => e.route === normalizePath(d.address));
+      const excused =
+        !isPageRoute &&
+        Object.entries(intended).some(
+          ([route, answer]) => isConcreteUrlOf(route, d.address) && sameAnswer(d.a, answer),
+        );
+      if (!excused)
+        out.push(
+          `${d.address} (from ${d.route}) moved without being declared in INTENDED_MOVES: ` +
+            `${showAnswer(d.b)} → ${showAnswer(d.a)}`,
+        );
+    } else if (!sameAnswer(d.a, want))
+      out.push(
+        `${d.address} (from ${d.route}) moved to ${showAnswer(d.a)}, but INTENDED_MOVES ` +
+          `declares ${showAnswer(want)}`,
+      );
+  }
+  const moved = new Set(diff.map((d) => d.address));
+  for (const route of Object.keys(intended)) {
+    const declared = corpus.filter((e) => e.route === route && e.form === 'concrete');
+    if (declared.length === 0)
+      out.push(`INTENDED_MOVES names ${route}, which has no concrete entry in the corpus`);
+    for (const e of declared)
+      if (!moved.has(e.address))
+        out.push(`${e.address} (from ${route}) is declared in INTENDED_MOVES but did not move`);
+  }
+  return out;
+}
+
+describe('regression baseline: every page route answers as it did before P17 (P17)', () => {
+  // Both matchers read the frozen `BASELINE_TABLE`, never the live `MOBILE_READINESS`: this
+  // block checks matching semantics only (see `legacyDispositionFor`).
+  const live: Resolver = (p) => dispositionFor(p, BASELINE_TABLE);
+  const legacy: Resolver = (p) => legacyDispositionFor(p, BASELINE_TABLE);
+  // VeloExpense: VeloExpense's two dynamic pages (ExpenseOS also has a print view and a
+  // card page, neither of which VeloExpense has).
+  const DYNAMIC_ROUTES = ['/admin/approval-workflows/[id]', '/expenses/[reportId]'];
+
+  it('B1: moves exactly the answers INTENDED_MOVES declares, and no other', () => {
+    expect(
+      moveViolations(CORPUS, answerDiff(CORPUS, live, legacy), INTENDED_MOVES),
+      'the live matcher answers differently from the frozen pre-P17 matcher; every move ' +
+        'must be declared in INTENDED_MOVES, and every declared move must happen',
+    ).toEqual([]);
+  });
+
+  it('B2: no moved answer changes its disposition (FR-4: only a prefix may move)', () => {
+    const changed = answerDiff(CORPUS, live, legacy)
+      .filter((d) => d.a.disposition !== d.b.disposition)
+      .map((d) => `${d.address}: ${showAnswer(d.b)} → ${showAnswer(d.a)}`);
+    expect(changed).toEqual([]);
+    // The declared moves themselves keep the frozen matcher's disposition too.
+    for (const [route, want] of Object.entries(INTENDED_MOVES))
+      for (const e of CORPUS.filter((c) => c.route === route && c.form === 'concrete'))
+        expect(want.disposition, e.address).toBe(legacy(e.address).disposition);
+  });
+
+  it('B3: the corpus is the real route tree, not an empty or partial walk', () => {
+    // VeloExpense: its tree has 55 pages today (ExpenseOS: 65), so the floor is 50.
+    expect(PAGE_ROUTES.length).toBeGreaterThanOrEqual(50);
+    for (const route of ['/', '/admin/roles', '/login', '/expenses', '/expenses/all'])
+      expect(PAGE_ROUTES, route).toContain(route);
+    expect(PAGE_ROUTES.filter((r) => r.includes('['))).toEqual(DYNAMIC_ROUTES);
+    for (const route of DYNAMIC_ROUTES)
+      for (const form of ['concrete', 'literal'] as const)
+        expect(
+          CORPUS.some((e) => e.route === route && e.form === form),
+          `${route} (${form})`,
+        ).toBe(true);
+    // Skipped folders stay skipped: `(app)/expenses/_workbench` exists and is not a route.
+    expect(PAGE_ROUTES.filter((r) => /\/[_@(]/.test(r))).toEqual([]);
+    // Addresses are unique, so a diff entry names exactly one corpus entry.
+    expect(new Set(CORPUS.map((e) => e.address)).size).toBe(CORPUS.length);
+    // Static ×1, dynamic ×2 (concrete + literal); each × 2 depths × 3 locale spellings.
+    expect(CORPUS.length).toBe((PAGE_ROUTES.length + DYNAMIC_ROUTES.length) * 6);
+    expect(
+      CORPUS.filter((e) => e.route === '/expenses/[reportId]' && e.form === 'concrete'),
+    ).toEqual([
+      { route: '/expenses/[reportId]', form: 'concrete', address: `/expenses/${CORPUS_ID}` },
+      { route: '/expenses/[reportId]', form: 'concrete', address: `/en/expenses/${CORPUS_ID}` },
+      {
+        route: '/expenses/[reportId]',
+        form: 'concrete',
+        address: `/fr-CA/expenses/${CORPUS_ID}`,
+      },
+      {
+        route: '/expenses/[reportId]',
+        form: 'concrete',
+        address: `/expenses/${CORPUS_ID}/${CORPUS_CHILD_ID}`,
+      },
+      {
+        route: '/expenses/[reportId]',
+        form: 'concrete',
+        address: `/en/expenses/${CORPUS_ID}/${CORPUS_CHILD_ID}`,
+      },
+      {
+        route: '/expenses/[reportId]',
+        form: 'concrete',
+        address: `/fr-CA/expenses/${CORPUS_ID}/${CORPUS_CHILD_ID}`,
+      },
+    ]);
+  });
+
+  it('B3: the walker skips private, slot and interception folders and elides groups', () => {
+    expect(routeDirKind('_workbench')).toBe('skip');
+    expect(routeDirKind('@modal')).toBe('skip');
+    expect(routeDirKind('(.)photo')).toBe('skip');
+    expect(routeDirKind('(..)photo')).toBe('skip');
+    expect(routeDirKind('(..)(..)photo')).toBe('skip');
+    expect(routeDirKind('(...)photo')).toBe('skip');
+    expect(routeDirKind('(app)')).toBe('group');
+    expect(routeDirKind('[reportId]')).toBe('segment');
+    expect(routeDirKind('expenses')).toBe('segment');
+  });
+
+  it('B4: the diff is wired: dropping /expenses/approvals moves exactly that route', () => {
+    const without = Object.freeze(
+      Object.fromEntries(
+        Object.entries(BASELINE_TABLE).filter(([k]) => k !== '/expenses/approvals'),
+      ),
+    ) as DispositionTable;
+    expect(Object.keys(without)).toHaveLength(Object.keys(BASELINE_TABLE).length - 1);
+    const diff = answerDiff(CORPUS, (p) => dispositionFor(p, without), live);
+    expect([...new Set(diff.map((d) => d.route))]).toEqual(['/expenses/approvals']);
+    expect(diff.map((d) => d.address)).toEqual(
+      CORPUS.filter((e) => e.route === '/expenses/approvals').map((e) => e.address),
+    );
+    expect(diff).toHaveLength(6);
+    // And B1's check fails on it, naming every moved address.
+    const undeclared = moveViolations(CORPUS, diff, {});
+    expect(undeclared).toHaveLength(6);
+    for (const d of diff)
+      expect(undeclared.some((v) => v.startsWith(`${d.address} (from /expenses/approvals)`))).toBe(
+        true,
+      );
+  });
+
+  it('B4: B1 fails on a declared move that did not happen, naming each address', () => {
+    const declared = {
+      '/expenses/[reportId]': { disposition: 'limited', prefix: '/expenses/[reportId]' },
+    } as const;
+    const absent = moveViolations(CORPUS, [], declared);
+    const addresses = CORPUS.filter(
+      (e) => e.route === '/expenses/[reportId]' && e.form === 'concrete',
+    ).map((e) => e.address);
+    expect(absent).toEqual(
+      addresses.map(
+        (a) => `${a} (from /expenses/[reportId]) is declared in INTENDED_MOVES but did not move`,
+      ),
+    );
+    // Only the route's own concrete entries are REQUIRED to move: the report-shaped child of
+    // the static `/expenses` route is excused when it moves, never demanded when it does not.
+    const parentChildren = CORPUS.filter(
+      (e) => e.route === '/expenses' && e.address.endsWith(`/expenses/${CORPUS_CHILD_ID}`),
+    ).map((e) => e.address);
+    expect(parentChildren).toHaveLength(3);
+    for (const a of parentChildren) expect(absent.join('\n')).not.toContain(a);
+    expect(
+      moveViolations(CORPUS, [], { '/no/such/[route]': declared['/expenses/[reportId]'] }),
+    ).toEqual(['INTENDED_MOVES names /no/such/[route], which has no concrete entry in the corpus']);
+  });
+
+  it('B4: B1 excuses a report-shaped move from another route, but never a deeper one', () => {
+    const declared = INTENDED_MOVES['/expenses/[reportId]'] as DispositionMatch;
+    const ownMoves: AnswerDiff[] = CORPUS.filter(
+      (e) => e.route === '/expenses/[reportId]' && e.form === 'concrete',
+    ).map((e) => ({ ...e, a: declared, b: { disposition: 'limited', prefix: '/expenses' } }));
+    // Excused: `/expenses/<id>` from the static `/expenses` route, in all three spellings.
+    const reportShaped: AnswerDiff[] = ['', '/en', '/fr-CA'].map((locale) => ({
+      route: '/expenses',
+      form: 'static',
+      address: `${locale}/expenses/${CORPUS_CHILD_ID}`,
+      a: declared,
+      b: { disposition: 'limited', prefix: '/expenses' },
+    }));
+    expect(moveViolations(CORPUS, [...ownMoves, ...reportShaped], INTENDED_MOVES)).toEqual([]);
+    // Not excused: report-shaped, but landing on a different answer.
+    const wrongAnswer: AnswerDiff = {
+      ...(reportShaped[0] as AnswerDiff),
+      a: { disposition: 'desktop', prefix: '/expenses/[reportId]' },
+    };
+    expect(moveViolations(CORPUS, [...ownMoves, wrongAnswer], INTENDED_MOVES)).toEqual([
+      `/expenses/${CORPUS_CHILD_ID} (from /expenses) moved without being declared in ` +
+        "INTENDED_MOVES: {limited, '/expenses'} → {desktop, '/expenses/[reportId]'}",
+    ]);
+    // Not excused: three segments, even though it lands on exactly the declared answer.
+    const deeper: AnswerDiff = {
+      route: '/expenses/all',
+      form: 'static',
+      address: `/expenses/all/${CORPUS_CHILD_ID}`,
+      a: declared,
+      b: { disposition: 'desktop', prefix: '/expenses/all' },
+    };
+    expect(moveViolations(CORPUS, [...ownMoves, deeper], INTENDED_MOVES)).toEqual([
+      `/expenses/all/${CORPUS_CHILD_ID} (from /expenses/all) moved without being declared in ` +
+        "INTENDED_MOVES: {desktop, '/expenses/all'} → {limited, '/expenses/[reportId]'}",
+    ]);
+    // The shape check itself, independent of the matcher.
+    expect(isConcreteUrlOf('/expenses/[reportId]', `/fr-CA/expenses/${CORPUS_ID}`)).toBe(true);
+    expect(isConcreteUrlOf('/expenses/[reportId]', `/expenses/${CORPUS_ID}/x`)).toBe(false);
+    expect(isConcreteUrlOf('/expenses/[reportId]', '/expenses')).toBe(false);
+    expect(isConcreteUrlOf('/expenses/[reportId]', `/print/${CORPUS_ID}`)).toBe(false);
+  });
+
+  it('B4: B1 reports a static sibling that moves onto exactly the declared answer', () => {
+    // Report-shaped AND landing on the declared answer, so only the page-route exclusion in
+    // `moveViolations` stands between these moves and a silent excuse.
+    // Every corpus entry of `route`, both depths and all three spellings, in corpus order.
+    const expected = (corpus: readonly CorpusEntry[], route: string, before: string) =>
+      corpus
+        .filter((e) => e.route === route)
+        .map(
+          (e) =>
+            `${e.address} (from ${route}) moved without being declared in INTENDED_MOVES: ` +
+            `{limited, '${before}'} → {limited, '/expenses/[reportId]'}`,
+        );
+
+    // A shipped sibling loses its key on the live side.
+    const without = Object.freeze(
+      Object.fromEntries(
+        Object.entries(BASELINE_TABLE).filter(([k]) => k !== '/expenses/approvals'),
+      ),
+    ) as DispositionTable;
+    const dropped = answerDiff(CORPUS, (p) => dispositionFor(p, without), legacy);
+    expect(moveViolations(CORPUS, dropped, INTENDED_MOVES)).toEqual(
+      expected(CORPUS, '/expenses/approvals', '/expenses/approvals'),
+    );
+
+    // A future page with no key at all: before P17 it fell under `/expenses`.
+    const withDrafts = buildCorpus([...PAGE_ROUTES, '/expenses/drafts']);
+    const drafts = answerDiff(withDrafts, live, legacy);
+    expect(moveViolations(withDrafts, drafts, INTENDED_MOVES)).toEqual(
+      expected(withDrafts, '/expenses/drafts', '/expenses'),
+    );
+  });
+
+  it('B5: pins the FR-4 rows nothing else pins', () => {
+    expect(dispositionFor('/expenses')).toEqual({ disposition: 'limited', prefix: '/expenses' });
+    expect(dispositionFor(`/print/expenses/${CORPUS_ID}`)).toEqual({
+      disposition: 'limited',
+      prefix: null,
+    });
+  });
+
+  it("B6: the frozen matcher answers a real report address through /expenses's key", () => {
+    expect(legacyDispositionFor(`/expenses/${CORPUS_ID}`, BASELINE_TABLE)).toEqual({
+      disposition: 'limited',
+      prefix: '/expenses',
+    });
+  });
+
+  it('resolves fixed-word-only tables exactly as the frozen matcher does (FR-1)', () => {
+    const SYNTHETIC = Object.freeze({
+      '/': 'ready',
+      '/a': 'desktop',
+      '/a/b': 'limited',
+      '/a-b': 'desktop',
+    } as const) as DispositionTable;
+    const SYNTHETIC_ADDRESSES = ['/', '/a', '/a/b/c', '/a-b/x', '/ab', '/en/a', '/a/?q', '/a/#h'];
+    const fixedOnly = Object.freeze(
+      Object.fromEntries(
+        Object.entries(MOBILE_READINESS).filter(([k]) => !k.split('/').some(isPlaceholderSegment)),
+      ),
+    ) as DispositionTable;
+    // Anti-vacuity: something was stripped, and plenty is left.
+    expect(Object.keys(fixedOnly).length).toBeLessThan(Object.keys(MOBILE_READINESS).length);
+    expect(Object.keys(fixedOnly).length).toBeGreaterThan(30);
+    // The `/` key is the special case in the matcher and needs a witness.
+    expect(dispositionFor('/ab', SYNTHETIC)).toEqual({ disposition: 'ready', prefix: '/' });
+
+    const addresses = [...CORPUS.map((e) => e.address), ...SYNTHETIC_ADDRESSES];
+    for (const table of [SYNTHETIC, fixedOnly]) {
+      const differ = addresses
+        .filter((p) => !sameAnswer(dispositionFor(p, table), legacyDispositionFor(p, table)))
+        .map(
+          (p) =>
+            `${p}: ${showAnswer(legacyDispositionFor(p, table))} → ${showAnswer(dispositionFor(p, table))}`,
+        );
+      expect(differ).toEqual([]);
+    }
+  });
+});
+
+/* ─────────────────────────────────────────────────────────────────────────────────────────
+ * PLACEHOLDER SEGMENTS AND RULED PRECEDENCE (P17): a `[name]` key segment matches any one
+ * real segment; more segments win, then a fixed word beats a placeholder at the first
+ * position where two keys differ. Each case carries its QA ID (R = red before the matcher
+ * change, G = green before and after). Injected tables use `desktop` wherever a hit must be
+ * told apart from the default (ADR-0005 D2 clause 4).
+ * ────────────────────────────────────────────────────────────────────────────────────── */
+
+describe('placeholder segments and ruled precedence (P17)', () => {
+  const REPORT_ID = '0199a4c1-7000-7000-8000-00000000000a';
+  const OTHER_REPORT_ID = '0199c7b4-8f3a-7000-8000-000000000001';
+  const REPORT_KEY = '/expenses/[reportId]';
+  const ONE_PLACEHOLDER = Object.freeze({ '/a/[id]': 'desktop' } as const) as DispositionTable;
+  /** R4's table: a parent, its placeholder child and a fixed sibling. */
+  const PARENT_CHILD_SIBLING = Object.freeze({
+    '/expenses': 'limited',
+    '/expenses/[reportId]': 'desktop',
+    '/expenses/all': 'ready',
+  } as const) as DispositionTable;
+  /** R5's tables: equal segment counts, decided at the first position the keys differ. */
+  const TIE_AT_SEGMENT_0 = Object.freeze({
+    '/[a]/b': 'ready',
+    '/x/[c]': 'desktop',
+  } as const) as DispositionTable;
+  const TIE_AT_SEGMENT_1 = Object.freeze({
+    '/a/[x]/c': 'ready',
+    '/a/b/[y]': 'desktop',
+  } as const) as DispositionTable;
+  /** R6's table: a deeper placeholder key over a shallower fixed one. */
+  const MORE_SEGMENTS = Object.freeze({
+    '/a/b': 'ready',
+    '/a/[x]/[y]': 'desktop',
+  } as const) as DispositionTable;
+
+  it('matches a [name] key segment against any one real segment, bare or under a locale (P17 R1)', () => {
+    for (const path of ['/a/123', '/a/123/b', '/en/a/123', '/fr-CA/a/123'])
+      expect(dispositionFor(path, ONE_PLACEHOLDER), path).toEqual({
+        disposition: 'desktop',
+        prefix: '/a/[id]',
+      });
+  });
+
+  it('resolves a real report url through the shipped [reportId] key itself (P17 R2)', () => {
+    expect(dispositionFor(`/expenses/${REPORT_ID}`)).toEqual({
+      disposition: 'limited',
+      prefix: REPORT_KEY,
+    });
+  });
+
+  it('gives two different reports the identical prefix, containing neither id (P17 R3)', () => {
+    const first = dispositionFor(`/expenses/${REPORT_ID}`).prefix;
+    const second = dispositionFor(`/expenses/${OTHER_REPORT_ID}`).prefix;
+    // The literal, not merely "equal to each other": two `/expenses` answers are equal too.
+    expect(first).toBe(REPORT_KEY);
+    expect(second).toBe(REPORT_KEY);
+    for (const prefix of [first, second])
+      for (const id of [REPORT_ID, OTHER_REPORT_ID]) expect(prefix ?? '').not.toContain(id);
+  });
+
+  it('lets a placeholder child beat its fixed parent on segment count (P17 R4)', () => {
+    expect(dispositionFor('/expenses/x', PARENT_CHILD_SIBLING)).toEqual({
+      disposition: 'desktop',
+      prefix: '/expenses/[reportId]',
+    });
+  });
+
+  it('breaks a segment-count tie at the first differing segment: fixed beats placeholder (P17 R5)', () => {
+    expect(dispositionFor('/x/b', TIE_AT_SEGMENT_0)).toEqual({
+      disposition: 'desktop',
+      prefix: '/x/[c]',
+    });
+    expect(dispositionFor('/a/b/c', TIE_AT_SEGMENT_1)).toEqual({
+      disposition: 'desktop',
+      prefix: '/a/b/[y]',
+    });
+  });
+
+  it('lets more segments beat an earlier fixed word (P17 R6)', () => {
+    expect(dispositionFor('/a/b/c', MORE_SEGMENTS)).toEqual({
+      disposition: 'desktop',
+      prefix: '/a/[x]/[y]',
+    });
+  });
+
+  it('never matches a placeholder key off a segment boundary or at an offset (P17 G1)', () => {
+    for (const path of ['/a', '/a/', '/a-b/123', '/b/123'])
+      expect(dispositionFor(path, ONE_PLACEHOLDER), path).toEqual({
+        disposition: DEFAULT_DISPOSITION,
+        prefix: null,
+      });
+    // Shipped: a hyphenated look-alike of the parent, and the same shape one segment down.
+    for (const path of [`/expenses-archive/${REPORT_ID}`, `/print/expenses/${REPORT_ID}`])
+      expect(dispositionFor(path), path).toEqual({ disposition: 'limited', prefix: null });
+  });
+
+  it('lets /expenses/all keep its own key over the longer placeholder key (P17 G2, 20-vs-13)', () => {
+    expect(dispositionFor('/expenses/all')).toEqual({
+      disposition: 'desktop',
+      prefix: '/expenses/all',
+    });
+    for (const path of ['/expenses/all', '/expenses/all/deeper'])
+      expect(dispositionFor(path, PARENT_CHILD_SIBLING), path).toEqual({
+        disposition: 'ready',
+        prefix: '/expenses/all',
+      });
+  });
+
+  it('lets /expenses/approvals keep its own key (P17 G3)', () => {
+    expect(dispositionFor('/expenses/approvals')).toEqual({
+      disposition: 'limited',
+      prefix: '/expenses/approvals',
+    });
+  });
+
+  it('answers the same whichever order the keys were written in (P17 G4)', () => {
+    const reversed = (t: DispositionTable): DispositionTable =>
+      Object.freeze(Object.fromEntries(Object.entries(t).reverse())) as DispositionTable;
+    const SYNTHETIC_ADDRESSES = [
+      '/',
+      '/a',
+      '/a/',
+      '/a/123',
+      '/a/123/b',
+      '/a/b',
+      '/a/b/c',
+      '/a/b/c/d',
+      '/a-b/x',
+      '/ab',
+      '/b/123',
+      '/x/b',
+      '/x/y',
+      '/en/a/b/c',
+      '/fr-CA/x/b',
+      '/expenses',
+      '/expenses/x',
+      '/expenses/all',
+      '/expenses/all/deeper',
+      '/expenses/approvals',
+      `/expenses/${REPORT_ID}`,
+      '/a/?q',
+      '/a/#h',
+    ];
+    const addresses = [...CORPUS.map((e) => e.address), ...SYNTHETIC_ADDRESSES];
+    const tables: Record<string, DispositionTable> = {
+      'R4 table': PARENT_CHILD_SIBLING,
+      'R5 table (tie at segment 0)': TIE_AT_SEGMENT_0,
+      'R5 table (tie at segment 1)': TIE_AT_SEGMENT_1,
+      'R6 table': MORE_SEGMENTS,
+      'shipped table': MOBILE_READINESS,
+    };
+    for (const [name, forward] of Object.entries(tables)) {
+      const backward = reversed(forward);
+      // Anti-vacuity: the reversal really reordered the keys.
+      expect(Object.keys(backward), name).toEqual([...Object.keys(forward)].reverse());
+      const differ = addresses
+        .filter((p) => !sameAnswer(dispositionFor(p, forward), dispositionFor(p, backward)))
+        .map(
+          (p) =>
+            `${p}: ${showAnswer(dispositionFor(p, forward))} forward, ` +
+            `${showAnswer(dispositionFor(p, backward))} reversed`,
+        );
+      expect(differ, `${name}: key order changed the answer`).toEqual([]);
+    }
+  });
+
+  it('never lets a placeholder match zero segments (P17 G5)', () => {
+    for (const path of ['/expenses', '/expenses/', '/expenses//'])
+      expect(dispositionFor(path), path).toEqual({ disposition: 'limited', prefix: '/expenses' });
+    expect(dispositionFor('/a', ONE_PLACEHOLDER)).toEqual({
+      disposition: DEFAULT_DISPOSITION,
+      prefix: null,
+    });
+  });
+
+  it('resolves the literal bracket spelling through the key itself (P17 G6)', () => {
+    expect(dispositionFor(REPORT_KEY)).toEqual({ disposition: 'limited', prefix: REPORT_KEY });
+  });
+
+  it('breaks the one tie the shape-collision check refuses by string order, in either key order (P17)', () => {
+    // `/a/[x]` and `/a/[y]` differ only in placeholder name, so segment count and
+    // fixed-over-placeholder cannot separate them. The shipped table refuses this shape
+    // (`holds no two keys that differ only in placeholder name`); an injected table can still
+    // hold it, and code-unit order (`'/a/[x]' < '/a/[y]'`) keeps the answer independent of
+    // key order.
+    const forward = Object.freeze({ '/a/[x]': 'ready', '/a/[y]': 'desktop' } as const);
+    const backward = Object.freeze({ '/a/[y]': 'desktop', '/a/[x]': 'ready' } as const);
+    for (const [name, table] of [
+      ['forward', forward],
+      ['reversed', backward],
+    ] as const)
+      for (const path of ['/a/1', '/a/1/b'])
+        expect(dispositionFor(path, table), `${name}: ${path}`).toEqual({
+          disposition: 'ready',
+          prefix: '/a/[x]',
+        });
+  });
+
+  it('ignores a query, a hash and a trailing slash on a report url (P17 G7)', () => {
+    for (const path of [
+      `/expenses/${REPORT_ID}?tab=x`,
+      `/expenses/${REPORT_ID}/`,
+      `/expenses/${REPORT_ID}#h`,
+    ])
+      expect(dispositionFor(path), path).toEqual({ disposition: 'limited', prefix: REPORT_KEY });
+  });
+
+  it("treats a catch-all, an optional or an empty bracket key segment as literal text (the module's isPlaceholder)", () => {
+    // `isPlaceholderSegment` above is the test's own copy of the rule; these cases pin the
+    // MODULE's private `isPlaceholder` through `dispositionFor`, so the two cannot drift apart.
+    for (const key of ['/a/[...x]', '/a/[[x]]', '/a/[]']) {
+      const table = Object.freeze({ [key]: 'desktop' }) as DispositionTable;
+      expect(dispositionFor('/a/1', table), key).toEqual({ disposition: 'limited', prefix: null });
+      // Literal text still matches itself, so the miss above is not a key the matcher dropped.
+      expect(dispositionFor(key, table), key).toEqual({ disposition: 'desktop', prefix: key });
+    }
+  });
+});
 
 /* ─────────────────────────────────────────────────────────────────────────────────────────
  * PARITY: the registry against `docs/design/pwa.md`'s Page-readiness table.

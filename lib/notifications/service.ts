@@ -28,6 +28,7 @@
  *    The one exception is the tenant predicate — an insert that RLS refuses is
  *    a bug, not a delivery problem, and it propagates.
  */
+import { approverNote } from '@/lib/notifications/approverNote';
 import type { QueryRunner } from '@/lib/db/client';
 import type { UserMessage } from '@/lib/errors/domain';
 import type { UserMessageCode } from '@/lib/i18n/catalog/errors';
@@ -365,6 +366,9 @@ export interface InboxRow {
   /** See RenderedMessage.fromTemplate. Surfaced so the admin can see whether
    *  their override is actually the thing being read. */
   fromTemplate: boolean;
+  /** The approver's own words on a return or rejection, when they gave any
+   *  (`approverNote`; ExpenseOS 67db2e33, #578). */
+  approverNote: string | null;
   readAt: Date | null;
   occurredAt: Date;
 }
@@ -451,6 +455,7 @@ export async function listInbox(
           values,
         ),
       fromTemplate: rendered !== null,
+      approverNote: approverNote({ type: row.event_type as string, payload: row.payload }),
       readAt: row.read_at as Date | null,
       occurredAt: row.occurred_at as Date,
     });

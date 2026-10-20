@@ -45,8 +45,10 @@ export async function createReport(page: Page, title: string, currency?: RegExp)
   await expect(dialog).toBeVisible();
   await dialog.getByLabel('Title').fill(title);
   /**
-   * The currency is left alone unless a spec needs it. It defaults from the legal entity
-   * (CAD for every seeded QA account), and the only reason to touch it is the FX spec's
+   * The currency is left alone unless a spec needs it. It defaults to the filer's
+   * (`expenses.defaultCurrency`, ExpenseOS 67db2e33 #581: their legal entity's, else the
+   * tenant's main entity's, else CAD — CAD for every seeded QA account), and the only
+   * reason to touch it is the FX spec's
    * missing-rate case — a report denominated in USD holding a CAD expense, which is the
    * one direction the seeded rate table cannot answer.
    */

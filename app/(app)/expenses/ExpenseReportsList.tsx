@@ -967,7 +967,20 @@ export function ExpenseReportsList({
 
 /** Create dialog — names the report + picks its currency (currency is fixed at
  *  create; expenses inherit it). Only mints a report on confirm, so cancelling
- *  never leaves an orphan draft. */
+ *  never leaves an orphan draft.
+ *
+ *  The picker opens on the filer's default (`expenses.defaultCurrency`). The default is
+ *  DERIVED, not copied into state: `picked` stays `undefined` until the person touches the
+ *  picker, so a default that lands late can never overwrite a choice they already made,
+ *  and there is no effect to race. Create stays disabled until a currency is visible in
+ *  the picker, and it always sends the one shown — the currency is permanent, so nobody
+ *  commits to one they cannot see. While the default loads the field is `aria-busy`; if
+ *  it failed, or the person cleared the picker, a note says a currency is needed and
+ *  picking one is the way out.
+ *
+ *  Ported from ExpenseOS 67db2e33 (#581). VeloExpense: the default is the person's legal
+ *  entity's, else the tenant's main entity's, else CAD (`homeCurrencyCode`); the kit's
+ *  Combobox takes no `aria-describedby`, so the note sits beside the field unlinked. */
 export function NewReportDialog({
   onClose,
   onCreated,
@@ -978,10 +991,15 @@ export function NewReportDialog({
   const t = useTranslations('expenses');
   const locale = useLocale();
   const currencies = trpc.expenses.currencies.useQuery();
+  const defaultCurrency = trpc.expenses.defaultCurrency.useQuery();
   const create = trpc.expenses.create.useMutation({ onSuccess: (r) => onCreated(r.id) });
 
   const [title, setTitle] = useState('');
-  const [currency, setCurrency] = useState<string | null>('CAD');
+  /** `undefined` = untouched (show the default); `null` = the person cleared it. */
+  const [picked, setPicked] = useState<string | null | undefined>(undefined);
+  const currency = picked !== undefined ? picked : (defaultCurrency.data?.code ?? null);
+  const defaultLoading = picked === undefined && defaultCurrency.isLoading;
+  const currencyNeeded = !currency && !defaultLoading;
 
   /**
    * Mirrors `expenses.create`'s `z.string().min(1).max(200)`.
@@ -998,6 +1016,17 @@ export function NewReportDialog({
     value: c.code,
     label: `${c.code} · ${localeLabel(c.label, locale)}`,
   }));
+
+  /**
+   * The field shows the code even when it is not among `items` — the list is still
+   * loading. Without it the field reads blank while Create is live and would file the
+   * report in a currency nobody saw. Memoised so the picker does not see a "new"
+   * selection on every render.
+   */
+  const selectedItem = useMemo(
+    () => (currency ? { value: currency, label: currency } : null),
+    [currency],
+  );
 
   const canSave = title.trim().length > 0 && !tooLong && !!currency && !create.isPending;
 
@@ -1023,16 +1052,26 @@ export function NewReportDialog({
               </span>
             )}
           </label>
-          {/* biome-ignore lint/a11y/noLabelWithoutControl: control nested as children */}
-          <label className="flex flex-col gap-1">
-            <span className="text-muted-foreground text-xs">{t('createDialog.currency')}</span>
-            <Combobox
-              items={items}
-              value={currency}
-              onValueChange={setCurrency}
-              placeholder={t('createDialog.currencyPlaceholder')}
-            />
-          </label>
+          <div className="flex flex-col gap-1" aria-busy={defaultLoading || undefined}>
+            {/* biome-ignore lint/a11y/noLabelWithoutControl: control nested as children */}
+            <label className="flex flex-col gap-1">
+              <span className="text-muted-foreground text-xs">{t('createDialog.currency')}</span>
+              <Combobox
+                items={items}
+                value={currency}
+                onValueChange={setPicked}
+                selectedItem={selectedItem}
+                placeholder={t('createDialog.currencyPlaceholder')}
+              />
+            </label>
+            {/* Outside the label on purpose: inside it, the note would become part of the
+                field's NAME rather than its description. */}
+            {currencyNeeded && (
+              <p id="new-report-currency-needed" className="text-muted-foreground text-xs">
+                {t('createDialog.currencyNeeded')}
+              </p>
+            )}
+          </div>
           {/* Any refusal the server makes that the form did not anticipate. Without
               this the dialog absorbs it: the mutation fails, nothing changes on
               screen, and the only report of it is in the network tab. */}

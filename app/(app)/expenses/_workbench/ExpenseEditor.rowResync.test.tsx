@@ -35,7 +35,16 @@ import { DEFAULT_LOCALE as CATALOG_LOCALE } from '@expenseos/i18n';
  * them, and pretending otherwise would overstate what it proves.
  */
 
-const h = vi.hoisted(() => ({ updates: [] as unknown[] }));
+const h = vi.hoisted(() => ({
+  updates: [] as unknown[],
+  /**
+   * When set, `lineItemUpdate` runs its `onMutate` on each call and keeps the options so a
+   * test can settle the writes one at a time, the way a real network does. Off by default:
+   * the other tests here describe a row whose writes never settle.
+   */
+  lifecycle: false,
+  lineOpts: null as null | { onMutate?: () => void; onSettled?: () => void },
+}));
 
 vi.mock('next-intl', () => ({
   useTranslations: () => (key: string) => key,
@@ -45,10 +54,15 @@ vi.mock('next-intl', () => ({
 vi.mock('@/lib/trpc/client', () => {
   const procedure = (name: string) => ({
     useQuery: () => ({ data: undefined, isLoading: false, isFetching: false, error: null }),
-    useMutation: () => ({
+    useMutation: (opts?: { onMutate?: () => void; onSettled?: () => void }) => ({
       isPending: false,
       mutate: (vars: unknown) => {
-        if (name === 'lineItemUpdate') h.updates.push(vars);
+        if (name !== 'lineItemUpdate') return;
+        h.updates.push(vars);
+        if (h.lifecycle && opts) {
+          h.lineOpts = opts;
+          opts.onMutate?.();
+        }
       },
       mutateAsync: vi.fn(),
     }),
@@ -162,6 +176,8 @@ const refetchWith = (rerender: (ui: React.ReactElement) => void, l: ReturnType<t
 
 beforeEach(() => {
   h.updates.length = 0;
+  h.lifecycle = false;
+  h.lineOpts = null;
 });
 
 describe('line-row re-sync across a report refetch', () => {
@@ -193,6 +209,41 @@ describe('line-row re-sync across a report refetch', () => {
     refetchWith(rerender, line());
 
     expect(screen.queryAllByLabelText(/^(from|to|stop)$/)).toHaveLength(3);
+  });
+
+  it('holds the route until its LAST write lands, not its first', async () => {
+    /**
+     * "The route was sent and the From is reset." A route edit fires several writes, and
+     * the hold used to be released by whichever settled first. The refetch that write
+     * triggers carries the server's copy as of THAT write — a genuinely different route,
+     * so the value-stable key does not protect it — and the row re-synced onto it while
+     * the later writes were still in flight, putting the older stops back on screen.
+     */
+    h.lifecycle = true;
+    const user = userEvent.setup();
+    const { rerender } = renderEditor(line());
+    const addStop = () => user.click(screen.getAllByRole('button', { name: /addStop/i })[0]);
+
+    await addStop(); // write 1: three stops
+    await addStop(); // write 2: four stops
+    expect(h.updates).toHaveLength(2);
+    expect(screen.queryAllByLabelText(/^(from|to|stop)$/)).toHaveLength(4);
+
+    // Write 1 lands; its refetch brings the server's three-stop copy.
+    h.lineOpts?.onSettled?.();
+    refetchWith(
+      rerender,
+      line({
+        mileageRoute: {
+          stops: [
+            { description: 'A', placeId: 'p1' },
+            { description: '' },
+            { description: 'B', placeId: 'p2' },
+          ],
+        },
+      }),
+    );
+    expect(screen.queryAllByLabelText(/^(from|to|stop)$/)).toHaveLength(4);
   });
 
   it('still adopts a stop the server genuinely added', () => {

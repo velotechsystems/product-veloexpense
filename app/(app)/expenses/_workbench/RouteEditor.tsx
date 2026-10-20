@@ -81,7 +81,13 @@ export function RouteEditor({
   }
 
   const compute = trpc.mileageRoute.computeRoute.useMutation({
-    onSuccess: (res) => {
+    onSuccess: (res, vars) => {
+      // A measurement for stops that have since changed describes a route nobody is
+      // claiming. Spreading it onto the current value would write legs for the old
+      // stops — or, if the row re-synced to an older server copy meanwhile, write that
+      // copy's From back over the new one.
+      const current = value.stops.map((s) => s.placeId ?? '').join('|');
+      if (vars.placeIds.join('|') !== current) return;
       setError(null);
       onChange({ ...value, legs: res.legs });
       onDistance(res.distance);
@@ -284,6 +290,10 @@ function PlaceInput({
   const [query, setQuery] = useState('');
   const [open, setOpen] = useState(false);
   const sessionToken = useRef(crypto.randomUUID());
+  // The blur commit runs 150ms later, so it must read the LATEST query, stop and
+  // setter, not the ones captured by the render that saw the blur.
+  const latest = useRef({ query, value, onChange });
+  latest.current = { query, value, onChange };
 
   const search = trpc.mileageRoute.searchPlaces.useQuery(
     { query, sessionToken: sessionToken.current },
@@ -295,6 +305,7 @@ function PlaceInput({
   const pick = useCallback(
     (s: { placeId: string; description: string }) => {
       onChange({ placeId: s.placeId, description: s.description });
+      latest.current.query = '';
       setQuery('');
       setOpen(false);
       // A new token for the next interaction — reusing one would bill the next
@@ -337,19 +348,26 @@ function PlaceInput({
              * Committed WITHOUT a placeId, which is the honest representation: the
              * text is what they wrote, and the route cannot auto-measure until every
              * stop resolves to a real place — a state `canCompute` already handles.
-             * A pick needs no guard here: `pick` clears `query`, and this only
-             * commits non-empty text. An explicit `picked` flag was written first and
-             * then removed — no mutation of it changed any behaviour, and a guard
-             * that cannot be shown to matter reads as load-bearing when it is not.
+             * A pick must not be overwritten by the text that found it. This runs 150ms
+             * after the blur, and on a touch screen the blur lands BEFORE the click on the
+             * suggestion, so the query and the stop captured by the blur's render are the
+             * typed text and the empty stop. Reading `latest` instead sees the pick, whose
+             * cleared query commits nothing.
              */
-            const typed = query.trim();
-            if (typed && typed !== value.description) {
-              onChange({ description: typed });
+            const cur = latest.current;
+            const typed = cur.query.trim();
+            if (typed && typed !== cur.value.description) {
+              cur.onChange({ description: typed });
             }
           }, 150);
         }}
         onChange={(e) => {
           setQuery(e.target.value);
+          latest.current.query = e.target.value;
+          // A pick closes the dropdown but leaves focus here, so onFocus never
+          // re-opens it. Typing must, or the field keeps rendering the stored
+          // description and swallows every keystroke.
+          setOpen(true);
           // Typing after a pick invalidates the placeId — the text no longer
           // describes the place it pointed at.
           if (value.placeId) onChange({ description: e.target.value });

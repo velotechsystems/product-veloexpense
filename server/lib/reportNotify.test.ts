@@ -226,6 +226,38 @@ describe('returning and reimbursing', () => {
     expect(h.notified[0].recipients).toEqual(['sub-1']);
   });
 
+  it("posts the approver's note to the report's thread, after the return, notifying once", async () => {
+    // ExpenseOS 67db2e33 (#578). VeloExpense: the activity carries the report's
+    // placeholders too (`reportPayload`, stubbed here as `{ report: 'R' }`).
+    await notifyReportReturned(db, 'r-1', 'mgr-1', '  Please attach the hotel folio.  ');
+    await settle();
+    expect(h.activities).toEqual([
+      // On the event too, so the "returned" notification itself quotes it.
+      expect.objectContaining({
+        type: 'RETURNED',
+        subjectId: 'r-1',
+        actorId: 'mgr-1',
+        payload: { report: 'R', note: 'Please attach the hotel folio.' },
+      }),
+      expect.objectContaining({
+        subjectType: 'EXPENSE_REPORT',
+        subjectId: 'r-1',
+        type: 'COMMENT',
+        actorId: 'mgr-1',
+        payload: { report: 'R', body: 'Please attach the hotel folio.', via: 'app' },
+      }),
+    ]);
+    // One notification, for the return; the comment rides along in the thread.
+    expect(h.notified).toHaveLength(1);
+    expect(h.notified[0].activityId).toBe('act-1');
+  });
+
+  it('posts no comment when the approver gave no note', async () => {
+    await notifyReportReturned(db, 'r-1', 'mgr-1', '   ');
+    await settle();
+    expect(h.activities.map((a) => a.type)).toEqual(['RETURNED']);
+  });
+
   it('tells the submitter the money went out', async () => {
     await notifyReportReimbursed(db, 'r-1', 'ap-1');
     await settle();

@@ -5,6 +5,24 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { createTenantHarness, type TenantHarness } from '../../../../server/__test-helpers__/tenantHarness';
 
 /**
+ * The audit writer, real — except that P6 can make it throw AFTER it has written its row,
+ * so the rollback is proven to take the attendee, the lines, the money and the audit row
+ * together. Only the exported `writeAudit` is replaced: `withAudit` calls the module-local
+ * function, so `recordExtractionSkipped` is untouched. (ExpenseOS 67db2e33, #588.)
+ */
+const ah = vi.hoisted(() => ({ auditFails: false }));
+vi.mock('@expenseos/audit', async (orig) => {
+  const actual = (await orig()) as typeof import('@expenseos/audit');
+  return {
+    ...actual,
+    writeAudit: async (...args: Parameters<typeof actual.writeAudit>) => {
+      await actual.writeAudit(...args);
+      if (ah.auditFails) throw new Error('audit write failed (test)');
+    },
+  };
+});
+
+/**
  * Uploading a receipt must produce expense line items.
  *
  * The reported failure: upload a receipt, extraction runs, and no line items appear.
@@ -56,6 +74,14 @@ describe.skipIf(!process.env.DATABASE_URL)('receipt prefill creates line items',
   const extraIds: string[] = [];
   const extraReportIds: string[] = [];
 
+  // ── The claimant as the first attendee (ExpenseOS 67db2e33, #588) ─────────────────
+  // Own fixtures: a category that requires attendees, one that does not, and an owner
+  // whose name is known.
+  const tag = 'prefill-claimant';
+  let claimOwnerId: string;
+  let requiringId: string;
+  let plainId: string;
+
   beforeAll(async () => {
     h = await createTenantHarness({ slug: 'prefill', name: 'Prefill' });
     db = h.db;
@@ -89,6 +115,26 @@ describe.skipIf(!process.env.DATABASE_URL)('receipt prefill creates line items',
       select: { id: true },
     });
     expenseId = expense.id;
+
+    claimOwnerId = (
+      await h.admin.query(
+        `INSERT INTO app_user (organization_id, email, display_name, first_name, last_name, role_id)
+         VALUES ($1, $2, 'Prefill Claimant', 'Prefill', 'Claimant', '019e3000-0000-7000-8000-000000000004')
+         RETURNING id`,
+        [h.orgId, `${tag}-owner@test.invalid`],
+      )
+    ).rows[0].id as string;
+    for (const requiresAttendees of [true, false]) {
+      const { id } = await db.expenseCategory.create({
+        data: {
+          label: { en: `${tag} ${requiresAttendees ? 'requiring' : 'plain'}` },
+          requiresAttendees,
+        },
+        select: { id: true },
+      });
+      if (requiresAttendees) requiringId = id;
+      else plainId = id;
+    }
   });
 
   afterAll(async () => {
@@ -165,7 +211,9 @@ describe.skipIf(!process.env.DATABASE_URL)('receipt prefill creates line items',
         taxPst: null,
         voluntaryTip: null,
         confidence: 0.99,
-        derivedCategoryCode: categoryId,
+        // Coded to a category that requires attendees, so the claimant rule is also on
+        // trial here: a filed report gains no attendee either (P5).
+        derivedCategoryCode: requiringId,
         lineItems: [],
       } as never,
       0.7,
@@ -209,6 +257,12 @@ describe.skipIf(!process.env.DATABASE_URL)('receipt prefill creates line items',
       actor_name: 'system:expense.extractReceipt',
       details: { reportId: approved.id, reportStatus: 'APPROVED' },
     });
+    // P5: no attendee lands on a filed report, and the skip is the only audit line.
+    expect(await db.expenseAttendee.count({ where: { expenseId: expense.id } })).toBe(0);
+    expect(
+      (await h.admin.query(`SELECT count(*)::int AS n FROM audit_entry WHERE entity_id = $1`, [expense.id]))
+        .rows[0].n,
+    ).toBe(1);
     // VeloExpense: the job's row (no user, role SYSTEM) is part of the tenant's chain, and
     // the chain still verifies with it in.
     const { withOrg } = await import('@/lib/tenant/context');
@@ -509,5 +563,309 @@ describe.skipIf(!process.env.DATABASE_URL)('receipt prefill creates line items',
     expect(new Set(lines.map((l: { categoryId: string }) => l.categoryId))).toEqual(
       new Set([categoryId]),
     );
+  });
+
+  describe('the claimant as the first attendee (ExpenseOS 67db2e33, #588)', () => {
+    const NAMED = { name: 'Prefill Claimant', company: null, isExternal: false };
+    const CATEGORY_SELECT = {
+      id: true,
+      label: true,
+      itcGstHstRate: true,
+      itcQstRate: true,
+      pstRecoverable: true,
+      acceptsTip: true,
+      isMileage: true,
+    } as const;
+    const activeCategories = () =>
+      db.expenseCategory.findMany({ where: { active: true }, select: CATEGORY_SELECT });
+
+    /** A fresh DRAFT report with one blank expense owned by the named fixture owner. */
+    async function blankClaimExpense(): Promise<string> {
+      const report = await db.expenseReport.create({
+        data: { title: `${tag} report`, submitterId: claimOwnerId, currencyId, status: 'DRAFT' },
+        select: { id: true },
+      });
+      const expense = await db.expense.create({
+        data: {
+          reportId: report.id,
+          ownerId: claimOwnerId,
+          date: new Date(),
+          amountMinor: 0n,
+          currencyId,
+        },
+        select: { id: true },
+      });
+      return expense.id;
+    }
+
+    /** The document the extraction came from, so the audit row's `receiptId` is real. */
+    async function receiptFor(id: string): Promise<string> {
+      const receipt = await db.receipt.create({
+        data: {
+          expenseId: id,
+          s3Key: `receipts/prefill-claimant/${id}-${Math.random()}.jpg`,
+          filename: 'bill.jpg',
+          contentType: 'image/jpeg',
+          sizeBytes: 1024,
+          uploadedById: claimOwnerId,
+          status: 'STORED',
+        },
+        select: { id: true },
+      });
+      return receipt.id;
+    }
+
+    const attendeesOf = (id: string) =>
+      db.expenseAttendee.findMany({
+        where: { expenseId: id },
+        select: { id: true, name: true, company: true, isExternal: true },
+      });
+
+    /** The system `REPORT_EDITED` rows on one expense — the claimant's audit trail.
+     *  VeloExpense: `audit_entry`, under the registry's name for `report.update`. */
+    const claimantAuditRows = async (id: string) =>
+      (
+        await h.admin.query(
+          `SELECT actor_id, actor_name, entity_type, entity_id, details FROM audit_entry
+            WHERE action = 'REPORT_EDITED' AND entity_id = $1 ORDER BY sequence`,
+          [id],
+        )
+      ).rows.map((r: any) => ({
+        actorId: r.actor_id,
+        actorName: r.actor_name,
+        entityType: r.entity_type,
+        entityId: r.entity_id,
+        details: r.details,
+      }));
+
+    /** A clean single-line dinner receipt coded to the requiring category, overridable. */
+    const extraction = (over: Record<string, unknown> = {}) =>
+      ({
+        vendor: 'Claimant Bistro',
+        address: null,
+        date: '2026-08-14',
+        currencyCode: 'CAD',
+        total: 113,
+        subtotal: 100,
+        taxGstHst: 13,
+        taxQst: null,
+        taxPst: null,
+        voluntaryTip: null,
+        confidence: 0.95,
+        derivedCategoryCode: requiringId,
+        lineItems: [],
+        ...over,
+      }) as never;
+
+    it('P1: adds the owner and writes exactly one system REPORT_EDITED row', async () => {
+      const id = await blankClaimExpense();
+      const receiptId = await receiptFor(id);
+
+      await prefill(id, await activeCategories(), extraction(), 0.7, receiptId);
+
+      const attendees = await attendeesOf(id);
+      expect(attendees).toEqual([{ id: expect.any(String), ...NAMED }]);
+      expect(await claimantAuditRows(id)).toEqual([
+        {
+          actorId: null,
+          actorName: 'system:expense.extractReceipt',
+          entityType: 'Expense',
+          entityId: id,
+          details: {
+            claimantAttendeeAdded: true,
+            claimantAttendeeId: attendees[0].id,
+            expenseId: id,
+            source: 'expense.extractReceipt',
+            receiptId,
+          },
+        },
+      ]);
+    });
+
+    it('P2: one row for a multi-line meal + parking receipt, not one per line', async () => {
+      const id = await blankClaimExpense();
+      const receiptId = await receiptFor(id);
+
+      await prefill(
+        id,
+        await activeCategories(),
+        extraction({
+          total: 115,
+          subtotal: 100,
+          taxGstHst: 5,
+          taxQst: 10,
+          lineItems: [
+            { description: 'Dinner', amount: 80, quantity: 1, categoryCode: requiringId },
+            { description: 'Parking', amount: 20, quantity: 1, categoryCode: plainId },
+          ],
+        }),
+        0.7,
+        receiptId,
+      );
+
+      const lines = await db.expenseLineItem.findMany({
+        where: { expenseId: id },
+        select: { categoryId: true },
+      });
+      // Per-line categories were trusted, so both lines exist.
+      expect(new Set(lines.map((l: { categoryId: string }) => l.categoryId))).toEqual(
+        new Set([requiringId, plainId]),
+      );
+      expect(await attendeesOf(id)).toHaveLength(1);
+      expect(await claimantAuditRows(id)).toHaveLength(1);
+    });
+
+    it('P3: a re-extraction after the owner removed the claimant adds nobody', async () => {
+      const id = await blankClaimExpense();
+      const receiptId = await receiptFor(id);
+      const categories = await activeCategories();
+
+      await prefill(id, categories, extraction(), 0.7, receiptId);
+      expect(await attendeesOf(id)).toHaveLength(1);
+      // The owner takes themselves off the list.
+      await db.expenseAttendee.deleteMany({ where: { expenseId: id } });
+
+      // The lines were already requiring BEFORE this pass wiped and rebuilt them, so the
+      // "before" read (taken ahead of the wipe) says so, and the empty list stands.
+      await prefill(id, categories, extraction(), 0.7, receiptId);
+      expect(await attendeesOf(id)).toEqual([]);
+      expect(await claimantAuditRows(id)).toHaveLength(1);
+    });
+
+    it('P4: an extraction coded to a plain category adds nobody', async () => {
+      const id = await blankClaimExpense();
+      const receiptId = await receiptFor(id);
+
+      await prefill(id, await activeCategories(), extraction({ derivedCategoryCode: plainId }), 0.7, receiptId);
+
+      const lines = await db.expenseLineItem.findMany({
+        where: { expenseId: id },
+        select: { categoryId: true },
+      });
+      expect(lines.map((l: { categoryId: string }) => l.categoryId)).toEqual([plainId]);
+      expect(await attendeesOf(id)).toEqual([]);
+      expect(await claimantAuditRows(id)).toEqual([]);
+    });
+
+    it('P6: an audit failure rolls the attendee back with the lines and the money; a retry succeeds once', async () => {
+      const id = await blankClaimExpense();
+      const receiptId = await receiptFor(id);
+      const categories = await activeCategories();
+      const moneyOf = () =>
+        db.expense.findUniqueOrThrow({
+          where: { id },
+          select: {
+            amountMinor: true,
+            taxGstHstMinor: true,
+            taxSource: true,
+            lineItems: { select: { categoryId: true, amountMinor: true } },
+          },
+        });
+      const before = await moneyOf();
+
+      ah.auditFails = true;
+      try {
+        await expect(prefill(id, categories, extraction(), 0.7, receiptId)).rejects.toThrow(
+          'audit write failed (test)',
+        );
+      } finally {
+        ah.auditFails = false;
+      }
+      expect(await attendeesOf(id)).toEqual([]);
+      expect(await moneyOf()).toEqual(before);
+      expect(await claimantAuditRows(id)).toEqual([]);
+
+      await prefill(id, categories, extraction(), 0.7, receiptId);
+      expect(await attendeesOf(id)).toHaveLength(1);
+      expect(await claimantAuditRows(id)).toHaveLength(1);
+    });
+
+    it('P7: called with no receiptId, the row still carries the key, as null', async () => {
+      const id = await blankClaimExpense();
+
+      await prefill(id, await activeCategories(), extraction(), 0.7);
+
+      const attendees = await attendeesOf(id);
+      expect(attendees).toEqual([{ id: expect.any(String), ...NAMED }]);
+      const rows = await claimantAuditRows(id);
+      expect(rows).toHaveLength(1);
+      expect(rows[0].details).toEqual({
+        claimantAttendeeAdded: true,
+        claimantAttendeeId: attendees[0].id,
+        expenseId: id,
+        source: 'expense.extractReceipt',
+        receiptId: null,
+      });
+    });
+
+    it('below the review threshold, a requiring main category still adds the owner once', async () => {
+      const id = await blankClaimExpense();
+      const receiptId = await receiptFor(id);
+
+      await prefill(
+        id,
+        await activeCategories(),
+        extraction({
+          total: 115,
+          subtotal: 100,
+          taxGstHst: 5,
+          taxQst: 10,
+          confidence: 0.4,
+          lineItems: [
+            { description: 'Dinner', amount: 80, quantity: 1, categoryCode: requiringId },
+            { description: 'Parking', amount: 20, quantity: 1, categoryCode: plainId },
+          ],
+        }),
+        0.7,
+        receiptId,
+      );
+
+      const lines = await db.expenseLineItem.findMany({
+        where: { expenseId: id },
+        select: { categoryId: true },
+      });
+      expect(lines.map((l: { categoryId: string }) => l.categoryId)).toEqual([requiringId]);
+      expect(await attendeesOf(id)).toHaveLength(1);
+      expect(await claimantAuditRows(id)).toHaveLength(1);
+    });
+
+    it('a hand-entered plain line, then a receipt coded to a requiring category, adds the owner once', async () => {
+      const id = await blankClaimExpense();
+      await db.expenseLineItem.create({
+        data: { expenseId: id, categoryId: plainId, amountMinor: 2000n, kind: 'STANDARD' },
+      });
+      const receiptId = await receiptFor(id);
+
+      await prefill(id, await activeCategories(), extraction(), 0.7, receiptId);
+
+      expect(await attendeesOf(id)).toEqual([{ id: expect.any(String), ...NAMED }]);
+      expect(await claimantAuditRows(id)).toHaveLength(1);
+    });
+
+    it('an extraction that reads nothing changes nothing', async () => {
+      const id = await blankClaimExpense();
+      const receiptId = await receiptFor(id);
+
+      await prefill(
+        id,
+        await activeCategories(),
+        extraction({
+          vendor: null,
+          date: null,
+          currencyCode: null,
+          total: null,
+          subtotal: null,
+          taxGstHst: null,
+          confidence: 0,
+          derivedCategoryCode: null,
+        }),
+        0.7,
+        receiptId,
+      );
+
+      expect(await db.expenseLineItem.count({ where: { expenseId: id } })).toBe(0);
+      expect(await attendeesOf(id)).toEqual([]);
+      expect(await claimantAuditRows(id)).toEqual([]);
+    });
   });
 });

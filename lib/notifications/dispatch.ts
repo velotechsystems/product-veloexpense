@@ -24,6 +24,7 @@
  * screen, because a queue that says "sent" is otherwise read as "delivered" and
  * the next question — "then why didn't they see it?" — has nowhere to go.
  */
+import { approverNote } from '@/lib/notifications/approverNote';
 import { withOrg, withPlatformRead } from '@/lib/tenant/context';
 import { getBranding } from '@/lib/branding/service';
 import { emailShell } from '@/lib/notifications/email-shell';
@@ -272,6 +273,9 @@ export async function prepareEmail(
   // w5-01: a reply to this email becomes a comment, when the subject has a thread.
   const replyTo = await replyAddressFor(tx, row, (slugRow.rows[0]?.slug as string | undefined) ?? '');
   const replyLine = replyTo ? await replyInvitation() : null;
+  // ExpenseOS 67db2e33 (#578): the approver's own words on a return or a rejection.
+  const noteText = approverNote({ type: row.event_type, payload: row.payload });
+  const note = noteText ? { label: await approverNoteLabel(), text: noteText } : null;
 
   return {
     kind: 'SEND',
@@ -280,7 +284,7 @@ export async function prepareEmail(
       to: row.recipient_email,
       subject,
       from: fromAddress(),
-      text: plainText(rendered.body, reportUrl, decide, replyLine, row.subject_type),
+      text: plainText(rendered.body, reportUrl, decide, replyLine, row.subject_type, note),
       html: htmlBody(
         branding.name,
         branding.brandColor,
@@ -289,6 +293,7 @@ export async function prepareEmail(
         decide,
         replyLine,
         row.subject_type,
+        note,
       ),
       ...(replyTo ? { replyTo } : {}),
       ...threadHeaders(claim.notificationId, row.subject_id, row.recipient_id),
@@ -488,14 +493,19 @@ function reportLinkLabel(decide: boolean, subjectType = 'EXPENSE_REPORT'): strin
   return decide ? 'Review and approve' : 'Open the report';
 }
 
+/** The approver's note on a return or a rejection, with its label (`approverNote`). */
+type ApproverNote = { label: string; text: string } | null;
+
 function plainText(
   body: string,
   reportUrl: string | null,
   decide: boolean,
   replyLine: string | null = null,
   subjectType = 'EXPENSE_REPORT',
+  note: ApproverNote = null,
 ): string {
   const parts = [body, ''];
+  if (note) parts.push(note.label, note.text, '');
   if (reportUrl) parts.push(`${reportLinkLabel(decide, subjectType)}: ${reportUrl}`);
   if (replyLine) parts.push('', replyLine);
   return parts.join('\n');
@@ -520,12 +530,18 @@ function htmlBody(
   decide: boolean,
   replyLine: string | null = null,
   subjectType = 'EXPENSE_REPORT',
+  note: ApproverNote = null,
 ): string {
   const link = reportUrl ? { label: reportLinkLabel(decide, subjectType), url: reportUrl } : null;
+  // ExpenseOS 67db2e33 (#578): the note quoted under the message, a left rule.
+  const noteHtml = note
+    ? `<p style="margin:12px 0 0"><strong>${escapeHtml(note.label)}</strong></p>` +
+      `<blockquote style="margin:4px 0 0;padding:8px 12px;border-left:3px solid #d1d5db">${escapeHtml(note.text).replace(/\n/g, '<br>')}</blockquote>`
+    : '';
   return emailShell({
     organizationName,
     brandColor,
-    bodyHtml: `<p style="margin:0">${escapeHtml(body)}</p>`,
+    bodyHtml: `<p style="margin:0">${escapeHtml(body)}</p>${noteHtml}`,
     cta: decide ? link : null,
     links: !decide && link ? [link] : [],
     // w5-01: the reply invitation, only when a reply actually lands somewhere.
@@ -574,6 +590,14 @@ async function replyAddressFor(
 }
 
 /** ExpenseOS's `replyToDiscuss` line, from the catalog with its English literal behind it. */
+/** The label over the approver's note — the catalog's, with ExpenseOS's English fallback. */
+async function approverNoteLabel(): Promise<string> {
+  const cat = await loadCatalog('en');
+  const email = (cat.notifications as { email?: Record<string, string> } | undefined)?.email;
+  const label = email?.approverNote;
+  return typeof label === 'string' && label.trim() ? label : 'Note from the approver:';
+}
+
 async function replyInvitation(): Promise<string> {
   const cat = await loadCatalog('en');
   const email = (cat.notifications as { email?: Record<string, string> } | undefined)?.email;

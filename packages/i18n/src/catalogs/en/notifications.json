@@ -6,6 +6,7 @@
   "viewAll": "View all",
   "loadMore": "Load more",
   "endOfList": "That's everything.",
+  "approverNote": "Note from the approver",
   "unreadOne": "1 unread",
   "unreadMany": "{count} unread",
   "event": {
@@ -168,6 +169,7 @@
   "email": {
     "greeting": "Hello {name}!",
     "hereIsTheInformation": "Here is the information:",
+    "approverNote": "Note from the approver:",
     "youCan": "You can:",
     "replyToDiscuss": "Or reply to this email to start a discussion.",
     "signOff": "Thanks,",

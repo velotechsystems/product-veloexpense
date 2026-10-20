@@ -1,5 +1,5 @@
 import '@testing-library/jest-dom/vitest';
-import { act, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useState } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -433,5 +433,123 @@ describe('add-a-stop spacing', () => {
     // Same spacing utility on both, which is what makes the two gaps equal.
     expect(rowWrapper?.className).toContain('space-y-2');
     expect(rowWrapper?.parentElement?.className).toContain('space-y-2');
+  });
+});
+
+/**
+ * "Frozen fields From/To once the route was sent, and the From is reset."
+ *
+ * A pick keeps focus in the field (the suggestion's mousedown is prevented) but closes the
+ * dropdown, and the field renders `open ? query : value.description`. Re-opening was left
+ * to `onFocus`, which cannot fire again while focus never left — so every keystroke after a
+ * pick went into a `query` nothing displayed, the first one having already blanked the stop.
+ */
+describe('editing a stop after picking it', () => {
+  const UNION = {
+    'mileageRoute.searchPlaces': {
+      data: {
+        available: true,
+        items: [{ placeId: 'p-union', description: 'Union Station, Toronto' }],
+      },
+    },
+  };
+
+  let last: RouteValue = EMPTY_ROUTE;
+  function Spy() {
+    const [value, setValue] = useState<RouteValue>(EMPTY_ROUTE);
+    last = value;
+    return <RouteEditor value={value} onChange={setValue} unit="KM" onDistance={() => {}} />;
+  }
+
+  it('lets you retype a stop you just picked without leaving the field', async () => {
+    const user = userEvent.setup();
+    setTrpc({ queries: UNION });
+    render(<Harness />);
+    const from = screen.getByLabelText('from');
+    await user.type(from, 'Union');
+    await user.click(screen.getByText('Union Station, Toronto'));
+    expect(from).toHaveFocus();
+    await user.clear(from);
+    await user.type(from, 'Kingston');
+    expect(from).toHaveValue('Kingston');
+  });
+
+  it('keeps a pick when the blur lands before the click, as a tap does', async () => {
+    // The blur's 150ms commit used to read the text that found the place and write it
+    // over the place, dropping its id — so the route could never measure itself.
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+      setTrpc({ queries: UNION });
+      render(<Spy />);
+      const from = screen.getByLabelText('from');
+      await user.type(from, 'Union');
+      fireEvent.blur(from);
+      fireEvent.click(screen.getByText('Union Station, Toronto'));
+      await act(async () => {
+        vi.advanceTimersByTime(200);
+      });
+      expect(last.stops[0]).toEqual({ placeId: 'p-union', description: 'Union Station, Toronto' });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe('a measurement that comes back for stops that have since changed', () => {
+  it('is dropped, rather than written over the current route', () => {
+    /**
+     * Writing it would attach legs for the old stops — or, where the row had re-synced to
+     * an older server copy meanwhile, write that copy's From back to the server.
+     */
+    const pending: { vars?: { placeIds: string[] } } = {};
+    let opts: { onSuccess?: (res: unknown, vars: unknown) => void } = {};
+    h.trpc = {
+      mileageRoute: {
+        searchPlaces: {
+          useQuery: () => ({
+            data: { available: true, items: [] },
+            isFetching: false,
+            error: null,
+          }),
+        },
+        computeRoute: {
+          useMutation: (o: typeof opts) => {
+            opts = o;
+            return {
+              isPending: false,
+              mutate: (vars: { placeIds: string[] }) => {
+                pending.vars = vars;
+              },
+            };
+          },
+        },
+      },
+    };
+    const onChange = vi.fn();
+    const onDistance = vi.fn();
+    const route = (to: string): RouteValue => ({
+      stops: [
+        { placeId: 'a', description: 'A' },
+        { placeId: to, description: to.toUpperCase() },
+      ],
+    });
+    const { rerender } = render(
+      <RouteEditor value={route('b')} onChange={onChange} unit="KM" onDistance={onDistance} />,
+    );
+    expect(pending.vars?.placeIds).toEqual(['a', 'b']);
+
+    // The destination changes before the answer for A→B arrives.
+    rerender(
+      <RouteEditor value={route('c')} onChange={onChange} unit="KM" onDistance={onDistance} />,
+    );
+    act(() => {
+      opts.onSuccess?.(
+        { legs: [{ fromPlaceId: 'a', toPlaceId: 'b', meters: 1000 }], distance: '1.00' },
+        { placeIds: ['a', 'b'], unit: 'KM' },
+      );
+    });
+    expect(onChange).not.toHaveBeenCalled();
+    expect(onDistance).not.toHaveBeenCalled();
   });
 });

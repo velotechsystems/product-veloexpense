@@ -1,10 +1,12 @@
-import { auditActions, withAudit } from '@expenseos/audit';
+import { auditActions, withAudit, writeAudit } from '@expenseos/audit';
 import {
   EXPENSE_FX_SELECT,
   ExpenseTaxSource,
+  ensureClaimantAttendee,
   fxColumns,
   fxParamsFrom,
   glAccountIdsForCategories,
+  lockClaimantSnapshot,
   type Prisma,
   recomputeReportTotal,
   recordTransactionId,
@@ -365,9 +367,15 @@ export async function prefillExpense(
   const settled = await db.$transaction(async (tx) => {
     const status = await lockReportStatus(tx, expense.reportId);
     if (!isReportEditable(status)) return { written: false as const, status };
+    let claimantAttendeeId: string | null = null;
     if (lineRows) {
+      // The claimant rule needs a "before": taken here — under the report lock and after
+      // the status check, so a filed report never gains an attendee — and BEFORE the wipe,
+      // which would otherwise make every re-extraction look like a first requiring line.
+      const snapshot = await lockClaimantSnapshot(tx, expense.id);
       await tx.expenseLineItem.deleteMany({ where: { expenseId: expense.id } });
       await tx.expenseLineItem.createMany({ data: lineRows });
+      claimantAttendeeId = await ensureClaimantAttendee(tx, snapshot);
     }
     if (extractedMoney) {
       await tx.expense.update({
@@ -390,6 +398,15 @@ export async function prefillExpense(
       // submit + approve landing in that gap would leave the lines written here
       // against a total the guard then (rightly) refuses to update.
       await recomputeReportTotal(tx, expense.reportId);
+    }
+    // Last: `writeAudit` takes the global audit-chain lock, held from here to commit.
+    if (claimantAttendeeId) {
+      await auditClaimantAttendee(tx, {
+        jobName: 'expense.extractReceipt',
+        expenseId: expense.id,
+        claimantAttendeeId,
+        receiptId: receiptId ?? null,
+      });
     }
     return { written: true as const };
   });
@@ -451,4 +468,42 @@ async function recordExtractionSkipped(
   console.info(
     `[prefill] expense ${expenseId} not rewritten: report ${reportId} is ${reportStatus ?? 'gone'}`,
   );
+}
+
+/**
+ * The audit row for the expense owner a worker pass added as the first attendee
+ * (`ensureClaimantAttendee`). Shared by this path and the joint pass (`determine.ts`).
+ *
+ * Inside the caller's transaction, so a rollback takes the row with the attendee; and the
+ * caller's LAST statement, because `writeAudit` takes the global audit-chain lock first
+ * and holds it to commit. The lock order is therefore report, expense, audit chain.
+ *
+ * Ids only: the attendee's name is the owner's name or e-mail, and neither belongs in the
+ * audit details. `receiptId` is the extract path's document (null when none was given);
+ * the joint pass reads a document SET and passes no key at all.
+ *
+ * Ported from ExpenseOS 67db2e33 (#588).
+ */
+export async function auditClaimantAttendee(
+  tx: Prisma.TransactionClient,
+  claim: {
+    jobName: 'expense.extractReceipt' | 'expense.determineExpense';
+    expenseId: string;
+    claimantAttendeeId: string;
+    receiptId?: string | null;
+  },
+): Promise<void> {
+  await writeAudit(tx, {
+    action: auditActions.report.update,
+    entityType: 'Expense',
+    entityId: claim.expenseId,
+    actor: { kind: 'system', jobName: claim.jobName },
+    details: {
+      claimantAttendeeAdded: true,
+      claimantAttendeeId: claim.claimantAttendeeId,
+      expenseId: claim.expenseId,
+      source: claim.jobName,
+      ...(claim.receiptId !== undefined ? { receiptId: claim.receiptId } : {}),
+    },
+  });
 }

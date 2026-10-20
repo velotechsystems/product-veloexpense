@@ -594,6 +594,79 @@ describe.skipIf(!process.env.DATABASE_URL)('expense reports (integration)', () =
       expect(stored.status).toBe('DRAFT');
     });
 
+    /**
+     * No currency sent: the report opens in the filer's resolved currency. Ported from
+     * ExpenseOS 67db2e33 (#581), where it was `.default('USD')`.
+     *
+     * VeloExpense: a person carries no currency of their own (Wave 2), so the rule is
+     * `homeCurrencyCode` (f29) — the person's legal entity's, else the tenant's main
+     * entity's, else CAD. Every default case expects CAD, because the old fallback was USD
+     * and a USD expectation would pass by accident; the explicit-currency case expects USD
+     * for the mirror reason. ExpenseOS's "the person's own currency wins" case has no
+     * counterpart here.
+     */
+    describe('with no currency sent', () => {
+      let n = 0;
+      const entityIn = async (code: string | null): Promise<string> =>
+        (
+          await admin.query(
+            `INSERT INTO legal_entity (organization_id, label, currency_code) VALUES ($1, $2, $3) RETURNING id`,
+            [orgId, JSON.stringify({ en: `hc entity ${++n}` }), code],
+          )
+        ).rows[0].id as string;
+      const filer = async (tag: string, legalEntityId: string | null): Promise<string> =>
+        (
+          await admin.query(
+            `INSERT INTO app_user (organization_id, email, display_name, role_id, legal_entity_id)
+             VALUES ($1, $2, $2, '019e3000-0000-7000-8000-000000000004', $3) RETURNING id`,
+            [orgId, `hc-${tag}@reports.test`, legalEntityId],
+          )
+        ).rows[0].id as string;
+      const storedCurrencyOf = async (userId: string): Promise<string> => {
+        const row = await inOrg(() => makeCaller(RW, userId).create({ title: 'x' }));
+        return (
+          await inOrg(() =>
+            db.expenseReport.findUniqueOrThrow({ where: { id: row.id }, select: { currencyId: true } }),
+          )
+        ).currencyId;
+      };
+
+      it('files in the filer’s entity currency when none is sent', async () => {
+        const userId = await filer('entity', await entityIn('CAD'));
+        expect(await storedCurrencyOf(userId)).toBe('CAD');
+      });
+
+      it('files a person with no entity in the same currency their totals are read in', async () => {
+        // The tenant's main entity's, else CAD — one rule with `readerCurrencyCode` (f29).
+        const userId = await filer('none', null);
+        const { homeCurrencyCode } = await import('@expenseos/db');
+        const expected = await inOrg(() => homeCurrencyCode(db, userId));
+        expect(await storedCurrencyOf(userId)).toBe(expected);
+      });
+
+      it('lets an explicit currency win over the filer’s default', async () => {
+        const userId = await filer('explicit', await entityIn('CAD'));
+        const row = await inOrg(() => makeCaller(RW, userId).create({ title: 'x', currency: 'USD' }));
+        const stored = await inOrg(() =>
+          db.expenseReport.findUniqueOrThrow({ where: { id: row.id }, select: { currencyId: true } }),
+        );
+        expect(stored.currencyId).toBe('USD');
+      });
+
+      it('tells each caller their own default currency, and nobody else’s', async () => {
+        /**
+         * `defaultCurrency` takes no input, so the session is the only thing that can
+         * pick whose answer it is. Two callers in different currencies, asked back to
+         * back, each get their own — a cached or shared answer would give one of them
+         * the other's.
+         */
+        const cadUser = await filer('dc-cad', await entityIn('CAD'));
+        const usdUser = await filer('dc-usd', await entityIn('USD'));
+        expect(await inOrg(() => makeCaller(RW, cadUser).defaultCurrency())).toEqual({ code: 'CAD' });
+        expect(await inOrg(() => makeCaller(RW, usdUser).defaultCurrency())).toEqual({ code: 'USD' });
+      });
+    });
+
     // VeloExpense: the number VeloExpense's writer has always minted, per tenant.
     it('numbers the report from the tenant’s own sequence', async () => {
       const a = await inOrg(() => makeCaller(RW, ownerId).create({ title: 'numbered', currency: currencyCode }));

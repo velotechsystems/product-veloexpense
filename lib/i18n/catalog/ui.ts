@@ -309,6 +309,8 @@ export const UI_COPY = {
   'notifications.filter.unread': { 'en-CA': 'Unread only' },
   'notifications.column.what': { 'en-CA': 'What happened' },
   'notifications.column.when': { 'en-CA': 'When' },
+  // ExpenseOS 67db2e33 (#578): the label over an approver's note on a return or rejection.
+  'notifications.approver.note': { 'en-CA': 'Note from the approver' },
   // Two empty states, not one with a clause bolted on. The unread-only view is
   // empty because the reader has caught up; the everything view is empty because
   // nothing has happened yet, and those want different sentences in any language.

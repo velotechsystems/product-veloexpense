@@ -53,6 +53,11 @@ const h = vi.hoisted(() => {
     tipPayload: vi.fn(),
     withAudit: vi.fn(),
     recordExtractionUsage: vi.fn(),
+    // The claimant helpers (packages/db/src/ownerAttendee.ts) and the audit row they
+    // lead to; the rule itself is pinned by determine.db.test.ts against a real Postgres.
+    lockClaimantSnapshot: vi.fn(),
+    ensureClaimantAttendee: vi.fn(),
+    writeAudit: vi.fn(),
   };
 });
 
@@ -74,10 +79,15 @@ vi.mock('@expenseos/db', () => ({
   recomputeReportTotal: h.recomputeReportTotal,
   resolveExpenseFx: h.resolveExpenseFx,
   supersedeDetermination: h.supersedeDetermination,
+  lockClaimantSnapshot: h.lockClaimantSnapshot,
+  ensureClaimantAttendee: h.ensureClaimantAttendee,
 }));
 vi.mock('@expenseos/audit', () => ({
-  auditActions: { report: { extractionSkipped: 'report.extraction.skipped' } },
+  auditActions: {
+    report: { extractionSkipped: 'report.extraction.skipped', update: 'report.update' },
+  },
   withAudit: h.withAudit,
+  writeAudit: h.writeAudit,
 }));
 vi.mock('./lib/extract-core', () => ({
   prepareExtraction: h.prepareExtraction,
@@ -198,6 +208,9 @@ beforeEach(() => {
   h.tx.expenseLineItem.deleteMany.mockResolvedValue({ count: 0 });
   h.db.expenseLineItem.findMany.mockResolvedValue([]);
   h.tx.receipt.update.mockResolvedValue({});
+  h.lockClaimantSnapshot.mockResolvedValue({ expenseId: 'e1', hadRequiringLine: false });
+  // Nobody added unless a test says so.
+  h.ensureClaimantAttendee.mockResolvedValue(null);
 });
 
 /** The `data` of the nth `expense.update` — the header write is 0, the totals write 1. */
@@ -887,6 +900,54 @@ describe('handleDetermineExpense · the report the writes land on', () => {
     });
     await handleDetermineExpense({ organizationId: ORG, expenseId: 'e1' });
     expect(seen[0]).toBe('lock');
+  });
+
+  it('reads the claimant "before" ahead of the wipe, and writes its audit row last', async () => {
+    /**
+     * attendees-prefill-claimant. The snapshot after the wipe would make every rebuild
+     * look like a first requiring line; the audit row anywhere but last would hold the
+     * global audit-chain lock across the rest of the apply. Both on `tx`.
+     */
+    locked('DRAFT');
+    const seen: string[] = [];
+    const note = (label: string, result: unknown) => async () => {
+      seen.push(label);
+      return result;
+    };
+    h.lockClaimantSnapshot.mockImplementation(
+      note('snapshot', { expenseId: 'e1', hadRequiringLine: false }),
+    );
+    h.tx.expenseLineItem.deleteMany.mockImplementation(note('wipe', { count: 0 }));
+    h.tx.expenseLineItem.create.mockImplementation(note('line', {}));
+    h.ensureClaimantAttendee.mockImplementation(note('ensure', 'att-1'));
+    h.supersedeDetermination.mockImplementation(note('supersede', undefined));
+    h.recomputeReportTotal.mockImplementation(note('rollup', undefined));
+    h.writeAudit.mockImplementation(note('audit', undefined));
+
+    await handleDetermineExpense({ organizationId: ORG, expenseId: 'e1' });
+
+    expect(seen).toEqual(['snapshot', 'wipe', 'line', 'ensure', 'supersede', 'rollup', 'audit']);
+    expect(h.lockClaimantSnapshot).toHaveBeenCalledWith(h.tx, 'e1');
+    expect(h.writeAudit.mock.calls[0][0]).toBe(h.tx);
+    expect(h.writeAudit.mock.calls[0][1]).toEqual({
+      action: 'report.update',
+      entityType: 'Expense',
+      entityId: 'e1',
+      actor: { kind: 'system', jobName: 'expense.determineExpense' },
+      details: {
+        claimantAttendeeAdded: true,
+        claimantAttendeeId: 'att-1',
+        expenseId: 'e1',
+        source: 'expense.determineExpense',
+      },
+    });
+  });
+
+  it('writes no claimant audit row when nobody was added', async () => {
+    locked('DRAFT');
+    await handleDetermineExpense({ organizationId: ORG, expenseId: 'e1' });
+    expect(h.ensureClaimantAttendee).toHaveBeenCalled();
+    expect(h.writeAudit).not.toHaveBeenCalled();
   });
 
   it('keeps the model call OUT of the transaction', async () => {

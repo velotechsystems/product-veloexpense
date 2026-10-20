@@ -1067,4 +1067,406 @@ describe.skipIf(!process.env.DATABASE_URL)('expenses report-editor (integration)
       await db.expenseReport.delete({ where: { id: report.id } }).catch(() => {});
     });
   });
+
+  /**
+   * The expense owner as the first attendee (attendees-prefill-claimant).
+   *
+   * When a line write gives an expense its FIRST line in a category that requires attendees
+   * and nobody is listed yet, the server adds the expense OWNER as an internal attendee in
+   * the same transaction, and the line's audit row says so with ids only. The rule itself is
+   * `@expenseos/db`'s `ownerAttendee.ts`, pinned there against Postgres. What this block
+   * proves is the WIRING in `lineItemCreate` / `lineItemUpdate`: which edits trigger it, that
+   * the old category counts as the "before", that a removal sticks, and that the audit row
+   * gains exactly three keys and only when a row was written.
+   *
+   * VeloExpense (ExpenseOS 67db2e33, #588): ExpenseOS's cases on this suite's harness. Its
+   * own people are inserted through the superuser pool (first/last names, 0072); the audit
+   * action names are VeloExpense's (`LINE_ITEM_ADDED`, `LINE_ITEM_EDITED`,
+   * `LINE_ITEM_REMOVED`); the tenant is this suite's own, so no cleanup is needed.
+   */
+  describe('the expense owner is prefilled as the first attendee', () => {
+    const tag = 'claimant-ed';
+    const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+    /** 'pending' if `p` has not settled within `ms`, else its outcome. */
+    const settledWithin = (p: Promise<unknown>, ms: number) =>
+      Promise.race([
+        p.then(
+          () => 'resolved' as const,
+          () => 'rejected' as const,
+        ),
+        sleep(ms).then(() => 'pending' as const),
+      ]);
+    const latch = () => {
+      let open!: () => void;
+      const opened = new Promise<void>((r) => {
+        open = r;
+      });
+      return { open, opened };
+    };
+
+    let lockClaimantSnapshot: (tx: unknown, expenseId: string) => Promise<unknown>;
+    const currencyId = 'CAD';
+    let businessUnitId: string;
+    /** Claire Mant — owns the expenses unless a case says otherwise. */
+    let claimantId: string;
+    /** No first or last name: the attendee falls back to the email. */
+    let namelessId: string;
+    let namelessEmail: string;
+    /** Files on the claimant's behalf (`report.submitterId`), never the expense owner. */
+    let delegateId: string;
+    let requiringId: string;
+    let requiringBId: string;
+    let plainId: string;
+    let ruleId: string | undefined;
+
+    beforeAll(async () => {
+      ({ lockClaimantSnapshot } = (await import('@expenseos/db')) as never);
+      businessUnitId = (
+        await db.businessUnit.create({ data: { label: { en: `${tag} BU` } }, select: { id: true } })
+      ).id;
+      const user = async (local: string, firstName: string | null, lastName: string | null) => {
+        const email = `${tag}-${local}@test.invalid`;
+        const id = (
+          await h.admin.query(
+            `INSERT INTO app_user (organization_id, email, display_name, first_name, last_name, role_id, business_unit_id)
+             VALUES ($1, $2, $3, $4, $5, '019e3000-0000-7000-8000-000000000004', $6) RETURNING id`,
+            [h.orgId, email, [firstName, lastName].filter(Boolean).join(' ') || email, firstName, lastName, businessUnitId],
+          )
+        ).rows[0].id as string;
+        return { id, email };
+      };
+      claimantId = (await user('claimant', 'Claire', 'Mant')).id;
+      const nameless = await user('nameless', null, null);
+      namelessId = nameless.id;
+      namelessEmail = nameless.email;
+      delegateId = (await user('delegate', 'Dana', 'Legate')).id;
+      const category = async (label: string, requiresAttendees: boolean) => {
+        const { id } = await db.expenseCategory.create({
+          data: { label: { en: `${tag} ${label}`, 'fr-CA': `${tag} ${label}` }, requiresAttendees },
+          select: { id: true },
+        });
+        return id;
+      };
+      requiringId = await category('requiring A', true);
+      requiringBId = await category('requiring B', true);
+      plainId = await category('plain', false);
+    });
+
+    afterAll(async () => {
+      // A BLOCK rule must not outlive its case for the suites that share this tenant's file.
+      if (ruleId) await db.policyRule.delete({ where: { id: ruleId } }).catch(() => {});
+    });
+
+    /** A fresh report holding one expense with no lines and no attendees. */
+    async function expenseFor(
+      owner: string,
+      opts: { submitter?: string; status?: 'DRAFT' | 'SUBMITTED' } = {},
+    ) {
+      const report = await db.expenseReport.create({
+        data: {
+          title: `${tag} report`,
+          submitterId: opts.submitter ?? owner,
+          currencyId,
+          status: opts.status ?? 'DRAFT',
+        },
+        select: { id: true },
+      });
+      const expense = await db.expense.create({
+        data: {
+          reportId: report.id,
+          ownerId: owner,
+          currencyId,
+          date: new Date(),
+          amountMinor: 0n,
+        },
+        select: { id: true },
+      });
+      return { reportId: report.id, expenseId: expense.id };
+    }
+
+    const attendeesOf = (expenseId: string) =>
+      db.expenseAttendee.findMany({
+        where: { expenseId },
+        orderBy: { id: 'asc' },
+        select: { id: true, name: true, company: true, isExternal: true },
+      });
+    const shapeOf = async (expenseId: string) =>
+      (await attendeesOf(expenseId)).map(({ id: _id, ...rest }: { id: string }) => rest);
+    const CLAIRE = { name: 'Claire Mant', company: null, isExternal: false };
+    const caller = () => makeCaller(RW, claimantId);
+    const addLine = (expenseId: string, categoryId: string, amountMinor = '5000') =>
+      caller().lineItemCreate({ expenseId, categoryId, amountMinor });
+
+    it('1, 16a: the first requiring line adds the owner, and its audit row names the attendee by id', async () => {
+      const { expenseId: id } = await expenseFor(claimantId);
+      await addLine(id, requiringId);
+
+      const rows = await attendeesOf(id);
+      expect(rows.map(({ id: _id, ...rest }: { id: string }) => rest)).toEqual([CLAIRE]);
+
+      const audit = await lastAudit('Expense', id);
+      expect(audit?.action).toBe('LINE_ITEM_ADDED');
+      expect(audit?.details).toEqual({
+        categoryId: requiringId,
+        claimantAttendeeAdded: true,
+        claimantAttendeeId: rows[0].id,
+        expenseId: id,
+      });
+    });
+
+    it('2, 16b: a second requiring line adds no one, and its audit row is unchanged', async () => {
+      const { expenseId: id } = await expenseFor(claimantId);
+      await addLine(id, requiringId);
+      await addLine(id, requiringId);
+
+      expect(await shapeOf(id)).toEqual([CLAIRE]);
+      expect((await lastAudit('Expense', id))?.details).toEqual({ categoryId: requiringId });
+    });
+
+    it('3: a removal sticks through a second requiring line and an amount edit', async () => {
+      const { expenseId: id } = await expenseFor(claimantId);
+      const first = await addLine(id, requiringId);
+      await caller().updateExpense({ expenseId: id, attendees: [] });
+      await addLine(id, requiringId);
+      await caller().lineItemUpdate({ id: first.id, amountMinor: '7000' });
+
+      expect(await attendeesOf(id)).toEqual([]);
+      expect((await lastAudit('ExpenseLineItem', first.id))?.details).toEqual({
+        fields: ['amountMinor'],
+      });
+    });
+
+    it('4, 16c: recoding the only requiring line away and back re-adds the owner once the list is empty', async () => {
+      const { expenseId: id } = await expenseFor(claimantId);
+      const line = await addLine(id, requiringId);
+      await caller().updateExpense({ expenseId: id, attendees: [] });
+      await caller().lineItemUpdate({ id: line.id, categoryId: plainId });
+      expect(await attendeesOf(id)).toEqual([]);
+      expect((await lastAudit('ExpenseLineItem', line.id))?.details).toEqual({
+        fields: ['categoryId'],
+      });
+
+      await caller().lineItemUpdate({ id: line.id, categoryId: requiringId });
+
+      const rows = await attendeesOf(id);
+      expect(rows.map(({ id: _id, ...rest }: { id: string }) => rest)).toEqual([CLAIRE]);
+      const audit = await lastAudit('ExpenseLineItem', line.id);
+      expect(audit?.action).toBe('LINE_ITEM_EDITED');
+      expect(audit?.details).toEqual({
+        fields: ['categoryId'],
+        claimantAttendeeAdded: true,
+        claimantAttendeeId: rows[0].id,
+        expenseId: id,
+      });
+    });
+
+    it('5, 16d: the same switch with the list NOT emptied adds no duplicate', async () => {
+      const { expenseId: id } = await expenseFor(claimantId);
+      const line = await addLine(id, requiringId);
+      await caller().lineItemUpdate({ id: line.id, categoryId: plainId });
+      await caller().lineItemUpdate({ id: line.id, categoryId: requiringId });
+
+      expect(await shapeOf(id)).toEqual([CLAIRE]);
+      expect((await lastAudit('ExpenseLineItem', line.id))?.details).toEqual({
+        fields: ['categoryId'],
+      });
+    });
+
+    it("6, 16d: requiring A to requiring B after a removal adds no one — the line's old category is the before", async () => {
+      const { expenseId: id } = await expenseFor(claimantId);
+      const line = await addLine(id, requiringId);
+      await caller().updateExpense({ expenseId: id, attendees: [] });
+      await caller().lineItemUpdate({ id: line.id, categoryId: requiringBId });
+
+      expect(await attendeesOf(id)).toEqual([]);
+      expect((await lastAudit('ExpenseLineItem', line.id))?.details).toEqual({
+        fields: ['categoryId'],
+      });
+    });
+
+    it('7, 16d: a categoryId equal to the current one is not a change', async () => {
+      const { expenseId: id } = await expenseFor(claimantId);
+      const line = await addLine(id, requiringId);
+      await caller().updateExpense({ expenseId: id, attendees: [] });
+      await caller().lineItemUpdate({ id: line.id, categoryId: requiringId });
+
+      expect(await attendeesOf(id)).toEqual([]);
+      expect((await lastAudit('ExpenseLineItem', line.id))?.details).toEqual({
+        fields: ['categoryId'],
+      });
+    });
+
+    it('8, 16d: an edit without a categoryId never prefills, even on a requiring line with an empty list', async () => {
+      const { expenseId: id } = await expenseFor(claimantId);
+      const line = await addLine(id, requiringId);
+      await caller().updateExpense({ expenseId: id, attendees: [] });
+      await caller().lineItemUpdate({ id: line.id, notes: 'Team lunch' });
+
+      expect(await attendeesOf(id)).toEqual([]);
+      expect((await lastAudit('ExpenseLineItem', line.id))?.details).toEqual({
+        fields: ['notes'],
+      });
+    });
+
+    it('9, 16e: removing the only requiring line leaves the owner listed, and a new one adds no second', async () => {
+      const { expenseId: id } = await expenseFor(claimantId);
+      const line = await addLine(id, requiringId);
+      await caller().lineItemRemove({ id: line.id });
+
+      expect(await shapeOf(id)).toEqual([CLAIRE]);
+      const audit = await lastAudit('ExpenseLineItem', line.id);
+      expect(audit?.action).toBe('LINE_ITEM_REMOVED');
+      expect(audit?.details).toEqual({});
+
+      await addLine(id, requiringId);
+      expect(await shapeOf(id)).toEqual([CLAIRE]);
+    });
+
+    it('10: removing the owner, then the requiring line, then adding a requiring line re-adds the owner', async () => {
+      const { expenseId: id } = await expenseFor(claimantId);
+      const line = await addLine(id, requiringId);
+      await caller().updateExpense({ expenseId: id, attendees: [] });
+      await caller().lineItemRemove({ id: line.id });
+      await addLine(id, requiringId);
+
+      expect(await shapeOf(id)).toEqual([CLAIRE]);
+    });
+
+    it("11: a delegate filing adds the expense OWNER's name, not their own", async () => {
+      const { expenseId: id } = await expenseFor(claimantId, { submitter: delegateId });
+      await makeCaller(RW, delegateId).lineItemCreate({
+        expenseId: id,
+        categoryId: requiringId,
+        amountMinor: '5000',
+      });
+
+      expect(await shapeOf(id)).toEqual([CLAIRE]);
+    });
+
+    it('12: an owner with no first or last name is listed by email', async () => {
+      const { expenseId: id } = await expenseFor(namelessId);
+      await makeCaller(RW, namelessId).lineItemCreate({
+        expenseId: id,
+        categoryId: requiringId,
+        amountMinor: '5000',
+      });
+
+      expect(await shapeOf(id)).toEqual([
+        { name: namelessEmail, company: null, isExternal: false },
+      ]);
+    });
+
+    it('13: a SUBMITTED report refuses the line and adds no one; once RETURNED the prefill applies', async () => {
+      const { reportId: rid, expenseId: id } = await expenseFor(claimantId, {
+        status: 'SUBMITTED',
+      });
+      await expect(addLine(id, requiringId)).rejects.toThrow();
+      expect(await attendeesOf(id)).toEqual([]);
+
+      await db.expenseReport.update({ where: { id: rid }, data: { status: 'RETURNED' } });
+      await addLine(id, requiringId);
+      expect(await shapeOf(id)).toEqual([CLAIRE]);
+    });
+
+    it('14: a header-only edit after the prefill leaves the owner row untouched', async () => {
+      const { expenseId: id } = await expenseFor(claimantId);
+      await addLine(id, requiringId);
+      const before = await attendeesOf(id);
+      expect(before).toHaveLength(1);
+      await caller().updateExpense({ expenseId: id, merchant: 'Le Bistro' });
+
+      expect(await attendeesOf(id)).toEqual(before);
+    });
+
+    it('15: re-sending the unchanged roster records no attendee change', async () => {
+      const { expenseId: id } = await expenseFor(claimantId);
+      await addLine(id, requiringId);
+      await caller().updateExpense({ expenseId: id, attendees: [CLAIRE] });
+
+      expect((await lastAudit('Expense', id))?.details).toEqual({
+        changed: {},
+        fields: [],
+        unchanged: true,
+      });
+      expect(await shapeOf(id)).toEqual([CLAIRE]);
+    });
+
+    it('17: the audit-threshold attendee finding is gone with the owner listed, and back once removed', async () => {
+      // Scoped to this block's business unit, so no other case's report sees it. BLOCK, so a
+      // seeded instance of the same kind cannot outrank it on the line; the purpose is filled
+      // in, so the only gap any instance of the kind can report here is attendees.
+      ruleId = (
+        await db.policyRule.create({
+          data: {
+            kindCode: 'AUDIT_THRESHOLD',
+            scope: 'AGGREGATE',
+            severity: 'BLOCK',
+            params: { thresholdMinor: '100', requirePurpose: false, requireAttendees: true },
+            messageKey: 'auditThresholdAttendees',
+            businessUnitId,
+            effectiveFrom: new Date('2000-01-01'),
+          },
+          select: { id: true },
+        })
+      ).id;
+      const { reportId: rid, expenseId: id } = await expenseFor(claimantId);
+      await db.expense.update({ where: { id }, data: { purpose: 'Client dinner' } });
+      const line = await addLine(id, requiringId);
+      const attendeeGaps = async () =>
+        (await caller().validate({ reportId: rid })).violations.filter(
+          (v: { lineItemId: string | null; data?: { missing?: string[] } }) =>
+            v.lineItemId === line.id && (v.data?.missing ?? []).includes('attendees'),
+        );
+
+      try {
+        expect(await attendeeGaps()).toEqual([]);
+
+        await caller().updateExpense({ expenseId: id, attendees: [] });
+        const gaps = await attendeeGaps();
+        expect(gaps).toHaveLength(1);
+        expect(gaps[0].ruleCode).toBe(ruleId);
+      } finally {
+        await db.policyRule.delete({ where: { id: ruleId } });
+        ruleId = undefined;
+      }
+    });
+
+    /**
+     * Characterisation, not a rule this ticket adds — it records what IS, so a change to it
+     * is noticed. `updateExpense` takes no lock of its own; the question was whether its
+     * `expense.update`, with every header field `undefined` when only `attendees` is sent,
+     * still reaches Postgres as an UPDATE and so waits behind a line write's Expense row
+     * lock. It does not: Prisma sends no UPDATE at all — `Expense.updatedAt`, an
+     * `@updatedAt` column, does not move — and the attendee delete takes no lock on the
+     * Expense row. So an attendees-only save does not serialise with a line write.
+     */
+    it('18 (characterisation): an attendees-only updateExpense does NOT wait behind a held claimant snapshot lock', async () => {
+      const { expenseId: id } = await expenseFor(claimantId);
+      const { updatedAt: before } = await db.expense.findUniqueOrThrow({
+        where: { id },
+        select: { updatedAt: true },
+      });
+      const locked = latch();
+      const release = latch();
+      const txA = db.$transaction(async (tx: unknown) => {
+        await lockClaimantSnapshot(tx, id);
+        locked.open();
+        await release.opened;
+      });
+      await locked.opened;
+
+      const write = caller().updateExpense({ expenseId: id, attendees: [] });
+      const outcome = await settledWithin(write, 300);
+      release.open();
+      await txA;
+      await write;
+
+      expect(outcome).toBe('resolved');
+      const { updatedAt: after } = await db.expense.findUniqueOrThrow({
+        where: { id },
+        select: { updatedAt: true },
+      });
+      expect(after).toEqual(before);
+    });
+  });
 });

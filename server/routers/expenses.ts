@@ -62,10 +62,13 @@ import {
   type DocScanStatus,
   ExpenseReportStatus,
   ExpenseTaxSource,
+  ensureClaimantAttendee,
   fxColumns,
   fxOverrideOf,
   fxParamsFrom,
   glAccountIdForCategory,
+  homeCurrencyCode,
+  lockClaimantSnapshot,
   nextReportNumber,
   Prisma,
   recomputeReportTotal,
@@ -322,6 +325,16 @@ function normalizeAttendees(
   return [...list]
     .map((a) => ({ name: a.name, company: a.company ?? null, isExternal: a.isExternal ?? false }))
     .sort((x, y) => x.name.localeCompare(y.name));
+}
+
+/**
+ * What a line write's audit row gains when it added the expense owner as the first
+ * attendee (`ensureClaimantAttendee`). Ids only: the attendee's name is the owner's name
+ * or email, and neither belongs in the audit details. `expenseId` is there because the
+ * `lineItemUpdate` row is keyed on the line and does not otherwise name the expense.
+ */
+function claimantAuditKeys(claimantAttendeeId: string, expenseId: string) {
+  return { claimantAttendeeAdded: true, claimantAttendeeId, expenseId } as const;
 }
 
 /** The one refusal for a write to a report the submitter no longer owns the figures of. */
@@ -649,7 +662,9 @@ async function resolveLineKind(
  *  country + the expense date) and the km / rate are stamped; for any other
  *  category the typed amount is used and the mileage columns are cleared. */
 async function computeLineFinancials(
-  db: import('@expenseos/db').PrismaClient,
+  // A transaction too: an expense's date change reprices its mileage lines inside the
+  // same transaction as the date, so a refused reprice leaves the date where it was.
+  db: import('@expenseos/db').PrismaClient | Prisma.TransactionClient,
   params: {
     expenseId: string;
     categoryId: string;
@@ -754,6 +769,53 @@ async function computeLineFinancials(
           : null,
     },
   };
+}
+
+/**
+ * Reprice every mileage line on an expense at the expense's CURRENT date.
+ *
+ * A mileage line's rate and year-to-date band are resolved from the expense date when the
+ * line is written, so changing the date afterwards left lines priced at a rate that was
+ * never in force on the day being claimed. Run inside the date change's transaction: a new
+ * date with no rate in force throws, and the date is not saved either.
+ *
+ * Each line keeps its claimed distance, unit, route and override; only what the date
+ * decides — rate, band, YTD basis and amount — is re-derived. A mileage line with no
+ * distance yet (a category just switched to mileage) is already zero and is left alone.
+ * Returns how many lines were repriced. Ported from ExpenseOS 67db2e33 (#578).
+ */
+async function repriceMileageLines(
+  db: import('@expenseos/db').PrismaClient | Prisma.TransactionClient,
+  expenseId: string,
+): Promise<number> {
+  const lines = await db.expenseLineItem.findMany({
+    where: { expenseId, kind: 'MILEAGE', mileageDistance: { not: null } },
+    select: {
+      id: true,
+      categoryId: true,
+      mileageDistance: true,
+      mileageUnit: true,
+      mileageRoute: true,
+      mileageDistanceOverride: true,
+    },
+  });
+  for (const line of lines) {
+    const fin = await computeLineFinancials(db, {
+      expenseId,
+      categoryId: line.categoryId,
+      mileageDistance: line.mileageDistance?.toString() ?? null,
+      // VeloExpense: text with a CHECK (KM | MI, 0054).
+      mileageUnit: line.mileageUnit as 'KM' | 'MI' | null,
+      mileageRoute: line.mileageRoute,
+      mileageDistanceOverride: line.mileageDistanceOverride?.toString() ?? null,
+      lineItemId: line.id,
+    });
+    await db.expenseLineItem.update({
+      where: { id: line.id },
+      data: { amountMinor: fin.amountMinor, ...fin.mileage },
+    });
+  }
+  return lines.length;
 }
 
 /** What `resolveMileageForLine` hands back: the derived amount plus the FULL set of
@@ -1424,6 +1486,22 @@ export const expensesRouter = router({
       };
     }),
 
+  /**
+   * The currency a new report opens in when the filer does not pick one — the same rule
+   * `create` applies when no currency is sent. The New report dialog pre-selects it.
+   *
+   * Takes no input on purpose: it answers for the SESSION's user only, so it cannot be
+   * pointed at somebody else to learn their currency. Gated on `createOwn` because the
+   * one thing it is for is filing a report; a role that cannot file has no use for it.
+   *
+   * Ported from ExpenseOS 67db2e33 (#581). VeloExpense: the rule is `homeCurrencyCode`
+   * (f29) — the person's legal entity's, else the tenant's main entity's, else CAD — as a
+   * person carries no currency of their own here (Wave 2).
+   */
+  defaultCurrency: withPermission(P.expense.report.createOwn).query(async ({ ctx }) => ({
+    code: await homeCurrencyCode(ctx.db, ctx.session.user.id),
+  })),
+
   /** Create a new draft expense report. */
   create: withPermission(P.expense.report.createOwn)
     .input(
@@ -1431,8 +1509,11 @@ export const expensesRouter = router({
         title: z.string().min(1).max(200),
         /** Either a Currency UUID or an ISO-4217 code. The router
          *  resolves to the FK so the client can keep using "USD"
-         *  while we move callers off the legacy String column. */
-        currency: z.string().min(3).default('USD'),
+         *  while we move callers off the legacy String column.
+         *  Omitted: the filer's default currency, resolved here from the
+         *  session — never a literal the client or this schema supplies.
+         *  (ExpenseOS 67db2e33, #581: this defaulted to 'USD'.) */
+        currency: z.string().min(3).optional(),
       }),
     )
     .mutation(async ({ ctx, input }) => {
@@ -1440,8 +1521,9 @@ export const expensesRouter = router({
       // VeloExpense: a currency's key IS its code, so there is no uuid to accept — a uuid
       // names nothing and is refused as an unknown currency, as ExpenseOS refuses one that
       // does not exist.
+      const requested = input.currency ?? (await homeCurrencyCode(ctx.db, ctx.session.user.id));
       const currencyRow = await ctx.db.currency.findUnique({
-        where: { code: input.currency.toUpperCase() },
+        where: { code: requested.toUpperCase() },
         select: { code: true },
       });
       if (!currencyRow) {
@@ -3422,7 +3504,10 @@ export const expensesRouter = router({
             : {}),
         },
       );
-      await withAudit(
+      // Only a date that actually moves reprices; re-sending the same day is not an edit.
+      const dateMoved =
+        input.date !== undefined && before?.date?.getTime() !== input.date.getTime();
+      const { repriced } = await withAudit(
         ctx.db,
         {
           action: auditActions.report.update,
@@ -3461,9 +3546,12 @@ export const expensesRouter = router({
               });
             }
           }
-          return { id: input.expenseId };
+          // After the date is written, so the pricing reads the new one.
+          const repriced = dateMoved ? await repriceMileageLines(tx, input.expenseId) : 0;
+          return { id: input.expenseId, repriced };
         },
       );
+      if (repriced > 0) await recomputeTotals(ctx.db, input.expenseId);
       // Header corrections the next determination has to honour (rule 2). Only the
       // fields a determination actually proposes — `purpose` and `explanation` are
       // the human's own words, never the model's, so they are not disagreements.
@@ -3754,6 +3842,9 @@ export const expensesRouter = router({
         categoryId: input.categoryId,
         tipMinor: optMinor(input.tipMinor) ?? null,
       });
+      // Hoisted so the callback can add the claimant keys: `withAudit` reads `details`
+      // only after the callback resolves.
+      const details: Record<string, unknown> = { categoryId: input.categoryId };
       const created = await withAudit(
         ctx.db,
         {
@@ -3761,10 +3852,13 @@ export const expensesRouter = router({
           entityType: 'Expense',
           entityId: input.expenseId,
           actor: actorOf(ctx),
-          details: { categoryId: input.categoryId },
+          details,
         },
-        async (tx) =>
-          tx.expenseLineItem.create({
+        async (tx) => {
+          // First statement: the Expense row lock, then the "before" read. The expense id
+          // is the one `assertExpenseDraft` just checked, never a new input.
+          const snapshot = await lockClaimantSnapshot(tx, input.expenseId);
+          const line = await tx.expenseLineItem.create({
             data: {
               expenseId: input.expenseId,
               categoryId: input.categoryId,
@@ -3778,7 +3872,13 @@ export const expensesRouter = router({
               notes: input.notes,
             },
             select: { id: true },
-          }),
+          });
+          const claimantAttendeeId = await ensureClaimantAttendee(tx, snapshot);
+          if (claimantAttendeeId) {
+            Object.assign(details, claimantAuditKeys(claimantAttendeeId, snapshot.expenseId));
+          }
+          return line;
+        },
       );
       // recomputeTotals re-derives the expense total + tax (recoverable
       // re-allocates across the new category set).
@@ -3873,6 +3973,14 @@ export const expensesRouter = router({
         categoryId: effectiveCategoryId,
         tipMinor: input.tipMinor === undefined ? tipMinorOf(line) : optMinor(input.tipMinor),
       });
+      // Only a category CHANGE can move the expense into a requiring category, so only
+      // that edit pays for the lock and the claimant reads; a notes or amount edit skips it.
+      const categoryChanges = input.categoryId != null && input.categoryId !== line.categoryId;
+      // Hoisted so the callback can add the claimant keys: `withAudit` reads `details`
+      // only after the callback resolves.
+      const details: Record<string, unknown> = {
+        fields: Object.keys(input).filter((k) => k !== 'id'),
+      };
       await withAudit(
         ctx.db,
         {
@@ -3880,10 +3988,14 @@ export const expensesRouter = router({
           entityType: 'ExpenseLineItem',
           entityId: input.id,
           actor: actorOf(ctx),
-          details: { fields: Object.keys(input).filter((k) => k !== 'id') },
+          details,
         },
-        async (tx) =>
-          tx.expenseLineItem.update({
+        async (tx) => {
+          // First statement: the Expense row lock, then the "before" read — which still
+          // sees this line in its OLD category. `line.expenseId` was read from the
+          // database and checked by `assertExpenseDraft`.
+          const snapshot = categoryChanges ? await lockClaimantSnapshot(tx, line.expenseId) : null;
+          await tx.expenseLineItem.update({
             where: { id: input.id },
             data: {
               categoryId: input.categoryId,
@@ -3901,7 +4013,12 @@ export const expensesRouter = router({
               notes: input.notes,
             },
             select: { id: true },
-          }),
+          });
+          const claimantAttendeeId = snapshot ? await ensureClaimantAttendee(tx, snapshot) : null;
+          if (claimantAttendeeId && snapshot) {
+            Object.assign(details, claimantAuditKeys(claimantAttendeeId, snapshot.expenseId));
+          }
+        },
       );
       // Category/amount change → the expense tax + recoverable re-derive.
       await recomputeTotals(ctx.db, line.expenseId);
