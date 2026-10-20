@@ -110,6 +110,9 @@ const PAGES = [
   // the travel module on (scripts/seed.mjs), so neither is the module gate's 404 here.
   '/travel',
   '/admin/travel-categories',
+  // VeloExpense (w6-03): the assistant's review queue (admin.help.manage). The assistant is
+  // CORE (d89), so this is never the module gate's 404 here.
+  '/admin/assistant-feedback',
 ] as const;
 
 /**

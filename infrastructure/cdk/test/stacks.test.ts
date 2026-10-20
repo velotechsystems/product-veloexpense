@@ -290,13 +290,22 @@ describe('the queue (w3-00)', () => {
     expect(relay('veloexpense-dev-worker')).toEqual(relay('veloexpense-dev-web'));
   });
 
-  it('only the worker receives the Anthropic key', () => {
+  // w6-03 (d90, reverses d40's worker-only rule): the web task holds the key too, for the
+  // assistant's chat route. Still nothing else — not the db task, not a scheduled job.
+  it('only the web task and the worker receive the Anthropic key', () => {
     const holders = resources(s.compute, 'AWS::ECS::TaskDefinition')
       .filter(([, r]) =>
         json((r.Properties as { ContainerDefinitions: unknown }).ContainerDefinitions).includes('ANTHROPIC_API_KEY'),
       )
-      .map(([, r]) => (r.Properties as { Family: string }).Family);
-    expect(holders).toEqual(['veloexpense-dev-worker']);
+      .map(([, r]) => (r.Properties as { Family: string }).Family)
+      .sort();
+    expect(holders).toEqual(['veloexpense-dev-web', 'veloexpense-dev-worker']);
+  });
+
+  it('the web execution role can read the Anthropic key (the assistant, d90)', () => {
+    const [, p] = resources(s.compute, 'AWS::IAM::Policy').find(([id]) => id.startsWith('WebExecutionRole'))!;
+    expect(json(p.Properties)).toContain('veloexpense/dev/anthropic-api-key');
+    expect(secretsOf('veloexpense-dev-web').secrets).toContain('ANTHROPIC_API_KEY');
   });
 
   it('the web task can enqueue', () => {

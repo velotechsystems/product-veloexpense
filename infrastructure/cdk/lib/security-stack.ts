@@ -33,7 +33,8 @@
  *   google-oauth            {"clientId": …, "clientSecret": …} — the Google
  *                           sign-in client for this environment's host.
  *   anthropic-api-key       The VeloExpense Anthropic API key (w3-02a, d40),
- *                           plain text. Read by the worker only.
+ *                           plain text. Read by the worker (receipt reading)
+ *                           and, since w6-03 (d90), the web task (the assistant).
  */
 import {
   Duration,

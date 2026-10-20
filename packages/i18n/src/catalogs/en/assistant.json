@@ -1,7 +1,7 @@
 {
   "attach": "Attach receipts",
   "attachRejectedSize": "{count, plural, =1 {One file is} other {# files are}} over the 10 MB limit.",
-  "attachRejectedType": "{count, plural, =1 {One file was not a receipt ExpenseOS can read} other {# files were not receipts ExpenseOS can read}} — use a photo, an image or a PDF.",
+  "attachRejectedType": "{count, plural, =1 {One file was not a receipt VeloExpense can read} other {# files were not receipts VeloExpense can read}} — use a photo, an image or a PDF.",
   "attachRemove": "Remove {name}",
   "attachTooMany": "You can attach up to {max} files at once.",
   "attachedCount": "{count, plural, =1 {1 attachment} other {# attachments}}",
@@ -15,7 +15,7 @@
   "confirmed": "Done.",
   "decline": "Not now",
   "declined": "Left alone.",
-  "emptyBody": "I answer questions about ExpenseOS and can draft actions for you to confirm. I only ever see what you can see.",
+  "emptyBody": "I answer questions about VeloExpense and can draft actions for you to confirm. I only ever see what you can see.",
   "emptyTitle": "What can I help with?",
   "error": "Something went wrong. Try asking again.",
   "errorReason": {
@@ -26,7 +26,7 @@
     "upstream": "The model service failed to answer. This is not something you did — try again shortly.",
     "network": "The connection dropped before the answer finished. Check your network and try again."
   },
-  "filed": "{count, plural, =1 {Receipt filed} other {# receipts filed}} — ExpenseOS is reading {count, plural, =1 {it} other {them}} now.",
+  "filed": "{count, plural, =1 {Receipt filed} other {# receipts filed}} — VeloExpense is reading {count, plural, =1 {it} other {them}} now.",
   "filedPartial": "{filed, plural, =0 {No receipts were filed} =1 {One receipt was filed} other {# receipts were filed}}, and {missing, plural, =1 {one did not go through} other {# did not go through}}. You can upload the rest on the report.",
   "filing": "Filing your receipts… {done} of {total}.",
   "history": "Past conversations",
@@ -37,7 +37,7 @@
   "newConversation": "New conversation",
   "open": "Open the assistant",
   "openReport": "Open the report",
-  "placeholder": "Ask about ExpenseOS…",
+  "placeholder": "Ask about VeloExpense…",
   "rateLimited": "You have reached the hourly limit for assistant messages.",
   "rateThanks": "Thanks — noted.",
   "rateTitle": "Was this helpful?",

@@ -106,6 +106,8 @@ export { SidebarSection, type SidebarSectionProps } from '@/components/navigatio
 // ── ui ───────────────────────────────────────────────────────────────
 export { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 export { Textarea } from '@/components/ui/textarea';
+// w6-03: the assistant panel and its feedback queue render replies with ExpenseOS's MarkdownText.
+export { MarkdownText, type MarkdownTextProps } from '@/components/ui/markdown-text';
 export { Badge, badgeVariants } from '@/components/ui/badge';
 /** People 3: ExpenseOS's barrel exports `BadgeProps` (lib/employeeStatus.ts types its variant map
  *  with it); the kit's Badge has no props interface of its own, so it is derived here. */
