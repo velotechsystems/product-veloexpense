@@ -468,5 +468,16 @@
   "capture": {
     "takePhoto": "Prendre une photo",
     "chooseFile": "Choisir un fichier"
+  },
+  "receiptsEmail": {
+    "title": "Envoyez vos reçus par courriel",
+    "lede": "Transférez un reçu à cette adresse et il devient un rapport de dépenses, lu de la même façon qu'un téléversement.",
+    "sendFrom": "Envoyez-le depuis {email}, l'adresse avec laquelle vous vous connectez. Un courriel provenant d'une autre adresse est refusé.",
+    "copy": "Copier l'adresse",
+    "copied": "Copiée",
+    "copyFailed": "Impossible de copier. Sélectionnez l'adresse et copiez-la vous-même.",
+    "notConfigured": "Les reçus par courriel ne sont pas encore configurés ici. Téléversez plutôt vos reçus depuis vos rapports de dépenses.",
+    "loadFailed": "Impossible de charger votre adresse de reçus.",
+    "hint": "Ou envoyez vos reçus par courriel à <mono>{address}</mono> depuis {email}."
   }
 }

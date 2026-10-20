@@ -468,5 +468,16 @@
   "capture": {
     "takePhoto": "Take photo",
     "chooseFile": "Choose file"
+  },
+  "receiptsEmail": {
+    "title": "Email your receipts",
+    "lede": "Forward a receipt to this address and it becomes an expense report, read the same way as an upload.",
+    "sendFrom": "Send from {email}, the address you sign in with. Email from any other address is refused.",
+    "copy": "Copy address",
+    "copied": "Copied",
+    "copyFailed": "Could not copy. Select the address and copy it yourself.",
+    "notConfigured": "Receipts by email is not set up here yet. Upload receipts from your expense reports instead.",
+    "loadFailed": "Could not load your receipts address.",
+    "hint": "Or email receipts to <mono>{address}</mono> from {email}."
   }
 }

@@ -22,9 +22,11 @@ jobs:
     runs-on: ubuntu-24.04
     # Everything from install to the audit-chain check runs in this one job. Wave 1
     # took it to ~15 minutes (unit + DB suite ~5, Playwright ~5-6, build, crawl), so the
-    # old 15-minute ceiling started cancelling green runs mid-e2e. 30 leaves room for the
-    # waves still to come; a step that genuinely hangs still fails the run.
-    timeout-minutes: 30
+    # old 15-minute ceiling started cancelling green runs mid-e2e. 30 left room for the
+    # waves still to come, until Wave 6 and its follow-ups took the desktop suite past 340
+    # cases and #292's run was cancelled at exactly 30m with every other job green. 45 is
+    # the new ceiling; a step that genuinely hangs still fails the run.
+    timeout-minutes: 45
     env:
       AUTH_SECRET: ci-test-only-not-a-real-secret
       # VX3-3. 32 bytes of base64 — the integration-credential envelope refuses
