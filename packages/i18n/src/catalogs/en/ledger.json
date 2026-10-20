@@ -31,7 +31,7 @@
     "deleteAction": "Delete",
     "deleteTitle": "Delete this reference?",
     "deleteSubject": "{name} — NetSuite ID {netsuiteId}",
-    "deleteBody": "This removes the row from ExpenseOS permanently. It cannot be undone.",
+    "deleteBody": "This removes the row from VeloExpense permanently. It cannot be undone.",
     "deleteConfirm": "Delete",
     "deleteCancel": "Cancel",
     "deleteWorking": "Deleting…",
@@ -242,7 +242,7 @@
     "taxGroupClear": "Clear",
     "taxGroupInactive": "Inactive",
     "taxGroupAppliesTo": "Applies to: {entities}",
-    "taxGroupsHelp": "Choose a zero-rated group. ExpenseOS already works out the tax — recoverable GST/QST post as their own GL lines and the rest is included in the line it belongs to — so a group with a rate would have NetSuite charge tax on tax. Without a tax code, NetSuite refuses a Canadian report outright."
+    "taxGroupsHelp": "Choose a zero-rated group. VeloExpense already works out the tax — recoverable GST/QST post as their own GL lines and the rest is included in the line it belongs to — so a group with a rate would have NetSuite charge tax on tax. Without a tax code, NetSuite refuses a Canadian report outright."
   },
   "report": {
     "state": {
@@ -261,11 +261,11 @@
     "retryHelp": "The last attempt failed. Fix what it reported, then retry it from the posting queue."
   },
   "people": {
-    "intro": "Where ExpenseOS and NetSuite disagree about a person. The sync never picks a side; you do.",
-    "empty": "Nothing to review — every field NetSuite holds agrees with ExpenseOS.",
+    "intro": "Where VeloExpense and NetSuite disagree about a person. The sync never picks a side; you do.",
+    "empty": "Nothing to review — every field NetSuite holds agrees with VeloExpense.",
     "colPerson": "Person",
     "colField": "Field",
-    "colOurs": "ExpenseOS (ADP → Google)",
+    "colOurs": "VeloExpense (ADP → Google)",
     "colTheirs": "NetSuite",
     "colStatus": "Status",
     "colDecision": "Decision",
@@ -285,7 +285,7 @@
       "DISMISSED": "Dismissed"
     },
     "decision": {
-      "KEEP_EXPENSEOS": "Keep ExpenseOS, fix NetSuite",
+      "KEEP_EXPENSEOS": "Keep VeloExpense, fix NetSuite",
       "ADOPT_NETSUITE": "Adopt NetSuite's value"
     },
     "push": {
@@ -300,9 +300,9 @@
       "INACTIVE": "Inactive"
     },
     "diverges": "HR / IT",
-    "divergesHelp": "Adopted from NetSuite while Google still says otherwise. Google is never overwritten by ExpenseOS — ask HR or IT to correct the upstream record; this clears itself when Google agrees.",
-    "unmapped": "Not in ExpenseOS",
-    "unmappedHelp": "NetSuite holds this value, and no ExpenseOS record is mapped to it — so ExpenseOS cannot adopt it. Keeping ExpenseOS still works and is usually what you want here: it pushes the ExpenseOS value to NetSuite and corrects the NetSuite record. To adopt it instead, map the NetSuite record to an ExpenseOS one first.",
+    "divergesHelp": "Adopted from NetSuite while Google still says otherwise. Google is never overwritten by VeloExpense — ask HR or IT to correct the upstream record; this clears itself when Google agrees.",
+    "unmapped": "Not in VeloExpense",
+    "unmappedHelp": "NetSuite holds this value, and no VeloExpense record is mapped to it — so VeloExpense cannot adopt it. Keeping VeloExpense still works and is usually what you want here: it pushes the VeloExpense value to NetSuite and corrects the NetSuite record. To adopt it instead, map the NetSuite record to a VeloExpense one first.",
     "unmappedWhatNow": "Nothing here matches",
     "unmappedMapLink": "Map this NetSuite record",
     "directorySays": "Google says",
@@ -314,7 +314,7 @@
     "sectionValues": "The two answers",
     "sectionRule": "The rule",
     "sectionDecision": "Decision",
-    "ruleText": "ADP is the source of truth for who a person is. Google follows ADP, ExpenseOS follows Google, and NetSuite is consulted last. Keeping ExpenseOS pushes the value to NetSuite. Adopting NetSuite writes its value onto the person and pins it, then flags HR / IT until Google agrees — ExpenseOS never overwrites Google.",
+    "ruleText": "ADP is the source of truth for who a person is. Google follows ADP, VeloExpense follows Google, and NetSuite is consulted last. Keeping VeloExpense pushes the value to NetSuite. Adopting NetSuite writes its value onto the person and pins it, then flags HR / IT until Google agrees — VeloExpense never overwrites Google.",
     "rulingSummary": "{person} — {field}: keep “{keeps}”, discard “{drops}”.",
     "rulingKeepHelp": "NetSuite’s employee record is updated with this value. One attempt; a failure shows on the row and can be retried.",
     "rulingAdoptHelp": "The person is updated with NetSuite’s value and the field is pinned so the nightly Google sync does not put the old value back. The row stays open, marked HR / IT, until Google agrees.",
@@ -325,7 +325,7 @@
     "dismissHelp": "For a difference that is nobody’s mistake. It stays dismissed while these two values stand; a change on either side reopens it.",
     "retryPush": "Retry push",
     "pushErrorLabel": "What NetSuite said",
-    "pushErrorHelp": "NetSuite’s own words, exactly as it returned them. A short or cryptic message is a NetSuite-side error, not an ExpenseOS one.",
+    "pushErrorHelp": "NetSuite’s own words, exactly as it returned them. A short or cryptic message is a NetSuite-side error, not a VeloExpense one.",
     "pushAdminRecord": "NetSuite refuses edits to an administrator’s employee record.",
     "pushAdminRecordHelp": "This is a NetSuite security rule, not a problem with the integration: only an administrator may edit an administrator’s record. Change this field in NetSuite directly — retrying is harmless, but it will be refused the same way.",
     "pushNoReason": "No reason was recorded.",
@@ -344,8 +344,8 @@
     "run": {
       "action": "Run sync now",
       "title": "Run the employee sync now",
-      "intro": "Pull every employee from NetSuite and reconcile them with the people in ExpenseOS. It normally runs once a night, behind the directory sync.",
-      "liveHelp": "A live run fills in the business unit, department, legal entity, class and manager that are still blank on real people, using what NetSuite holds, and opens a review row here wherever the two systems hold different values. It never overwrites a value ExpenseOS already has.",
+      "intro": "Pull every employee from NetSuite and reconcile them with the people in VeloExpense. It normally runs once a night, behind the directory sync.",
+      "liveHelp": "A live run fills in the business unit, department, legal entity, class and manager that are still blank on real people, using what NetSuite holds, and opens a review row here wherever the two systems hold different values. It never overwrites a value VeloExpense already has.",
       "dryHelp": "A dry run reads NetSuite and reports exactly what a live run would do. It writes nothing.",
       "pending": "Running against NetSuite. This can take a minute or two — leave this open.",
       "dry": "Dry run",

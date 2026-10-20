@@ -24,6 +24,7 @@
 
 import { pickPerDiemRate } from '@expenseos/approvals';
 import { canDecide, decideTask, startInstance } from '@expenseos/approvals/engine';
+import { onlyRequesterCouldDecide } from '@/lib/approvals/someoneElseCanDecide';
 import { auditActions, withAudit } from '@expenseos/audit';
 import type { Prisma } from '@expenseos/db';
 // VeloExpense (w6-01): the line kind and price basis are text under CHECKs (0077), not Prisma
@@ -2271,6 +2272,22 @@ export const travelRequestsRouter = router({
               code: 'PRECONDITION_FAILED',
               message:
                 'No approval workflow covers this travel request. Ask an administrator to set one up.',
+            });
+          }
+          // VeloExpense (f61): a flow whose first approvals only the traveller could decide is
+          // refused, as a report's is (NO_APPROVER, the 4 Oct 2026 rule). `canDecide` already
+          // stops the traveller approving their own trip; without this the request would wait
+          // on nobody. ExpenseOS has no such check.
+          if (
+            start.status === 'RUNNING' &&
+            (await onlyRequesterCouldDecide(tx, req.submitterId, start.createdTaskIds))
+          ) {
+            throw new TRPCError({
+              code: 'PRECONDITION_FAILED',
+              message:
+                'Nobody else here can approve this travel request, and a trip cannot be approved ' +
+                'by the person who requested it. Invite somebody who can approve or give yourself ' +
+                'a manager, then submit again. Your request is saved as a draft.',
             });
           }
           createdTaskIds = start.createdTaskIds;

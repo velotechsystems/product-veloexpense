@@ -13,11 +13,11 @@
     "rateFarFromPrior": "{base}→{quote} was last recorded at {prior} on {on}. {rate} is {deviation}% away from that — more than the {bound}% a rate may move without a reason. If the earlier rate was the wrong one, add this one with a reason saying so."
   },
   "ledger": {
-    "adoptUnmapped": "Nothing in ExpenseOS is mapped to the NetSuite record “{value}”, so there is no value to adopt. Map it on the matching admin page first, or choose “Keep ExpenseOS, fix NetSuite” to correct NetSuite instead.",
+    "adoptUnmapped": "Nothing in VeloExpense is mapped to the NetSuite record “{value}”, so there is no value to adopt. Map it on the matching admin page first, or choose “Keep VeloExpense, fix NetSuite” to correct NetSuite instead.",
     "referenceInUse": "This reference cannot be removed because records still point at it. The list below shows exactly where. Nothing was deleted and nothing was unmapped.",
     "referenceActive": "Only an inactive reference can be removed. Deactivate this one first, then delete it.",
-    "reconcileNotImported": "This charge was entered by hand in ExpenseOS, not imported from the card feed, so there is nothing in NetSuite to reconcile it with.",
-    "reconcileProcessing": "ExpenseOS is posting this charge to NetSuite right now. Wait for the result before marking it as posted by hand.",
+    "reconcileNotImported": "This charge was entered by hand in VeloExpense, not imported from the card feed, so there is nothing in NetSuite to reconcile it with.",
+    "reconcileProcessing": "VeloExpense is posting this charge to NetSuite right now. Wait for the result before marking it as posted by hand.",
     "reconcileAlreadyReconciled": "This charge is already marked as posted in NetSuite by hand.",
     "reconcileChangedConcurrently": "This charge changed while you were marking it, so nothing was recorded. Refresh to see its current state."
   },

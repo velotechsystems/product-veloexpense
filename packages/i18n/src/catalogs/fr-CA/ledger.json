@@ -31,7 +31,7 @@
     "deleteAction": "Supprimer",
     "deleteTitle": "Supprimer cette référence?",
     "deleteSubject": "{name} — ID NetSuite {netsuiteId}",
-    "deleteBody": "La ligne est retirée d'ExpenseOS de façon permanente. Cette action est irréversible.",
+    "deleteBody": "La ligne est retirée de VeloExpense de façon permanente. Cette action est irréversible.",
     "deleteConfirm": "Supprimer",
     "deleteCancel": "Annuler",
     "deleteWorking": "Suppression…",
@@ -242,7 +242,7 @@
     "taxGroupClear": "Effacer",
     "taxGroupInactive": "Inactif",
     "taxGroupAppliesTo": "S'applique à : {entities}",
-    "taxGroupsHelp": "Choisissez un groupe à taux nul. ExpenseOS calcule déjà la taxe — la TPS/TVQ récupérable est transmise sur ses propres lignes de grand livre et le reste est inclus dans la ligne concernée — donc un groupe avec un taux ferait calculer la taxe sur la taxe par NetSuite. Sans code de taxe, NetSuite refuse d'emblée un rapport canadien."
+    "taxGroupsHelp": "Choisissez un groupe à taux nul. VeloExpense calcule déjà la taxe — la TPS/TVQ récupérable est transmise sur ses propres lignes de grand livre et le reste est inclus dans la ligne concernée — donc un groupe avec un taux ferait calculer la taxe sur la taxe par NetSuite. Sans code de taxe, NetSuite refuse d'emblée un rapport canadien."
   },
   "report": {
     "state": {
@@ -261,11 +261,11 @@
     "retryHelp": "La dernière tentative a échoué. Corrigez ce qu’elle a signalé, puis réessayez depuis la file de publication."
   },
   "people": {
-    "intro": "Là où ExpenseOS et NetSuite ne s’entendent pas sur une personne. La synchronisation ne tranche jamais ; vous le faites.",
-    "empty": "Rien à réviser — chaque champ détenu par NetSuite concorde avec ExpenseOS.",
+    "intro": "Là où VeloExpense et NetSuite ne s’entendent pas sur une personne. La synchronisation ne tranche jamais ; vous le faites.",
+    "empty": "Rien à réviser — chaque champ détenu par NetSuite concorde avec VeloExpense.",
     "colPerson": "Personne",
     "colField": "Champ",
-    "colOurs": "ExpenseOS (ADP → Google)",
+    "colOurs": "VeloExpense (ADP → Google)",
     "colTheirs": "NetSuite",
     "colStatus": "Statut",
     "colDecision": "Décision",
@@ -285,7 +285,7 @@
       "DISMISSED": "Rejeté"
     },
     "decision": {
-      "KEEP_EXPENSEOS": "Garder ExpenseOS, corriger NetSuite",
+      "KEEP_EXPENSEOS": "Garder VeloExpense, corriger NetSuite",
       "ADOPT_NETSUITE": "Adopter la valeur de NetSuite"
     },
     "push": {
@@ -300,9 +300,9 @@
       "INACTIVE": "Inactif"
     },
     "diverges": "RH / TI",
-    "divergesHelp": "Adopté de NetSuite alors que Google dit encore autre chose. ExpenseOS n’écrase jamais Google — demandez aux RH ou aux TI de corriger la fiche en amont ; ceci se règle de lui-même quand Google concorde.",
-    "unmapped": "Absent d’ExpenseOS",
-    "unmappedHelp": "NetSuite détient cette valeur et aucun enregistrement ExpenseOS n’y est associé : ExpenseOS ne peut donc pas l’adopter. Conserver ExpenseOS fonctionne toujours et c’est généralement le bon choix ici : cela transmet la valeur d’ExpenseOS à NetSuite et corrige l’enregistrement NetSuite. Pour l’adopter plutôt, associez d’abord l’enregistrement NetSuite à un enregistrement ExpenseOS.",
+    "divergesHelp": "Adopté de NetSuite alors que Google dit encore autre chose. VeloExpense n’écrase jamais Google — demandez aux RH ou aux TI de corriger la fiche en amont ; ceci se règle de lui-même quand Google concorde.",
+    "unmapped": "Absent de VeloExpense",
+    "unmappedHelp": "NetSuite détient cette valeur et aucun enregistrement VeloExpense n’y est associé : VeloExpense ne peut donc pas l’adopter. Conserver VeloExpense fonctionne toujours et c’est généralement le bon choix ici : cela transmet la valeur de VeloExpense à NetSuite et corrige l’enregistrement NetSuite. Pour l’adopter plutôt, associez d’abord l’enregistrement NetSuite à un enregistrement VeloExpense.",
     "unmappedWhatNow": "Aucune correspondance ici",
     "unmappedMapLink": "Associer cet enregistrement NetSuite",
     "directorySays": "Google dit",
@@ -314,7 +314,7 @@
     "sectionValues": "Les deux réponses",
     "sectionRule": "La règle",
     "sectionDecision": "Décision",
-    "ruleText": "ADP est la source de vérité sur l’identité d’une personne. Google suit ADP, ExpenseOS suit Google, et NetSuite est consulté en dernier. Garder ExpenseOS envoie la valeur à NetSuite. Adopter NetSuite écrit sa valeur sur la personne et l’épingle, puis signale RH / TI jusqu’à ce que Google concorde — ExpenseOS n’écrase jamais Google.",
+    "ruleText": "ADP est la source de vérité sur l’identité d’une personne. Google suit ADP, VeloExpense suit Google, et NetSuite est consulté en dernier. Garder VeloExpense envoie la valeur à NetSuite. Adopter NetSuite écrit sa valeur sur la personne et l’épingle, puis signale RH / TI jusqu’à ce que Google concorde — VeloExpense n’écrase jamais Google.",
     "rulingSummary": "{person} — {field} : garder « {keeps} », écarter « {drops} ».",
     "rulingKeepHelp": "La fiche employé NetSuite est mise à jour avec cette valeur. Une seule tentative ; un échec s’affiche sur la ligne et peut être relancé.",
     "rulingAdoptHelp": "La personne est mise à jour avec la valeur de NetSuite et le champ est épinglé pour que la synchronisation Google nocturne ne remette pas l’ancienne valeur. La ligne reste ouverte, marquée RH / TI, jusqu’à ce que Google concorde.",
@@ -325,7 +325,7 @@
     "dismissHelp": "Pour une différence qui n’est l’erreur de personne. Elle reste rejetée tant que ces deux valeurs tiennent ; un changement d’un côté ou de l’autre la rouvre.",
     "retryPush": "Relancer l’envoi",
     "pushErrorLabel": "Réponse de NetSuite",
-    "pushErrorHelp": "Les mots de NetSuite, tels qu’il les a retournés. Un message court ou obscur provient d’une erreur du côté de NetSuite, et non d’ExpenseOS.",
+    "pushErrorHelp": "Les mots de NetSuite, tels qu’il les a retournés. Un message court ou obscur provient d’une erreur du côté de NetSuite, et non de VeloExpense.",
     "pushAdminRecord": "NetSuite refuse toute modification de la fiche employé d’un administrateur.",
     "pushAdminRecordHelp": "Il s’agit d’une règle de sécurité de NetSuite, et non d’un problème d’intégration : seul un administrateur peut modifier la fiche d’un administrateur. Modifiez ce champ directement dans NetSuite — relancer l’envoi est sans risque, mais sera refusé de la même façon.",
     "pushNoReason": "Aucune raison n’a été enregistrée.",
@@ -344,8 +344,8 @@
     "run": {
       "action": "Synchroniser maintenant",
       "title": "Lancer la synchronisation des employés",
-      "intro": "Récupère tous les employés de NetSuite et les rapproche des personnes d’ExpenseOS. Elle s’exécute normalement une fois par nuit, après la synchronisation de l’annuaire.",
-      "liveHelp": "Une exécution réelle remplit l’unité d’affaires, le département, l’entité légale, la classe et le gestionnaire encore vides sur de vraies personnes, à partir des valeurs de NetSuite, et ouvre ici une ligne à réviser partout où les deux systèmes divergent. Elle n’écrase jamais une valeur qu’ExpenseOS possède déjà.",
+      "intro": "Récupère tous les employés de NetSuite et les rapproche des personnes de VeloExpense. Elle s’exécute normalement une fois par nuit, après la synchronisation de l’annuaire.",
+      "liveHelp": "Une exécution réelle remplit l’unité d’affaires, le département, l’entité légale, la classe et le gestionnaire encore vides sur de vraies personnes, à partir des valeurs de NetSuite, et ouvre ici une ligne à réviser partout où les deux systèmes divergent. Elle n’écrase jamais une valeur que VeloExpense possède déjà.",
       "dryHelp": "Un essai lit NetSuite et rapporte exactement ce qu’une exécution réelle ferait. Il n’écrit rien.",
       "pending": "Exécution en cours sur NetSuite. Cela peut prendre une minute ou deux — laissez cette fenêtre ouverte.",
       "dry": "Essai",

@@ -39,6 +39,8 @@ import * as lifecycle from '@/lib/expenses/lifecycle';
 import { userMessageOf } from '@/lib/errors/domain';
 import { TEST_ACTOR } from './support/audit-actor';
 import { TODAY } from './support/dates';
+import { startInstance } from '@expenseos/approvals/engine';
+import { onlyRequesterCouldDecide } from '@/lib/approvals/someoneElseCanDecide';
 
 const admin = new Pool({
   connectionString: process.env.ADMIN_DATABASE_URL ?? process.env.DATABASE_URL,
@@ -93,9 +95,10 @@ beforeAll(async () => {
 
 beforeEach(async () => {
   await admin.query('DELETE FROM expense_report WHERE organization_id = $1', [orgId]);
+  await admin.query('DELETE FROM travel_request WHERE organization_id = $1', [orgId]);
   await admin.query('DELETE FROM approval_instance WHERE organization_id = $1', [orgId]);
   await admin.query(
-    "DELETE FROM approval_workflow WHERE organization_id = $1 AND key <> 'expense-report-default'",
+    "DELETE FROM approval_workflow WHERE organization_id = $1 AND key NOT IN ('expense-report-default', 'travel-request-default')",
     [orgId],
   );
   await admin.query('UPDATE approval_workflow SET active = true WHERE organization_id = $1', [orgId]);
@@ -191,5 +194,53 @@ describe('the other refusals the flow can give at submit (w4-00c)', () => {
       reportId,
     ]);
     expect(runs.rows[0].n).toBe(0);
+  });
+});
+
+/**
+ * f61: the same rule for a trip. ExpenseOS's travel submit has no such check: a founder alone
+ * would submit a request the default travel flow sends to the administrators — themselves —
+ * and `canDecide` would then stop them deciding it, so it waits on nobody. `travelRequests.submit`
+ * refuses it with the rule reports use (`onlyRequesterCouldDecide`); this runs that rule on the
+ * real travel flow (0077's `travel-request-default`) and the real engine.
+ */
+describe('a founder alone, requesting a trip (f61)', () => {
+  async function routeTrip(): Promise<boolean> {
+    return withOrg(orgId, async (tx, db) => {
+      // `::text`: the function returns void, which the Prisma bridge cannot deserialize.
+      await tx.query('SELECT seed_travel_defaults()::text AS done');
+      const trip = await tx.query(
+        `INSERT INTO travel_request (submitter_id, purpose, destination_label, destination_city,
+                                     depart_date, currency_code, status)
+         VALUES ($1, 'Client visit', 'Montréal', 'Montréal', now(), 'CAD', 'SUBMITTED') RETURNING id`,
+        [founderId],
+      );
+      const start = await startInstance(db, 'TRAVEL_REQUEST', trip.rows[0].id as string);
+      expect(start.status).toBe('RUNNING');
+      return onlyRequesterCouldDecide(db, founderId, start.createdTaskIds);
+    });
+  }
+
+  it('routes only to the traveller, so the submit is refused', async () => {
+    expect(await routeTrip()).toBe(true);
+  });
+
+  it('reaches somebody else once a second administrator exists', async () => {
+    await admin.query(
+      `INSERT INTO app_user (organization_id, email, display_name, role_id)
+       VALUES ($1,'second@solo.test','Second','019e3000-0000-7000-8000-000000000001')`,
+      [orgId],
+    );
+    expect(await routeTrip()).toBe(false);
+  });
+
+  it('reaches somebody else once the traveller has a manager', async () => {
+    const m = await admin.query(
+      `INSERT INTO app_user (organization_id, email, display_name, role_id)
+       VALUES ($1,'manager@solo.test','Manager','019e3000-0000-7000-8000-000000000004') RETURNING id`,
+      [orgId],
+    );
+    await admin.query('UPDATE app_user SET manager_id = $1 WHERE id = $2', [m.rows[0].id, founderId]);
+    expect(await routeTrip()).toBe(false);
   });
 });

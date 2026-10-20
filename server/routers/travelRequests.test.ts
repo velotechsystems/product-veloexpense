@@ -60,11 +60,17 @@ const decideTask = stubFn(async () => ({
 const startInstance = stubFn(async () => ({
   // `instanceId: null` is a legitimate outcome (no workflow matched), so the stub's
   // type has to admit it or no test can express that case.
+  // VeloExpense (f61): `status` too — the NO_APPROVER check runs on a RUNNING start only.
+  status: 'RUNNING' as string | undefined,
   instanceId: 'inst-1' as string | null,
   createdTaskIds: ['t1'],
   firedEffects: ['e1'] as unknown[],
 }));
 vi.mock('@expenseos/approvals/engine', () => ({ canDecide, decideTask, startInstance }));
+// VeloExpense (f61): the NO_APPROVER rule is a db query over the engine's tasks; it has its own
+// db suite (test/solo-founder.db.test.ts). Here it answers what each case needs.
+const onlyRequesterCouldDecide = stubFn(async () => false);
+vi.mock('@/lib/approvals/someoneElseCanDecide', () => ({ onlyRequesterCouldDecide }));
 
 // Synchronous, and its return is written straight to travelBudgetLine — an array, not
 // an object, or `repricePerDiem` throws on `.length`.
@@ -299,10 +305,12 @@ beforeEach(() => {
   getSerpApiConfig.mockResolvedValue({ apiKey: 'sk' });
   searchCities.mockResolvedValue([{ placeId: 'p1', label: 'Toronto' }]);
   startInstance.mockResolvedValue({
+    status: 'RUNNING',
     instanceId: 'inst-1',
     createdTaskIds: ['t1'],
     firedEffects: ['e1'],
   });
+  onlyRequesterCouldDecide.mockResolvedValue(false);
   canDecide.mockResolvedValue(false);
   // Restored explicitly: `clearAllMocks` clears the call log but keeps the last
   // implementation, so one test's "the activity write failed" rejection would otherwise
@@ -1053,13 +1061,61 @@ describe('submit', () => {
   // with nobody to decide it; VeloExpense refuses the submit, which rolls back with it. Every
   // tenant is seeded a default travel flow (0077), so this is a flow an admin switched off.
   it('refuses when no workflow matched', async () => {
-    startInstance.mockResolvedValue({ instanceId: null, createdTaskIds: [], firedEffects: [] });
+    startInstance.mockResolvedValue({ status: 'NO_WORKFLOW', instanceId: null, createdTaskIds: [], firedEffects: [] });
     const db = makeDb();
     await expect((await caller(db)).submit({ id: REQ })).rejects.toMatchObject({
       code: 'PRECONDITION_FAILED',
       message: expect.stringMatching(/No approval workflow covers this travel request/),
     });
     expect(executeWorkflowEffects).not.toHaveBeenCalled();
+  });
+
+  // VeloExpense (f61): a flow whose first approvals only the traveller could decide is refused,
+  // as a report's is (NO_APPROVER, the 4 Oct 2026 rule). ExpenseOS submits it, and it waits on
+  // nobody, because `canDecide` stops the traveller deciding their own trip.
+  it('refuses a flow only the traveller could decide, and starts nothing after it', async () => {
+    startInstance.mockResolvedValue({
+      status: 'RUNNING',
+      instanceId: 'inst-1',
+      createdTaskIds: ['t1'],
+      firedEffects: ['e1'],
+    });
+    onlyRequesterCouldDecide.mockResolvedValueOnce(true);
+    const db = makeDb();
+    await expect((await caller(db)).submit({ id: REQ })).rejects.toMatchObject({
+      code: 'PRECONDITION_FAILED',
+      message: expect.stringMatching(/Nobody else here can approve this travel request/),
+    });
+    expect(onlyRequesterCouldDecide).toHaveBeenCalledWith(expect.anything(), ME, ['t1']);
+    expect(executeWorkflowEffects).not.toHaveBeenCalled();
+    expect(recordActivity).not.toHaveBeenCalled();
+  });
+
+  it('submits when somebody else can decide (a manager, or another administrator)', async () => {
+    startInstance.mockResolvedValue({
+      status: 'RUNNING',
+      instanceId: 'inst-1',
+      createdTaskIds: ['t1'],
+      firedEffects: [],
+    });
+    onlyRequesterCouldDecide.mockResolvedValueOnce(false);
+    const db = makeDb();
+    await (await caller(db)).submit({ id: REQ });
+    expect(onlyRequesterCouldDecide).toHaveBeenCalledWith(expect.anything(), ME, ['t1']);
+    const data = db.travelRequest.update.mock.calls[0]?.[0]?.data as Record<string, unknown>;
+    expect(data.status).toBe('SUBMITTED');
+  });
+
+  it('does not ask who can decide when the flow decided on submit', async () => {
+    startInstance.mockResolvedValue({
+      status: 'APPROVED',
+      instanceId: 'inst-1',
+      createdTaskIds: [],
+      firedEffects: [],
+    });
+    const db = makeDb();
+    await (await caller(db)).submit({ id: REQ });
+    expect(onlyRequesterCouldDecide).not.toHaveBeenCalled();
   });
 
   it('refuses somebody else’s request and an already-submitted one', async () => {

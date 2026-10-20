@@ -188,7 +188,7 @@
     "badge": "NetSuite",
     "badgeTitle": "NetSuite disagrees on {count, plural, one {# field} other {# fields}} — see People ↔ NetSuite",
     "section": "People ↔ NetSuite",
-    "explain": "NetSuite holds a different value for these fields. ExpenseOS follows ADP through Google and never overwrites either; a reviewer rules which system is right.",
+    "explain": "NetSuite holds a different value for these fields. VeloExpense follows ADP through Google and never overwrites either; a reviewer rules which system is right.",
     "review": "Review on People ↔ NetSuite",
     "hrIt": "HR / IT",
     "hrItHelp": "Adopted from NetSuite while Google still says otherwise — HR or IT need to correct the upstream record.",

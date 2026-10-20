@@ -1,5 +1,5 @@
 {
-  "appName": "ExpenseOS",
+  "appName": "VeloExpense",
   "loading": "Loading…",
   "errorBoundary": "Something went wrong.",
   "panelUnavailable": "This section could not be loaded.",
@@ -41,8 +41,8 @@
     "title": "We could not find that page"
   },
   "offline": {
-    "body": "You may be offline, or the connection dropped. ExpenseOS needs an internet connection and saves nothing on this device. Check your connection, then try again.",
-    "title": "We could not reach ExpenseOS"
+    "body": "You may be offline, or the connection dropped. VeloExpense needs an internet connection and saves nothing on this device. Check your connection, then try again.",
+    "title": "We could not reach VeloExpense"
   },
   "skipToContent": "Skip to content"
 }
