@@ -40,21 +40,28 @@ export const METERED_FEATURES: ReadonlySet<AiFeature> = new Set<AiFeature>(['ass
 
 /**
  * Per-model rates in micro-USD per token (i.e. USD-per-million-tokens directly:
- * $3 / Mtok == 3 micro-USD / token). VERIFY against current Anthropic pricing —
- * token counts are authoritative and the platform owns the billed price, so a
+ * $3 / Mtok == 3 micro-USD / token). Token counts are authoritative and the platform owns the billed price, so a
  * stale rate here only affects the informational `cost_micro_usd` column.
  */
 interface Rate {
   inMicroUsdPerTok: number;
   outMicroUsdPerTok: number;
 }
+// f63: checked against Anthropic's published API prices on 20 Oct 2026 —
+// https://platform.claude.com/docs/en/about-claude/pricing and each model's page
+// (https://platform.claude.com/docs/en/models/sonnet-5/overview,
+//  https://platform.claude.com/docs/en/models/haiku-4-5/overview).
+// Unknown models fall through to a 0 cost (informational only) — never a hard failure.
+// Rates are in micro-USD per token; a fractional published rate would need a finer unit.
 const RATES: Record<string, Rate> = {
-  // VERIFY against current Anthropic pricing. Unknown models fall through to a
-  // 0 cost (informational only) — never a hard failure.
-  'claude-sonnet-5': { inMicroUsdPerTok: 3, outMicroUsdPerTok: 15 },
+  // Claude Sonnet 5: $2 in / $10 out per MTok. (Was $3 / $15 here, Sonnet 4.6's price.)
+  'claude-sonnet-5': { inMicroUsdPerTok: 2, outMicroUsdPerTok: 10 },
+  // Claude Sonnet 4.6: $3 in / $15 out per MTok.
   'claude-sonnet-4-6': { inMicroUsdPerTok: 3, outMicroUsdPerTok: 15 },
-  // w6-03: the assistant's fast model (titles, reviews, article reads). VERIFY.
+  // w6-03: the assistant's fast model (titles, reviews, article reads).
+  // Claude Haiku 4.5 (alias of claude-haiku-4-5-20251001): $1 in / $5 out per MTok.
   'claude-haiku-4-5': { inMicroUsdPerTok: 1, outMicroUsdPerTok: 5 },
+  'claude-haiku-4-5-20251001': { inMicroUsdPerTok: 1, outMicroUsdPerTok: 5 },
 };
 
 export function computeCostMicroUsd(
@@ -68,7 +75,8 @@ export function computeCostMicroUsd(
   const full =
     BigInt(inTok) * BigInt(rate.inMicroUsdPerTok) + BigInt(outTok) * BigInt(rate.outMicroUsdPerTok);
   // VeloExpense (w3-02b): a Message Batches call is billed at half the rate, which is the
-  // reason the batch path exists. VERIFY with the rates above.
+  // reason the batch path exists. Confirmed 20 Oct 2026: Batch API is 50% of input and
+  // output (same pricing page).
   return opts.batch ? full / 2n : full;
 }
 

@@ -9,12 +9,20 @@ import { computeCostMicroUsd, METERED_FEATURES, recordUsage, usageOf } from './u
 
 describe('computeCostMicroUsd', () => {
   it('prices a call at the model’s per-token rates', () => {
-    // 1,000 in at $3/Mtok + 200 out at $15/Mtok = 3,000 + 3,000 micro-USD.
-    expect(computeCostMicroUsd('claude-sonnet-5', 1000, 200)).toBe(6000n);
+    // f63: Sonnet 5 is $2/Mtok in, $10/Mtok out (Anthropic pricing, 20 Oct 2026).
+    // 1,000 in + 200 out = 2,000 + 2,000 micro-USD.
+    expect(computeCostMicroUsd('claude-sonnet-5', 1000, 200)).toBe(4000n);
+  });
+
+  it('prices each model the app calls at its published rate (f63, 20 Oct 2026)', () => {
+    // Sonnet 4.6: $3 / $15. Haiku 4.5 (alias and dated id): $1 / $5.
+    expect(computeCostMicroUsd('claude-sonnet-4-6', 1000, 200)).toBe(6000n);
+    expect(computeCostMicroUsd('claude-haiku-4-5', 1000, 200)).toBe(2000n);
+    expect(computeCostMicroUsd('claude-haiku-4-5-20251001', 1000, 200)).toBe(2000n);
   });
 
   it('halves a Message Batches call, the reason the batch path exists', () => {
-    expect(computeCostMicroUsd('claude-sonnet-5', 1000, 200, { batch: true })).toBe(3000n);
+    expect(computeCostMicroUsd('claude-sonnet-5', 1000, 200, { batch: true })).toBe(2000n);
   });
 
   it('records an unknown model at zero rather than failing the call', () => {
@@ -66,7 +74,7 @@ describe('recordUsage', () => {
       data: expect.objectContaining({
         feature: 'assistant',
         metered: true,
-        costMicroUsd: 7500n,
+        costMicroUsd: 5000n,
         receiptId: null,
         actorUserId: 'u1',
       }),
@@ -91,7 +99,7 @@ describe('recordUsage', () => {
         model: 'claude-sonnet-5',
         inputTokens: 1000,
         outputTokens: 200,
-        costMicroUsd: 3000n,
+        costMicroUsd: 2000n,
         metered: false,
         receiptId: 'r1',
         actorUserId: null,
@@ -109,6 +117,6 @@ describe('recordUsage', () => {
       outputTokens: 10,
       requestId: 'msg_2',
     });
-    expect(create.mock.calls[0]).toMatchObject([{ data: { receiptId: null, costMicroUsd: 180n } }]);
+    expect(create.mock.calls[0]).toMatchObject([{ data: { receiptId: null, costMicroUsd: 120n } }]);
   });
 });

@@ -260,7 +260,7 @@ describe('VeloExpense: every model call is recorded in ai_usage (d43)', () => {
       model: 'claude-sonnet-5',
       inputTokens: 2100,
       outputTokens: 320,
-      costMicroUsd: 2100n * 3n + 320n * 15n,
+      costMicroUsd: 2100n * 2n + 320n * 10n,
       metered: false,
       receiptId: 'r-1',
       requestId: 'msg_01',

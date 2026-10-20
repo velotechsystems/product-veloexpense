@@ -27,12 +27,14 @@ vi.mock('@/lib/tenant/request', () => ({ hostTenantSlug: async () => null }));
  * VeloExpense (w6-03): the SDK, so an article read answers without a network — the real
  * `assistantClient`, and its metering, still run. Each call answers with token counts.
  */
-const sdk = vi.hoisted(() => ({ calls: 0 }));
+const sdk = vi.hoisted(() => ({ calls: 0, probe: null as null | (() => unknown), seen: [] as unknown[] }));
 vi.mock('@anthropic-ai/sdk', () => ({
   default: class {
     messages = {
       create: async () => {
         sdk.calls += 1;
+        // f63: what the procedure's scope looks like while the model is being waited on.
+        if (sdk.probe) sdk.seen.push(sdk.probe());
         return {
           id: `msg_db_${sdk.calls}`,
           model: 'claude-haiku-4-5',
@@ -455,6 +457,61 @@ describe.skipIf(!process.env.DATABASE_URL)('assistant persistence (integration)'
         if (saved === undefined) delete process.env.ANTHROPIC_API_KEY;
         else process.env.ANTHROPIC_API_KEY = saved;
       }
+    });
+
+    // f63: through the REAL tenant middleware (the harness's caller wraps every call in one
+    // transaction of its own, so it cannot show this). The article reads are network calls;
+    // while they run, no tenant transaction may be open — the procedure is statement-at-a-time.
+    it('holds no tenant transaction open while the model reads the articles (f63)', async () => {
+      const saved = process.env.ANTHROPIC_API_KEY;
+      process.env.ANTHROPIC_API_KEY = 'sk-test-not-real';
+      const { inTenantTransaction, currentTenantId, db: realDb } = await import('@/lib/db/prisma');
+      const { createCallerFactory } = await import('@/server/trpc');
+      const { assistantRouter } = await import('./assistant');
+      sdk.seen = [];
+      sdk.probe = () => ({ inTransaction: inTenantTransaction(), tenant: currentTenantId() });
+      try {
+        await h.admin.query('DELETE FROM ai_usage WHERE organization_id = $1', [h.orgId]);
+        const real = createCallerFactory(assistantRouter)({
+          session: null,
+          db: realDb,
+          rbac: null,
+          caller: { email: 'alice@assistant.test', organizationId: h.orgId },
+        } as never);
+        const out = await real.searchArticles({ terms: ['receipt', 'receipts'], intent: 'How do I email a receipt in?', limit: 3 });
+        expect(out.found).toBeGreaterThan(0);
+        expect(sdk.seen.length).toBe(out.found);
+        // Still scoped to the caller's tenant (every statement is), but not in a transaction.
+        for (const s of sdk.seen) expect(s).toEqual({ inTransaction: false, tenant: h.orgId });
+        // And the reads were still metered, against the caller, in the one short write after.
+        const rows = (
+          await h.admin.query(
+            'SELECT actor_user_id, metered FROM ai_usage WHERE organization_id = $1',
+            [h.orgId],
+          )
+        ).rows;
+        expect(rows).toHaveLength(out.found);
+        for (const r of rows) expect(r).toEqual({ actor_user_id: aliceId, metered: true });
+      } finally {
+        sdk.probe = null;
+        if (saved === undefined) delete process.env.ANTHROPIC_API_KEY;
+        else process.env.ANTHROPIC_API_KEY = saved;
+      }
+    });
+
+    it('statement-at-a-time still asks who the caller is: a stranger is refused (f63)', async () => {
+      const { db: realDb } = await import('@/lib/db/prisma');
+      const { createCallerFactory } = await import('@/server/trpc');
+      const { assistantRouter } = await import('./assistant');
+      const stranger = createCallerFactory(assistantRouter)({
+        session: null,
+        db: realDb,
+        rbac: null,
+        caller: { email: 'nobody@elsewhere.test', organizationId: h.orgId },
+      } as never);
+      await expect(stranger.searchArticles({ terms: ['receipt'], intent: 'x' })).rejects.toMatchObject({
+        code: 'FORBIDDEN',
+      });
     });
 
     it('reads nothing, and records nothing, with no key configured', async () => {

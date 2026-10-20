@@ -394,6 +394,11 @@ export const assistantRouter = router({
    * but nothing relevant" are different facts, and the model should be able to say which.
    */
   searchArticles: protectedProcedure
+    // f63: statement-at-a-time. The procedure waits on up to ten model calls; inside the request's
+    // tenant transaction that held a pooled connection idle-in-transaction for the whole wait
+    // (and under the 30-second transaction timeout). Its queries are reads, and its one write —
+    // the usage rows — is its own short transaction below.
+    .meta({ tenantScope: 'statements' })
     .input(
       z.object({
         /** English search terms. Several surface forms help — the index has no stemmer. */
@@ -425,13 +430,14 @@ export const assistantRouter = router({
           : {}),
       }).fastModel;
       // VeloExpense (w6-03): every article read is a metered call (server/lib/assistantUsage.ts),
-      // recorded once they have all returned, on this procedure's transaction.
+      // recorded once they have all returned. f63: in one short transaction of its own, opened
+      // only after the model calls are done.
       const usage = usageCollector(ctx.rbac.id);
       const extracts = await extractFromArticles(fastClient(anthropic.apiKey, usage.onMessage), fastModel, {
         articles,
         intent: input.intent,
       });
-      await usage.flush(ctx.db);
+      await ctx.db.$transaction((tx) => usage.flush(tx));
 
       return { extracts, searched: input.terms, found: hits.length };
     }),

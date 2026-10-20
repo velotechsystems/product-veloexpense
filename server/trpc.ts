@@ -5,7 +5,7 @@ import { initTRPC, TRPCError } from '@trpc/server';
 import superjson from 'superjson';
 import { ZodError } from 'zod';
 import { auth } from '@/auth';
-import { db, type TenantDb, withTenantDb } from '@/lib/db/prisma';
+import { db, type TenantDb, withTenantDb, withTenantStatementsHere } from '@/lib/db/prisma';
 import { hostTenantSlug } from '@/lib/tenant/request';
 import { refusalData } from '@/server/refusal';
 
@@ -73,7 +73,21 @@ export const createTRPCContext = async () => {
 };
 export type Context = Awaited<ReturnType<typeof createTRPCContext>>;
 
-const t = initTRPC.context<Context>().create({
+/**
+ * f63: per-procedure options the middleware reads.
+ *
+ * `tenantScope: 'statements'` — the procedure runs statement-at-a-time (each query its own
+ * short tenant transaction, under RLS as ever) instead of inside one transaction for the whole
+ * call. For a procedure that WAITS on the network between its queries — the assistant's article
+ * reads, up to ten model calls — so it never holds a pooled connection idle in a transaction.
+ * The trade is atomicity: such a procedure must not need its writes to commit or fail together
+ * (any that must, wrap them in `ctx.db.$transaction(fn)`, which opens one real transaction).
+ */
+export interface ProcedureMeta {
+  tenantScope?: 'transaction' | 'statements';
+}
+
+const t = initTRPC.context<Context>().meta<ProcedureMeta>().create({
   transformer: superjson,
   errorFormatter({ shape, error }) {
     const zodError = error.cause instanceof ZodError ? error.cause.flatten() : null;
@@ -206,10 +220,21 @@ const domainErrors = t.middleware(async ({ next }) => {
  * `db` throws if touched, `protectedProcedure` refuses — the same outcome as ExpenseOS's
  * signed-out request.
  */
-const tenant = t.middleware(async ({ ctx, next }) => {
+const tenant = t.middleware(async ({ ctx, next, meta }) => {
   if (!ctx.caller) return next();
   const caller = ctx.caller;
   const hostSlug = await hostTenantSlug();
+  if (meta?.tenantScope === 'statements') {
+    // f63: who is asking is resolved in one short transaction; the procedure then runs
+    // statement-at-a-time (ProcedureMeta). A failure has nothing to roll back beyond the
+    // statement that failed, so it is rethrown for the same reason as below: one shape.
+    const member = await withTenantDb(caller.organizationId, (tx) => resolveTenantMember(tx, caller, hostSlug));
+    return withTenantStatementsHere(caller.organizationId, async () => {
+      const result = await next({ ctx: { ...ctx, ...member } });
+      if (!result.ok) throw result.error;
+      return result;
+    });
+  }
   return withTenantDb(caller.organizationId, async (tx) => {
     const { session, rbac } = await resolveTenantMember(tx, caller, hostSlug);
     const result = await next({ ctx: { ...ctx, session, rbac } });

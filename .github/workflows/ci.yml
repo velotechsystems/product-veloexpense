@@ -340,6 +340,14 @@ jobs:
       - name: Pseudo-locale crawl (per PR, not nightly)
         run: npm run e2e:crawl
 
+      # f63. The assistant's answer is a server-sent event stream, and only a running server
+      # and a real browser fetch can show it arrives in pieces rather than as one late blob.
+      # Its own config and server (a placeholder key, pointed at the fake Messages API in
+      # scripts/e2e-anthropic.mjs on loopback), for the reason the pseudo crawl has its own:
+      # the server above has no key, and assistant-panel.spec.ts depends on that.
+      - name: Assistant streaming through the real server (fake model)
+        run: npm run e2e:assistant
+
       # VX2-10. The board asks for "chain verification runs on every build", and
       # until now it did not: `verifyChain` is exercised by test/audit.db.test.ts
       # and by VX2-9's suite, over rows those suites wrote themselves. This runs
