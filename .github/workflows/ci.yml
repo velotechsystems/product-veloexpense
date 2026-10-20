@@ -20,13 +20,14 @@ jobs:
     # OS can break Playwright's system libraries or the Postgres service with no change of
     # ours. Move to 26 on purpose, in a branch whose CI is watched. (Same in every job.)
     runs-on: ubuntu-24.04
-    # Everything from install to the audit-chain check runs in this one job. Wave 1
-    # took it to ~15 minutes (unit + DB suite ~5, Playwright ~5-6, build, crawl), so the
-    # old 15-minute ceiling started cancelling green runs mid-e2e. 30 left room for the
-    # waves still to come, until Wave 6 and its follow-ups took the desktop suite past 340
-    # cases and #292's run was cancelled at exactly 30m with every other job green. 45 is
-    # the new ceiling; a step that genuinely hangs still fails the run.
-    timeout-minutes: 45
+    # The guards, build, typecheck, lint, migrations, RLS gates and the unit + DB suites run
+    # here; every browser run has a job of its own beside it (desktop, phones, roles). Wave 1
+    # took this job to ~15 minutes, Wave 6 took it past 30 with the desktop e2e still in it
+    # (#292 was cancelled at exactly 30m, then got a 45-minute stopgap). f73 moved the desktop
+    # e2e, both crawls and the audit-chain check to `desktop`, which leaves roughly the build
+    # and the suites here, so 30 is a ceiling with room again. A step that genuinely hangs
+    # still fails the run.
+    timeout-minutes: 30
     env:
       AUTH_SECRET: ci-test-only-not-a-real-secret
       # VX3-3. 32 bytes of base64 — the integration-credential envelope refuses
@@ -309,8 +310,81 @@ jobs:
       - name: RLS isolation gate + unit tests
         run: npm test
 
-      # The DB suites TRUNCATE, so the demo tenant has to be (re)seeded after
-      # them — the e2e signs in as its seeded admin (e2e/auth.setup.ts).
+      - name: Audit (non-blocking)
+        run: npm audit --audit-level=high
+        continue-on-error: true
+
+  desktop:
+    # f73. The desktop Playwright project, the pseudo-locale crawl, the assistant streaming
+    # spec and the audit-chain check, split out of `quality` so neither job nears its
+    # ceiling: with them, `quality` was cancelled at 30 minutes on #292. Built the same way
+    # as `phones` and `roles` (its own database and build; see the note on `phones`).
+    #
+    # The audit-chain check moved WITH the e2e, not left in `quality`: it walks the rows the
+    # desktop e2e wrote (its second test needs an approval and a reimbursement in the chain,
+    # test/chain-verify.check.ts), and a job shares no database with another.
+    name: End-to-end (desktop)
+    # Pinned, not ubuntu-latest; see the note on the first job.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      AUTH_SECRET: ci-test-only-not-a-real-secret
+      SECRET_ENCRYPTION_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+      INTEGRATIONS_ENABLE_STUB: '1'
+      ADMIN_DATABASE_URL: postgres://postgres:velo@localhost:5432/veloexpense
+      DATABASE_URL: postgres://veloapp:velo@localhost:5432/veloexpense
+      STAGE: ci
+
+    services:
+      postgres:
+        # The same image as `quality`'s; see the note there.
+        image: ghcr.io/velotechsystems/base-postgres:16
+        env:
+          POSTGRES_PASSWORD: velo
+          POSTGRES_DB: veloexpense
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+
+      # The e2e serves the standalone output (playwright.config.ts).
+      - name: Build
+        run: npm run build
+
+      - name: Apply migrations
+        run: npm run migrate
+
+      # `quality`'s role step, verbatim: the app connects as `veloapp` so RLS applies.
+      - name: Create non-superuser app role
+        run: |
+          psql "$ADMIN_DATABASE_URL" -v ON_ERROR_STOP=1 <<'SQL'
+          DO $$ BEGIN
+            IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='veloapp') THEN
+              CREATE ROLE veloapp LOGIN PASSWORD 'velo';
+            END IF;
+          END $$;
+          GRANT CONNECT ON DATABASE veloexpense TO veloapp;
+          GRANT USAGE ON SCHEMA public TO veloapp;
+          GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO veloapp;
+          GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO veloapp;
+          ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO veloapp;
+          ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE, SELECT ON SEQUENCES TO veloapp;
+          SQL
+
+      # The e2e signs in as the seeded admin (e2e/auth.setup.ts). In `quality` this ran after
+      # the DB suites, which TRUNCATE; here the database is fresh, so it seeds once.
       - name: Seed the demo tenant
         run: npm run seed
 
@@ -322,10 +396,11 @@ jobs:
       # Docker image runs.
       #
       # DESKTOP ONLY (`chromium`, plus the `setup` project it depends on). The three
-      # phone projects run in the `phones` job below, at the same time as this one:
+      # phone projects run in the `phones` job, at the same time as this one:
       # ported from ExpenseOS in phone e2e 1-5, they took this job's e2e from about 6
       # minutes to about 17, and #246 was cancelled at the 30-minute ceiling. The
-      # role-matrix specs (the `roles` project) run in the `roles` job for the same reason.
+      # role-matrix specs (the `roles` project) run in the `roles` job for the same reason,
+      # and f73 moved this step out of `quality` for it too (#292, 30m).
       # Every PR still runs every project — just not all in one job.
       - name: End-to-end happy path (Playwright, desktop)
         run: npx playwright test --project=chromium
@@ -366,15 +441,12 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v7
         with:
-          name: playwright-report
+          name: playwright-report-desktop
           path: |
             playwright-report/
             test-results/
+            e2e/.artifacts/
           retention-days: 7
-
-      - name: Audit (non-blocking)
-        run: npm audit --audit-level=high
-        continue-on-error: true
 
   phones:
     # The three phone projects (`mobile-360`, `mobile-390`, `mobile-412`;
