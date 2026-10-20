@@ -12,14 +12,14 @@
     "homeCurrency": "Home currency"
   },
   "install": {
-    "sectionTitle": "Install ExpenseOS",
-    "sectionBody": "Add ExpenseOS to this device and it opens like an app, with its own icon, full screen, and no address bar.",
-    "genericBody": "You can also install ExpenseOS from your browser's own menu, under Install or Add to Home Screen.",
+    "sectionTitle": "Install VeloExpense",
+    "sectionBody": "Add VeloExpense to this device and it opens like an app, with its own icon, full screen, and no address bar.",
+    "genericBody": "You can also install VeloExpense from your browser's own menu, under Install or Add to Home Screen.",
     "iosTitle": "Install on iPhone or iPad",
     "iosLead": "This device has no install button. The Share menu does it, in three steps.",
     "iosStep1": "Tap the Share button — the square with an arrow pointing out of it.",
     "iosStep2": "The share list scrolls. Keep going past the apps and the first actions — Add to Home Screen sits well down it. Tap it.",
-    "iosStep3": "A panel appears with the app name in it. Tap Add, then open ExpenseOS from your Home Screen.",
+    "iosStep3": "A panel appears with the app name in it. Tap Add, then open VeloExpense from your Home Screen.",
     "iosShellLead": "Open this page in Safari — on iPhone and iPad, adding a site to the Home Screen is something only Safari can do.",
     "iosShellThen": "Then, in Safari:",
     "installButton": "Install",
@@ -27,7 +27,7 @@
     "dismissedTitle": "Not installed",
     "dismissedBody": "You closed the install dialog, so nothing changed.",
     "failedBody": "Your browser did not open the install dialog, and nothing changed.",
-    "installedTitle": "ExpenseOS is installed",
+    "installedTitle": "VeloExpense is installed",
     "installedBody": "Open it from your home screen or app list. It runs in its own window from now on."
   },
   "noManager": "—",

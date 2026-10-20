@@ -84,7 +84,7 @@
     "billing": "Facturation"
   },
   "profile": {
-    "installApp": "Installer ExpenseOS",
+    "installApp": "Installer VeloExpense",
     "signOut": "Se déconnecter",
     "roleAdmin": "Administrateur système",
     "roleManager": "Gestionnaire",

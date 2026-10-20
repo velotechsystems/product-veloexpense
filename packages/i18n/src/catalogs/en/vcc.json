@@ -29,14 +29,14 @@
   "cardImport": {
     "alreadyImported": "Imported as {card}",
     "assignPrompt": "Not assigned — open the row to choose",
-    "blockedCurrency": "No currency in ExpenseOS matches \"{code}\", so there is nothing to record the limit in.",
-    "blockedExisting": "This card is already in ExpenseOS as {card}, so it cannot be imported again.",
+    "blockedCurrency": "No currency in VeloExpense matches \"{code}\", so there is nothing to record the limit in.",
+    "blockedExisting": "This card is already in VeloExpense as {card}, so it cannot be imported again.",
     "blockedRepeat": "This card appears earlier in the same report; only the first occurrence is imported.",
     "chooseFile": "Choose .xlsx",
     "colCard": "Card",
     "colCardholder": "Name",
     "colCurrency": "Currency",
-    "colExisting": "Already in ExpenseOS",
+    "colExisting": "Already in VeloExpense",
     "colLimit": "Limit",
     "colMatched": "Matched user",
     "colStatus": "Status",
@@ -330,7 +330,7 @@
     "amount": "Amount ({currency})",
     "amountInvalid": "That isn't a valid amount.",
     "reconciledDialogSummary": "{marked, plural, one {# transaction} other {# transactions}} will be marked as already in NetSuite.{skipped, plural, =0 {} other { # will be skipped.}}",
-    "reconciledSkipSynced": "{count} already posted by ExpenseOS",
+    "reconciledSkipSynced": "{count} already posted by VeloExpense",
     "reconciledSkipManual": "{count} recorded by hand here, never posted",
     "reconciledSkipReconciled": "{count} already marked",
     "reconciledSkipProcessing": "{count} posting in progress"
@@ -632,8 +632,8 @@
     "consumed": "This link has already been used.",
     "alreadyDecided": "This request was already decided.",
     "forbidden": "You're no longer able to act on this request.",
-    "error": "Something went wrong. Please act from ExpenseOS instead.",
-    "openApp": "Open ExpenseOS"
+    "error": "Something went wrong. Please act from VeloExpense instead.",
+    "openApp": "Open VeloExpense"
   },
   "addTxn": {
     "action": "Add transaction",

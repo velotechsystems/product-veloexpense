@@ -188,7 +188,7 @@
     "badge": "NetSuite",
     "badgeTitle": "NetSuite diverge sur {count, plural, one {# champ} other {# champs}} — voir Personnes ↔ NetSuite",
     "section": "Personnes ↔ NetSuite",
-    "explain": "NetSuite détient une valeur différente pour ces champs. ExpenseOS suit ADP via Google et n’écrase ni l’un ni l’autre ; un réviseur tranche quel système a raison.",
+    "explain": "NetSuite détient une valeur différente pour ces champs. VeloExpense suit ADP via Google et n’écrase ni l’un ni l’autre ; un réviseur tranche quel système a raison.",
     "review": "Réviser dans Personnes ↔ NetSuite",
     "hrIt": "RH / TI",
     "hrItHelp": "Adopté de NetSuite alors que Google dit encore autre chose — les RH ou les TI doivent corriger la fiche en amont.",

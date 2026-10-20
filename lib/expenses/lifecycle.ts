@@ -36,6 +36,7 @@ import { capabilityAvailability } from '@/lib/integrations/service';
 import { uncodedCategories, uncodedDiagnostic } from '@/lib/integrations/coding';
 import { ORG } from '@/lib/tenant/sql';
 import { assertTenantMayWrite } from '@/lib/billing/gate';
+import { onlyRequesterCouldDecide } from '@/lib/approvals/someoneElseCanDecide';
 
 
 export type TransitionAction = 'SUBMIT' | 'RECALL' | 'APPROVE' | 'REJECT' | 'RETURN' | 'REIMBURSE';
@@ -535,16 +536,8 @@ async function routeSubmittedReport(
 
 /**
  * w4-00c: refuse a submit whose first approvals could only be decided by the submitter.
- *
- * The engine assigns what the flow names, and `canDecide` refuses a requester their own
- * report — so a task parked on the submitter, or a pool whose only member is the submitter,
- * is a report nobody can move. Two cases are knowable here, and both are refused:
- *   · a task ASSIGNED to the submitter (a named fallback, a manager chain that loops back);
- *   · an UNASSIGNED task whose node falls back to a ROLE that nobody but the submitter holds
- *     — the default flow's case (d59) for a solo founder, which `SUBMIT_NEEDS_APPROVER`
- *     already explains in the words the setup checklist uses.
- * A filter pool, or a relative approver with no fallback, is open to whoever the engine finds
- * eligible when they look; this does not try to predict that, and does not refuse it.
+ * The rule itself lives in `lib/approvals/someoneElseCanDecide.ts` (f61), which travel
+ * requests share; `SUBMIT_NEEDS_APPROVER` explains it in the words the setup checklist uses.
  */
 async function assertSomeoneElseCanDecide(
   db: TenantDb,
@@ -557,41 +550,7 @@ async function assertSomeoneElseCanDecide(
     select: { submitterId: true },
   });
   if (!report) return;
-  const tasks = await db.approvalTask.findMany({
-    where: { id: { in: taskIds } },
-    select: {
-      assigneeUserId: true,
-      nodeId: true,
-      instance: { select: { effectiveGraph: true } },
-    },
-  });
-  const stranded: boolean[] = [];
-  for (const t of tasks) {
-    if (t.assigneeUserId !== null) {
-      stranded.push(t.assigneeUserId === report.submitterId);
-      continue;
-    }
-    const graph = t.instance.effectiveGraph as {
-      nodes?: Array<{ id: string; approver?: { fallback?: { kind: string; roleId?: string } } }>;
-    } | null;
-    const fallback = graph?.nodes?.find((n) => n.id === t.nodeId)?.approver?.fallback;
-    if (fallback?.kind !== 'role' || !fallback.roleId) {
-      stranded.push(false);
-      continue;
-    }
-    const others = await db.user.count({
-      where: {
-        roleId: fallback.roleId,
-        id: { not: report.submitterId },
-        deletedAt: null,
-        employeeStatus: 'ACTIVE',
-      },
-    });
-    stranded.push(others === 0);
-  }
-  // Every first approval stranded: nobody can move the report. One reachable approval of
-  // several (a parallel step) is enough to keep it moving.
-  if (stranded.length > 0 && stranded.every(Boolean)) {
+  if (await onlyRequesterCouldDecide(db, report.submitterId, taskIds)) {
     throw new LifecycleError(
       `report ${reportId} would route only to its own submitter`,
       'NO_APPROVER',

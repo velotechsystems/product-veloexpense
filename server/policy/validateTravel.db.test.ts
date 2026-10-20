@@ -65,7 +65,13 @@ describe.skipIf(!process.env.DATABASE_URL)('travel policy engine (integration)',
   let ruleId: string | null = null;
 
   beforeAll(async () => {
-    h = await createTenantHarness({ slug: 'travel-policy', name: 'Travel Policy Co' });
+    // VeloExpense (f61): a second administrator, so the default travel flow reaches somebody
+    // other than the traveller — a founder alone is now refused at submit (NO_APPROVER).
+    h = await createTenantHarness({
+      slug: 'travel-policy',
+      name: 'Travel Policy Co',
+      people: [{ email: 'approver@travel-policy.test', name: 'Approver', role: 'ADMIN' }],
+    });
     db = h.db;
     const validate = (await import('./validateTravel')).validateTravelRequest;
     // VeloExpense (w6-01): in one tenant transaction; the cases' own `db` argument is the

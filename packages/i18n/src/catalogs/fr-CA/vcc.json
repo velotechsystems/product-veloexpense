@@ -29,14 +29,14 @@
   "cardImport": {
     "alreadyImported": "Importée sous {card}",
     "assignPrompt": "Non attribuée — ouvrez la ligne pour choisir",
-    "blockedCurrency": "Aucune devise d'ExpenseOS ne correspond à « {code} »; la limite ne peut être enregistrée.",
-    "blockedExisting": "Cette carte est déjà dans ExpenseOS sous {card}; elle ne peut pas être importée de nouveau.",
+    "blockedCurrency": "Aucune devise de VeloExpense ne correspond à « {code} »; la limite ne peut être enregistrée.",
+    "blockedExisting": "Cette carte est déjà dans VeloExpense sous {card}; elle ne peut pas être importée de nouveau.",
     "blockedRepeat": "Cette carte figure plus haut dans le même rapport; seule la première occurrence est importée.",
     "chooseFile": "Choisir un .xlsx",
     "colCard": "Carte",
     "colCardholder": "Nom",
     "colCurrency": "Devise",
-    "colExisting": "Déjà dans ExpenseOS",
+    "colExisting": "Déjà dans VeloExpense",
     "colLimit": "Limite",
     "colMatched": "Utilisateur apparié",
     "colStatus": "Statut",
@@ -330,7 +330,7 @@
     "amount": "Montant ({currency})",
     "amountInvalid": "Ce n'est pas un montant valide.",
     "reconciledDialogSummary": "{marked, plural, one {# transaction sera marquée} other {# transactions seront marquées}} comme déjà dans NetSuite.{skipped, plural, =0 {} one { # sera ignorée.} other { # seront ignorées.}}",
-    "reconciledSkipSynced": "{count} déjà publiée(s) par ExpenseOS",
+    "reconciledSkipSynced": "{count} déjà publiée(s) par VeloExpense",
     "reconciledSkipManual": "{count} enregistrée(s) manuellement ici, jamais publiée(s)",
     "reconciledSkipReconciled": "{count} déjà marquée(s)",
     "reconciledSkipProcessing": "{count} en cours de publication"
@@ -632,8 +632,8 @@
     "consumed": "Ce lien a déjà été utilisé.",
     "alreadyDecided": "Cette demande a déjà été traitée.",
     "forbidden": "Vous ne pouvez plus traiter cette demande.",
-    "error": "Une erreur est survenue. Veuillez agir depuis ExpenseOS.",
-    "openApp": "Ouvrir ExpenseOS"
+    "error": "Une erreur est survenue. Veuillez agir depuis VeloExpense.",
+    "openApp": "Ouvrir VeloExpense"
   },
   "addTxn": {
     "action": "Ajouter une transaction",

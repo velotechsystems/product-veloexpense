@@ -1,5 +1,5 @@
 {
-  "appName": "ExpenseOS",
+  "appName": "VeloExpense",
   "loading": "Chargement…",
   "errorBoundary": "Une erreur s'est produite.",
   "panelUnavailable": "Cette section n'a pas pu être chargée.",
@@ -41,8 +41,8 @@
     "title": "Page introuvable"
   },
   "offline": {
-    "body": "Vous êtes peut-être hors ligne, ou la connexion a été interrompue. ExpenseOS a besoin d'une connexion Internet et ne conserve rien sur cet appareil. Vérifiez votre connexion, puis réessayez.",
-    "title": "Nous n'avons pas pu joindre ExpenseOS"
+    "body": "Vous êtes peut-être hors ligne, ou la connexion a été interrompue. VeloExpense a besoin d'une connexion Internet et ne conserve rien sur cet appareil. Vérifiez votre connexion, puis réessayez.",
+    "title": "Nous n'avons pas pu joindre VeloExpense"
   },
   "skipToContent": "Aller au contenu"
 }

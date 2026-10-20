@@ -13,11 +13,11 @@
     "rateFarFromPrior": "{base}→{quote} a été enregistré pour la dernière fois à {prior} le {on}. {rate} s’en écarte de {deviation} %, soit plus que le {bound} % qu’un taux peut varier sans justification. Si c’est le taux précédent qui était erroné, ajoutez celui-ci avec une raison qui le dit."
   },
   "ledger": {
-    "adoptUnmapped": "Aucun enregistrement ExpenseOS n’est associé à l’enregistrement NetSuite « {value} » : il n’y a donc aucune valeur à adopter. Associez-le d’abord dans la page d’administration correspondante, ou choisissez « Conserver ExpenseOS, corriger NetSuite » pour corriger NetSuite.",
+    "adoptUnmapped": "Aucun enregistrement VeloExpense n’est associé à l’enregistrement NetSuite « {value} » : il n’y a donc aucune valeur à adopter. Associez-le d’abord dans la page d’administration correspondante, ou choisissez « Conserver VeloExpense, corriger NetSuite » pour corriger NetSuite.",
     "referenceInUse": "Cette référence ne peut pas être supprimée, car des enregistrements y renvoient encore. La liste ci-dessous indique exactement lesquels. Rien n’a été supprimé et aucune association n’a été retirée.",
     "referenceActive": "Seule une référence inactive peut être supprimée. Désactivez d’abord celle-ci, puis supprimez-la.",
-    "reconcileNotImported": "Cette charge a été saisie manuellement dans ExpenseOS et non importée du flux de cartes : il n’y a donc rien dans NetSuite avec quoi la rapprocher.",
-    "reconcileProcessing": "ExpenseOS publie cette charge dans NetSuite en ce moment. Attendez le résultat avant de la marquer comme publiée manuellement.",
+    "reconcileNotImported": "Cette charge a été saisie manuellement dans VeloExpense et non importée du flux de cartes : il n’y a donc rien dans NetSuite avec quoi la rapprocher.",
+    "reconcileProcessing": "VeloExpense publie cette charge dans NetSuite en ce moment. Attendez le résultat avant de la marquer comme publiée manuellement.",
     "reconcileAlreadyReconciled": "Cette charge est déjà marquée comme publiée manuellement dans NetSuite.",
     "reconcileChangedConcurrently": "Cette charge a changé pendant que vous la marquiez : rien n’a été enregistré. Actualisez la page pour voir son état actuel."
   },

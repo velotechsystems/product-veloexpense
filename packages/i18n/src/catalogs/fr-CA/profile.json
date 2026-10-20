@@ -12,14 +12,14 @@
     "homeCurrency": "Devise principale"
   },
   "install": {
-    "sectionTitle": "Installer ExpenseOS",
-    "sectionBody": "Ajoutez ExpenseOS à cet appareil et il s'ouvrira comme une application, avec sa propre icône, en plein écran, sans barre d'adresse.",
-    "genericBody": "Vous pouvez aussi installer ExpenseOS depuis le menu de votre navigateur : cherchez Installer ou Sur l'écran d'accueil.",
+    "sectionTitle": "Installer VeloExpense",
+    "sectionBody": "Ajoutez VeloExpense à cet appareil et il s'ouvrira comme une application, avec sa propre icône, en plein écran, sans barre d'adresse.",
+    "genericBody": "Vous pouvez aussi installer VeloExpense depuis le menu de votre navigateur : cherchez Installer ou Sur l'écran d'accueil.",
     "iosTitle": "Installer sur iPhone ou iPad",
     "iosLead": "Cet appareil n'a pas de bouton d'installation. Le menu Partager s'en charge, en trois étapes.",
     "iosStep1": "Touchez le bouton Partager, le carré avec une flèche qui en sort.",
     "iosStep2": "La liste de partage défile. Continuez au-delà des applications et des premières actions — Sur l'écran d'accueil se trouve bien plus bas. Touchez-le.",
-    "iosStep3": "Un panneau affiche le nom de l'application. Touchez Ajouter, puis ouvrez ExpenseOS depuis votre écran d'accueil.",
+    "iosStep3": "Un panneau affiche le nom de l'application. Touchez Ajouter, puis ouvrez VeloExpense depuis votre écran d'accueil.",
     "iosShellLead": "Ouvrez cette page dans Safari — sur iPhone et iPad, seul Safari peut ajouter un site à l'écran d'accueil.",
     "iosShellThen": "Ensuite, dans Safari :",
     "installButton": "Installer",
@@ -27,7 +27,7 @@
     "dismissedTitle": "Non installé",
     "dismissedBody": "Vous avez fermé la fenêtre d'installation, donc rien n'a changé.",
     "failedBody": "Votre navigateur n'a pas ouvert la fenêtre d'installation, et rien n'a changé.",
-    "installedTitle": "ExpenseOS est installé",
+    "installedTitle": "VeloExpense est installé",
     "installedBody": "Ouvrez-le depuis votre écran d'accueil ou votre liste d'applications. Il s'exécute désormais dans sa propre fenêtre."
   },
   "noManager": "—",
