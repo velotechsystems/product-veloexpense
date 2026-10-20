@@ -39,7 +39,7 @@
   "copyFailed": "La copie automatique a échoué — sélectionnez la clé ci-dessus et copiez-la vous-même.",
   "personal": {
     "title": "Clé API",
-    "subtitle": "Une clé unique qui permet à un assistant IA — Claude Code, par exemple — d'effectuer certaines actions dans ExpenseOS en votre nom. Il n'y a rien à configurer : tous les paramètres sont fixés.",
+    "subtitle": "Une clé unique qui permet à un assistant IA — Claude Code, par exemple — d'effectuer certaines actions dans VeloExpense en votre nom. Il n'y a rien à configurer : tous les paramètres sont fixés.",
     "smallScreenTitle": "Clé API",
     "smallScreenBody": "Demander ou régénérer une clé vous la montre une seule fois, et il faut la coller quelque part avant qu'elle disparaisse. Cela se fait à l'ordinateur : ouvrez votre profil sur un écran plus grand lorsque vous avez besoin d'une clé.",
     "smallScreenLiveBody": "Vous détenez une clé API, et vous pouvez la révoquer ici — c'est la seule chose pour laquelle vous ne devriez jamais avoir à trouver un ordinateur. Demander ou régénérer une clé vous la montre une seule fois et il faut la coller quelque part : ouvrez votre profil sur un écran plus grand pour cela.",
@@ -63,7 +63,7 @@
     "requesting": "Demande en cours…",
     "revealTitle": "Copiez cette clé maintenant — elle ne sera plus jamais affichée.",
     "assistantPromptLabel": "Collez ceci dans votre assistant IA :",
-    "assistantPromptText": "Connecte-toi au serveur MCP d'ExpenseOS à {url}, en utilisant cette clé comme jeton porteur : {token}",
+    "assistantPromptText": "Connecte-toi au serveur MCP de VeloExpense à {url}, en utilisant cette clé comme jeton porteur : {token}",
     "assistantPromptCopy": "Copier l'instruction",
     "assistantPromptCopied": "Instruction copiée",
     "assistantPromptCopyFailed": "Impossible de copier l'instruction. Sélectionnez-la et copiez-la à la main.",

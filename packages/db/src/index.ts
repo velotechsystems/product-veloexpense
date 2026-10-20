@@ -11,7 +11,12 @@ export { Prisma, type PrismaClient } from '@/lib/generated/prisma/client';
 // w4-02a: the policy engine's model types. `FxRate` is VeloExpense's own table; `ExpensePolicy`
 // is ExpenseOS's per-category policy, on `expense_category_policy` (w4-02c, 0065).
 export type { ExpensePolicy, FxRate } from '@/lib/generated/prisma/client';
+// w6-04: ExpenseOS's `ApiKey` row type, its `kind` narrowed to the CHECK's values (0079).
+import type { ApiKey as ApiKeyRow } from '@/lib/generated/prisma/client';
+import type { ApiKeyKind as ApiKeyKindValue } from './enums';
+export type ApiKey = Omit<ApiKeyRow, 'kind'> & { kind: ApiKeyKindValue };
 export {
+  ApiKeyKind,
   DocExtractStatus,
   DocScanStatus,
   ExpenseLineKind,

@@ -95,6 +95,16 @@ import { NextResponse, type NextRequest } from 'next/server';
 //                                       307 and then disables the subscription. EXACT
 //                                       path, in both places.
 //
+// w6-04 adds a ninth, and it is the only one whose caller is a PERSON's agent:
+//   /api/mcp                            the MCP endpoint: Claude Desktop, Claude Code or an
+//                                       integration, holding an API key. Authenticated by
+//                                       the bearer token in the route (`apiKeyTenantId`,
+//                                       then ExpenseOS's `guardApiRequest`), which answers
+//                                       401 in JSON-RPC itself. An MCP client sends no
+//                                       cookie, and a 307 to the login PAGE would read to it
+//                                       as a broken server rather than a refused key. EXACT
+//                                       path, in both places.
+//
 // TWO PLACES, AND EITHER ONE ALONE IS ENOUGH — MEASURED, NOT ASSUMED. The
 // `matcher` decides whether middleware runs at all; `PUBLIC` is what runs when
 // it does. `/signup` is in both, as `/login` and `/approve` already were, and a
@@ -119,6 +129,7 @@ const PUBLIC = [
   /^\/api\/health$/,
   /^\/api\/email\/inbound$/,
   /^\/api\/slack\/events$/,
+  /^\/api\/mcp$/,
   /^\/_next\//,
   /^\/favicon\.ico$/,
   // 2026 brand: the wordmark and the favicon render BEFORE anyone signs in — on
@@ -155,5 +166,5 @@ export function proxy(req: NextRequest) {
 }
 
 export const config = {
-  matcher: ['/((?!api/auth|api/internal|api/platform|api/health$|api/email/inbound$|api/slack/events$|_next/static|_next/image|favicon.ico|brand/|apple-touch-icon.png|login|approve|signup|invite).*)'],
+  matcher: ['/((?!api/auth|api/internal|api/platform|api/health$|api/email/inbound$|api/slack/events$|api/mcp$|_next/static|_next/image|favicon.ico|brand/|apple-touch-icon.png|login|approve|signup|invite).*)'],
 };

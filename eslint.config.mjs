@@ -54,6 +54,16 @@ const PORTED_FROM_EXPENSEOS = [
   "components/ui/resizable-panels*.tsx",
   // Wave 6 (w6-03): ExpenseOS's assistant panel, launcher and voice input.
   "components/assistant/**",
+  // Wave 6 (w6-04): ExpenseOS's API key components, its personal key box (on /preferences
+  // here) and its API key guard, idempotency and request-log modules.
+  "components/api-keys/**",
+  "app/preferences/PersonalApiKey*.tsx",
+  "server/lib/apiKey*.ts",
+  "server/lib/idempotency*.ts",
+  "server/lib/ipMatch*.ts",
+  "server/lib/personalApiKey*.ts",
+  "server/routers/apiKeys.ts",
+  "app/api/mcp/**",
 ];
 
 const eslintConfig = defineConfig([

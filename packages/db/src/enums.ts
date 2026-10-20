@@ -81,3 +81,14 @@ export { PolicyViolationSeverity } from '@/lib/generated/prisma/enums';
 
 export const RuleScope = { LINE: 'LINE', REPORT: 'REPORT', AGGREGATE: 'AGGREGATE' } as const;
 export type RuleScope = (typeof RuleScope)[keyof typeof RuleScope];
+
+/**
+ * w6-04: ExpenseOS's `ApiKeyKind` (who a key acts as). Text with a CHECK here (0079).
+ * `USER` is a personal token acting as its owner; `PLATFORM` is a service account that
+ * names its subject per request.
+ */
+export const ApiKeyKind = {
+  USER: 'USER',
+  PLATFORM: 'PLATFORM',
+} as const;
+export type ApiKeyKind = (typeof ApiKeyKind)[keyof typeof ApiKeyKind];

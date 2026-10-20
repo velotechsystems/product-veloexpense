@@ -133,6 +133,8 @@ describe("an admin's menu", () => {
         // w6-02: ExpenseOS's travel screens (ALL_ON has the travel module).
         '/travel',
         '/admin/travel-categories',
+        // w6-04: ExpenseOS's platform API keys and their request log.
+        '/admin/api-keys',
       ].sort(),
     );
   });

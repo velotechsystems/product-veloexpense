@@ -102,7 +102,10 @@ export const ModelName = {
   TravelBudgetLine: 'TravelBudgetLine',
   AssistantConversation: 'AssistantConversation',
   AssistantMessage: 'AssistantMessage',
-  AssistantFeedback: 'AssistantFeedback'
+  AssistantFeedback: 'AssistantFeedback',
+  ApiKey: 'ApiKey',
+  ApiKeyRequest: 'ApiKeyRequest',
+  ApiKeyIdempotency: 'ApiKeyIdempotency'
 } as const
 
 export type ModelName = (typeof ModelName)[keyof typeof ModelName]
@@ -1027,6 +1030,67 @@ export const AssistantFeedbackScalarFieldEnum = {
 } as const
 
 export type AssistantFeedbackScalarFieldEnum = (typeof AssistantFeedbackScalarFieldEnum)[keyof typeof AssistantFeedbackScalarFieldEnum]
+
+
+export const ApiKeyScalarFieldEnum = {
+  id: 'id',
+  organizationId: 'organizationId',
+  kind: 'kind',
+  name: 'name',
+  prefix: 'prefix',
+  tokenHash: 'tokenHash',
+  userId: 'userId',
+  createdById: 'createdById',
+  scopes: 'scopes',
+  rateLimitPerMinute: 'rateLimitPerMinute',
+  allowedIps: 'allowedIps',
+  lastUsedAt: 'lastUsedAt',
+  expiresAt: 'expiresAt',
+  revokedAt: 'revokedAt',
+  createdAt: 'createdAt'
+} as const
+
+export type ApiKeyScalarFieldEnum = (typeof ApiKeyScalarFieldEnum)[keyof typeof ApiKeyScalarFieldEnum]
+
+
+export const ApiKeyRequestScalarFieldEnum = {
+  id: 'id',
+  organizationId: 'organizationId',
+  apiKeyId: 'apiKeyId',
+  prefixTried: 'prefixTried',
+  actingUserId: 'actingUserId',
+  operation: 'operation',
+  toolName: 'toolName',
+  scopeRequired: 'scopeRequired',
+  outcome: 'outcome',
+  statusCode: 'statusCode',
+  durationMs: 'durationMs',
+  request: 'request',
+  response: 'response',
+  ip: 'ip',
+  userAgent: 'userAgent',
+  count: 'count',
+  windowStart: 'windowStart',
+  createdAt: 'createdAt',
+  expiresAt: 'expiresAt'
+} as const
+
+export type ApiKeyRequestScalarFieldEnum = (typeof ApiKeyRequestScalarFieldEnum)[keyof typeof ApiKeyRequestScalarFieldEnum]
+
+
+export const ApiKeyIdempotencyScalarFieldEnum = {
+  id: 'id',
+  organizationId: 'organizationId',
+  apiKeyId: 'apiKeyId',
+  key: 'key',
+  requestHash: 'requestHash',
+  response: 'response',
+  status: 'status',
+  createdAt: 'createdAt',
+  expiresAt: 'expiresAt'
+} as const
+
+export type ApiKeyIdempotencyScalarFieldEnum = (typeof ApiKeyIdempotencyScalarFieldEnum)[keyof typeof ApiKeyIdempotencyScalarFieldEnum]
 
 
 export const SortOrder = {

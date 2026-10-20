@@ -316,3 +316,18 @@ export type AssistantMessage = Prisma.AssistantMessageModel
  * raised about itself.
  */
 export type AssistantFeedback = Prisma.AssistantFeedbackModel
+/**
+ * Model ApiKey
+ * ExpenseOS's ApiKey: a credential that acts as a person. Only the token's hash is stored.
+ */
+export type ApiKey = Prisma.ApiKeyModel
+/**
+ * Model ApiKeyRequest
+ * ExpenseOS's ApiKeyRequest: every call made with an API key, successful or not.
+ */
+export type ApiKeyRequest = Prisma.ApiKeyRequestModel
+/**
+ * Model ApiKeyIdempotency
+ * ExpenseOS's ApiKeyIdempotency: replay protection for mutating API-key calls.
+ */
+export type ApiKeyIdempotency = Prisma.ApiKeyIdempotencyModel

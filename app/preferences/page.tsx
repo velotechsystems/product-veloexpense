@@ -18,6 +18,7 @@ import { localeName } from '@/lib/i18n/locales';
 import { readerPrefs } from '@/lib/i18n/request';
 import { uiText, type UiKey } from '@/lib/i18n/catalog/ui';
 import { getPreferencesPage, savePreferencesFromForm } from './actions';
+import { PersonalApiKey } from './PersonalApiKey';
 
 import { pageTitle } from '@/lib/i18n/page-title';
 import { NativeSelect } from '@/components/ui/native-select';
@@ -123,6 +124,11 @@ export default async function PreferencesPage({
         </Link>
         .
       </p>
+
+      {/* w6-04: ExpenseOS's personal API key box (its `/profile`, which is this page here).
+          Last, as on ExpenseOS's profile: the section somebody visits once and then leaves
+          alone for six months. It configures nothing; its procedures take no input. */}
+      <PersonalApiKey />
     </Screen>
   );
 }

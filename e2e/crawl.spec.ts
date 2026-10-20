@@ -113,6 +113,9 @@ const PAGES = [
   // VeloExpense (w6-03): the assistant's review queue (admin.help.manage). The assistant is
   // CORE (d89), so this is never the module gate's 404 here.
   '/admin/assistant-feedback',
+  // VeloExpense (w6-04): platform API keys and their request log (admin.apiKey.create or
+  // .list, a disjunction). Not module-gated.
+  '/admin/api-keys',
 ] as const;
 
 /**

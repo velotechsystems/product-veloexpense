@@ -39,7 +39,7 @@
   "copyFailed": "Could not copy it for you — select the key above and copy it yourself.",
   "personal": {
     "title": "API key",
-    "subtitle": "One key that lets an AI assistant — Claude Code, for instance — do a few things in ExpenseOS on your behalf. There is nothing to set up: every setting is fixed.",
+    "subtitle": "One key that lets an AI assistant — Claude Code, for instance — do a few things in VeloExpense on your behalf. There is nothing to set up: every setting is fixed.",
     "smallScreenTitle": "API key",
     "smallScreenBody": "Requesting or regenerating a key shows it to you once, and it has to be pasted somewhere before it is gone. That is a thing to do at a computer — open your profile on a larger screen when you need a key.",
     "smallScreenLiveBody": "You hold an API key, and you can revoke it here — that is the one thing you should never have to find a computer for. Requesting or regenerating one shows the key once and it has to be pasted somewhere, so open your profile on a larger screen for that.",
@@ -63,7 +63,7 @@
     "requesting": "Requesting…",
     "revealTitle": "Copy this key now — it is never shown again.",
     "assistantPromptLabel": "Paste this to your AI assistant:",
-    "assistantPromptText": "Connect to the ExpenseOS MCP server at {url}, using this key as a bearer token: {token}",
+    "assistantPromptText": "Connect to the VeloExpense MCP server at {url}, using this key as a bearer token: {token}",
     "assistantPromptCopy": "Copy prompt",
     "assistantPromptCopied": "Prompt copied",
     "assistantPromptCopyFailed": "Could not copy the prompt. Select it and copy it by hand.",

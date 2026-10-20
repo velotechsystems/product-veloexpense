@@ -193,6 +193,21 @@ export const EXPORTED: Readonly<Record<string, ExportedTable>> = {
   assistant_message: { file: 'assistant-messages.csv' },
   assistant_feedback: { file: 'assistant-feedback.csv' },
 
+  /* ── API keys ─────────────────────────────────────────────────────────── */
+  // w6-04 (0079): ExpenseOS's API keys — who holds a key that acts as somebody, what it may
+  // do, who minted and who revoked it — and the log of every call made with one. Both are the
+  // tenant's own record of who reached its data and how. The hash is withheld.
+  api_key: {
+    file: 'api-keys.csv',
+    redact: {
+      token_hash:
+        'the SHA-256 of a live credential. It cannot be reversed, but it is exactly what ' +
+        'verification compares against, so a copy of it is a copy of the lock; the key\'s ' +
+        'public prefix is exported in its place.',
+    },
+  },
+  api_key_request: { file: 'api-key-requests.csv' },
+
   /* ── accounting ───────────────────────────────────────────────────────── */
   gl_account: { file: 'gl-accounts.csv' },
   integration_installation: {
@@ -299,6 +314,14 @@ export const EXCLUDED: Readonly<Record<string, string>> = {
     'and a hash of each address token. It records nothing the tenant did — the comments a',
     'reply produced are in the activity export — and the hashes are fingerprints of live',
     'reply addresses, which nobody is served by exporting.',
+  ].join(' '),
+
+  // w6-04 (0079).
+  api_key_idempotency: [
+    'Replay protection with a 24-hour lifetime: an Idempotency-Key a client sent and the',
+    'result to hand back if it retries. It is how one retried call was recognised, not a',
+    'record of anything the tenant did — the call itself is in the API key request export,',
+    'and what it changed is in the activity export.',
   ].join(' '),
 
   tenant_export: [

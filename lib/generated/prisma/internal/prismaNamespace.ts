@@ -435,7 +435,10 @@ export const ModelName = {
   TravelBudgetLine: 'TravelBudgetLine',
   AssistantConversation: 'AssistantConversation',
   AssistantMessage: 'AssistantMessage',
-  AssistantFeedback: 'AssistantFeedback'
+  AssistantFeedback: 'AssistantFeedback',
+  ApiKey: 'ApiKey',
+  ApiKeyRequest: 'ApiKeyRequest',
+  ApiKeyIdempotency: 'ApiKeyIdempotency'
 } as const
 
 export type ModelName = (typeof ModelName)[keyof typeof ModelName]
@@ -451,7 +454,7 @@ export type TypeMap<ExtArgs extends runtime.Types.Extensions.InternalArgs = runt
     omit: GlobalOmitOptions
   }
   meta: {
-    modelProps: "expenseCategory" | "glAccount" | "expenseReport" | "expense" | "expenseAllocation" | "expenseAttendee" | "expenseLineItem" | "receipt" | "documentExtraction" | "expenseDetermination" | "receiptExternalId" | "expenseExternalId" | "aiUsage" | "taxJurisdiction" | "user" | "userExternalId" | "role" | "roleExternalId" | "businessUnit" | "externalIdSource" | "businessUnitExternalId" | "legalEntity" | "legalEntityExternalId" | "fxRate" | "mileageRate" | "mileageRateTier" | "mileageRateSubject" | "perDiemRate" | "currency" | "department" | "departmentExternalId" | "jobLevel" | "jobLevelExternalId" | "fiscalYear" | "fiscalYearExternalId" | "approvalWorkflow" | "approvalWorkflowVersion" | "approvalInstance" | "approvalTask" | "delegation" | "policyRule" | "expensePolicy" | "policyViolation" | "savedView" | "replyThread" | "travelPlace" | "travelRequest" | "travelCategory" | "travelBudgetLine" | "assistantConversation" | "assistantMessage" | "assistantFeedback"
+    modelProps: "expenseCategory" | "glAccount" | "expenseReport" | "expense" | "expenseAllocation" | "expenseAttendee" | "expenseLineItem" | "receipt" | "documentExtraction" | "expenseDetermination" | "receiptExternalId" | "expenseExternalId" | "aiUsage" | "taxJurisdiction" | "user" | "userExternalId" | "role" | "roleExternalId" | "businessUnit" | "externalIdSource" | "businessUnitExternalId" | "legalEntity" | "legalEntityExternalId" | "fxRate" | "mileageRate" | "mileageRateTier" | "mileageRateSubject" | "perDiemRate" | "currency" | "department" | "departmentExternalId" | "jobLevel" | "jobLevelExternalId" | "fiscalYear" | "fiscalYearExternalId" | "approvalWorkflow" | "approvalWorkflowVersion" | "approvalInstance" | "approvalTask" | "delegation" | "policyRule" | "expensePolicy" | "policyViolation" | "savedView" | "replyThread" | "travelPlace" | "travelRequest" | "travelCategory" | "travelBudgetLine" | "assistantConversation" | "assistantMessage" | "assistantFeedback" | "apiKey" | "apiKeyRequest" | "apiKeyIdempotency"
     txIsolationLevel: TransactionIsolationLevel
   }
   model: {
@@ -4303,6 +4306,228 @@ export type TypeMap<ExtArgs extends runtime.Types.Extensions.InternalArgs = runt
         }
       }
     }
+    ApiKey: {
+      payload: Prisma.$ApiKeyPayload<ExtArgs>
+      fields: Prisma.ApiKeyFieldRefs
+      operations: {
+        findUnique: {
+          args: Prisma.ApiKeyFindUniqueArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ApiKeyPayload> | null
+        }
+        findUniqueOrThrow: {
+          args: Prisma.ApiKeyFindUniqueOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ApiKeyPayload>
+        }
+        findFirst: {
+          args: Prisma.ApiKeyFindFirstArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ApiKeyPayload> | null
+        }
+        findFirstOrThrow: {
+          args: Prisma.ApiKeyFindFirstOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ApiKeyPayload>
+        }
+        findMany: {
+          args: Prisma.ApiKeyFindManyArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ApiKeyPayload>[]
+        }
+        create: {
+          args: Prisma.ApiKeyCreateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ApiKeyPayload>
+        }
+        createMany: {
+          args: Prisma.ApiKeyCreateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        createManyAndReturn: {
+          args: Prisma.ApiKeyCreateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ApiKeyPayload>[]
+        }
+        delete: {
+          args: Prisma.ApiKeyDeleteArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ApiKeyPayload>
+        }
+        update: {
+          args: Prisma.ApiKeyUpdateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ApiKeyPayload>
+        }
+        deleteMany: {
+          args: Prisma.ApiKeyDeleteManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateMany: {
+          args: Prisma.ApiKeyUpdateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateManyAndReturn: {
+          args: Prisma.ApiKeyUpdateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ApiKeyPayload>[]
+        }
+        upsert: {
+          args: Prisma.ApiKeyUpsertArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ApiKeyPayload>
+        }
+        aggregate: {
+          args: Prisma.ApiKeyAggregateArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.AggregateApiKey>
+        }
+        groupBy: {
+          args: Prisma.ApiKeyGroupByArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.ApiKeyGroupByOutputType>[]
+        }
+        count: {
+          args: Prisma.ApiKeyCountArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.ApiKeyCountAggregateOutputType> | number
+        }
+      }
+    }
+    ApiKeyRequest: {
+      payload: Prisma.$ApiKeyRequestPayload<ExtArgs>
+      fields: Prisma.ApiKeyRequestFieldRefs
+      operations: {
+        findUnique: {
+          args: Prisma.ApiKeyRequestFindUniqueArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ApiKeyRequestPayload> | null
+        }
+        findUniqueOrThrow: {
+          args: Prisma.ApiKeyRequestFindUniqueOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ApiKeyRequestPayload>
+        }
+        findFirst: {
+          args: Prisma.ApiKeyRequestFindFirstArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ApiKeyRequestPayload> | null
+        }
+        findFirstOrThrow: {
+          args: Prisma.ApiKeyRequestFindFirstOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ApiKeyRequestPayload>
+        }
+        findMany: {
+          args: Prisma.ApiKeyRequestFindManyArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ApiKeyRequestPayload>[]
+        }
+        create: {
+          args: Prisma.ApiKeyRequestCreateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ApiKeyRequestPayload>
+        }
+        createMany: {
+          args: Prisma.ApiKeyRequestCreateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        createManyAndReturn: {
+          args: Prisma.ApiKeyRequestCreateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ApiKeyRequestPayload>[]
+        }
+        delete: {
+          args: Prisma.ApiKeyRequestDeleteArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ApiKeyRequestPayload>
+        }
+        update: {
+          args: Prisma.ApiKeyRequestUpdateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ApiKeyRequestPayload>
+        }
+        deleteMany: {
+          args: Prisma.ApiKeyRequestDeleteManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateMany: {
+          args: Prisma.ApiKeyRequestUpdateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateManyAndReturn: {
+          args: Prisma.ApiKeyRequestUpdateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ApiKeyRequestPayload>[]
+        }
+        upsert: {
+          args: Prisma.ApiKeyRequestUpsertArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ApiKeyRequestPayload>
+        }
+        aggregate: {
+          args: Prisma.ApiKeyRequestAggregateArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.AggregateApiKeyRequest>
+        }
+        groupBy: {
+          args: Prisma.ApiKeyRequestGroupByArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.ApiKeyRequestGroupByOutputType>[]
+        }
+        count: {
+          args: Prisma.ApiKeyRequestCountArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.ApiKeyRequestCountAggregateOutputType> | number
+        }
+      }
+    }
+    ApiKeyIdempotency: {
+      payload: Prisma.$ApiKeyIdempotencyPayload<ExtArgs>
+      fields: Prisma.ApiKeyIdempotencyFieldRefs
+      operations: {
+        findUnique: {
+          args: Prisma.ApiKeyIdempotencyFindUniqueArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ApiKeyIdempotencyPayload> | null
+        }
+        findUniqueOrThrow: {
+          args: Prisma.ApiKeyIdempotencyFindUniqueOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ApiKeyIdempotencyPayload>
+        }
+        findFirst: {
+          args: Prisma.ApiKeyIdempotencyFindFirstArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ApiKeyIdempotencyPayload> | null
+        }
+        findFirstOrThrow: {
+          args: Prisma.ApiKeyIdempotencyFindFirstOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ApiKeyIdempotencyPayload>
+        }
+        findMany: {
+          args: Prisma.ApiKeyIdempotencyFindManyArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ApiKeyIdempotencyPayload>[]
+        }
+        create: {
+          args: Prisma.ApiKeyIdempotencyCreateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ApiKeyIdempotencyPayload>
+        }
+        createMany: {
+          args: Prisma.ApiKeyIdempotencyCreateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        createManyAndReturn: {
+          args: Prisma.ApiKeyIdempotencyCreateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ApiKeyIdempotencyPayload>[]
+        }
+        delete: {
+          args: Prisma.ApiKeyIdempotencyDeleteArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ApiKeyIdempotencyPayload>
+        }
+        update: {
+          args: Prisma.ApiKeyIdempotencyUpdateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ApiKeyIdempotencyPayload>
+        }
+        deleteMany: {
+          args: Prisma.ApiKeyIdempotencyDeleteManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateMany: {
+          args: Prisma.ApiKeyIdempotencyUpdateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateManyAndReturn: {
+          args: Prisma.ApiKeyIdempotencyUpdateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ApiKeyIdempotencyPayload>[]
+        }
+        upsert: {
+          args: Prisma.ApiKeyIdempotencyUpsertArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ApiKeyIdempotencyPayload>
+        }
+        aggregate: {
+          args: Prisma.ApiKeyIdempotencyAggregateArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.AggregateApiKeyIdempotency>
+        }
+        groupBy: {
+          args: Prisma.ApiKeyIdempotencyGroupByArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.ApiKeyIdempotencyGroupByOutputType>[]
+        }
+        count: {
+          args: Prisma.ApiKeyIdempotencyCountArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.ApiKeyIdempotencyCountAggregateOutputType> | number
+        }
+      }
+    }
   }
 } & {
   other: {
@@ -5250,6 +5475,67 @@ export const AssistantFeedbackScalarFieldEnum = {
 export type AssistantFeedbackScalarFieldEnum = (typeof AssistantFeedbackScalarFieldEnum)[keyof typeof AssistantFeedbackScalarFieldEnum]
 
 
+export const ApiKeyScalarFieldEnum = {
+  id: 'id',
+  organizationId: 'organizationId',
+  kind: 'kind',
+  name: 'name',
+  prefix: 'prefix',
+  tokenHash: 'tokenHash',
+  userId: 'userId',
+  createdById: 'createdById',
+  scopes: 'scopes',
+  rateLimitPerMinute: 'rateLimitPerMinute',
+  allowedIps: 'allowedIps',
+  lastUsedAt: 'lastUsedAt',
+  expiresAt: 'expiresAt',
+  revokedAt: 'revokedAt',
+  createdAt: 'createdAt'
+} as const
+
+export type ApiKeyScalarFieldEnum = (typeof ApiKeyScalarFieldEnum)[keyof typeof ApiKeyScalarFieldEnum]
+
+
+export const ApiKeyRequestScalarFieldEnum = {
+  id: 'id',
+  organizationId: 'organizationId',
+  apiKeyId: 'apiKeyId',
+  prefixTried: 'prefixTried',
+  actingUserId: 'actingUserId',
+  operation: 'operation',
+  toolName: 'toolName',
+  scopeRequired: 'scopeRequired',
+  outcome: 'outcome',
+  statusCode: 'statusCode',
+  durationMs: 'durationMs',
+  request: 'request',
+  response: 'response',
+  ip: 'ip',
+  userAgent: 'userAgent',
+  count: 'count',
+  windowStart: 'windowStart',
+  createdAt: 'createdAt',
+  expiresAt: 'expiresAt'
+} as const
+
+export type ApiKeyRequestScalarFieldEnum = (typeof ApiKeyRequestScalarFieldEnum)[keyof typeof ApiKeyRequestScalarFieldEnum]
+
+
+export const ApiKeyIdempotencyScalarFieldEnum = {
+  id: 'id',
+  organizationId: 'organizationId',
+  apiKeyId: 'apiKeyId',
+  key: 'key',
+  requestHash: 'requestHash',
+  response: 'response',
+  status: 'status',
+  createdAt: 'createdAt',
+  expiresAt: 'expiresAt'
+} as const
+
+export type ApiKeyIdempotencyScalarFieldEnum = (typeof ApiKeyIdempotencyScalarFieldEnum)[keyof typeof ApiKeyIdempotencyScalarFieldEnum]
+
+
 export const SortOrder = {
   asc: 'asc',
   desc: 'desc'
@@ -5598,6 +5884,9 @@ export type GlobalOmitConfig = {
   assistantConversation?: Prisma.AssistantConversationOmit
   assistantMessage?: Prisma.AssistantMessageOmit
   assistantFeedback?: Prisma.AssistantFeedbackOmit
+  apiKey?: Prisma.ApiKeyOmit
+  apiKeyRequest?: Prisma.ApiKeyRequestOmit
+  apiKeyIdempotency?: Prisma.ApiKeyIdempotencyOmit
 }
 
 /* Types for Logging */
