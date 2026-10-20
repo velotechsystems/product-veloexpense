@@ -42,6 +42,7 @@
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import { withInviteLookup, withOrg } from '@/lib/tenant/context';
 import type { QueryRunner } from '@/lib/db/client';
+import { assertBusinessUnitUsable } from '@/lib/businessUnits/usable';
 import { DomainError, type UserMessage } from '@/lib/errors/domain';
 import type { UserMessageCode } from '@/lib/i18n/catalog/errors';
 import { append as auditAppend, type AuditActor } from '@/lib/audit/service';
@@ -163,6 +164,9 @@ export async function issueInvite(
   if (!role) {
     throw new InviteError(`unknown role ${input.roleId}`, 'ROLE_UNKNOWN', 'ROLE_UNKNOWN');
   }
+  // f09: the server, not only the picker, refuses a deactivated business unit. Checked when
+  // the invitation is issued; accepting it later writes the unit the admin chose then.
+  await assertBusinessUnitUsable(tx, input.businessUnitId);
   // w4-10d (VeloExpense): ExpenseOS's grant ceiling (`users.setRole`), applied to the role an
   // invitation promises too — otherwise an admin whose role lacks a permission could invite
   // a second address of their own into a role that has it. ExpenseOS's invite path does not

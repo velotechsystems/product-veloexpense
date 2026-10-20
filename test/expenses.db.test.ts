@@ -132,6 +132,52 @@ describe('expense workbench (VX1-6)', () => {
     expect(after.cleared.purpose).toBeNull();
   });
 
+  // f09: the server, not only the picker, refuses a deactivated business unit — except the
+  // one a report already carries, so the rest of a report coded before the switch-off saves.
+  it('refuses a deactivated business unit on create and edit, but keeps the one already there', async () => {
+    const units = await admin.query(
+      `INSERT INTO business_unit (organization_id, label, active)
+       VALUES ($1, '{"en":"Live unit"}', true), ($1, '{"en":"Retired unit"}', false) RETURNING id, active`,
+      [orgId],
+    );
+    const live = units.rows.find((r) => r.active).id as string;
+    const retired = units.rows.find((r) => !r.active).id as string;
+    const codeOf = (p: Promise<unknown>) =>
+      p.then(
+        () => 'ok',
+        (e: { code?: string }) => e.code ?? 'error',
+      );
+
+    expect(
+      await codeOf(
+        withOrg(orgId, (tx) =>
+          svc.createReport(tx, 'u@acme.test', { title: 'Retired', currencyCode: 'CAD', businessUnitId: retired }),
+        ),
+      ),
+    ).toBe('BUSINESS_UNIT_UNAVAILABLE');
+
+    const report = await withOrg(orgId, (tx) =>
+      svc.createReport(tx, 'u@acme.test', { title: 'Coded', currencyCode: 'CAD', businessUnitId: live }),
+    );
+    expect(
+      await codeOf(withOrg(orgId, (tx) => svc.updateReport(tx, TEST_ACTOR, report.id, { businessUnitId: retired }))),
+    ).toBe('BUSINESS_UNIT_UNAVAILABLE');
+
+    // Coded to the live unit, which is then switched off: re-sending it still saves.
+    await admin.query('UPDATE business_unit SET active = false WHERE id = $1', [live]);
+    expect(
+      await codeOf(
+        withOrg(orgId, (tx) =>
+          svc.updateReport(tx, TEST_ACTOR, report.id, { title: 'Renamed', businessUnitId: live }),
+        ),
+      ),
+    ).toBe('ok');
+    // …and clearing it is always allowed.
+    expect(
+      await codeOf(withOrg(orgId, (tx) => svc.updateReport(tx, TEST_ACTOR, report.id, { businessUnitId: null }))),
+    ).toBe('ok');
+  });
+
   it('carries a currency change down to the report expenses', async () => {
     const currencies = await withOrg(orgId, async (tx) => {
       const report = await svc.createReport(tx, 'u@acme.test', { title: 'FX', currencyCode: 'CAD' });

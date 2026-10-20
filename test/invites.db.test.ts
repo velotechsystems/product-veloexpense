@@ -94,6 +94,21 @@ describe('issuing an invitation', () => {
     expect(members.rows.map((r) => r.email)).toEqual(['founder@acme.test']);
   });
 
+  // f09: the server, not only the picker, refuses a deactivated business unit.
+  it('refuses to promise a deactivated business unit, and stores nothing', async () => {
+    const units = await admin.query(
+      `INSERT INTO business_unit (organization_id, label, active)
+       VALUES ($1, '{"en":"Gone"}', false), ($1, '{"en":"Here"}', true) RETURNING id, active`,
+      [orgId],
+    );
+    const gone = units.rows.find((r) => !r.active).id as string;
+    const here = units.rows.find((r) => r.active).id as string;
+    await expect(issue({ businessUnitId: gone })).rejects.toMatchObject({ code: 'BUSINESS_UNIT_UNAVAILABLE' });
+    expect((await admin.query('SELECT count(*)::int AS n FROM invite')).rows[0].n).toBe(0);
+    await issue({ businessUnitId: here });
+    expect((await inviteRow()).business_unit_id).toBe(here);
+  });
+
   // w4-10d: ExpenseOS's grant ceiling (users.setRole), on the role an invitation promises.
   it('will not promise a role granting more than the inviter holds', async () => {
     const narrow = { permissions: ['admin.appSettings.update'] };

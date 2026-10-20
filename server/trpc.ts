@@ -218,6 +218,14 @@ const tenant = t.middleware(async ({ ctx, next }) => {
   });
 });
 
+/** f04: why `resolveTenantMember` refused a signed-in person who IS on this tenant's books. */
+export class MemberRefusal extends Error {
+  constructor(readonly reason: 'ACCOUNT_DEACTIVATED' | 'ACCESS_REVOKED') {
+    super(reason);
+    this.name = 'MemberRefusal';
+  }
+}
+
 /**
  * VeloExpense: who the caller is in their tenant — the ExpenseOS-shaped `session.user` and
  * `rbac`. Shared by the tRPC `tenant` middleware and the server shell (`server/shell.ts`),
@@ -257,12 +265,22 @@ export async function resolveTenantMember(
   if (!member) {
     throw new TRPCError({ code: 'FORBIDDEN', message: 'You are not a member of this organization.' });
   }
+  // f04: the refusal carries its reason as `cause` (a MemberRefusal), so the root layout can
+  // tell a deactivated person why the product is closed to them (server/shell.ts).
   if (member.deleted_at !== null) {
-    throw new TRPCError({ code: 'FORBIDDEN', message: 'This account has been deactivated.' });
+    throw new TRPCError({
+      code: 'FORBIDDEN',
+      message: 'This account has been deactivated.',
+      cause: new MemberRefusal('ACCOUNT_DEACTIVATED'),
+    });
   }
   // People 1 (0072): access turned off on the People screen takes effect on the next request.
   if (!member.has_access) {
-    throw new TRPCError({ code: 'FORBIDDEN', message: 'Your access to this organization has been turned off.' });
+    throw new TRPCError({
+      code: 'FORBIDDEN',
+      message: 'Your access to this organization has been turned off.',
+      cause: new MemberRefusal('ACCESS_REVOKED'),
+    });
   }
   const roleId = member.role_id;
   // VeloExpense: English until the reader's locale reaches the tRPC context with next-intl —

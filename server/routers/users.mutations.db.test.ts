@@ -42,7 +42,7 @@ describe.skipIf(!process.env.DATABASE_URL)('users router writes (integration)', 
   const row = async (id: string) =>
     (
       await admin.query(
-        `SELECT display_name, first_name, last_name, employee_status, deleted_at, has_access
+        `SELECT display_name, first_name, last_name, employee_status, deleted_at, has_access, business_unit_id
            FROM app_user WHERE id = $1`,
         [id],
       )
@@ -89,6 +89,26 @@ describe.skipIf(!process.env.DATABASE_URL)('users router writes (integration)', 
     expect(await auditFor(ids.leaver)).toEqual([
       { action: 'USER_UPDATED', details: { changedFields: ['firstName', 'lastName'] } },
     ]);
+  });
+
+  // f09: the server, not only the picker, refuses a deactivated business unit — except the
+  // one the person already has, so editing their name still saves.
+  it('refuses a deactivated business unit, but keeps the one the person already has', async () => {
+    const units = await admin.query(
+      `INSERT INTO business_unit (organization_id, label, active)
+       VALUES ($1, '{"en":"BU One"}', true), ($1, '{"en":"BU Two"}', false) RETURNING id, active`,
+      [A],
+    );
+    const one = units.rows.find((r: { active: boolean }) => r.active).id as string;
+    const two = units.rows.find((r: { active: boolean }) => !r.active).id as string;
+    const boss = usersAs('boss@people-w.test');
+    await expect(boss.update({ id: ids.manager, patch: { businessUnitId: two } })).rejects.toMatchObject({
+      code: 'BAD_REQUEST',
+    });
+    await boss.update({ id: ids.manager, patch: { businessUnitId: one } });
+    await admin.query('UPDATE business_unit SET active = false WHERE id = $1', [one]);
+    await boss.update({ id: ids.manager, patch: { businessUnitId: one, firstName: 'Margaret' } });
+    expect((await row(ids.manager)).business_unit_id).toBe(one);
   });
 
   it('revokes access with an audit row naming which way it went', async () => {
