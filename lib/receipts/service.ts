@@ -29,6 +29,7 @@ import * as expenses from '@/lib/expenses/service';
 import { holdsAdminPermission, type Actor } from '@/lib/auth/actor';
 // Shared with the browser via lib/receipts/constants (this module imports pg).
 import { ALLOWED_CONTENT_TYPES, MAX_RECEIPT_BYTES } from './constants';
+import { receiptViewUrl } from './viewUrl';
 import type { AuditActor } from '@/lib/audit/service';
 import { ORG } from '@/lib/tenant/sql';
 
@@ -59,6 +60,7 @@ export class ReceiptError extends DomainError {
       | 'NOT_UPLOADED'
       | 'ALREADY_STORED'
       | 'NOT_STORED'
+      | 'NOT_SCANNED'
       | 'EXPENSE_NOT_FOUND'
       | 'UPLOADER_NOT_FOUND'
       | 'NO_RECEIPTS'
@@ -299,7 +301,8 @@ export async function listUnattachedReceipts(tx: QueryRunner, uploaderEmail: str
 
 /**
  * A short-lived presigned GET. The RLS-scoped SELECT above it is the tenant
- * check — an invisible receipt yields no row, so no URL is signed.
+ * check — an invisible receipt yields no row, so no URL is signed. f19: and a receipt
+ * whose malware scan is not CLEAN is refused (NOT_SCANNED).
  */
 export async function getDownloadUrl(
   tx: QueryRunner,
@@ -311,7 +314,19 @@ export async function getDownloadUrl(
   if (receipt.status !== 'STORED') throw new ReceiptError('receipt upload is not complete', 'NOT_STORED',
       'RECEIPT_UPLOAD_INCOMPLETE',
     );
-  return storage.presignDownload(receipt.s3_key, receipt.filename);
+  // f19: no link until the malware scan says CLEAN (see lib/receipts/viewUrl.ts). No
+  // extraction row yet counts as not scanned.
+  const scan = await tx.query('SELECT scan_status FROM document_extraction WHERE receipt_id = $1', [
+    receiptId,
+  ]);
+  const url = await receiptViewUrl(receipt.s3_key, scan.rows[0]?.scan_status ?? null, {
+    filename: receipt.filename,
+    storage,
+  });
+  if (url === null) {
+    throw new ReceiptError('receipt has not passed its malware scan', 'NOT_SCANNED', 'RECEIPT_NOT_SCANNED');
+  }
+  return url;
 }
 
 /* ── attach / detach / remove ──────────────────────────────────────────────── */

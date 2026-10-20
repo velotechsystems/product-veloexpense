@@ -48,6 +48,7 @@ import { APPROVAL_POOL_CAP, capApprovalPool } from '@/server/lib/approvalPoolCap
 import { currencySymbol } from '@/server/lib/currencySymbol';
 import { homeConverterFor, readerCurrencyCode } from '@/server/lib/readerCurrency';
 import { getStorage } from '@/lib/storage';
+import { receiptViewUrl } from '@/lib/receipts/viewUrl';
 import { resolveDecideAccess } from '@/server/lib/decideAccess';
 import { deriveRouteView } from '@/server/lib/mileageRouteView';
 import { callerCanDecideReport, canViewReport } from '@/server/lib/reportApproval';
@@ -716,7 +717,8 @@ export const expenseApprovalsRouter = router({
               filename: r.filename,
               contentType: r.contentType,
               uploadedAt: r.uploadedAt,
-              url: await storage.presignDownload(r.s3Key),
+              // f19: null until the malware scan is CLEAN (ExpenseOS signs it regardless).
+              url: await receiptViewUrl(r.s3Key, r.extraction?.scanStatus, { storage }),
               extraction: r.extraction
                 ? {
                     scanStatus: r.extraction.scanStatus,

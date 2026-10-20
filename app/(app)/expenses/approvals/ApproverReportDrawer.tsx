@@ -481,14 +481,28 @@ function ExpenseCard({
             {expense.receipts.map((r) => (
               <li key={r.id} className="flex items-center gap-2 text-sm">
                 <IconFileText size={14} className="shrink-0 text-muted-foreground" />
-                <a
-                  href={r.url}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="min-w-0 flex-1 truncate text-primary hover:underline"
-                >
-                  {r.filename}
-                </a>
+                {/* VeloExpense (f19): the server signs no link until the malware scan is
+                    CLEAN — ExpenseOS links the file whatever the scan said. */}
+                {r.url ? (
+                  <a
+                    href={r.url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="min-w-0 flex-1 truncate text-primary hover:underline"
+                  >
+                    {r.filename}
+                  </a>
+                ) : (
+                  <span className="min-w-0 flex-1 truncate text-muted-foreground">
+                    {r.filename}
+                    {' · '}
+                    {r.extraction?.scanStatus === 'INFECTED'
+                      ? t('extraction.infected')
+                      : r.extraction?.scanStatus === 'FAILED'
+                        ? t('extraction.failed')
+                        : t('extraction.scanning')}
+                  </span>
+                )}
                 {r.extraction?.status === 'EXTRACTED' && (
                   <Badge variant="success">{t('extraction.done')}</Badge>
                 )}
