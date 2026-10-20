@@ -19,6 +19,7 @@ import { readerPrefs } from '@/lib/i18n/request';
 import { uiText, type UiKey } from '@/lib/i18n/catalog/ui';
 import { getPreferencesPage, savePreferencesFromForm } from './actions';
 import { PersonalApiKey } from './PersonalApiKey';
+import { ReceiptsEmailCard } from '@/components/receipts/ReceiptsEmailAddress';
 
 import { pageTitle } from '@/lib/i18n/page-title';
 import { NativeSelect } from '@/components/ui/native-select';
@@ -124,6 +125,9 @@ export default async function PreferencesPage({
         </Link>
         .
       </p>
+
+      {/* f26: the address this person emails receipts to, and the address they must send from. */}
+      <ReceiptsEmailCard />
 
       {/* w6-04: ExpenseOS's personal API key box (its `/profile`, which is this page here).
           Last, as on ExpenseOS's profile: the section somebody visits once and then leaves

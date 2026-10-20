@@ -40,6 +40,7 @@ import {
 } from '@tabler/icons-react';
 import type { inferRouterOutputs } from '@trpc/server';
 import { useLocale, useTranslations } from 'next-intl';
+import { ReceiptsEmailHint } from '@/components/receipts/ReceiptsEmailAddress';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useFilterPillBarWiring } from '@/components/admin/useFilterPillBarWiring';
 import { ReceiptFileInput } from '@/components/attachments/ReceiptFileInput';
@@ -941,6 +942,13 @@ export function ExpenseReportsList({
           )}
           selectable={false}
         />
+        {/* f26: the other way in. The upload chips live in the top bar; this line says that a
+            receipt can also be emailed, and to which address — silent where there is none. */}
+        {canCreate && (
+          <div className="mt-3">
+            <ReceiptsEmailHint />
+          </div>
+        )}
       </div>
 
       {creating && (
