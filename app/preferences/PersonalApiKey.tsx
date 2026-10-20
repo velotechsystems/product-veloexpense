@@ -202,7 +202,7 @@ import { useLocale, useTranslations } from 'next-intl';
 import { useState, useSyncExternalStore } from 'react';
 import { AssistantPrompt } from '@/components/api-keys/AssistantPrompt';
 import { TokenReveal } from '@/components/api-keys/TokenReveal';
-import { LG_MEDIA_QUERY } from '@/lib/breakpoints';
+import { LG_MEDIA_QUERY } from '@/lib/breakpointsLg';
 import { trpc } from '@/lib/trpc/client';
 
 /** What the reveal panel is showing: the secret, and the date it stops working. */

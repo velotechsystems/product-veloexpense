@@ -1,6 +1,6 @@
 // Ported from ExpenseOS `apps/web/src/lib/breakpoints.test.ts` (1e682dd6), w6-04 (d88): the `lg` half only.
 import { describe, expect, it } from 'vitest';
-import { LG_BREAKPOINT_PX, LG_MEDIA_QUERY } from './breakpoints';
+import { LG_BREAKPOINT_PX, LG_MEDIA_QUERY } from './breakpointsLg';
 
 /**
  * These assertions exist to make a silent divergence loud.
