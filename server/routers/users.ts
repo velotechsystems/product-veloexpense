@@ -25,6 +25,7 @@
 import { auditActions, withAudit } from '@expenseos/audit';
 import { Prisma, type PrismaClient, rollUpOnOffboard } from '@expenseos/db';
 import { permissions as P, SYSTEM_ROLE_IDS } from '@expenseos/rbac';
+import { businessUnitUsable } from '@/lib/businessUnits/usable';
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 import { canViewUser } from '@/server/lib/canViewUser';
@@ -1403,9 +1404,23 @@ export const usersRouter = router({
       // tenant's id is "not found" here rather than a foreign-key error from the write.
       const current = await ctx.db.user.findFirst({
         where: { id: input.id },
-        select: { id: true, deletedAt: true, roleId: true },
+        select: { id: true, deletedAt: true, roleId: true, businessUnitId: true },
       });
       if (!current) throw new TRPCError({ code: 'NOT_FOUND', message: 'User not found' });
+      // f09: the server, not only the picker, refuses a deactivated business unit — unless it
+      // is the one this person already has (lib/businessUnits/usable.ts).
+      if (input.patch.businessUnitId) {
+        const unit = await ctx.db.businessUnit.findFirst({
+          where: { id: input.patch.businessUnitId },
+          select: { active: true },
+        });
+        if (!businessUnitUsable(input.patch.businessUnitId, unit, current.businessUnitId)) {
+          throw new TRPCError({
+            code: 'BAD_REQUEST',
+            message: 'That business unit is no longer available. Choose another one.',
+          });
+        }
+      }
       if (input.patch.managerId) {
         const manager = await ctx.db.user.findFirst({
           where: { id: input.patch.managerId },

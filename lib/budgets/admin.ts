@@ -24,6 +24,7 @@
  * right rather than one per caller.
  */
 import type { QueryRunner } from '@/lib/db/client';
+import { assertBusinessUnitUsable } from '@/lib/businessUnits/usable';
 import type { UserMessage } from '@/lib/errors/domain';
 import type { UserMessageCode } from '@/lib/i18n/catalog/errors';
 import { DomainError } from '@/lib/errors/domain';
@@ -207,6 +208,10 @@ export async function createBudget(tx: QueryRunner, input: NewBudget): Promise<B
       'BUDGET_YEAR_INVALID',
     );
   }
+
+  // f09: the server, not only the picker, refuses a deactivated business unit. A budget's
+  // scope is fixed once created (updateBudget cannot move it), so this is the only write.
+  await assertBusinessUnitUsable(tx, input.businessUnitId);
 
   let r;
   try {

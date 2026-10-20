@@ -19,7 +19,7 @@ vi.mock('@/auth', () => ({ auth: vi.fn(async () => h.session) }));
 vi.mock('@/lib/tenant/request', () => ({ hostTenantSlug: async () => null }));
 
 const { createOrganization } = await import('@/lib/onboarding/provision');
-const { shellContext } = await import('@/server/shell');
+const { shellContext, shellState } = await import('@/server/shell');
 const { MODULE_FOR_SLUG } = await import('@/server/platform/modules');
 
 const admin = new Pool({ connectionString: process.env.ADMIN_DATABASE_URL ?? process.env.DATABASE_URL });
@@ -53,6 +53,8 @@ beforeAll(async () => {
   await addUser(A, 'report@alpha.test', 'EMPLOYEE', managerId);
   const gone = await addUser(A, 'gone@alpha.test', 'EMPLOYEE');
   await admin.query('UPDATE app_user SET deleted_at = now() WHERE id = $1', [gone]);
+  const off = await addUser(A, 'off@alpha.test', 'EMPLOYEE');
+  await admin.query('UPDATE app_user SET has_access = false WHERE id = $1', [off]);
 });
 
 beforeEach(() => {
@@ -113,5 +115,34 @@ describe('no shell, and no throw', () => {
 
   it('for a deactivated account', async () => {
     expect(await as('gone@alpha.test', A)).toBeNull();
+  });
+});
+
+// f04 — the root layout shows a deactivated person (or one whose access is off) why, rather
+// than a blank page; nobody else gets a refusal page from it.
+describe('why there is no shell', () => {
+  const refusalOf = async (email: string | null, organizationId: string) => {
+    h.session = email ? { user: { email, organizationId } } : null;
+    return (await shellState()).refusal;
+  };
+
+  it('a deactivated account: ACCOUNT_DEACTIVATED', async () => {
+    expect(await refusalOf('gone@alpha.test', A)).toBe('ACCOUNT_DEACTIVATED');
+  });
+
+  it('access turned off: ACCESS_REVOKED', async () => {
+    expect(await refusalOf('off@alpha.test', A)).toBe('ACCESS_REVOKED');
+  });
+
+  it('no session, or not a member here: no refusal (the pages handle those as before)', async () => {
+    expect(await refusalOf(null, A)).toBeNull();
+    expect(await refusalOf('boss@beta.test', A)).toBeNull();
+  });
+
+  it('an active member: a shell and no refusal', async () => {
+    h.session = { user: { email: 'loner@alpha.test', organizationId: A } };
+    const state = await shellState();
+    expect(state.refusal).toBeNull();
+    expect(state.shell).not.toBeNull();
   });
 });

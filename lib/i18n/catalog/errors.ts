@@ -255,6 +255,8 @@ export const USER_MESSAGE_CODES = [
   'ADMIN_ONLY',
   /* ── People 1: access revoked (has_access, 0072) ──────────────────────── */
   'ACCESS_REVOKED',
+  /* ── f09: a deactivated business unit (lib/businessUnits/usable.ts) ─────── */
+  'BUSINESS_UNIT_UNAVAILABLE',
 ] as const;
 export type UserMessageCode = (typeof USER_MESSAGE_CODES)[number];
 
@@ -1137,6 +1139,9 @@ export const ERROR_COPY: Record<UserMessageCode, Copy> = {
     'en-CA':
       'That is an administrator screen. Ask an administrator of your organization if you ' +
       'need something changed there.',
+  },
+  BUSINESS_UNIT_UNAVAILABLE: {
+    'en-CA': 'That business unit is no longer available. Choose another one.',
   },
 };
 

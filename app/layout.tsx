@@ -44,7 +44,8 @@ import { readerPrefs } from "@/lib/i18n/request";
 import { hostTenantMismatch } from "@/lib/tenant/request";
 import { WrongTenantHost } from "@/app/wrong-tenant-host";
 import { ShellGate } from "@/app/(app)/ShellGate";
-import { shellContext } from "@/server/shell";
+import { shellState } from "@/server/shell";
+import { AccountUnavailable } from "@/app/account-unavailable";
 import { Providers } from "@/app/providers";
 import { NextIntlClientProvider } from "next-intl";
 
@@ -141,7 +142,10 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
   // ExpenseOS's app shell (app/(app)/AppShell.tsx), ported in Wave 0. `null` with no
   // session, for a non-member, or if it could not be read — see server/shell.ts for why
   // the menu never takes a page down with it. Not asked for on a wrong-tenant host.
-  const shell = mismatch === null ? await shellContext() : null;
+  // f04: with no shell, `refusal` says whether that is because this person's account here is
+  // deactivated or their access is off — then they get app/account-unavailable.tsx, not a page
+  // that cannot work for them.
+  const { shell, refusal } = mismatch === null ? await shellState() : { shell: null, refusal: null };
 
   return (
     <html
@@ -171,6 +175,8 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
         <Providers>
           {mismatch !== null ? (
             <WrongTenantHost locale={locale} />
+          ) : shell === null && refusal !== null ? (
+            <AccountUnavailable reason={refusal} locale={locale} />
           ) : shell === null ? (
             children
           ) : (

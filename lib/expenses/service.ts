@@ -21,6 +21,7 @@
  * stay strings until lib/money.ts formats them.
  */
 import type { QueryRunner } from '@/lib/db/client';
+import { assertBusinessUnitUsable } from '@/lib/businessUnits/usable';
 import { DomainError } from '@/lib/errors/domain';
 import type { UserMessageCode } from '@/lib/i18n/catalog/errors';
 import { holdsAdminPermission, type Actor } from '@/lib/auth/actor';
@@ -444,6 +445,8 @@ export async function createReport(tx: QueryRunner, submitterEmail: string, inpu
     throw new ExpenseError('submitter not found in organization', 'SUBMITTER_NOT_FOUND');
   }
 
+  // f09: the server, not only the picker, refuses a deactivated business unit.
+  await assertBusinessUnitUsable(tx, input.businessUnitId);
   const r = await tx.query(
     `INSERT INTO expense_report
        (organization_id, number, title, purpose, currency_code, submitter_id, business_unit_id)
@@ -617,7 +620,15 @@ export async function updateReport(
     set('title', title);
   }
   if ('purpose' in patch) set('purpose', patch.purpose ?? null);
-  if ('businessUnitId' in patch) set('business_unit_id', patch.businessUnitId ?? null);
+  if ('businessUnitId' in patch) {
+    // f09: a deactivated unit is refused, unless it is the one the report already carries.
+    await assertBusinessUnitUsable(
+      tx,
+      patch.businessUnitId,
+      (before as { business_unit_id?: string | null } | null)?.business_unit_id ?? null,
+    );
+    set('business_unit_id', patch.businessUnitId ?? null);
+  }
   if (patch.currencyCode !== undefined) {
     await assertCurrency(tx, patch.currencyCode);
     set('currency_code', patch.currencyCode);

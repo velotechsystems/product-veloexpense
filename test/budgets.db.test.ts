@@ -1295,6 +1295,32 @@ describe('the budgets admin service (VX4-5 part 3b)', () => {
     ).rejects.toMatchObject({ code: 'DUPLICATE_SCOPE' });
   });
 
+  // f09: the server, not only the picker, refuses a deactivated business unit.
+  it('refuses a budget scoped to a deactivated business unit, and accepts an active one', async () => {
+    const units = await admin.query(
+      `INSERT INTO business_unit (organization_id, label, active)
+       VALUES ($1, '{"en":"Closed BU"}', false), ($1, '{"en":"Open BU"}', true) RETURNING id, active`,
+      [orgId],
+    );
+    const closed = units.rows.find((r) => !r.active).id as string;
+    const open = units.rows.find((r) => r.active).id as string;
+    const make = (businessUnitId: string, name: string) =>
+      withPgOrg(orgId, (tx) =>
+        budgetAdmin.createBudget(tx, {
+          name,
+          glAccountId: accountId,
+          currencyCode: 'CAD',
+          fiscalYear: 2026,
+          businessUnitId,
+        }),
+      );
+    await expect(make(closed, 'Closed')).rejects.toMatchObject({
+      code: 'BUSINESS_UNIT_UNAVAILABLE',
+      userMessage: { code: 'BUSINESS_UNIT_UNAVAILABLE' },
+    });
+    expect((await make(open, 'Open')).name).toBe('Open');
+  });
+
   it('a narrower scope is a DIFFERENT budget, not a duplicate', async () => {
     await withPgOrg(orgId, (tx) =>
       budgetAdmin.createBudget(tx, {
