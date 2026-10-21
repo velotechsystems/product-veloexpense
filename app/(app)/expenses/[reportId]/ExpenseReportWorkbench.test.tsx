@@ -272,7 +272,7 @@ vi.mock('@/lib/trpc/client', () => {
   };
 });
 
-import { ExpenseReportWorkbench } from './ExpenseReportWorkbench';
+import { ExpenseReportWorkbench, isFxOverrideOffered } from './ExpenseReportWorkbench';
 
 const CATEGORIES = [
   { id: 'cat-meals', label: { en: 'Meals' }, icon: null, isMileage: false, acceptsTip: true },
@@ -2186,6 +2186,123 @@ describe('the FX override', () => {
   });
 });
 
+/**
+ * Where the FX override is offered, and how a phone is told about it.
+ *
+ * One render-only predicate, `isFxOverrideOffered`, decides both the cloaked control's
+ * mount and the plain sentence at the end of the phone's "Conversion details" region,
+ * so the two cannot disagree. The control keeps its `hidden lg:contents` cloak: a phone
+ * gets a sentence naming where the override is, never a second way to reach it.
+ */
+describe('offering the FX override', () => {
+  const STATUSES = [
+    'DRAFT',
+    'SUBMITTED',
+    'APPROVED',
+    'REJECTED',
+    'RETURNED',
+    'REIMBURSED',
+  ] as const;
+  const TABLE = [true, false].flatMap((can) =>
+    STATUSES.flatMap((status) =>
+      [true, false].map((multiCurrency) => ({
+        can,
+        status,
+        multiCurrency,
+        offered: can && status === 'SUBMITTED' && multiCurrency,
+      })),
+    ),
+  );
+
+  it('covers every holder × status × currency mix, and exactly one is offered', () => {
+    expect(TABLE).toHaveLength(24);
+    expect(TABLE.filter((row) => row.offered)).toEqual([
+      { can: true, status: 'SUBMITTED', multiCurrency: true, offered: true },
+    ]);
+  });
+
+  it.each(TABLE)(
+    'isFxOverrideOffered(canFxOverride: $can, $status, multiCurrency: $multiCurrency) is $offered',
+    ({ can, status, multiCurrency, offered }) => {
+      expect(isFxOverrideOffered(can, { status, rollup: { multiCurrency } })).toBe(offered);
+    },
+  );
+
+  const MULTI = {
+    status: 'SUBMITTED',
+    rollup: {
+      homeTotalMinor: '20000',
+      homeCurrency: 'CAD',
+      recoverableTotalMinor: '0',
+      multiCurrency: true,
+      byCurrency: [
+        { code: 'CAD', grossMinor: '5000', rate: null, convertedMinor: '5000' },
+        { code: 'USD', grossMinor: '10000', rate: '1.37', convertedMinor: '13700' },
+      ],
+      missingRates: [],
+    },
+  };
+  const trigger = () => screen.queryByRole('button', { name: 'workbench.fxOverride' });
+  const phoneNote = () => screen.queryByText('workbench.fxOverridePhoneNote');
+
+  it.each([
+    { can: true, status: 'SUBMITTED', multi: true },
+    { can: false, status: 'SUBMITTED', multi: true },
+    { can: true, status: 'APPROVED', multi: true },
+    { can: true, status: 'RETURNED', multi: true },
+    { can: true, status: 'SUBMITTED', multi: false },
+  ])(
+    'names the override on a phone if and only if its control is mounted (canFxOverride: $can, $status, multiCurrency: $multi)',
+    ({ can, status, multi }) => {
+      stubDevice('phone');
+      show(multi ? { ...MULTI, status } : { status }, { canFxOverride: can });
+      expect(phoneNote() !== null).toBe(trigger() !== null);
+      expect(trigger() !== null).toBe(can && status === 'SUBMITTED' && multi);
+    },
+  );
+
+  it('names it in plain text at the end of the open details, never as a control', async () => {
+    stubDevice('phone');
+    const user = userEvent.setup();
+    show(MULTI, { canFxOverride: true });
+    const summary = screen.getByTestId('report-summary');
+    const toggle = within(summary).getByRole('button', { name: 'workbench.fxDetailsToggle' });
+    const region = document.getElementById(toggle.getAttribute('aria-controls') ?? '');
+    if (!region) throw new Error('the disclosure controls nothing');
+
+    const note = phoneNote();
+    expect(note?.tagName).toBe('P');
+    expect(region.lastElementChild).toBe(note);
+    expect(note?.closest('button, a')).toBeNull();
+    // Still exactly one control in the block — the disclosure — and no link.
+    expect(within(summary).getAllByRole('button')).toEqual([toggle]);
+    expect(within(summary).queryByRole('link')).toBeNull();
+    // The headline total is still the summary's first paragraph.
+    expect(summary.querySelector('p')).toHaveTextContent(/^CAD\s*\$200\.00$/);
+
+    // Reading it sends nothing.
+    await user.click(toggle);
+    expect(region.className).not.toContain('hidden');
+    expect(h.calls).toEqual({});
+    expect(h.utilsCalls).toEqual([]);
+  });
+
+  it('keeps the control cloaked, outside the summary, and mounted once', () => {
+    /**
+     * jsdom loads no Tailwind, so `hidden` hides nothing here: this asserts the classes
+     * and the ancestry that do the hiding in a browser, not the hiding itself.
+     */
+    stubDevice('phone');
+    show(MULTI, { canFxOverride: true });
+    const buttons = screen.getAllByRole('button', { name: /fxOverride/ });
+    expect(buttons).toHaveLength(1);
+    const control = buttons[0] as HTMLElement;
+    const wrapper = control.parentElement;
+    expect(wrapper?.className).toBe('hidden lg:contents');
+    expect(screen.getByTestId('report-summary').contains(control)).toBe(false);
+  });
+});
+
 // ── The MCP hand-off banner ───────────────────────────────────────────────────
 
 describe('the upload hand-off', () => {
@@ -2749,21 +2866,256 @@ describe('the report chrome below lg', () => {
       expect(within(summary).getByText('CAD')).toBeInTheDocument();
     });
 
-    it('renders the by-currency composition rather than disclosing it', () => {
+    it('renders the composition with no tap and discloses only the reconciliation', async () => {
       /**
        * The defect this exists for is not a width problem: the composition and the
        * reconciliation are exposed on `group-hover`, and `hover` does not exist on a
        * touch device. On a phone these two numbers were unreachable, not merely
-       * inconvenient.
+       * inconvenient. The composition is what an approver reads first, so it stays
+       * rendered; the converted amounts and the sum they make sit behind ONE closed
+       * "Conversion details" disclosure.
        */
       stubDevice('phone');
+      const user = userEvent.setup();
       show(MIXED);
       const summary = screen.getByTestId('report-summary');
+
+      // Reachable with no control operated.
       expect(within(summary).getByText(/CAD 100\.00/)).toBeInTheDocument();
       expect(within(summary).getByText(/USD 100\.00/)).toBeInTheDocument();
       expect(within(summary).getByText('workbench.fxRate:1.37')).toBeInTheDocument();
-      // Not behind a disclosure: no control has to be operated to reach them.
-      expect(within(summary).queryByRole('button')).toBeNull();
+
+      // Exactly one control in the block, and it is the disclosure.
+      const buttons = within(summary).getAllByRole('button');
+      expect(buttons).toHaveLength(1);
+      const toggle = within(summary).getByRole('button', { name: 'workbench.fxDetailsToggle' });
+      expect(toggle).toHaveAttribute('aria-expanded', 'false');
+      // Never named like the FX override, which desktop specs press by name, unscoped.
+      expect(toggle).not.toHaveAccessibleName(/fxOverride/);
+
+      // `aria-controls` resolves, to a region inside this block, mounted while closed.
+      const regionId = toggle.getAttribute('aria-controls');
+      expect(regionId).toBeTruthy();
+      const region = document.getElementById(regionId ?? '');
+      expect(region).not.toBeNull();
+      expect(summary.contains(region)).toBe(true);
+      expect(region?.className).toContain('hidden');
+
+      // Opening it is local state: no mutation, no cache call, no new query (I2).
+      const queriesBefore = Object.keys(h.queryOpts).sort();
+      await user.click(toggle);
+      expect(toggle).toHaveAttribute('aria-expanded', 'true');
+      expect(region?.className).not.toContain('hidden');
+      expect(h.calls).toEqual({});
+      expect(h.utilsCalls).toEqual([]);
+      expect(Object.keys(h.queryOpts).sort()).toEqual(queriesBefore);
+
+      // The converted rows add up to the "Report total" row, and that row IS the total.
+      const reconciliation = region as HTMLElement;
+      expect(within(reconciliation).getByText('workbench.fxConvertedTo:CAD')).toBeInTheDocument();
+      expect(within(reconciliation).getByText('$100.00')).toBeInTheDocument();
+      expect(within(reconciliation).getByText('$137.00')).toBeInTheDocument();
+      const sum = within(reconciliation).getByTestId('report-summary-sum');
+      expect(sum).toHaveTextContent(/^workbench\.fxReportTotal\$237\.00$/);
+      expect(summary.querySelector('p')).toHaveTextContent(/^CAD\s*\$237\.00$/);
+      // Closed again by the same control.
+      await user.click(toggle);
+      expect(toggle).toHaveAttribute('aria-expanded', 'false');
+      expect(region?.className).toContain('hidden');
+
+      // A single-currency report has nothing to reconcile, so there is no control at all.
+      cleanup();
+      stubDevice('phone');
+      show();
+      expect(within(screen.getByTestId('report-summary')).queryByRole('button')).toBeNull();
+    });
+
+    describe('the conversion details', () => {
+      const ROLLUP = {
+        homeTotalMinor: '2604500',
+        homeCurrency: 'CAD',
+        recoverableTotalMinor: '12345',
+        multiCurrency: true,
+        byCurrency: [
+          { code: 'CAD', grossMinor: '1234500', rate: null, convertedMinor: '1234500' },
+          { code: 'USD', grossMinor: '1000000', rate: '1.37', convertedMinor: '1370000' },
+          { code: 'THB', grossMinor: '5000000', rate: null, convertedMinor: null },
+        ],
+        missingRates: ['THB'],
+      };
+      const region = () => {
+        const toggle = within(screen.getByTestId('report-summary')).getByRole('button', {
+          name: 'workbench.fxDetailsToggle',
+        });
+        const el = document.getElementById(toggle.getAttribute('aria-controls') ?? '');
+        if (!el) throw new Error('the disclosure controls nothing');
+        return el;
+      };
+      /** The converted `<li>` for one currency — its leading text is the bare code. */
+      const converted = (code: string) => {
+        const li = within(region()).getByText(code, EXACT).closest('li');
+        if (!li) throw new Error(`no converted row for ${code}`);
+        return li as HTMLElement;
+      };
+
+      it('says a currency with no rate is not included, in words and an icon', () => {
+        stubDevice('phone');
+        show({ rollup: ROLLUP });
+        const flag = converted('THB').children[1] as HTMLElement;
+        expect(flag).toHaveTextContent(/^workbench\.fxNotIncluded$/);
+        expect(flag.className).toContain('text-warning');
+        expect(flag.querySelector('svg')?.getAttribute('aria-hidden')).toBe('true');
+        // Not a bare dash, which a screen reader cannot say.
+        expect(within(region()).queryByText('—')).toBeNull();
+        expect(converted('USD')).toHaveTextContent(/^USD\$13,700\.00$/);
+        expect(converted('CAD')).toHaveTextContent(/^CAD\$12,345\.00$/);
+        // The total is the sum of what was converted, and says it is not the whole report.
+        expect(within(region()).getByTestId('report-summary-sum')).toHaveTextContent(
+          /\$26,045\.00$/,
+        );
+        expect(within(region()).getByText('workbench.fxMissingRate:1')).toBeInTheDocument();
+      });
+
+      it('lists recoverable VAT / ITC only when it is not zero', () => {
+        stubDevice('phone');
+        show({ rollup: ROLLUP });
+        const recoverable = within(region()).getByText('workbench.fxRecoverable');
+        expect(recoverable.parentElement).toHaveTextContent(/\$123\.45$/);
+
+        cleanup();
+        stubDevice('phone');
+        show({
+          rollup: {
+            ...ROLLUP,
+            recoverableTotalMinor: '0',
+            byCurrency: ROLLUP.byCurrency.filter((c) => c.convertedMinor !== null),
+            missingRates: [],
+          },
+        });
+        expect(within(region()).queryByText('workbench.fxRecoverable')).toBeNull();
+        expect(within(region()).queryByText(/workbench\.fxMissingRate/)).toBeNull();
+      });
+    });
+
+    /**
+     * The phone rows used to print "No rate" beside the report's OWN currency, and beside a
+     * currency converted at several snapshotted rates — because the roll-up's `rate` is
+     * `null` in both of those cases as well as in the one where it is true. A false
+     * statement on a money figure. Each row's right-hand text is now chosen by what the
+     * roll-up actually says about that currency.
+     *
+     * Four-plus-digit fixtures throughout, so a grouping separator is in every figure.
+     */
+    describe('the right-hand text on each currency row', () => {
+      const ROLLUP = {
+        homeTotalMinor: '4925678',
+        homeCurrency: 'CAD',
+        recoverableTotalMinor: '0',
+        multiCurrency: true,
+        byCurrency: [
+          { code: 'CAD', grossMinor: '1234500', rate: null, convertedMinor: '1234500' },
+          { code: 'USD', grossMinor: '1000000', rate: '1.37', convertedMinor: '1370000' },
+          { code: 'EUR', grossMinor: '1500000', rate: null, convertedMinor: '2321178' },
+          { code: 'THB', grossMinor: '5000000', rate: null, convertedMinor: null },
+        ],
+        missingRates: ['THB'],
+      };
+
+      /** The `<li>` whose leading text is `CODE amount`. */
+      const row = (code: string) => {
+        const summary = screen.getByTestId('report-summary');
+        const lead = within(summary).getByText(new RegExp(`^${code} `));
+        const li = lead.closest('li');
+        if (!li) throw new Error(`no <li> around the ${code} row`);
+        return li as HTMLElement;
+      };
+      /** The row's right-hand span — the second child, after `CODE amount`. */
+      const note = (code: string) => row(code).children[1] as HTMLElement;
+
+      it('says nothing beside the report’s own currency, and never "No rate"', () => {
+        stubDevice('phone');
+        show({ rollup: ROLLUP });
+        expect(row('CAD')).toHaveTextContent(/^CAD 12,345\.00$/);
+        expect(note('CAD')).toBeEmptyDOMElement();
+        expect(within(row('CAD')).queryByText('workbench.fxNoRate')).toBeNull();
+      });
+
+      it('keys the home row on the roll-up’s currency, not on CAD', () => {
+        // A USD report with CAD lines: USD is the row with nothing to convert, and CAD is
+        // the converted one.
+        stubDevice('phone');
+        show({
+          currency: { code: 'USD', symbol: '$' },
+          rollup: {
+            homeTotalMinor: '2370000',
+            homeCurrency: 'USD',
+            recoverableTotalMinor: '0',
+            multiCurrency: true,
+            byCurrency: [
+              { code: 'USD', grossMinor: '1000000', rate: null, convertedMinor: '1000000' },
+              { code: 'CAD', grossMinor: '1870000', rate: '0.73', convertedMinor: '1370000' },
+            ],
+            missingRates: [],
+          },
+        });
+        expect(note('USD')).toBeEmptyDOMElement();
+        expect(note('CAD')).toHaveTextContent('workbench.fxRate:0.73');
+      });
+
+      it('prints the one rate a single-rate currency was converted at', () => {
+        stubDevice('phone');
+        show({ rollup: ROLLUP });
+        expect(row('USD')).toHaveTextContent(/^USD 10,000\.00/);
+        expect(note('USD')).toHaveTextContent(/^workbench\.fxRate:1\.37$/);
+        expect(note('USD').className).toContain('text-muted-foreground');
+      });
+
+      it('says "several rates", not "No rate", for a currency converted at more than one', () => {
+        stubDevice('phone');
+        show({ rollup: ROLLUP });
+        expect(note('EUR')).toHaveTextContent(/^workbench\.fxRatesVary$/);
+        expect(within(row('EUR')).queryByText('workbench.fxNoRate')).toBeNull();
+        expect(note('EUR').className).not.toContain('text-warning');
+      });
+
+      it('flags a currency with no rate in words and an icon, not in colour alone', () => {
+        stubDevice('phone');
+        show({ rollup: ROLLUP });
+        const flag = note('THB');
+        expect(flag).toHaveTextContent(/^workbench\.fxNoRate$/);
+        expect(flag.className).toContain('text-warning');
+        expect(row('THB').children[0]?.className).toContain('text-warning');
+        const icon = flag.querySelector('svg');
+        expect(icon).not.toBeNull();
+        expect(icon?.getAttribute('aria-hidden')).toBe('true');
+        // "No rate" appears on exactly the one row it is true of.
+        expect(
+          within(screen.getByTestId('report-summary')).getAllByText('workbench.fxNoRate'),
+        ).toHaveLength(1);
+      });
+
+      it('keeps the total as the summary’s first paragraph', () => {
+        // The phone e2e reads the report total off `p:first-of-type`.
+        stubDevice('phone');
+        show({ rollup: ROLLUP });
+        const first = screen.getByTestId('report-summary').querySelector('p');
+        expect(first).toHaveTextContent(/^CAD\s*\$49,256\.78$/);
+      });
+
+      it('groups each row’s amount with U+00A0 in fr-CA', () => {
+        h.locale = 'fr-CA';
+        stubDevice('phone');
+        show({ rollup: ROLLUP });
+        const summary = screen.getByTestId('report-summary');
+        expect(within(summary).getByText(`CAD 12${NBSP}345,00`, EXACT)).toBeInTheDocument();
+        expect(within(summary).getByText(`USD 10${NBSP}000,00`, EXACT)).toBeInTheDocument();
+        expect(within(summary).getByText(`EUR 15${NBSP}000,00`, EXACT)).toBeInTheDocument();
+        expect(within(summary).getByText(`THB 50${NBSP}000,00`, EXACT)).toBeInTheDocument();
+        // The ASCII-space spelling must not match, or `EXACT` has stopped proving anything.
+        expect(within(summary).queryByText('CAD 12 345,00', EXACT)).toBeNull();
+        expect(note('CAD')).toBeEmptyDOMElement();
+        expect(note('EUR')).toHaveTextContent(/^workbench\.fxRatesVary$/);
+      });
     });
   });
 

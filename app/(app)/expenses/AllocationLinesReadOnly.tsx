@@ -35,14 +35,14 @@ function money(minor: number, currency: CurrencyLike, locale: string): string {
  * The saved allocation as prose — one line per row: its share, what that share is in
  * money, and the dimensions it codes to.
  *
- * Shared by the expense workbench (`_workbench/parts.tsx`: alone on a submitted report, and
- * beside the editable row set as its below-`lg` face on a draft one) and the approver
- * drawer. One piece of markup serving several surfaces cannot drift between them.
+ * Shared by the expense workbench (`_workbench/parts.tsx`, on a submitted report only: a
+ * draft edits its rows at every width and renders none of this) and the approver drawer.
+ * One piece of markup serving several surfaces cannot drift between them.
  *
  * NO `<Field>`, NO `<input>`, NO `aria-label` — the same contract `ExpenseFieldsReadOnly`
- * and `TaxFiguresReadOnly` carry, and here it rules out `Percent` specifically: on a draft
- * report this renders at the same time as the `allocation.percent`-labelled input the
- * cloak merely hides, and Playwright's label engine has no visibility filter.
+ * and `TaxFiguresReadOnly` carry. It rules out `Percent` specifically: Playwright's label
+ * engine has no visibility filter, so a labelled control here would be a second strict
+ * match for the editor's `allocation.percent` input wherever the two ever shared a page.
  *
  * The money column is derived, never stored: the expense's own total split by
  * `splitExact`, the same largest-remainder split the NetSuite poster allocates with, so
@@ -59,7 +59,6 @@ export function AllocationLinesReadOnly({
   amountMinor,
   currency,
   locale,
-  className,
 }: {
   allocations: readonly AllocationLineView[];
   /** The expense total in minor units, as the wire sends it (a bigint as a string). */
@@ -67,7 +66,6 @@ export function AllocationLinesReadOnly({
   currency: CurrencyLike;
   /** The READER's locale — it formats the money and picks the label translation. */
   locale: string;
-  className?: string;
 }) {
   const t = useTranslations('expenses');
   /**
@@ -77,18 +75,17 @@ export function AllocationLinesReadOnly({
    * the approver, who is the last person able to catch it, could not see that BU /
    * department / class were blank. It reads as "no allocation section on this expense"
    * rather than "this expense is not coded", and blank coding is exactly what NetSuite
-   * rejects downstream (GA readiness report F17, alongside F18 / F21 / F22). Below `lg`
-   * on a draft it says the same thing to the submitter, who can still fix it.
+   * rejects downstream (GA readiness report F17, alongside F18 / F21 / F22).
    */
   if (allocations.length === 0) {
-    return <p className={`text-sm text-warning ${className ?? ''}`}>{t('allocation.none')}</p>;
+    return <p className="text-sm text-warning">{t('allocation.none')}</p>;
   }
   const shares = splitExact(
     BigInt(amountMinor),
     allocations.map((a) => BigInt(a.percentBp)),
   );
   return (
-    <ul className={`flex flex-col gap-1 text-sm ${className ?? ''}`}>
+    <ul className="flex flex-col gap-1 text-sm">
       {allocations.map((a, i) => (
         /* `flex-wrap`: at 360 the dimension string is the long part, and it takes its own
            line under the two figures rather than squeezing them. */

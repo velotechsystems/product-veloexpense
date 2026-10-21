@@ -55,7 +55,6 @@ import { useRefusalText } from '@/lib/trpc/refusal';
 import { useCoarsePointer } from '@/lib/useCoarsePointer';
 import { useIsBelowLg } from '@/lib/useIsBelowLg';
 import type { AppRouter } from '@/server/routers/_app';
-import { SectionNotice } from '../../SectionNotice';
 import { localeLabel, SEVERITY_KEY } from '../_shared';
 import { AllocationLinesReadOnly } from '../AllocationLinesReadOnly';
 import { MileageLineDetail, type MileageLineFields } from '../approvals/MileageLineDetail';
@@ -904,36 +903,6 @@ export function ExpenseEditor({
           </Field>
         )}
 
-        {/**
-         * THE ONE `SectionNotice` ON THIS ROUTE, and the only place it is rendered.
-         *
-         * It used to be five — one at the cost-allocation card, one at the tax panel, one
-         * at the line items, one at the attendees, and one in the expenses card over in
-         * `ExpenseReportWorkbench`. Each was accurate and each was in the right place, and
-         * together they were five copies of one sentence down a single 664px scroll. The
-         * register cannot carry that: by the third the reader is skipping a box that is
-         * trying to tell them something.
-         *
-         * HERE, DIRECTLY ABOVE THE COST ALLOCATION, and no longer at the top of the pane.
-         * It sat at the top while it covered the whole pane, header fields included. P18
-         * gave the date, vendor, currency, location and explanation one editable face at
-         * every width, so a notice above them would read as "these fields are read-only"
-         * about fields a phone reader can now edit. The operator ruled (2026-10-13) that it
-         * moves to just before the first region it still names, and that its copy names
-         * only what is still suppressed below `lg`: cost allocation, tax and attendees.
-         * This reverses the earlier "one notice, at the top of the pane" ruling.
-         *
-         * Below the violation warnings and the editable fields, then: the reader meets the
-         * things they can change first, and the notice frames the regions after it.
-         *
-         * `editable` for exactly the reason each placement carried it: on a submitted
-         * report the editing controls are absent at EVERY width, so a notice saying
-         * "changing them needs a larger screen" would blame the screen for a refusal the
-         * report's status made. `lg:hidden`, so a desktop sees nothing here at all. Still a
-         * direct child of this pane column, never inside a region's card.
-         */}
-        {editable && <SectionNotice className="lg:hidden" />}
-
         {/* Cost allocation across BU / Department / Class — before taxes */}
         <AllocationEditor
           expense={expense}
@@ -978,16 +947,15 @@ export function ExpenseEditor({
           {/*
            * NOT SUPPRESSED, at any width (P18, which absorbed P12). "Add line", the new-line
            * forms and the projected totals render wherever the report is editable, so a phone
-           * can add a line, type its amount and watch the report total move. The notice above
-           * the cost allocation does not name this region, and must not.
+           * can add a line, type its amount and watch the report total move.
            *
            * These used to sit in a `hidden lg:contents` wrapper. Removing it is
            * layout-identical at `lg`+: a `contents` box generates no box, so its children
            * were already direct children of this block, and they still are.
            *
            * Accepted with the operator's Option A: a mileage category opens `MileageFields`
-           * here at phone width unassessed (P14's), and a meals line can be created on a phone
-           * while `AttendeesEditor` below stays suppressed (P13's).
+           * here at phone width unassessed (P14's). A meals line created on a phone can now
+           * name its attendees there too: `AttendeesEditor` below renders at every width (P13).
            */}
           {editable && drafts.length > 0 && (
             <div className="mt-2 flex flex-col gap-1.5">
@@ -1054,17 +1022,15 @@ export function ExpenseEditor({
             <div className="mb-1 text-muted-foreground text-xs uppercase tracking-wide">
               {t('drawer.attendees')}
             </div>
-            {/* Named once above the cost allocation, like every other region here. This is
-                still the one with nothing to show beneath it — `AttendeesEditor` has no
-                read-only twin anywhere in this file, and building it is P13's, with the
-                editing. */}
-            <div className="hidden lg:contents">
-              <AttendeesEditor
-                initial={expense.attendees}
-                onCommit={(attendees) => updateExpense.mutate({ expenseId: expense.id, attendees })}
-                t={t}
-              />
-            </div>
+            {/* One face at every width (P13): the `hidden lg:contents` cloak is gone, so a
+                phone edits the attendees the way a desktop does. There is no read-only twin
+                to select between — the `editable && requiresAttendees` guard above is what
+                keeps it off a submitted report. */}
+            <AttendeesEditor
+              initial={expense.attendees}
+              onCommit={(attendees) => updateExpense.mutate({ expenseId: expense.id, attendees })}
+              t={t}
+            />
           </div>
         )}
       </div>
@@ -1270,141 +1236,127 @@ function AllocationEditor({
         )}
       </div>
       {/*
-       * The below-`lg` face of the rows, and one of the two regions of this pane that still
-       * render both faces on a draft (the tax panel is the other).
+       * One face on a draft, at every width (P13). The `hidden lg:contents` cloaks around
+       * the row set and "Add allocation" are gone, and so is the draft-time
+       * `AllocationLinesReadOnly` copy that used to stand in for them below `lg`: it read
+       * the SAVED `expense.allocations` while these rows hold the local `rows`, so once a
+       * phone could edit, the two could contradict each other. A phone draft with nothing
+       * saved therefore shows the blank 100 % row, as a desktop does; `allocation.none` is
+       * the `!editable` arm's alone. The "% / 100 %" total in the head stays at every width.
        *
-       * The head above it used to be the WHOLE of what a phone was shown: a heading, a
-       * "% / 100 %" total and — when a row was half-coded — a warning. So the reader was
-       * told there was a problem with the coding and never shown the coding, which is the
-       * one shape of suppression the ruling rejects ("these values are current and can be
-       * read here" rather than "not available"). The figures are real review content, so
-       * they are shown, exactly as the tax panel's are.
+       * Each row is a two-track grid card below `lg`, restored to the pre-P13 one-line row
+       * from `lg` up. DOM order is percent, business unit, department, class, remove, and
+       * so is the visual order at every width (no `order-*`): percent and the first two
+       * pickers take a line each (`col-span-2`), and class shares its line with the remove
+       * button when there is one, in the `auto` track. With a single row there is no
+       * remove, so class takes `col-span-2` and matches the pickers above it.
        *
-       * It is the SAME component the `!editable` arm renders, for the reason
-       * `ExpenseFieldsReadOnly` and `TaxFiguresReadOnly` carry in their own headers: one
-       * piece of markup serving two conditions cannot drift between them. On a submitted
-       * report it is the only face there is, at every width; on a draft it is the phone's.
-       *
-       * It reads `expense.allocations` — the SAVED set — rather than the local `rows`.
-       * Below `lg` the two cannot differ, because the only thing that edits `rows` is the
-       * control set cloaked immediately below. Above `lg` this face has no box at all.
+       * The `lg:` half gives back exactly `flex items-center gap-1.5` on the row (the grid
+       * `gap-1.5` is the same value in both modes), `min-w-0 flex-1` on each picker and a
+       * bare row with no border or padding; `col-span-*` is inert on a flex item. Every size
+       * floor is `pointer-coarse:`, so a mouse keeps the 40px field and the 14px icon
+       * button at every width.
        */}
-      <AllocationLinesReadOnly
-        allocations={expense.allocations}
-        amountMinor={expense.amountMinor}
-        currency={expense.currency}
-        locale={locale}
-        className="lg:hidden"
-      />
-      {/*
-       * PLACEMENT 1 of 5 — cost-allocation editing.
-       *
-       * The percentage total in the head above stays visible below `lg`: it is the fact a
-       * reader needs to understand a coding blocker, not a control. What is cloaked is the
-       * row set and the "add a row" button.
-       *
-       * `lg:contents` rather than `lg:block` even though this card's own parent is a block:
-       * the rule is the file's, so the next region that IS a flex child inherits a correct
-       * example rather than a coincidentally-harmless one. It also keeps the rows' own
-       * `mb`/`mt` spacing collapsing against the card's padding exactly as it does today.
-       */}
-      <div className="hidden lg:contents">
-        <div className="flex flex-col gap-2">
-          {rows.map((r, i) => (
+      <div className="flex flex-col gap-2">
+        {rows.map((r, i) => (
+          <div
             // biome-ignore lint/suspicious/noArrayIndexKey: positional, locally-edited rows
-            <div key={i} className="flex items-center gap-1.5">
-              <div className="relative w-20 shrink-0">
-                <Input
-                  inputMode="decimal"
-                  value={r.percent}
-                  aria-label={t('allocation.percent')}
-                  onChange={(e) => editRow(i, { percent: e.target.value })}
-                  onBlur={() => commit(rows)}
-                  disabled={!optionsLoaded}
-                  className="w-full pr-5 text-right"
-                />
-                <span className="pointer-events-none absolute inset-y-0 right-2 flex items-center text-muted-foreground text-xs">
-                  %
-                </span>
-              </div>
-              <div
-                className={`min-w-0 flex-1 rounded ${(started(r) && !hasBusinessUnit(r)) || inactiveBusinessUnit(r) ? 'ring-1 ring-warning/60' : ''}`}
-              >
-                <Combobox
-                  items={buItems}
-                  value={ledgerBusinessUnits ? r.nsBusinessUnitId : r.businessUnitId}
-                  onValueChange={(v) =>
-                    commit(rows.map((x, idx) => (idx === i ? withBusinessUnit(x, v) : x)))
-                  }
-                  placeholder={t('allocation.businessUnit')}
-                  disabled={!optionsLoaded}
-                />
-              </div>
-              <div
-                className={`min-w-0 flex-1 rounded ${started(r) && !r.departmentId ? 'ring-1 ring-warning/60' : ''}`}
-              >
-                <Combobox
-                  items={deptItems}
-                  value={r.departmentId}
-                  onValueChange={(v) =>
-                    commit(rows.map((x, idx) => (idx === i ? { ...x, departmentId: v ?? '' } : x)))
-                  }
-                  placeholder={t('allocation.department')}
-                  disabled={!optionsLoaded}
-                />
-              </div>
-              {/* VeloExpense: only where the tenant has classes (see `hasClasses`). */}
-              {hasClasses && (
-                <div
-                  className={`min-w-0 flex-1 rounded ${started(r) && !r.classId ? 'ring-1 ring-warning/60' : ''}`}
-                >
-                  <Combobox
-                    items={classItems}
-                    value={r.classId}
-                    onValueChange={(v) =>
-                      commit(rows.map((x, idx) => (idx === i ? { ...x, classId: v ?? '' } : x)))
-                    }
-                    placeholder={t('allocation.class')}
-                    disabled={!optionsLoaded}
-                  />
-                </div>
-              )}
-              {/* The base 100% row is required and can't be removed. */}
-              {rows.length > 1 && (
-                <button
-                  type="button"
-                  aria-label={t('allocation.remove')}
-                  className="shrink-0 text-muted-foreground hover:text-destructive disabled:opacity-50"
-                  disabled={!optionsLoaded}
-                  onClick={() => commit(rows.filter((_, idx) => idx !== i))}
-                >
-                  <IconTrash size={14} />
-                </button>
-              )}
+            key={i}
+            className="grid grid-cols-[minmax(0,1fr)_auto] gap-1.5 rounded-md border border-border p-2 lg:flex lg:items-center lg:rounded-none lg:border-0 lg:p-0"
+          >
+            <div className="relative col-span-2 w-20 shrink-0">
+              <Input
+                inputMode="decimal"
+                value={r.percent}
+                aria-label={t('allocation.percent')}
+                onChange={(e) => editRow(i, { percent: e.target.value })}
+                onBlur={() => commit(rows)}
+                disabled={!optionsLoaded}
+                className="pointer-coarse:h-11 w-full pr-5 text-right"
+              />
+              <span className="pointer-events-none absolute inset-y-0 right-2 flex items-center text-muted-foreground text-xs">
+                %
+              </span>
             </div>
-          ))}
-        </div>
+            <div
+              className={`col-span-2 min-w-0 rounded lg:col-span-1 lg:flex-1 ${(started(r) && !hasBusinessUnit(r)) || inactiveBusinessUnit(r) ? 'ring-1 ring-warning/60' : ''}`}
+            >
+              <Combobox
+                items={buItems}
+                value={ledgerBusinessUnits ? r.nsBusinessUnitId : r.businessUnitId}
+                onValueChange={(v) =>
+                  commit(rows.map((x, idx) => (idx === i ? withBusinessUnit(x, v) : x)))
+                }
+                placeholder={t('allocation.businessUnit')}
+                disabled={!optionsLoaded}
+                className={TAP_FIELD}
+              />
+            </div>
+            <div
+              className={`min-w-0 rounded lg:col-span-1 lg:flex-1 ${hasClasses || rows.length <= 1 ? 'col-span-2' : ''} ${started(r) && !r.departmentId ? 'ring-1 ring-warning/60' : ''}`}
+            >
+              <Combobox
+                items={deptItems}
+                value={r.departmentId}
+                onValueChange={(v) =>
+                  commit(rows.map((x, idx) => (idx === i ? { ...x, departmentId: v ?? '' } : x)))
+                }
+                placeholder={t('allocation.department')}
+                disabled={!optionsLoaded}
+                className={TAP_FIELD}
+              />
+            </div>
+            {/* VeloExpense: only where the tenant has classes (see `hasClasses`). Without
+                one, department takes the class picker's place beside the remove button. */}
+            {hasClasses && (
+              <div
+                className={`min-w-0 rounded lg:flex-1 ${rows.length > 1 ? '' : 'col-span-2'} ${started(r) && !r.classId ? 'ring-1 ring-warning/60' : ''}`}
+              >
+                <Combobox
+                  items={classItems}
+                  value={r.classId}
+                  onValueChange={(v) =>
+                    commit(rows.map((x, idx) => (idx === i ? { ...x, classId: v ?? '' } : x)))
+                  }
+                  placeholder={t('allocation.class')}
+                  disabled={!optionsLoaded}
+                  className={TAP_FIELD}
+                />
+              </div>
+            )}
+            {/* The base 100% row is required and can't be removed. Same `rows.length > 1`
+                as the class picker's `col-span-2` above, so the two cannot disagree. */}
+            {rows.length > 1 && (
+              <button
+                type="button"
+                aria-label={t('allocation.remove')}
+                className="flex pointer-coarse:min-h-11 pointer-coarse:min-w-11 shrink-0 items-center justify-center text-muted-foreground hover:text-destructive disabled:opacity-50"
+                disabled={!optionsLoaded}
+                onClick={() => commit(rows.filter((_, idx) => idx !== i))}
+              >
+                <IconTrash size={14} />
+              </button>
+            )}
+          </div>
+        ))}
       </div>
-      {/* OUTSIDE the cloak, deliberately. "This expense has to be coded" is the sentence a
-          submitter needs in order to understand why the report will not submit, and a
-          reader who cannot fix it here still has to be able to learn it. The control is
-          suppressed; its explanation is not. */}
+      {/* The explanation of a submit blocker, at every width: "this expense has to be
+          coded" is why the report will not submit, and a phone draft can now fix it in
+          the rows above. */}
       {showRequired && <p className="mt-1 text-warning text-xs">{t('allocation.required')}</p>}
       {showInactive && (
         <p className="mt-1 text-warning text-xs">{t('allocation.businessUnitInactive')}</p>
       )}
-      <div className="hidden lg:contents">
-        <Button
-          size="sm"
-          variant="outline"
-          className="mt-2 w-full"
-          disabled={!optionsLoaded}
-          onClick={() => setRows((prev) => [...prev, { percent: '', ...BLANK_ALLOC_ROW }])}
-        >
-          <IconPlus size={12} className="mr-1" />
-          {t('allocation.add')}
-        </Button>
-      </div>
+      <Button
+        size="sm"
+        variant="outline"
+        className="mt-2 pointer-coarse:min-h-11 w-full pointer-coarse:min-w-11"
+        disabled={!optionsLoaded}
+        onClick={() => setRows((prev) => [...prev, { percent: '', ...BLANK_ALLOC_ROW }])}
+      >
+        <IconPlus size={12} className="mr-1" />
+        {t('allocation.add')}
+      </Button>
     </div>
   );
 }
@@ -1492,10 +1444,8 @@ function ExpenseTaxPanel({
   /**
    * ONE definition of the card head, rendered in both conditions.
    *
-   * It was written out twice — once in each arm — and the two copies were already
-   * byte-identical. Now that both arms can be on screen in the same render they have to be
-   * one thing, or the phone would carry a second "Taxes" heading and a second recoverable
-   * figure in the accessibility tree.
+   * The submitted arm and the draft arm carry the same "Taxes" heading and recoverable
+   * figure, so they share one piece of markup rather than two copies that could drift.
    */
   const head = (
     <div className="mb-2 flex items-start justify-between gap-2">
@@ -1524,64 +1474,63 @@ function ExpenseTaxPanel({
     <div className="rounded-md border border-border p-3">
       {head}
       {/*
-       * PLACEMENT 2 of 5, and one of the two regions that still render both faces on a
-       * draft (the cost allocation is the other; the core fields and the line rows have
-       * one face since P18).
+       * ONE FACE, MUTUALLY EXCLUSIVE ON `editable` — the same rule P18 gave the core fields.
        *
-       * GST/HST, QST and PST are real review content — an approver reads them on a phone —
-       * so the figures are shown rather than merely named as missing. Below `lg` they are
-       * prose; at `lg` and up the three `MoneyInput`s take over and the prose goes.
+       * On a DRAFT report the three `MoneyInput`s render at every width and nothing else
+       * does: no read-only twin, no `lg:` cloak, no `useIsBelowLg` branch, so there is no
+       * width at which they could unmount and take a half-typed figure with them. On a
+       * SUBMITTED report the early return above renders the prose alone.
        *
-       * The read-only face carries NO `<Field>` and no `aria-label`. Three labelled
-       * "GST/HST" fields would be one too many for any strict `getByLabel`, and the label
-       * engine counts a `display:none` node.
+       * The grid used to sit in a `hidden lg:contents` wrapper with `TaxFiguresReadOnly` as
+       * its below-`lg` face. Removing the wrapper is layout-identical at `lg`+: a `contents`
+       * box generates no box, so the grid was already the card's child, and it still is.
+       *
+       * `grid-cols-2 sm:grid-cols-3` is unchanged: two columns below `sm` (PST alone on the
+       * second row), three from `sm` up. `TAP_FIELD` gives each `<input>` a 44px floor on a
+       * coarse pointer only — `MoneyInput` forwards `className` to its `Input`, whose plain
+       * branch puts it on the `<input>` itself — so a desktop keeps its 40px fields.
        */}
-      <TaxFiguresReadOnly expense={expense} locale={locale} className="lg:hidden" />
-      <div className="hidden lg:contents">
-        {/* Narrow-first like its read-only twin, and inert below `lg` for the same
-            reason — see the header-field grid in `ExpenseEditor`. */}
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-          <Field label={t('line.gst')}>
-            <MoneyInput
-              symbol={currencySymbol}
-              locale={locale}
-              invalid={gst.trim() !== '' && inputToMinor(gst, code, locale) == null}
-              value={gst}
-              onFocus={onNumFocus}
-              onChange={(e) => setGst(e.target.value)}
-              onBlur={onNumBlur}
-            />
-          </Field>
-          <Field label={t('line.qst')}>
-            <MoneyInput
-              symbol={currencySymbol}
-              locale={locale}
-              invalid={qst.trim() !== '' && inputToMinor(qst, code, locale) == null}
-              value={qst}
-              onFocus={onNumFocus}
-              onChange={(e) => setQst(e.target.value)}
-              onBlur={onNumBlur}
-            />
-          </Field>
-          <Field label={t('workbench.pst')}>
-            <MoneyInput
-              symbol={currencySymbol}
-              locale={locale}
-              invalid={pst.trim() !== '' && inputToMinor(pst, code, locale) == null}
-              value={pst}
-              onFocus={onNumFocus}
-              onChange={(e) => setPst(e.target.value)}
-              onBlur={onNumBlur}
-            />
-          </Field>
-        </div>
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+        <Field label={t('line.gst')}>
+          <MoneyInput
+            symbol={currencySymbol}
+            locale={locale}
+            className={TAP_FIELD}
+            invalid={gst.trim() !== '' && inputToMinor(gst, code, locale) == null}
+            value={gst}
+            onFocus={onNumFocus}
+            onChange={(e) => setGst(e.target.value)}
+            onBlur={onNumBlur}
+          />
+        </Field>
+        <Field label={t('line.qst')}>
+          <MoneyInput
+            symbol={currencySymbol}
+            locale={locale}
+            className={TAP_FIELD}
+            invalid={qst.trim() !== '' && inputToMinor(qst, code, locale) == null}
+            value={qst}
+            onFocus={onNumFocus}
+            onChange={(e) => setQst(e.target.value)}
+            onBlur={onNumBlur}
+          />
+        </Field>
+        <Field label={t('workbench.pst')}>
+          <MoneyInput
+            symbol={currencySymbol}
+            locale={locale}
+            className={TAP_FIELD}
+            invalid={pst.trim() !== '' && inputToMinor(pst, code, locale) == null}
+            value={pst}
+            onFocus={onNumFocus}
+            onChange={(e) => setPst(e.target.value)}
+            onBlur={onNumBlur}
+          />
+        </Field>
       </div>
-      {/* The server's refusal, under the fields it refused (#513). It sits OUTSIDE the
-          `hidden lg:contents` cloak and not inside it: only the `MoneyInput`s are
-          suppressed below `lg`, and a refusal already in state when the viewport crosses
-          the breakpoint would otherwise vanish with no explanation. Nothing below `lg` can
-          produce one — the inputs are the only thing that calls the mutation — so this is
-          a guard on the resize case, not a second phone surface. */}
+      {/* The server's refusal, under the fields it refused (#513), at every width. The
+          inputs above run the mutation on a phone as well as on a desktop, so a phone can
+          produce a refusal and this is where it reads it. */}
       {refusal && (
         <p role="alert" className="mt-2 text-destructive text-xs">
           {refusal}
@@ -1594,26 +1543,15 @@ function ExpenseTaxPanel({
 /**
  * The three tax figures as prose — GST/HST · QST · PST.
  *
- * Lifted out of `ExpenseTaxPanel`'s `!editable` arm unchanged, for the same reason as
- * `ExpenseFieldsReadOnly`: one piece of markup now has to serve two conditions. Plain
- * spans and no `<Field>`, because on a draft report this renders alongside the three
- * labelled `MoneyInput`s that a `lg:hidden`/`lg:contents` pair merely hides.
+ * `ExpenseTaxPanel`'s face on a submitted report, and only there: a draft renders the
+ * three `MoneyInput`s instead, at every width. Plain spans and no `<Field>`, so it adds no
+ * labelled "GST/HST" for a strict `getByLabel` to count.
  */
-function TaxFiguresReadOnly({
-  expense,
-  locale,
-  className,
-}: {
-  expense: ExpenseDetail;
-  locale: string;
-  className?: string;
-}) {
+function TaxFiguresReadOnly({ expense, locale }: { expense: ExpenseDetail; locale: string }) {
   const t = useTranslations('expenses');
   return (
     /* Narrow-first, as in `ExpenseFieldsReadOnly` above and `TotalsReadOnly` below. */
-    <div
-      className={`grid grid-cols-2 gap-x-4 gap-y-1 text-sm tabular-nums sm:grid-cols-3 ${className ?? ''}`}
-    >
+    <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm tabular-nums sm:grid-cols-3">
       <div>
         <span className="text-muted-foreground text-xs">{t('line.gst')}: </span>
         {money(Number(expense.taxGstHstMinor ?? 0), expense.currency, locale)}
@@ -2747,24 +2685,36 @@ function AttendeesEditor({
   const edit = (i: number, patch: Partial<AttendeeRow>) =>
     setRows((prev) => prev.map((row, idx) => (idx === i ? { ...row, ...patch } : row)));
 
+  /**
+   * The row stacks below `lg` and comes back to one line from `lg` up (P13). `flex-wrap`
+   * plus `basis-full` puts the name and the company on a line each, with the badge and
+   * the remove button sharing the last one (`ml-auto` pushes the button to its end).
+   * From `lg` the `lg:` half restores the pre-P13 row exactly: `lg:flex-nowrap`,
+   * `lg:flex-1` (whose `flex: 1 1 0%` also resets `basis-full`'s 100% basis) and
+   * `lg:ml-0`. Every size floor is `pointer-coarse:`, so a mouse keeps the 40px field and
+   * the 14px icon button at every width.
+   */
   return (
     <div className="flex flex-col gap-2">
       {rows.map((r, i) => (
-        // biome-ignore lint/suspicious/noArrayIndexKey: positional, locally-edited rows
-        <div key={i} className="flex items-center gap-2 rounded-md border border-border p-2">
+        <div
+          // biome-ignore lint/suspicious/noArrayIndexKey: positional, locally-edited rows
+          key={i}
+          className="flex flex-wrap items-center gap-2 rounded-md border border-border p-2 lg:flex-nowrap"
+        >
           {r.isExternal ? (
             <>
               <Input
                 value={r.name}
                 placeholder={t('attendee.name')}
-                className="min-w-0 flex-1"
+                className={`min-w-0 basis-full lg:flex-1 ${TAP_FIELD}`}
                 onChange={(e) => edit(i, { name: e.currentTarget.value })}
                 onBlur={() => commit(rows)}
               />
               <Input
                 value={r.company}
                 placeholder={t('attendee.company')}
-                className="min-w-0 flex-1"
+                className={`min-w-0 basis-full lg:flex-1 ${TAP_FIELD}`}
                 onChange={(e) => edit(i, { company: e.currentTarget.value })}
                 onBlur={() => commit(rows)}
               />
@@ -2779,7 +2729,7 @@ function AttendeesEditor({
           <button
             type="button"
             aria-label={t('attendee.remove')}
-            className="shrink-0 text-muted-foreground hover:text-destructive"
+            className="ml-auto flex pointer-coarse:min-h-11 pointer-coarse:min-w-11 shrink-0 items-center justify-center text-muted-foreground hover:text-destructive lg:ml-0"
             onClick={() => commit(rows.filter((_, idx) => idx !== i))}
           >
             <IconTrash size={14} />
@@ -2792,6 +2742,7 @@ function AttendeesEditor({
         <Input
           value={query}
           placeholder={t('attendee.searchPlaceholder')}
+          className={TAP_FIELD}
           onChange={(e) => setQuery(e.currentTarget.value)}
         />
         {debounced.length >= 2 && (dir.data ?? []).length > 0 && (
@@ -2800,7 +2751,7 @@ function AttendeesEditor({
               <li key={u.id}>
                 <button
                   type="button"
-                  className="flex w-full flex-col px-2 py-1.5 text-left hover:bg-muted"
+                  className="flex pointer-coarse:min-h-11 w-full flex-col px-2 py-1.5 text-left hover:bg-muted"
                   onClick={() => {
                     commit([...rows, { name: u.name, company: '', isExternal: false }]);
                     setQuery('');
@@ -2816,7 +2767,7 @@ function AttendeesEditor({
         <Button
           size="sm"
           variant="ghost"
-          className="w-full"
+          className="pointer-coarse:min-h-11 w-full pointer-coarse:min-w-11"
           onClick={() => setRows((prev) => [...prev, { name: '', company: '', isExternal: true }])}
         >
           <IconPlus size={12} className="mr-1" />

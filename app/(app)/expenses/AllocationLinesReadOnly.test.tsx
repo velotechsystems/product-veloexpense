@@ -78,17 +78,11 @@ describe('AllocationLinesReadOnly', () => {
 
   it('says an uncoded expense is uncoded, rather than rendering nothing', () => {
     render(
-      <AllocationLinesReadOnly
-        allocations={[]}
-        amountMinor="11500"
-        currency={CAD}
-        locale={DEFAULT_LOCALE}
-        className="lg:hidden"
-      />,
+      <AllocationLinesReadOnly allocations={[]} amountMinor="11500" currency={CAD} locale={DEFAULT_LOCALE} />,
     );
 
     const none = screen.getByText('allocation.none');
-    expect(none).toHaveClass('text-warning', 'lg:hidden');
+    expect(none).toHaveClass('text-warning');
     expect(screen.queryByRole('list')).not.toBeInTheDocument();
   });
 
