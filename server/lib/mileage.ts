@@ -20,6 +20,7 @@
  */
 
 import type { MileageUnit, Prisma, PrismaClient } from '@expenseos/db';
+import { readerCurrencyCode } from '@/server/lib/readerCurrency';
 
 /** Distances are carried as hundredths of a unit (×100) — the scale of
  *  `Decimal(12,2)` — so the arithmetic stays in BigInt. */
@@ -121,6 +122,65 @@ export async function resolveMileageRule(
     select: RULE_SELECT,
   });
   return general ? toResolved(general) : null;
+}
+
+// ── The unit a new line opens in (FR-11) ───────────────────────────
+
+/** What decides the default unit for one person: their own country, and their home
+ *  currency by the shared rule — VeloExpense (d92): their legal entity's, else the tenant's
+ *  main entity's, else CAD (`readerCurrencyCode`); there is no per-person currency. */
+export interface MileageUnitOwner {
+  /** `User.country`, ISO-3166-1 alpha-2, or null when it was never set. */
+  country: string | null;
+  /** The person's home currency code (ISO-4217), already resolved by the shared rule. */
+  homeCurrencyCode: string;
+}
+
+/**
+ * The unit a NEW mileage line opens and prices in, for the person the claim is for.
+ *
+ * Miles when that person lives in the United States, or is paid in US dollars; kilometres
+ * otherwise. Always the expense OWNER (`Expense.ownerId`): a delegate or a reader who works
+ * in kilometres, filing for an American, still sees miles, because the trip is the owner's.
+ * The report's currency never decides it, and the entity's currency counts only as a link
+ * in the owner's own home-currency chain, never on its own.
+ *
+ * Only the default: a saved line keeps its stored unit and never reads this, and the
+ * server still stores every line in its mileage rule's unit (`computeLineFinancials`).
+ */
+export function defaultMileageUnitFor(owner: MileageUnitOwner): MileageUnit {
+  if (owner.country?.trim().toUpperCase() === 'US') return 'MI';
+  return owner.homeCurrencyCode.trim().toUpperCase() === 'USD' ? 'MI' : 'KM';
+}
+
+/**
+ * {@link defaultMileageUnitFor} for every owner on one read, keyed by user id.
+ *
+ * Batched by DISTINCT owner, never per expense: one `user.findMany` for the countries, and
+ * the shared currency chain once per owner. A report's expenses almost always share one
+ * owner, so that is two reads for the whole report. An id with no user row reads as no
+ * country and the currency floor — kilometres — like any unknown person.
+ */
+export async function defaultMileageUnitsFor(
+  db: PrismaClient,
+  ownerIds: readonly string[],
+): Promise<Map<string, MileageUnit>> {
+  const ids = [...new Set(ownerIds)];
+  if (ids.length === 0) return new Map();
+  const [owners, currencies] = await Promise.all([
+    db.user.findMany({ where: { id: { in: ids } }, select: { id: true, country: true } }),
+    Promise.all(ids.map((id) => readerCurrencyCode(db, id))),
+  ]);
+  const countryOf = new Map(owners.map((o) => [o.id, o.country]));
+  return new Map(
+    ids.map((id, i) => [
+      id,
+      defaultMileageUnitFor({
+        country: countryOf.get(id) ?? null,
+        homeCurrencyCode: currencies[i],
+      }),
+    ]),
+  );
 }
 
 // ── Year-to-date basis ─────────────────────────────────────────────

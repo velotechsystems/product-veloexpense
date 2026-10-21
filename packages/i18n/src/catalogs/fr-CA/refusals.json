@@ -30,5 +30,10 @@
   },
   "people": {
     "directoryManaged": "{fields} : ces champs proviennent de Google Workspace pour cette personne; une modification ici serait annulée par la prochaine synchronisation de l’annuaire. Modifiez-les plutôt dans Google."
+  },
+  "mileage": {
+    "noRoadNear": "Aucune route ni adresse n’a été trouvée près de ce point; l’itinéraire est donc resté tel quel. Déposez le point plus près d’une route.",
+    "dragApisUnavailable": "L’itinéraire ne peut pas encore passer par un point déposé : la clé Maps Platform ne peut pas utiliser {apis}. Un administrateur peut corriger cela dans la console Google Cloud. Vous pouvez toujours tracer l’itinéraire à partir de vos arrêts.",
+    "viaPlaceRefused": "L’itinéraire ne peut pas passer par ce point; il est donc resté tel quel. Déposez le point ailleurs sur la route."
   }
 }

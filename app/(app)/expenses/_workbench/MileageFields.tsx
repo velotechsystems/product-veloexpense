@@ -13,17 +13,54 @@
  * rule's unit when it isn't told, so 100 entered as miles was priced as 100 km:
  * a wrong reimbursement, not just a missing control. Two copies of one form is
  * how that happened, so there is now one.
+ *
+ * Four modes (FR-6). `new` is the add-a-line form. A saved line measured by its route,
+ * with lookup on, is `route`: its distance as text, a KM/MI toggle that only changes what
+ * is shown (the caller converts from the legs and writes nothing), its saved price, and
+ * the caller's route control (`routeControl`, the line's dropdown and small map) — no
+ * Edit, no Save. Every other saved line takes the TYPED path: `locked`, every input on
+ * screen but disabled in a legible muted colour with Edit as its only control, and
+ * `editing` after Edit, where nothing here writes anything — the row's Save does, once.
+ *
+ * A NEW line with address lookup on is the route dropdown and nothing else (FR-1): no
+ * From/To, no Calculate, no KM/MI and no price. Any entry opens the route workspace,
+ * whose Use this route creates the line through `onAccept` in one step (FR-5), and whose
+ * Cancel writes nothing and drops the draft through `onAbandon`. With lookup off the new
+ * line is today's typed distance.
  */
 
-import { Input } from '@expenseos/design-system';
+import { Button, Input } from '@expenseos/design-system';
 import { useLocale, useTranslations } from 'next-intl';
 import type React from 'react';
-import { useEffect, useState } from 'react';
+import { type ComponentProps, useEffect, useId, useRef, useState } from 'react';
 import { type CurrencyLike, formatMinor } from '@/lib/format';
 import { trpc } from '@/lib/trpc/client';
-import { EMPTY_ROUTE, RouteEditor, RouteSummary, type RouteValue } from './RouteEditor';
+import { EMPTY_ROUTE, LOCKED_FIELD, RouteSummary, type RouteValue } from './RouteEditor';
+import { RoutePickerModal } from './RoutePickerModal';
+import { RouteSelect } from './RouteSelect';
+import type { AcceptPayload, WorkspaceSeed } from './routeWorkspace';
+import { useRecentRoutes } from './useRecentRoutes';
 
 export type DistanceUnit = 'KM' | 'MI';
+
+/**
+ * Where a mileage line is in its life (FR-6).
+ *
+ *   · `new` — the add-a-line form. Nothing is saved until Add line.
+ *   · `route` — a saved line with lookup on, measured by its route: the route control is
+ *     the way to change it, and the unit toggle writes nothing.
+ *   · `locked` — a saved line on the typed path. Read-only until Edit.
+ *   · `editing` — a typed-path line reopened by Edit. Nothing is saved until Save.
+ */
+export type MileageMode = 'new' | 'route' | 'locked' | 'editing';
+
+/** The stops a person actually named, as one line: "Toronto → Ottawa". */
+function namedStops(route: RouteValue): string {
+  return route.stops
+    .map((s) => s.description.trim())
+    .filter(Boolean)
+    .join(' → ');
+}
 
 /** A distance is a positive decimal with at most two places. */
 export function isValidDistance(value: string): boolean {
@@ -83,19 +120,33 @@ export interface MileageFieldsProps {
   onUnitChange: (unit: DistanceUnit) => void;
   route: RouteValue;
   onRouteChange: (route: RouteValue) => void;
+  /** Where the line is in its life; `new` when omitted. See `MileageMode`. */
+  mode?: MileageMode;
   /**
-   * A distance the ROUTE measured, as distinct from one that was typed.
-   *
-   * Separate because the edit row saves on blur but a measured distance arrives
-   * without one — it has to commit immediately, or the field would show a figure
-   * the server hasn't priced. Typing must not commit per keystroke, hence two
-   * callbacks rather than one. Defaults to `onDistanceChange`.
+   * A NEW line with lookup on: the one write, from the workspace's Use this route.
+   * Resolve once the line exists; reject with the server's error to keep the workspace
+   * open with it. Omitted: the chosen route only fills the draft — `onRouteChange`, then
+   * `onDistanceChange` with the distance it measured.
    */
-  onMeasuredDistance?: (value: string) => void;
-  /** Called when the distance field loses focus — the edit row commits here; the
-   *  add form has an explicit Save and passes nothing. */
-  onDistanceBlur?: () => void;
-  onDistanceFocus?: () => void;
+  onAccept?: (payload: AcceptPayload) => Promise<void>;
+  /** A NEW line with lookup on: the workspace was cancelled, so the draft goes. */
+  onAbandon?: () => void;
+  /**
+   * Where focus goes when the workspace closes on a new line — the draft (and so the
+   * dropdown that opened it) goes with a cancel or an accept, so focus needs a control
+   * that stays (NFR-12).
+   */
+  finalFocus?: ComponentProps<typeof RoutePickerModal>['finalFocus'];
+  /**
+   * Locked mode's one control: Edit. Rendered only while `locked`, and only when given.
+   * The caller flips the row to `editing`.
+   */
+  onEdit?: () => void;
+  /**
+   * A saved line's route control, with lookup on: the line's dropdown and its small map
+   * (`RouteLine`). Rendered full width under the row, where the stops used to be.
+   */
+  routeControl?: React.ReactNode;
   disabled?: boolean;
   /**
    * Caller controls that belong on the same line as the distance — the edit row's
@@ -142,18 +193,28 @@ export function MileageFields({
   onUnitChange,
   route,
   onRouteChange,
-  onMeasuredDistance,
-  onDistanceBlur,
-  onDistanceFocus,
+  mode = 'new',
+  onEdit,
+  routeControl,
+  onAccept,
+  onAbandon,
+  finalFocus,
   disabled,
   pricing,
   trailing,
 }: MileageFieldsProps) {
   const t = useTranslations('expenses');
   const locale = useLocale();
+  const locked = mode === 'locked';
+  /** Measured by the route: the distance is text, and its unit only changes the view. */
+  const routeMode = mode === 'route';
+  /** Locked fields are still real `disabled` inputs — only their colour differs. */
+  const inputsDisabled = disabled || locked;
+  const summaryId = useId();
   // Deduped by react-query, so every row asking is one request for the page.
   const routeLookup = trpc.mileageRoute.status.useQuery();
   const routeAvailable = routeLookup.data?.available ?? false;
+  const mapAvailable = routeLookup.data?.mapAvailable ?? false;
   const hasStoredRoute = route.stops.some((s) => s.description.trim());
   const valid = isValidDistance(distance);
 
@@ -165,9 +226,18 @@ export function MileageFields({
    * report with thirty mileage lines from firing thirty pricing requests on open to
    * recompute figures it was already sent.
    */
-  const savedIsCurrent = pricing?.saved != null && pricing.saved.distance === distance.trim();
+  /**
+   * On a route line the distance shown may be the other unit's restatement of the same
+   * claim (display-only KM/MI), so the saved figure is the price whatever is shown: asking
+   * the server to price the restated number would re-round it into a different claim.
+   */
+  const savedIsCurrent =
+    pricing?.saved != null && (routeMode || pricing.saved.distance === distance.trim());
   const priceable =
-    Boolean(pricing?.categoryId) && isValidDistance(settledDistance) && !savedIsCurrent;
+    !routeMode &&
+    Boolean(pricing?.categoryId) &&
+    isValidDistance(settledDistance) &&
+    !savedIsCurrent;
   const preview = trpc.expenses.mileagePreview.useQuery(
     {
       expenseId: pricing?.expenseId ?? '',
@@ -200,12 +270,78 @@ export function MileageFields({
   /** Between a changed distance and its price arriving. Neither figure is true yet. */
   const pricePending = shownAmount == null && priceable && !priceRefusal;
 
+  /**
+   * What Edit route says aloud, and what a sighted reader sees beside it: the route and
+   * the distance. The locked inputs are disabled, which takes them out of the tab order
+   * and makes many screen readers skip them — so without this the one focusable control
+   * on a locked line would be "Edit route" with nothing to say which route it edits.
+   */
+  const stopsText = namedStops(route);
+  const distanceText = distance.trim()
+    ? t('line.distanceValue', {
+        distance: distance.trim(),
+        unit: unit === 'MI' ? t('line.mi') : t('line.km'),
+      })
+    : '';
+  // With a route control on the line the route is already said there, so the locked
+  // summary is the distance alone.
+  const lockedSummary =
+    stopsText && distanceText && !routeControl
+      ? t('route.lockedSummary', { route: stopsText, distance: distanceText })
+      : routeControl
+        ? distanceText
+        : stopsText || distanceText;
+
+  /**
+   * Keep focus with the person across the switch between locked and editing.
+   *
+   * Edit route disappears when it is pressed, and so do Save and Cancel when they are,
+   * so the focused element is removed and focus falls to the page — a keyboard user
+   * would be thrown back to the top. Moving it is ONLY a repair of that loss: when focus
+   * is anywhere but the page body (somebody has already tabbed on), it is left alone.
+   */
+  const editButton = useRef<HTMLButtonElement>(null);
+  const distanceInput = useRef<HTMLInputElement>(null);
+  const previousMode = useRef(mode);
+  useEffect(() => {
+    const was = previousMode.current;
+    previousMode.current = mode;
+    if (was === mode) return;
+    const lost = document.activeElement == null || document.activeElement === document.body;
+    if (!lost) return;
+    if (was === 'locked' && mode === 'editing') {
+      // The first control the person can use: the distance.
+      distanceInput.current?.focus();
+    } else if (was === 'editing' && mode === 'locked') {
+      editButton.current?.focus();
+    }
+  }, [mode]);
+
+  if (mode === 'new' && routeAvailable) {
+    return (
+      <NewLineRoute
+        unit={unit}
+        mapAvailable={mapAvailable}
+        pricing={pricing}
+        disabled={disabled}
+        finalFocus={finalFocus}
+        onAbandon={onAbandon}
+        onAccept={
+          onAccept ??
+          (async (payload) => {
+            onRouteChange(payload.mileageRoute);
+            onDistanceChange(payload.mileageDistance);
+          })
+        }
+      />
+    );
+  }
+
   return (
     <>
-      {routeAvailable ? (
-        // With address lookup on, the distance is MEASURED, not typed — the route
-        // below produces it. Showing an editable box invites a number that
-        // contradicts the stops right underneath it.
+      {routeMode ? (
+        // Measured by the route, not typed — the route below produces it. Showing an
+        // editable box invites a number that contradicts the route right underneath it.
         <span className="flex h-10 min-w-24 items-center justify-end px-2 text-right">
           {distance ? (
             <span className="font-medium text-foreground text-sm tabular-nums">{distance}</span>
@@ -215,34 +351,44 @@ export function MileageFields({
         </span>
       ) : (
         <Input
+          ref={distanceInput}
           inputMode="decimal"
           aria-label={t('line.distance')}
           placeholder={t('line.distance')}
           value={distance}
-          disabled={disabled}
-          onFocus={onDistanceFocus}
+          disabled={inputsDisabled}
           onChange={(e) => onDistanceChange(e.target.value)}
-          onBlur={onDistanceBlur}
-          className={`w-full lg:w-24 ${valid ? '' : 'border-destructive'}`}
+          className={`w-full lg:w-24 ${valid ? '' : 'border-destructive'} ${locked ? LOCKED_FIELD : ''}`}
         />
       )}
       {/* Text buttons, not a select: two options, and the chosen one has to be
-          readable at a glance beside the number it qualifies. */}
+          readable at a glance beside the number it qualifies.
+
+          Locked, the unit is locked with the route (FR-6) — but the chosen unit still
+          has to be readable, so it is drawn in the muted tokens rather than faded to
+          half opacity, and still bold. */}
       <div className="flex shrink-0 overflow-hidden rounded-md border border-input">
         {(['KM', 'MI'] as const).map((u) => (
           <button
             key={u}
             type="button"
             aria-pressed={unit === u}
-            disabled={disabled}
+            // A route line with no distance yet has nothing to restate.
+            disabled={inputsDisabled || (routeMode && !distance)}
             onClick={() => {
               if (unit === u) return;
               onUnitChange(u);
             }}
-            className={`flex-1 px-2 py-1 text-xs disabled:opacity-50 lg:flex-initial ${
-              unit === u
-                ? 'bg-primary font-semibold text-primary-foreground'
-                : 'text-muted-foreground hover:bg-muted'
+            className={`flex-1 px-2 py-1 text-xs lg:flex-initial ${
+              locked
+                ? unit === u
+                  ? 'bg-muted font-semibold text-foreground'
+                  : 'text-muted-foreground'
+                : `disabled:opacity-50 ${
+                    unit === u
+                      ? 'bg-primary font-semibold text-primary-foreground'
+                      : 'text-muted-foreground hover:bg-muted'
+                  }`
             }`}
           >
             {u}
@@ -303,31 +449,115 @@ export function MileageFields({
           that already works — the distance box is right there and typing in it is
           the whole job. Whether address search exists is an admin's problem, and
           the admin surface (Integrations → Google Maps) is where it is now stated. */}
-      {routeAvailable && (
-        // Always visible, never behind an "Add route" button: the From and To ARE
-        // the mileage line when lookup works, and a claim that starts by hiding
-        // its own inputs behind a disclosure is a claim people fill in wrong.
-        // No border of its own: the line item already draws one, and a second box
-        // inside it framed the same mileage context twice.
-        <div className="mt-2 w-full">
-          <RouteEditor
-            value={route}
-            onChange={onRouteChange}
-            unit={unit}
-            onDistance={onMeasuredDistance ?? onDistanceChange}
-            disabled={disabled}
-          />
-        </div>
+      {routeAvailable && routeControl && (
+        // The line's route: its dropdown and its small map, never behind a disclosure.
+        // No border of its own: the line item already draws one. This fragment renders
+        // straight into the saved row (`parts.tsx`, `flex flex-col gap-1.5`; at `lg` `w-full`
+        // wraps it onto its own flex line). With no route yet: 6 px row gap + `mt-1.5` = 12 px,
+        // as on a new line (`NewLineRoute`). With a route (dropdown + map): `mt-3`, 18 px, so
+        // the full-width dropdown and its map stand clear of the category row.
+        <div className={hasStoredRoute ? 'mt-3 w-full' : 'mt-1.5 w-full'}>{routeControl}</div>
       )}
       {/* Lookup off but the line already carries a route: still show it. It is
           part of a filed claim, and hiding it because a setting changed later
-          would lose evidence an approver may be relying on. */}
-      {!routeAvailable && hasStoredRoute && (
+          would lose evidence an approver may be relying on. Locked, the summary
+          beside Edit route already carries it, so it is not said twice. */}
+      {!routeAvailable && hasStoredRoute && !locked && (
         <div className="mt-1 w-full pl-6">
           <RouteSummary value={route} />
         </div>
       )}
+      {/* Locked: the route as one line of text, and Edit route described by it — the
+          one route control on a saved line. It sits where Add line sits on a new line
+          and Save sits in Edit mode, so the row's action is always in the same place. */}
+      {locked && (
+        <div className="flex w-full flex-col gap-1.5 lg:flex-row lg:items-center lg:justify-end">
+          <p id={summaryId} className="min-w-0 break-words text-muted-foreground text-xs lg:flex-1">
+            {lockedSummary}
+          </p>
+          {onEdit && (
+            <Button
+              ref={editButton}
+              size="sm"
+              // VeloExpense kit: the kit's Button has no `soft`; `secondary` is its tinted fill.
+              variant="secondary"
+              aria-describedby={summaryId}
+              onClick={onEdit}
+              className="self-end lg:self-auto"
+            >
+              {routeControl ? t('line.editDistance') : t('route.editRoute')}
+            </Button>
+          )}
+        </div>
+      )}
     </>
+  );
+}
+
+/**
+ * A new mileage line with lookup on (FR-1): the route dropdown, and the workspace it
+ * opens. Nothing is written until Use this route; a cancel drops the draft.
+ */
+function NewLineRoute({
+  unit,
+  mapAvailable,
+  pricing,
+  disabled,
+  finalFocus,
+  onAccept,
+  onAbandon,
+}: {
+  unit: DistanceUnit;
+  mapAvailable: boolean;
+  pricing: MileageFieldsProps['pricing'];
+  disabled?: boolean;
+  finalFocus?: MileageFieldsProps['finalFocus'];
+  onAccept: (payload: AcceptPayload) => Promise<void>;
+  onAbandon?: () => void;
+}) {
+  const t = useTranslations('expenses');
+  const previous = useRecentRoutes();
+  const [seed, setSeed] = useState<WorkspaceSeed | null>(null);
+  return (
+    // Full width under the category row (FR-7): `lg:basis-full` wraps it onto its own line
+    // in the new-line row's `lg:flex-wrap`, from the form's left edge across its width.
+    // 12 px above it, as on a saved line: the row's 6 px `gap-1.5` + `mt-1.5`.
+    <div className="mt-1.5 w-full lg:basis-full">
+      <RouteSelect
+        entries={previous}
+        onNewRoute={() => setSeed({ kind: 'new' })}
+        onPrevious={(entry) => setSeed({ kind: 'previous', entry })}
+        label={t('route.dropdownLabel')}
+        placeholder={t('route.dropdownPlaceholder')}
+        disabled={disabled}
+      />
+      {seed && (
+        <RoutePickerModal
+          seed={seed}
+          unit={unit}
+          mapAvailable={mapAvailable}
+          pricing={
+            pricing
+              ? {
+                  expenseId: pricing.expenseId,
+                  categoryId: pricing.categoryId,
+                  lineItemId: pricing.lineItemId,
+                  currency: pricing.currency,
+                }
+              : undefined
+          }
+          finalFocus={finalFocus}
+          onAccept={async (payload) => {
+            await onAccept(payload);
+            setSeed(null);
+          }}
+          onClose={() => {
+            setSeed(null);
+            onAbandon?.();
+          }}
+        />
+      )}
+    </div>
   );
 }
 

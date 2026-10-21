@@ -1,65 +1,105 @@
 /**
- * The approver's view of a mileage line's stored route: stop names only, plus the
- * route's own distance when it disagrees with the claim.
+ * Every server-side view of a mileage line's stored route, and the one rule for which of
+ * its keys may be stored or served at all.
+ *
+ * ── The stored keys ──────────────────────────────────────────────────────────────────
+ *
+ * A stored route is its claim and nothing Google drew: `stops`, `legs`, `routeLabel`,
+ * `routeIndex`, `routeCount` and `via` (`STORED_ROUTE_KEYS`). The only Google-derived
+ * values among them are place IDs — on the stops, the legs and `via` — which Google's terms
+ * let us keep indefinitely (ADR 0020). `storedRoute` copies those keys and no other, and it
+ * sits at both ends of the column:
+ *
+ *   · every write, at the one persist point (`computeLineFinancials` in
+ *     `routers/expenses.ts`), so create, update, the carry-over of a route an update did not
+ *     mention and a date-move reprice all store the allowed keys alone;
+ *   · the writer's read (`serializeExpense`), so a row that still carries a key from before
+ *     this rule — a drawn path, dragged lat/lng points, a fetch stamp — is served without it.
+ *     That read is also what the assistant and MCP tools are given (`get_expense_report`),
+ *     so their transcripts hold nothing more than the writer's screen.
+ *
+ * It names the keys it keeps, never the ones it drops, so a key added to the column later
+ * is dropped until somebody adds it here on purpose.
+ *
+ * ── The approver's view ──────────────────────────────────────────────────────────────
+ *
+ * `deriveRouteView`: stop names, the chosen route's label and how many routes were
+ * offered, plus the route's own distance when it disagrees with the claim.
  *
  * Why the server trims it. `expenseApprovals.report` is read by everyone
  * `canViewReport` admits — the submitter's direct manager, anyone ever assigned to,
  * or who decided, a task on the report and, while a task is pending, anyone eligible
  * to decide it, including every member of a filter-approver or fallback pool — a
- * wider audience than the submitter's editor. The stored route (`ExpenseLineItem.mileageRoute`) is whatever the write
- * path accepted (`z.unknown()`), so it is parsed here with a typed, capped schema
- * and rebuilt by name: `placeId`, `legs` and per-leg metres never leave the server.
+ * wider audience than the submitter's editor. The stored route
+ * (`ExpenseLineItem.mileageRoute`) is parsed here with the shared read schema
+ * (`lib/mileageRouteSchema.ts`) and rebuilt by name: `placeId`, `legs`, per-leg
+ * metres and `routeIndex` never leave the server. Rows saved before the write path
+ * checked the route were stored unchecked, which is why the read is its own schema.
+ *
+ * Absent stays absent. `routeLabel` and `routeCount` are added only when the stored
+ * route carries a usable value — never as `null` — so a line filed without them
+ * reads exactly as it did before they existed.
  *
  * Why the server works out the distance. The traveller's correction overwrites
  * `mileageDistance`, so the original route distance survives only in the legs.
  * Summing them here, and deciding here whether the difference is worth showing,
- * keeps the browser from needing the legs at all. The figure is "as filed", never
- * "verified": the submitter controls the stored legs.
+ * keeps the browser from needing the legs at all. The figure, the label and the
+ * count are "as filed", never "verified": the submitter controls all three.
  */
 
-import { z } from 'zod';
-import { metersToDistance } from '@/server/platform/googleMaps';
+import {
+  metersToDistance,
+  mileageRouteReadSchema,
+  routeChainMeters,
+} from '@/lib/mileageRouteSchema';
 
-/** Most stops a route may carry — the same bound `mileageRoute.computeRoute` puts
- *  on the place ids it measures. */
-export const MAX_ROUTE_STOPS = 25;
-/** Longest stop description sent to an approver. */
-export const MAX_STOP_DESCRIPTION = 300;
+// ── The stored keys ──────────────────────────────────────────────────────────────────
+
+/** The keys a stored route may hold, and the only ones served back to its writer. */
+export const STORED_ROUTE_KEYS = [
+  'stops',
+  'legs',
+  'routeLabel',
+  'routeIndex',
+  'routeCount',
+  'via',
+] as const;
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) return false;
+  // Dates, Prisma Decimals and Buffers are values, not containers.
+  const proto = Object.getPrototypeOf(value);
+  return proto === Object.prototype || proto === null;
+}
 
 /**
- * The stored route, as far as the approver view needs it. Descriptions are typed
- * and capped; a route that fails here is sent as unavailable, not trimmed to fit.
- * `placeId` and `legs` are read loosely because they feed only the freshness check
- * below: a malformed leg hides the route distance, never the stops. Unknown keys
- * are dropped by the parse and, regardless, the output is built field by field.
+ * `route` with only the keys in `STORED_ROUTE_KEYS`, each value as it is; an absent or
+ * `undefined` key stays absent. The input is not mutated.
+ *
+ * A value that is not a route object (null, an array, a scalar — a pre-schema oddity on an
+ * old row) is returned as it is: it has no top-level key to drop, and a reprice must never
+ * be blocked by it.
  */
-const storedRouteSchema = z.object({
-  stops: z
-    .array(
-      z.object({
-        description: z.string().max(MAX_STOP_DESCRIPTION),
-        placeId: z.unknown().optional(),
-      }),
-    )
-    .max(MAX_ROUTE_STOPS),
-  legs: z.unknown().optional(),
-});
+export function storedRoute(route: unknown): unknown {
+  if (!isPlainObject(route)) return route;
+  const out: Record<string, unknown> = {};
+  for (const key of STORED_ROUTE_KEYS) {
+    if (Object.hasOwn(route, key) && route[key] !== undefined) out[key] = route[key];
+  }
+  return out;
+}
 
-const legsSchema = z
-  .array(
-    z.object({
-      fromPlaceId: z.string().min(1),
-      toPlaceId: z.string().min(1),
-      meters: z.number(),
-    }),
-  )
-  .min(1)
-  // A chain of N stops has N - 1 legs; more than the stop cap allows is not a route.
-  .max(MAX_ROUTE_STOPS - 1);
+// ── The approver's view ──────────────────────────────────────────────────────────────
 
 export interface MileageRouteView {
-  /** Stop descriptions in order, or null when there is no route or it is unreadable. */
-  mileageRoute: { stops: { description: string }[] } | null;
+  /** Stop descriptions in order — with the chosen route's label and the number of
+   *  routes offered, when the route carries them — or null when there is no route or
+   *  it is unreadable. */
+  mileageRoute: {
+    stops: { description: string }[];
+    routeLabel?: string;
+    routeCount?: number;
+  } | null;
   /** The filed route's distance in the claim's unit ("12.34"), set only when it
    *  differs from the claim by more than max(0.01 unit, 0.5 % of the route). */
   routeDistance: string | null;
@@ -82,33 +122,6 @@ function toHundredths(value: string): number | null {
 }
 
 /**
- * Total metres of `legs`, or null when they do not describe THESE stops.
- *
- * `RouteEditor` clears the legs on every stop edit and only a lookup rewrites
- * them, so a normal save cannot carry stale legs. The write path accepts any
- * JSON, though, so the check is made here regardless: the legs must form one
- * chain (each leg starts where the previous ended), every leg's metres must be a
- * finite number ≥ 0, and the chain's place ids must be exactly the stops' place
- * ids, in order. Every stop must have one — a lookup only runs once every stop is
- * a real place, so a hand-typed stop beside legs means the legs are not its own.
- */
-function freshRouteMeters(stops: readonly { placeId?: unknown }[], legs: unknown): number | null {
-  const parsed = legsSchema.safeParse(legs);
-  if (!parsed.success) return null;
-  const chain = parsed.data;
-  if (stops.length !== chain.length + 1) return null;
-
-  let total = 0;
-  for (const [i, leg] of chain.entries()) {
-    if (!Number.isFinite(leg.meters) || leg.meters < 0) return null;
-    if (leg.fromPlaceId !== stops[i]?.placeId) return null;
-    if (leg.toPlaceId !== stops[i + 1]?.placeId) return null;
-    total += leg.meters;
-  }
-  return total;
-}
-
-/**
  * Trim a stored route for the approver and work out whether its distance is
  * worth showing beside the claim.
  *
@@ -126,13 +139,17 @@ export function deriveRouteView(
 ): MileageRouteView {
   if (route == null) return NO_ROUTE;
 
-  const parsed = storedRouteSchema.safeParse(route);
+  const parsed = mileageRouteReadSchema.safeParse(route);
   if (!parsed.success) {
     return { mileageRoute: null, routeDistance: null, mileageRouteUnavailable: true };
   }
 
-  const { stops, legs } = parsed.data;
-  const mileageRoute = { stops: stops.map((s) => ({ description: s.description })) };
+  const { stops, legs, routeLabel, routeCount } = parsed.data;
+  const mileageRoute = {
+    stops: stops.map((s) => ({ description: s.description })),
+    ...(routeLabel !== undefined ? { routeLabel } : {}),
+    ...(routeCount !== undefined ? { routeCount } : {}),
+  };
   return {
     mileageRoute,
     routeDistance: routeDistanceIfDifferent(stops, legs, unit, claimed),
@@ -149,7 +166,7 @@ function routeDistanceIfDifferent(
   if (unit == null || claimed == null) return null;
   const claimedH = toHundredths(claimed);
   if (claimedH == null) return null;
-  const meters = freshRouteMeters(stops, legs);
+  const meters = routeChainMeters(stops, legs);
   if (meters == null) return null;
 
   // The same conversion that filled the editor's distance field, so a claim the

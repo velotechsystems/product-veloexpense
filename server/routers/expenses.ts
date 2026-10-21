@@ -69,6 +69,7 @@ import {
   glAccountIdForCategory,
   homeCurrencyCode,
   lockClaimantSnapshot,
+  type MileageUnit,
   nextReportNumber,
   Prisma,
   recomputeReportTotal,
@@ -98,7 +99,15 @@ import { receiptKey, receiptPrefix } from '@/lib/storage/keys';
 import { RECEIPT_CAP_BYTES } from '@/lib/storage/limits';
 import { currencySymbol } from '@/server/lib/currencySymbol';
 import { validateReport } from '@/server/policy/validate';
+import { mileageRouteWriteSchema } from '@/lib/mileageRouteSchema';
 import { explainExpenseTax, resolveExpenseTax } from '@/server/lib/expenseTax';
+import {
+  ATTACHABLE_REPORT_STATUSES,
+  assertExpenseAttachable,
+  assertExpenseDraft,
+  EDITABLE_REPORT_STATUSES,
+  NOT_EDITABLE,
+} from '@/server/lib/expenseWriteGuard';
 import {
   extractionInFlightMessage,
   reportExtractionProgress,
@@ -106,12 +115,13 @@ import {
 } from '@/server/lib/extractionInFlight';
 import {
   convertScaled,
+  defaultMileageUnitsFor,
   distanceToScaled,
   priceMileage,
   resolveMileageRule,
   ytdBasis,
 } from '@/server/lib/mileage';
-import { deriveRouteView } from '@/server/lib/mileageRouteView';
+import { deriveRouteView, storedRoute } from '@/server/lib/mileageRouteView';
 import {
   buildHomeRollup,
   type CurrencyGroup,
@@ -240,33 +250,6 @@ function assertReceiptTypes(files: readonly ReceiptFile[]): void {
   }
 }
 
-/** A report is editable (and (re)submittable) by its submitter while DRAFT or
- *  RETURNED — an approver can return a submitted report for fixes (Phase 3),
- *  after which it behaves like a draft again until resubmitted. */
-const EDITABLE_REPORT_STATUSES: ExpenseReportStatus[] = [
-  ExpenseReportStatus.DRAFT,
-  ExpenseReportStatus.RETURNED,
-];
-
-/**
- * Where a document may still be ADDED: the editable statuses, plus SUBMITTED.
- *
- * Attaching evidence is not editing the claim — an approver asking for a missing receipt
- * mid-review is a real flow, and the joint/single-document extraction refuses to move a
- * filed report's numbers (`prefill.ts`, `determine.ts`). The window closes with the
- * decision: once a report is APPROVED, REJECTED or REIMBURSED the evidence set is what
- * the approver signed, and NetSuite's File Cabinet push sends whatever is on the report
- * at post time. There is deliberately no post-approval attach path; a report whose
- * evidence is wrong after approval is a report to reject or reverse, not to patch.
- *
- * Removing or moving a document is narrower still — `EDITABLE_REPORT_STATUSES` only —
- * because both destroy or restate what an approver may already have looked at.
- */
-const ATTACHABLE_REPORT_STATUSES: ExpenseReportStatus[] = [
-  ...EDITABLE_REPORT_STATUSES,
-  ExpenseReportStatus.SUBMITTED,
-];
-
 function actorOf(ctx: {
   rbac: { id: string; roleLabel: string };
   session: { user: { name?: string | null; email?: string | null } };
@@ -335,69 +318,6 @@ function normalizeAttendees(
  */
 function claimantAuditKeys(claimantAttendeeId: string, expenseId: string) {
   return { claimantAttendeeAdded: true, claimantAttendeeId, expenseId } as const;
-}
-
-/** The one refusal for a write to a report the submitter no longer owns the figures of. */
-const NOT_EDITABLE = {
-  key: REFUSAL_KEYS.reportNotEditable,
-  message: 'Report is not editable.',
-} as const;
-
-async function assertExpenseDraft(
-  ctx: {
-    db: import('@expenseos/db').PrismaClient;
-    session: { user: { id: string } };
-  },
-  expenseId: string,
-): Promise<{ reportId: string; ownerId: string }> {
-  return assertExpenseWritable(ctx, expenseId, EDITABLE_REPORT_STATUSES, NOT_EDITABLE);
-}
-
-/**
- * As `assertExpenseDraft`, for the document endpoints that ADD evidence: the report may
- * also be SUBMITTED (see `ATTACHABLE_REPORT_STATUSES`). Delete and move stay on the
- * draft gate.
- */
-async function assertExpenseAttachable(
-  ctx: {
-    db: import('@expenseos/db').PrismaClient;
-    session: { user: { id: string } };
-  },
-  expenseId: string,
-): Promise<{ reportId: string; ownerId: string }> {
-  return assertExpenseWritable(ctx, expenseId, ATTACHABLE_REPORT_STATUSES, {
-    key: REFUSAL_KEYS.documentsClosed,
-    message: 'Documents cannot be added once the report has been decided.',
-  });
-}
-
-/** Ownership + a status allow-list, in one read. The two public gates above are the
- *  only callers, so there is exactly one notion of "may this expense be written". */
-async function assertExpenseWritable(
-  ctx: {
-    db: import('@expenseos/db').PrismaClient;
-    session: { user: { id: string } };
-  },
-  expenseId: string,
-  allowed: readonly ExpenseReportStatus[],
-  refused: { key: RefusalKey; message: string },
-): Promise<{ reportId: string; ownerId: string }> {
-  const expense = await ctx.db.expense.findUnique({
-    where: { id: expenseId },
-    select: {
-      reportId: true,
-      ownerId: true,
-      report: { select: { submitterId: true, status: true } },
-    },
-  });
-  const uid = ctx.session.user.id;
-  if (!expense || (expense.ownerId !== uid && expense.report?.submitterId !== uid)) {
-    throw new TRPCError({ code: 'NOT_FOUND' });
-  }
-  if (expense.report && !allowed.includes(expense.report.status)) {
-    throw refusal('BAD_REQUEST', refused.key, refused.message);
-  }
-  return { reportId: expense.reportId, ownerId: expense.ownerId };
 }
 
 /**
@@ -672,7 +592,11 @@ async function computeLineFinancials(
     /** Distance as typed, in `mileageUnit`. */
     mileageDistance?: string | null;
     mileageUnit?: 'KM' | 'MI' | null;
-    /** Ordered stops + per-leg distances from the route lookup, stored verbatim. */
+    /**
+     * The route to store. From `lineItemCreate`/`lineItemUpdate` it is the shared write
+     * schema's parsed output; from a date-move reprice it is the route already stored,
+     * carried over untouched (an old unchecked row must not block a date change).
+     */
     mileageRoute?: unknown;
     /** Traveller's correction to the computed distance. */
     mileageDistanceOverride?: string | null;
@@ -749,6 +673,14 @@ async function computeLineFinancials(
   const ytdScaled = basis.totalScaled;
   const priced = priceMileage(rule.tiers, ytdScaled, distanceScaled);
 
+  // The ONE persist point for a mileage route, so every write — create, update, the
+  // carry-over of a route an update did not mention, and a date-move reprice — stores the
+  // allowed keys alone (`storedRoute`): nothing Google drew, whatever the row held before.
+  const mileageRoute: Prisma.InputJsonValue | typeof Prisma.JsonNull =
+    params.mileageRoute != null
+      ? (storedRoute(params.mileageRoute) as Prisma.InputJsonValue)
+      : Prisma.JsonNull;
+
   return {
     amountMinor: priced.amountMinor,
     carried: {
@@ -764,10 +696,7 @@ async function computeLineFinancials(
       mileageBreakdown: priced.segments as unknown as Prisma.InputJsonValue,
       // JsonNull, not null: `null` on a nullable Json column is ambiguous in
       // Prisma and it refuses it outright.
-      mileageRoute:
-        params.mileageRoute == null
-          ? Prisma.JsonNull
-          : (params.mileageRoute as Prisma.InputJsonValue),
+      mileageRoute,
       mileageDistanceOverride:
         params.mileageDistanceOverride != null
           ? scaledToDecimalString(convertScaled(typedScaled, enteredUnit, rule.unit))
@@ -947,8 +876,15 @@ type ExpenseWithDetail = Prisma.ExpenseGetPayload<{ include: typeof EXPENSE_DETA
  *  or metres) and no year-to-date basis: the two fields the approvals drawer holds back
  *  from the same audience. The editor's route field re-saves what it is given, so the
  *  trimmed shape must never reach a writer; it is keyed on the writer identities for
- *  that reason. */
-async function serializeExpense(e: ExpenseWithDetail, rawFor: boolean) {
+ *  that reason. Even the writer is sent the allowed keys alone (`storedRoute`): a row
+ *  that still carries a key from before that rule is served without it.
+ *
+ *  `mileageDefaultUnit` is the expense OWNER's default unit (ExpenseOS #591). */
+async function serializeExpense(
+  e: ExpenseWithDetail,
+  rawFor: boolean,
+  mileageDefaultUnit: MileageUnit,
+) {
   return {
     id: e.id,
     merchant: e.merchant,
@@ -979,6 +915,10 @@ async function serializeExpense(e: ExpenseWithDetail, rawFor: boolean) {
     fxRateSource: e.fxRateSource,
     homeCurrency: e.homeCurrency,
     homeAmountMinor: e.homeAmountMinor?.toString() ?? null,
+    // The unit a NEW mileage line on this expense opens and prices in: the expense
+    // OWNER's (`defaultMileageUnitFor`, FR-11), resolved once per owner by the caller.
+    // A saved line keeps its own stored `mileageUnit` and never reads this.
+    mileageDefaultUnit,
     // Tax lives on the expense, not the line. But the line's KIND and PAYLOAD have to travel:
     // a tip is stored in the payload of a STANDARD_WITH_TIP line, and `tipMinorOf` reads both.
     // Dropping them here is what left the tip field blank on a line the extractor had correctly
@@ -1003,7 +943,7 @@ async function serializeExpense(e: ExpenseWithDetail, rawFor: boolean) {
         mileageUnit: li.mileageUnit as 'KM' | 'MI' | null,
         mileageYtdBefore: rawFor ? (li.mileageYtdBefore?.toString() ?? null) : null,
         mileageBreakdown: li.mileageBreakdown,
-        mileageRoute: rawFor ? li.mileageRoute : (route?.mileageRoute ?? null),
+        mileageRoute: rawFor ? storedRoute(li.mileageRoute) : (route?.mileageRoute ?? null),
         routeDistance: route?.routeDistance ?? null,
         mileageRouteUnavailable: route?.mileageRouteUnavailable ?? false,
         notes: li.notes,
@@ -3219,12 +3159,19 @@ export const expensesRouter = router({
       // Confidence threshold below which an extraction is flagged for human
       // verification in the FE (Platform Settings; default 0.7).
       // VeloExpense: no Platform Settings — ExpenseOS's default, as a constant.
-      const [fxRows, readerCurrency, violations, posting] = await Promise.all([
+      const [fxRows, readerCurrency, violations, posting, mileageDefaultUnits] =
+        await Promise.all([
         ctx.db.fxRate.findMany({ orderBy: { fetchedAt: 'desc' } }),
         // Folded into the same Promise.all so reading it costs no extra round trip.
         readerCurrencyCode(ctx.db, ctx.session.user.id),
         reportViolations(ctx.db, report.id),
         postingStateOf(ctx.db, report.id),
+        // Each expense OWNER's default mileage unit — never the reader's, who may be a
+        // delegate. Once per distinct owner, not per expense.
+        defaultMileageUnitsFor(
+          ctx.db,
+          report.expenses.map((e) => e.ownerId),
+        ),
       ]);
       const extractionReviewThreshold = 0.7;
 
@@ -3323,13 +3270,15 @@ export const expensesRouter = router({
       // pre-select to resolve (see `serializeExpense`).
       const readerId = ctx.session.user.id;
       const expenses = await Promise.all(
-        report.expenses.map((e) =>
-          serializeExpense(
+        report.expenses.map((e) => {
+          // Who may write the line (`assertExpenseWritable`): the submitter or its owner.
+          const rawFor = readerId === report.submitterId || readerId === e.ownerId;
+          return serializeExpense(
             e,
-            // Who may write the line (`assertExpenseWritable`): the submitter or its owner.
-            readerId === report.submitterId || readerId === e.ownerId,
-          ),
-        ),
+            rawFor,
+            mileageDefaultUnits.get(e.ownerId) ?? 'KM',
+          );
+        }),
       );
 
       /**
@@ -3822,8 +3771,14 @@ export const expensesRouter = router({
           .regex(/^\d+(\.\d{1,2})?$/)
           .optional(),
         mileageUnit: z.enum(['KM', 'MI']).optional(),
-        /** Ordered stops + per-leg distances from the route lookup. */
-        mileageRoute: z.unknown().optional(),
+        /**
+         * The chosen route: ordered stops, per-leg distances, and which of the routes
+         * offered was picked. Checked against the shared schema and stored as its
+         * parsed output only — a key the schema does not name (a drawn path) is
+         * dropped, and a body that fails is BAD_REQUEST with nothing written.
+         * `null` (no route) is accepted, as it always was.
+         */
+        mileageRoute: mileageRouteWriteSchema.nullable().optional(),
         /** Traveller's correction to the computed distance. */
         mileageDistanceOverride: z
           .string()
@@ -3917,8 +3872,11 @@ export const expensesRouter = router({
           .regex(/^\d+(\.\d{1,2})?$/)
           .optional(),
         mileageUnit: z.enum(['KM', 'MI']).optional(),
-        /** Ordered stops + per-leg distances from the route lookup. */
-        mileageRoute: z.unknown().optional(),
+        /**
+         * The chosen route, checked and stored as on create. Absent leaves the
+         * line's route alone; `null` clears it.
+         */
+        mileageRoute: mileageRouteWriteSchema.nullable().optional(),
         /** Traveller's correction to the computed distance. */
         mileageDistanceOverride: z
           .string()

@@ -392,6 +392,75 @@ async function seedPerDiemRates(orgId) {
 }
 
 /**
+ * eos batch 5 — ExpenseOS's seeded mileage (`packages/db/prisma/seed.ts`, `MILEAGE_RULES` and
+ * its `travelMileage` category, 67db2e33): the CRA 2026 allowance for CA ($0.72/km for the
+ * first 5,000 km in the calendar year, $0.66/km after) and the IRS 2026 standard rate for US
+ * ($0.72/mi — 72.5¢ rounded DOWN, ExpenseOS's reasoning: the standard rate is the tax-free
+ * ceiling). Both are country defaults (no subjects). The route picker's e2e
+ * (`mileage-route-picker*.spec.ts`, `mileage-route-lookup-off.spec.ts`) files mileage lines
+ * as the demo employee and prices them against the CA rule.
+ *
+ * VeloExpense: per tenant, for the demo tenant only; VeloExpense's starter six have no
+ * mileage category, so ExpenseOS's "Travel - Mileage" is added with the same code
+ * (`travelMileage`). The demo employee is given country CA, which mileage pricing reads
+ * (`User.country`). Created, never updated, as ExpenseOS's: an administrator who has tuned a
+ * rate keeps it, and a second rule is never stood beside the first.
+ */
+const SEED_MILEAGE_RULES = [
+  { country: 'CA', unit: 'KM', tiers: [['0', 72], ['5000', 66]] },
+  { country: 'US', unit: 'MI', tiers: [['0', 72]] },
+];
+
+async function seedMileage(orgId) {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query("SELECT set_config('app.current_org', $1, true)", [orgId]);
+    await client.query(
+      `INSERT INTO expense_category (organization_id, code, label, sort_order, icon, color, is_mileage)
+       VALUES ($1, 'travelMileage', jsonb_build_object('en', $2::text, 'fr-CA', $3::text),
+               240, '📍', '#2563eb', true)
+       ON CONFLICT (organization_id, code) DO NOTHING`,
+      [orgId, 'Travel - Mileage', 'Voyage - Kilométrage'],
+    );
+    for (const rule of SEED_MILEAGE_RULES) {
+      const existing = await client.query(
+        `SELECT 1 FROM mileage_rate r
+          WHERE r.country = $1 AND r.effective_to IS NULL
+            AND NOT EXISTS (SELECT 1 FROM mileage_rate_subject s WHERE s.rate_id = r.id)`,
+        [rule.country],
+      );
+      if (existing.rowCount > 0) continue;
+      const rateId = (
+        await client.query(
+          `INSERT INTO mileage_rate (organization_id, country, unit, effective_from)
+           VALUES ($1, $2, $3, '2026-01-01T00:00:00Z') RETURNING id`,
+          [orgId, rule.country, rule.unit],
+        )
+      ).rows[0].id;
+      for (const [fromDistance, rateMinor] of rule.tiers) {
+        await client.query(
+          `INSERT INTO mileage_rate_tier (organization_id, rate_id, from_distance, rate_minor)
+           VALUES ($1, $2, $3, $4)`,
+          [orgId, rateId, fromDistance, rateMinor],
+        );
+      }
+    }
+    await client.query(
+      `UPDATE app_user SET country = 'CA'
+        WHERE organization_id = $1 AND email = 'employee@demo.test' AND country IS NULL`,
+      [orgId],
+    );
+    await client.query('COMMIT');
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+/**
  * w6-00 (d88) — travel's category list and its default approval flow, from migration 0077's
  * `seed_travel_defaults()`: the one copy `createOrganization` also calls. After the reference
  * data, whose expense categories the travel list maps onto. Idempotent.
@@ -754,6 +823,7 @@ async function main() {
   await seedDefaultApprovalWorkflow(demoId);
   await seedTravelDefaults(demoId);
   await seedPerDiemRates(demoId);
+  await seedMileage(demoId);
 
   // ── VX3-9a: a SECOND populated tenant, on a DIFFERENT ledger ───────────────
   //

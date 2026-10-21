@@ -114,6 +114,9 @@ export function makeExecutor(ctx: Context, locale: Locale) {
       // Formatted HERE rather than in any procedure, because the defect was systemic: no
       // tool formatted money, so every tool that returns an amount handed the model bare
       // minor units. One boundary, ~25 tools fixed, and the raw values are all still there.
+      //
+      // A mileage route needs nothing here: the procedure already serves only the keys a
+      // route may be stored with (`storedRoute` in `server/lib/mileageRouteView.ts`).
       return { status: 'ok', result: withMoneyDisplay(await procedure(args), locale) };
     } catch (err) {
       return toErrorOutcome(err);

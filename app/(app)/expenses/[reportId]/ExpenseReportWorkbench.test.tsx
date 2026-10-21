@@ -266,7 +266,7 @@ vi.mock('@/lib/trpc/client', () => {
         searchPlaces: {
           useQuery: () => ({ data: { items: [], error: null }, isFetching: false, error: null }),
         },
-        computeRoute: { useMutation: () => ({ mutate: vi.fn(), isPending: false }) },
+        computeRoutes: { useMutation: () => ({ mutate: vi.fn(), isPending: false }) },
       },
     },
   };
@@ -2004,6 +2004,43 @@ describe('a mileage line on a submitted report', () => {
     expect(screen.getByText('line.mileageClaimed:120.00,line.km,131.20')).toBeInTheDocument();
     expect(screen.getByText('Montréal → Québec')).toBeInTheDocument();
     expect(screen.getByText(/^line\.mileageRate:/)).toBeInTheDocument();
+  });
+
+  it('shows the route chosen when filed, from either shape of the route', () => {
+    const chosen = { routeLabel: 'Hwy 401', routeIndex: 1, routeCount: 3 };
+    // The writer's raw route…
+    const { unmount } = show(
+      submittedWith(mileageLine({ mileageRoute: { ...mileageLine().mileageRoute, ...chosen } })),
+    );
+    expect(screen.getByText('line.routeChosen:Hwy 401,3')).toBeInTheDocument();
+    unmount();
+    // …and the server's trim for every other reader.
+    show(
+      submittedWith(
+        mileageLine({
+          mileageRoute: {
+            stops: [{ description: 'Montréal' }, { description: 'Québec' }],
+            routeLabel: 'Hwy 401',
+            routeCount: 3,
+          },
+        }),
+      ),
+      { isSubmitter: false, canEdit: false, canDelete: false, canSubmit: false },
+    );
+    expect(screen.getByText('line.routeChosen:Hwy 401,3')).toBeInTheDocument();
+  });
+
+  it.each([
+    ['no label', { routeCount: 3 }],
+    ['an empty label', { routeLabel: '  ', routeCount: 3 }],
+    ['no count', { routeLabel: 'Hwy 401' }],
+    ['a count out of range', { routeLabel: 'Hwy 401', routeCount: 4 }],
+  ])('adds nothing about the chosen route with %s', (_, chosen) => {
+    show(
+      submittedWith(mileageLine({ mileageRoute: { ...mileageLine().mileageRoute, ...chosen } })),
+    );
+    expect(screen.getByText('Montréal → Québec')).toBeInTheDocument();
+    expect(screen.queryByText(/^line\.routeChosen/)).toBeNull();
   });
 
   it('says a route the server could not read is unavailable', () => {

@@ -62,6 +62,18 @@ export const REFUSAL_KEYS = {
   /** eos batch 4 (#582): an admin edit to a field Google Workspace owns, for a person linked
    *  to Google while directory sync is on — the next sync would undo it. `{ fields }`. */
   peopleDirectoryManaged: 'refusals.people.directoryManaged',
+  /** A point dropped on a mileage route where Google has no road and no address to turn it
+   *  into a place. The drop is undone. Takes no ICU arguments. */
+  mileageNoRoadNear: 'refusals.mileage.noRoadNear',
+  /** A dropped point could not be turned into a place because the Maps key may not call
+   *  the API(s) that do it. `{ apis }` is the console names of the refused APIs ("Roads
+   *  API, Geocoding API") — proper nouns, never Google's own text. */
+  mileageDragApisUnavailable: 'refusals.mileage.dragApisUnavailable',
+  /** The route lookup carried a dragged point (`via`) and Google would not route through
+   *  its place ID (spec TR-13 check 1). BAD_REQUEST; the modal reads this KEY, not the
+   *  code, to retry the newest Roads point once through Geocoding. The sentence is what
+   *  is shown when it does not retry, or the retry is refused too. No ICU arguments. */
+  mileageViaPlaceRefused: 'refusals.mileage.viaPlaceRefused',
 } as const;
 
 export type RefusalKey = (typeof REFUSAL_KEYS)[keyof typeof REFUSAL_KEYS];

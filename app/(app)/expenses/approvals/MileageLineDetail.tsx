@@ -14,7 +14,9 @@
  *
  * Two labelling rules come from the security review and are not style:
  *   · the route figure is "as filed" — the submitter controls the stored legs, so
- *     it is never presented as verified or computed;
+ *     it is never presented as verified or computed. The same goes for the chosen
+ *     route's label and the number of routes offered: the line says "Route chosen
+ *     when filed", and shows the label as plain text;
  *   · a hidden pair says nothing about agreement. With `routeDistance` null the
  *     line shows the distance alone, never "matches the route".
  */
@@ -31,7 +33,13 @@ export interface MileageLineFields {
   mileageUnit: 'KM' | 'MI' | null;
   /** The pricing engine's segments, as stored (JSON). Read through `mileageTiers`. */
   mileageBreakdown: unknown;
-  mileageRoute: { stops: { description: string }[] } | null;
+  /** Stop names, plus — when the route was chosen from those offered — Google's label
+   *  for the chosen one and how many were offered. Absent, never null, when not stored. */
+  mileageRoute: {
+    stops: { description: string }[];
+    routeLabel?: string;
+    routeCount?: number;
+  } | null;
   /** The filed route's distance in `mileageUnit`, only when it differs from the claim. */
   routeDistance: string | null;
   /** A route was stored but the server could not read it. */
@@ -133,7 +141,20 @@ export function MileageLineDetail({
       {line.mileageRouteUnavailable ? (
         <p>{t('line.routeUnavailable')}</p>
       ) : line.mileageRoute ? (
-        <RouteSummary value={line.mileageRoute} />
+        <>
+          <RouteSummary value={line.mileageRoute} />
+          {/* Only with both: a route without a label (an older line, or one filed with
+              lookup off) shows nothing new, and a fallback "Route n" would present a
+              made-up name as what was filed. */}
+          {line.mileageRoute.routeLabel && line.mileageRoute.routeCount ? (
+            <p>
+              {t('line.routeChosen', {
+                label: line.mileageRoute.routeLabel,
+                count: line.mileageRoute.routeCount,
+              })}
+            </p>
+          ) : null}
+        </>
       ) : null}
 
       {unit && tiers.length === 1 && (

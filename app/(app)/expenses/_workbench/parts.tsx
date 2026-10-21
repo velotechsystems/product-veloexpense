@@ -34,7 +34,15 @@ import {
 } from '@tabler/icons-react';
 import type { inferRouterOutputs } from '@trpc/server';
 import { useLocale, useTranslations } from 'next-intl';
-import { type ComponentProps, type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  type ComponentProps,
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import {
   AttachmentDocument,
   useViewerZoom,
@@ -50,6 +58,7 @@ import {
   minorToMajorInput,
   sanitizeMoneyText,
 } from '@/lib/format';
+import { MAX_ROUTE_LABEL, MAX_ROUTES_OFFERED } from '@/lib/mileageRouteSchema';
 import { trpc } from '@/lib/trpc/client';
 import { useRefusalText } from '@/lib/trpc/refusal';
 import { useCoarsePointer } from '@/lib/useCoarsePointer';
@@ -61,6 +70,7 @@ import { MileageLineDetail, type MileageLineFields } from '../approvals/MileageL
 import { fieldsToClear, strategyFor } from './lineKinds';
 import { convertDistance, isValidDistance, MileageFields, useSettled } from './MileageFields';
 import { EMPTY_ROUTE, type RouteValue } from './RouteEditor';
+import { RouteLine } from './RouteLine';
 import {
   isReceiptDrag,
   type ReceiptDragPayload,
@@ -68,6 +78,7 @@ import {
   setReceiptDrag,
 } from './receiptDrag';
 import { StatementApplyDialog } from './StatementApplyDialog';
+import { useUnitToggle } from './useUnitToggle';
 
 export type ReportDetail = inferRouterOutputs<AppRouter>['expenses']['report'];
 export type ExpenseDetail = ReportDetail['expenses'][number];
@@ -696,6 +707,12 @@ export function ExpenseEditor({
   const [drafts, setDrafts] = useState<number[]>([]);
   const draftSeq = useRef(0);
   const addDraft = () => setDrafts((d) => [...d, draftSeq.current++]);
+  /**
+   * "Add line". Where focus goes when a route workspace closes on a draft line: Use this
+   * route and Cancel both take the draft away, and the dropdown that opened the workspace
+   * with it (NFR-12).
+   */
+  const addLineButton = useRef<HTMLButtonElement>(null);
   const removeDraft = (id: number) => setDrafts((d) => d.filter((x) => x !== id));
   /**
    * What each open draft row currently holds, so the projected totals below can price
@@ -985,6 +1002,16 @@ export function ExpenseEditor({
                       },
                     );
                   }}
+                  // The route workspace's Use this route (FR-5): one create, and the draft
+                  // goes only once it landed. A refusal rejects back into the workspace,
+                  // which stays open and says why — nothing is half-written.
+                  onCreate={async (data) => {
+                    setLineErrors(({ [d]: _drop, ...rest }) => rest);
+                    await lineCreate.mutateAsync({ expenseId: expense.id, ...data });
+                    removeDraft(d);
+                  }}
+                  defaultUnit={expense.mileageDefaultUnit ?? 'KM'}
+                  addLineButton={addLineButton}
                 />
               ))}
             </div>
@@ -995,6 +1022,7 @@ export function ExpenseEditor({
                the pane. `min-w-11` is inert here (`w-full`) and is kept for the pair's sake.
                A fine pointer keeps the 36px button at every width. */
             <Button
+              ref={addLineButton}
               size="sm"
               variant="outline"
               className="mt-2 pointer-coarse:min-h-11 w-full pointer-coarse:min-w-11"
@@ -2779,6 +2807,7 @@ function AttendeesEditor({
 }
 
 // ── Line-item row (view + edit) ───────────────────────────────────────────────
+
 function LineItemRow({
   line,
   expenseId,
@@ -2814,29 +2843,55 @@ function LineItemRow({
    * error because it looks like it worked.
    */
   const [saveError, setSaveError] = useState<string | null>(null);
-  /** This row's `lineItemUpdate` calls that have not settled yet. */
+  /**
+   * This row's `lineItemUpdate` calls that have not settled yet. While any is in flight the
+   * re-sync below holds, so a refetch carrying the server's copy from BEFORE the write
+   * cannot put the old figures back over the ones being written.
+   */
   const writesInFlight = useRef(0);
+  /**
+   * Set when Save sends and cleared when that write settles, so a double-click is ONE
+   * `lineItemUpdate` even before `isPending` has re-rendered the button.
+   */
+  const saveInFlight = useRef(false);
   const update = trpc.expenses.lineItemUpdate.useMutation({
     onSuccess: () => {
       setSaveError(null);
       onChange();
     },
     onError: (e) => setSaveError(e.message),
-    // Release the route hold once the LAST write has landed, either way. A route edit
-    // fires several writes — the stops, the measured legs, the measured distance — and
-    // releasing on the first to settle let a refetch re-sync the row onto a server copy
-    // that predated the later ones, putting the old From back on screen and then, via
-    // the measurement, back on the server. On failure the guard must not stick and
-    // freeze the row against every future server update.
+    onMutate: () => {
+      writesInFlight.current += 1;
+    },
+    // Released either way: a failed write must not freeze the row against every later
+    // server update.
+    onSettled: () => {
+      writesInFlight.current = Math.max(0, writesInFlight.current - 1);
+      saveInFlight.current = false;
+    },
+  });
+  /**
+   * The route workspace's one write on this line (FR-6): its own hook, so a refusal is
+   * said in the workspace (which stays open with it) rather than also on the row. It
+   * counts in `writesInFlight` like any other write of this row.
+   */
+  const acceptUpdate = trpc.expenses.lineItemUpdate.useMutation({
+    onSuccess: () => {
+      setSaveError(null);
+      onChange();
+    },
     onMutate: () => {
       writesInFlight.current += 1;
     },
     onSettled: () => {
       writesInFlight.current = Math.max(0, writesInFlight.current - 1);
-      if (writesInFlight.current === 0) routePending.current = false;
     },
   });
   const remove = trpc.expenses.lineItemRemove.useMutation({ onSuccess: onChange });
+  // Deduped by react-query: every row asking is one request for the page.
+  const routeLookup = trpc.mileageRoute.status.useQuery();
+  const routeAvailable = routeLookup.data?.available ?? false;
+  const mapAvailable = routeLookup.data?.mapAvailable ?? false;
 
   const [category, setCategory] = useState<string | null>(line.categoryId);
   const [amount, setAmount] = useState(minorToInput(line.amountMinor, currencyCode));
@@ -2845,11 +2900,48 @@ function LineItemRow({
   // in; the server converts to the rule's unit, so switching never changes which
   // band the distance falls into.
   const [distanceUnit, setDistanceUnit] = useState<'KM' | 'MI'>(line.mileageUnit ?? 'KM');
-  // From / stops / To. Shown under the row for a mileage line; the distance it
-  // measures lands in the field above rather than replacing it, so a traveller
-  // can still overwrite it.
+  // From / stops / To, shown under the row for a mileage line. With lookup on, the
+  // distance is whatever the route chosen in the picker measured; nothing types over it.
   const [route, setRoute] = useState<RouteValue>(
     (line.mileageRoute as RouteValue | null) ?? EMPTY_ROUTE,
+  );
+  /**
+   * Edit was pressed on a typed-path line, and neither Save nor Cancel has finished with it
+   * (FR-6, D3).
+   *
+   * A typed-path mileage line is LOCKED otherwise: its distance and unit are read-only, and
+   * nothing on the row can write them. This is what fixed "my route changed under me"
+   * (#577/#578) — every unit switch and blur used to autosave, so a half-made change
+   * reached the server. Now the draft lives here, and the one write is `saveMileage`, from
+   * the Save button. A line measured by its route has no lock at all: its route changes
+   * only through the workspace, and its unit toggle only changes what is shown.
+   */
+  const [editing, setEditing] = useState(false);
+  /**
+   * The server's line as it was when a Save succeeded, until a newer one arrives.
+   *
+   * A line with no saved distance stays in Edit (it has nothing to lock on) until the
+   * refetch brings the distance it was just given. In between, its draft still differs
+   * from the server's copy, so Save was enabled again and a second press sent a second
+   * write. Save stays disabled while the line on screen is the one this names.
+   */
+  const [savedOver, setSavedOver] = useState<LineItemDetail | null>(null);
+  const latestLine = useRef(line);
+  latestLine.current = line;
+  const justSaved = savedOver === line;
+  /**
+   * The distance a unit switch converts FROM, and its unit: the stored one, the one the
+   * chosen route measured, or the one typed.
+   *
+   * Converting the number already on screen instead would compound the rounding — 10.05 km
+   * is 6.24 mi, and 6.24 mi is 10.04 km — so KM → MI → KM would come back as a "change" that
+   * Save offers to write. Converting from the source each time lands back on it exactly.
+   * Null when the distance was cleared (a stop edit): there is nothing left to convert.
+   */
+  const distanceBase = useRef<{ distance: string; unit: 'KM' | 'MI' } | null>(
+    line.mileageDistance
+      ? { distance: line.mileageDistance, unit: line.mileageUnit ?? 'KM' }
+      : null,
   );
   /** Whether the distance was MEASURED rather than typed — the one fact that
    *  decides whether switching unit converts the number or reinterprets it. */
@@ -2912,22 +3004,21 @@ function LineItemRow({
     [routeKey],
   );
   /**
-   * Two INDEPENDENT reasons the re-sync must hold, tracked separately.
+   * Put the server's copy of the line on screen, discarding whatever the row holds.
    *
-   * One boolean could not express both: a route mutation settling while somebody is
-   * still typing in the distance field would have released the guard and let the
-   * reset land on their half-typed number. Whoever raised a hold releases only
-   * their own.
+   * The re-sync below calls it when the polled report genuinely changes the line, and
+   * Cancel calls it directly — so Cancel shows the LATEST server copy, including a change
+   * that landed while the row was being edited and the re-sync was holding.
    */
-  const numFocused = useRef(false);
-  const routePending = useRef(false);
-  useEffect(() => {
-    if (numFocused.current || routePending.current || writesInFlight.current > 0) return;
+  const applyServerCopy = useCallback(() => {
     setCategory(line.categoryId);
     setAmount(minorToInput(line.amountMinor, currencyCode));
     setKm(line.mileageDistance ?? '');
     setDistanceUnit(line.mileageUnit ?? 'KM');
     setRoute(routeFromServer);
+    distanceBase.current = line.mileageDistance
+      ? { distance: line.mileageDistance, unit: line.mileageUnit ?? 'KM' }
+      : null;
   }, [
     line.categoryId,
     line.amountMinor,
@@ -2937,32 +3028,76 @@ function LineItemRow({
     currencyCode,
   ]);
 
-  // A line item is category + (amount | mileage km); tax lives on the expense.
-  const commit = (over?: {
-    category?: string | null;
-    amount?: string;
-    km?: string;
-    route?: RouteValue;
-  }) => {
-    const cat = over?.category !== undefined ? over.category : category;
-    if (!cat) return;
-    if (isMileage(cat)) {
-      const kmVal = (over?.km ?? km).trim();
-      if (!/^\d+(\.\d{1,2})?$/.test(kmVal)) return;
-      const stops = over?.route ?? route;
-      update.mutate({
-        id: line.id,
-        categoryId: cat,
-        mileageDistance: kmVal,
-        mileageUnit: distanceUnit,
-        // The stops ride along with every commit. The server keeps an unmentioned
-        // route as-is, so omitting it would leave the ones just typed unsaved; an
-        // explicit null is how clearing the last stop gets persisted.
-        mileageRoute: stops.stops.some((st) => st.description.trim()) ? stops : null,
-      });
-      return;
-    }
-    const amt = inputToMinor(over?.amount ?? amount, currencyCode, locale);
+  /**
+   * Where a mileage line is in its life (FR-6).
+   *
+   *   · `route` — lookup on, and the line is measured by its route: its distance is what
+   *     its stored legs measure in its stored unit (`useUnitToggle`), or it has no distance
+   *     yet (a line just switched into a mileage category, which gets its route from the
+   *     dropdown as a new line does). No lock, no Save: the workspace's Use this route is
+   *     the write, and KM/MI only changes what is shown.
+   *   · `locked` / `editing` — the TYPED path: lookup off, or a distance that is not the
+   *     legs' (an override, a route with no usable legs, a distance typed before lookup
+   *     was on). Locked once it has a saved distance; editing after Edit — and from the
+   *     start with no saved distance and lookup off, Save-only, as there is nothing to
+   *     cancel back to.
+   */
+  const hasSavedDistance = line.mileageDistance != null;
+  const unitView = useUnitToggle({
+    route: line.mileageRoute ? routeFromServer : null,
+    distance: line.mileageDistance,
+    unit: line.mileageUnit,
+  });
+  const routePath = routeAvailable && (!hasSavedDistance || unitView.derived);
+  const mileageMode: 'route' | 'locked' | 'editing' = routePath
+    ? 'route'
+    : editing || !hasSavedDistance
+      ? 'editing'
+      : 'locked';
+  const mileageEditing = isMileage() && mileageMode === 'editing';
+
+  /**
+   * Three INDEPENDENT reasons the re-sync must hold, any one of which is enough:
+   *
+   *   · a mileage line is being edited — the draft is the person's until Save or Cancel;
+   *   · the amount field is focused — a reset would land on a half-typed number;
+   *   · one of this row's writes is in flight — its refetch may predate it.
+   *
+   * Read through refs, and `editing` deliberately NOT a dependency of the effect: adding
+   * it would re-run the effect the moment Save locks the row, and put the server's
+   * pre-save figures back on screen until the refetch lands. A server change that arrives
+   * while the hold is up is not lost: Cancel applies the latest copy, and Save's refetch
+   * brings it.
+   */
+  const numFocused = useRef(false);
+  const holdForEdit = useRef(false);
+  holdForEdit.current = mileageEditing;
+  useEffect(() => {
+    if (holdForEdit.current || numFocused.current || writesInFlight.current > 0) return;
+    applyServerCopy();
+  }, [applyServerCopy]);
+
+  // A report that turns read-only (submitted) ends the edit as Cancel would, so the row
+  // cannot come back in Edit mode, or holding a draft, if the report is editable again.
+  useEffect(() => {
+    if (editable) return;
+    setEditing(false);
+    applyServerCopy();
+  }, [editable, applyServerCopy]);
+
+  /**
+   * The autosave for a line that is NOT mileage: its amount, on blur. Tax lives on the
+   * expense.
+   *
+   * A mileage line can never get a write out of here, and that is by construction rather
+   * than by a flag: this returns before anything else for a mileage category, and the
+   * only write it can build carries an amount and nothing about distance, unit or route.
+   * A mileage line's one write is `saveMileage`, behind the Save button.
+   */
+  const commit = () => {
+    const cat = category;
+    if (!cat || isMileage(cat)) return;
+    const amt = inputToMinor(amount, currencyCode, locale);
     if (amt == null) {
       /**
        * NOT a silent return, which is what this was.
@@ -2980,6 +3115,96 @@ function LineItemRow({
     update.mutate({ id: line.id, categoryId: cat, amountMinor: amt });
   };
 
+  /**
+   * Whether the draft differs from the stored line — Save offers nothing otherwise.
+   *
+   * Compared as numbers, so "100" stored and "100.00" on screen are the same distance. The
+   * route is not part of it: the typed path never changes the route (only the workspace's
+   * accept does), and Save never sends it.
+   */
+  const mileageChanged =
+    !hasSavedDistance ||
+    Number(km.trim()) !== Number(line.mileageDistance) ||
+    distanceUnit !== (line.mileageUnit ?? 'KM');
+  const canSaveMileage = isValidDistance(km) && mileageChanged && !justSaved;
+
+  /**
+   * The typed path's mileage write, and its only one (FR-6). Called from Save and nowhere
+   * else.
+   *
+   * One `lineItemUpdate` carrying the distance and the unit together (#577). NEVER the
+   * route: only the workspace's Use this route writes `mileageRoute` (security A1), and an
+   * absent key leaves the stored route — and its path — exactly as it is.
+   *
+   * Last writer wins: a second tab saving the same line in between is overwritten without
+   * a warning. Accepted, and stated in the plan.
+   *
+   * A refusal leaves the row in Edit with the person's changes in place, and the server's
+   * own sentence on the row (the hook's `onError`); only a success locks it again.
+   */
+  const saveMileage = () => {
+    const cat = category ?? line.categoryId;
+    if (!cat || !isMileage(cat) || !canSaveMileage || update.isPending || saveInFlight.current) {
+      return;
+    }
+    saveInFlight.current = true;
+    setSaveError(null);
+    update.mutate(
+      {
+        id: line.id,
+        categoryId: cat,
+        mileageDistance: km.trim(),
+        mileageUnit: distanceUnit,
+      },
+      {
+        onSuccess: () => {
+          setSavedOver(latestLine.current);
+          setEditing(false);
+        },
+      },
+    );
+  };
+
+  /**
+   * Edit route: open the line from the server's copy, which is what the locked row shows
+   * and what Cancel returns to, rather than whatever the row last held.
+   */
+  const startEdit = () => {
+    applyServerCopy();
+    setSavedOver(null);
+    setEditing(true);
+  };
+
+  /** Cancel: back to the stored line, exactly. Nothing is sent. */
+  const cancelEdit = () => {
+    applyServerCopy();
+    setSaveError(null);
+    setEditing(false);
+  };
+
+  /**
+   * The route workspace's Use this route on this line (FR-5, FR-6): ONE update carrying
+   * the distance, the unit and the route — its stops, legs, label, position, count and the
+   * place IDs it passes through (`via`), never a path, a coordinate or a stamp — as
+   * `saveMileage` used to. Rejects with the server's error, which keeps the workspace open
+   * with it.
+   */
+  const acceptRoute = async (payload: {
+    mileageDistance: string;
+    mileageUnit: 'KM' | 'MI';
+    mileageRoute: RouteValue;
+  }) => {
+    const cat = category ?? line.categoryId;
+    if (!cat) return;
+    await acceptUpdate.mutateAsync({
+      id: line.id,
+      categoryId: cat,
+      mileageDistance: payload.mileageDistance,
+      mileageUnit: payload.mileageUnit,
+      mileageRoute: payload.mileageRoute,
+    });
+  };
+
   if (!editable) {
     return (
       <LineItemReadOnlyRow
@@ -2992,26 +3217,15 @@ function LineItemRow({
   }
 
   // Single row: [icon] · category · amount* · trash. flex-wrap so it only stacks
-  // on a very narrow pane. Autosave on blur; while the amount field is focused,
-  // numFocused suppresses the server re-sync (see above).
+  // on a very narrow pane. A non-mileage amount autosaves on blur; while the field is
+  // focused, numFocused suppresses the server re-sync (see above). A mileage line has
+  // no autosave at all: it is locked, or being edited towards one Save.
   const onNumFocus = () => {
     numFocused.current = true;
   };
   const onNumBlur = () => {
     numFocused.current = false;
     commit();
-  };
-  /**
-   * A route edit is an edit — hold the re-sync open across it.
-   *
-   * The guard used to be raised only by the numeric field's focus/blur, so picking a
-   * place or adding a stop was completely unprotected: the commit it triggered
-   * refetched the report, and the reset above landed on top of the edit in flight.
-   * Released when the row's own mutation settles, which is the point the server and
-   * the screen agree again.
-   */
-  const holdForRouteEdit = () => {
-    routePending.current = true;
   };
   // One definition, two placements: inline for a mileage line (inside MileageFields,
   // to stay on the first row) and directly after the amount for every other line.
@@ -3039,7 +3253,7 @@ function LineItemRow({
    * figures and a desktop the controls. P18 brought the line block back below `lg`, so the
    * editable row now renders at every width and the read-only row only on a SUBMITTED
    * report (the early return above). One face means no width at which this component's
-   * eight pieces of state and two re-sync guards could unmount mid-edit, and exactly one
+   * draft state and its re-sync guards could unmount mid-edit, and exactly one
    * `line.amount`-labelled control per saved line, as `e2e/support/workbench.ts` needs.
    *
    * Layout-identical at `lg`+: the cloak was `contents` (no box), and the twin was
@@ -3071,6 +3285,11 @@ function LineItemRow({
           items={categoryItems}
           value={category}
           onValueChange={(v) => {
+            // A category change in the middle of a mileage edit CANCELS the edit first,
+            // then writes the category alone (operator ruling). The half-made route,
+            // distance or unit is never written along with it: the category write below
+            // carries no mileage field, and the server re-derives the rest.
+            if (mileageEditing) cancelEdit();
             // What a category change invalidates is DECLARED by the two strategies
             // rather than derived from one boolean here — see `fieldsToClear`.
             const clearing = fieldsToClear(capsOf(category), capsOf(v));
@@ -3124,64 +3343,120 @@ function LineItemRow({
       {isMileage() ? (
         // Distance-based: enter a distance in either unit; the amount is computed
         // server-side against the rule in force and shown read-only alongside.
-        <MileageFields
-          distance={km}
-          onDistanceChange={setKm}
-          unit={distanceUnit}
-          onUnitChange={(u) => {
-            // A MEASURED distance is restated in the new unit; a typed one is
-            // reinterpreted. 100 km measured by the route IS 62.14 mi, whereas
-            // somebody who typed 100 and pressed MI meant a hundred miles.
-            const next = routeMeasured ? convertDistance(km, distanceUnit, u) : km;
-            setDistanceUnit(u);
-            if (next !== km) setKm(next);
-            // Commit immediately: the unit changes the amount, and leaving it
-            // uncommitted would show a figure the server disagrees with.
-            if (isValidDistance(next)) {
-              update.mutate({
-                id: line.id,
-                categoryId: category ?? line.categoryId,
-                mileageDistance: next.trim(),
-                mileageUnit: u,
-                mileageRoute: route.stops.some((st) => st.description.trim()) ? route : null,
-              });
+        //
+        // Every handler below changes the DRAFT only, or (a route line's unit) the view.
+        // None of them writes — not a typed distance, not its blur, not a unit switch.
+        // While locked, the fields are disabled and these cannot fire; the guards on
+        // `mileageEditing` are the belt to that brace. The route's one write is the
+        // workspace's Use this route (`acceptRoute`).
+        <>
+          <MileageFields
+            mode={mileageMode}
+            onEdit={startEdit}
+            distance={routePath ? unitView.shownDistance : km}
+            onDistanceChange={(v) => {
+              if (!mileageEditing) return;
+              setKm(v);
+              distanceBase.current = v.trim() ? { distance: v, unit: distanceUnit } : null;
+            }}
+            unit={routePath ? unitView.shownUnit : distanceUnit}
+            onUnitChange={(u) => {
+              // Measured by its route: shown in the other unit, converted from the leg
+              // metres, and NOTHING written (operator, 2026-10-16).
+              if (routePath) {
+                unitView.show(u);
+                return;
+              }
+              if (!mileageEditing) return;
+              // A MEASURED distance is restated in the new unit; a typed one is
+              // reinterpreted. 100 km measured by the route IS 62.14 mi, whereas
+              // somebody who typed 100 and pressed MI meant a hundred miles. Restated
+              // from its source (see `distanceBase`), so switching back is exact.
+              const base = distanceBase.current;
+              let next = km;
+              if (routeMeasured) {
+                next = !base
+                  ? convertDistance(km, distanceUnit, u)
+                  : u === base.unit
+                    ? base.distance
+                    : convertDistance(base.distance, base.unit, u);
+              } else {
+                distanceBase.current = km.trim() ? { distance: km, unit: u } : null;
+              }
+              setDistanceUnit(u);
+              if (next !== km) setKm(next);
+            }}
+            route={route}
+            // A saved line's route changes only through its route control's workspace
+            // (`acceptRoute`); the fields have no stops to edit.
+            onRouteChange={() => {}}
+            // The amount used to be a separate span showing `line.amountMinor` — the
+            // SAVED figure, which is right until the distance is edited and then sits
+            // there contradicting it until a blur commits. MileageFields owns the
+            // figure now: it shows the saved one while the distance is untouched and
+            // the freshly-priced one as soon as it is not.
+            pricing={{
+              expenseId,
+              categoryId: category ?? line.categoryId,
+              lineItemId: line.id,
+              currency: { code: currencyCode, symbol: currencySymbol },
+              saved:
+                line.mileageDistance != null
+                  ? { amountMinor: line.amountMinor, distance: line.mileageDistance }
+                  : null,
+            }}
+            // Rendered inside MileageFields so it stays on the first line: the route
+            // block is full-width, and anything after it wraps below.
+            trailing={deleteButton}
+            routeControl={
+              routeAvailable ? (
+                <RouteLine
+                  lineItemId={line.id}
+                  route={line.mileageRoute ? routeFromServer : null}
+                  unit={line.mileageUnit ?? 'KM'}
+                  distanceText={
+                    line.mileageDistance
+                      ? t('line.distanceValue', {
+                          distance: line.mileageDistance,
+                          unit: line.mileageUnit === 'MI' ? t('line.mi') : t('line.km'),
+                        })
+                      : ''
+                  }
+                  mapAvailable={mapAvailable}
+                  pricing={{
+                    expenseId,
+                    categoryId: category ?? line.categoryId,
+                    lineItemId: line.id,
+                    currency: { code: currencyCode, symbol: currencySymbol },
+                  }}
+                  // A typed-path edit in progress owns the line until Save or Cancel.
+                  disabled={mileageEditing}
+                  onAccept={acceptRoute}
+                />
+              ) : undefined
             }
-          }}
-          route={route}
-          onRouteChange={(next) => {
-            holdForRouteEdit();
-            setRoute(next);
-            // Persist the stops as they change, not only when a distance arrives. A
-            // route whose distance is already correct produces no `onDistance`, so
-            // without this an edited From/To was never written.
-            if (isValidDistance(km)) commit({ route: next });
-          }}
-          onMeasuredDistance={(d) => {
-            holdForRouteEdit();
-            setKm(d);
-            commit({ km: d });
-          }}
-          onDistanceFocus={onNumFocus}
-          onDistanceBlur={onNumBlur}
-          // The amount used to be a separate span showing `line.amountMinor` — the
-          // SAVED figure, which is right until the distance is edited and then sits
-          // there contradicting it until a blur commits. MileageFields owns the
-          // figure now: it shows the saved one while the distance is untouched and
-          // the freshly-priced one as soon as it is not.
-          pricing={{
-            expenseId,
-            categoryId: category ?? line.categoryId,
-            lineItemId: line.id,
-            currency: { code: currencyCode, symbol: currencySymbol },
-            saved:
-              line.mileageDistance != null
-                ? { amountMinor: line.amountMinor, distance: line.mileageDistance }
-                : null,
-          }}
-          // Rendered inside MileageFields so it stays on the first line: the From/To
-          // block is full-width, and anything after it wraps below.
-          trailing={deleteButton}
-        />
+          />
+          {/* Edit mode's Save and Cancel, where Add line and Cancel sit on a new line and in
+            the same order. Save is natively disabled until the distance is valid and
+            something differs from the stored line. A line with no saved distance has
+            nothing to cancel back to, so it offers Save alone. */}
+          {mileageEditing && (
+            <div className="flex w-full justify-end gap-2">
+              {hasSavedDistance && (
+                <Button size="sm" variant="ghost" onClick={cancelEdit}>
+                  {t('addLine.cancel')}
+                </Button>
+              )}
+              <Button
+                size="sm"
+                disabled={update.isPending || !canSaveMileage}
+                onClick={saveMileage}
+              >
+                {t('addLine.saveEdit')}
+              </Button>
+            </div>
+          )}
+        </>
       ) : (
         <>
           <MoneyInput
@@ -3212,18 +3487,24 @@ function LineItemRow({
 }
 
 /**
- * A line's route as stop names only, whichever shape `expenses.report` sent it in.
+ * A line's route as stop names — plus the chosen route's label and how many routes were
+ * offered, when stored — whichever shape `expenses.report` sent it in.
  *
  * A writer of the line (the submitter, the expense's owner) gets the stored route as is —
  * the editor re-saves what it is given — and every other reader gets the server's
- * stops-only trim. Display needs the names and nothing else, so both are rebuilt by name
- * here rather than cast: a stored route is whatever the write path accepted, and anything
- * not shaped like stops reads as no route. (A route the server could not parse at all is
- * already flagged `mileageRouteUnavailable`, which `MileageLineDetail` says out loud.)
+ * trim. Display needs the names, the label and the count and nothing else, so both are
+ * rebuilt by name here rather than cast: anything not shaped like stops reads as no route,
+ * and a label or count that is not usable is left out (never shown as null). (A route the
+ * server could not parse at all is already flagged `mileageRouteUnavailable`, which
+ * `MileageLineDetail` says out loud.)
  */
 function routeStopsOf(route: unknown): MileageLineFields['mileageRoute'] {
   if (route == null || typeof route !== 'object') return null;
-  const stops = (route as { stops?: unknown }).stops;
+  const { stops, routeLabel, routeCount } = route as {
+    stops?: unknown;
+    routeLabel?: unknown;
+    routeCount?: unknown;
+  };
   if (!Array.isArray(stops)) return null;
   const named: { description: string }[] = [];
   for (const stop of stops) {
@@ -3231,7 +3512,19 @@ function routeStopsOf(route: unknown): MileageLineFields['mileageRoute'] {
     if (typeof description !== 'string') return null;
     named.push({ description });
   }
-  return { stops: named };
+  const label = typeof routeLabel === 'string' ? routeLabel.trim() : '';
+  const count =
+    typeof routeCount === 'number' &&
+    Number.isInteger(routeCount) &&
+    routeCount >= 1 &&
+    routeCount <= MAX_ROUTES_OFFERED
+      ? routeCount
+      : undefined;
+  return {
+    stops: named,
+    ...(label && label.length <= MAX_ROUTE_LABEL ? { routeLabel: label } : {}),
+    ...(count !== undefined ? { routeCount: count } : {}),
+  };
 }
 
 /**
@@ -3304,6 +3597,9 @@ function NewLineForm({
   onDraftChange,
   onCancel,
   onSave,
+  onCreate,
+  defaultUnit,
+  addLineButton,
 }: {
   categoryItems: {
     value: string;
@@ -3338,16 +3634,32 @@ function NewLineForm({
     mileageUnit?: 'KM' | 'MI';
     mileageRoute?: RouteValue;
   }) => void;
+  /**
+   * The route workspace's one write (lookup on): resolves once the line exists, rejects
+   * with the server's error. Carries what Add line sends for a mileage line.
+   */
+  onCreate: (data: {
+    categoryId: string;
+    mileageDistance: string;
+    mileageUnit: 'KM' | 'MI';
+    mileageRoute: RouteValue;
+  }) => Promise<void>;
+  /** The unit a new mileage line opens and prices in: the expense owner's (FR-11). */
+  defaultUnit: 'KM' | 'MI';
+  /** Where focus goes when the route workspace takes this draft away. */
+  addLineButton: React.RefObject<HTMLButtonElement | null>;
 }) {
   const t = useTranslations('expenses');
   const [category, setCategory] = useState<string | null>(null);
   const [km, setKm] = useState('');
-  // A new line is entered in whatever unit the traveller chooses. It used not to
-  // be captured here at all, so the server fell back to the RULE's unit and a
-  // distance meant as miles was priced as kilometres.
-  const [distanceUnit, setDistanceUnit] = useState<'KM' | 'MI'>('KM');
-  const [route, setRoute] = useState<RouteValue>(EMPTY_ROUTE);
-  const routeMeasured = route.stops.some((st) => st.description.trim());
+  // A new line is entered in whatever unit the traveller chooses, starting from the
+  // owner's default. It used not to be captured here at all, so the server fell back to
+  // the RULE's unit and a distance meant as miles was priced as kilometres.
+  const [distanceUnit, setDistanceUnit] = useState<'KM' | 'MI'>(defaultUnit);
+  // With lookup on a mileage line is the route dropdown alone, and the workspace it opens
+  // is where the line is added or abandoned — so this row offers no Add line or Cancel.
+  const routeLookup = trpc.mileageRoute.status.useQuery();
+  const routed = routeLookup.data?.available ?? false;
 
   const isMileage = categoryItems.find((c) => c.value === category)?.isMileage ?? false;
   const kmValid = isValidDistance(km);
@@ -3435,14 +3747,12 @@ function NewLineForm({
             distance={km}
             onDistanceChange={setKm}
             unit={distanceUnit}
-            onUnitChange={(u) => {
-              // Same rule as the edit row: convert what the route measured, leave
-              // what a person typed.
-              if (routeMeasured) setKm(convertDistance(km, distanceUnit, u));
-              setDistanceUnit(u);
-            }}
-            route={route}
-            onRouteChange={setRoute}
+            // A typed distance: a new unit reinterprets it, nothing is converted. With
+            // lookup on, the route is chosen in the workspace, whose Use this route
+            // creates the line (`onAccept`); this row never holds a route of its own.
+            onUnitChange={setDistanceUnit}
+            route={EMPTY_ROUTE}
+            onRouteChange={() => {}}
             // What the distance is worth, shown before the line is added rather
             // than discovered after it. No saved figure here — nothing is saved yet.
             pricing={{
@@ -3450,37 +3760,43 @@ function NewLineForm({
               categoryId: category,
               currency: { code: currencyCode, symbol: currencySymbol },
             }}
+            onAccept={async (payload) => {
+              if (!category) return;
+              await onCreate({ categoryId: category, ...payload });
+            }}
+            onAbandon={onCancel}
+            finalFocus={addLineButton}
           />
         )}
       </div>
       {/* Only a mileage row has anything left to confirm. Everything else committed when its
-          category was chosen, so a save button there would be a button that does nothing. */}
-      <div className="flex justify-end gap-2">
-        <Button size="sm" variant="ghost" onClick={onCancel}>
-          {t('addLine.cancel')}
-        </Button>
-        {isMileage && (
-          <Button
-            size="sm"
-            disabled={pending || !canSave}
-            onClick={() => {
-              if (!category || !kmValid) return;
-              onSave({
-                categoryId: category,
-                mileageDistance: km.trim(),
-                // The unit travels with the distance, or the server prices the
-                // number against the rule's unit and quietly gets it wrong.
-                mileageUnit: distanceUnit,
-                // Only when a route was actually measured — an empty pair of
-                // blank stops is not evidence of anything.
-                ...(route.stops.some((st) => st.description.trim()) ? { mileageRoute: route } : {}),
-              });
-            }}
-          >
-            {t('addLine.save')}
+          category was chosen, so a save button there would be a button that does nothing.
+          A routed mileage row confirms in its workspace instead. */}
+      {!(isMileage && routed) && (
+        <div className="flex justify-end gap-2">
+          <Button size="sm" variant="ghost" onClick={onCancel}>
+            {t('addLine.cancel')}
           </Button>
-        )}
-      </div>
+          {isMileage && (
+            <Button
+              size="sm"
+              disabled={pending || !canSave}
+              onClick={() => {
+                if (!category || !kmValid) return;
+                onSave({
+                  categoryId: category,
+                  mileageDistance: km.trim(),
+                  // The unit travels with the distance, or the server prices the
+                  // number against the rule's unit and quietly gets it wrong.
+                  mileageUnit: distanceUnit,
+                });
+              }}
+            >
+              {t('addLine.save')}
+            </Button>
+          )}
+        </div>
+      )}
     </div>
   );
 }

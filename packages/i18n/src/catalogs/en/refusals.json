@@ -30,5 +30,10 @@
   },
   "people": {
     "directoryManaged": "{fields}: these come from Google Workspace for this person, so a change here would be undone by the next directory sync. Change them in Google instead."
+  },
+  "mileage": {
+    "noRoadNear": "No road or address was found near that point, so the route was left as it was. Drop the point closer to a road.",
+    "dragApisUnavailable": "The route cannot pass through a dropped point yet: the Maps Platform key may not use {apis}. An administrator can enable this in the Google Cloud console. You can still route by your stops.",
+    "viaPlaceRefused": "The route cannot pass through that point, so it was left as it was. Drop the point somewhere else on the road."
   }
 }
