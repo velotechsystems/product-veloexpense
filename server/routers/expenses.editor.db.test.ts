@@ -757,7 +757,9 @@ describe.skipIf(!process.env.DATABASE_URL)('expenses report-editor (integration)
           { description: '100 King St W, Toronto', placeId: 'place-a' },
           { description: '1 Yonge St, Toronto', placeId: 'place-b' },
         ],
-        legs: [{ distance: '4.20' }],
+        // The shape the editor stores; the route is checked on write since
+        // mileage-route-pick-on-map, so a made-up leg would now be refused.
+        legs: [{ fromPlaceId: 'place-a', toPlaceId: 'place-b', meters: 4200 }],
       };
       const { id: lineId } = await caller.lineItemCreate({
         expenseId: previewExpenseId,

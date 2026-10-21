@@ -279,7 +279,9 @@ describe("mileage and the traveller's country (w2-10)", () => {
     const before = process.env.GOOGLE_PLACES_API_KEY;
     delete process.env.GOOGLE_PLACES_API_KEY;
     try {
-      expect(await route.status()).toEqual({ available: false });
+      // eos batch 5 (ExpenseOS #591): the status also says whether a map can be drawn —
+      // never without lookup.
+      expect(await route.status()).toEqual({ available: false, mapAvailable: false });
       expect(
         await route.searchPlaces({ query: '100 King St', sessionToken: '00000000-0000-4000-8000-000000000001' }),
       ).toEqual({ available: false, items: [], error: null });

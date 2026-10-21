@@ -151,6 +151,71 @@ describe('<MileageLineDetail>', () => {
     expect(screen.getByText('Montréal → Laval → Montréal')).toBeInTheDocument();
   });
 
+  const STOPS = [{ description: 'Toronto' }, { description: 'Ottawa' }];
+
+  it('says which route was chosen when filed, and that it was the only one offered', () => {
+    show(line({ mileageRoute: { stops: STOPS, routeLabel: 'Hwy 401', routeCount: 1 } }));
+    expect(screen.getByText('Toronto → Ottawa')).toBeInTheDocument();
+    expect(
+      screen.getByText('Route chosen when filed: via Hwy 401 · 1 route offered'),
+    ).toBeInTheDocument();
+  });
+
+  it('counts three routes offered in the plural', () => {
+    show(line({ mileageRoute: { stops: STOPS, routeLabel: 'Hwy 7', routeCount: 3 } }));
+    expect(
+      screen.getByText('Route chosen when filed: via Hwy 7 · 3 routes offered'),
+    ).toBeInTheDocument();
+  });
+
+  it('places the chosen route under the stops', () => {
+    const { container } = show(
+      line({ mileageRoute: { stops: STOPS, routeLabel: 'Hwy 401', routeCount: 3 } }),
+    );
+    const lines = [...container.querySelectorAll('p')].map((p) => p.textContent);
+    expect(lines.indexOf('Route chosen when filed: via Hwy 401 · 3 routes offered')).toBe(
+      lines.indexOf('Toronto → Ottawa') + 1,
+    );
+  });
+
+  it('shows a label as text, never as markup', () => {
+    const { container } = show(
+      line({ mileageRoute: { stops: STOPS, routeLabel: '<b>via</b> {count}', routeCount: 2 } }),
+    );
+    expect(container.querySelector('b')).toBeNull();
+    expect(
+      screen.getByText('Route chosen when filed: via <b>via</b> {count} · 2 routes offered'),
+    ).toBeInTheDocument();
+  });
+
+  it.each([
+    ['no label', { routeCount: 3 }],
+    ['no count', { routeLabel: 'Hwy 401' }],
+    ['neither — an older line, or one filed with lookup off', {}],
+  ])('adds nothing new with %s', (_, chosen) => {
+    show(line({ mileageRoute: { stops: STOPS, ...chosen } }));
+    expect(screen.getByText('Toronto → Ottawa')).toBeInTheDocument();
+    expect(screen.queryByText(/chosen|offered|via/)).not.toBeInTheDocument();
+  });
+
+  it('says which route was chosen in French, with the French plural', () => {
+    const one = show(
+      line({ mileageRoute: { stops: STOPS, routeLabel: '401', routeCount: 1 } }),
+      'fr-CA',
+    );
+    expect(fold(one.container.textContent)).toContain(
+      'Itinéraire choisi à la soumission : via 401 · 1 itinéraire proposé',
+    );
+    one.unmount();
+    const three = show(
+      line({ mileageRoute: { stops: STOPS, routeLabel: '401', routeCount: 3 } }),
+      'fr-CA',
+    );
+    expect(fold(three.container.textContent)).toContain(
+      'Itinéraire choisi à la soumission : via 401 · 3 itinéraires proposés',
+    );
+  });
+
   it('says the route is unavailable when the server could not read it', () => {
     show(line({ mileageRouteUnavailable: true }));
     expect(screen.getByText('Route unavailable')).toBeInTheDocument();

@@ -26,13 +26,19 @@ import { DEFAULT_LOCALE as CATALOG_LOCALE } from '@expenseos/i18n';
  * the naive fix (never re-sync) breaks extraction results appearing without a
  * manual refresh, which is what the effect is for.
  *
- * On mutation coverage, stated plainly: removing BOTH fix mechanisms (the
- * value-stable `routeFromServer` dep and the `routePending` hold) fails the first test.
- * Removing either ONE does not, because in this scenario each is independently
- * sufficient. They are both kept because they cover different windows in
- * production — `routePending` spans the gap between the edit and the write landing,
- * `routeKey` covers every refetch after that — but this test cannot distinguish
- * them, and pretending otherwise would overstate what it proves.
+ * A saved mileage line on the TYPED path (here: a route with no legs, so its distance is
+ * not the route's) is LOCKED until Edit, and its draft is held while it is being edited
+ * (FR-6) — that hold replaced the old `routePending` one, which spanned a chain of
+ * autosaves that no longer exists. Nothing is written until Save, so the question these
+ * answer is narrower: does a refetch leave an edit in progress alone, does Save's result
+ * stay on screen until the server's copy arrives, and does a genuine server change still
+ * land on a locked row? (A line measured by its route has no draft at all: its route
+ * changes only through the workspace.)
+ *
+ * On mutation coverage, stated plainly: the first test fails only when BOTH the edit
+ * hold and the value-stable `routeFromServer` dep are removed, because a refetch whose
+ * route is merely a new object is stopped by either. "Holds a genuine server change
+ * during an edit" is the one that needs the edit hold on its own.
  */
 
 const h = vi.hoisted(() => ({
@@ -43,7 +49,8 @@ const h = vi.hoisted(() => ({
    * the other tests here describe a row whose writes never settle.
    */
   lifecycle: false,
-  lineOpts: null as null | { onMutate?: () => void; onSettled?: () => void },
+  /** Settle the last `lineItemUpdate` as a success, the way a real network eventually does. */
+  settle: () => {},
 }));
 
 vi.mock('next-intl', () => ({
@@ -54,14 +61,22 @@ vi.mock('next-intl', () => ({
 vi.mock('@/lib/trpc/client', () => {
   const procedure = (name: string) => ({
     useQuery: () => ({ data: undefined, isLoading: false, isFetching: false, error: null }),
-    useMutation: (opts?: { onMutate?: () => void; onSettled?: () => void }) => ({
+    useMutation: (opts?: {
+      onMutate?: () => void;
+      onSuccess?: () => void;
+      onSettled?: () => void;
+    }) => ({
       isPending: false,
-      mutate: (vars: unknown) => {
+      mutate: (vars: unknown, perCall?: { onSuccess?: () => void }) => {
         if (name !== 'lineItemUpdate') return;
         h.updates.push(vars);
         if (h.lifecycle && opts) {
-          h.lineOpts = opts;
           opts.onMutate?.();
+          h.settle = () => {
+            opts.onSuccess?.();
+            perCall?.onSuccess?.();
+            opts.onSettled?.();
+          };
         }
       },
       mutateAsync: vi.fn(),
@@ -74,13 +89,14 @@ vi.mock('@/lib/trpc/client', () => {
     trpc: {
       expenses: router,
       mileageRoute: {
-        // Available, so RouteEditor renders one input per stop and the stop set
-        // is observable rather than collapsed into a summary line.
+        // Available, so the line carries its route control; no browser key, so no map.
         status: { useQuery: () => ({ data: { available: true }, isLoading: false }) },
+        recentRoutes: { useQuery: () => ({ data: undefined, isLoading: false }) },
         searchPlaces: {
           useQuery: () => ({ data: { items: [], error: null }, isFetching: false, error: null }),
         },
-        computeRoute: { useMutation: () => ({ mutate: vi.fn(), isPending: false }) },
+        computeRoutes: { useMutation: () => ({ mutate: vi.fn(), isPending: false }) },
+        lineRoutePath: { useMutation: () => ({ mutateAsync: vi.fn(), isPending: false }) },
       },
     },
   };
@@ -156,8 +172,8 @@ function renderEditor(l: ReturnType<typeof line>) {
   );
 }
 
-/** The route's stop inputs, which carry stable aria-labels (from / to / stop). */
-const stopInput = (label: string) => screen.getByLabelText(label) as HTMLInputElement;
+/** The typed distance. */
+const distanceInput = () => screen.getByLabelText('line.distance') as HTMLInputElement;
 
 /** Re-render with `l`, standing in for a report refetch landing. */
 const refetchWith = (rerender: (ui: React.ReactElement) => void, l: ReturnType<typeof line>) =>
@@ -177,86 +193,96 @@ const refetchWith = (rerender: (ui: React.ReactElement) => void, l: ReturnType<t
 beforeEach(() => {
   h.updates.length = 0;
   h.lifecycle = false;
-  h.lineOpts = null;
+  h.settle = () => {};
 });
 
+const editRoute = () => screen.getByRole('button', { name: 'line.editDistance' });
+
 describe('line-row re-sync across a report refetch', () => {
-  it('does not discard an ADDED STOP when a refetch brings the old route back', async () => {
+  it('does not discard a distance being edited when a refetch brings the same line back', async () => {
     /**
-     * The reported scenario, and the only interaction that actually reaches the
-     * row's route state.
-     *
-     * Typing into a stop does NOT: PlaceInput keeps its own `query` while open and
-     * discards it on blur unless a suggestion is picked, so a typed-but-unpicked
-     * address never leaves that component. An earlier version of this test typed
-     * into "to" and passed against the BUG as well as the fix — it was watching
-     * PlaceInput's internal state, not the row's.
-     *
-     * Adding a stop goes through `onChange` to the parent, so the third input is
-     * real evidence of the row's state. Before the fix, the refetch that the
-     * accompanying commit triggers reset the route to the server's 2-stop copy and
-     * the new stop vanished — which is also why no re-measure fired: RouteEditor
-     * still had the old stop set recorded as measured.
+     * The reported scenario: adding a line refetches the whole report, and every line comes
+     * back as a NEW route object with the same value. The row being edited must keep what
+     * is being typed into it — and the edit wrote nothing for the refetch to be racing.
      */
     const user = userEvent.setup();
     const { rerender } = renderEditor(line());
-    expect(screen.queryAllByLabelText(/^(from|to|stop)$/)).toHaveLength(2);
+    await user.click(editRoute());
+    await user.clear(distanceInput());
+    await user.type(distanceInput(), '150');
 
-    await user.click(screen.getAllByRole('button', { name: /addStop/i })[0]);
-    expect(screen.queryAllByLabelText(/^(from|to|stop)$/)).toHaveLength(3);
-
-    // A refetch lands carrying the server's OLD two-stop route.
+    // A refetch lands carrying the server's copy: same value, new objects.
     refetchWith(rerender, line());
 
-    expect(screen.queryAllByLabelText(/^(from|to|stop)$/)).toHaveLength(3);
+    expect(distanceInput().value).toBe('150');
+    expect(h.updates).toHaveLength(0);
   });
 
-  it('holds the route until its LAST write lands, not its first', async () => {
+  it('after Save, shows what was saved until the server copy lands, then adopts it', async () => {
     /**
-     * "The route was sent and the From is reset." A route edit fires several writes, and
-     * the hold used to be released by whichever settled first. The refetch that write
-     * triggers carries the server's copy as of THAT write — a genuinely different route,
-     * so the value-stable key does not protect it — and the row re-synced onto it while
-     * the later writes were still in flight, putting the older stops back on screen.
+     * Replaces "holds the route until its LAST write lands". A route edit used to fire a
+     * chain of writes and the hold had to outlast all of them; Save is one write now.
+     *
+     * What is left to pin is the moment after it. Save locks the row again, and the row
+     * must keep showing the figures just saved — not flick back to the server's pre-save
+     * copy, which is what adding `editing` to the re-sync's dependencies would do — and
+     * then take the server's own copy (its price, in particular) when the refetch lands.
      */
     h.lifecycle = true;
     const user = userEvent.setup();
     const { rerender } = renderEditor(line());
-    const addStop = () => user.click(screen.getAllByRole('button', { name: /addStop/i })[0]);
 
-    await addStop(); // write 1: three stops
-    await addStop(); // write 2: four stops
-    expect(h.updates).toHaveLength(2);
-    expect(screen.queryAllByLabelText(/^(from|to|stop)$/)).toHaveLength(4);
+    await user.click(editRoute());
+    // A measured 72 km restated in miles.
+    await user.click(screen.getByRole('button', { name: 'MI' }));
+    expect(distanceInput().value).toBe('44.74');
+    await user.click(screen.getByRole('button', { name: 'addLine.saveEdit' }));
+    expect(h.updates).toEqual([
+      expect.objectContaining({ mileageDistance: '44.74', mileageUnit: 'MI' }),
+    ]);
 
-    // Write 1 lands; its refetch brings the server's three-stop copy.
-    h.lineOpts?.onSettled?.();
+    // The write lands. Locked again, on the saved figures, before any refetch.
+    h.settle();
+    refetchWith(rerender, line());
+    expect(editRoute()).toBeDefined();
+    expect(distanceInput().value).toBe('44.74');
+    expect(screen.getByRole('button', { name: 'MI' }).getAttribute('aria-pressed')).toBe('true');
+
+    // The refetch brings the server's copy, priced by the server.
     refetchWith(
       rerender,
-      line({
-        mileageRoute: {
-          stops: [
-            { description: 'A', placeId: 'p1' },
-            { description: '' },
-            { description: 'B', placeId: 'p2' },
-          ],
-        },
-      }),
+      line({ mileageDistance: '44.74', mileageUnit: 'MI', amountMinor: '3221' }),
     );
-    expect(screen.queryAllByLabelText(/^(from|to|stop)$/)).toHaveLength(4);
+    expect(screen.getByLabelText('line.amount').textContent).toMatch(/32\.21/);
+    expect(h.updates).toHaveLength(1);
   });
 
-  it('still adopts a stop the server genuinely added', () => {
+  it('holds a genuine server change during an edit, and shows it after Cancel', async () => {
+    // The edit is the person's until they finish it; Cancel then shows the LATEST stored
+    // line, not the one the edit started from.
+    const user = userEvent.setup();
+    const { rerender } = renderEditor(line());
+    await user.click(editRoute());
+
+    refetchWith(rerender, line({ mileageDistance: '80' }));
+    expect(distanceInput().value).toBe('72');
+
+    await user.click(screen.getByRole('button', { name: 'addLine.cancel' }));
+    expect(distanceInput().value).toBe('80');
+    expect(h.updates).toHaveLength(0);
+  });
+
+  it('still adopts a distance the server genuinely changed', () => {
     // The other half. "Never re-sync" would pass the test above and break the
     // reason the effect exists — extraction rebuilding a line has to appear
     // without a manual page refresh.
     const { rerender } = renderEditor(line());
-    expect(stopInput('from').value).toBe('A');
-    expect(stopInput('to').value).toBe('B');
+    expect(distanceInput().value).toBe('72');
 
     refetchWith(
       rerender,
       line({
+        mileageDistance: '90',
         mileageRoute: {
           stops: [
             { description: 'A', placeId: 'p1' },
@@ -266,9 +292,7 @@ describe('line-row re-sync across a report refetch', () => {
         },
       }),
     );
-    // A real value change lands: the destination is now Z, with a middle stop.
-    expect(stopInput('to').value).toBe('Z');
-    expect(screen.getByDisplayValue('MID')).toBeDefined();
+    expect(distanceInput().value).toBe('90');
   });
 
   it('adopts a category the server genuinely changed', () => {

@@ -3,17 +3,20 @@ import { act, fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useState } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { MAX_ROUTE_STOPS, MAX_STOP_DESCRIPTION } from '@/lib/mileageRouteSchema';
 import { createTrpcMock, type TrpcMockConfig } from '@/test-utils/trpc';
-import { EMPTY_ROUTE, RouteEditor, RouteSummary, type RouteValue, rowKind } from './RouteEditor';
+import { EMPTY_ROUTE, RouteSummary, type RouteValue } from './RouteEditor';
+import { RouteStopRows, rowKind } from './RouteStopRows';
+import { chosenRoute, type PreviousRoute, previousRouteValue } from './routeWorkspace';
 
 /**
- * The stops editor, which is only rendered when address lookup is available — the
- * line row gates it, and without the integration a mileage line collects a
- * distance and nothing else.
+ * The route's stop rows (`RouteStopRows`, From / stops / To with address search), the
+ * text summary, and the route builders (`routeWorkspace.ts`).
  *
- * What it has to get right: a route always keeps an origin and a destination, a
- * stop is inserted BETWEEN two rows rather than appended, and the measured
- * distance fills the field rather than being applied invisibly.
+ * What the rows have to get right: a route always keeps an origin and a destination, a
+ * stop is inserted BETWEEN two rows rather than appended, and a stop holds a place id only
+ * when a suggestion was picked. The workspace that hosts them, and its request rules, are
+ * `RoutePickerModal.test.tsx`'s; a saved line's route control is `RouteLine.test.tsx`'s.
  */
 
 const h = vi.hoisted(() => ({ trpc: undefined as unknown }));
@@ -23,6 +26,7 @@ vi.mock('@/lib/trpc/client', () => ({
   },
 }));
 vi.mock('next-intl', () => ({
+  useLocale: () => 'en',
   useTranslations: () => (key: string, values?: Record<string, unknown>) =>
     values ? `${key}:${Object.values(values).join(',')}` : key,
 }));
@@ -37,34 +41,46 @@ function setTrpc(over: TrpcMockConfig = {}) {
   });
 }
 
-/** Drives the editor as a controlled component, like the line row does. */
+/** Drives the rows as the workspace does: each row named once, the stops held above. */
+let lastValue: RouteValue = EMPTY_ROUTE;
+let nextId = 0;
 function Harness({
   initial = EMPTY_ROUTE,
   disabled,
+  locked,
 }: {
   initial?: RouteValue;
   disabled?: boolean;
+  locked?: boolean;
 }) {
-  const [value, setValue] = useState(initial);
-  const [distance, setDistance] = useState('');
+  const [rows, setRows] = useState(() =>
+    initial.stops.map((stop) => ({ id: `row-${nextId++}`, stop })),
+  );
+  lastValue = { stops: rows.map((r) => r.stop) };
   return (
     <>
-      <RouteEditor
-        value={value}
-        onChange={setValue}
-        unit="KM"
-        onDistance={setDistance}
+      <RouteStopRows
+        rows={rows}
+        onSetStop={(i, stop) => setRows((rs) => rs.map((r, j) => (j === i ? { ...r, stop } : r)))}
+        onInsertAfter={(i) =>
+          setRows((rs) => {
+            const next = [...rs];
+            next.splice(i + 1, 0, { id: `row-${nextId++}`, stop: { description: '' } });
+            return next;
+          })
+        }
+        onRemove={(i) => setRows((rs) => (rs.length <= 2 ? rs : rs.filter((_, j) => j !== i)))}
         disabled={disabled}
+        locked={locked}
       />
-      <output data-testid="stops">{value.stops.length}</output>
-      <output data-testid="distance">{distance}</output>
-      <output data-testid="legs">{value.legs ? 'has-legs' : 'no-legs'}</output>
+      <output data-testid="stops">{rows.length}</output>
     </>
   );
 }
 
 afterEach(() => {
   h.trpc = undefined;
+  lastValue = EMPTY_ROUTE;
   vi.restoreAllMocks();
 });
 
@@ -81,7 +97,7 @@ describe('row labelling', () => {
   });
 });
 
-describe('<RouteEditor>', () => {
+describe('<RouteStopRows>', () => {
   it('starts as an origin and a destination', () => {
     setTrpc();
     render(<Harness />);
@@ -264,126 +280,134 @@ describe('<RouteEditor>', () => {
     vi.useRealTimers();
   });
 
-  it('will not measure until every stop is a picked address', () => {
-    const onCall = vi.fn();
-    setTrpc({ mutations: { 'mileageRoute.computeRoute': { onCall, outcome: 'success' } } });
-    render(<Harness />);
-    // Typed text has no placeId, so there's nothing to send to the Routes API —
-    // and nothing is sent, because a half-built route is a billed request for an
-    // answer that can't exist.
-    expect(onCall).not.toHaveBeenCalled();
-    expect(screen.getByText('pickAllStops')).toBeInTheDocument();
-  });
-
-  it('measures once every stop carries a placeId, and fills the distance', () => {
-    const onCall = vi.fn();
-    setTrpc({
-      mutations: {
-        'mileageRoute.computeRoute': {
-          onCall,
-          outcome: 'success',
-          data: {
-            legs: [{ fromPlaceId: 'a', toPlaceId: 'b', meters: 45_000 }],
-            totalMeters: 45_000,
-            distance: '45.00',
-          },
-        },
-      },
-    });
-    render(
-      <Harness
-        initial={{
-          stops: [
-            { placeId: 'a', description: 'Toronto' },
-            { placeId: 'b', description: 'Oshawa' },
-          ],
-        }}
-      />,
-    );
-    // No click: a route with every stop resolved measures itself. A button you can
-    // forget to press is a mileage line filed with a blank distance. Asserting the
-    // INPUT only — the call also carries per-call error options.
-    expect(onCall).toHaveBeenCalledOnce();
-    expect(onCall.mock.calls[0][0]).toEqual({ placeIds: ['a', 'b'], unit: 'KM' });
-    // The measured distance lands in the field rather than being applied
-    // invisibly, so the traveller can still overwrite it.
-    expect(screen.getByTestId('distance')).toHaveTextContent('45.00');
-    expect(screen.getByTestId('legs')).toHaveTextContent('has-legs');
-  });
-
-  it('measures ONCE for a given stop set, not on every render', () => {
-    const onCall = vi.fn();
-    setTrpc({
-      mutations: {
-        'mileageRoute.computeRoute': {
-          onCall,
-          outcome: 'success',
-          data: { legs: [], totalMeters: 45_000, distance: '45.00' },
-        },
-      },
-    });
-    const { rerender } = render(
-      <Harness
-        initial={{
-          stops: [
-            { placeId: 'a', description: 'Toronto' },
-            { placeId: 'b', description: 'Oshawa' },
-          ],
-        }}
-      />,
-    );
-    // Success writes legs back onto the value, which re-renders the editor. Without
-    // the measured-for guard that write would trigger another measurement, and the
-    // Routes API bills per request.
-    rerender(
-      <Harness
-        initial={{
-          stops: [
-            { placeId: 'a', description: 'Toronto' },
-            { placeId: 'b', description: 'Oshawa' },
-          ],
-        }}
-      />,
-    );
-    expect(onCall).toHaveBeenCalledOnce();
-  });
-
-  it('does not measure while the row is locked', () => {
-    const onCall = vi.fn();
-    setTrpc({ mutations: { 'mileageRoute.computeRoute': { onCall, outcome: 'success' } } });
-    render(
-      <Harness
-        disabled
-        initial={{
-          stops: [
-            { placeId: 'a', description: 'Toronto' },
-            { placeId: 'b', description: 'Oshawa' },
-          ],
-        }}
-      />,
-    );
-    expect(onCall).not.toHaveBeenCalled();
-  });
-
-  it('drops stale legs the moment a stop changes', async () => {
+  it(`stops adding stops at ${MAX_ROUTE_STOPS} — the save path refuses more`, async () => {
     const user = userEvent.setup();
     setTrpc();
-    render(
-      <Harness
-        initial={{
-          stops: [
-            { placeId: 'a', description: 'Toronto' },
-            { placeId: 'b', description: 'Oshawa' },
-          ],
-          legs: [{ fromPlaceId: 'a', toPlaceId: 'b', meters: 45_000 }],
-        }}
-      />,
+    const stops = (n: number) =>
+      Array.from({ length: n }, (_, i) => ({ placeId: `p${i}`, description: `Stop ${i}` }));
+
+    const { unmount } = render(<Harness initial={{ stops: stops(MAX_ROUTE_STOPS - 1) }} />);
+    expect(screen.queryByText(`maxStops:${MAX_ROUTE_STOPS}`)).not.toBeInTheDocument();
+    await user.click(screen.getAllByText('addStop')[0]);
+    expect(screen.getByTestId('stops')).toHaveTextContent(String(MAX_ROUTE_STOPS));
+    for (const add of screen.getAllByRole('button', { name: /addStop/ }))
+      expect(add).toBeDisabled();
+    expect(screen.getByText(`maxStops:${MAX_ROUTE_STOPS}`)).toBeInTheDocument();
+    unmount();
+  });
+
+  it(`caps a typed stop at ${MAX_STOP_DESCRIPTION} characters, the stored limit`, () => {
+    setTrpc();
+    render(<Harness />);
+    expect(screen.getByLabelText('from')).toHaveAttribute(
+      'maxLength',
+      String(MAX_STOP_DESCRIPTION),
     );
-    expect(screen.getByTestId('legs')).toHaveTextContent('has-legs');
-    await user.click(screen.getByText('addStop'));
-    // Legs describe the route that was; keeping them beside changed stops would
-    // snapshot something that didn't happen.
-    expect(screen.getByTestId('legs')).toHaveTextContent('no-legs');
+  });
+
+  it('caps a picked place’s description at the stored limit too', async () => {
+    const user = userEvent.setup();
+    const long = 'x'.repeat(MAX_STOP_DESCRIPTION + 40);
+    setTrpc({
+      queries: {
+        'mileageRoute.searchPlaces': {
+          data: { available: true, items: [{ placeId: 'p-long', description: long }] },
+        },
+      },
+    });
+    render(<Harness />);
+    await user.type(screen.getByLabelText('from'), 'Long');
+    await user.click(screen.getByText(long));
+    expect(lastValue.stops[0]).toEqual({
+      placeId: 'p-long',
+      description: long.slice(0, MAX_STOP_DESCRIPTION),
+    });
+  });
+});
+
+// ── The route builders ─────────────
+
+const TWO_PICKED: RouteValue = {
+  stops: [
+    { placeId: 'a', description: 'Toronto' },
+    { placeId: 'b', description: 'Ottawa' },
+  ],
+};
+
+describe('previousRouteValue', () => {
+  const PREVIOUS: PreviousRoute[] = [
+    {
+      stops: [
+        { placeId: 'tor', description: 'Toronto' },
+        { placeId: 'kin', description: 'Kingston' },
+        { placeId: 'ott', description: 'Ottawa' },
+      ],
+      legs: [
+        { fromPlaceId: 'tor', toPlaceId: 'kin', meters: 260_000 },
+        { fromPlaceId: 'kin', toPlaceId: 'ott', meters: 190_000 },
+      ],
+      routeLabel: 'Hwy 401',
+      routeIndex: 1,
+      routeCount: 3,
+      distance: { KM: '450.00', MI: '279.62' },
+    },
+    {
+      stops: [
+        { placeId: 'home', description: 'Home' },
+        { placeId: 'office', description: 'Office' },
+      ],
+      legs: [{ fromPlaceId: 'home', toPlaceId: 'office', meters: 12_000 }],
+      distance: { KM: '12.00', MI: '7.46' },
+    },
+  ];
+
+  it('copies an entry field by field, so nothing else on the wire reaches the line', () => {
+    const wire = {
+      ...PREVIOUS[1],
+      stops: [
+        { placeId: 'a', description: 'A', extra: 1 },
+        { placeId: 'b', description: 'B' },
+      ],
+      encodedPolyline: 'abc',
+    } as unknown as PreviousRoute;
+    expect(previousRouteValue(wire)).toEqual({
+      stops: [
+        { placeId: 'a', description: 'A' },
+        { placeId: 'b', description: 'B' },
+      ],
+      legs: PREVIOUS[1]?.legs,
+    });
+  });
+});
+
+describe('chosenRoute', () => {
+  const stops = TWO_PICKED.stops;
+  const legs = [{ fromPlaceId: 'a', toPlaceId: 'b', meters: 1000 }];
+
+  it('records the label, the position among those offered, and how many were offered', () => {
+    expect(chosenRoute(stops, { index: 2, label: 'Hwy 7', legs }, 3)).toEqual({
+      stops,
+      legs,
+      routeLabel: 'Hwy 7',
+      routeIndex: 2,
+      routeCount: 3,
+    });
+  });
+
+  it('omits a null or blank label — never "" and never a made-up name', () => {
+    for (const label of [null, '', '   ']) {
+      const out = chosenRoute(stops, { index: 0, label, legs }, 1);
+      expect(out).not.toHaveProperty('routeLabel');
+    }
+  });
+
+  it('copies legs field by field, so nothing else the wire carried is stored', () => {
+    const out = chosenRoute(
+      stops,
+      { index: 0, label: 'X', legs: [{ ...legs[0], extra: 'y' } as (typeof legs)[number]] },
+      1,
+    );
+    expect(out.legs).toEqual(legs);
   });
 });
 
@@ -454,13 +478,6 @@ describe('editing a stop after picking it', () => {
     },
   };
 
-  let last: RouteValue = EMPTY_ROUTE;
-  function Spy() {
-    const [value, setValue] = useState<RouteValue>(EMPTY_ROUTE);
-    last = value;
-    return <RouteEditor value={value} onChange={setValue} unit="KM" onDistance={() => {}} />;
-  }
-
   it('lets you retype a stop you just picked without leaving the field', async () => {
     const user = userEvent.setup();
     setTrpc({ queries: UNION });
@@ -481,7 +498,7 @@ describe('editing a stop after picking it', () => {
     try {
       const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
       setTrpc({ queries: UNION });
-      render(<Spy />);
+      render(<Harness />);
       const from = screen.getByLabelText('from');
       await user.type(from, 'Union');
       fireEvent.blur(from);
@@ -489,67 +506,41 @@ describe('editing a stop after picking it', () => {
       await act(async () => {
         vi.advanceTimersByTime(200);
       });
-      expect(last.stops[0]).toEqual({ placeId: 'p-union', description: 'Union Station, Toronto' });
+      expect(lastValue.stops[0]).toEqual({
+        placeId: 'p-union',
+        description: 'Union Station, Toronto',
+      });
     } finally {
       vi.useRealTimers();
     }
   });
-});
 
-describe('a measurement that comes back for stops that have since changed', () => {
-  it('is dropped, rather than written over the current route', () => {
-    /**
-     * Writing it would attach legs for the old stops — or, where the row had re-synced to
-     * an older server copy meanwhile, write that copy's From back to the server.
-     */
-    const pending: { vars?: { placeIds: string[] } } = {};
-    let opts: { onSuccess?: (res: unknown, vars: unknown) => void } = {};
-    h.trpc = {
-      mileageRoute: {
-        searchPlaces: {
-          useQuery: () => ({
-            data: { available: true, items: [] },
-            isFetching: false,
-            error: null,
-          }),
-        },
-        computeRoute: {
-          useMutation: (o: typeof opts) => {
-            opts = o;
-            return {
-              isPending: false,
-              mutate: (vars: { placeIds: string[] }) => {
-                pending.vars = vars;
-              },
-            };
-          },
-        },
-      },
-    };
-    const onChange = vi.fn();
-    const onDistance = vi.fn();
-    const route = (to: string): RouteValue => ({
-      stops: [
-        { placeId: 'a', description: 'A' },
-        { placeId: to, description: to.toUpperCase() },
-      ],
-    });
-    const { rerender } = render(
-      <RouteEditor value={route('b')} onChange={onChange} unit="KM" onDistance={onDistance} />,
-    );
-    expect(pending.vars?.placeIds).toEqual(['a', 'b']);
-
-    // The destination changes before the answer for A→B arrives.
-    rerender(
-      <RouteEditor value={route('c')} onChange={onChange} unit="KM" onDistance={onDistance} />,
-    );
-    act(() => {
-      opts.onSuccess?.(
-        { legs: [{ fromPlaceId: 'a', toPlaceId: 'b', meters: 1000 }], distance: '1.00' },
-        { placeIds: ['a', 'b'], unit: 'KM' },
-      );
-    });
-    expect(onChange).not.toHaveBeenCalled();
-    expect(onDistance).not.toHaveBeenCalled();
+  it('keeps the suggestions open when focus leaves and comes straight back', async () => {
+    // Focus out (a press on Add stop) and back into the field inside the blur's 150ms:
+    // the blur's commit used to fire anyway, closing the list under the pointer about to
+    // press a suggestion and committing the typed text with no place (E2E b).
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+      setTrpc({ queries: UNION });
+      render(<Harness />);
+      const from = screen.getByLabelText('from');
+      fireEvent.focus(from);
+      fireEvent.blur(from);
+      fireEvent.focus(from);
+      await user.type(from, 'Union');
+      await act(async () => {
+        vi.advanceTimersByTime(200);
+      });
+      expect(from).toHaveValue('Union');
+      expect(lastValue.stops[0]).toEqual({ description: '' });
+      await user.click(screen.getByText('Union Station, Toronto'));
+      expect(lastValue.stops[0]).toEqual({
+        placeId: 'p-union',
+        description: 'Union Station, Toronto',
+      });
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

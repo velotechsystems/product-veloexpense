@@ -1134,6 +1134,11 @@ describe('report: the mileage claim the approver signs off on', () => {
         { placeId: 'place-B', description: 'Client', lat: 45.6, lng: -73.7, extra: 'x' },
       ],
       legs: [{ fromPlaceId: 'place-A', toPlaceId: 'place-B', meters: 12_000 }],
+      // The chosen route: its label and the number offered reach the approver, its
+      // position among them does not.
+      routeLabel: 'Hwy 401',
+      routeIndex: 1,
+      routeCount: 3,
       lat: 45.5,
       lng: -73.6,
       extra: { anything: true },
@@ -1145,14 +1150,16 @@ describe('report: the mileage claim the approver signs off on', () => {
       ),
     ]);
     // The extra-key route was read, not refused: its stop names are on the wire.
-    expect(out.expenses[0]?.lineItems[1]?.mileageRoute?.stops).toEqual([
-      { description: 'Office' },
-      { description: 'Client' },
-    ]);
+    expect(out.expenses[0]?.lineItems[1]?.mileageRoute).toEqual({
+      stops: [{ description: 'Office' }, { description: 'Client' }],
+      routeLabel: 'Hwy 401',
+      routeCount: 3,
+    });
     const wire = JSON.stringify(out);
     for (const key of [
       'legs',
       'placeId',
+      'routeIndex',
       'mileageRateId',
       'mileageDistanceOverride',
       'notes',

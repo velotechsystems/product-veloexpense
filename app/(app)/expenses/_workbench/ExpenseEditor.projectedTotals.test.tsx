@@ -84,7 +84,7 @@ vi.mock('@/lib/trpc/client', () => {
         searchPlaces: {
           useQuery: () => ({ data: { items: [], error: null }, isFetching: false, error: null }),
         },
-        computeRoute: { useMutation: () => ({ mutate: vi.fn(), isPending: false }) },
+        computeRoutes: { useMutation: () => ({ mutate: vi.fn(), isPending: false }) },
       },
     },
   };

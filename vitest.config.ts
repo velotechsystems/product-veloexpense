@@ -23,6 +23,11 @@ export default defineConfig({
       { find: /^@expenseos\/receipt-extraction$/, replacement: r('packages/receipt-extraction/src/index.ts') },
       { find: /^@expenseos\/jobs$/, replacement: r('packages/jobs/src/index.ts') },
       { find: /^@expenseos\/db$/, replacement: r('packages/db/src/index.ts') },
+      // ExpenseOS #591: `server-only` is not an installed package. Next resolves the bare
+      // specifier to its own vendored copy (the no-op `empty.js` in server bundles, the
+      // throwing `index.js` in client ones); vitest has no such resolution, so tests that
+      // load a module importing it point at the same `empty.js` Next uses for server code.
+      { find: /^server-only$/, replacement: r('node_modules/next/dist/compiled/server-only/empty.js') },
       { find: /^@expenseos\/integrations-google$/, replacement: r('packages/integrations-google/src/index.ts') },
       { find: /^@expenseos\/travel-lines$/, replacement: r('packages/travel-lines/src/index.ts') },
       { find: /^@expenseos\/travel-search$/, replacement: r('packages/travel-search/src/index.ts') },

@@ -1,6 +1,7 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest';
-import { deriveRouteView, MAX_ROUTE_STOPS, MAX_STOP_DESCRIPTION } from './mileageRouteView';
+import { MAX_ROUTE_LABEL, MAX_ROUTE_STOPS, MAX_STOP_DESCRIPTION } from '@/lib/mileageRouteSchema';
+import { deriveRouteView, STORED_ROUTE_KEYS, storedRoute } from './mileageRouteView';
 
 /**
  * What an approver may see of a filed route. Two rules carry the weight:
@@ -102,6 +103,58 @@ describe('deriveRouteView: the trimmed route', () => {
       routeDistance: null,
       mileageRouteUnavailable: true,
     });
+  });
+});
+
+describe('deriveRouteView: the route chosen when filed', () => {
+  const chosen = (over: Record<string, unknown>) => route({ routeIndex: 1, ...over });
+
+  it('passes the label and the number of routes offered, and nothing else of the choice', () => {
+    const out = deriveRouteView(chosen({ routeLabel: 'Hwy 401', routeCount: 3 }), 'KM', '20.00');
+    expect(out.mileageRoute).toEqual({ ...STOPS_OUT, routeLabel: 'Hwy 401', routeCount: 3 });
+    const wire = JSON.stringify(out);
+    expect(wire).not.toContain('routeIndex');
+    expect(wire).not.toContain('placeId');
+    expect(wire).not.toContain('legs');
+    expect(wire).not.toContain('meters');
+  });
+
+  it('adds no key, and no null, to a route filed without a choice', () => {
+    const out = deriveRouteView(route(), 'KM', '20.00');
+    expect(out.mileageRoute).toEqual(STOPS_OUT);
+    expect(JSON.stringify(out.mileageRoute)).not.toContain('null');
+  });
+
+  it.each([
+    ['""', ''],
+    ['whitespace', '   '],
+    ['null', null],
+  ])('treats a stored %s label as no label', (_label, routeLabel) => {
+    const out = deriveRouteView(chosen({ routeLabel, routeCount: 2 }), 'KM', '20.00');
+    expect(out.mileageRoute).toEqual({ ...STOPS_OUT, routeCount: 2 });
+    expect(JSON.stringify(out)).not.toContain('routeLabel');
+  });
+
+  it('drops a stored count that is not 1 to 3, and keeps the label and the stops', () => {
+    for (const routeCount of [0, 4, 2.5, '3', null]) {
+      const out = deriveRouteView(chosen({ routeLabel: 'Hwy 7', routeCount }), 'KM', '20.00');
+      expect(out.mileageRoute).toEqual({ ...STOPS_OUT, routeLabel: 'Hwy 7' });
+      expect(out.mileageRouteUnavailable).toBe(false);
+    }
+  });
+
+  it(`says the route is unavailable when its label is over ${MAX_ROUTE_LABEL} characters`, () => {
+    const out = deriveRouteView(
+      chosen({ routeLabel: 'x'.repeat(MAX_ROUTE_LABEL + 1), routeCount: 3 }),
+      'KM',
+      '20.00',
+    );
+    expect(out).toEqual({ mileageRoute: null, routeDistance: null, mileageRouteUnavailable: true });
+  });
+
+  it('keeps the route distance check as it was', () => {
+    const out = deriveRouteView(chosen({ routeLabel: 'Hwy 7', routeCount: 3 }), 'KM', '15.00');
+    expect(out.routeDistance).toBe('20.00');
   });
 });
 
@@ -260,5 +313,97 @@ describe('deriveRouteView: the route distance', () => {
       '9.00',
     );
     expect(out.routeDistance).toBe('5.00');
+  });
+});
+
+// ── The stored keys ──────────────────────────────────────────────────────────────────
+
+/**
+ * A stored route is its claim and nothing Google drew. `storedRoute` is the one allow-list
+ * every write and the writer's read pass through, so a key left on an old row — a drawn
+ * path, dragged lat/lng points, a fetch stamp — is neither stored again nor served.
+ */
+const POLYLINE = 'a~l~Fjk~uOwHJy@P';
+const POINTS = [{ lat: 43.6532101, lng: -79.3831843, leg: 0 }];
+const STAMP = '2026-10-01T12:00:00.000Z';
+const VIA = [{ placeId: 'V', leg: 0 }];
+/** A route as a row saved while geometry was stored still holds it. */
+const legacyRow = (over: Record<string, unknown> = {}) =>
+  route({
+    routeLabel: 'via Hwy 401',
+    routeIndex: 1,
+    routeCount: 3,
+    encodedPolyline: POLYLINE,
+    passThrough: POINTS,
+    routeFetchedAt: STAMP,
+    ...over,
+  });
+
+describe('storedRoute: the keys a route may be stored with', () => {
+  it('names exactly the claim keys and via', () => {
+    expect([...STORED_ROUTE_KEYS]).toEqual([
+      'stops',
+      'legs',
+      'routeLabel',
+      'routeIndex',
+      'routeCount',
+      'via',
+    ]);
+  });
+
+  it('keeps every claim key and via, as they are', () => {
+    const r = route({ routeLabel: 'via Hwy 401', routeIndex: 1, routeCount: 3, via: VIA });
+    expect(storedRoute(r)).toEqual(r);
+  });
+
+  it('drops the drawn path, the points and the stamp of an old row, keeping the rest', () => {
+    const out = storedRoute(legacyRow({ via: VIA }));
+    expect(out).toEqual(
+      route({ routeLabel: 'via Hwy 401', routeIndex: 1, routeCount: 3, via: VIA }),
+    );
+    const wire = JSON.stringify(out);
+    for (const text of ['encodedPolyline', 'passThrough', 'routeFetchedAt', POLYLINE, '43.65']) {
+      expect(wire).not.toContain(text);
+    }
+  });
+
+  it('drops any key it does not name, so a key added later is dropped until named here', () => {
+    expect(storedRoute(route({ drawnPath: 'abc', lat: 45.4, lng: -75.7 }))).toEqual(route());
+  });
+
+  it('adds no key a route was saved without, and none for an undefined value', () => {
+    expect(Object.keys(storedRoute({ stops: [stop('A')] }) as object)).toEqual(['stops']);
+    expect(Object.keys(storedRoute(route({ via: undefined })) as object)).toEqual([
+      'stops',
+      'legs',
+    ]);
+  });
+
+  it('copies: the stored value is not changed', () => {
+    const row = legacyRow();
+    const before = structuredClone(row);
+    storedRoute(row);
+    expect(row).toEqual(before);
+  });
+
+  it.each([
+    ['null', null],
+    ['undefined', undefined],
+    ['a string', 'not a route'],
+    ['a number', 5],
+    ['an array', ['encodedPolyline']],
+  ])('returns %s as it is: no route object, no key to drop', (_label, value) => {
+    expect(storedRoute(value)).toEqual(value);
+  });
+});
+
+describe('deriveRouteView never carries geometry', () => {
+  it('drops the path, the points, the stamp and via from what the approver is sent', () => {
+    const out = deriveRouteView(legacyRow({ via: VIA }), 'KM', '20.00');
+    const wire = JSON.stringify(out);
+    for (const key of ['encodedPolyline', 'passThrough', 'routeFetchedAt', '"via"', '43.65']) {
+      expect(wire).not.toContain(key);
+    }
+    expect(out.mileageRoute).toEqual({ ...STOPS_OUT, routeLabel: 'via Hwy 401', routeCount: 3 });
   });
 });

@@ -5,6 +5,8 @@ import {
   calendarYearBounds,
   computeMileageMinor,
   convertScaled,
+  defaultMileageUnitFor,
+  defaultMileageUnitsFor,
   distanceToScaled,
   type MileageDb,
   priceMileage,
@@ -306,5 +308,85 @@ describe('year-to-date basis (carried over + claimed here)', () => {
   it('ytdDistanceScaled is the total alone', async () => {
     const db = fakeDb([balance('10', 'KM', '2026-01-31')], [line('5', 'KM')]);
     expect(await ytdDistanceScaled(db, params)).toBe(15_00n);
+  });
+});
+
+describe('the unit a new mileage line opens in (FR-11)', () => {
+  it.each([
+    ['a US owner', { country: 'US', homeCurrencyCode: 'CAD' }, 'MI'],
+    ['a US owner, lower-cased', { country: 'us', homeCurrencyCode: 'CAD' }, 'MI'],
+    ['an owner paid in USD with no country', { country: null, homeCurrencyCode: 'USD' }, 'MI'],
+    ['a Canadian owner paid in USD', { country: 'CA', homeCurrencyCode: 'USD' }, 'MI'],
+    ['a CA / CAD owner', { country: 'CA', homeCurrencyCode: 'CAD' }, 'KM'],
+    ['an owner with neither set (the CAD floor)', { country: null, homeCurrencyCode: 'CAD' }, 'KM'],
+    ['a UK owner paid in GBP', { country: 'GB', homeCurrencyCode: 'GBP' }, 'KM'],
+  ] as const)('%s → %s', (_name, owner, unit) => {
+    expect(defaultMileageUnitFor(owner)).toBe(unit);
+  });
+
+  /**
+   * The owner resolution, against a stub that answers like Prisma: `user.findMany` for the
+   * countries, `user.findUnique` for the shared currency chain (`defaultCurrencyCodeFor`).
+   *
+   * VeloExpense (d92): the chain is the person's legal entity, else the tenant's main
+   * entity, else CAD (`homeCurrencyCode`) — there is no per-person currency, so ExpenseOS's
+   * "paid in USD with no entity" owner is not a case here; the entity one is. The main
+   * entity read (`legalEntity.findFirst`) answers none, so the floor is CAD.
+   */
+  function ownersDb(
+    people: Record<
+      string,
+      { country: string | null; entityCurrency?: string }
+    >,
+  ) {
+    const findMany = vi.fn(async ({ where }: { where: { id: { in: string[] } } }) =>
+      where.id.in.filter((id) => id in people).map((id) => ({ id, country: people[id].country })),
+    );
+    const findUnique = vi.fn(async ({ where }: { where: { id: string } }) => {
+      const p = people[where.id];
+      if (!p) return null;
+      return { entity: p.entityCurrency ? { homeCurrencyId: p.entityCurrency } : null };
+    });
+    const legalEntity = { findFirst: vi.fn(async () => null) };
+    return { db: { user: { findMany, findUnique }, legalEntity } as never, findMany, findUnique };
+  }
+
+  it('resolves each owner by the owner, never by whoever is reading', async () => {
+    const { db } = ownersDb({
+      'us-owner': { country: 'US' },
+      'usd-entity-owner': { country: null, entityCurrency: 'USD' },
+      'ca-owner': { country: 'CA', entityCurrency: 'CAD' },
+      // A delegate who works in kilometres: present in the db, never asked for here.
+      'ca-delegate': { country: 'CA', entityCurrency: 'CAD' },
+    });
+    const units = await defaultMileageUnitsFor(db, [
+      'us-owner',
+      'usd-entity-owner',
+      'ca-owner',
+      'gone',
+    ]);
+    expect(Object.fromEntries(units)).toEqual({
+      'us-owner': 'MI',
+      // The entity's currency counts as a link in the OWNER's chain.
+      'usd-entity-owner': 'MI',
+      'ca-owner': 'KM',
+      // No user row: no country and the CAD floor.
+      gone: 'KM',
+    });
+  });
+
+  it('reads once per distinct owner, not once per expense', async () => {
+    const { db, findMany, findUnique } = ownersDb({ owner: { country: 'US' } });
+    const units = await defaultMileageUnitsFor(db, Array(40).fill('owner'));
+    expect(units.get('owner')).toBe('MI');
+    expect(findMany).toHaveBeenCalledTimes(1);
+    expect(findUnique).toHaveBeenCalledTimes(1);
+  });
+
+  it('reads nothing for no owners', async () => {
+    const { db, findMany, findUnique } = ownersDb({});
+    expect((await defaultMileageUnitsFor(db, [])).size).toBe(0);
+    expect(findMany).not.toHaveBeenCalled();
+    expect(findUnique).not.toHaveBeenCalled();
   });
 });

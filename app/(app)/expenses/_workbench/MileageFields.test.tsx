@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -23,6 +23,12 @@ const h = vi.hoisted(() => ({
     | { ok: true; amountMinor: string }
     | { ok: false; reason: string | null },
   previewCalls: [] as { input: Record<string, unknown>; enabled: boolean }[],
+  /** What the workspace's route lookup brings back. */
+  routes: [] as unknown[],
+  /** Every route lookup the workspace sent. */
+  computed: [] as unknown[],
+  /** The person's previous routes. */
+  recent: [] as unknown[],
 }));
 
 vi.mock('next-intl', () => ({
@@ -45,11 +51,25 @@ vi.mock('@/lib/trpc/client', () => ({
     mileageRoute: {
       status: { useQuery: () => ({ data: { available: h.available }, isLoading: h.loading }) },
       // The route editor renders inline once lookup works, so its own queries have
-      // to answer too.
+      // to answer too. No previous routes here: the dropdown offers "New route" alone.
+      recentRoutes: {
+        useQuery: () => ({ data: { routes: h.recent }, isLoading: false }),
+      },
       searchPlaces: {
         useQuery: () => ({ data: { items: [], error: null }, isFetching: false, error: null }),
       },
-      computeRoute: { useMutation: () => ({ mutate: vi.fn(), isPending: false }) },
+      mapConfig: { useQuery: () => ({ data: undefined, isError: false }) },
+      computeRoutes: {
+        useMutation: () => ({
+          mutateAsync: async (vars: unknown) => {
+            h.computed.push(vars);
+            return { routes: h.routes };
+          },
+          isPending: false,
+        }),
+      },
+      pointToPlace: { useMutation: () => ({ mutateAsync: () => new Promise(() => {}) }) },
+      viaLocations: { useMutation: () => ({ mutateAsync: () => new Promise(() => {}) }) },
     },
   },
 }));
@@ -79,6 +99,9 @@ beforeEach(() => {
   h.loading = false;
   h.preview = undefined;
   h.previewCalls = [];
+  h.routes = [];
+  h.computed = [];
+  h.recent = [];
 });
 
 describe('isValidDistance', () => {
@@ -97,12 +120,14 @@ describe('isValidDistance', () => {
 
 describe('MileageFields', () => {
   it('offers BOTH units — the add form had no way to say miles', () => {
+    h.available = false;
     setup();
     expect(screen.getByRole('button', { name: 'KM' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'MI' })).toBeInTheDocument();
   });
 
   it('marks the selected unit, so the number and its unit cannot disagree', () => {
+    h.available = false;
     setup({ unit: 'MI' });
     expect(screen.getByRole('button', { name: 'MI' })).toHaveAttribute('aria-pressed', 'true');
     expect(screen.getByRole('button', { name: 'KM' })).toHaveAttribute('aria-pressed', 'false');
@@ -116,6 +141,7 @@ describe('MileageFields', () => {
 
   it('reports a unit change', async () => {
     const user = userEvent.setup();
+    h.available = false;
     const { onUnitChange } = setup();
     await user.click(screen.getByRole('button', { name: 'MI' }));
     expect(onUnitChange).toHaveBeenCalledWith('MI');
@@ -123,6 +149,7 @@ describe('MileageFields', () => {
 
   it('does not fire for the unit already selected', async () => {
     const user = userEvent.setup();
+    h.available = false;
     const { onUnitChange } = setup({ unit: 'KM' });
     await user.click(screen.getByRole('button', { name: 'KM' }));
     expect(onUnitChange).not.toHaveBeenCalled();
@@ -134,25 +161,53 @@ describe('MileageFields', () => {
     expect(screen.getByLabelText('line.distance').className).toContain('border-destructive');
   });
 
-  it('shows From/To immediately when lookup works — no disclosure to find first', () => {
-    setup();
-    expect(screen.getByLabelText('from')).toBeInTheDocument();
-    expect(screen.getByLabelText('to')).toBeInTheDocument();
-    // The old "Add route" button is gone: the stops ARE the mileage line.
+  it('route mode: the caller’s route control under the row, and no stops of its own', () => {
+    setup({ mode: 'route', routeControl: <div data-testid="route-control" /> });
+    expect(screen.getByTestId('route-control')).toBeInTheDocument();
+    expect(screen.queryByLabelText('from')).not.toBeInTheDocument();
+    // The old "Add route" button is gone too.
     expect(screen.queryByText('line.addRoute')).not.toBeInTheDocument();
   });
 
-  it('shows the measured distance as text, not an editable box', () => {
-    setup({ distance: '141.20' });
+  it('route mode: the route control sits 12 px under the row (6 px row gap + mt-1.5), as on a new line (FR-7)', () => {
+    setup({ mode: 'route', routeControl: <div data-testid="route-control" /> });
+    const block = screen.getByTestId('route-control').parentElement;
+    expect(block).toHaveClass('mt-1.5', 'w-full');
+    expect(block).not.toHaveClass('mt-3');
+    expect(block).not.toHaveClass('mt-2');
+  });
+
+  it('route mode with a route: the dropdown and map sit 18 px under the row (6 px row gap + mt-3)', () => {
+    setup({
+      mode: 'route',
+      routeControl: <div data-testid="route-control" />,
+      route: { stops: [{ description: 'Toronto' }, { description: 'Ottawa' }] },
+    });
+    const block = screen.getByTestId('route-control').parentElement;
+    expect(block).toHaveClass('mt-3', 'w-full');
+    expect(block).not.toHaveClass('mt-1.5');
+  });
+
+  it('route mode: shows the measured distance as text, not an editable box', () => {
+    setup({ mode: 'route', distance: '141.20' });
     expect(screen.getByText('141.20')).toBeInTheDocument();
-    // An editable figure beside the stops that produced it invites a claim that
+    // An editable figure beside the route that produced it invites a claim that
     // contradicts its own route.
     expect(screen.queryByLabelText('line.distance')).not.toBeInTheDocument();
   });
 
-  it('says the distance is pending until a route resolves', () => {
-    setup({ distance: '' });
+  it('route mode: says the distance is pending until a route is chosen', () => {
+    setup({ mode: 'route', distance: '' });
     expect(screen.getByText('line.distancePending')).toBeInTheDocument();
+    // Nothing to restate yet.
+    expect(screen.getByRole('button', { name: 'MI' })).toBeDisabled();
+  });
+
+  it('route mode: the unit buttons are live, with no Edit and no lock', async () => {
+    const { onUnitChange } = setup({ mode: 'route', onEdit: vi.fn() });
+    expect(screen.queryByRole('button', { name: 'route.editRoute' })).not.toBeInTheDocument();
+    await userEvent.setup().click(screen.getByRole('button', { name: 'MI' }));
+    expect(onUnitChange).toHaveBeenCalledWith('MI');
   });
 
   it('says NOTHING about lookup being off — it just leaves the box editable', () => {
@@ -177,11 +232,259 @@ describe('MileageFields', () => {
     expect(screen.getByText(/Toronto/)).toBeInTheDocument();
   });
 
-  it('disables every control when the row is locked', () => {
+  it('disables every control when the caller disables it', () => {
     h.available = false;
     setup({ disabled: true });
     expect(screen.getByLabelText('line.distance')).toBeDisabled();
     expect(screen.getByRole('button', { name: 'MI' })).toBeDisabled();
+  });
+});
+
+/**
+ * The three modes (FR-6). A saved line is `locked` until Edit route; `editing` and `new`
+ * are both open forms, and NOTHING in this component writes in any mode — there is no
+ * blur callback left to write from.
+ */
+describe('MileageFields modes', () => {
+  const ROUTE = {
+    stops: [
+      { placeId: 'a', description: 'Toronto' },
+      { placeId: 'b', description: 'Ottawa' },
+    ],
+  };
+
+  describe('locked', () => {
+    it('keeps the fields as real disabled inputs, in a legible muted colour', () => {
+      // Disabled, not read-only text (UX ruling U1) — but not faded to half opacity
+      // either, which fails contrast on a claim the traveller still has to read.
+      h.available = false;
+      setup({ mode: 'locked', onEdit: vi.fn() });
+      const field = screen.getByLabelText('line.distance');
+      expect(field).toBeDisabled();
+      expect(field.className).toContain('disabled:text-muted-foreground');
+      expect(field.className).toContain('disabled:opacity-100');
+      for (const u of ['KM', 'MI']) {
+        const button = screen.getByRole('button', { name: u });
+        expect(button).toBeDisabled();
+        expect(button.className).not.toContain('opacity-50');
+      }
+      // The chosen unit is still marked.
+      expect(screen.getByRole('button', { name: 'KM' })).toHaveAttribute('aria-pressed', 'true');
+    });
+
+    it('with lookup off, offers Edit route, described by the route and the distance', async () => {
+      h.available = false;
+      const onEdit = vi.fn();
+      setup({ mode: 'locked', onEdit, route: ROUTE, distance: '450.00' });
+      const edit = screen.getByRole('button', { name: 'route.editRoute' });
+      expect(edit).toHaveAccessibleDescription(
+        'route.lockedSummary:Toronto → Ottawa,line.distanceValue:450.00,line.km',
+      );
+      await userEvent.setup().click(edit);
+      expect(onEdit).toHaveBeenCalledOnce();
+    });
+
+    it('with lookup on (the typed path of a route line), offers Edit distance beside the route control', () => {
+      // The route control already says the route, so Edit is described by the distance.
+      setup({
+        mode: 'locked',
+        onEdit: vi.fn(),
+        route: ROUTE,
+        distance: '450.00',
+        routeControl: <div data-testid="route-control" />,
+      });
+      expect(screen.getByTestId('route-control')).toBeInTheDocument();
+      expect(screen.getByLabelText('line.distance')).toBeDisabled();
+      expect(screen.queryByLabelText('from')).not.toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'line.editDistance' })).toHaveAccessibleDescription(
+        'line.distanceValue:450.00,line.km',
+      );
+    });
+
+    it('describes a line with no route by its distance alone', () => {
+      h.available = false;
+      setup({ mode: 'locked', onEdit: vi.fn(), unit: 'MI' });
+      expect(screen.getByRole('button', { name: 'route.editRoute' })).toHaveAccessibleDescription(
+        'line.distanceValue:100,line.mi',
+      );
+    });
+
+    it('with lookup off, says a stored route once, in the summary', () => {
+      h.available = false;
+      setup({ mode: 'locked', onEdit: vi.fn(), route: ROUTE });
+      expect(screen.getAllByText(/Toronto → Ottawa/)).toHaveLength(1);
+    });
+  });
+
+  it('editing: the fields are open and Edit route is gone', () => {
+    h.available = false;
+    setup({ mode: 'editing', onEdit: vi.fn() });
+    expect(screen.getByLabelText('line.distance')).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'MI' })).toBeEnabled();
+    expect(screen.queryByRole('button', { name: 'route.editRoute' })).not.toBeInTheDocument();
+  });
+
+  it('new (the default), lookup off: the open typed distance, with no Edit route', () => {
+    h.available = false;
+    setup();
+    expect(screen.getByLabelText('line.distance')).toBeEnabled();
+    expect(screen.queryByRole('button', { name: 'route.editRoute' })).not.toBeInTheDocument();
+  });
+
+  /**
+   * A saved line never edits its stops in place any more: with lookup on, its route control
+   * (the caller's `routeControl`) is the way to change the route, in every mode.
+   */
+  it.each(['route', 'locked', 'editing'] as const)('%s mode, lookup on: no stop fields', (mode) => {
+    setup({ mode, onEdit: vi.fn(), route: ROUTE });
+    expect(screen.queryByLabelText('from')).not.toBeInTheDocument();
+    expect(screen.queryByRole('combobox', { name: 'previousRoutes' })).not.toBeInTheDocument();
+  });
+});
+
+/**
+ * A NEW line with lookup on (FR-1, FR-5): the route dropdown and nothing else, and the
+ * workspace it opens is where the line is created — in one call — or abandoned.
+ */
+describe('a new line with lookup on', () => {
+  const ROUTE = {
+    index: 0,
+    label: 'Hwy 401',
+    totalMeters: 450_000,
+    distance: '450.00',
+    durationSeconds: 16_200,
+    legs: [{ fromPlaceId: 'a', toPlaceId: 'b', meters: 450_000 }],
+    encodedPolyline: 'enc',
+  };
+  const PREVIOUS = (n: number) => ({
+    stops: [
+      { placeId: `a${n}`, description: `From ${n}` },
+      { placeId: `b${n}`, description: `To ${n}` },
+    ],
+    legs: [{ fromPlaceId: `a${n}`, toPlaceId: `b${n}`, meters: 1000 }],
+    distance: { KM: '1.00', MI: '0.62' },
+  });
+  const dropdown = () => screen.getByRole('combobox', { name: 'route.dropdownLabel' });
+
+  async function open(user: ReturnType<typeof userEvent.setup>) {
+    await user.click(dropdown());
+    return screen.findByRole('listbox');
+  }
+
+  it('is the dropdown alone: no stops, Calculate, unit toggle or price', () => {
+    setup({ pricing: { expenseId: 'e', categoryId: 'c', currency: { code: 'CAD', symbol: '$' } } });
+    expect(dropdown()).toBeInTheDocument();
+    expect(screen.queryByLabelText('from')).toBeNull();
+    expect(screen.queryByLabelText('to')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'calculate' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'KM' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'MI' })).toBeNull();
+    expect(screen.queryByRole('status', { name: 'line.amount' })).toBeNull();
+  });
+
+  it('offers New route alone, with no empty group title, when there are no previous routes', async () => {
+    const user = userEvent.setup();
+    setup();
+    const list = await open(user);
+    expect(
+      within(list)
+        .getAllByRole('option')
+        .map((o) => o.textContent),
+    ).toEqual(['newRoute']);
+    expect(within(list).queryByRole('group')).toBeNull();
+  });
+
+  it('lists New route above a "Previous routes" group of at most five', async () => {
+    h.recent = [1, 2, 3, 4, 5, 6].map(PREVIOUS);
+    const user = userEvent.setup();
+    setup();
+    const list = await open(user);
+    const options = within(list).getAllByRole('option');
+    expect(options[0]).toHaveTextContent('newRoute');
+    const group = within(list).getByRole('group', { name: 'previousRoutes' });
+    expect(within(group).getAllByRole('option')).toHaveLength(5);
+  });
+
+  it('New route opens the workspace; Use this route makes ONE create call with the route', async () => {
+    h.routes = [ROUTE];
+    const onAccept = vi.fn(async () => {});
+    const user = userEvent.setup();
+    setup({ onAccept });
+    await open(user);
+    await user.click(screen.getByRole('option', { name: 'newRoute' }));
+    expect(await screen.findByRole('dialog')).toBeInTheDocument();
+    // Nothing is asked of Google until every stop is a picked place.
+    expect(h.computed).toEqual([]);
+    expect(onAccept).not.toHaveBeenCalled();
+  });
+
+  it('a previous route reopens as stored, and an unchanged Use this route writes it back once', async () => {
+    h.recent = [PREVIOUS(1)];
+    h.routes = [{ ...ROUTE, legs: [{ fromPlaceId: 'a1', toPlaceId: 'b1', meters: 450_000 }] }];
+    const onAccept = vi.fn(async () => {});
+    const user = userEvent.setup();
+    setup({ onAccept });
+    await open(user);
+    await user.click(screen.getByRole('option', { name: /previousRouteEnds:From 1,To 1/ }));
+    expect(h.computed).toEqual([{ placeIds: ['a1', 'b1'], unit: 'KM' }]);
+    await user.click(await screen.findByRole('button', { name: 'route.picker.useRoute' }));
+    expect(onAccept).toHaveBeenCalledOnce();
+    // The stored route and its stored distance, not the fresh answer's (spec FR-4 step 5).
+    expect(onAccept).toHaveBeenCalledWith({
+      mileageDistance: '1.00',
+      mileageUnit: 'KM',
+      mileageRoute: { stops: PREVIOUS(1).stops, legs: PREVIOUS(1).legs },
+    });
+    // Nothing Google drew is written: the route is its stops and legs.
+    const written = JSON.stringify(onAccept.mock.calls[0]);
+    expect(written).not.toMatch(/encodedPolyline|passThrough/);
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  it('Cancel writes nothing and gives the draft up', async () => {
+    h.recent = [PREVIOUS(1)];
+    h.routes = [ROUTE];
+    const onAccept = vi.fn(async () => {});
+    const onAbandon = vi.fn();
+    const user = userEvent.setup();
+    setup({ onAccept, onAbandon });
+    await open(user);
+    await user.click(screen.getByRole('option', { name: /previousRouteEnds:From 1,To 1/ }));
+    await user.click(await screen.findByRole('button', { name: 'addLine.cancel' }));
+    expect(onAbandon).toHaveBeenCalledOnce();
+    expect(onAccept).not.toHaveBeenCalled();
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  /**
+   * FR-7: the dropdown sits full width under the category row, 12 px below it in both
+   * states. The new-line row (`parts.tsx` NewLineForm) has a 6 px `gap-1.5`, so the new
+   * line adds `mt-1.5`; a saved line's route block sits in the saved row's `gap-1.5` too,
+   * so it takes the same `mt-1.5`.
+   */
+  it('sits full width under the category row, 12 px down (6 px row gap + mt-1.5)', () => {
+    const { container } = render(
+      <MileageFields
+        distance=""
+        onDistanceChange={vi.fn()}
+        unit="KM"
+        onUnitChange={vi.fn()}
+        route={EMPTY_ROUTE}
+        onRouteChange={vi.fn()}
+      />,
+    );
+    const root = container.firstElementChild;
+    expect(root).toContainElement(dropdown());
+    expect(root).toHaveClass('w-full', 'lg:basis-full', 'mt-1.5');
+    expect(root).not.toHaveClass('lg:flex-1');
+    expect(root).not.toHaveClass('lg:min-w-[14rem]');
+  });
+
+  it('with lookup off, is the typed distance and no dropdown (FR-1 1.A)', () => {
+    h.available = false;
+    setup();
+    expect(screen.getByLabelText('line.distance')).toBeInTheDocument();
+    expect(screen.queryByRole('combobox', { name: 'route.dropdownLabel' })).toBeNull();
   });
 });
 
@@ -292,6 +595,20 @@ describe('the priced amount', () => {
     // The saved $17.95 belongs to 25.66 km; the field says 30.
     expect(screen.getByLabelText('line.amount')).not.toHaveTextContent('$17.95');
     expect(screen.getByLabelText('line.amount')).toHaveTextContent('$21.00');
+  });
+
+  it('on a route line, keeps the saved figure for the same claim shown in the other unit', () => {
+    // Display-only KM/MI: 25.66 km shown as 15.94 mi is the same claim, priced in the
+    // rule's unit. Pricing the restated number would re-round it into a different claim.
+    h.preview = { ok: true, amountMinor: '9999' };
+    setup({
+      mode: 'route',
+      distance: '15.94',
+      unit: 'MI',
+      pricing: { ...PRICING, saved: { amountMinor: '1795', distance: '25.66' } },
+    });
+    expect(screen.getByLabelText('line.amount')).toHaveTextContent('$17.95');
+    expect(h.previewCalls.every((c) => !c.enabled)).toBe(true);
   });
 });
 

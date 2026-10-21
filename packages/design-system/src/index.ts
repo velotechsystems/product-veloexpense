@@ -187,6 +187,10 @@ export {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+// VeloExpense (eos batch 5): ExpenseOS #591 adds `SelectGroupLabel` to its design system, a
+// group's visible title announced through the group. The kit's Radix `SelectLabel` is
+// exactly that (Radix wires the group's `aria-labelledby` to it), with the same classes.
+export { SelectLabel as SelectGroupLabel } from '@/components/ui/select';
 // VeloExpense: ExpenseOS's one-component Tooltip, on the kit's parts — in the kit's `forms`
 // item since Wave 1 (it was this package's own file in Wave 0).
 export { Tooltip } from '@/components/forms/Tooltip';
