@@ -2963,6 +2963,98 @@ describe('RLS tenant isolation', () => {
     await admin.query('DELETE FROM mileage_rate');
   });
 
+  /* ── Mileage opening balances (eos batch 3, #589, migration 0081) ───────────
+   *
+   * Two new tenant tables. The ordinary claim for each, then what the composite FKs add:
+   * an upload cannot be imported by another tenant's person or superseded by another
+   * tenant's upload, and a balance cannot hang off another tenant's upload or name another
+   * tenant's person.
+   */
+  it("mileage balance uploads and their balances are tenant-isolated, and cannot name another tenant's rows", async () => {
+    await admin.query('DELETE FROM mileage_balance_import');
+    const seed = async (org: string, country: string) =>
+      withOrg(org, async (tx) => {
+        const user = (await tx.query('SELECT id FROM app_user LIMIT 1')).rows[0].id as string;
+        const upload = (
+          await tx.query(
+            `INSERT INTO mileage_balance_import (organization_id, source, year, as_of, filename, imported_by_id)
+             VALUES ($1, 'concur', 2026, '2026-06-30', 'ytd.xlsx', $2) RETURNING id`,
+            [org, user],
+          )
+        ).rows[0].id as string;
+        await tx.query(
+          `INSERT INTO mileage_opening_balance (organization_id, import_id, user_id, country, unit, distance, source_name)
+           VALUES ($1, $2, $3, $4, 'KM', 1234.5, 'Côté, Hélène')`,
+          [org, upload, user, country],
+        );
+        return { upload, user };
+      });
+    const a = await seed(orgA, 'CA');
+    const b = await seed(orgB, 'US');
+
+    for (const [org, country] of [
+      [orgA, 'CA'],
+      [orgB, 'US'],
+    ] as const) {
+      const seen = await withOrg(org, async (tx) => ({
+        uploads: (await tx.query('SELECT count(*)::int AS n FROM mileage_balance_import')).rows[0].n,
+        balances: (await tx.query('SELECT country FROM mileage_opening_balance')).rows.map((r) => r.country),
+      }));
+      expect(seen).toEqual({ uploads: 1, balances: [country] });
+    }
+
+    await expect(
+      withOrg(orgB, (tx) =>
+        tx.query(
+          `INSERT INTO mileage_balance_import (organization_id, source, year, as_of, filename, imported_by_id)
+           VALUES ($1, 'concur', 2026, now(), 'x.xlsx', $2)`,
+          [orgA, a.user],
+        ),
+      ),
+    ).rejects.toThrow(/row-level security|violates/i);
+    await expect(
+      withOrg(orgB, (tx) =>
+        tx.query(
+          `INSERT INTO mileage_balance_import (organization_id, source, year, as_of, filename, imported_by_id)
+           VALUES ($1, 'concur', 2026, now(), 'x.xlsx', $2)`,
+          [orgB, a.user],
+        ),
+      ),
+    ).rejects.toThrow(/foreign key/i);
+    await expect(
+      withOrg(orgB, (tx) =>
+        tx.query(
+          `INSERT INTO mileage_opening_balance (organization_id, import_id, user_id, country, unit, distance, source_name)
+           VALUES ($1, $2, $3, 'US', 'KM', 1, 'x')`,
+          [orgB, a.upload, b.user],
+        ),
+      ),
+    ).rejects.toThrow(/foreign key/i);
+    await expect(
+      withOrg(orgB, (tx) =>
+        tx.query(
+          `INSERT INTO mileage_opening_balance (organization_id, import_id, user_id, country, unit, distance, source_name)
+           VALUES ($1, $2, $3, 'CA', 'KM', 1, 'x')`,
+          [orgB, b.upload, a.user],
+        ),
+      ),
+    ).rejects.toThrow(/foreign key/i);
+    await expect(
+      withOrg(orgB, (tx) =>
+        tx.query('UPDATE mileage_balance_import SET superseded_by_id = $1 WHERE id = $2', [a.upload, b.upload]),
+      ),
+    ).rejects.toThrow(/foreign key/i);
+
+    for (const table of ['mileage_balance_import', 'mileage_opening_balance']) {
+      const viaPlatform = await withPlatformRead((tx) => tx.query(`SELECT count(*)::int AS n FROM ${table}`));
+      expect(viaPlatform.rows[0].n, table).toBe(0);
+      const blind = await withoutOrg((tx) => tx.query(`SELECT count(*)::int AS n FROM ${table}`));
+      expect(blind.rows[0].n, table).toBe(0);
+    }
+
+    await admin.query('DELETE FROM mileage_balance_import');
+  });
+
   /* ── Per-diem rates (the Wave 1 port, migration 0053) ──────────────────────
    *
    * The ordinary claim, and the composite FKs: a rate cannot name another tenant's

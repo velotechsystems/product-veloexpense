@@ -302,3 +302,21 @@ describe('<MileageRatesAdmin>', () => {
     expect(screen.queryByText('delete')).not.toBeInTheDocument();
   });
 });
+
+describe('year-to-date mileage import', () => {
+  it('opens the Concur import from the top bar for somebody who can edit mileage', async () => {
+    const user = userEvent.setup();
+    setTrpc([RATE]);
+    renderPage({ canEdit: true });
+    await user.click(screen.getByRole('button', { name: /importYtd/ }));
+    // The drawer's own tabs: importing, and the history of uploads.
+    expect(await screen.findByRole('tab', { name: 'tabImport' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'tabHistory' })).toBeInTheDocument();
+  });
+
+  it('offers no import without the permission', () => {
+    setTrpc([RATE]);
+    renderPage({ canEdit: false });
+    expect(screen.queryByRole('button', { name: /importYtd/ })).not.toBeInTheDocument();
+  });
+});

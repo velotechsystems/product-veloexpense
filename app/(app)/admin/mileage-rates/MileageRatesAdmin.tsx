@@ -35,7 +35,7 @@ import {
   RowActionsMenu,
   TableSettingsButton,
 } from '@expenseos/design-system';
-import { IconEye, IconPlayerStop, IconTrash } from '@tabler/icons-react';
+import { IconEye, IconFileImport, IconPlayerStop, IconTrash } from '@tabler/icons-react';
 import { useTranslations } from 'next-intl';
 import { useMemo, useState } from 'react';
 // VeloExpense: the shell lives at app/(app) (no [locale] segment).
@@ -52,6 +52,7 @@ import {
 import { CountryCombobox, CountryLabel } from '@/components/pickers/CountryDisplay';
 import { GlAccountCombobox, UserCombobox } from '@/components/pickers/EntityPickers';
 import { trpc } from '@/lib/trpc/client';
+import { MileageBalanceImportDrawer } from './MileageBalanceImport';
 
 type MileageUnit = 'KM' | 'MI';
 
@@ -197,6 +198,8 @@ export function MileageRatesAdmin({ canEdit }: { canEdit: boolean }) {
   const [selected, setSelected] = useState<RateRow | null>(null);
   const [form, setForm] = useState<FormData>(EMPTY_FORM);
   const [error, setError] = useState<string | null>(null);
+  /** The year-to-date (Concur) import drawer — separate from the rule drawer. */
+  const [importOpen, setImportOpen] = useState(false);
 
   const invalidate = () => utils.policies.mileageRate.list.invalidate();
   const onErr = (e: { message: string }) => setError(e.message);
@@ -437,10 +440,16 @@ export function MileageRatesAdmin({ canEdit }: { canEdit: boolean }) {
   useTopBarSlots(
     () => ({
       right: canEdit ? (
-        <Button size="sm" onClick={openCreate}>
-          <IconPlus size={14} className="mr-1" />
-          {t('addRate')}
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button size="sm" variant="outline" onClick={() => setImportOpen(true)}>
+            <IconFileImport size={14} className="mr-1" />
+            {t('importYtd')}
+          </Button>
+          <Button size="sm" onClick={openCreate}>
+            <IconPlus size={14} className="mr-1" />
+            {t('addRate')}
+          </Button>
+        </div>
       ) : null,
     }),
     [canEdit, t],
@@ -800,6 +809,8 @@ export function MileageRatesAdmin({ canEdit }: { canEdit: boolean }) {
           )}
         </DrawerContent>
       </Drawer>
+
+      {canEdit && <MileageBalanceImportDrawer open={importOpen} onOpenChange={setImportOpen} />}
     </div>
   );
 }

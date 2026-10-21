@@ -411,6 +411,8 @@ export const ModelName = {
   MileageRate: 'MileageRate',
   MileageRateTier: 'MileageRateTier',
   MileageRateSubject: 'MileageRateSubject',
+  MileageBalanceImport: 'MileageBalanceImport',
+  MileageOpeningBalance: 'MileageOpeningBalance',
   PerDiemRate: 'PerDiemRate',
   Currency: 'Currency',
   Department: 'Department',
@@ -458,7 +460,7 @@ export type TypeMap<ExtArgs extends runtime.Types.Extensions.InternalArgs = runt
     omit: GlobalOmitOptions
   }
   meta: {
-    modelProps: "expenseCategory" | "glAccount" | "expenseReport" | "expense" | "expenseAllocation" | "expenseAttendee" | "expenseLineItem" | "receipt" | "documentExtraction" | "expenseDetermination" | "receiptExternalId" | "expenseExternalId" | "aiUsage" | "taxJurisdiction" | "user" | "userExternalId" | "role" | "roleExternalId" | "businessUnit" | "externalIdSource" | "businessUnitExternalId" | "legalEntity" | "legalEntityExternalId" | "fxRate" | "mileageRate" | "mileageRateTier" | "mileageRateSubject" | "perDiemRate" | "currency" | "department" | "departmentExternalId" | "jobLevel" | "jobLevelExternalId" | "fiscalYear" | "fiscalYearExternalId" | "approvalWorkflow" | "approvalWorkflowVersion" | "approvalInstance" | "approvalTask" | "delegation" | "policyRule" | "expensePolicy" | "policyViolation" | "savedView" | "replyThread" | "travelPlace" | "travelRequest" | "travelCategory" | "travelBudgetLine" | "assistantConversation" | "assistantMessage" | "assistantFeedback" | "apiKey" | "apiKeyRequest" | "apiKeyIdempotency" | "mcpOauthClient" | "mcpOauthGrant" | "mcpOauthCode" | "mcpOauthRefreshToken"
+    modelProps: "expenseCategory" | "glAccount" | "expenseReport" | "expense" | "expenseAllocation" | "expenseAttendee" | "expenseLineItem" | "receipt" | "documentExtraction" | "expenseDetermination" | "receiptExternalId" | "expenseExternalId" | "aiUsage" | "taxJurisdiction" | "user" | "userExternalId" | "role" | "roleExternalId" | "businessUnit" | "externalIdSource" | "businessUnitExternalId" | "legalEntity" | "legalEntityExternalId" | "fxRate" | "mileageRate" | "mileageRateTier" | "mileageRateSubject" | "mileageBalanceImport" | "mileageOpeningBalance" | "perDiemRate" | "currency" | "department" | "departmentExternalId" | "jobLevel" | "jobLevelExternalId" | "fiscalYear" | "fiscalYearExternalId" | "approvalWorkflow" | "approvalWorkflowVersion" | "approvalInstance" | "approvalTask" | "delegation" | "policyRule" | "expensePolicy" | "policyViolation" | "savedView" | "replyThread" | "travelPlace" | "travelRequest" | "travelCategory" | "travelBudgetLine" | "assistantConversation" | "assistantMessage" | "assistantFeedback" | "apiKey" | "apiKeyRequest" | "apiKeyIdempotency" | "mcpOauthClient" | "mcpOauthGrant" | "mcpOauthCode" | "mcpOauthRefreshToken"
     txIsolationLevel: TransactionIsolationLevel
   }
   model: {
@@ -2457,6 +2459,154 @@ export type TypeMap<ExtArgs extends runtime.Types.Extensions.InternalArgs = runt
         count: {
           args: Prisma.MileageRateSubjectCountArgs<ExtArgs>
           result: runtime.Types.Utils.Optional<Prisma.MileageRateSubjectCountAggregateOutputType> | number
+        }
+      }
+    }
+    MileageBalanceImport: {
+      payload: Prisma.$MileageBalanceImportPayload<ExtArgs>
+      fields: Prisma.MileageBalanceImportFieldRefs
+      operations: {
+        findUnique: {
+          args: Prisma.MileageBalanceImportFindUniqueArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$MileageBalanceImportPayload> | null
+        }
+        findUniqueOrThrow: {
+          args: Prisma.MileageBalanceImportFindUniqueOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$MileageBalanceImportPayload>
+        }
+        findFirst: {
+          args: Prisma.MileageBalanceImportFindFirstArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$MileageBalanceImportPayload> | null
+        }
+        findFirstOrThrow: {
+          args: Prisma.MileageBalanceImportFindFirstOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$MileageBalanceImportPayload>
+        }
+        findMany: {
+          args: Prisma.MileageBalanceImportFindManyArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$MileageBalanceImportPayload>[]
+        }
+        create: {
+          args: Prisma.MileageBalanceImportCreateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$MileageBalanceImportPayload>
+        }
+        createMany: {
+          args: Prisma.MileageBalanceImportCreateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        createManyAndReturn: {
+          args: Prisma.MileageBalanceImportCreateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$MileageBalanceImportPayload>[]
+        }
+        delete: {
+          args: Prisma.MileageBalanceImportDeleteArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$MileageBalanceImportPayload>
+        }
+        update: {
+          args: Prisma.MileageBalanceImportUpdateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$MileageBalanceImportPayload>
+        }
+        deleteMany: {
+          args: Prisma.MileageBalanceImportDeleteManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateMany: {
+          args: Prisma.MileageBalanceImportUpdateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateManyAndReturn: {
+          args: Prisma.MileageBalanceImportUpdateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$MileageBalanceImportPayload>[]
+        }
+        upsert: {
+          args: Prisma.MileageBalanceImportUpsertArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$MileageBalanceImportPayload>
+        }
+        aggregate: {
+          args: Prisma.MileageBalanceImportAggregateArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.AggregateMileageBalanceImport>
+        }
+        groupBy: {
+          args: Prisma.MileageBalanceImportGroupByArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.MileageBalanceImportGroupByOutputType>[]
+        }
+        count: {
+          args: Prisma.MileageBalanceImportCountArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.MileageBalanceImportCountAggregateOutputType> | number
+        }
+      }
+    }
+    MileageOpeningBalance: {
+      payload: Prisma.$MileageOpeningBalancePayload<ExtArgs>
+      fields: Prisma.MileageOpeningBalanceFieldRefs
+      operations: {
+        findUnique: {
+          args: Prisma.MileageOpeningBalanceFindUniqueArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$MileageOpeningBalancePayload> | null
+        }
+        findUniqueOrThrow: {
+          args: Prisma.MileageOpeningBalanceFindUniqueOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$MileageOpeningBalancePayload>
+        }
+        findFirst: {
+          args: Prisma.MileageOpeningBalanceFindFirstArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$MileageOpeningBalancePayload> | null
+        }
+        findFirstOrThrow: {
+          args: Prisma.MileageOpeningBalanceFindFirstOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$MileageOpeningBalancePayload>
+        }
+        findMany: {
+          args: Prisma.MileageOpeningBalanceFindManyArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$MileageOpeningBalancePayload>[]
+        }
+        create: {
+          args: Prisma.MileageOpeningBalanceCreateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$MileageOpeningBalancePayload>
+        }
+        createMany: {
+          args: Prisma.MileageOpeningBalanceCreateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        createManyAndReturn: {
+          args: Prisma.MileageOpeningBalanceCreateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$MileageOpeningBalancePayload>[]
+        }
+        delete: {
+          args: Prisma.MileageOpeningBalanceDeleteArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$MileageOpeningBalancePayload>
+        }
+        update: {
+          args: Prisma.MileageOpeningBalanceUpdateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$MileageOpeningBalancePayload>
+        }
+        deleteMany: {
+          args: Prisma.MileageOpeningBalanceDeleteManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateMany: {
+          args: Prisma.MileageOpeningBalanceUpdateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateManyAndReturn: {
+          args: Prisma.MileageOpeningBalanceUpdateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$MileageOpeningBalancePayload>[]
+        }
+        upsert: {
+          args: Prisma.MileageOpeningBalanceUpsertArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$MileageOpeningBalancePayload>
+        }
+        aggregate: {
+          args: Prisma.MileageOpeningBalanceAggregateArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.AggregateMileageOpeningBalance>
+        }
+        groupBy: {
+          args: Prisma.MileageOpeningBalanceGroupByArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.MileageOpeningBalanceGroupByOutputType>[]
+        }
+        count: {
+          args: Prisma.MileageOpeningBalanceCountArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.MileageOpeningBalanceCountAggregateOutputType> | number
         }
       }
     }
@@ -5332,6 +5482,37 @@ export const MileageRateSubjectScalarFieldEnum = {
 export type MileageRateSubjectScalarFieldEnum = (typeof MileageRateSubjectScalarFieldEnum)[keyof typeof MileageRateSubjectScalarFieldEnum]
 
 
+export const MileageBalanceImportScalarFieldEnum = {
+  id: 'id',
+  organizationId: 'organizationId',
+  source: 'source',
+  year: 'year',
+  asOf: 'asOf',
+  filename: 'filename',
+  importedById: 'importedById',
+  importedAt: 'importedAt',
+  supersededById: 'supersededById',
+  supersededAt: 'supersededAt'
+} as const
+
+export type MileageBalanceImportScalarFieldEnum = (typeof MileageBalanceImportScalarFieldEnum)[keyof typeof MileageBalanceImportScalarFieldEnum]
+
+
+export const MileageOpeningBalanceScalarFieldEnum = {
+  id: 'id',
+  organizationId: 'organizationId',
+  importId: 'importId',
+  userId: 'userId',
+  country: 'country',
+  unit: 'unit',
+  distance: 'distance',
+  sourceName: 'sourceName',
+  paidRate: 'paidRate'
+} as const
+
+export type MileageOpeningBalanceScalarFieldEnum = (typeof MileageOpeningBalanceScalarFieldEnum)[keyof typeof MileageOpeningBalanceScalarFieldEnum]
+
+
 export const PerDiemRateScalarFieldEnum = {
   id: 'id',
   organizationId: 'organizationId',
@@ -6221,6 +6402,8 @@ export type GlobalOmitConfig = {
   mileageRate?: Prisma.MileageRateOmit
   mileageRateTier?: Prisma.MileageRateTierOmit
   mileageRateSubject?: Prisma.MileageRateSubjectOmit
+  mileageBalanceImport?: Prisma.MileageBalanceImportOmit
+  mileageOpeningBalance?: Prisma.MileageOpeningBalanceOmit
   perDiemRate?: Prisma.PerDiemRateOmit
   currency?: Prisma.CurrencyOmit
   department?: Prisma.DepartmentOmit

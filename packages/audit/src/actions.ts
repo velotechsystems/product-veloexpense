@@ -136,6 +136,8 @@ const CONFIG_ACTIONS = {
   policy: 'EXPENSE_POLICY_CHANGED',
   fxRate: 'FX_RATE_ADDED',
   mileageRate: 'MILEAGE_RATE_CHANGED',
+  /** eos batch 3 (#589): a year-to-date mileage upload committed. */
+  mileageBalanceImport: 'MILEAGE_BALANCES_IMPORTED',
   /** w4-02b: every rule-instance write, the operation in `details.op` (as ExpenseOS). */
   policyRule: 'POLICY_RULE_CHANGED',
 } as const satisfies Record<string, AuditAction>;

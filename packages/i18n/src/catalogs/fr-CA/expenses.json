@@ -285,7 +285,12 @@
     "addRoute": "Ajouter un trajet",
     "routeSet": "{stops} arrêts",
     "distancePending": "Définissez l’itinéraire ci-dessous",
-    "amountNotANumber": "Non enregistré : ce n’est pas un montant."
+    "amountNotANumber": "Non enregistré : ce n’est pas un montant.",
+    "mileageCarried": "Déjà cette année : {ytd} {unit} (dont {carried} {unit} reportés de Concur jusqu’au {date})",
+    "mileageUnitShort": {
+      "KM": "km",
+      "MI": "mi"
+    }
   },
   "extraction": {
     "infected": "Logiciel malveillant détecté",

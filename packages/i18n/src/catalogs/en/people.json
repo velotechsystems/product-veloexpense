@@ -65,7 +65,24 @@
     "noDelegations": "No delegations.",
     "delegatesTo": "Delegates to",
     "actsFor": "Acts for",
-    "delegationEnded": "Ended"
+    "delegationEnded": "Ended",
+    "mileageYtd": "Mileage this year",
+    "mileageYtdUnavailable": "Unavailable",
+    "mileageYtdLines": {
+      "none": "None",
+      "country": "{country}:",
+      "line": {
+        "first": "{total} of {boundary} {unit} this year · {remaining} {unit} left in the first band",
+        "past": "Past {from} {unit} since {date} · {band, select, 2 {second rate applies} 3 {third rate applies} other {band {band} rate applies}}",
+        "pastNoDate": "Past {from} {unit} · {band, select, 2 {second rate applies} 3 {third rate applies} other {band {band} rate applies}}",
+        "left": "{remaining} {unit} left before the next rate",
+        "flat": "Flat rate (car allowance) · {total} {unit}",
+        "single": "Single rate · {total} {unit}",
+        "noRule": "{total} {unit} this year · no rate in force today",
+        "carried": "incl. {carried} {unit} carried over through {date}",
+        "pending": "of which {pending} {unit} not yet approved"
+      }
+    }
   },
   "selectAll": "Select all visible rows",
   "groupBy": {

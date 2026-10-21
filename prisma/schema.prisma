@@ -521,6 +521,10 @@ model User {
   expenses     Expense[]       @relation("ExpenseOwner")
   receipts     Receipt[]       @relation("ReceiptUploader")
   mileageRates MileageRateSubject[] @relation("MileageRateSubject")
+  /// eos batch 3 (#589): distance carried in from another system (Concur) for the mileage bands.
+  mileageOpeningBalances MileageOpeningBalance[]
+  /// eos batch 3 (#589): year-to-date mileage files this person uploaded.
+  mileageBalanceImports  MileageBalanceImport[]  @relation("MileageBalanceImporter")
   /// w4-00a: the workflow engine's tasks (0058).
   approvalTasksAssigned ApprovalTask[] @relation("ApprovalTaskAssignee")
   approvalTasksDecided  ApprovalTask[] @relation("ApprovalTaskDecider")
@@ -807,6 +811,62 @@ model MileageRateSubject {
 
   @@id([rateId, userId])
   @@map("mileage_rate_subject")
+}
+
+// ExpenseOS's `MileageBalanceImport` and `MileageOpeningBalance` (#589, 67db2e33), migration
+// 0081. VeloExpense differences: per tenant (composite tenant FKs in the database); the unit is
+// text with a CHECK (KM | MI), as `MileageRate.unit` is.
+
+/// One upload of a year-to-date mileage file from another system (Concur). Uploads are
+/// EVOLUTIONARY: the newest per (source, year) is in force and every earlier one is
+/// superseded, never deleted.
+model MileageBalanceImport {
+  id             String                  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String                  @default(dbgenerated("(NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid")) @map("organization_id") @db.Uuid
+  /// Where the distance came from — 'concur'.
+  source         String
+  /// The calendar year the distance counts toward.
+  year           Int
+  /// The file's period end: mileage dated on or before it is covered by the file.
+  asOf           DateTime                @map("as_of") @db.Timestamptz(6)
+  filename       String
+  importedById   String                  @map("imported_by_id") @db.Uuid
+  importedBy     User                    @relation("MileageBalanceImporter", fields: [importedById], references: [id], onDelete: Restrict)
+  importedAt     DateTime                @default(now()) @map("imported_at") @db.Timestamptz(6)
+  /// The upload that replaced this one; null while it is in force.
+  supersededById String?                 @unique @map("superseded_by_id") @db.Uuid
+  supersededBy   MileageBalanceImport?   @relation("MileageBalanceSuccession", fields: [supersededById], references: [id], onDelete: SetNull)
+  supersedes     MileageBalanceImport?   @relation("MileageBalanceSuccession")
+  supersededAt   DateTime?               @map("superseded_at") @db.Timestamptz(6)
+  balances       MileageOpeningBalance[]
+
+  @@unique([organizationId, id])
+  @@index([organizationId, source, year, supersededAt], map: "mileage_balance_import_source_year_superseded_idx")
+  @@map("mileage_balance_import")
+}
+
+/// One person's carried-over distance in one upload.
+model MileageOpeningBalance {
+  id             String               @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String               @default(dbgenerated("(NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid")) @map("organization_id") @db.Uuid
+  importId       String               @map("import_id") @db.Uuid
+  import         MileageBalanceImport @relation(fields: [importId], references: [id], onDelete: Cascade)
+  userId         String               @map("user_id") @db.Uuid
+  user           User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// ISO-2 — the same country the mileage bands are kept per.
+  country        String
+  /// KM | MI (a CHECK in the table).
+  unit           String
+  distance       Decimal              @db.Decimal(12, 2)
+  /// The person's name as the file wrote it, so the next upload matches it without asking.
+  sourceName     String               @map("source_name")
+  /// The last rate the other system paid, as reported (e.g. 0.73) — informational.
+  paidRate       Decimal?             @map("paid_rate") @db.Decimal(6, 4)
+
+  @@unique([organizationId, id])
+  @@unique([importId, userId, country])
+  @@index([userId], map: "mileage_opening_balance_user_idx")
+  @@map("mileage_opening_balance")
 }
 
 // ExpenseOS's `PerDiemRate` (Wave 1), migration 0053. VeloExpense differences: per
