@@ -525,6 +525,8 @@ model User {
   mileageOpeningBalances MileageOpeningBalance[]
   /// eos batch 3 (#589): year-to-date mileage files this person uploaded.
   mileageBalanceImports  MileageBalanceImport[]  @relation("MileageBalanceImporter")
+  userSyncRuns           UserSyncRun[]           @relation("UserSyncRunActor")
+  userSyncRunItems       UserSyncRunItem[]
   /// w4-00a: the workflow engine's tasks (0058).
   approvalTasksAssigned ApprovalTask[] @relation("ApprovalTaskAssignee")
   approvalTasksDecided  ApprovalTask[] @relation("ApprovalTaskDecider")
@@ -562,6 +564,8 @@ model UserExternalId {
   user   User             @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([sourceId, sourceValue])
+  /// eos batch 4 (#582): one id per person per source (0082).
+  @@unique([userId, sourceId], map: "user_external_id_user_source_key")
   @@index([userId])
   @@map("user_external_id")
 }
@@ -1778,4 +1782,53 @@ model McpOauthRefreshToken {
   @@index([grantId], map: "mcp_oauth_refresh_token_grant_idx")
   @@index([expiresAt])
   @@map("mcp_oauth_refresh_token")
+}
+
+/// eos batch 4 (#582): a people-sync run (0082). Also the per-kind, per-tenant run lock.
+model UserSyncRun {
+  id             String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String            @default(dbgenerated("(NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid")) @map("organization_id") @db.Uuid
+  /// 'GOOGLE_DIRECTORY' (CHECK).
+  kind           String
+  trigger        String
+  dryRun         Boolean           @default(false) @map("dry_run")
+  /// RUNNING | COMPLETED | DISABLED | ERROR | CANCELLED (CHECK).
+  status         String            @default("RUNNING")
+  jobId          String?           @map("job_id")
+  actorId        String?           @map("actor_id") @db.Uuid
+  actor          User?             @relation("UserSyncRunActor", fields: [actorId], references: [id], onDelete: SetNull)
+  counts         Json              @default("{}")
+  message        String?
+  startedAt      DateTime          @default(now()) @map("started_at") @db.Timestamptz(6)
+  heartbeatAt    DateTime          @default(now()) @map("heartbeat_at") @db.Timestamptz(6)
+  finishedAt     DateTime?         @map("finished_at") @db.Timestamptz(6)
+  items          UserSyncRunItem[]
+
+  @@unique([organizationId, id])
+  @@index([organizationId, kind, startedAt], map: "user_sync_run_kind_started_idx")
+  @@index([organizationId, status], map: "user_sync_run_status_idx")
+  @@map("user_sync_run")
+}
+
+/// eos batch 4 (#582): what a run did to one person (0082).
+model UserSyncRunItem {
+  id             String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String       @default(dbgenerated("(NULLIF(current_setting('app.current_org'::text, true), ''::text))::uuid")) @map("organization_id") @db.Uuid
+  runId          String?      @map("run_id") @db.Uuid
+  run            UserSyncRun? @relation(fields: [runId], references: [id], onDelete: Cascade)
+  kind           String
+  userId         String?      @map("user_id") @db.Uuid
+  user           User?        @relation(fields: [userId], references: [id], onDelete: SetNull)
+  externalRef    String?      @map("external_ref")
+  /// CREATED | UPDATED | LINKED | CONFLICT | SKIPPED | … (CHECK).
+  outcome        String
+  fields         Json         @default("{}")
+  message        String?
+  createdAt      DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@unique([organizationId, id])
+  @@index([runId], map: "user_sync_run_item_run_idx")
+  @@index([userId, createdAt], map: "user_sync_run_item_user_created_idx")
+  @@index([organizationId, kind, createdAt], map: "user_sync_run_item_kind_created_idx")
+  @@map("user_sync_run_item")
 }

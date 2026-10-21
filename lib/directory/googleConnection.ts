@@ -45,6 +45,12 @@ export interface DirectorySyncSummary {
   held: number;
   offboarded: number;
   errors: number;
+  /** eos batch 4 (#582): people linked to their Google account, and conflicts refused.
+   *  Optional: a summary recorded before batch 4 has neither. */
+  linked?: number;
+  conflicts?: number;
+  /** eos batch 4 (#582): the run report this summary is of (`user_sync_run`). */
+  runId?: string;
   unmappedTitles: { title: string; count: number }[];
   missingJobLevels: { code: string; count: number }[];
   message?: string;
@@ -218,20 +224,25 @@ export async function recordDirectorySync(
   trigger: string,
   result: SyncAllResult,
   at: Date,
+  runId?: string,
 ): Promise<void> {
   if (result.status === 'disabled') return;
+  const { counts } = result;
   const summary: DirectorySyncSummary = {
     status: result.status,
     trigger,
-    scanned: result.scanned,
-    updated: result.updated,
-    notFound: result.notFound,
-    held: result.held,
+    scanned: counts.scanned,
+    updated: counts.updated,
+    notFound: counts.notFound,
+    held: counts.held,
     offboarded: result.offboarded.length,
-    errors: result.errors,
+    errors: counts.errors,
+    linked: counts.linked,
+    conflicts: counts.conflicts,
     // The screen shows the commonest; the full tally is the audit row's.
-    unmappedTitles: result.unmappedTitles.slice(0, 25),
-    missingJobLevels: result.missingJobLevels.slice(0, 25),
+    unmappedTitles: counts.unmappedTitles.slice(0, 25),
+    missingJobLevels: counts.missingJobLevels.slice(0, 25),
+    ...(runId ? { runId } : {}),
     ...(result.message ? { message: result.message } : {}),
   };
   await tx.query(

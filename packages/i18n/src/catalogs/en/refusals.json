@@ -27,5 +27,8 @@
   },
   "billing": {
     "expenseLimitReached": "This organization’s plan allows {limit, number} expenses a year, and that many have been added in the last twelve months. Your drafts are saved — an administrator can change the plan from the billing settings."
+  },
+  "people": {
+    "directoryManaged": "{fields}: these come from Google Workspace for this person, so a change here would be undone by the next directory sync. Change them in Google instead."
   }
 }

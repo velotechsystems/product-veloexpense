@@ -1,313 +1,729 @@
+// eos batch 4 — ported from ExpenseOS `packages/integrations-google/src/syncAll.test.ts`
+// (67db2e33, #582). VeloExpense, each marked "VeloExpense:" below:
+//   · the credentials are the tenant's and passed in (`null` = not connected = `disabled`),
+//     and the platform's GOOGLE_DIRECTORY_DISABLED switch still turns every tenant off —
+//     ExpenseOS's `loadDirectorySettings` is not ported;
+//   · each person is applied, and each manager resolved, on its own `db.$transaction`;
+//   · the customer is `my_customer` unless the caller passes one;
+//   · nobody is created (d84): ExpenseOS's `created` is `notFound` here, which is counted and
+//     leaves no item; a held offboarding (the last admin) is a SKIPPED item; the people
+//     offboarded and the missing level codes are reported;
+//   · the addresses are `example.test`.
 // @vitest-environment node
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { ApplyResult } from './apply';
+import type { DirectoryUser } from './types';
 
 /**
- * The daily Directory reconciliation.
+ * The nightly Directory reconciliation.
  *
- * The properties worth pinning are all about RESILIENCE and REPORTING, because this runs
+ * The properties worth pinning are about ORDER, RESILIENCE and REPORTING, because this runs
  * unattended over the whole org:
  *
- *   · **One bad user must not abort the sync.** With 703 people, a single malformed record
- *     aborting the pass means nobody gets reconciled that day — and the failure is a log
- *     line nobody reads.
+ *   · **Both listings are read in full before anything is written.** Which Google ids are
+ *     live decides a re-link versus a conflict, and a deleted account may share an address
+ *     with a live one — neither can be judged a page at a time. A listing failure therefore
+ *     fails the run with NOTHING written, rather than half a reconciliation.
  *   · **Paging must actually page.** Stopping after the first page silently syncs the first
  *     500 people alphabetically and leaves the rest stale forever.
- *   · **Unmapped job titles must be REPORTED, not swallowed.** A person with no job level
- *     is invisible to a `managerChain` tier walk, so enough of them in one chain routes a
- *     large report past everyone who should have seen it. The tally is how that gets
- *     noticed.
- *   · **Disabled is a status, not an error.** Dev has no service-account key; returning
- *     `error` there would make a normal configuration look broken every night.
- *
- * w5-04 — ported from ExpenseOS `syncAll.test.ts` (1e682dd6). VeloExpense: the credentials
- * are the tenant's and passed in (`null` = not connected = `disabled`); each person is applied
- * on its own `db.$transaction`; `created` is `notFound` (update only, d84), plus `held`,
- * `offboarded` and `missingJobLevels`; there is no GOOGLE_WORKSPACE_CUSTOMER_ID override. The
- * addresses are `example.test`.
+ *   · **A deleted account never terminates a live address's owner.** Google lists deleted
+ *     accounts for ~20 days; their addresses get re-issued.
+ *   · **Managers are a second pass.** Otherwise a manager listed after their report is not
+ *     found on the first night.
+ *   · **One bad person must not abort the run**, and unmapped titles / unresolved managers
+ *     are REPORTED, not swallowed — a person with no job level is invisible to a
+ *     `managerChain` tier walk.
+ *   · **Disabled is a status, not an error.** Returning `error` for a deliberately-off
+ *     integration would make a normal configuration look broken every night.
  */
 
-const listMock = vi.fn();
-const applyMock = vi.fn();
-
-class DisabledError extends Error {}
-class ConfigError extends Error {}
-
-vi.mock('./client', () => ({
-  GoogleDirectoryDisabledError: DisabledError,
-  GoogleDirectoryConfigError: ConfigError,
-  isDirectoryDisabled: () => process.env.GOOGLE_DIRECTORY_DISABLED === 'true',
-  getDirectoryClient: () => {
-    if (process.env.__FAIL_INIT === 'config') throw new ConfigError('no service account');
-    if (process.env.__FAIL_INIT === 'disabled') throw new DisabledError('off');
-    if (process.env.__FAIL_INIT === 'boom') throw new Error('unexpected');
-    return { users: { list: listMock } };
-  },
+const h = vi.hoisted(() => ({
+  list: vi.fn(),
+  getClient: vi.fn(),
+  apply: vi.fn(),
+  manager: vi.fn(),
+  sourceId: vi.fn(async () => 'src-google'),
 }));
 
+vi.mock('./client', () => {
+  class GoogleDirectoryConfigError extends Error {}
+  class GoogleDirectoryDisabledError extends Error {}
+  return {
+    GoogleDirectoryConfigError,
+    GoogleDirectoryDisabledError,
+    getDirectoryClient: h.getClient,
+    isDirectoryDisabled: () => process.env.GOOGLE_DIRECTORY_DISABLED === 'true',
+  };
+});
 vi.mock('./apply', () => ({
-  applyDirectoryUserToDb: (...args: unknown[]) => applyMock(...args),
+  applyDirectoryUserToDb: h.apply,
+  applyDirectoryManager: h.manager,
+  googleSourceIdOf: h.sourceId,
 }));
 
 const { syncAllFromDirectory } = await import('./syncAll');
+const { GoogleDirectoryConfigError, GoogleDirectoryDisabledError } = (await import('./client')) as unknown as {
+  GoogleDirectoryConfigError: new (m: string) => Error;
+  GoogleDirectoryDisabledError: new (m: string) => Error;
+};
 
-const user = (email: string, title?: string) => ({
-  primaryEmail: email,
-  ...(title ? { organizations: [{ primary: true, title }] } : {}),
-});
-
-const page = (users: unknown[], nextPageToken?: string) => ({
-  data: { users, ...(nextPageToken ? { nextPageToken } : {}) },
-});
-
-// VeloExpense: each person runs on `db.$transaction`; the stub hands apply a dummy tx.
+// VeloExpense: each person runs on `db.$transaction`; the stub hands every call one tx.
+const TX = { tx: true } as never;
 const transactions = vi.fn();
 const db = {
   $transaction: async <T>(fn: (tx: never) => Promise<T>) => {
     transactions();
-    return fn({} as never);
+    return fn(TX);
   },
 };
 const CREDS = { serviceAccountJson: '{}', impersonateEmail: 'admin@example.test' };
-const updated = (userId = 'u', extra: Record<string, unknown> = {}) => ({
-  outcome: 'updated',
-  userId,
-  offboarded: false,
-  ...extra,
+
+/** A raw Directory user, as `users.list` returns it. */
+const g = (id: string, email: string, over: Record<string, unknown> = {}) => ({
+  id,
+  primaryEmail: email,
+  ...over,
+});
+const page = (users: unknown[], nextPageToken?: string) => ({
+  data: { users, ...(nextPageToken ? { nextPageToken } : {}) },
 });
 
+/** Live accounts, then deleted ones — one page each. */
+function listing(live: unknown[], deleted: unknown[] = []) {
+  h.list.mockImplementation(async (params: { showDeleted?: string }) =>
+    params.showDeleted === 'true' ? page(deleted) : page(live),
+  );
+}
+
+const result = (over: Partial<ApplyResult> = {}): ApplyResult => ({
+  outcome: 'unchanged',
+  userId: 'u1',
+  linked: false,
+  relinked: false,
+  changes: {},
+  ...over,
+});
+
+/** The DirectoryUser `apply` was called with, by call index. */
+const appliedAccount = (i: number) => h.apply.mock.calls[i][1] as DirectoryUser;
+const appliedOptions = (i: number) => h.apply.mock.calls[i][2];
+
 beforeEach(() => {
-  listMock.mockReset();
-  applyMock.mockReset();
-  applyMock.mockResolvedValue(updated());
-  transactions.mockReset();
+  vi.clearAllMocks();
   delete process.env.GOOGLE_DIRECTORY_DISABLED;
-  delete process.env.__FAIL_INIT;
+  h.getClient.mockReturnValue({ users: { list: h.list } });
+  h.apply.mockImplementation(async (_db: unknown, account: DirectoryUser) =>
+    result({ userId: `u-${account.googleId}` }),
+  );
+  h.manager.mockResolvedValue({ unresolved: false });
+  listing([]);
 });
 afterEach(() => {
   delete process.env.GOOGLE_DIRECTORY_DISABLED;
-  delete process.env.__FAIL_INIT;
 });
 
-describe('syncAllFromDirectory — configuration', () => {
-  it('returns `disabled` when directory sync is switched off', async () => {
-    // This is dev's normal state. It must not read as a failure.
+describe('syncAllFromDirectory — switched off or broken before it starts', () => {
+  it('returns `disabled` with the reason, without listing, when the platform switch is off', async () => {
+    // This is dev's and CI's normal state. It must not read as a failure.
     process.env.GOOGLE_DIRECTORY_DISABLED = 'true';
     const res = await syncAllFromDirectory(db, CREDS);
-    expect(res).toEqual({
-      status: 'disabled',
-      scanned: 0,
-      updated: 0,
-      notFound: 0,
-      held: 0,
-      offboarded: [],
-      errors: 0,
-      unmappedTitles: [],
-      missingJobLevels: [],
-    });
-    expect(listMock).not.toHaveBeenCalled();
+    expect(res).toMatchObject({ status: 'disabled', items: [], offboarded: [] });
+    expect(res.message).toMatch(/GOOGLE_DIRECTORY_DISABLED/);
+    expect(res.counts.scanned).toBe(0);
+    expect(h.getClient).not.toHaveBeenCalled();
+    expect(h.list).not.toHaveBeenCalled();
   });
 
   it('VeloExpense: returns `disabled` for a tenant that has not connected', async () => {
-    // A tenant that never turned the sync on is not a failure either.
-    expect((await syncAllFromDirectory(db, null)).status).toBe('disabled');
-    expect(listMock).not.toHaveBeenCalled();
+    const res = await syncAllFromDirectory(db, null);
+    expect(res).toMatchObject({ status: 'disabled', message: 'Google Workspace is not connected.' });
+    expect(h.getClient).not.toHaveBeenCalled();
   });
 
-  it('returns `disabled` when the client itself reports disabled', async () => {
-    process.env.__FAIL_INIT = 'disabled';
-    expect((await syncAllFromDirectory(db, CREDS)).status).toBe('disabled');
+  it("builds the client from the tenant's credentials", async () => {
+    await syncAllFromDirectory(db, CREDS);
+    expect(h.getClient).toHaveBeenCalledWith(CREDS);
   });
 
-  it('returns `error` with the config message when credentials are missing', async () => {
+  it('VeloExpense: uses an injected client, for a test, without building one', async () => {
+    const list = vi.fn(async () => ({ data: { users: [] } }));
+    await syncAllFromDirectory(db, null, { client: { users: { list } } });
+    expect(h.getClient).not.toHaveBeenCalled();
+    expect(list).toHaveBeenCalledTimes(2);
+  });
+
+  it('returns `error` with the config message when the key is bad', async () => {
     // Distinguishable from `disabled`: somebody meant to enable this and it is misconfigured.
-    process.env.__FAIL_INIT = 'config';
+    h.getClient.mockImplementation(() => {
+      throw new GoogleDirectoryConfigError('The service account key is not valid JSON');
+    });
     const res = await syncAllFromDirectory(db, CREDS);
-    expect(res.status).toBe('error');
-    expect(res.message).toContain('no service account');
+    expect(res).toMatchObject({
+      status: 'error',
+      message: 'The service account key is not valid JSON',
+    });
+  });
+
+  it('returns `disabled` when the client refuses as switched off', async () => {
+    h.getClient.mockImplementation(() => {
+      throw new GoogleDirectoryDisabledError('off');
+    });
+    expect((await syncAllFromDirectory(db, CREDS)).status).toBe('disabled');
   });
 
   it('returns `error` rather than throwing on an unexpected init failure', async () => {
     // The caller is a cron handler; a throw there is an unhandled rejection.
-    process.env.__FAIL_INIT = 'boom';
+    h.getClient.mockImplementation(() => {
+      throw new Error('unexpected');
+    });
     const res = await syncAllFromDirectory(db, CREDS);
     expect(res.status).toBe('error');
-    expect(res.message).toContain('init failed');
+    expect(res.message).toBe('init failed: Error: unexpected');
   });
 });
 
-describe('syncAllFromDirectory — paging', () => {
-  it('follows nextPageToken to the end', async () => {
-    listMock
-      .mockResolvedValueOnce(page([user('a@example.test')], 'tok-2'))
-      .mockResolvedValueOnce(page([user('b@example.test')]));
+describe('syncAllFromDirectory — listing', () => {
+  it('lists live accounts, then deleted ones, for the impersonated admin\'s own Workspace', async () => {
+    // VeloExpense: `my_customer` — per tenant that is the right one (no platform override).
+    await syncAllFromDirectory(db, CREDS);
+    expect(h.list).toHaveBeenCalledTimes(2);
+    expect(h.list.mock.calls[0][0]).toEqual({
+      customer: 'my_customer',
+      maxResults: 500,
+      pageToken: undefined,
+      projection: 'full',
+      orderBy: 'email',
+    });
+    expect(h.list.mock.calls[1][0]).toMatchObject({ customer: 'my_customer', showDeleted: 'true' });
+  });
+
+  it('VeloExpense: lists the customer the caller names', async () => {
+    await syncAllFromDirectory(db, CREDS, { customer: 'C0123' });
+    expect(h.list.mock.calls[0][0]).toMatchObject({ customer: 'C0123' });
+  });
+
+  it('follows nextPageToken to the end of BOTH listings', async () => {
+    h.list
+      .mockResolvedValueOnce(page([g('1', 'a@example.test')], 'live-2'))
+      .mockResolvedValueOnce(page([g('2', 'b@example.test')]))
+      .mockResolvedValueOnce(page([g('3', 'c@example.test')], 'gone-2'))
+      .mockResolvedValueOnce(page([g('4', 'd@example.test')]));
     const res = await syncAllFromDirectory(db, CREDS);
-    expect(listMock).toHaveBeenCalledTimes(2);
-    expect(listMock.mock.calls[1][0]).toMatchObject({ pageToken: 'tok-2' });
-    expect(res.scanned).toBe(2);
+    expect(h.list).toHaveBeenCalledTimes(4);
+    expect(h.list.mock.calls[1][0]).toMatchObject({ pageToken: 'live-2' });
+    expect(h.list.mock.calls[3][0]).toMatchObject({ pageToken: 'gone-2', showDeleted: 'true' });
+    expect(res.counts).toMatchObject({ scanned: 4, active: 2, deleted: 2 });
   });
 
   it('clamps the page size into the API range of 1..500', async () => {
-    listMock.mockResolvedValue(page([]));
     await syncAllFromDirectory(db, CREDS, { pageSize: 9999 });
-    expect(listMock.mock.calls[0][0]).toMatchObject({ maxResults: 500 });
-    listMock.mockClear();
+    expect(h.list.mock.calls[0][0]).toMatchObject({ maxResults: 500 });
+    h.list.mockClear();
     await syncAllFromDirectory(db, CREDS, { pageSize: 0 });
-    expect(listMock.mock.calls[0][0]).toMatchObject({ maxResults: 1 });
-  });
-
-  it('defaults the customer to my_customer, and honours an explicit one', async () => {
-    // VeloExpense: no env override — `my_customer` is the impersonated admin's own Workspace,
-    // which per tenant is the right one.
-    listMock.mockResolvedValue(page([]));
-    await syncAllFromDirectory(db, CREDS);
-    expect(listMock.mock.calls[0][0]).toMatchObject({ customer: 'my_customer' });
-    listMock.mockClear();
-    await syncAllFromDirectory(db, CREDS, { customer: 'C0123' });
-    expect(listMock.mock.calls[0][0]).toMatchObject({ customer: 'C0123' });
-  });
-
-  it('stops and reports partial counts when a page request fails', async () => {
-    // Partial progress is real and must be reported honestly — claiming `completed` after
-    // a failed page would hide that most of the org was never reconciled.
-    listMock
-      .mockResolvedValueOnce(page([user('a@example.test')], 'tok-2'))
-      .mockRejectedValueOnce(new Error('429 rate limited'));
-    const res = await syncAllFromDirectory(db, CREDS);
-    expect(res.status).toBe('error');
-    expect(res.scanned).toBe(1);
-    expect(res.updated).toBe(1);
-    expect(res.message).toContain('429 rate limited');
+    expect(h.list.mock.calls[0][0]).toMatchObject({ maxResults: 1 });
   });
 
   it('handles a page with no users array at all', async () => {
-    listMock.mockResolvedValue({ data: {} });
+    h.list.mockResolvedValue({ data: {} });
     const res = await syncAllFromDirectory(db, CREDS);
-    expect(res).toMatchObject({ status: 'completed', scanned: 0 });
+    expect(res).toMatchObject({ status: 'completed', items: [] });
+    expect(res.counts.scanned).toBe(0);
+  });
+
+  it.each([
+    ['the live listing', 1],
+    ['the deleted listing', 3],
+  ])('fails before ANY write when %s fails part way', async (_label, failingCall) => {
+    /**
+     * Judging re-link vs conflict needs the full live set. A run that wrote the first page
+     * and then failed would have made those calls on partial knowledge.
+     */
+    let call = 0;
+    h.list.mockImplementation(async () => {
+      call += 1;
+      if (call === failingCall + 1) throw new Error('429 rate limited');
+      return page(
+        [g(`id-${call}`, `p${call}@example.test`)],
+        call < 2 || call === 3 ? `t${call}` : undefined,
+      );
+    });
+    const res = await syncAllFromDirectory(db, CREDS);
+    expect(res.status).toBe('error');
+    expect(res.message).toBe('directory.users.list failed: 429 rate limited');
+    expect(res.counts.scanned).toBe(0);
+    expect(h.apply).not.toHaveBeenCalled();
+    expect(h.manager).not.toHaveBeenCalled();
+    expect(h.sourceId).not.toHaveBeenCalled();
+  });
+
+  it('quotes a non-Error listing failure', async () => {
+    h.list.mockRejectedValue('quota');
+    expect((await syncAllFromDirectory(db, CREDS)).message).toBe('directory.users.list failed: quota');
   });
 });
 
-describe('syncAllFromDirectory — per-user resilience', () => {
-  it('counts not-found, held and updated separately, and names who was offboarded', async () => {
-    // VeloExpense: ExpenseOS's `created` is `notFound` — update only (d84).
-    listMock.mockResolvedValue(
-      page([user('a@example.test'), user('b@example.test'), user('c@example.test'), user('d@example.test')]),
-    );
-    applyMock
-      .mockResolvedValueOnce({ outcome: 'not-found' })
-      .mockResolvedValueOnce(updated('u2'))
-      .mockResolvedValueOnce(updated('u3', { offboarded: true }))
-      .mockResolvedValueOnce({ outcome: 'held', userId: 'u4', reason: 'last-admin' });
-    const res = await syncAllFromDirectory(db, CREDS);
-    expect(res).toMatchObject({
-      status: 'completed',
-      scanned: 4,
-      notFound: 1,
-      updated: 2,
-      held: 1,
-      offboarded: ['u3'],
+describe('syncAllFromDirectory — live and deleted accounts', () => {
+  it('passes the live id set, the resolved source and NO manager resolution to pass 1', async () => {
+    listing([g('1', 'a@example.test'), g('2', 'b@example.test')]);
+    await syncAllFromDirectory(db, CREDS);
+    // VeloExpense: no `allowCreate` (nobody is created, d84); the clock is passed through.
+    expect(appliedOptions(0)).toEqual({
+      resolveManager: false,
+      activeGoogleIds: new Set(['1', '2']),
+      googleSourceId: 'src-google',
+      allowEmailMatch: true,
+      now: undefined,
     });
-    // One transaction per person.
-    expect(transactions).toHaveBeenCalledTimes(4);
+    expect(h.sourceId).toHaveBeenCalledTimes(1);
+    expect(h.apply.mock.calls[0][0]).toBe(TX);
   });
 
-  it('keeps going after one user fails', async () => {
+  it('applies deleted accounts as TERMINATED', async () => {
+    listing([g('1', 'a@example.test')], [g('9', 'gone@example.test', { deletionTime: '2026-09-01T00:00:00Z' })]);
+    await syncAllFromDirectory(db, CREDS);
+    expect(appliedAccount(1)).toMatchObject({
+      googleId: '9',
+      deleted: true,
+      employeeStatus: 'TERMINATED',
+    });
+    expect(appliedOptions(1)).toMatchObject({ allowEmailMatch: true });
+  });
+
+  it('does not email-match a deleted account whose address is live again', async () => {
+    // The address was re-issued to a new account. Matching it would terminate whoever
+    // owns it now.
+    listing([g('new', 'ada@example.test')], [g('old', 'ada@example.test')]);
+    await syncAllFromDirectory(db, CREDS);
+    expect(appliedOptions(1)).toMatchObject({ allowEmailMatch: false });
+  });
+
+  it('drops a deleted account whose id is also live — the live one wins', async () => {
+    // Google can list an account in both views mid-restore.
+    listing([g('1', 'a@example.test')], [g('1', 'a@example.test'), g('2', 'b@example.test')]);
+    const res = await syncAllFromDirectory(db, CREDS);
+    expect(h.apply).toHaveBeenCalledTimes(2);
+    expect(appliedAccount(0).deleted).toBe(false);
+    expect(appliedAccount(1).googleId).toBe('2');
+    expect(res.counts).toMatchObject({ scanned: 2, active: 1, deleted: 1 });
+  });
+
+  it('records no item for a deleted account nobody here ever had', async () => {
+    // Noise, not news: every departure for 20 days would otherwise fill the report.
+    listing([], [g('9', 'gone@example.test')]);
+    h.apply.mockResolvedValue(
+      result({
+        outcome: 'skipped',
+        userId: null,
+        message: 'Deleted in Google and never known here.',
+      }),
+    );
+    const res = await syncAllFromDirectory(db, CREDS);
+    expect(res.items).toEqual([]);
+    expect(res.counts.skipped).toBe(1);
+  });
+
+  it('records a SKIPPED item for a live account that could not be applied', async () => {
+    listing([g('1', 'a@example.test')]);
+    h.apply.mockResolvedValue(result({ outcome: 'skipped', userId: null, message: 'why' }));
+    const res = await syncAllFromDirectory(db, CREDS);
+    expect(res.items).toEqual([
+      {
+        outcome: 'SKIPPED',
+        userId: null,
+        googleId: '1',
+        email: 'a@example.test',
+        fields: {},
+        message: 'why',
+      },
+    ]);
+  });
+});
+
+describe('syncAllFromDirectory — outcomes and counts', () => {
+  it('reports every outcome but unchanged, and counts each', async () => {
+    listing([
+      g('1', 'notfound@example.test'),
+      g('2', 'updated@example.test'),
+      g('3', 'linked@example.test'),
+      g('4', 'relinked@example.test'),
+      g('5', 'conflict@example.test'),
+      g('6', 'same@example.test'),
+    ]);
+    h.apply
+      // VeloExpense: nobody is created (d84) — an account nobody here has is not-found.
+      .mockResolvedValueOnce(result({ outcome: 'not-found', userId: null }))
+      .mockResolvedValueOnce(
+        result({
+          outcome: 'updated',
+          userId: 'u2',
+          changes: { country: { from: 'US', to: 'CA' } },
+        }),
+      )
+      .mockResolvedValueOnce(result({ outcome: 'updated', userId: 'u3', linked: true }))
+      .mockResolvedValueOnce(
+        result({ outcome: 'updated', userId: 'u4', linked: true, relinked: true }),
+      )
+      .mockResolvedValueOnce(result({ outcome: 'conflict', userId: 'u5', message: 'two accounts' }))
+      .mockResolvedValueOnce(result({ outcome: 'unchanged', userId: 'u6' }));
+    const res = await syncAllFromDirectory(db, CREDS);
+    expect(res.status).toBe('completed');
+    expect(res.counts).toMatchObject({
+      scanned: 6,
+      active: 6,
+      deleted: 0,
+      notFound: 1,
+      updated: 3,
+      unchanged: 1,
+      linked: 2,
+      relinked: 1,
+      conflicts: 1,
+      skipped: 0,
+      errors: 0,
+    });
+    // VeloExpense: not-found leaves no item — counted, not news.
+    expect(res.items.map((i) => [i.email, i.outcome])).toEqual([
+      ['updated@example.test', 'UPDATED'],
+      ['linked@example.test', 'LINKED'],
+      ['relinked@example.test', 'LINKED'],
+      ['conflict@example.test', 'CONFLICT'],
+    ]);
+    expect(res.items[0].fields).toEqual({ country: { from: 'US', to: 'CA' } });
+    expect(res.items[2].message).toBe('Re-linked from a Google account that no longer exists.');
+    expect(res.items[3].message).toBe('two accounts');
+  });
+
+  it('appends the re-link note to an existing message', async () => {
+    listing([g('1', 'a@example.test')]);
+    h.apply.mockResolvedValue(
+      result({
+        outcome: 'updated',
+        linked: true,
+        relinked: true,
+        changes: { lastName: { from: 'X', to: 'Y' } },
+        message: 'Manager m@example.test is not a person here.',
+      }),
+    );
+    const [item] = (await syncAllFromDirectory(db, CREDS)).items;
+    expect(item.outcome).toBe('UPDATED');
+    expect(item.message).toBe(
+      'Manager m@example.test is not a person here. Re-linked from a Google account that no longer exists.',
+    );
+  });
+
+  it('reports an unchanged account that carries a note as SKIPPED', async () => {
+    // Nothing changed, but something is worth a look (email kept, title unmapped…).
+    listing([g('1', 'a@example.test')]);
+    h.apply.mockResolvedValue(
+      result({ outcome: 'unchanged', emailConflict: true, message: 'Kept' }),
+    );
+    const res = await syncAllFromDirectory(db, CREDS);
+    expect(res.items).toEqual([
+      {
+        outcome: 'SKIPPED',
+        userId: 'u1',
+        googleId: '1',
+        email: 'a@example.test',
+        fields: {},
+        message: 'Kept',
+      },
+    ]);
+    expect(res.counts.unchanged).toBe(1);
+  });
+
+  it('keeps going after one person fails', async () => {
     /**
      * The whole point. One malformed record out of hundreds must cost one error, not the
      * night's reconciliation.
      */
-    listMock.mockResolvedValue(page([user('a@example.test'), user('b@example.test'), user('c@example.test')]));
-    applyMock
-      .mockResolvedValueOnce(updated('u1'))
+    listing([g('1', 'a@example.test'), g('2', 'b@example.test'), g('3', 'c@example.test')]);
+    h.apply
+      .mockResolvedValueOnce(result({ userId: 'u1' }))
       .mockRejectedValueOnce(new Error('FK violation'))
-      .mockResolvedValueOnce(updated('u3'));
+      .mockRejectedValueOnce('odd');
     const res = await syncAllFromDirectory(db, CREDS);
-    expect(res).toMatchObject({ status: 'completed', scanned: 3, updated: 2, errors: 1 });
+    expect(res.status).toBe('completed');
+    expect(res.counts).toMatchObject({ scanned: 3, unchanged: 1, errors: 2 });
+    expect(res.items).toEqual([
+      {
+        outcome: 'ERROR',
+        userId: null,
+        googleId: '2',
+        email: 'b@example.test',
+        fields: {},
+        message: 'FK violation',
+      },
+      {
+        outcome: 'ERROR',
+        userId: null,
+        googleId: '3',
+        email: 'c@example.test',
+        fields: {},
+        message: 'odd',
+      },
+    ]);
   });
 
-  it('counts a user with no email as an error without calling apply', async () => {
-    listMock.mockResolvedValue(page([{ organizations: [] }]));
+  it('counts an account with no id or email as an error without applying it', async () => {
+    listing([{ organizations: [] }, g('', 'noid@example.test')]);
     const res = await syncAllFromDirectory(db, CREDS);
-    expect(res).toMatchObject({ scanned: 1, errors: 1 });
-    expect(applyMock).not.toHaveBeenCalled();
+    expect(res.counts).toMatchObject({ scanned: 2, errors: 2 });
+    expect(res.items.map((i) => i.email)).toEqual(['(unknown)', 'noid@example.test']);
+    expect(h.apply).not.toHaveBeenCalled();
   });
 
-  it('reports each outcome through onUser', async () => {
-    listMock.mockResolvedValue(page([user('a@example.test'), user('b@example.test')]));
-    applyMock
-      .mockResolvedValueOnce({ outcome: 'not-found' })
-      .mockRejectedValueOnce(new Error('nope'));
-    const events: unknown[] = [];
-    await syncAllFromDirectory(db, CREDS, { onUser: (e) => events.push(e) });
-    expect(events).toEqual([
-      { email: 'a@example.test', outcome: 'not-found' },
-      { email: 'b@example.test', outcome: 'error', error: 'nope' },
+  it('heart-beats through onProgress every 50 people and once at the end', async () => {
+    // The worker marks a run stale when it stops beating; 120 people must not look dead.
+    listing(Array.from({ length: 120 }, (_, i) => g(`${i}`, `p${i}@example.test`)));
+    const onProgress = vi.fn();
+    await syncAllFromDirectory(db, CREDS, { onProgress });
+    expect(onProgress.mock.calls.map((c) => c[0])).toEqual([50, 100, 120]);
+  });
+
+  it('heart-beats once even for an empty directory', async () => {
+    const onProgress = vi.fn();
+    await syncAllFromDirectory(db, CREDS, { onProgress });
+    expect(onProgress).toHaveBeenCalledWith(0);
+  });
+});
+
+describe('syncAllFromDirectory — pass 2: managers', () => {
+  it('resolves managers only after every person has been applied', async () => {
+    // A manager listed after their report must be found on the FIRST night.
+    listing([
+      g('1', 'report@example.test', { relations: [{ type: 'manager', value: 'Boss@example.test' }] }),
+      g('2', 'boss@example.test'),
+    ]);
+    const order: string[] = [];
+    h.apply.mockImplementation(async (_d: unknown, a: DirectoryUser) => {
+      order.push(`apply:${a.email}`);
+      return result({ userId: `u-${a.googleId}` });
+    });
+    h.manager.mockImplementation(async (_d: unknown, userId: string) => {
+      order.push(`manager:${userId}`);
+      return { unresolved: false };
+    });
+    await syncAllFromDirectory(db, CREDS);
+    expect(order).toEqual(['apply:report@example.test', 'apply:boss@example.test', 'manager:u-1', 'manager:u-2']);
+    expect(h.manager).toHaveBeenCalledWith(TX, 'u-1', 'boss@example.test');
+    expect(h.manager).toHaveBeenCalledWith(TX, 'u-2', null);
+  });
+
+  it('skips managers for conflicts, skips and errors', async () => {
+    listing([g('1', 'a@example.test'), g('2', 'b@example.test'), g('3', 'c@example.test')]);
+    h.apply
+      .mockResolvedValueOnce(result({ outcome: 'conflict', userId: 'u1' }))
+      .mockResolvedValueOnce(result({ outcome: 'skipped', userId: null }))
+      .mockRejectedValueOnce(new Error('x'));
+    // VeloExpense: and for not-found and held (see below).
+    await syncAllFromDirectory(db, CREDS);
+    expect(h.manager).not.toHaveBeenCalled();
+  });
+
+  it('leaves a deleted account’s manager alone', async () => {
+    /**
+     * Google drops a deleted account's manager relation. Clearing it here would strand the
+     * leaver's cards and open reports, which the offboarding roll-up moves TO that manager.
+     */
+    listing([g('1', 'a@example.test')], [g('9', 'gone@example.test')]);
+    h.apply.mockImplementation(async (_d: unknown, a: DirectoryUser) =>
+      result({ userId: `u-${a.googleId}` }),
+    );
+    h.manager.mockResolvedValue({ unresolved: false });
+    await syncAllFromDirectory(db, CREDS);
+    expect(h.manager).toHaveBeenCalledTimes(1);
+    expect(h.manager).toHaveBeenCalledWith(TX, 'u-1', null);
+  });
+
+  it('turns an unchanged person into UPDATED when only the manager changed', async () => {
+    listing([g('1', 'a@example.test')]);
+    h.manager.mockResolvedValue({ change: { from: null, to: 'u-boss' }, unresolved: false });
+    const res = await syncAllFromDirectory(db, CREDS);
+    expect(res.items).toEqual([
+      {
+        outcome: 'UPDATED',
+        userId: 'u-1',
+        googleId: '1',
+        email: 'a@example.test',
+        fields: { managerId: { from: null, to: 'u-boss' } },
+      },
+    ]);
+    expect(res.counts).toMatchObject({ updated: 1, unchanged: 0 });
+  });
+
+  it('upgrades a noted-but-unchanged SKIPPED item to UPDATED', async () => {
+    listing([g('1', 'a@example.test')]);
+    h.apply.mockResolvedValue(
+      result({ userId: 'u-1', message: 'Title "X" maps to no job level.' }),
+    );
+    h.manager.mockResolvedValue({ change: { from: 'u-a', to: 'u-b' }, unresolved: false });
+    const res = await syncAllFromDirectory(db, CREDS);
+    expect(res.items[0]).toMatchObject({
+      outcome: 'UPDATED',
+      message: 'Title "X" maps to no job level.',
+      fields: { managerId: { from: 'u-a', to: 'u-b' } },
+    });
+    expect(res.counts).toMatchObject({ updated: 1, unchanged: 0 });
+  });
+
+  it('upgrades a LINKED item to UPDATED without double counting', async () => {
+    listing([g('1', 'a@example.test')]);
+    h.apply.mockResolvedValue(result({ outcome: 'updated', userId: 'u-1', linked: true }));
+    h.manager.mockResolvedValue({ change: { from: null, to: 'u-b' }, unresolved: false });
+    const res = await syncAllFromDirectory(db, CREDS);
+    expect(res.items[0].outcome).toBe('UPDATED');
+    expect(res.counts).toMatchObject({ updated: 1, linked: 1, unchanged: 0 });
+  });
+
+  it('adds the manager to an item that already changed', async () => {
+    // VeloExpense: an UPDATED person (ExpenseOS uses a CREATED one, which cannot happen here).
+    listing([g('1', 'a@example.test')]);
+    h.apply.mockResolvedValue(
+      result({
+        outcome: 'updated',
+        userId: 'u-1',
+        changes: { firstName: { from: 'Z', to: 'A' } },
+      }),
+    );
+    h.manager.mockResolvedValue({ change: { from: null, to: 'u-b' }, unresolved: false });
+    const res = await syncAllFromDirectory(db, CREDS);
+    expect(res.items[0]).toMatchObject({
+      outcome: 'UPDATED',
+      fields: { firstName: { from: 'Z', to: 'A' }, managerId: { from: null, to: 'u-b' } },
+    });
+    expect(res.counts).toMatchObject({ updated: 1, unchanged: 0 });
+  });
+
+  it('counts an unresolved manager and keeps going', async () => {
+    listing([g('1', 'a@example.test'), g('2', 'b@example.test')]);
+    h.manager
+      .mockResolvedValueOnce({ unresolved: true })
+      .mockResolvedValueOnce({ unresolved: false });
+    const res = await syncAllFromDirectory(db, CREDS);
+    expect(res.counts.managersUnresolved).toBe(1);
+    expect(res.items).toEqual([]);
+  });
+
+  it('records a manager failure as an error and keeps going', async () => {
+    listing([g('1', 'a@example.test'), g('2', 'b@example.test')]);
+    h.manager
+      .mockRejectedValueOnce(new Error('deadlock'))
+      .mockRejectedValueOnce('odd')
+      .mockResolvedValue({ unresolved: false });
+    const res = await syncAllFromDirectory(db, CREDS);
+    expect(res.counts.errors).toBe(2);
+    expect(res.items).toEqual([
+      {
+        outcome: 'ERROR',
+        userId: 'u-1',
+        googleId: '1',
+        email: 'a@example.test',
+        fields: {},
+        message: 'manager: deadlock',
+      },
+      {
+        outcome: 'ERROR',
+        userId: 'u-2',
+        googleId: '2',
+        email: 'b@example.test',
+        fields: {},
+        message: 'manager: odd',
+      },
     ]);
   });
 });
 
 describe('syncAllFromDirectory — unmapped job titles', () => {
-  it('tallies unrecognised titles, most common first', async () => {
+  it('tallies titles apply could not map, most common first, ties alphabetical', async () => {
     /**
      * Not a log line: a person with no job level is invisible to a `managerChain` tier
      * walk, so this list is how a routing hole gets found before it routes a $100k report
      * past everyone.
      */
-    // Titles chosen because `titleToJobLevelCode` genuinely does not recognise them. It
-    // is more capable than it looks — "Chief Vibes Officer" maps to E4 via the
-    // "Chief … Officer" rule and "Head of Snacks" to E1 via "Head of", so neither is an
-    // example of an unmapped title.
-    listMock.mockResolvedValue(
-      page([
-        user('a@example.test', 'Barista'),
-        user('b@example.test', 'Barista'),
-        user('c@example.test', 'Zebra Wrangler'),
-      ]),
+    const titled = (id: string, title: string) =>
+      g(id, `${id}@example.test`, { organizations: [{ primary: true, title }] });
+    listing([
+      titled('1', 'Zebra Wrangler'),
+      titled('2', 'Barista'),
+      titled('3', 'Barista'),
+      titled('4', 'Aardvark Herder'),
+      titled('5', 'Senior Engineer'),
+    ]);
+    h.apply.mockImplementation(async (_d: unknown, a: DirectoryUser) =>
+      result({ userId: `u-${a.googleId}`, titleUnmapped: a.title !== 'Senior Engineer' }),
     );
     const res = await syncAllFromDirectory(db, CREDS);
-    expect(res.unmappedTitles).toEqual([
+    expect(res.counts.unmappedTitles).toEqual([
       { title: 'Barista', count: 2 },
+      { title: 'Aardvark Herder', count: 1 },
       { title: 'Zebra Wrangler', count: 1 },
     ]);
   });
-
-  it('breaks a count tie alphabetically, so the report is stable', async () => {
-    listMock.mockResolvedValue(
-      page([user('a@example.test', 'Zebra Wrangler'), user('b@example.test', 'Aardvark Herder')]),
-    );
-    const res = await syncAllFromDirectory(db, CREDS);
-    expect(res.unmappedTitles.map((t) => t.title)).toEqual(['Aardvark Herder', 'Zebra Wrangler']);
-  });
-
-  it('does not tally a title that DOES map', async () => {
-    listMock.mockResolvedValue(page([user('a@example.test', 'Senior Engineer')]));
-    const res = await syncAllFromDirectory(db, CREDS);
-    expect(res.unmappedTitles).toEqual([]);
-  });
-
-  it('reports the tally even when the sync fails part way', async () => {
-    // The titles seen so far are still useful; discarding them on failure wastes the pass.
-    listMock
-      .mockResolvedValueOnce(page([user('a@example.test', 'Barista')], 'tok'))
-      .mockRejectedValueOnce(new Error('boom'));
-    const res = await syncAllFromDirectory(db, CREDS);
-    expect(res.status).toBe('error');
-    expect(res.unmappedTitles).toEqual([{ title: 'Barista', count: 1 }]);
-  });
 });
 
-describe('syncAllFromDirectory — job levels the tenant lacks (VeloExpense)', () => {
-  it('tallies codes a title mapped to that this tenant has no level for', async () => {
-    // A VeloExpense tenant builds its own ladder (0050), so a recognised title can still land
-    // nowhere — and the person is just as invisible to a tier walk.
-    listMock.mockResolvedValue(page([user('a@example.test'), user('b@example.test'), user('c@example.test')]));
-    applyMock
-      .mockResolvedValueOnce(updated('u1', { missingLevelCode: 'M3' }))
-      .mockResolvedValueOnce(updated('u2', { missingLevelCode: 'M3' }))
-      .mockResolvedValueOnce(updated('u3', { missingLevelCode: 'IC4' }));
+describe('syncAllFromDirectory — VeloExpense: update only, one way (d84, d85)', () => {
+  it('counts not-found accounts and records no item for them', async () => {
+    listing([g('1', 'a@example.test'), g('2', 'b@example.test')]);
+    h.apply.mockResolvedValue(result({ outcome: 'not-found', userId: null }));
     const res = await syncAllFromDirectory(db, CREDS);
-    expect(res.missingJobLevels).toEqual([
-      { code: 'M3', count: 2 },
-      { code: 'IC4', count: 1 },
+    expect(res.counts).toMatchObject({ notFound: 2, updated: 0 });
+    expect(res.items).toEqual([]);
+    expect(h.manager).not.toHaveBeenCalled();
+  });
+
+  it('records a held offboarding as a SKIPPED item with its reason, and resolves no manager', async () => {
+    listing([g('1', 'admin@example.test', { suspended: true })]);
+    h.apply.mockResolvedValue(
+      result({ outcome: 'held', userId: 'u-1', message: 'Google offboarded the last active administrator here; held, not written.' }),
+    );
+    const res = await syncAllFromDirectory(db, CREDS);
+    expect(res.counts.held).toBe(1);
+    expect(res.items).toEqual([
+      {
+        outcome: 'SKIPPED',
+        userId: 'u-1',
+        googleId: '1',
+        email: 'admin@example.test',
+        fields: {},
+        message: 'Google offboarded the last active administrator here; held, not written.',
+      },
     ]);
+    expect(h.manager).not.toHaveBeenCalled();
+  });
+
+  it('collects the people it offboarded, for the summary audit row', async () => {
+    listing([g('1', 'a@example.test', { archived: true }), g('2', 'b@example.test')]);
+    h.apply
+      .mockResolvedValueOnce(result({ outcome: 'updated', userId: 'u-1', offboarded: true, changes: { employeeStatus: { from: 'ACTIVE', to: 'TERMINATED' } } }))
+      .mockResolvedValueOnce(result({ userId: 'u-2' }));
+    const res = await syncAllFromDirectory(db, CREDS);
+    expect(res.offboarded).toEqual(['u-1']);
+  });
+
+  it('tallies level codes this tenant has no job level for, most common first', async () => {
+    listing([g('1', 'a@example.test'), g('2', 'b@example.test'), g('3', 'c@example.test')]);
+    h.apply
+      .mockResolvedValueOnce(result({ userId: 'u-1', missingLevelCode: 'L5' }))
+      .mockResolvedValueOnce(result({ userId: 'u-2', missingLevelCode: 'L7' }))
+      .mockResolvedValueOnce(result({ userId: 'u-3', missingLevelCode: 'L7' }));
+    const res = await syncAllFromDirectory(db, CREDS);
+    expect(res.counts.missingJobLevels).toEqual([
+      { code: 'L7', count: 2 },
+      { code: 'L5', count: 1 },
+    ]);
+  });
+
+  it('applies each person, and resolves each manager, on its own transaction', async () => {
+    // One person's failure rolls back that person only.
+    listing([g('1', 'a@example.test'), g('2', 'b@example.test')]);
+    await syncAllFromDirectory(db, CREDS);
+    // 1 for the source id, 2 applies, 2 managers.
+    expect(transactions).toHaveBeenCalledTimes(5);
+  });
+
+  it('passes its clock to apply, so a test can fix the offboarding time', async () => {
+    listing([g('1', 'a@example.test')]);
+    const now = new Date('2026-10-21T02:30:00Z');
+    await syncAllFromDirectory(db, CREDS, { now });
+    expect(appliedOptions(0)).toMatchObject({ now });
   });
 });

@@ -1,39 +1,74 @@
-// w5-04 — ported from ExpenseOS `packages/integrations-google/src/mappers.test.ts` (1e682dd6).
-// VeloExpense: the addresses are `example.test` and the companies fictional (Northwind, Fabrikam).
+// w5-04 — ported from ExpenseOS `packages/integrations-google/src/mappers.test.ts`, as it stands at
+// 67db2e33 (#582). VeloExpense: the addresses are `example.test` and the companies fictional.
 import { describe, expect, it } from 'vitest';
 import { mapGoogleUserToDirectoryUser } from './mappers';
 
 /**
  * Google Directory payload → the normalized `DirectoryUser` this package writes.
  *
- * `applyDirectoryUserToDb` treats `employeeStatus`, `terminationDate` and `managerEmail`
- * as CANONICAL and writes them on every sync, so a mapping error here is not a cosmetic
- * problem — it is written straight over the org graph:
+ * `applyDirectoryUserToDb` treats every field here as CANONICAL: Google owns them, and a
+ * blank in Google clears ours. So a mapping error here is not a cosmetic problem — it is
+ * written straight over the org graph on every sign-in and every night:
  *
- *   · a missed `managerEmail` breaks the approval chain walk, and an unlevelled or
- *     manager-less person is invisible to tiered routing;
- *   · a missed `archived` flag leaves a terminated employee ACTIVE, with live cards;
- *   · a wrong `primary` pick assigns somebody the wrong department, and therefore the
- *     wrong budget and the wrong approver.
+ *   · a missed `managerEmail` breaks the approval chain walk;
+ *   · a missed `archived` or deleted flag leaves a terminated employee ACTIVE, with live
+ *     cards;
+ *   · a wrong `primary` pick assigns somebody the wrong title (→ job level → approver) or
+ *     the wrong country.
+ *
+ * Equally pinned is what is NOT read. Department and business unit are owned by VeloExpense,
+ * legal entity by NetSuite's subsidiary; reading Google's cost centre or building here
+ * would only invite a second writer for them.
  *
  * Every field is defensively coerced because the Directory payload is sparse in practice:
  * plenty of real accounts have no organizations array at all.
  */
 
-const base = { primaryEmail: 'Ada.Lovelace@EXAMPLE.TEST' };
+const base = { id: '1001', primaryEmail: 'Ada.Lovelace@EXAMPLE.TEST' };
 
 describe('mapGoogleUserToDirectoryUser', () => {
-  it('lowercases the email, because it is the join key', () => {
-    // The email is what matches a Google identity to a User row. A case difference here
-    // creates a duplicate placeholder person on every sync.
-    expect(mapGoogleUserToDirectoryUser(base).email).toBe('ada.lovelace@example.test');
+  it('lowercases and trims the email, because it is a join key', () => {
+    // The email is the fallback match from a Google account to a User row. A case
+    // difference here would create a duplicate person on every sync.
+    expect(
+      mapGoogleUserToDirectoryUser({ ...base, primaryEmail: '  Ada.Lovelace@EXAMPLE.TEST ' }).email,
+    ).toBe('ada.lovelace@example.test');
   });
 
-  it('maps names, avatar and the primary organization', () => {
+  it('reads the Google id, which is matched BEFORE email', () => {
+    // The id survives a primary-email change; email does not. It is the same value as the
+    // OIDC `sub` Google sign-in reports.
+    expect(mapGoogleUserToDirectoryUser({ ...base, id: ' 1001 ' }).googleId).toBe('1001');
+    expect(mapGoogleUserToDirectoryUser({ primaryEmail: 'x@example.test' }).googleId).toBe('');
+  });
+
+  it('maps names, avatar, the primary title and the primary country', () => {
     const out = mapGoogleUserToDirectoryUser({
       ...base,
       name: { givenName: 'Ada', familyName: 'Lovelace' },
       thumbnailPhotoUrl: 'https://x/photo.jpg',
+      organizations: [{ primary: true, title: 'Engineer' }],
+      addresses: [{ primary: true, countryCode: 'ca' }],
+    });
+    expect(out).toMatchObject({
+      firstName: 'Ada',
+      lastName: 'Lovelace',
+      avatarUrl: 'https://x/photo.jpg',
+      title: 'Engineer',
+      // Uppercased: ISO-3166 alpha-2 is compared as written by the tax engine.
+      country: 'CA',
+    });
+  });
+
+  it('does not expose department, business unit, legal entity or employee id', () => {
+    /**
+     * The whole point of the rewrite. VeloExpense owns department and business unit, and
+     * NetSuite's subsidiary owns the legal entity. If the mapper handed these over, some
+     * later caller would write them — and Google's cost centre, building and bare-leaf
+     * department names would overwrite the curated values on every sign-in.
+     */
+    const out = mapGoogleUserToDirectoryUser({
+      ...base,
       organizations: [
         {
           primary: true,
@@ -43,63 +78,63 @@ describe('mapGoogleUserToDirectoryUser', () => {
           costCenter: 'Northwind Inc.',
         },
       ],
-      addresses: [{ primary: true, countryCode: 'CA' }],
       locations: [{ type: 'desk', buildingId: 'Logistic Centre - Edmonton' }],
-    } as never);
-    expect(out).toMatchObject({
-      firstName: 'Ada',
-      lastName: 'Lovelace',
-      avatarUrl: 'https://x/photo.jpg',
-      title: 'Engineer',
-      department: 'R&D',
-      country: 'CA',
+      externalIds: [{ type: 'organization', value: 'E-12345' }],
     });
-    /**
-     * The pairing that is easy to get backwards, so it is asserted as a pair.
-     *
-     * HR's payroll company lands in Cost Center and is a LEGAL ENTITY; `organizations[].name`
-     * carries the REGIONAL unit. Reading them the other way round hands a company name to a
-     * lookup table full of regions, which matches nothing and silently leaves the person on
-     * whatever they had.
-     */
-    expect(out.entity).toBe('Northwind Inc.');
-    /**
-     * And the business unit is the BUILDING, not `organizations[].name`.
-     *
-     * ADP owns Google and states no business unit — it has no such column. It states a work
-     * LOCATION, and the region follows from it. `applyDirectoryUserToDb` turns the building
-     * into the unit it rolls up to; this only has to hand it over unchanged.
-     */
-    expect(out.businessUnit).toBe('Logistic Centre - Edmonton');
+    for (const key of ['department', 'businessUnit', 'entity', 'legalEntity', 'employeeId']) {
+      expect(out).not.toHaveProperty(key);
+    }
   });
 
   it('prefers the entry flagged primary, not the first one', () => {
-    // Google returns organizations in no guaranteed order, and taking [0] assigns the
-    // wrong department — which then drives the wrong budget and the wrong approver.
+    // Google returns organizations and addresses in no guaranteed order; taking [0] would
+    // assign the wrong title — and therefore the wrong job level and approver.
     const out = mapGoogleUserToDirectoryUser({
       ...base,
       organizations: [
-        { primary: false, department: 'Sales', costCenter: 'Fabrikam', name: 'Fabrikam' },
-        { primary: true, department: 'R&D', costCenter: 'Northwind Inc.', name: 'Northwind Ontario' },
+        { primary: false, title: 'Sales Rep' },
+        { primary: true, title: 'Engineer' },
       ],
       addresses: [
         { primary: false, countryCode: 'US' },
         { primary: true, countryCode: 'CA' },
       ],
-    } as never);
-    expect(out.department).toBe('R&D');
-    expect(out.entity).toBe('Northwind Inc.');
+    });
+    expect(out.title).toBe('Engineer');
     expect(out.country).toBe('CA');
   });
 
   it('falls back to the first entry when none is flagged primary', () => {
-    // Common in real payloads. Guessing the first is better than dropping the department
-    // entirely, which would blank it on a canonical write.
+    // Common in real payloads. Guessing the first is better than dropping the title,
+    // which would clear the job level on a canonical write.
     const out = mapGoogleUserToDirectoryUser({
       ...base,
-      organizations: [{ department: 'Ops' }, { department: 'Sales' }],
-    } as never);
-    expect(out.department).toBe('Ops');
+      organizations: [{ title: 'Ops Lead' }, { title: 'Sales Rep' }],
+      addresses: [{ countryCode: 'us' }],
+    });
+    expect(out.title).toBe('Ops Lead');
+    expect(out.country).toBe('US');
+  });
+
+  it('treats blank strings as absent', () => {
+    // A whitespace-only title or name is not a value; written as-is it would read as a
+    // real (empty) title and never map to a job level.
+    const out = mapGoogleUserToDirectoryUser({
+      ...base,
+      name: { givenName: '  ', familyName: '' },
+      thumbnailPhotoUrl: ' ',
+      organizations: [{ primary: true, title: '   ' }],
+      addresses: [{ primary: true, countryCode: ' ' }],
+      relations: [{ type: 'manager', value: '  ' }],
+    });
+    expect(out).toMatchObject({
+      firstName: null,
+      lastName: null,
+      avatarUrl: null,
+      title: null,
+      country: null,
+      managerEmail: null,
+    });
   });
 
   it('reads the manager from the relations list, lowercased', () => {
@@ -107,9 +142,9 @@ describe('mapGoogleUserToDirectoryUser', () => {
       ...base,
       relations: [
         { type: 'assistant', value: 'PA@example.test' },
-        { type: 'manager', value: 'Grace.Hopper@Example.Test' },
+        { type: 'manager', value: 'Grace.Hopper@Example.test' },
       ],
-    } as never);
+    });
     // Lowercased for the same reason as the primary email: it is resolved by lookup.
     expect(out.managerEmail).toBe('grace.hopper@example.test');
   });
@@ -120,27 +155,8 @@ describe('mapGoogleUserToDirectoryUser', () => {
     const out = mapGoogleUserToDirectoryUser({
       ...base,
       relations: [{ type: 'assistant', value: 'pa@example.test' }],
-    } as never);
+    });
     expect(out.managerEmail).toBeNull();
-  });
-
-  it('reads the employee id only from the organization external id', () => {
-    const out = mapGoogleUserToDirectoryUser({
-      ...base,
-      externalIds: [
-        { type: 'login_id', value: 'ada' },
-        { type: 'organization', value: 'E-12345' },
-      ],
-    } as never);
-    expect(out.employeeId).toBe('E-12345');
-  });
-
-  it('ignores an external id of another type', () => {
-    const out = mapGoogleUserToDirectoryUser({
-      ...base,
-      externalIds: [{ type: 'custom', value: 'nope' }],
-    } as never);
-    expect(out.employeeId).toBeNull();
   });
 
   describe('employee status', () => {
@@ -151,84 +167,100 @@ describe('mapGoogleUserToDirectoryUser', () => {
     it('is TERMINATED for an archived account', () => {
       // The status that triggers the offboarding roll-up. Missing it leaves a departed
       // employee with live cards and open drafts.
-      const out = mapGoogleUserToDirectoryUser({ ...base, archived: true } as never);
+      expect(mapGoogleUserToDirectoryUser({ ...base, archived: true }).employeeStatus).toBe(
+        'TERMINATED',
+      );
+    });
+
+    it('is TERMINATED for an account deleted in Google', () => {
+      // A deleted account looks like any other in the payload; only the caller knows it
+      // came from the `showDeleted` listing, and says so.
+      const out = mapGoogleUserToDirectoryUser(base, { deleted: true });
       expect(out.employeeStatus).toBe('TERMINATED');
+      expect(out.deleted).toBe(true);
     });
 
     it('is DEACTIVATED for a suspended account', () => {
-      const out = mapGoogleUserToDirectoryUser({ ...base, suspended: true } as never);
-      expect(out.employeeStatus).toBe('DEACTIVATED');
+      expect(mapGoogleUserToDirectoryUser({ ...base, suspended: true }).employeeStatus).toBe(
+        'DEACTIVATED',
+      );
     });
 
-    it('treats archived as stronger than suspended', () => {
-      // Both flags can be set. Terminated is the more consequential of the two, so it has
-      // to win rather than depending on evaluation order.
-      const out = mapGoogleUserToDirectoryUser({
-        ...base,
-        archived: true,
-        suspended: true,
-      } as never);
-      expect(out.employeeStatus).toBe('TERMINATED');
+    it('treats archived and deleted as stronger than suspended', () => {
+      // Both flags can be set. Terminated is the more consequential, so it has to win
+      // rather than depending on evaluation order.
+      expect(
+        mapGoogleUserToDirectoryUser({ ...base, archived: true, suspended: true }).employeeStatus,
+      ).toBe('TERMINATED');
+      expect(
+        mapGoogleUserToDirectoryUser({ ...base, suspended: true }, { deleted: true })
+          .employeeStatus,
+      ).toBe('TERMINATED');
+    });
+
+    it('is not deleted unless the caller says so', () => {
+      expect(mapGoogleUserToDirectoryUser(base).deleted).toBe(false);
+      expect(mapGoogleUserToDirectoryUser(base, { deleted: false }).deleted).toBe(false);
     });
   });
 
   describe('termination date', () => {
-    it('is set only when the account is archived AND has a deletion time', () => {
+    it('is the deletion time of an archived account', () => {
       const out = mapGoogleUserToDirectoryUser({
         ...base,
         archived: true,
         deletionTime: '2026-07-31T00:00:00.000Z',
-      } as never);
+      });
       expect(out.terminationDate?.toISOString()).toBe('2026-07-31T00:00:00.000Z');
     });
 
-    it('is null for an archived account with no deletion time', () => {
-      const out = mapGoogleUserToDirectoryUser({ ...base, archived: true } as never);
-      expect(out.terminationDate).toBeNull();
+    it('is the deletion time of a deleted account', () => {
+      const out = mapGoogleUserToDirectoryUser(
+        { ...base, deletionTime: '2026-08-15T12:00:00.000Z' },
+        { deleted: true },
+      );
+      expect(out.terminationDate?.toISOString()).toBe('2026-08-15T12:00:00.000Z');
     });
 
-    it('is null for an active account that happens to carry a deletion time', () => {
+    it('is null for an archived account with no deletion time', () => {
+      expect(mapGoogleUserToDirectoryUser({ ...base, archived: true }).terminationDate).toBeNull();
+    });
+
+    it('is null for a live account that happens to carry a deletion time', () => {
       // Writing a termination date onto an ACTIVE person would make them look departed in
       // every report that reads the column.
       const out = mapGoogleUserToDirectoryUser({
         ...base,
+        suspended: true,
         deletionTime: '2026-07-31T00:00:00.000Z',
-      } as never);
+      });
       expect(out.terminationDate).toBeNull();
     });
   });
 
-  it('never invents a home currency', () => {
-    // Directory does not expose one, and `applyDirectoryUserToDb` deliberately never
-    // writes it. A guessed currency would silently restate somebody's reimbursements.
-    expect(mapGoogleUserToDirectoryUser(base).homeCurrency).toBeNull();
-  });
-
-  it('survives a payload with nothing but an email', () => {
-    // Very common. Every optional field must come back null rather than undefined, since
-    // the apply step distinguishes "absent" from "empty".
-    const out = mapGoogleUserToDirectoryUser(base);
-    expect(out).toEqual({
+  it('survives a payload with nothing but an id and an email', () => {
+    // Very common. Every optional field must come back null rather than undefined: the
+    // apply step clears a field Google leaves blank, and undefined is not "blank".
+    expect(mapGoogleUserToDirectoryUser(base)).toEqual({
+      googleId: '1001',
       email: 'ada.lovelace@example.test',
       firstName: null,
       lastName: null,
       avatarUrl: null,
-      department: null,
-      businessUnit: null,
-      entity: null,
       title: null,
       country: null,
-      homeCurrency: null,
-      employeeId: null,
       employeeStatus: 'ACTIVE',
       terminationDate: null,
       managerEmail: null,
+      deleted: false,
     });
   });
 
-  it('produces an empty email rather than throwing when one is absent', () => {
-    // Should not happen, but the caller filters on email — a throw here would abort the
-    // whole sync over one malformed row.
-    expect(mapGoogleUserToDirectoryUser({} as never).email).toBe('');
+  it('produces an empty email and id rather than throwing when they are absent', () => {
+    // Should not happen, but the sync filters on both — a throw here would abort the whole
+    // run over one malformed row.
+    const out = mapGoogleUserToDirectoryUser({});
+    expect(out.email).toBe('');
+    expect(out.googleId).toBe('');
   });
 });

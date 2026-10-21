@@ -21,6 +21,6 @@
  */
 
 export { getJobsConnection } from './connection';
-export { type EnqueueOptions, enqueue, upsertRecurring } from './enqueue';
+export { type EnqueueOptions, enqueue, removeStaleSchedulers, upsertRecurring } from './enqueue';
 export { JOB_QUEUES, type JobMap, type JobName } from './jobs';
 export { QUEUE_CONFIG, QUEUE_NAMES, type QueueName, type QueueOptions } from './queues';

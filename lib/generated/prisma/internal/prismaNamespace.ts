@@ -444,7 +444,9 @@ export const ModelName = {
   McpOauthClient: 'McpOauthClient',
   McpOauthGrant: 'McpOauthGrant',
   McpOauthCode: 'McpOauthCode',
-  McpOauthRefreshToken: 'McpOauthRefreshToken'
+  McpOauthRefreshToken: 'McpOauthRefreshToken',
+  UserSyncRun: 'UserSyncRun',
+  UserSyncRunItem: 'UserSyncRunItem'
 } as const
 
 export type ModelName = (typeof ModelName)[keyof typeof ModelName]
@@ -460,7 +462,7 @@ export type TypeMap<ExtArgs extends runtime.Types.Extensions.InternalArgs = runt
     omit: GlobalOmitOptions
   }
   meta: {
-    modelProps: "expenseCategory" | "glAccount" | "expenseReport" | "expense" | "expenseAllocation" | "expenseAttendee" | "expenseLineItem" | "receipt" | "documentExtraction" | "expenseDetermination" | "receiptExternalId" | "expenseExternalId" | "aiUsage" | "taxJurisdiction" | "user" | "userExternalId" | "role" | "roleExternalId" | "businessUnit" | "externalIdSource" | "businessUnitExternalId" | "legalEntity" | "legalEntityExternalId" | "fxRate" | "mileageRate" | "mileageRateTier" | "mileageRateSubject" | "mileageBalanceImport" | "mileageOpeningBalance" | "perDiemRate" | "currency" | "department" | "departmentExternalId" | "jobLevel" | "jobLevelExternalId" | "fiscalYear" | "fiscalYearExternalId" | "approvalWorkflow" | "approvalWorkflowVersion" | "approvalInstance" | "approvalTask" | "delegation" | "policyRule" | "expensePolicy" | "policyViolation" | "savedView" | "replyThread" | "travelPlace" | "travelRequest" | "travelCategory" | "travelBudgetLine" | "assistantConversation" | "assistantMessage" | "assistantFeedback" | "apiKey" | "apiKeyRequest" | "apiKeyIdempotency" | "mcpOauthClient" | "mcpOauthGrant" | "mcpOauthCode" | "mcpOauthRefreshToken"
+    modelProps: "expenseCategory" | "glAccount" | "expenseReport" | "expense" | "expenseAllocation" | "expenseAttendee" | "expenseLineItem" | "receipt" | "documentExtraction" | "expenseDetermination" | "receiptExternalId" | "expenseExternalId" | "aiUsage" | "taxJurisdiction" | "user" | "userExternalId" | "role" | "roleExternalId" | "businessUnit" | "externalIdSource" | "businessUnitExternalId" | "legalEntity" | "legalEntityExternalId" | "fxRate" | "mileageRate" | "mileageRateTier" | "mileageRateSubject" | "mileageBalanceImport" | "mileageOpeningBalance" | "perDiemRate" | "currency" | "department" | "departmentExternalId" | "jobLevel" | "jobLevelExternalId" | "fiscalYear" | "fiscalYearExternalId" | "approvalWorkflow" | "approvalWorkflowVersion" | "approvalInstance" | "approvalTask" | "delegation" | "policyRule" | "expensePolicy" | "policyViolation" | "savedView" | "replyThread" | "travelPlace" | "travelRequest" | "travelCategory" | "travelBudgetLine" | "assistantConversation" | "assistantMessage" | "assistantFeedback" | "apiKey" | "apiKeyRequest" | "apiKeyIdempotency" | "mcpOauthClient" | "mcpOauthGrant" | "mcpOauthCode" | "mcpOauthRefreshToken" | "userSyncRun" | "userSyncRunItem"
     txIsolationLevel: TransactionIsolationLevel
   }
   model: {
@@ -4978,6 +4980,154 @@ export type TypeMap<ExtArgs extends runtime.Types.Extensions.InternalArgs = runt
         }
       }
     }
+    UserSyncRun: {
+      payload: Prisma.$UserSyncRunPayload<ExtArgs>
+      fields: Prisma.UserSyncRunFieldRefs
+      operations: {
+        findUnique: {
+          args: Prisma.UserSyncRunFindUniqueArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$UserSyncRunPayload> | null
+        }
+        findUniqueOrThrow: {
+          args: Prisma.UserSyncRunFindUniqueOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$UserSyncRunPayload>
+        }
+        findFirst: {
+          args: Prisma.UserSyncRunFindFirstArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$UserSyncRunPayload> | null
+        }
+        findFirstOrThrow: {
+          args: Prisma.UserSyncRunFindFirstOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$UserSyncRunPayload>
+        }
+        findMany: {
+          args: Prisma.UserSyncRunFindManyArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$UserSyncRunPayload>[]
+        }
+        create: {
+          args: Prisma.UserSyncRunCreateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$UserSyncRunPayload>
+        }
+        createMany: {
+          args: Prisma.UserSyncRunCreateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        createManyAndReturn: {
+          args: Prisma.UserSyncRunCreateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$UserSyncRunPayload>[]
+        }
+        delete: {
+          args: Prisma.UserSyncRunDeleteArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$UserSyncRunPayload>
+        }
+        update: {
+          args: Prisma.UserSyncRunUpdateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$UserSyncRunPayload>
+        }
+        deleteMany: {
+          args: Prisma.UserSyncRunDeleteManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateMany: {
+          args: Prisma.UserSyncRunUpdateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateManyAndReturn: {
+          args: Prisma.UserSyncRunUpdateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$UserSyncRunPayload>[]
+        }
+        upsert: {
+          args: Prisma.UserSyncRunUpsertArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$UserSyncRunPayload>
+        }
+        aggregate: {
+          args: Prisma.UserSyncRunAggregateArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.AggregateUserSyncRun>
+        }
+        groupBy: {
+          args: Prisma.UserSyncRunGroupByArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.UserSyncRunGroupByOutputType>[]
+        }
+        count: {
+          args: Prisma.UserSyncRunCountArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.UserSyncRunCountAggregateOutputType> | number
+        }
+      }
+    }
+    UserSyncRunItem: {
+      payload: Prisma.$UserSyncRunItemPayload<ExtArgs>
+      fields: Prisma.UserSyncRunItemFieldRefs
+      operations: {
+        findUnique: {
+          args: Prisma.UserSyncRunItemFindUniqueArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$UserSyncRunItemPayload> | null
+        }
+        findUniqueOrThrow: {
+          args: Prisma.UserSyncRunItemFindUniqueOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$UserSyncRunItemPayload>
+        }
+        findFirst: {
+          args: Prisma.UserSyncRunItemFindFirstArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$UserSyncRunItemPayload> | null
+        }
+        findFirstOrThrow: {
+          args: Prisma.UserSyncRunItemFindFirstOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$UserSyncRunItemPayload>
+        }
+        findMany: {
+          args: Prisma.UserSyncRunItemFindManyArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$UserSyncRunItemPayload>[]
+        }
+        create: {
+          args: Prisma.UserSyncRunItemCreateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$UserSyncRunItemPayload>
+        }
+        createMany: {
+          args: Prisma.UserSyncRunItemCreateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        createManyAndReturn: {
+          args: Prisma.UserSyncRunItemCreateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$UserSyncRunItemPayload>[]
+        }
+        delete: {
+          args: Prisma.UserSyncRunItemDeleteArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$UserSyncRunItemPayload>
+        }
+        update: {
+          args: Prisma.UserSyncRunItemUpdateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$UserSyncRunItemPayload>
+        }
+        deleteMany: {
+          args: Prisma.UserSyncRunItemDeleteManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateMany: {
+          args: Prisma.UserSyncRunItemUpdateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateManyAndReturn: {
+          args: Prisma.UserSyncRunItemUpdateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$UserSyncRunItemPayload>[]
+        }
+        upsert: {
+          args: Prisma.UserSyncRunItemUpsertArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$UserSyncRunItemPayload>
+        }
+        aggregate: {
+          args: Prisma.UserSyncRunItemAggregateArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.AggregateUserSyncRunItem>
+        }
+        groupBy: {
+          args: Prisma.UserSyncRunItemGroupByArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.UserSyncRunItemGroupByOutputType>[]
+        }
+        count: {
+          args: Prisma.UserSyncRunItemCountArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.UserSyncRunItemCountAggregateOutputType> | number
+        }
+      }
+    }
   }
 } & {
   other: {
@@ -6079,6 +6229,41 @@ export const McpOauthRefreshTokenScalarFieldEnum = {
 export type McpOauthRefreshTokenScalarFieldEnum = (typeof McpOauthRefreshTokenScalarFieldEnum)[keyof typeof McpOauthRefreshTokenScalarFieldEnum]
 
 
+export const UserSyncRunScalarFieldEnum = {
+  id: 'id',
+  organizationId: 'organizationId',
+  kind: 'kind',
+  trigger: 'trigger',
+  dryRun: 'dryRun',
+  status: 'status',
+  jobId: 'jobId',
+  actorId: 'actorId',
+  counts: 'counts',
+  message: 'message',
+  startedAt: 'startedAt',
+  heartbeatAt: 'heartbeatAt',
+  finishedAt: 'finishedAt'
+} as const
+
+export type UserSyncRunScalarFieldEnum = (typeof UserSyncRunScalarFieldEnum)[keyof typeof UserSyncRunScalarFieldEnum]
+
+
+export const UserSyncRunItemScalarFieldEnum = {
+  id: 'id',
+  organizationId: 'organizationId',
+  runId: 'runId',
+  kind: 'kind',
+  userId: 'userId',
+  externalRef: 'externalRef',
+  outcome: 'outcome',
+  fields: 'fields',
+  message: 'message',
+  createdAt: 'createdAt'
+} as const
+
+export type UserSyncRunItemScalarFieldEnum = (typeof UserSyncRunItemScalarFieldEnum)[keyof typeof UserSyncRunItemScalarFieldEnum]
+
+
 export const SortOrder = {
   asc: 'asc',
   desc: 'desc'
@@ -6436,6 +6621,8 @@ export type GlobalOmitConfig = {
   mcpOauthGrant?: Prisma.McpOauthGrantOmit
   mcpOauthCode?: Prisma.McpOauthCodeOmit
   mcpOauthRefreshToken?: Prisma.McpOauthRefreshTokenOmit
+  userSyncRun?: Prisma.UserSyncRunOmit
+  userSyncRunItem?: Prisma.UserSyncRunItemOmit
 }
 
 /* Types for Logging */

@@ -67,6 +67,8 @@ export interface UsersListParams {
   pageToken?: string;
   projection: 'basic' | 'full';
   orderBy: 'email' | 'givenName' | 'familyName';
+  /** #582: list accounts deleted in Google (kept about 20 days) instead of live ones. */
+  showDeleted?: 'true';
 }
 
 export interface DirectoryClient {
@@ -174,6 +176,7 @@ export function getDirectoryClient(
         url.searchParams.set('projection', params.projection);
         url.searchParams.set('orderBy', params.orderBy);
         if (params.pageToken) url.searchParams.set('pageToken', params.pageToken);
+        if (params.showDeleted) url.searchParams.set('showDeleted', params.showDeleted);
         const res = await doFetch(url, {
           headers: { authorization: `Bearer ${await accessToken()}` },
           signal: AbortSignal.timeout(TIMEOUT_MS),

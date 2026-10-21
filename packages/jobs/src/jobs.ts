@@ -86,6 +86,12 @@ export interface JobMap {
    *  chain, the retention window and the watermark are all the tenant's (0010, 0075). */
   'audit.purge': { trigger?: 'cron' | 'manual'; organizationId?: string };
 
+  /** Delete people-sync run reports (UserSyncRun + items) older than 90 days.
+   *
+   *  eos batch 4 — ExpenseOS's job (67db2e33, #582), plus `organizationId` (fanned out per
+   *  tenant, as above): the run reports are the tenant's (0082). */
+  'userSyncRun.prune': { trigger?: 'cron' | 'manual'; organizationId?: string };
+
   /** Reconcile the entire Workspace directory into the User table.
    *  Runs daily on cron; can be triggered manually for ad-hoc syncs.
    *
@@ -204,6 +210,7 @@ export const JOB_QUEUES: Record<JobName, QueueName> = {
   'expense.receiptChase': 'housekeeping',
   'notification.prune': 'housekeeping',
   'audit.purge': 'housekeeping',
+  'userSyncRun.prune': 'housekeeping',
   // w5-04: ExpenseOS's queue for it.
   'integration.google.directorySync': 'integrations',
   'email.ingestReceipts': 'integrations',

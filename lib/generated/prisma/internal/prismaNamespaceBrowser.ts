@@ -111,7 +111,9 @@ export const ModelName = {
   McpOauthClient: 'McpOauthClient',
   McpOauthGrant: 'McpOauthGrant',
   McpOauthCode: 'McpOauthCode',
-  McpOauthRefreshToken: 'McpOauthRefreshToken'
+  McpOauthRefreshToken: 'McpOauthRefreshToken',
+  UserSyncRun: 'UserSyncRun',
+  UserSyncRunItem: 'UserSyncRunItem'
 } as const
 
 export type ModelName = (typeof ModelName)[keyof typeof ModelName]
@@ -1190,6 +1192,41 @@ export const McpOauthRefreshTokenScalarFieldEnum = {
 } as const
 
 export type McpOauthRefreshTokenScalarFieldEnum = (typeof McpOauthRefreshTokenScalarFieldEnum)[keyof typeof McpOauthRefreshTokenScalarFieldEnum]
+
+
+export const UserSyncRunScalarFieldEnum = {
+  id: 'id',
+  organizationId: 'organizationId',
+  kind: 'kind',
+  trigger: 'trigger',
+  dryRun: 'dryRun',
+  status: 'status',
+  jobId: 'jobId',
+  actorId: 'actorId',
+  counts: 'counts',
+  message: 'message',
+  startedAt: 'startedAt',
+  heartbeatAt: 'heartbeatAt',
+  finishedAt: 'finishedAt'
+} as const
+
+export type UserSyncRunScalarFieldEnum = (typeof UserSyncRunScalarFieldEnum)[keyof typeof UserSyncRunScalarFieldEnum]
+
+
+export const UserSyncRunItemScalarFieldEnum = {
+  id: 'id',
+  organizationId: 'organizationId',
+  runId: 'runId',
+  kind: 'kind',
+  userId: 'userId',
+  externalRef: 'externalRef',
+  outcome: 'outcome',
+  fields: 'fields',
+  message: 'message',
+  createdAt: 'createdAt'
+} as const
+
+export type UserSyncRunItemScalarFieldEnum = (typeof UserSyncRunItemScalarFieldEnum)[keyof typeof UserSyncRunItemScalarFieldEnum]
 
 
 export const SortOrder = {

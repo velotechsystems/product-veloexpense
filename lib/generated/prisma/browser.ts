@@ -341,3 +341,13 @@ export type McpOauthCode = Prisma.McpOauthCodeModel
  * 0080: VeloCRM's rotating refresh token, hashed. A used one presented again revokes its grant.
  */
 export type McpOauthRefreshToken = Prisma.McpOauthRefreshTokenModel
+/**
+ * Model UserSyncRun
+ * eos batch 4 (#582): a people-sync run (0082). Also the per-kind, per-tenant run lock.
+ */
+export type UserSyncRun = Prisma.UserSyncRunModel
+/**
+ * Model UserSyncRunItem
+ * eos batch 4 (#582): what a run did to one person (0082).
+ */
+export type UserSyncRunItem = Prisma.UserSyncRunItemModel

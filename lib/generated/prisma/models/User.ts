@@ -347,6 +347,8 @@ export type UserWhereInput = {
   mileageRates?: Prisma.MileageRateSubjectListRelationFilter
   mileageOpeningBalances?: Prisma.MileageOpeningBalanceListRelationFilter
   mileageBalanceImports?: Prisma.MileageBalanceImportListRelationFilter
+  userSyncRuns?: Prisma.UserSyncRunListRelationFilter
+  userSyncRunItems?: Prisma.UserSyncRunItemListRelationFilter
   approvalTasksAssigned?: Prisma.ApprovalTaskListRelationFilter
   approvalTasksDecided?: Prisma.ApprovalTaskListRelationFilter
   delegationsFrom?: Prisma.DelegationListRelationFilter
@@ -397,6 +399,8 @@ export type UserOrderByWithRelationInput = {
   mileageRates?: Prisma.MileageRateSubjectOrderByRelationAggregateInput
   mileageOpeningBalances?: Prisma.MileageOpeningBalanceOrderByRelationAggregateInput
   mileageBalanceImports?: Prisma.MileageBalanceImportOrderByRelationAggregateInput
+  userSyncRuns?: Prisma.UserSyncRunOrderByRelationAggregateInput
+  userSyncRunItems?: Prisma.UserSyncRunItemOrderByRelationAggregateInput
   approvalTasksAssigned?: Prisma.ApprovalTaskOrderByRelationAggregateInput
   approvalTasksDecided?: Prisma.ApprovalTaskOrderByRelationAggregateInput
   delegationsFrom?: Prisma.DelegationOrderByRelationAggregateInput
@@ -450,6 +454,8 @@ export type UserWhereUniqueInput = Prisma.AtLeast<{
   mileageRates?: Prisma.MileageRateSubjectListRelationFilter
   mileageOpeningBalances?: Prisma.MileageOpeningBalanceListRelationFilter
   mileageBalanceImports?: Prisma.MileageBalanceImportListRelationFilter
+  userSyncRuns?: Prisma.UserSyncRunListRelationFilter
+  userSyncRunItems?: Prisma.UserSyncRunItemListRelationFilter
   approvalTasksAssigned?: Prisma.ApprovalTaskListRelationFilter
   approvalTasksDecided?: Prisma.ApprovalTaskListRelationFilter
   delegationsFrom?: Prisma.DelegationListRelationFilter
@@ -553,6 +559,8 @@ export type UserCreateInput = {
   mileageRates?: Prisma.MileageRateSubjectCreateNestedManyWithoutUserInput
   mileageOpeningBalances?: Prisma.MileageOpeningBalanceCreateNestedManyWithoutUserInput
   mileageBalanceImports?: Prisma.MileageBalanceImportCreateNestedManyWithoutImportedByInput
+  userSyncRuns?: Prisma.UserSyncRunCreateNestedManyWithoutActorInput
+  userSyncRunItems?: Prisma.UserSyncRunItemCreateNestedManyWithoutUserInput
   approvalTasksAssigned?: Prisma.ApprovalTaskCreateNestedManyWithoutAssigneeInput
   approvalTasksDecided?: Prisma.ApprovalTaskCreateNestedManyWithoutDecidedByInput
   delegationsFrom?: Prisma.DelegationCreateNestedManyWithoutFromUserInput
@@ -597,6 +605,8 @@ export type UserUncheckedCreateInput = {
   mileageRates?: Prisma.MileageRateSubjectUncheckedCreateNestedManyWithoutUserInput
   mileageOpeningBalances?: Prisma.MileageOpeningBalanceUncheckedCreateNestedManyWithoutUserInput
   mileageBalanceImports?: Prisma.MileageBalanceImportUncheckedCreateNestedManyWithoutImportedByInput
+  userSyncRuns?: Prisma.UserSyncRunUncheckedCreateNestedManyWithoutActorInput
+  userSyncRunItems?: Prisma.UserSyncRunItemUncheckedCreateNestedManyWithoutUserInput
   approvalTasksAssigned?: Prisma.ApprovalTaskUncheckedCreateNestedManyWithoutAssigneeInput
   approvalTasksDecided?: Prisma.ApprovalTaskUncheckedCreateNestedManyWithoutDecidedByInput
   delegationsFrom?: Prisma.DelegationUncheckedCreateNestedManyWithoutFromUserInput
@@ -640,6 +650,8 @@ export type UserUpdateInput = {
   mileageRates?: Prisma.MileageRateSubjectUpdateManyWithoutUserNestedInput
   mileageOpeningBalances?: Prisma.MileageOpeningBalanceUpdateManyWithoutUserNestedInput
   mileageBalanceImports?: Prisma.MileageBalanceImportUpdateManyWithoutImportedByNestedInput
+  userSyncRuns?: Prisma.UserSyncRunUpdateManyWithoutActorNestedInput
+  userSyncRunItems?: Prisma.UserSyncRunItemUpdateManyWithoutUserNestedInput
   approvalTasksAssigned?: Prisma.ApprovalTaskUpdateManyWithoutAssigneeNestedInput
   approvalTasksDecided?: Prisma.ApprovalTaskUpdateManyWithoutDecidedByNestedInput
   delegationsFrom?: Prisma.DelegationUpdateManyWithoutFromUserNestedInput
@@ -684,6 +696,8 @@ export type UserUncheckedUpdateInput = {
   mileageRates?: Prisma.MileageRateSubjectUncheckedUpdateManyWithoutUserNestedInput
   mileageOpeningBalances?: Prisma.MileageOpeningBalanceUncheckedUpdateManyWithoutUserNestedInput
   mileageBalanceImports?: Prisma.MileageBalanceImportUncheckedUpdateManyWithoutImportedByNestedInput
+  userSyncRuns?: Prisma.UserSyncRunUncheckedUpdateManyWithoutActorNestedInput
+  userSyncRunItems?: Prisma.UserSyncRunItemUncheckedUpdateManyWithoutUserNestedInput
   approvalTasksAssigned?: Prisma.ApprovalTaskUncheckedUpdateManyWithoutAssigneeNestedInput
   approvalTasksDecided?: Prisma.ApprovalTaskUncheckedUpdateManyWithoutDecidedByNestedInput
   delegationsFrom?: Prisma.DelegationUncheckedUpdateManyWithoutFromUserNestedInput
@@ -1369,6 +1383,38 @@ export type UserUpdateOneRequiredWithoutApiKeysCreatedNestedInput = {
   update?: Prisma.XOR<Prisma.XOR<Prisma.UserUpdateToOneWithWhereWithoutApiKeysCreatedInput, Prisma.UserUpdateWithoutApiKeysCreatedInput>, Prisma.UserUncheckedUpdateWithoutApiKeysCreatedInput>
 }
 
+export type UserCreateNestedOneWithoutUserSyncRunsInput = {
+  create?: Prisma.XOR<Prisma.UserCreateWithoutUserSyncRunsInput, Prisma.UserUncheckedCreateWithoutUserSyncRunsInput>
+  connectOrCreate?: Prisma.UserCreateOrConnectWithoutUserSyncRunsInput
+  connect?: Prisma.UserWhereUniqueInput
+}
+
+export type UserUpdateOneWithoutUserSyncRunsNestedInput = {
+  create?: Prisma.XOR<Prisma.UserCreateWithoutUserSyncRunsInput, Prisma.UserUncheckedCreateWithoutUserSyncRunsInput>
+  connectOrCreate?: Prisma.UserCreateOrConnectWithoutUserSyncRunsInput
+  upsert?: Prisma.UserUpsertWithoutUserSyncRunsInput
+  disconnect?: Prisma.UserWhereInput | boolean
+  delete?: Prisma.UserWhereInput | boolean
+  connect?: Prisma.UserWhereUniqueInput
+  update?: Prisma.XOR<Prisma.XOR<Prisma.UserUpdateToOneWithWhereWithoutUserSyncRunsInput, Prisma.UserUpdateWithoutUserSyncRunsInput>, Prisma.UserUncheckedUpdateWithoutUserSyncRunsInput>
+}
+
+export type UserCreateNestedOneWithoutUserSyncRunItemsInput = {
+  create?: Prisma.XOR<Prisma.UserCreateWithoutUserSyncRunItemsInput, Prisma.UserUncheckedCreateWithoutUserSyncRunItemsInput>
+  connectOrCreate?: Prisma.UserCreateOrConnectWithoutUserSyncRunItemsInput
+  connect?: Prisma.UserWhereUniqueInput
+}
+
+export type UserUpdateOneWithoutUserSyncRunItemsNestedInput = {
+  create?: Prisma.XOR<Prisma.UserCreateWithoutUserSyncRunItemsInput, Prisma.UserUncheckedCreateWithoutUserSyncRunItemsInput>
+  connectOrCreate?: Prisma.UserCreateOrConnectWithoutUserSyncRunItemsInput
+  upsert?: Prisma.UserUpsertWithoutUserSyncRunItemsInput
+  disconnect?: Prisma.UserWhereInput | boolean
+  delete?: Prisma.UserWhereInput | boolean
+  connect?: Prisma.UserWhereUniqueInput
+  update?: Prisma.XOR<Prisma.XOR<Prisma.UserUpdateToOneWithWhereWithoutUserSyncRunItemsInput, Prisma.UserUpdateWithoutUserSyncRunItemsInput>, Prisma.UserUncheckedUpdateWithoutUserSyncRunItemsInput>
+}
+
 export type UserCreateWithoutReportsInput = {
   id?: string
   email: string
@@ -1399,6 +1445,8 @@ export type UserCreateWithoutReportsInput = {
   mileageRates?: Prisma.MileageRateSubjectCreateNestedManyWithoutUserInput
   mileageOpeningBalances?: Prisma.MileageOpeningBalanceCreateNestedManyWithoutUserInput
   mileageBalanceImports?: Prisma.MileageBalanceImportCreateNestedManyWithoutImportedByInput
+  userSyncRuns?: Prisma.UserSyncRunCreateNestedManyWithoutActorInput
+  userSyncRunItems?: Prisma.UserSyncRunItemCreateNestedManyWithoutUserInput
   approvalTasksAssigned?: Prisma.ApprovalTaskCreateNestedManyWithoutAssigneeInput
   approvalTasksDecided?: Prisma.ApprovalTaskCreateNestedManyWithoutDecidedByInput
   delegationsFrom?: Prisma.DelegationCreateNestedManyWithoutFromUserInput
@@ -1442,6 +1490,8 @@ export type UserUncheckedCreateWithoutReportsInput = {
   mileageRates?: Prisma.MileageRateSubjectUncheckedCreateNestedManyWithoutUserInput
   mileageOpeningBalances?: Prisma.MileageOpeningBalanceUncheckedCreateNestedManyWithoutUserInput
   mileageBalanceImports?: Prisma.MileageBalanceImportUncheckedCreateNestedManyWithoutImportedByInput
+  userSyncRuns?: Prisma.UserSyncRunUncheckedCreateNestedManyWithoutActorInput
+  userSyncRunItems?: Prisma.UserSyncRunItemUncheckedCreateNestedManyWithoutUserInput
   approvalTasksAssigned?: Prisma.ApprovalTaskUncheckedCreateNestedManyWithoutAssigneeInput
   approvalTasksDecided?: Prisma.ApprovalTaskUncheckedCreateNestedManyWithoutDecidedByInput
   delegationsFrom?: Prisma.DelegationUncheckedCreateNestedManyWithoutFromUserInput
@@ -1500,6 +1550,8 @@ export type UserUpdateWithoutReportsInput = {
   mileageRates?: Prisma.MileageRateSubjectUpdateManyWithoutUserNestedInput
   mileageOpeningBalances?: Prisma.MileageOpeningBalanceUpdateManyWithoutUserNestedInput
   mileageBalanceImports?: Prisma.MileageBalanceImportUpdateManyWithoutImportedByNestedInput
+  userSyncRuns?: Prisma.UserSyncRunUpdateManyWithoutActorNestedInput
+  userSyncRunItems?: Prisma.UserSyncRunItemUpdateManyWithoutUserNestedInput
   approvalTasksAssigned?: Prisma.ApprovalTaskUpdateManyWithoutAssigneeNestedInput
   approvalTasksDecided?: Prisma.ApprovalTaskUpdateManyWithoutDecidedByNestedInput
   delegationsFrom?: Prisma.DelegationUpdateManyWithoutFromUserNestedInput
@@ -1543,6 +1595,8 @@ export type UserUncheckedUpdateWithoutReportsInput = {
   mileageRates?: Prisma.MileageRateSubjectUncheckedUpdateManyWithoutUserNestedInput
   mileageOpeningBalances?: Prisma.MileageOpeningBalanceUncheckedUpdateManyWithoutUserNestedInput
   mileageBalanceImports?: Prisma.MileageBalanceImportUncheckedUpdateManyWithoutImportedByNestedInput
+  userSyncRuns?: Prisma.UserSyncRunUncheckedUpdateManyWithoutActorNestedInput
+  userSyncRunItems?: Prisma.UserSyncRunItemUncheckedUpdateManyWithoutUserNestedInput
   approvalTasksAssigned?: Prisma.ApprovalTaskUncheckedUpdateManyWithoutAssigneeNestedInput
   approvalTasksDecided?: Prisma.ApprovalTaskUncheckedUpdateManyWithoutDecidedByNestedInput
   delegationsFrom?: Prisma.DelegationUncheckedUpdateManyWithoutFromUserNestedInput
@@ -1585,6 +1639,8 @@ export type UserCreateWithoutExpensesInput = {
   mileageRates?: Prisma.MileageRateSubjectCreateNestedManyWithoutUserInput
   mileageOpeningBalances?: Prisma.MileageOpeningBalanceCreateNestedManyWithoutUserInput
   mileageBalanceImports?: Prisma.MileageBalanceImportCreateNestedManyWithoutImportedByInput
+  userSyncRuns?: Prisma.UserSyncRunCreateNestedManyWithoutActorInput
+  userSyncRunItems?: Prisma.UserSyncRunItemCreateNestedManyWithoutUserInput
   approvalTasksAssigned?: Prisma.ApprovalTaskCreateNestedManyWithoutAssigneeInput
   approvalTasksDecided?: Prisma.ApprovalTaskCreateNestedManyWithoutDecidedByInput
   delegationsFrom?: Prisma.DelegationCreateNestedManyWithoutFromUserInput
@@ -1628,6 +1684,8 @@ export type UserUncheckedCreateWithoutExpensesInput = {
   mileageRates?: Prisma.MileageRateSubjectUncheckedCreateNestedManyWithoutUserInput
   mileageOpeningBalances?: Prisma.MileageOpeningBalanceUncheckedCreateNestedManyWithoutUserInput
   mileageBalanceImports?: Prisma.MileageBalanceImportUncheckedCreateNestedManyWithoutImportedByInput
+  userSyncRuns?: Prisma.UserSyncRunUncheckedCreateNestedManyWithoutActorInput
+  userSyncRunItems?: Prisma.UserSyncRunItemUncheckedCreateNestedManyWithoutUserInput
   approvalTasksAssigned?: Prisma.ApprovalTaskUncheckedCreateNestedManyWithoutAssigneeInput
   approvalTasksDecided?: Prisma.ApprovalTaskUncheckedCreateNestedManyWithoutDecidedByInput
   delegationsFrom?: Prisma.DelegationUncheckedCreateNestedManyWithoutFromUserInput
@@ -1686,6 +1744,8 @@ export type UserUpdateWithoutExpensesInput = {
   mileageRates?: Prisma.MileageRateSubjectUpdateManyWithoutUserNestedInput
   mileageOpeningBalances?: Prisma.MileageOpeningBalanceUpdateManyWithoutUserNestedInput
   mileageBalanceImports?: Prisma.MileageBalanceImportUpdateManyWithoutImportedByNestedInput
+  userSyncRuns?: Prisma.UserSyncRunUpdateManyWithoutActorNestedInput
+  userSyncRunItems?: Prisma.UserSyncRunItemUpdateManyWithoutUserNestedInput
   approvalTasksAssigned?: Prisma.ApprovalTaskUpdateManyWithoutAssigneeNestedInput
   approvalTasksDecided?: Prisma.ApprovalTaskUpdateManyWithoutDecidedByNestedInput
   delegationsFrom?: Prisma.DelegationUpdateManyWithoutFromUserNestedInput
@@ -1729,6 +1789,8 @@ export type UserUncheckedUpdateWithoutExpensesInput = {
   mileageRates?: Prisma.MileageRateSubjectUncheckedUpdateManyWithoutUserNestedInput
   mileageOpeningBalances?: Prisma.MileageOpeningBalanceUncheckedUpdateManyWithoutUserNestedInput
   mileageBalanceImports?: Prisma.MileageBalanceImportUncheckedUpdateManyWithoutImportedByNestedInput
+  userSyncRuns?: Prisma.UserSyncRunUncheckedUpdateManyWithoutActorNestedInput
+  userSyncRunItems?: Prisma.UserSyncRunItemUncheckedUpdateManyWithoutUserNestedInput
   approvalTasksAssigned?: Prisma.ApprovalTaskUncheckedUpdateManyWithoutAssigneeNestedInput
   approvalTasksDecided?: Prisma.ApprovalTaskUncheckedUpdateManyWithoutDecidedByNestedInput
   delegationsFrom?: Prisma.DelegationUncheckedUpdateManyWithoutFromUserNestedInput
@@ -1771,6 +1833,8 @@ export type UserCreateWithoutReceiptsInput = {
   mileageRates?: Prisma.MileageRateSubjectCreateNestedManyWithoutUserInput
   mileageOpeningBalances?: Prisma.MileageOpeningBalanceCreateNestedManyWithoutUserInput
   mileageBalanceImports?: Prisma.MileageBalanceImportCreateNestedManyWithoutImportedByInput
+  userSyncRuns?: Prisma.UserSyncRunCreateNestedManyWithoutActorInput
+  userSyncRunItems?: Prisma.UserSyncRunItemCreateNestedManyWithoutUserInput
   approvalTasksAssigned?: Prisma.ApprovalTaskCreateNestedManyWithoutAssigneeInput
   approvalTasksDecided?: Prisma.ApprovalTaskCreateNestedManyWithoutDecidedByInput
   delegationsFrom?: Prisma.DelegationCreateNestedManyWithoutFromUserInput
@@ -1814,6 +1878,8 @@ export type UserUncheckedCreateWithoutReceiptsInput = {
   mileageRates?: Prisma.MileageRateSubjectUncheckedCreateNestedManyWithoutUserInput
   mileageOpeningBalances?: Prisma.MileageOpeningBalanceUncheckedCreateNestedManyWithoutUserInput
   mileageBalanceImports?: Prisma.MileageBalanceImportUncheckedCreateNestedManyWithoutImportedByInput
+  userSyncRuns?: Prisma.UserSyncRunUncheckedCreateNestedManyWithoutActorInput
+  userSyncRunItems?: Prisma.UserSyncRunItemUncheckedCreateNestedManyWithoutUserInput
   approvalTasksAssigned?: Prisma.ApprovalTaskUncheckedCreateNestedManyWithoutAssigneeInput
   approvalTasksDecided?: Prisma.ApprovalTaskUncheckedCreateNestedManyWithoutDecidedByInput
   delegationsFrom?: Prisma.DelegationUncheckedCreateNestedManyWithoutFromUserInput
@@ -1872,6 +1938,8 @@ export type UserUpdateWithoutReceiptsInput = {
   mileageRates?: Prisma.MileageRateSubjectUpdateManyWithoutUserNestedInput
   mileageOpeningBalances?: Prisma.MileageOpeningBalanceUpdateManyWithoutUserNestedInput
   mileageBalanceImports?: Prisma.MileageBalanceImportUpdateManyWithoutImportedByNestedInput
+  userSyncRuns?: Prisma.UserSyncRunUpdateManyWithoutActorNestedInput
+  userSyncRunItems?: Prisma.UserSyncRunItemUpdateManyWithoutUserNestedInput
   approvalTasksAssigned?: Prisma.ApprovalTaskUpdateManyWithoutAssigneeNestedInput
   approvalTasksDecided?: Prisma.ApprovalTaskUpdateManyWithoutDecidedByNestedInput
   delegationsFrom?: Prisma.DelegationUpdateManyWithoutFromUserNestedInput
@@ -1915,6 +1983,8 @@ export type UserUncheckedUpdateWithoutReceiptsInput = {
   mileageRates?: Prisma.MileageRateSubjectUncheckedUpdateManyWithoutUserNestedInput
   mileageOpeningBalances?: Prisma.MileageOpeningBalanceUncheckedUpdateManyWithoutUserNestedInput
   mileageBalanceImports?: Prisma.MileageBalanceImportUncheckedUpdateManyWithoutImportedByNestedInput
+  userSyncRuns?: Prisma.UserSyncRunUncheckedUpdateManyWithoutActorNestedInput
+  userSyncRunItems?: Prisma.UserSyncRunItemUncheckedUpdateManyWithoutUserNestedInput
   approvalTasksAssigned?: Prisma.ApprovalTaskUncheckedUpdateManyWithoutAssigneeNestedInput
   approvalTasksDecided?: Prisma.ApprovalTaskUncheckedUpdateManyWithoutDecidedByNestedInput
   delegationsFrom?: Prisma.DelegationUncheckedUpdateManyWithoutFromUserNestedInput
@@ -1957,6 +2027,8 @@ export type UserCreateWithoutDirectReportsInput = {
   mileageRates?: Prisma.MileageRateSubjectCreateNestedManyWithoutUserInput
   mileageOpeningBalances?: Prisma.MileageOpeningBalanceCreateNestedManyWithoutUserInput
   mileageBalanceImports?: Prisma.MileageBalanceImportCreateNestedManyWithoutImportedByInput
+  userSyncRuns?: Prisma.UserSyncRunCreateNestedManyWithoutActorInput
+  userSyncRunItems?: Prisma.UserSyncRunItemCreateNestedManyWithoutUserInput
   approvalTasksAssigned?: Prisma.ApprovalTaskCreateNestedManyWithoutAssigneeInput
   approvalTasksDecided?: Prisma.ApprovalTaskCreateNestedManyWithoutDecidedByInput
   delegationsFrom?: Prisma.DelegationCreateNestedManyWithoutFromUserInput
@@ -2000,6 +2072,8 @@ export type UserUncheckedCreateWithoutDirectReportsInput = {
   mileageRates?: Prisma.MileageRateSubjectUncheckedCreateNestedManyWithoutUserInput
   mileageOpeningBalances?: Prisma.MileageOpeningBalanceUncheckedCreateNestedManyWithoutUserInput
   mileageBalanceImports?: Prisma.MileageBalanceImportUncheckedCreateNestedManyWithoutImportedByInput
+  userSyncRuns?: Prisma.UserSyncRunUncheckedCreateNestedManyWithoutActorInput
+  userSyncRunItems?: Prisma.UserSyncRunItemUncheckedCreateNestedManyWithoutUserInput
   approvalTasksAssigned?: Prisma.ApprovalTaskUncheckedCreateNestedManyWithoutAssigneeInput
   approvalTasksDecided?: Prisma.ApprovalTaskUncheckedCreateNestedManyWithoutDecidedByInput
   delegationsFrom?: Prisma.DelegationUncheckedCreateNestedManyWithoutFromUserInput
@@ -2047,6 +2121,8 @@ export type UserCreateWithoutManagerInput = {
   mileageRates?: Prisma.MileageRateSubjectCreateNestedManyWithoutUserInput
   mileageOpeningBalances?: Prisma.MileageOpeningBalanceCreateNestedManyWithoutUserInput
   mileageBalanceImports?: Prisma.MileageBalanceImportCreateNestedManyWithoutImportedByInput
+  userSyncRuns?: Prisma.UserSyncRunCreateNestedManyWithoutActorInput
+  userSyncRunItems?: Prisma.UserSyncRunItemCreateNestedManyWithoutUserInput
   approvalTasksAssigned?: Prisma.ApprovalTaskCreateNestedManyWithoutAssigneeInput
   approvalTasksDecided?: Prisma.ApprovalTaskCreateNestedManyWithoutDecidedByInput
   delegationsFrom?: Prisma.DelegationCreateNestedManyWithoutFromUserInput
@@ -2090,6 +2166,8 @@ export type UserUncheckedCreateWithoutManagerInput = {
   mileageRates?: Prisma.MileageRateSubjectUncheckedCreateNestedManyWithoutUserInput
   mileageOpeningBalances?: Prisma.MileageOpeningBalanceUncheckedCreateNestedManyWithoutUserInput
   mileageBalanceImports?: Prisma.MileageBalanceImportUncheckedCreateNestedManyWithoutImportedByInput
+  userSyncRuns?: Prisma.UserSyncRunUncheckedCreateNestedManyWithoutActorInput
+  userSyncRunItems?: Prisma.UserSyncRunItemUncheckedCreateNestedManyWithoutUserInput
   approvalTasksAssigned?: Prisma.ApprovalTaskUncheckedCreateNestedManyWithoutAssigneeInput
   approvalTasksDecided?: Prisma.ApprovalTaskUncheckedCreateNestedManyWithoutDecidedByInput
   delegationsFrom?: Prisma.DelegationUncheckedCreateNestedManyWithoutFromUserInput
@@ -2153,6 +2231,8 @@ export type UserUpdateWithoutDirectReportsInput = {
   mileageRates?: Prisma.MileageRateSubjectUpdateManyWithoutUserNestedInput
   mileageOpeningBalances?: Prisma.MileageOpeningBalanceUpdateManyWithoutUserNestedInput
   mileageBalanceImports?: Prisma.MileageBalanceImportUpdateManyWithoutImportedByNestedInput
+  userSyncRuns?: Prisma.UserSyncRunUpdateManyWithoutActorNestedInput
+  userSyncRunItems?: Prisma.UserSyncRunItemUpdateManyWithoutUserNestedInput
   approvalTasksAssigned?: Prisma.ApprovalTaskUpdateManyWithoutAssigneeNestedInput
   approvalTasksDecided?: Prisma.ApprovalTaskUpdateManyWithoutDecidedByNestedInput
   delegationsFrom?: Prisma.DelegationUpdateManyWithoutFromUserNestedInput
@@ -2196,6 +2276,8 @@ export type UserUncheckedUpdateWithoutDirectReportsInput = {
   mileageRates?: Prisma.MileageRateSubjectUncheckedUpdateManyWithoutUserNestedInput
   mileageOpeningBalances?: Prisma.MileageOpeningBalanceUncheckedUpdateManyWithoutUserNestedInput
   mileageBalanceImports?: Prisma.MileageBalanceImportUncheckedUpdateManyWithoutImportedByNestedInput
+  userSyncRuns?: Prisma.UserSyncRunUncheckedUpdateManyWithoutActorNestedInput
+  userSyncRunItems?: Prisma.UserSyncRunItemUncheckedUpdateManyWithoutUserNestedInput
   approvalTasksAssigned?: Prisma.ApprovalTaskUncheckedUpdateManyWithoutAssigneeNestedInput
   approvalTasksDecided?: Prisma.ApprovalTaskUncheckedUpdateManyWithoutDecidedByNestedInput
   delegationsFrom?: Prisma.DelegationUncheckedUpdateManyWithoutFromUserNestedInput
@@ -2285,6 +2367,8 @@ export type UserCreateWithoutExternalIdsInput = {
   mileageRates?: Prisma.MileageRateSubjectCreateNestedManyWithoutUserInput
   mileageOpeningBalances?: Prisma.MileageOpeningBalanceCreateNestedManyWithoutUserInput
   mileageBalanceImports?: Prisma.MileageBalanceImportCreateNestedManyWithoutImportedByInput
+  userSyncRuns?: Prisma.UserSyncRunCreateNestedManyWithoutActorInput
+  userSyncRunItems?: Prisma.UserSyncRunItemCreateNestedManyWithoutUserInput
   approvalTasksAssigned?: Prisma.ApprovalTaskCreateNestedManyWithoutAssigneeInput
   approvalTasksDecided?: Prisma.ApprovalTaskCreateNestedManyWithoutDecidedByInput
   delegationsFrom?: Prisma.DelegationCreateNestedManyWithoutFromUserInput
@@ -2328,6 +2412,8 @@ export type UserUncheckedCreateWithoutExternalIdsInput = {
   mileageRates?: Prisma.MileageRateSubjectUncheckedCreateNestedManyWithoutUserInput
   mileageOpeningBalances?: Prisma.MileageOpeningBalanceUncheckedCreateNestedManyWithoutUserInput
   mileageBalanceImports?: Prisma.MileageBalanceImportUncheckedCreateNestedManyWithoutImportedByInput
+  userSyncRuns?: Prisma.UserSyncRunUncheckedCreateNestedManyWithoutActorInput
+  userSyncRunItems?: Prisma.UserSyncRunItemUncheckedCreateNestedManyWithoutUserInput
   approvalTasksAssigned?: Prisma.ApprovalTaskUncheckedCreateNestedManyWithoutAssigneeInput
   approvalTasksDecided?: Prisma.ApprovalTaskUncheckedCreateNestedManyWithoutDecidedByInput
   delegationsFrom?: Prisma.DelegationUncheckedCreateNestedManyWithoutFromUserInput
@@ -2386,6 +2472,8 @@ export type UserUpdateWithoutExternalIdsInput = {
   mileageRates?: Prisma.MileageRateSubjectUpdateManyWithoutUserNestedInput
   mileageOpeningBalances?: Prisma.MileageOpeningBalanceUpdateManyWithoutUserNestedInput
   mileageBalanceImports?: Prisma.MileageBalanceImportUpdateManyWithoutImportedByNestedInput
+  userSyncRuns?: Prisma.UserSyncRunUpdateManyWithoutActorNestedInput
+  userSyncRunItems?: Prisma.UserSyncRunItemUpdateManyWithoutUserNestedInput
   approvalTasksAssigned?: Prisma.ApprovalTaskUpdateManyWithoutAssigneeNestedInput
   approvalTasksDecided?: Prisma.ApprovalTaskUpdateManyWithoutDecidedByNestedInput
   delegationsFrom?: Prisma.DelegationUpdateManyWithoutFromUserNestedInput
@@ -2429,6 +2517,8 @@ export type UserUncheckedUpdateWithoutExternalIdsInput = {
   mileageRates?: Prisma.MileageRateSubjectUncheckedUpdateManyWithoutUserNestedInput
   mileageOpeningBalances?: Prisma.MileageOpeningBalanceUncheckedUpdateManyWithoutUserNestedInput
   mileageBalanceImports?: Prisma.MileageBalanceImportUncheckedUpdateManyWithoutImportedByNestedInput
+  userSyncRuns?: Prisma.UserSyncRunUncheckedUpdateManyWithoutActorNestedInput
+  userSyncRunItems?: Prisma.UserSyncRunItemUncheckedUpdateManyWithoutUserNestedInput
   approvalTasksAssigned?: Prisma.ApprovalTaskUncheckedUpdateManyWithoutAssigneeNestedInput
   approvalTasksDecided?: Prisma.ApprovalTaskUncheckedUpdateManyWithoutDecidedByNestedInput
   delegationsFrom?: Prisma.DelegationUncheckedUpdateManyWithoutFromUserNestedInput
@@ -2470,6 +2560,8 @@ export type UserCreateWithoutRoleInput = {
   mileageRates?: Prisma.MileageRateSubjectCreateNestedManyWithoutUserInput
   mileageOpeningBalances?: Prisma.MileageOpeningBalanceCreateNestedManyWithoutUserInput
   mileageBalanceImports?: Prisma.MileageBalanceImportCreateNestedManyWithoutImportedByInput
+  userSyncRuns?: Prisma.UserSyncRunCreateNestedManyWithoutActorInput
+  userSyncRunItems?: Prisma.UserSyncRunItemCreateNestedManyWithoutUserInput
   approvalTasksAssigned?: Prisma.ApprovalTaskCreateNestedManyWithoutAssigneeInput
   approvalTasksDecided?: Prisma.ApprovalTaskCreateNestedManyWithoutDecidedByInput
   delegationsFrom?: Prisma.DelegationCreateNestedManyWithoutFromUserInput
@@ -2512,6 +2604,8 @@ export type UserUncheckedCreateWithoutRoleInput = {
   mileageRates?: Prisma.MileageRateSubjectUncheckedCreateNestedManyWithoutUserInput
   mileageOpeningBalances?: Prisma.MileageOpeningBalanceUncheckedCreateNestedManyWithoutUserInput
   mileageBalanceImports?: Prisma.MileageBalanceImportUncheckedCreateNestedManyWithoutImportedByInput
+  userSyncRuns?: Prisma.UserSyncRunUncheckedCreateNestedManyWithoutActorInput
+  userSyncRunItems?: Prisma.UserSyncRunItemUncheckedCreateNestedManyWithoutUserInput
   approvalTasksAssigned?: Prisma.ApprovalTaskUncheckedCreateNestedManyWithoutAssigneeInput
   approvalTasksDecided?: Prisma.ApprovalTaskUncheckedCreateNestedManyWithoutDecidedByInput
   delegationsFrom?: Prisma.DelegationUncheckedCreateNestedManyWithoutFromUserInput
@@ -2580,6 +2674,8 @@ export type UserCreateWithoutBusinessUnitInput = {
   mileageRates?: Prisma.MileageRateSubjectCreateNestedManyWithoutUserInput
   mileageOpeningBalances?: Prisma.MileageOpeningBalanceCreateNestedManyWithoutUserInput
   mileageBalanceImports?: Prisma.MileageBalanceImportCreateNestedManyWithoutImportedByInput
+  userSyncRuns?: Prisma.UserSyncRunCreateNestedManyWithoutActorInput
+  userSyncRunItems?: Prisma.UserSyncRunItemCreateNestedManyWithoutUserInput
   approvalTasksAssigned?: Prisma.ApprovalTaskCreateNestedManyWithoutAssigneeInput
   approvalTasksDecided?: Prisma.ApprovalTaskCreateNestedManyWithoutDecidedByInput
   delegationsFrom?: Prisma.DelegationCreateNestedManyWithoutFromUserInput
@@ -2623,6 +2719,8 @@ export type UserUncheckedCreateWithoutBusinessUnitInput = {
   mileageRates?: Prisma.MileageRateSubjectUncheckedCreateNestedManyWithoutUserInput
   mileageOpeningBalances?: Prisma.MileageOpeningBalanceUncheckedCreateNestedManyWithoutUserInput
   mileageBalanceImports?: Prisma.MileageBalanceImportUncheckedCreateNestedManyWithoutImportedByInput
+  userSyncRuns?: Prisma.UserSyncRunUncheckedCreateNestedManyWithoutActorInput
+  userSyncRunItems?: Prisma.UserSyncRunItemUncheckedCreateNestedManyWithoutUserInput
   approvalTasksAssigned?: Prisma.ApprovalTaskUncheckedCreateNestedManyWithoutAssigneeInput
   approvalTasksDecided?: Prisma.ApprovalTaskUncheckedCreateNestedManyWithoutDecidedByInput
   delegationsFrom?: Prisma.DelegationUncheckedCreateNestedManyWithoutFromUserInput
@@ -2691,6 +2789,8 @@ export type UserCreateWithoutEntityInput = {
   mileageRates?: Prisma.MileageRateSubjectCreateNestedManyWithoutUserInput
   mileageOpeningBalances?: Prisma.MileageOpeningBalanceCreateNestedManyWithoutUserInput
   mileageBalanceImports?: Prisma.MileageBalanceImportCreateNestedManyWithoutImportedByInput
+  userSyncRuns?: Prisma.UserSyncRunCreateNestedManyWithoutActorInput
+  userSyncRunItems?: Prisma.UserSyncRunItemCreateNestedManyWithoutUserInput
   approvalTasksAssigned?: Prisma.ApprovalTaskCreateNestedManyWithoutAssigneeInput
   approvalTasksDecided?: Prisma.ApprovalTaskCreateNestedManyWithoutDecidedByInput
   delegationsFrom?: Prisma.DelegationCreateNestedManyWithoutFromUserInput
@@ -2734,6 +2834,8 @@ export type UserUncheckedCreateWithoutEntityInput = {
   mileageRates?: Prisma.MileageRateSubjectUncheckedCreateNestedManyWithoutUserInput
   mileageOpeningBalances?: Prisma.MileageOpeningBalanceUncheckedCreateNestedManyWithoutUserInput
   mileageBalanceImports?: Prisma.MileageBalanceImportUncheckedCreateNestedManyWithoutImportedByInput
+  userSyncRuns?: Prisma.UserSyncRunUncheckedCreateNestedManyWithoutActorInput
+  userSyncRunItems?: Prisma.UserSyncRunItemUncheckedCreateNestedManyWithoutUserInput
   approvalTasksAssigned?: Prisma.ApprovalTaskUncheckedCreateNestedManyWithoutAssigneeInput
   approvalTasksDecided?: Prisma.ApprovalTaskUncheckedCreateNestedManyWithoutDecidedByInput
   delegationsFrom?: Prisma.DelegationUncheckedCreateNestedManyWithoutFromUserInput
@@ -2802,6 +2904,8 @@ export type UserCreateWithoutMileageRatesInput = {
   receipts?: Prisma.ReceiptCreateNestedManyWithoutUploadedByInput
   mileageOpeningBalances?: Prisma.MileageOpeningBalanceCreateNestedManyWithoutUserInput
   mileageBalanceImports?: Prisma.MileageBalanceImportCreateNestedManyWithoutImportedByInput
+  userSyncRuns?: Prisma.UserSyncRunCreateNestedManyWithoutActorInput
+  userSyncRunItems?: Prisma.UserSyncRunItemCreateNestedManyWithoutUserInput
   approvalTasksAssigned?: Prisma.ApprovalTaskCreateNestedManyWithoutAssigneeInput
   approvalTasksDecided?: Prisma.ApprovalTaskCreateNestedManyWithoutDecidedByInput
   delegationsFrom?: Prisma.DelegationCreateNestedManyWithoutFromUserInput
@@ -2845,6 +2949,8 @@ export type UserUncheckedCreateWithoutMileageRatesInput = {
   receipts?: Prisma.ReceiptUncheckedCreateNestedManyWithoutUploadedByInput
   mileageOpeningBalances?: Prisma.MileageOpeningBalanceUncheckedCreateNestedManyWithoutUserInput
   mileageBalanceImports?: Prisma.MileageBalanceImportUncheckedCreateNestedManyWithoutImportedByInput
+  userSyncRuns?: Prisma.UserSyncRunUncheckedCreateNestedManyWithoutActorInput
+  userSyncRunItems?: Prisma.UserSyncRunItemUncheckedCreateNestedManyWithoutUserInput
   approvalTasksAssigned?: Prisma.ApprovalTaskUncheckedCreateNestedManyWithoutAssigneeInput
   approvalTasksDecided?: Prisma.ApprovalTaskUncheckedCreateNestedManyWithoutDecidedByInput
   delegationsFrom?: Prisma.DelegationUncheckedCreateNestedManyWithoutFromUserInput
@@ -2903,6 +3009,8 @@ export type UserUpdateWithoutMileageRatesInput = {
   receipts?: Prisma.ReceiptUpdateManyWithoutUploadedByNestedInput
   mileageOpeningBalances?: Prisma.MileageOpeningBalanceUpdateManyWithoutUserNestedInput
   mileageBalanceImports?: Prisma.MileageBalanceImportUpdateManyWithoutImportedByNestedInput
+  userSyncRuns?: Prisma.UserSyncRunUpdateManyWithoutActorNestedInput
+  userSyncRunItems?: Prisma.UserSyncRunItemUpdateManyWithoutUserNestedInput
   approvalTasksAssigned?: Prisma.ApprovalTaskUpdateManyWithoutAssigneeNestedInput
   approvalTasksDecided?: Prisma.ApprovalTaskUpdateManyWithoutDecidedByNestedInput
   delegationsFrom?: Prisma.DelegationUpdateManyWithoutFromUserNestedInput
@@ -2946,6 +3054,8 @@ export type UserUncheckedUpdateWithoutMileageRatesInput = {
   receipts?: Prisma.ReceiptUncheckedUpdateManyWithoutUploadedByNestedInput
   mileageOpeningBalances?: Prisma.MileageOpeningBalanceUncheckedUpdateManyWithoutUserNestedInput
   mileageBalanceImports?: Prisma.MileageBalanceImportUncheckedUpdateManyWithoutImportedByNestedInput
+  userSyncRuns?: Prisma.UserSyncRunUncheckedUpdateManyWithoutActorNestedInput
+  userSyncRunItems?: Prisma.UserSyncRunItemUncheckedUpdateManyWithoutUserNestedInput
   approvalTasksAssigned?: Prisma.ApprovalTaskUncheckedUpdateManyWithoutAssigneeNestedInput
   approvalTasksDecided?: Prisma.ApprovalTaskUncheckedUpdateManyWithoutDecidedByNestedInput
   delegationsFrom?: Prisma.DelegationUncheckedUpdateManyWithoutFromUserNestedInput
@@ -2988,6 +3098,8 @@ export type UserCreateWithoutMileageBalanceImportsInput = {
   receipts?: Prisma.ReceiptCreateNestedManyWithoutUploadedByInput
   mileageRates?: Prisma.MileageRateSubjectCreateNestedManyWithoutUserInput
   mileageOpeningBalances?: Prisma.MileageOpeningBalanceCreateNestedManyWithoutUserInput
+  userSyncRuns?: Prisma.UserSyncRunCreateNestedManyWithoutActorInput
+  userSyncRunItems?: Prisma.UserSyncRunItemCreateNestedManyWithoutUserInput
   approvalTasksAssigned?: Prisma.ApprovalTaskCreateNestedManyWithoutAssigneeInput
   approvalTasksDecided?: Prisma.ApprovalTaskCreateNestedManyWithoutDecidedByInput
   delegationsFrom?: Prisma.DelegationCreateNestedManyWithoutFromUserInput
@@ -3031,6 +3143,8 @@ export type UserUncheckedCreateWithoutMileageBalanceImportsInput = {
   receipts?: Prisma.ReceiptUncheckedCreateNestedManyWithoutUploadedByInput
   mileageRates?: Prisma.MileageRateSubjectUncheckedCreateNestedManyWithoutUserInput
   mileageOpeningBalances?: Prisma.MileageOpeningBalanceUncheckedCreateNestedManyWithoutUserInput
+  userSyncRuns?: Prisma.UserSyncRunUncheckedCreateNestedManyWithoutActorInput
+  userSyncRunItems?: Prisma.UserSyncRunItemUncheckedCreateNestedManyWithoutUserInput
   approvalTasksAssigned?: Prisma.ApprovalTaskUncheckedCreateNestedManyWithoutAssigneeInput
   approvalTasksDecided?: Prisma.ApprovalTaskUncheckedCreateNestedManyWithoutDecidedByInput
   delegationsFrom?: Prisma.DelegationUncheckedCreateNestedManyWithoutFromUserInput
@@ -3089,6 +3203,8 @@ export type UserUpdateWithoutMileageBalanceImportsInput = {
   receipts?: Prisma.ReceiptUpdateManyWithoutUploadedByNestedInput
   mileageRates?: Prisma.MileageRateSubjectUpdateManyWithoutUserNestedInput
   mileageOpeningBalances?: Prisma.MileageOpeningBalanceUpdateManyWithoutUserNestedInput
+  userSyncRuns?: Prisma.UserSyncRunUpdateManyWithoutActorNestedInput
+  userSyncRunItems?: Prisma.UserSyncRunItemUpdateManyWithoutUserNestedInput
   approvalTasksAssigned?: Prisma.ApprovalTaskUpdateManyWithoutAssigneeNestedInput
   approvalTasksDecided?: Prisma.ApprovalTaskUpdateManyWithoutDecidedByNestedInput
   delegationsFrom?: Prisma.DelegationUpdateManyWithoutFromUserNestedInput
@@ -3132,6 +3248,8 @@ export type UserUncheckedUpdateWithoutMileageBalanceImportsInput = {
   receipts?: Prisma.ReceiptUncheckedUpdateManyWithoutUploadedByNestedInput
   mileageRates?: Prisma.MileageRateSubjectUncheckedUpdateManyWithoutUserNestedInput
   mileageOpeningBalances?: Prisma.MileageOpeningBalanceUncheckedUpdateManyWithoutUserNestedInput
+  userSyncRuns?: Prisma.UserSyncRunUncheckedUpdateManyWithoutActorNestedInput
+  userSyncRunItems?: Prisma.UserSyncRunItemUncheckedUpdateManyWithoutUserNestedInput
   approvalTasksAssigned?: Prisma.ApprovalTaskUncheckedUpdateManyWithoutAssigneeNestedInput
   approvalTasksDecided?: Prisma.ApprovalTaskUncheckedUpdateManyWithoutDecidedByNestedInput
   delegationsFrom?: Prisma.DelegationUncheckedUpdateManyWithoutFromUserNestedInput
@@ -3174,6 +3292,8 @@ export type UserCreateWithoutMileageOpeningBalancesInput = {
   receipts?: Prisma.ReceiptCreateNestedManyWithoutUploadedByInput
   mileageRates?: Prisma.MileageRateSubjectCreateNestedManyWithoutUserInput
   mileageBalanceImports?: Prisma.MileageBalanceImportCreateNestedManyWithoutImportedByInput
+  userSyncRuns?: Prisma.UserSyncRunCreateNestedManyWithoutActorInput
+  userSyncRunItems?: Prisma.UserSyncRunItemCreateNestedManyWithoutUserInput
   approvalTasksAssigned?: Prisma.ApprovalTaskCreateNestedManyWithoutAssigneeInput
   approvalTasksDecided?: Prisma.ApprovalTaskCreateNestedManyWithoutDecidedByInput
   delegationsFrom?: Prisma.DelegationCreateNestedManyWithoutFromUserInput
@@ -3217,6 +3337,8 @@ export type UserUncheckedCreateWithoutMileageOpeningBalancesInput = {
   receipts?: Prisma.ReceiptUncheckedCreateNestedManyWithoutUploadedByInput
   mileageRates?: Prisma.MileageRateSubjectUncheckedCreateNestedManyWithoutUserInput
   mileageBalanceImports?: Prisma.MileageBalanceImportUncheckedCreateNestedManyWithoutImportedByInput
+  userSyncRuns?: Prisma.UserSyncRunUncheckedCreateNestedManyWithoutActorInput
+  userSyncRunItems?: Prisma.UserSyncRunItemUncheckedCreateNestedManyWithoutUserInput
   approvalTasksAssigned?: Prisma.ApprovalTaskUncheckedCreateNestedManyWithoutAssigneeInput
   approvalTasksDecided?: Prisma.ApprovalTaskUncheckedCreateNestedManyWithoutDecidedByInput
   delegationsFrom?: Prisma.DelegationUncheckedCreateNestedManyWithoutFromUserInput
@@ -3275,6 +3397,8 @@ export type UserUpdateWithoutMileageOpeningBalancesInput = {
   receipts?: Prisma.ReceiptUpdateManyWithoutUploadedByNestedInput
   mileageRates?: Prisma.MileageRateSubjectUpdateManyWithoutUserNestedInput
   mileageBalanceImports?: Prisma.MileageBalanceImportUpdateManyWithoutImportedByNestedInput
+  userSyncRuns?: Prisma.UserSyncRunUpdateManyWithoutActorNestedInput
+  userSyncRunItems?: Prisma.UserSyncRunItemUpdateManyWithoutUserNestedInput
   approvalTasksAssigned?: Prisma.ApprovalTaskUpdateManyWithoutAssigneeNestedInput
   approvalTasksDecided?: Prisma.ApprovalTaskUpdateManyWithoutDecidedByNestedInput
   delegationsFrom?: Prisma.DelegationUpdateManyWithoutFromUserNestedInput
@@ -3318,6 +3442,8 @@ export type UserUncheckedUpdateWithoutMileageOpeningBalancesInput = {
   receipts?: Prisma.ReceiptUncheckedUpdateManyWithoutUploadedByNestedInput
   mileageRates?: Prisma.MileageRateSubjectUncheckedUpdateManyWithoutUserNestedInput
   mileageBalanceImports?: Prisma.MileageBalanceImportUncheckedUpdateManyWithoutImportedByNestedInput
+  userSyncRuns?: Prisma.UserSyncRunUncheckedUpdateManyWithoutActorNestedInput
+  userSyncRunItems?: Prisma.UserSyncRunItemUncheckedUpdateManyWithoutUserNestedInput
   approvalTasksAssigned?: Prisma.ApprovalTaskUncheckedUpdateManyWithoutAssigneeNestedInput
   approvalTasksDecided?: Prisma.ApprovalTaskUncheckedUpdateManyWithoutDecidedByNestedInput
   delegationsFrom?: Prisma.DelegationUncheckedUpdateManyWithoutFromUserNestedInput
@@ -3360,6 +3486,8 @@ export type UserCreateWithoutDepartmentInput = {
   mileageRates?: Prisma.MileageRateSubjectCreateNestedManyWithoutUserInput
   mileageOpeningBalances?: Prisma.MileageOpeningBalanceCreateNestedManyWithoutUserInput
   mileageBalanceImports?: Prisma.MileageBalanceImportCreateNestedManyWithoutImportedByInput
+  userSyncRuns?: Prisma.UserSyncRunCreateNestedManyWithoutActorInput
+  userSyncRunItems?: Prisma.UserSyncRunItemCreateNestedManyWithoutUserInput
   approvalTasksAssigned?: Prisma.ApprovalTaskCreateNestedManyWithoutAssigneeInput
   approvalTasksDecided?: Prisma.ApprovalTaskCreateNestedManyWithoutDecidedByInput
   delegationsFrom?: Prisma.DelegationCreateNestedManyWithoutFromUserInput
@@ -3403,6 +3531,8 @@ export type UserUncheckedCreateWithoutDepartmentInput = {
   mileageRates?: Prisma.MileageRateSubjectUncheckedCreateNestedManyWithoutUserInput
   mileageOpeningBalances?: Prisma.MileageOpeningBalanceUncheckedCreateNestedManyWithoutUserInput
   mileageBalanceImports?: Prisma.MileageBalanceImportUncheckedCreateNestedManyWithoutImportedByInput
+  userSyncRuns?: Prisma.UserSyncRunUncheckedCreateNestedManyWithoutActorInput
+  userSyncRunItems?: Prisma.UserSyncRunItemUncheckedCreateNestedManyWithoutUserInput
   approvalTasksAssigned?: Prisma.ApprovalTaskUncheckedCreateNestedManyWithoutAssigneeInput
   approvalTasksDecided?: Prisma.ApprovalTaskUncheckedCreateNestedManyWithoutDecidedByInput
   delegationsFrom?: Prisma.DelegationUncheckedCreateNestedManyWithoutFromUserInput
@@ -3471,6 +3601,8 @@ export type UserCreateWithoutJobLevelInput = {
   mileageRates?: Prisma.MileageRateSubjectCreateNestedManyWithoutUserInput
   mileageOpeningBalances?: Prisma.MileageOpeningBalanceCreateNestedManyWithoutUserInput
   mileageBalanceImports?: Prisma.MileageBalanceImportCreateNestedManyWithoutImportedByInput
+  userSyncRuns?: Prisma.UserSyncRunCreateNestedManyWithoutActorInput
+  userSyncRunItems?: Prisma.UserSyncRunItemCreateNestedManyWithoutUserInput
   approvalTasksAssigned?: Prisma.ApprovalTaskCreateNestedManyWithoutAssigneeInput
   approvalTasksDecided?: Prisma.ApprovalTaskCreateNestedManyWithoutDecidedByInput
   delegationsFrom?: Prisma.DelegationCreateNestedManyWithoutFromUserInput
@@ -3514,6 +3646,8 @@ export type UserUncheckedCreateWithoutJobLevelInput = {
   mileageRates?: Prisma.MileageRateSubjectUncheckedCreateNestedManyWithoutUserInput
   mileageOpeningBalances?: Prisma.MileageOpeningBalanceUncheckedCreateNestedManyWithoutUserInput
   mileageBalanceImports?: Prisma.MileageBalanceImportUncheckedCreateNestedManyWithoutImportedByInput
+  userSyncRuns?: Prisma.UserSyncRunUncheckedCreateNestedManyWithoutActorInput
+  userSyncRunItems?: Prisma.UserSyncRunItemUncheckedCreateNestedManyWithoutUserInput
   approvalTasksAssigned?: Prisma.ApprovalTaskUncheckedCreateNestedManyWithoutAssigneeInput
   approvalTasksDecided?: Prisma.ApprovalTaskUncheckedCreateNestedManyWithoutDecidedByInput
   delegationsFrom?: Prisma.DelegationUncheckedCreateNestedManyWithoutFromUserInput
@@ -3583,6 +3717,8 @@ export type UserCreateWithoutApprovalTasksAssignedInput = {
   mileageRates?: Prisma.MileageRateSubjectCreateNestedManyWithoutUserInput
   mileageOpeningBalances?: Prisma.MileageOpeningBalanceCreateNestedManyWithoutUserInput
   mileageBalanceImports?: Prisma.MileageBalanceImportCreateNestedManyWithoutImportedByInput
+  userSyncRuns?: Prisma.UserSyncRunCreateNestedManyWithoutActorInput
+  userSyncRunItems?: Prisma.UserSyncRunItemCreateNestedManyWithoutUserInput
   approvalTasksDecided?: Prisma.ApprovalTaskCreateNestedManyWithoutDecidedByInput
   delegationsFrom?: Prisma.DelegationCreateNestedManyWithoutFromUserInput
   delegationsTo?: Prisma.DelegationCreateNestedManyWithoutToUserInput
@@ -3626,6 +3762,8 @@ export type UserUncheckedCreateWithoutApprovalTasksAssignedInput = {
   mileageRates?: Prisma.MileageRateSubjectUncheckedCreateNestedManyWithoutUserInput
   mileageOpeningBalances?: Prisma.MileageOpeningBalanceUncheckedCreateNestedManyWithoutUserInput
   mileageBalanceImports?: Prisma.MileageBalanceImportUncheckedCreateNestedManyWithoutImportedByInput
+  userSyncRuns?: Prisma.UserSyncRunUncheckedCreateNestedManyWithoutActorInput
+  userSyncRunItems?: Prisma.UserSyncRunItemUncheckedCreateNestedManyWithoutUserInput
   approvalTasksDecided?: Prisma.ApprovalTaskUncheckedCreateNestedManyWithoutDecidedByInput
   delegationsFrom?: Prisma.DelegationUncheckedCreateNestedManyWithoutFromUserInput
   delegationsTo?: Prisma.DelegationUncheckedCreateNestedManyWithoutToUserInput
@@ -3673,6 +3811,8 @@ export type UserCreateWithoutApprovalTasksDecidedInput = {
   mileageRates?: Prisma.MileageRateSubjectCreateNestedManyWithoutUserInput
   mileageOpeningBalances?: Prisma.MileageOpeningBalanceCreateNestedManyWithoutUserInput
   mileageBalanceImports?: Prisma.MileageBalanceImportCreateNestedManyWithoutImportedByInput
+  userSyncRuns?: Prisma.UserSyncRunCreateNestedManyWithoutActorInput
+  userSyncRunItems?: Prisma.UserSyncRunItemCreateNestedManyWithoutUserInput
   approvalTasksAssigned?: Prisma.ApprovalTaskCreateNestedManyWithoutAssigneeInput
   delegationsFrom?: Prisma.DelegationCreateNestedManyWithoutFromUserInput
   delegationsTo?: Prisma.DelegationCreateNestedManyWithoutToUserInput
@@ -3716,6 +3856,8 @@ export type UserUncheckedCreateWithoutApprovalTasksDecidedInput = {
   mileageRates?: Prisma.MileageRateSubjectUncheckedCreateNestedManyWithoutUserInput
   mileageOpeningBalances?: Prisma.MileageOpeningBalanceUncheckedCreateNestedManyWithoutUserInput
   mileageBalanceImports?: Prisma.MileageBalanceImportUncheckedCreateNestedManyWithoutImportedByInput
+  userSyncRuns?: Prisma.UserSyncRunUncheckedCreateNestedManyWithoutActorInput
+  userSyncRunItems?: Prisma.UserSyncRunItemUncheckedCreateNestedManyWithoutUserInput
   approvalTasksAssigned?: Prisma.ApprovalTaskUncheckedCreateNestedManyWithoutAssigneeInput
   delegationsFrom?: Prisma.DelegationUncheckedCreateNestedManyWithoutFromUserInput
   delegationsTo?: Prisma.DelegationUncheckedCreateNestedManyWithoutToUserInput
@@ -3774,6 +3916,8 @@ export type UserUpdateWithoutApprovalTasksAssignedInput = {
   mileageRates?: Prisma.MileageRateSubjectUpdateManyWithoutUserNestedInput
   mileageOpeningBalances?: Prisma.MileageOpeningBalanceUpdateManyWithoutUserNestedInput
   mileageBalanceImports?: Prisma.MileageBalanceImportUpdateManyWithoutImportedByNestedInput
+  userSyncRuns?: Prisma.UserSyncRunUpdateManyWithoutActorNestedInput
+  userSyncRunItems?: Prisma.UserSyncRunItemUpdateManyWithoutUserNestedInput
   approvalTasksDecided?: Prisma.ApprovalTaskUpdateManyWithoutDecidedByNestedInput
   delegationsFrom?: Prisma.DelegationUpdateManyWithoutFromUserNestedInput
   delegationsTo?: Prisma.DelegationUpdateManyWithoutToUserNestedInput
@@ -3817,6 +3961,8 @@ export type UserUncheckedUpdateWithoutApprovalTasksAssignedInput = {
   mileageRates?: Prisma.MileageRateSubjectUncheckedUpdateManyWithoutUserNestedInput
   mileageOpeningBalances?: Prisma.MileageOpeningBalanceUncheckedUpdateManyWithoutUserNestedInput
   mileageBalanceImports?: Prisma.MileageBalanceImportUncheckedUpdateManyWithoutImportedByNestedInput
+  userSyncRuns?: Prisma.UserSyncRunUncheckedUpdateManyWithoutActorNestedInput
+  userSyncRunItems?: Prisma.UserSyncRunItemUncheckedUpdateManyWithoutUserNestedInput
   approvalTasksDecided?: Prisma.ApprovalTaskUncheckedUpdateManyWithoutDecidedByNestedInput
   delegationsFrom?: Prisma.DelegationUncheckedUpdateManyWithoutFromUserNestedInput
   delegationsTo?: Prisma.DelegationUncheckedUpdateManyWithoutToUserNestedInput
@@ -3870,6 +4016,8 @@ export type UserUpdateWithoutApprovalTasksDecidedInput = {
   mileageRates?: Prisma.MileageRateSubjectUpdateManyWithoutUserNestedInput
   mileageOpeningBalances?: Prisma.MileageOpeningBalanceUpdateManyWithoutUserNestedInput
   mileageBalanceImports?: Prisma.MileageBalanceImportUpdateManyWithoutImportedByNestedInput
+  userSyncRuns?: Prisma.UserSyncRunUpdateManyWithoutActorNestedInput
+  userSyncRunItems?: Prisma.UserSyncRunItemUpdateManyWithoutUserNestedInput
   approvalTasksAssigned?: Prisma.ApprovalTaskUpdateManyWithoutAssigneeNestedInput
   delegationsFrom?: Prisma.DelegationUpdateManyWithoutFromUserNestedInput
   delegationsTo?: Prisma.DelegationUpdateManyWithoutToUserNestedInput
@@ -3913,6 +4061,8 @@ export type UserUncheckedUpdateWithoutApprovalTasksDecidedInput = {
   mileageRates?: Prisma.MileageRateSubjectUncheckedUpdateManyWithoutUserNestedInput
   mileageOpeningBalances?: Prisma.MileageOpeningBalanceUncheckedUpdateManyWithoutUserNestedInput
   mileageBalanceImports?: Prisma.MileageBalanceImportUncheckedUpdateManyWithoutImportedByNestedInput
+  userSyncRuns?: Prisma.UserSyncRunUncheckedUpdateManyWithoutActorNestedInput
+  userSyncRunItems?: Prisma.UserSyncRunItemUncheckedUpdateManyWithoutUserNestedInput
   approvalTasksAssigned?: Prisma.ApprovalTaskUncheckedUpdateManyWithoutAssigneeNestedInput
   delegationsFrom?: Prisma.DelegationUncheckedUpdateManyWithoutFromUserNestedInput
   delegationsTo?: Prisma.DelegationUncheckedUpdateManyWithoutToUserNestedInput
@@ -3955,6 +4105,8 @@ export type UserCreateWithoutDelegationsFromInput = {
   mileageRates?: Prisma.MileageRateSubjectCreateNestedManyWithoutUserInput
   mileageOpeningBalances?: Prisma.MileageOpeningBalanceCreateNestedManyWithoutUserInput
   mileageBalanceImports?: Prisma.MileageBalanceImportCreateNestedManyWithoutImportedByInput
+  userSyncRuns?: Prisma.UserSyncRunCreateNestedManyWithoutActorInput
+  userSyncRunItems?: Prisma.UserSyncRunItemCreateNestedManyWithoutUserInput
   approvalTasksAssigned?: Prisma.ApprovalTaskCreateNestedManyWithoutAssigneeInput
   approvalTasksDecided?: Prisma.ApprovalTaskCreateNestedManyWithoutDecidedByInput
   delegationsTo?: Prisma.DelegationCreateNestedManyWithoutToUserInput
@@ -3998,6 +4150,8 @@ export type UserUncheckedCreateWithoutDelegationsFromInput = {
   mileageRates?: Prisma.MileageRateSubjectUncheckedCreateNestedManyWithoutUserInput
   mileageOpeningBalances?: Prisma.MileageOpeningBalanceUncheckedCreateNestedManyWithoutUserInput
   mileageBalanceImports?: Prisma.MileageBalanceImportUncheckedCreateNestedManyWithoutImportedByInput
+  userSyncRuns?: Prisma.UserSyncRunUncheckedCreateNestedManyWithoutActorInput
+  userSyncRunItems?: Prisma.UserSyncRunItemUncheckedCreateNestedManyWithoutUserInput
   approvalTasksAssigned?: Prisma.ApprovalTaskUncheckedCreateNestedManyWithoutAssigneeInput
   approvalTasksDecided?: Prisma.ApprovalTaskUncheckedCreateNestedManyWithoutDecidedByInput
   delegationsTo?: Prisma.DelegationUncheckedCreateNestedManyWithoutToUserInput
@@ -4045,6 +4199,8 @@ export type UserCreateWithoutDelegationsToInput = {
   mileageRates?: Prisma.MileageRateSubjectCreateNestedManyWithoutUserInput
   mileageOpeningBalances?: Prisma.MileageOpeningBalanceCreateNestedManyWithoutUserInput
   mileageBalanceImports?: Prisma.MileageBalanceImportCreateNestedManyWithoutImportedByInput
+  userSyncRuns?: Prisma.UserSyncRunCreateNestedManyWithoutActorInput
+  userSyncRunItems?: Prisma.UserSyncRunItemCreateNestedManyWithoutUserInput
   approvalTasksAssigned?: Prisma.ApprovalTaskCreateNestedManyWithoutAssigneeInput
   approvalTasksDecided?: Prisma.ApprovalTaskCreateNestedManyWithoutDecidedByInput
   delegationsFrom?: Prisma.DelegationCreateNestedManyWithoutFromUserInput
@@ -4088,6 +4244,8 @@ export type UserUncheckedCreateWithoutDelegationsToInput = {
   mileageRates?: Prisma.MileageRateSubjectUncheckedCreateNestedManyWithoutUserInput
   mileageOpeningBalances?: Prisma.MileageOpeningBalanceUncheckedCreateNestedManyWithoutUserInput
   mileageBalanceImports?: Prisma.MileageBalanceImportUncheckedCreateNestedManyWithoutImportedByInput
+  userSyncRuns?: Prisma.UserSyncRunUncheckedCreateNestedManyWithoutActorInput
+  userSyncRunItems?: Prisma.UserSyncRunItemUncheckedCreateNestedManyWithoutUserInput
   approvalTasksAssigned?: Prisma.ApprovalTaskUncheckedCreateNestedManyWithoutAssigneeInput
   approvalTasksDecided?: Prisma.ApprovalTaskUncheckedCreateNestedManyWithoutDecidedByInput
   delegationsFrom?: Prisma.DelegationUncheckedCreateNestedManyWithoutFromUserInput
@@ -4146,6 +4304,8 @@ export type UserUpdateWithoutDelegationsFromInput = {
   mileageRates?: Prisma.MileageRateSubjectUpdateManyWithoutUserNestedInput
   mileageOpeningBalances?: Prisma.MileageOpeningBalanceUpdateManyWithoutUserNestedInput
   mileageBalanceImports?: Prisma.MileageBalanceImportUpdateManyWithoutImportedByNestedInput
+  userSyncRuns?: Prisma.UserSyncRunUpdateManyWithoutActorNestedInput
+  userSyncRunItems?: Prisma.UserSyncRunItemUpdateManyWithoutUserNestedInput
   approvalTasksAssigned?: Prisma.ApprovalTaskUpdateManyWithoutAssigneeNestedInput
   approvalTasksDecided?: Prisma.ApprovalTaskUpdateManyWithoutDecidedByNestedInput
   delegationsTo?: Prisma.DelegationUpdateManyWithoutToUserNestedInput
@@ -4189,6 +4349,8 @@ export type UserUncheckedUpdateWithoutDelegationsFromInput = {
   mileageRates?: Prisma.MileageRateSubjectUncheckedUpdateManyWithoutUserNestedInput
   mileageOpeningBalances?: Prisma.MileageOpeningBalanceUncheckedUpdateManyWithoutUserNestedInput
   mileageBalanceImports?: Prisma.MileageBalanceImportUncheckedUpdateManyWithoutImportedByNestedInput
+  userSyncRuns?: Prisma.UserSyncRunUncheckedUpdateManyWithoutActorNestedInput
+  userSyncRunItems?: Prisma.UserSyncRunItemUncheckedUpdateManyWithoutUserNestedInput
   approvalTasksAssigned?: Prisma.ApprovalTaskUncheckedUpdateManyWithoutAssigneeNestedInput
   approvalTasksDecided?: Prisma.ApprovalTaskUncheckedUpdateManyWithoutDecidedByNestedInput
   delegationsTo?: Prisma.DelegationUncheckedUpdateManyWithoutToUserNestedInput
@@ -4242,6 +4404,8 @@ export type UserUpdateWithoutDelegationsToInput = {
   mileageRates?: Prisma.MileageRateSubjectUpdateManyWithoutUserNestedInput
   mileageOpeningBalances?: Prisma.MileageOpeningBalanceUpdateManyWithoutUserNestedInput
   mileageBalanceImports?: Prisma.MileageBalanceImportUpdateManyWithoutImportedByNestedInput
+  userSyncRuns?: Prisma.UserSyncRunUpdateManyWithoutActorNestedInput
+  userSyncRunItems?: Prisma.UserSyncRunItemUpdateManyWithoutUserNestedInput
   approvalTasksAssigned?: Prisma.ApprovalTaskUpdateManyWithoutAssigneeNestedInput
   approvalTasksDecided?: Prisma.ApprovalTaskUpdateManyWithoutDecidedByNestedInput
   delegationsFrom?: Prisma.DelegationUpdateManyWithoutFromUserNestedInput
@@ -4285,6 +4449,8 @@ export type UserUncheckedUpdateWithoutDelegationsToInput = {
   mileageRates?: Prisma.MileageRateSubjectUncheckedUpdateManyWithoutUserNestedInput
   mileageOpeningBalances?: Prisma.MileageOpeningBalanceUncheckedUpdateManyWithoutUserNestedInput
   mileageBalanceImports?: Prisma.MileageBalanceImportUncheckedUpdateManyWithoutImportedByNestedInput
+  userSyncRuns?: Prisma.UserSyncRunUncheckedUpdateManyWithoutActorNestedInput
+  userSyncRunItems?: Prisma.UserSyncRunItemUncheckedUpdateManyWithoutUserNestedInput
   approvalTasksAssigned?: Prisma.ApprovalTaskUncheckedUpdateManyWithoutAssigneeNestedInput
   approvalTasksDecided?: Prisma.ApprovalTaskUncheckedUpdateManyWithoutDecidedByNestedInput
   delegationsFrom?: Prisma.DelegationUncheckedUpdateManyWithoutFromUserNestedInput
@@ -4327,6 +4493,8 @@ export type UserCreateWithoutTravelRequestsInput = {
   mileageRates?: Prisma.MileageRateSubjectCreateNestedManyWithoutUserInput
   mileageOpeningBalances?: Prisma.MileageOpeningBalanceCreateNestedManyWithoutUserInput
   mileageBalanceImports?: Prisma.MileageBalanceImportCreateNestedManyWithoutImportedByInput
+  userSyncRuns?: Prisma.UserSyncRunCreateNestedManyWithoutActorInput
+  userSyncRunItems?: Prisma.UserSyncRunItemCreateNestedManyWithoutUserInput
   approvalTasksAssigned?: Prisma.ApprovalTaskCreateNestedManyWithoutAssigneeInput
   approvalTasksDecided?: Prisma.ApprovalTaskCreateNestedManyWithoutDecidedByInput
   delegationsFrom?: Prisma.DelegationCreateNestedManyWithoutFromUserInput
@@ -4370,6 +4538,8 @@ export type UserUncheckedCreateWithoutTravelRequestsInput = {
   mileageRates?: Prisma.MileageRateSubjectUncheckedCreateNestedManyWithoutUserInput
   mileageOpeningBalances?: Prisma.MileageOpeningBalanceUncheckedCreateNestedManyWithoutUserInput
   mileageBalanceImports?: Prisma.MileageBalanceImportUncheckedCreateNestedManyWithoutImportedByInput
+  userSyncRuns?: Prisma.UserSyncRunUncheckedCreateNestedManyWithoutActorInput
+  userSyncRunItems?: Prisma.UserSyncRunItemUncheckedCreateNestedManyWithoutUserInput
   approvalTasksAssigned?: Prisma.ApprovalTaskUncheckedCreateNestedManyWithoutAssigneeInput
   approvalTasksDecided?: Prisma.ApprovalTaskUncheckedCreateNestedManyWithoutDecidedByInput
   delegationsFrom?: Prisma.DelegationUncheckedCreateNestedManyWithoutFromUserInput
@@ -4428,6 +4598,8 @@ export type UserUpdateWithoutTravelRequestsInput = {
   mileageRates?: Prisma.MileageRateSubjectUpdateManyWithoutUserNestedInput
   mileageOpeningBalances?: Prisma.MileageOpeningBalanceUpdateManyWithoutUserNestedInput
   mileageBalanceImports?: Prisma.MileageBalanceImportUpdateManyWithoutImportedByNestedInput
+  userSyncRuns?: Prisma.UserSyncRunUpdateManyWithoutActorNestedInput
+  userSyncRunItems?: Prisma.UserSyncRunItemUpdateManyWithoutUserNestedInput
   approvalTasksAssigned?: Prisma.ApprovalTaskUpdateManyWithoutAssigneeNestedInput
   approvalTasksDecided?: Prisma.ApprovalTaskUpdateManyWithoutDecidedByNestedInput
   delegationsFrom?: Prisma.DelegationUpdateManyWithoutFromUserNestedInput
@@ -4471,6 +4643,8 @@ export type UserUncheckedUpdateWithoutTravelRequestsInput = {
   mileageRates?: Prisma.MileageRateSubjectUncheckedUpdateManyWithoutUserNestedInput
   mileageOpeningBalances?: Prisma.MileageOpeningBalanceUncheckedUpdateManyWithoutUserNestedInput
   mileageBalanceImports?: Prisma.MileageBalanceImportUncheckedUpdateManyWithoutImportedByNestedInput
+  userSyncRuns?: Prisma.UserSyncRunUncheckedUpdateManyWithoutActorNestedInput
+  userSyncRunItems?: Prisma.UserSyncRunItemUncheckedUpdateManyWithoutUserNestedInput
   approvalTasksAssigned?: Prisma.ApprovalTaskUncheckedUpdateManyWithoutAssigneeNestedInput
   approvalTasksDecided?: Prisma.ApprovalTaskUncheckedUpdateManyWithoutDecidedByNestedInput
   delegationsFrom?: Prisma.DelegationUncheckedUpdateManyWithoutFromUserNestedInput
@@ -4513,6 +4687,8 @@ export type UserCreateWithoutAssistantConversationsInput = {
   mileageRates?: Prisma.MileageRateSubjectCreateNestedManyWithoutUserInput
   mileageOpeningBalances?: Prisma.MileageOpeningBalanceCreateNestedManyWithoutUserInput
   mileageBalanceImports?: Prisma.MileageBalanceImportCreateNestedManyWithoutImportedByInput
+  userSyncRuns?: Prisma.UserSyncRunCreateNestedManyWithoutActorInput
+  userSyncRunItems?: Prisma.UserSyncRunItemCreateNestedManyWithoutUserInput
   approvalTasksAssigned?: Prisma.ApprovalTaskCreateNestedManyWithoutAssigneeInput
   approvalTasksDecided?: Prisma.ApprovalTaskCreateNestedManyWithoutDecidedByInput
   delegationsFrom?: Prisma.DelegationCreateNestedManyWithoutFromUserInput
@@ -4556,6 +4732,8 @@ export type UserUncheckedCreateWithoutAssistantConversationsInput = {
   mileageRates?: Prisma.MileageRateSubjectUncheckedCreateNestedManyWithoutUserInput
   mileageOpeningBalances?: Prisma.MileageOpeningBalanceUncheckedCreateNestedManyWithoutUserInput
   mileageBalanceImports?: Prisma.MileageBalanceImportUncheckedCreateNestedManyWithoutImportedByInput
+  userSyncRuns?: Prisma.UserSyncRunUncheckedCreateNestedManyWithoutActorInput
+  userSyncRunItems?: Prisma.UserSyncRunItemUncheckedCreateNestedManyWithoutUserInput
   approvalTasksAssigned?: Prisma.ApprovalTaskUncheckedCreateNestedManyWithoutAssigneeInput
   approvalTasksDecided?: Prisma.ApprovalTaskUncheckedCreateNestedManyWithoutDecidedByInput
   delegationsFrom?: Prisma.DelegationUncheckedCreateNestedManyWithoutFromUserInput
@@ -4614,6 +4792,8 @@ export type UserUpdateWithoutAssistantConversationsInput = {
   mileageRates?: Prisma.MileageRateSubjectUpdateManyWithoutUserNestedInput
   mileageOpeningBalances?: Prisma.MileageOpeningBalanceUpdateManyWithoutUserNestedInput
   mileageBalanceImports?: Prisma.MileageBalanceImportUpdateManyWithoutImportedByNestedInput
+  userSyncRuns?: Prisma.UserSyncRunUpdateManyWithoutActorNestedInput
+  userSyncRunItems?: Prisma.UserSyncRunItemUpdateManyWithoutUserNestedInput
   approvalTasksAssigned?: Prisma.ApprovalTaskUpdateManyWithoutAssigneeNestedInput
   approvalTasksDecided?: Prisma.ApprovalTaskUpdateManyWithoutDecidedByNestedInput
   delegationsFrom?: Prisma.DelegationUpdateManyWithoutFromUserNestedInput
@@ -4657,6 +4837,8 @@ export type UserUncheckedUpdateWithoutAssistantConversationsInput = {
   mileageRates?: Prisma.MileageRateSubjectUncheckedUpdateManyWithoutUserNestedInput
   mileageOpeningBalances?: Prisma.MileageOpeningBalanceUncheckedUpdateManyWithoutUserNestedInput
   mileageBalanceImports?: Prisma.MileageBalanceImportUncheckedUpdateManyWithoutImportedByNestedInput
+  userSyncRuns?: Prisma.UserSyncRunUncheckedUpdateManyWithoutActorNestedInput
+  userSyncRunItems?: Prisma.UserSyncRunItemUncheckedUpdateManyWithoutUserNestedInput
   approvalTasksAssigned?: Prisma.ApprovalTaskUncheckedUpdateManyWithoutAssigneeNestedInput
   approvalTasksDecided?: Prisma.ApprovalTaskUncheckedUpdateManyWithoutDecidedByNestedInput
   delegationsFrom?: Prisma.DelegationUncheckedUpdateManyWithoutFromUserNestedInput
@@ -4699,6 +4881,8 @@ export type UserCreateWithoutAssistantFeedbackInput = {
   mileageRates?: Prisma.MileageRateSubjectCreateNestedManyWithoutUserInput
   mileageOpeningBalances?: Prisma.MileageOpeningBalanceCreateNestedManyWithoutUserInput
   mileageBalanceImports?: Prisma.MileageBalanceImportCreateNestedManyWithoutImportedByInput
+  userSyncRuns?: Prisma.UserSyncRunCreateNestedManyWithoutActorInput
+  userSyncRunItems?: Prisma.UserSyncRunItemCreateNestedManyWithoutUserInput
   approvalTasksAssigned?: Prisma.ApprovalTaskCreateNestedManyWithoutAssigneeInput
   approvalTasksDecided?: Prisma.ApprovalTaskCreateNestedManyWithoutDecidedByInput
   delegationsFrom?: Prisma.DelegationCreateNestedManyWithoutFromUserInput
@@ -4742,6 +4926,8 @@ export type UserUncheckedCreateWithoutAssistantFeedbackInput = {
   mileageRates?: Prisma.MileageRateSubjectUncheckedCreateNestedManyWithoutUserInput
   mileageOpeningBalances?: Prisma.MileageOpeningBalanceUncheckedCreateNestedManyWithoutUserInput
   mileageBalanceImports?: Prisma.MileageBalanceImportUncheckedCreateNestedManyWithoutImportedByInput
+  userSyncRuns?: Prisma.UserSyncRunUncheckedCreateNestedManyWithoutActorInput
+  userSyncRunItems?: Prisma.UserSyncRunItemUncheckedCreateNestedManyWithoutUserInput
   approvalTasksAssigned?: Prisma.ApprovalTaskUncheckedCreateNestedManyWithoutAssigneeInput
   approvalTasksDecided?: Prisma.ApprovalTaskUncheckedCreateNestedManyWithoutDecidedByInput
   delegationsFrom?: Prisma.DelegationUncheckedCreateNestedManyWithoutFromUserInput
@@ -4800,6 +4986,8 @@ export type UserUpdateWithoutAssistantFeedbackInput = {
   mileageRates?: Prisma.MileageRateSubjectUpdateManyWithoutUserNestedInput
   mileageOpeningBalances?: Prisma.MileageOpeningBalanceUpdateManyWithoutUserNestedInput
   mileageBalanceImports?: Prisma.MileageBalanceImportUpdateManyWithoutImportedByNestedInput
+  userSyncRuns?: Prisma.UserSyncRunUpdateManyWithoutActorNestedInput
+  userSyncRunItems?: Prisma.UserSyncRunItemUpdateManyWithoutUserNestedInput
   approvalTasksAssigned?: Prisma.ApprovalTaskUpdateManyWithoutAssigneeNestedInput
   approvalTasksDecided?: Prisma.ApprovalTaskUpdateManyWithoutDecidedByNestedInput
   delegationsFrom?: Prisma.DelegationUpdateManyWithoutFromUserNestedInput
@@ -4843,6 +5031,8 @@ export type UserUncheckedUpdateWithoutAssistantFeedbackInput = {
   mileageRates?: Prisma.MileageRateSubjectUncheckedUpdateManyWithoutUserNestedInput
   mileageOpeningBalances?: Prisma.MileageOpeningBalanceUncheckedUpdateManyWithoutUserNestedInput
   mileageBalanceImports?: Prisma.MileageBalanceImportUncheckedUpdateManyWithoutImportedByNestedInput
+  userSyncRuns?: Prisma.UserSyncRunUncheckedUpdateManyWithoutActorNestedInput
+  userSyncRunItems?: Prisma.UserSyncRunItemUncheckedUpdateManyWithoutUserNestedInput
   approvalTasksAssigned?: Prisma.ApprovalTaskUncheckedUpdateManyWithoutAssigneeNestedInput
   approvalTasksDecided?: Prisma.ApprovalTaskUncheckedUpdateManyWithoutDecidedByNestedInput
   delegationsFrom?: Prisma.DelegationUncheckedUpdateManyWithoutFromUserNestedInput
@@ -4885,6 +5075,8 @@ export type UserCreateWithoutApiKeysInput = {
   mileageRates?: Prisma.MileageRateSubjectCreateNestedManyWithoutUserInput
   mileageOpeningBalances?: Prisma.MileageOpeningBalanceCreateNestedManyWithoutUserInput
   mileageBalanceImports?: Prisma.MileageBalanceImportCreateNestedManyWithoutImportedByInput
+  userSyncRuns?: Prisma.UserSyncRunCreateNestedManyWithoutActorInput
+  userSyncRunItems?: Prisma.UserSyncRunItemCreateNestedManyWithoutUserInput
   approvalTasksAssigned?: Prisma.ApprovalTaskCreateNestedManyWithoutAssigneeInput
   approvalTasksDecided?: Prisma.ApprovalTaskCreateNestedManyWithoutDecidedByInput
   delegationsFrom?: Prisma.DelegationCreateNestedManyWithoutFromUserInput
@@ -4928,6 +5120,8 @@ export type UserUncheckedCreateWithoutApiKeysInput = {
   mileageRates?: Prisma.MileageRateSubjectUncheckedCreateNestedManyWithoutUserInput
   mileageOpeningBalances?: Prisma.MileageOpeningBalanceUncheckedCreateNestedManyWithoutUserInput
   mileageBalanceImports?: Prisma.MileageBalanceImportUncheckedCreateNestedManyWithoutImportedByInput
+  userSyncRuns?: Prisma.UserSyncRunUncheckedCreateNestedManyWithoutActorInput
+  userSyncRunItems?: Prisma.UserSyncRunItemUncheckedCreateNestedManyWithoutUserInput
   approvalTasksAssigned?: Prisma.ApprovalTaskUncheckedCreateNestedManyWithoutAssigneeInput
   approvalTasksDecided?: Prisma.ApprovalTaskUncheckedCreateNestedManyWithoutDecidedByInput
   delegationsFrom?: Prisma.DelegationUncheckedCreateNestedManyWithoutFromUserInput
@@ -4975,6 +5169,8 @@ export type UserCreateWithoutApiKeysCreatedInput = {
   mileageRates?: Prisma.MileageRateSubjectCreateNestedManyWithoutUserInput
   mileageOpeningBalances?: Prisma.MileageOpeningBalanceCreateNestedManyWithoutUserInput
   mileageBalanceImports?: Prisma.MileageBalanceImportCreateNestedManyWithoutImportedByInput
+  userSyncRuns?: Prisma.UserSyncRunCreateNestedManyWithoutActorInput
+  userSyncRunItems?: Prisma.UserSyncRunItemCreateNestedManyWithoutUserInput
   approvalTasksAssigned?: Prisma.ApprovalTaskCreateNestedManyWithoutAssigneeInput
   approvalTasksDecided?: Prisma.ApprovalTaskCreateNestedManyWithoutDecidedByInput
   delegationsFrom?: Prisma.DelegationCreateNestedManyWithoutFromUserInput
@@ -5018,6 +5214,8 @@ export type UserUncheckedCreateWithoutApiKeysCreatedInput = {
   mileageRates?: Prisma.MileageRateSubjectUncheckedCreateNestedManyWithoutUserInput
   mileageOpeningBalances?: Prisma.MileageOpeningBalanceUncheckedCreateNestedManyWithoutUserInput
   mileageBalanceImports?: Prisma.MileageBalanceImportUncheckedCreateNestedManyWithoutImportedByInput
+  userSyncRuns?: Prisma.UserSyncRunUncheckedCreateNestedManyWithoutActorInput
+  userSyncRunItems?: Prisma.UserSyncRunItemUncheckedCreateNestedManyWithoutUserInput
   approvalTasksAssigned?: Prisma.ApprovalTaskUncheckedCreateNestedManyWithoutAssigneeInput
   approvalTasksDecided?: Prisma.ApprovalTaskUncheckedCreateNestedManyWithoutDecidedByInput
   delegationsFrom?: Prisma.DelegationUncheckedCreateNestedManyWithoutFromUserInput
@@ -5076,6 +5274,8 @@ export type UserUpdateWithoutApiKeysInput = {
   mileageRates?: Prisma.MileageRateSubjectUpdateManyWithoutUserNestedInput
   mileageOpeningBalances?: Prisma.MileageOpeningBalanceUpdateManyWithoutUserNestedInput
   mileageBalanceImports?: Prisma.MileageBalanceImportUpdateManyWithoutImportedByNestedInput
+  userSyncRuns?: Prisma.UserSyncRunUpdateManyWithoutActorNestedInput
+  userSyncRunItems?: Prisma.UserSyncRunItemUpdateManyWithoutUserNestedInput
   approvalTasksAssigned?: Prisma.ApprovalTaskUpdateManyWithoutAssigneeNestedInput
   approvalTasksDecided?: Prisma.ApprovalTaskUpdateManyWithoutDecidedByNestedInput
   delegationsFrom?: Prisma.DelegationUpdateManyWithoutFromUserNestedInput
@@ -5119,6 +5319,8 @@ export type UserUncheckedUpdateWithoutApiKeysInput = {
   mileageRates?: Prisma.MileageRateSubjectUncheckedUpdateManyWithoutUserNestedInput
   mileageOpeningBalances?: Prisma.MileageOpeningBalanceUncheckedUpdateManyWithoutUserNestedInput
   mileageBalanceImports?: Prisma.MileageBalanceImportUncheckedUpdateManyWithoutImportedByNestedInput
+  userSyncRuns?: Prisma.UserSyncRunUncheckedUpdateManyWithoutActorNestedInput
+  userSyncRunItems?: Prisma.UserSyncRunItemUncheckedUpdateManyWithoutUserNestedInput
   approvalTasksAssigned?: Prisma.ApprovalTaskUncheckedUpdateManyWithoutAssigneeNestedInput
   approvalTasksDecided?: Prisma.ApprovalTaskUncheckedUpdateManyWithoutDecidedByNestedInput
   delegationsFrom?: Prisma.DelegationUncheckedUpdateManyWithoutFromUserNestedInput
@@ -5172,6 +5374,8 @@ export type UserUpdateWithoutApiKeysCreatedInput = {
   mileageRates?: Prisma.MileageRateSubjectUpdateManyWithoutUserNestedInput
   mileageOpeningBalances?: Prisma.MileageOpeningBalanceUpdateManyWithoutUserNestedInput
   mileageBalanceImports?: Prisma.MileageBalanceImportUpdateManyWithoutImportedByNestedInput
+  userSyncRuns?: Prisma.UserSyncRunUpdateManyWithoutActorNestedInput
+  userSyncRunItems?: Prisma.UserSyncRunItemUpdateManyWithoutUserNestedInput
   approvalTasksAssigned?: Prisma.ApprovalTaskUpdateManyWithoutAssigneeNestedInput
   approvalTasksDecided?: Prisma.ApprovalTaskUpdateManyWithoutDecidedByNestedInput
   delegationsFrom?: Prisma.DelegationUpdateManyWithoutFromUserNestedInput
@@ -5215,6 +5419,8 @@ export type UserUncheckedUpdateWithoutApiKeysCreatedInput = {
   mileageRates?: Prisma.MileageRateSubjectUncheckedUpdateManyWithoutUserNestedInput
   mileageOpeningBalances?: Prisma.MileageOpeningBalanceUncheckedUpdateManyWithoutUserNestedInput
   mileageBalanceImports?: Prisma.MileageBalanceImportUncheckedUpdateManyWithoutImportedByNestedInput
+  userSyncRuns?: Prisma.UserSyncRunUncheckedUpdateManyWithoutActorNestedInput
+  userSyncRunItems?: Prisma.UserSyncRunItemUncheckedUpdateManyWithoutUserNestedInput
   approvalTasksAssigned?: Prisma.ApprovalTaskUncheckedUpdateManyWithoutAssigneeNestedInput
   approvalTasksDecided?: Prisma.ApprovalTaskUncheckedUpdateManyWithoutDecidedByNestedInput
   delegationsFrom?: Prisma.DelegationUncheckedUpdateManyWithoutFromUserNestedInput
@@ -5224,6 +5430,394 @@ export type UserUncheckedUpdateWithoutApiKeysCreatedInput = {
   assistantConversations?: Prisma.AssistantConversationUncheckedUpdateManyWithoutUserNestedInput
   assistantFeedback?: Prisma.AssistantFeedbackUncheckedUpdateManyWithoutUserNestedInput
   apiKeys?: Prisma.ApiKeyUncheckedUpdateManyWithoutUserNestedInput
+}
+
+export type UserCreateWithoutUserSyncRunsInput = {
+  id?: string
+  email: string
+  name?: string | null
+  firstName?: string | null
+  lastName?: string | null
+  hasAccess?: boolean
+  onLeaveAt?: Date | string | null
+  terminationDate?: Date | string | null
+  lastLoginAt?: Date | string | null
+  avatarUrl?: string | null
+  employeeStatus?: string
+  slackUserId?: string | null
+  slackLookupAt?: Date | string | null
+  country?: string | null
+  deletedAt?: Date | string | null
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  manager?: Prisma.UserCreateNestedOneWithoutDirectReportsInput
+  directReports?: Prisma.UserCreateNestedManyWithoutManagerInput
+  department?: Prisma.DepartmentCreateNestedOneWithoutUsersInput
+  businessUnit?: Prisma.BusinessUnitCreateNestedOneWithoutUsersInput
+  entity?: Prisma.LegalEntityCreateNestedOneWithoutUsersInput
+  jobLevel?: Prisma.JobLevelCreateNestedOneWithoutUsersInput
+  role?: Prisma.RoleCreateNestedOneWithoutUsersInput
+  reports?: Prisma.ExpenseReportCreateNestedManyWithoutSubmitterInput
+  expenses?: Prisma.ExpenseCreateNestedManyWithoutOwnerInput
+  receipts?: Prisma.ReceiptCreateNestedManyWithoutUploadedByInput
+  mileageRates?: Prisma.MileageRateSubjectCreateNestedManyWithoutUserInput
+  mileageOpeningBalances?: Prisma.MileageOpeningBalanceCreateNestedManyWithoutUserInput
+  mileageBalanceImports?: Prisma.MileageBalanceImportCreateNestedManyWithoutImportedByInput
+  userSyncRunItems?: Prisma.UserSyncRunItemCreateNestedManyWithoutUserInput
+  approvalTasksAssigned?: Prisma.ApprovalTaskCreateNestedManyWithoutAssigneeInput
+  approvalTasksDecided?: Prisma.ApprovalTaskCreateNestedManyWithoutDecidedByInput
+  delegationsFrom?: Prisma.DelegationCreateNestedManyWithoutFromUserInput
+  delegationsTo?: Prisma.DelegationCreateNestedManyWithoutToUserInput
+  externalIds?: Prisma.UserExternalIdCreateNestedManyWithoutUserInput
+  travelRequests?: Prisma.TravelRequestCreateNestedManyWithoutSubmitterInput
+  assistantConversations?: Prisma.AssistantConversationCreateNestedManyWithoutUserInput
+  assistantFeedback?: Prisma.AssistantFeedbackCreateNestedManyWithoutUserInput
+  apiKeys?: Prisma.ApiKeyCreateNestedManyWithoutUserInput
+  apiKeysCreated?: Prisma.ApiKeyCreateNestedManyWithoutCreatedByInput
+}
+
+export type UserUncheckedCreateWithoutUserSyncRunsInput = {
+  id?: string
+  organizationId?: string
+  email: string
+  name?: string | null
+  firstName?: string | null
+  lastName?: string | null
+  hasAccess?: boolean
+  onLeaveAt?: Date | string | null
+  terminationDate?: Date | string | null
+  lastLoginAt?: Date | string | null
+  avatarUrl?: string | null
+  employeeStatus?: string
+  slackUserId?: string | null
+  slackLookupAt?: Date | string | null
+  country?: string | null
+  managerId?: string | null
+  departmentId?: string | null
+  businessUnitId?: string | null
+  legalEntityId?: string | null
+  jobLevelId?: string | null
+  roleId?: string
+  deletedAt?: Date | string | null
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  directReports?: Prisma.UserUncheckedCreateNestedManyWithoutManagerInput
+  reports?: Prisma.ExpenseReportUncheckedCreateNestedManyWithoutSubmitterInput
+  expenses?: Prisma.ExpenseUncheckedCreateNestedManyWithoutOwnerInput
+  receipts?: Prisma.ReceiptUncheckedCreateNestedManyWithoutUploadedByInput
+  mileageRates?: Prisma.MileageRateSubjectUncheckedCreateNestedManyWithoutUserInput
+  mileageOpeningBalances?: Prisma.MileageOpeningBalanceUncheckedCreateNestedManyWithoutUserInput
+  mileageBalanceImports?: Prisma.MileageBalanceImportUncheckedCreateNestedManyWithoutImportedByInput
+  userSyncRunItems?: Prisma.UserSyncRunItemUncheckedCreateNestedManyWithoutUserInput
+  approvalTasksAssigned?: Prisma.ApprovalTaskUncheckedCreateNestedManyWithoutAssigneeInput
+  approvalTasksDecided?: Prisma.ApprovalTaskUncheckedCreateNestedManyWithoutDecidedByInput
+  delegationsFrom?: Prisma.DelegationUncheckedCreateNestedManyWithoutFromUserInput
+  delegationsTo?: Prisma.DelegationUncheckedCreateNestedManyWithoutToUserInput
+  externalIds?: Prisma.UserExternalIdUncheckedCreateNestedManyWithoutUserInput
+  travelRequests?: Prisma.TravelRequestUncheckedCreateNestedManyWithoutSubmitterInput
+  assistantConversations?: Prisma.AssistantConversationUncheckedCreateNestedManyWithoutUserInput
+  assistantFeedback?: Prisma.AssistantFeedbackUncheckedCreateNestedManyWithoutUserInput
+  apiKeys?: Prisma.ApiKeyUncheckedCreateNestedManyWithoutUserInput
+  apiKeysCreated?: Prisma.ApiKeyUncheckedCreateNestedManyWithoutCreatedByInput
+}
+
+export type UserCreateOrConnectWithoutUserSyncRunsInput = {
+  where: Prisma.UserWhereUniqueInput
+  create: Prisma.XOR<Prisma.UserCreateWithoutUserSyncRunsInput, Prisma.UserUncheckedCreateWithoutUserSyncRunsInput>
+}
+
+export type UserUpsertWithoutUserSyncRunsInput = {
+  update: Prisma.XOR<Prisma.UserUpdateWithoutUserSyncRunsInput, Prisma.UserUncheckedUpdateWithoutUserSyncRunsInput>
+  create: Prisma.XOR<Prisma.UserCreateWithoutUserSyncRunsInput, Prisma.UserUncheckedCreateWithoutUserSyncRunsInput>
+  where?: Prisma.UserWhereInput
+}
+
+export type UserUpdateToOneWithWhereWithoutUserSyncRunsInput = {
+  where?: Prisma.UserWhereInput
+  data: Prisma.XOR<Prisma.UserUpdateWithoutUserSyncRunsInput, Prisma.UserUncheckedUpdateWithoutUserSyncRunsInput>
+}
+
+export type UserUpdateWithoutUserSyncRunsInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  email?: Prisma.StringFieldUpdateOperationsInput | string
+  name?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  firstName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  lastName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hasAccess?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  onLeaveAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  terminationDate?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  lastLoginAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  avatarUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  employeeStatus?: Prisma.StringFieldUpdateOperationsInput | string
+  slackUserId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  slackLookupAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  country?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  deletedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  manager?: Prisma.UserUpdateOneWithoutDirectReportsNestedInput
+  directReports?: Prisma.UserUpdateManyWithoutManagerNestedInput
+  department?: Prisma.DepartmentUpdateOneWithoutUsersNestedInput
+  businessUnit?: Prisma.BusinessUnitUpdateOneWithoutUsersNestedInput
+  entity?: Prisma.LegalEntityUpdateOneWithoutUsersNestedInput
+  jobLevel?: Prisma.JobLevelUpdateOneWithoutUsersNestedInput
+  role?: Prisma.RoleUpdateOneRequiredWithoutUsersNestedInput
+  reports?: Prisma.ExpenseReportUpdateManyWithoutSubmitterNestedInput
+  expenses?: Prisma.ExpenseUpdateManyWithoutOwnerNestedInput
+  receipts?: Prisma.ReceiptUpdateManyWithoutUploadedByNestedInput
+  mileageRates?: Prisma.MileageRateSubjectUpdateManyWithoutUserNestedInput
+  mileageOpeningBalances?: Prisma.MileageOpeningBalanceUpdateManyWithoutUserNestedInput
+  mileageBalanceImports?: Prisma.MileageBalanceImportUpdateManyWithoutImportedByNestedInput
+  userSyncRunItems?: Prisma.UserSyncRunItemUpdateManyWithoutUserNestedInput
+  approvalTasksAssigned?: Prisma.ApprovalTaskUpdateManyWithoutAssigneeNestedInput
+  approvalTasksDecided?: Prisma.ApprovalTaskUpdateManyWithoutDecidedByNestedInput
+  delegationsFrom?: Prisma.DelegationUpdateManyWithoutFromUserNestedInput
+  delegationsTo?: Prisma.DelegationUpdateManyWithoutToUserNestedInput
+  externalIds?: Prisma.UserExternalIdUpdateManyWithoutUserNestedInput
+  travelRequests?: Prisma.TravelRequestUpdateManyWithoutSubmitterNestedInput
+  assistantConversations?: Prisma.AssistantConversationUpdateManyWithoutUserNestedInput
+  assistantFeedback?: Prisma.AssistantFeedbackUpdateManyWithoutUserNestedInput
+  apiKeys?: Prisma.ApiKeyUpdateManyWithoutUserNestedInput
+  apiKeysCreated?: Prisma.ApiKeyUpdateManyWithoutCreatedByNestedInput
+}
+
+export type UserUncheckedUpdateWithoutUserSyncRunsInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  organizationId?: Prisma.StringFieldUpdateOperationsInput | string
+  email?: Prisma.StringFieldUpdateOperationsInput | string
+  name?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  firstName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  lastName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hasAccess?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  onLeaveAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  terminationDate?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  lastLoginAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  avatarUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  employeeStatus?: Prisma.StringFieldUpdateOperationsInput | string
+  slackUserId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  slackLookupAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  country?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  managerId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  departmentId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  businessUnitId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  legalEntityId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  jobLevelId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  roleId?: Prisma.StringFieldUpdateOperationsInput | string
+  deletedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  directReports?: Prisma.UserUncheckedUpdateManyWithoutManagerNestedInput
+  reports?: Prisma.ExpenseReportUncheckedUpdateManyWithoutSubmitterNestedInput
+  expenses?: Prisma.ExpenseUncheckedUpdateManyWithoutOwnerNestedInput
+  receipts?: Prisma.ReceiptUncheckedUpdateManyWithoutUploadedByNestedInput
+  mileageRates?: Prisma.MileageRateSubjectUncheckedUpdateManyWithoutUserNestedInput
+  mileageOpeningBalances?: Prisma.MileageOpeningBalanceUncheckedUpdateManyWithoutUserNestedInput
+  mileageBalanceImports?: Prisma.MileageBalanceImportUncheckedUpdateManyWithoutImportedByNestedInput
+  userSyncRunItems?: Prisma.UserSyncRunItemUncheckedUpdateManyWithoutUserNestedInput
+  approvalTasksAssigned?: Prisma.ApprovalTaskUncheckedUpdateManyWithoutAssigneeNestedInput
+  approvalTasksDecided?: Prisma.ApprovalTaskUncheckedUpdateManyWithoutDecidedByNestedInput
+  delegationsFrom?: Prisma.DelegationUncheckedUpdateManyWithoutFromUserNestedInput
+  delegationsTo?: Prisma.DelegationUncheckedUpdateManyWithoutToUserNestedInput
+  externalIds?: Prisma.UserExternalIdUncheckedUpdateManyWithoutUserNestedInput
+  travelRequests?: Prisma.TravelRequestUncheckedUpdateManyWithoutSubmitterNestedInput
+  assistantConversations?: Prisma.AssistantConversationUncheckedUpdateManyWithoutUserNestedInput
+  assistantFeedback?: Prisma.AssistantFeedbackUncheckedUpdateManyWithoutUserNestedInput
+  apiKeys?: Prisma.ApiKeyUncheckedUpdateManyWithoutUserNestedInput
+  apiKeysCreated?: Prisma.ApiKeyUncheckedUpdateManyWithoutCreatedByNestedInput
+}
+
+export type UserCreateWithoutUserSyncRunItemsInput = {
+  id?: string
+  email: string
+  name?: string | null
+  firstName?: string | null
+  lastName?: string | null
+  hasAccess?: boolean
+  onLeaveAt?: Date | string | null
+  terminationDate?: Date | string | null
+  lastLoginAt?: Date | string | null
+  avatarUrl?: string | null
+  employeeStatus?: string
+  slackUserId?: string | null
+  slackLookupAt?: Date | string | null
+  country?: string | null
+  deletedAt?: Date | string | null
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  manager?: Prisma.UserCreateNestedOneWithoutDirectReportsInput
+  directReports?: Prisma.UserCreateNestedManyWithoutManagerInput
+  department?: Prisma.DepartmentCreateNestedOneWithoutUsersInput
+  businessUnit?: Prisma.BusinessUnitCreateNestedOneWithoutUsersInput
+  entity?: Prisma.LegalEntityCreateNestedOneWithoutUsersInput
+  jobLevel?: Prisma.JobLevelCreateNestedOneWithoutUsersInput
+  role?: Prisma.RoleCreateNestedOneWithoutUsersInput
+  reports?: Prisma.ExpenseReportCreateNestedManyWithoutSubmitterInput
+  expenses?: Prisma.ExpenseCreateNestedManyWithoutOwnerInput
+  receipts?: Prisma.ReceiptCreateNestedManyWithoutUploadedByInput
+  mileageRates?: Prisma.MileageRateSubjectCreateNestedManyWithoutUserInput
+  mileageOpeningBalances?: Prisma.MileageOpeningBalanceCreateNestedManyWithoutUserInput
+  mileageBalanceImports?: Prisma.MileageBalanceImportCreateNestedManyWithoutImportedByInput
+  userSyncRuns?: Prisma.UserSyncRunCreateNestedManyWithoutActorInput
+  approvalTasksAssigned?: Prisma.ApprovalTaskCreateNestedManyWithoutAssigneeInput
+  approvalTasksDecided?: Prisma.ApprovalTaskCreateNestedManyWithoutDecidedByInput
+  delegationsFrom?: Prisma.DelegationCreateNestedManyWithoutFromUserInput
+  delegationsTo?: Prisma.DelegationCreateNestedManyWithoutToUserInput
+  externalIds?: Prisma.UserExternalIdCreateNestedManyWithoutUserInput
+  travelRequests?: Prisma.TravelRequestCreateNestedManyWithoutSubmitterInput
+  assistantConversations?: Prisma.AssistantConversationCreateNestedManyWithoutUserInput
+  assistantFeedback?: Prisma.AssistantFeedbackCreateNestedManyWithoutUserInput
+  apiKeys?: Prisma.ApiKeyCreateNestedManyWithoutUserInput
+  apiKeysCreated?: Prisma.ApiKeyCreateNestedManyWithoutCreatedByInput
+}
+
+export type UserUncheckedCreateWithoutUserSyncRunItemsInput = {
+  id?: string
+  organizationId?: string
+  email: string
+  name?: string | null
+  firstName?: string | null
+  lastName?: string | null
+  hasAccess?: boolean
+  onLeaveAt?: Date | string | null
+  terminationDate?: Date | string | null
+  lastLoginAt?: Date | string | null
+  avatarUrl?: string | null
+  employeeStatus?: string
+  slackUserId?: string | null
+  slackLookupAt?: Date | string | null
+  country?: string | null
+  managerId?: string | null
+  departmentId?: string | null
+  businessUnitId?: string | null
+  legalEntityId?: string | null
+  jobLevelId?: string | null
+  roleId?: string
+  deletedAt?: Date | string | null
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  directReports?: Prisma.UserUncheckedCreateNestedManyWithoutManagerInput
+  reports?: Prisma.ExpenseReportUncheckedCreateNestedManyWithoutSubmitterInput
+  expenses?: Prisma.ExpenseUncheckedCreateNestedManyWithoutOwnerInput
+  receipts?: Prisma.ReceiptUncheckedCreateNestedManyWithoutUploadedByInput
+  mileageRates?: Prisma.MileageRateSubjectUncheckedCreateNestedManyWithoutUserInput
+  mileageOpeningBalances?: Prisma.MileageOpeningBalanceUncheckedCreateNestedManyWithoutUserInput
+  mileageBalanceImports?: Prisma.MileageBalanceImportUncheckedCreateNestedManyWithoutImportedByInput
+  userSyncRuns?: Prisma.UserSyncRunUncheckedCreateNestedManyWithoutActorInput
+  approvalTasksAssigned?: Prisma.ApprovalTaskUncheckedCreateNestedManyWithoutAssigneeInput
+  approvalTasksDecided?: Prisma.ApprovalTaskUncheckedCreateNestedManyWithoutDecidedByInput
+  delegationsFrom?: Prisma.DelegationUncheckedCreateNestedManyWithoutFromUserInput
+  delegationsTo?: Prisma.DelegationUncheckedCreateNestedManyWithoutToUserInput
+  externalIds?: Prisma.UserExternalIdUncheckedCreateNestedManyWithoutUserInput
+  travelRequests?: Prisma.TravelRequestUncheckedCreateNestedManyWithoutSubmitterInput
+  assistantConversations?: Prisma.AssistantConversationUncheckedCreateNestedManyWithoutUserInput
+  assistantFeedback?: Prisma.AssistantFeedbackUncheckedCreateNestedManyWithoutUserInput
+  apiKeys?: Prisma.ApiKeyUncheckedCreateNestedManyWithoutUserInput
+  apiKeysCreated?: Prisma.ApiKeyUncheckedCreateNestedManyWithoutCreatedByInput
+}
+
+export type UserCreateOrConnectWithoutUserSyncRunItemsInput = {
+  where: Prisma.UserWhereUniqueInput
+  create: Prisma.XOR<Prisma.UserCreateWithoutUserSyncRunItemsInput, Prisma.UserUncheckedCreateWithoutUserSyncRunItemsInput>
+}
+
+export type UserUpsertWithoutUserSyncRunItemsInput = {
+  update: Prisma.XOR<Prisma.UserUpdateWithoutUserSyncRunItemsInput, Prisma.UserUncheckedUpdateWithoutUserSyncRunItemsInput>
+  create: Prisma.XOR<Prisma.UserCreateWithoutUserSyncRunItemsInput, Prisma.UserUncheckedCreateWithoutUserSyncRunItemsInput>
+  where?: Prisma.UserWhereInput
+}
+
+export type UserUpdateToOneWithWhereWithoutUserSyncRunItemsInput = {
+  where?: Prisma.UserWhereInput
+  data: Prisma.XOR<Prisma.UserUpdateWithoutUserSyncRunItemsInput, Prisma.UserUncheckedUpdateWithoutUserSyncRunItemsInput>
+}
+
+export type UserUpdateWithoutUserSyncRunItemsInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  email?: Prisma.StringFieldUpdateOperationsInput | string
+  name?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  firstName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  lastName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hasAccess?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  onLeaveAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  terminationDate?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  lastLoginAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  avatarUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  employeeStatus?: Prisma.StringFieldUpdateOperationsInput | string
+  slackUserId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  slackLookupAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  country?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  deletedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  manager?: Prisma.UserUpdateOneWithoutDirectReportsNestedInput
+  directReports?: Prisma.UserUpdateManyWithoutManagerNestedInput
+  department?: Prisma.DepartmentUpdateOneWithoutUsersNestedInput
+  businessUnit?: Prisma.BusinessUnitUpdateOneWithoutUsersNestedInput
+  entity?: Prisma.LegalEntityUpdateOneWithoutUsersNestedInput
+  jobLevel?: Prisma.JobLevelUpdateOneWithoutUsersNestedInput
+  role?: Prisma.RoleUpdateOneRequiredWithoutUsersNestedInput
+  reports?: Prisma.ExpenseReportUpdateManyWithoutSubmitterNestedInput
+  expenses?: Prisma.ExpenseUpdateManyWithoutOwnerNestedInput
+  receipts?: Prisma.ReceiptUpdateManyWithoutUploadedByNestedInput
+  mileageRates?: Prisma.MileageRateSubjectUpdateManyWithoutUserNestedInput
+  mileageOpeningBalances?: Prisma.MileageOpeningBalanceUpdateManyWithoutUserNestedInput
+  mileageBalanceImports?: Prisma.MileageBalanceImportUpdateManyWithoutImportedByNestedInput
+  userSyncRuns?: Prisma.UserSyncRunUpdateManyWithoutActorNestedInput
+  approvalTasksAssigned?: Prisma.ApprovalTaskUpdateManyWithoutAssigneeNestedInput
+  approvalTasksDecided?: Prisma.ApprovalTaskUpdateManyWithoutDecidedByNestedInput
+  delegationsFrom?: Prisma.DelegationUpdateManyWithoutFromUserNestedInput
+  delegationsTo?: Prisma.DelegationUpdateManyWithoutToUserNestedInput
+  externalIds?: Prisma.UserExternalIdUpdateManyWithoutUserNestedInput
+  travelRequests?: Prisma.TravelRequestUpdateManyWithoutSubmitterNestedInput
+  assistantConversations?: Prisma.AssistantConversationUpdateManyWithoutUserNestedInput
+  assistantFeedback?: Prisma.AssistantFeedbackUpdateManyWithoutUserNestedInput
+  apiKeys?: Prisma.ApiKeyUpdateManyWithoutUserNestedInput
+  apiKeysCreated?: Prisma.ApiKeyUpdateManyWithoutCreatedByNestedInput
+}
+
+export type UserUncheckedUpdateWithoutUserSyncRunItemsInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  organizationId?: Prisma.StringFieldUpdateOperationsInput | string
+  email?: Prisma.StringFieldUpdateOperationsInput | string
+  name?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  firstName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  lastName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hasAccess?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  onLeaveAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  terminationDate?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  lastLoginAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  avatarUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  employeeStatus?: Prisma.StringFieldUpdateOperationsInput | string
+  slackUserId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  slackLookupAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  country?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  managerId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  departmentId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  businessUnitId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  legalEntityId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  jobLevelId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  roleId?: Prisma.StringFieldUpdateOperationsInput | string
+  deletedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  directReports?: Prisma.UserUncheckedUpdateManyWithoutManagerNestedInput
+  reports?: Prisma.ExpenseReportUncheckedUpdateManyWithoutSubmitterNestedInput
+  expenses?: Prisma.ExpenseUncheckedUpdateManyWithoutOwnerNestedInput
+  receipts?: Prisma.ReceiptUncheckedUpdateManyWithoutUploadedByNestedInput
+  mileageRates?: Prisma.MileageRateSubjectUncheckedUpdateManyWithoutUserNestedInput
+  mileageOpeningBalances?: Prisma.MileageOpeningBalanceUncheckedUpdateManyWithoutUserNestedInput
+  mileageBalanceImports?: Prisma.MileageBalanceImportUncheckedUpdateManyWithoutImportedByNestedInput
+  userSyncRuns?: Prisma.UserSyncRunUncheckedUpdateManyWithoutActorNestedInput
+  approvalTasksAssigned?: Prisma.ApprovalTaskUncheckedUpdateManyWithoutAssigneeNestedInput
+  approvalTasksDecided?: Prisma.ApprovalTaskUncheckedUpdateManyWithoutDecidedByNestedInput
+  delegationsFrom?: Prisma.DelegationUncheckedUpdateManyWithoutFromUserNestedInput
+  delegationsTo?: Prisma.DelegationUncheckedUpdateManyWithoutToUserNestedInput
+  externalIds?: Prisma.UserExternalIdUncheckedUpdateManyWithoutUserNestedInput
+  travelRequests?: Prisma.TravelRequestUncheckedUpdateManyWithoutSubmitterNestedInput
+  assistantConversations?: Prisma.AssistantConversationUncheckedUpdateManyWithoutUserNestedInput
+  assistantFeedback?: Prisma.AssistantFeedbackUncheckedUpdateManyWithoutUserNestedInput
+  apiKeys?: Prisma.ApiKeyUncheckedUpdateManyWithoutUserNestedInput
+  apiKeysCreated?: Prisma.ApiKeyUncheckedUpdateManyWithoutCreatedByNestedInput
 }
 
 export type UserCreateManyManagerInput = {
@@ -5282,6 +5876,8 @@ export type UserUpdateWithoutManagerInput = {
   mileageRates?: Prisma.MileageRateSubjectUpdateManyWithoutUserNestedInput
   mileageOpeningBalances?: Prisma.MileageOpeningBalanceUpdateManyWithoutUserNestedInput
   mileageBalanceImports?: Prisma.MileageBalanceImportUpdateManyWithoutImportedByNestedInput
+  userSyncRuns?: Prisma.UserSyncRunUpdateManyWithoutActorNestedInput
+  userSyncRunItems?: Prisma.UserSyncRunItemUpdateManyWithoutUserNestedInput
   approvalTasksAssigned?: Prisma.ApprovalTaskUpdateManyWithoutAssigneeNestedInput
   approvalTasksDecided?: Prisma.ApprovalTaskUpdateManyWithoutDecidedByNestedInput
   delegationsFrom?: Prisma.DelegationUpdateManyWithoutFromUserNestedInput
@@ -5325,6 +5921,8 @@ export type UserUncheckedUpdateWithoutManagerInput = {
   mileageRates?: Prisma.MileageRateSubjectUncheckedUpdateManyWithoutUserNestedInput
   mileageOpeningBalances?: Prisma.MileageOpeningBalanceUncheckedUpdateManyWithoutUserNestedInput
   mileageBalanceImports?: Prisma.MileageBalanceImportUncheckedUpdateManyWithoutImportedByNestedInput
+  userSyncRuns?: Prisma.UserSyncRunUncheckedUpdateManyWithoutActorNestedInput
+  userSyncRunItems?: Prisma.UserSyncRunItemUncheckedUpdateManyWithoutUserNestedInput
   approvalTasksAssigned?: Prisma.ApprovalTaskUncheckedUpdateManyWithoutAssigneeNestedInput
   approvalTasksDecided?: Prisma.ApprovalTaskUncheckedUpdateManyWithoutDecidedByNestedInput
   delegationsFrom?: Prisma.DelegationUncheckedUpdateManyWithoutFromUserNestedInput
@@ -5418,6 +6016,8 @@ export type UserUpdateWithoutRoleInput = {
   mileageRates?: Prisma.MileageRateSubjectUpdateManyWithoutUserNestedInput
   mileageOpeningBalances?: Prisma.MileageOpeningBalanceUpdateManyWithoutUserNestedInput
   mileageBalanceImports?: Prisma.MileageBalanceImportUpdateManyWithoutImportedByNestedInput
+  userSyncRuns?: Prisma.UserSyncRunUpdateManyWithoutActorNestedInput
+  userSyncRunItems?: Prisma.UserSyncRunItemUpdateManyWithoutUserNestedInput
   approvalTasksAssigned?: Prisma.ApprovalTaskUpdateManyWithoutAssigneeNestedInput
   approvalTasksDecided?: Prisma.ApprovalTaskUpdateManyWithoutDecidedByNestedInput
   delegationsFrom?: Prisma.DelegationUpdateManyWithoutFromUserNestedInput
@@ -5460,6 +6060,8 @@ export type UserUncheckedUpdateWithoutRoleInput = {
   mileageRates?: Prisma.MileageRateSubjectUncheckedUpdateManyWithoutUserNestedInput
   mileageOpeningBalances?: Prisma.MileageOpeningBalanceUncheckedUpdateManyWithoutUserNestedInput
   mileageBalanceImports?: Prisma.MileageBalanceImportUncheckedUpdateManyWithoutImportedByNestedInput
+  userSyncRuns?: Prisma.UserSyncRunUncheckedUpdateManyWithoutActorNestedInput
+  userSyncRunItems?: Prisma.UserSyncRunItemUncheckedUpdateManyWithoutUserNestedInput
   approvalTasksAssigned?: Prisma.ApprovalTaskUncheckedUpdateManyWithoutAssigneeNestedInput
   approvalTasksDecided?: Prisma.ApprovalTaskUncheckedUpdateManyWithoutDecidedByNestedInput
   delegationsFrom?: Prisma.DelegationUncheckedUpdateManyWithoutFromUserNestedInput
@@ -5553,6 +6155,8 @@ export type UserUpdateWithoutBusinessUnitInput = {
   mileageRates?: Prisma.MileageRateSubjectUpdateManyWithoutUserNestedInput
   mileageOpeningBalances?: Prisma.MileageOpeningBalanceUpdateManyWithoutUserNestedInput
   mileageBalanceImports?: Prisma.MileageBalanceImportUpdateManyWithoutImportedByNestedInput
+  userSyncRuns?: Prisma.UserSyncRunUpdateManyWithoutActorNestedInput
+  userSyncRunItems?: Prisma.UserSyncRunItemUpdateManyWithoutUserNestedInput
   approvalTasksAssigned?: Prisma.ApprovalTaskUpdateManyWithoutAssigneeNestedInput
   approvalTasksDecided?: Prisma.ApprovalTaskUpdateManyWithoutDecidedByNestedInput
   delegationsFrom?: Prisma.DelegationUpdateManyWithoutFromUserNestedInput
@@ -5596,6 +6200,8 @@ export type UserUncheckedUpdateWithoutBusinessUnitInput = {
   mileageRates?: Prisma.MileageRateSubjectUncheckedUpdateManyWithoutUserNestedInput
   mileageOpeningBalances?: Prisma.MileageOpeningBalanceUncheckedUpdateManyWithoutUserNestedInput
   mileageBalanceImports?: Prisma.MileageBalanceImportUncheckedUpdateManyWithoutImportedByNestedInput
+  userSyncRuns?: Prisma.UserSyncRunUncheckedUpdateManyWithoutActorNestedInput
+  userSyncRunItems?: Prisma.UserSyncRunItemUncheckedUpdateManyWithoutUserNestedInput
   approvalTasksAssigned?: Prisma.ApprovalTaskUncheckedUpdateManyWithoutAssigneeNestedInput
   approvalTasksDecided?: Prisma.ApprovalTaskUncheckedUpdateManyWithoutDecidedByNestedInput
   delegationsFrom?: Prisma.DelegationUncheckedUpdateManyWithoutFromUserNestedInput
@@ -5690,6 +6296,8 @@ export type UserUpdateWithoutEntityInput = {
   mileageRates?: Prisma.MileageRateSubjectUpdateManyWithoutUserNestedInput
   mileageOpeningBalances?: Prisma.MileageOpeningBalanceUpdateManyWithoutUserNestedInput
   mileageBalanceImports?: Prisma.MileageBalanceImportUpdateManyWithoutImportedByNestedInput
+  userSyncRuns?: Prisma.UserSyncRunUpdateManyWithoutActorNestedInput
+  userSyncRunItems?: Prisma.UserSyncRunItemUpdateManyWithoutUserNestedInput
   approvalTasksAssigned?: Prisma.ApprovalTaskUpdateManyWithoutAssigneeNestedInput
   approvalTasksDecided?: Prisma.ApprovalTaskUpdateManyWithoutDecidedByNestedInput
   delegationsFrom?: Prisma.DelegationUpdateManyWithoutFromUserNestedInput
@@ -5733,6 +6341,8 @@ export type UserUncheckedUpdateWithoutEntityInput = {
   mileageRates?: Prisma.MileageRateSubjectUncheckedUpdateManyWithoutUserNestedInput
   mileageOpeningBalances?: Prisma.MileageOpeningBalanceUncheckedUpdateManyWithoutUserNestedInput
   mileageBalanceImports?: Prisma.MileageBalanceImportUncheckedUpdateManyWithoutImportedByNestedInput
+  userSyncRuns?: Prisma.UserSyncRunUncheckedUpdateManyWithoutActorNestedInput
+  userSyncRunItems?: Prisma.UserSyncRunItemUncheckedUpdateManyWithoutUserNestedInput
   approvalTasksAssigned?: Prisma.ApprovalTaskUncheckedUpdateManyWithoutAssigneeNestedInput
   approvalTasksDecided?: Prisma.ApprovalTaskUncheckedUpdateManyWithoutDecidedByNestedInput
   delegationsFrom?: Prisma.DelegationUncheckedUpdateManyWithoutFromUserNestedInput
@@ -5827,6 +6437,8 @@ export type UserUpdateWithoutDepartmentInput = {
   mileageRates?: Prisma.MileageRateSubjectUpdateManyWithoutUserNestedInput
   mileageOpeningBalances?: Prisma.MileageOpeningBalanceUpdateManyWithoutUserNestedInput
   mileageBalanceImports?: Prisma.MileageBalanceImportUpdateManyWithoutImportedByNestedInput
+  userSyncRuns?: Prisma.UserSyncRunUpdateManyWithoutActorNestedInput
+  userSyncRunItems?: Prisma.UserSyncRunItemUpdateManyWithoutUserNestedInput
   approvalTasksAssigned?: Prisma.ApprovalTaskUpdateManyWithoutAssigneeNestedInput
   approvalTasksDecided?: Prisma.ApprovalTaskUpdateManyWithoutDecidedByNestedInput
   delegationsFrom?: Prisma.DelegationUpdateManyWithoutFromUserNestedInput
@@ -5870,6 +6482,8 @@ export type UserUncheckedUpdateWithoutDepartmentInput = {
   mileageRates?: Prisma.MileageRateSubjectUncheckedUpdateManyWithoutUserNestedInput
   mileageOpeningBalances?: Prisma.MileageOpeningBalanceUncheckedUpdateManyWithoutUserNestedInput
   mileageBalanceImports?: Prisma.MileageBalanceImportUncheckedUpdateManyWithoutImportedByNestedInput
+  userSyncRuns?: Prisma.UserSyncRunUncheckedUpdateManyWithoutActorNestedInput
+  userSyncRunItems?: Prisma.UserSyncRunItemUncheckedUpdateManyWithoutUserNestedInput
   approvalTasksAssigned?: Prisma.ApprovalTaskUncheckedUpdateManyWithoutAssigneeNestedInput
   approvalTasksDecided?: Prisma.ApprovalTaskUncheckedUpdateManyWithoutDecidedByNestedInput
   delegationsFrom?: Prisma.DelegationUncheckedUpdateManyWithoutFromUserNestedInput
@@ -5964,6 +6578,8 @@ export type UserUpdateWithoutJobLevelInput = {
   mileageRates?: Prisma.MileageRateSubjectUpdateManyWithoutUserNestedInput
   mileageOpeningBalances?: Prisma.MileageOpeningBalanceUpdateManyWithoutUserNestedInput
   mileageBalanceImports?: Prisma.MileageBalanceImportUpdateManyWithoutImportedByNestedInput
+  userSyncRuns?: Prisma.UserSyncRunUpdateManyWithoutActorNestedInput
+  userSyncRunItems?: Prisma.UserSyncRunItemUpdateManyWithoutUserNestedInput
   approvalTasksAssigned?: Prisma.ApprovalTaskUpdateManyWithoutAssigneeNestedInput
   approvalTasksDecided?: Prisma.ApprovalTaskUpdateManyWithoutDecidedByNestedInput
   delegationsFrom?: Prisma.DelegationUpdateManyWithoutFromUserNestedInput
@@ -6007,6 +6623,8 @@ export type UserUncheckedUpdateWithoutJobLevelInput = {
   mileageRates?: Prisma.MileageRateSubjectUncheckedUpdateManyWithoutUserNestedInput
   mileageOpeningBalances?: Prisma.MileageOpeningBalanceUncheckedUpdateManyWithoutUserNestedInput
   mileageBalanceImports?: Prisma.MileageBalanceImportUncheckedUpdateManyWithoutImportedByNestedInput
+  userSyncRuns?: Prisma.UserSyncRunUncheckedUpdateManyWithoutActorNestedInput
+  userSyncRunItems?: Prisma.UserSyncRunItemUncheckedUpdateManyWithoutUserNestedInput
   approvalTasksAssigned?: Prisma.ApprovalTaskUncheckedUpdateManyWithoutAssigneeNestedInput
   approvalTasksDecided?: Prisma.ApprovalTaskUncheckedUpdateManyWithoutDecidedByNestedInput
   delegationsFrom?: Prisma.DelegationUncheckedUpdateManyWithoutFromUserNestedInput
@@ -6058,6 +6676,8 @@ export type UserCountOutputType = {
   mileageRates: number
   mileageOpeningBalances: number
   mileageBalanceImports: number
+  userSyncRuns: number
+  userSyncRunItems: number
   approvalTasksAssigned: number
   approvalTasksDecided: number
   delegationsFrom: number
@@ -6078,6 +6698,8 @@ export type UserCountOutputTypeSelect<ExtArgs extends runtime.Types.Extensions.I
   mileageRates?: boolean | UserCountOutputTypeCountMileageRatesArgs
   mileageOpeningBalances?: boolean | UserCountOutputTypeCountMileageOpeningBalancesArgs
   mileageBalanceImports?: boolean | UserCountOutputTypeCountMileageBalanceImportsArgs
+  userSyncRuns?: boolean | UserCountOutputTypeCountUserSyncRunsArgs
+  userSyncRunItems?: boolean | UserCountOutputTypeCountUserSyncRunItemsArgs
   approvalTasksAssigned?: boolean | UserCountOutputTypeCountApprovalTasksAssignedArgs
   approvalTasksDecided?: boolean | UserCountOutputTypeCountApprovalTasksDecidedArgs
   delegationsFrom?: boolean | UserCountOutputTypeCountDelegationsFromArgs
@@ -6147,6 +6769,20 @@ export type UserCountOutputTypeCountMileageOpeningBalancesArgs<ExtArgs extends r
  */
 export type UserCountOutputTypeCountMileageBalanceImportsArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   where?: Prisma.MileageBalanceImportWhereInput
+}
+
+/**
+ * UserCountOutputType without action
+ */
+export type UserCountOutputTypeCountUserSyncRunsArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  where?: Prisma.UserSyncRunWhereInput
+}
+
+/**
+ * UserCountOutputType without action
+ */
+export type UserCountOutputTypeCountUserSyncRunItemsArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  where?: Prisma.UserSyncRunItemWhereInput
 }
 
 /**
@@ -6258,6 +6894,8 @@ export type UserSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs = r
   mileageRates?: boolean | Prisma.User$mileageRatesArgs<ExtArgs>
   mileageOpeningBalances?: boolean | Prisma.User$mileageOpeningBalancesArgs<ExtArgs>
   mileageBalanceImports?: boolean | Prisma.User$mileageBalanceImportsArgs<ExtArgs>
+  userSyncRuns?: boolean | Prisma.User$userSyncRunsArgs<ExtArgs>
+  userSyncRunItems?: boolean | Prisma.User$userSyncRunItemsArgs<ExtArgs>
   approvalTasksAssigned?: boolean | Prisma.User$approvalTasksAssignedArgs<ExtArgs>
   approvalTasksDecided?: boolean | Prisma.User$approvalTasksDecidedArgs<ExtArgs>
   delegationsFrom?: boolean | Prisma.User$delegationsFromArgs<ExtArgs>
@@ -6379,6 +7017,8 @@ export type UserInclude<ExtArgs extends runtime.Types.Extensions.InternalArgs = 
   mileageRates?: boolean | Prisma.User$mileageRatesArgs<ExtArgs>
   mileageOpeningBalances?: boolean | Prisma.User$mileageOpeningBalancesArgs<ExtArgs>
   mileageBalanceImports?: boolean | Prisma.User$mileageBalanceImportsArgs<ExtArgs>
+  userSyncRuns?: boolean | Prisma.User$userSyncRunsArgs<ExtArgs>
+  userSyncRunItems?: boolean | Prisma.User$userSyncRunItemsArgs<ExtArgs>
   approvalTasksAssigned?: boolean | Prisma.User$approvalTasksAssignedArgs<ExtArgs>
   approvalTasksDecided?: boolean | Prisma.User$approvalTasksDecidedArgs<ExtArgs>
   delegationsFrom?: boolean | Prisma.User$delegationsFromArgs<ExtArgs>
@@ -6446,6 +7086,8 @@ export type $UserPayload<ExtArgs extends runtime.Types.Extensions.InternalArgs =
      * eos batch 3 (#589): year-to-date mileage files this person uploaded.
      */
     mileageBalanceImports: Prisma.$MileageBalanceImportPayload<ExtArgs>[]
+    userSyncRuns: Prisma.$UserSyncRunPayload<ExtArgs>[]
+    userSyncRunItems: Prisma.$UserSyncRunItemPayload<ExtArgs>[]
     /**
      * w4-00a: the workflow engine's tasks (0058).
      */
@@ -6942,6 +7584,8 @@ export interface Prisma__UserClient<T, Null = never, ExtArgs extends runtime.Typ
   mileageRates<T extends Prisma.User$mileageRatesArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.User$mileageRatesArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$MileageRateSubjectPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
   mileageOpeningBalances<T extends Prisma.User$mileageOpeningBalancesArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.User$mileageOpeningBalancesArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$MileageOpeningBalancePayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
   mileageBalanceImports<T extends Prisma.User$mileageBalanceImportsArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.User$mileageBalanceImportsArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$MileageBalanceImportPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
+  userSyncRuns<T extends Prisma.User$userSyncRunsArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.User$userSyncRunsArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$UserSyncRunPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
+  userSyncRunItems<T extends Prisma.User$userSyncRunItemsArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.User$userSyncRunItemsArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$UserSyncRunItemPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
   approvalTasksAssigned<T extends Prisma.User$approvalTasksAssignedArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.User$approvalTasksAssignedArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$ApprovalTaskPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
   approvalTasksDecided<T extends Prisma.User$approvalTasksDecidedArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.User$approvalTasksDecidedArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$ApprovalTaskPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
   delegationsFrom<T extends Prisma.User$delegationsFromArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.User$delegationsFromArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$DelegationPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
@@ -7666,6 +8310,54 @@ export type User$mileageBalanceImportsArgs<ExtArgs extends runtime.Types.Extensi
   take?: number
   skip?: number
   distinct?: Prisma.MileageBalanceImportScalarFieldEnum | Prisma.MileageBalanceImportScalarFieldEnum[]
+}
+
+/**
+ * User.userSyncRuns
+ */
+export type User$userSyncRunsArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  /**
+   * Select specific fields to fetch from the UserSyncRun
+   */
+  select?: Prisma.UserSyncRunSelect<ExtArgs> | null
+  /**
+   * Omit specific fields from the UserSyncRun
+   */
+  omit?: Prisma.UserSyncRunOmit<ExtArgs> | null
+  /**
+   * Choose, which related nodes to fetch as well
+   */
+  include?: Prisma.UserSyncRunInclude<ExtArgs> | null
+  where?: Prisma.UserSyncRunWhereInput
+  orderBy?: Prisma.UserSyncRunOrderByWithRelationInput | Prisma.UserSyncRunOrderByWithRelationInput[]
+  cursor?: Prisma.UserSyncRunWhereUniqueInput
+  take?: number
+  skip?: number
+  distinct?: Prisma.UserSyncRunScalarFieldEnum | Prisma.UserSyncRunScalarFieldEnum[]
+}
+
+/**
+ * User.userSyncRunItems
+ */
+export type User$userSyncRunItemsArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  /**
+   * Select specific fields to fetch from the UserSyncRunItem
+   */
+  select?: Prisma.UserSyncRunItemSelect<ExtArgs> | null
+  /**
+   * Omit specific fields from the UserSyncRunItem
+   */
+  omit?: Prisma.UserSyncRunItemOmit<ExtArgs> | null
+  /**
+   * Choose, which related nodes to fetch as well
+   */
+  include?: Prisma.UserSyncRunItemInclude<ExtArgs> | null
+  where?: Prisma.UserSyncRunItemWhereInput
+  orderBy?: Prisma.UserSyncRunItemOrderByWithRelationInput | Prisma.UserSyncRunItemOrderByWithRelationInput[]
+  cursor?: Prisma.UserSyncRunItemWhereUniqueInput
+  take?: number
+  skip?: number
+  distinct?: Prisma.UserSyncRunItemScalarFieldEnum | Prisma.UserSyncRunItemScalarFieldEnum[]
 }
 
 /**

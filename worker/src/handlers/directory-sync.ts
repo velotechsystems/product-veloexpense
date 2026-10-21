@@ -1,6 +1,10 @@
 import { auditActions, withAudit } from '@expenseos/audit';
-import { rollUpOnOffboard } from '@expenseos/db';
-import { type SyncAllResult, syncAllFromDirectory } from '@expenseos/integrations-google';
+import { finishRun, heartbeatRun, openRun, recordRunItems, rollUpOnOffboard } from '@expenseos/db';
+import {
+  emptyCounts,
+  type SyncAllResult,
+  syncAllFromDirectory,
+} from '@expenseos/integrations-google';
 import type { JobMap } from '@expenseos/jobs';
 import { pushSeatCount } from '@/lib/billing/seats';
 import { db, currentTenantId } from '@/lib/db/prisma';
@@ -8,7 +12,12 @@ import { queryRunnerOf } from '@/lib/db/prisma-pg-bridge';
 import { directoryCredentials, recordDirectorySync } from '@/lib/directory/googleConnection';
 
 /**
- * w5-04 — ported from ExpenseOS `apps/worker/src/handlers/directory-sync.ts` (1e682dd6).
+ * w5-04 — ported from ExpenseOS `apps/worker/src/handlers/directory-sync.ts` (1e682dd6), and
+ * brought to ExpenseOS 67db2e33 (#582, directory sync v2): every run gets a `user_sync_run`
+ * row — opened first, which is also the lock against a second concurrent pass, heart-beaten
+ * while it works, and closed with its totals — and one item per person it changed, linked or
+ * refused. The audit log keeps ONE summary row per run that did work.
+ *
  * VeloExpense, each marked below:
  *   · PER TENANT: the job runs as one tenant (fanned out by the schedule, as `audit.purge` is),
  *     with that tenant's stored key (`google_directory_connection`, 0076). A tenant that has
@@ -57,75 +66,107 @@ async function rollUpOffboardedUsers(): Promise<{
 }
 
 /**
- * Handler for the `integration.google.directorySync` job. Paginates
- * the entire Workspace directory via the Admin SDK and reconciles
- * every user into the DB via `syncAllFromDirectory`.
+ * Handler for the `integration.google.directorySync` job (nightly, 02:30 UTC). Reconciles
+ * the tenant's whole Workspace directory via `syncAllFromDirectory`.
  *
- * Emits one summary audit row per run (action
- * `integration.google.directory.synced`) — per-user changes are NOT
- * audited individually because the sync is an idempotent
- * reconciliation from a trusted upstream and per-row audit at 359+
- * users daily would balloon the table without adding signal.
+ * Every run gets a `user_sync_run` row — opened first, which is also the lock against a
+ * second concurrent pass (VeloExpense: per tenant), heart-beaten while it works, and closed
+ * with its totals — and one item per person it changed, linked or refused. The audit log
+ * gets ONE summary row per run that did work; per-person changes are not audited
+ * individually (the sync is an idempotent reconciliation from a trusted upstream, and a row
+ * per person per night would bury the signal).
  *
- * Throws on initialization / config errors so BullMQ retries the
- * job. `syncAllFromDirectory` returns `status: 'disabled'` cleanly
- * when `GOOGLE_DIRECTORY_DISABLED=true` — in that case we log and
- * return without throwing (no audit row written for the no-op).
+ * A switched-off or unconnected directory closes the run as DISABLED with the reason and
+ * writes no audit row. A run that fails to list the directory closes as ERROR, is audited,
+ * and throws so the job shows as failed (the schedule allows one attempt, so it is not
+ * re-run until the next night).
  */
 export async function handleDirectorySync(
   data: JobMap['integration.google.directorySync'],
   // VeloExpense: injectable for the test — the client, and the clock the offboarding stamps.
-  opts: Parameters<typeof syncAllFromDirectory>[2] = {},
+  opts: Omit<Parameters<typeof syncAllFromDirectory>[2], 'onProgress'> = {},
+  job?: { id?: string | null },
 ): Promise<SyncAllResult> {
   const trigger = data.trigger ?? 'cron';
+  const opened = await db.$transaction((tx) =>
+    openRun(tx, { kind: 'GOOGLE_DIRECTORY', trigger, jobId: job?.id ?? null }),
+  );
+  if (opened.status === 'busy') {
+    console.warn(`[directory.sync] skipped: run ${opened.runId} is still in progress`);
+    return { status: 'disabled', counts: emptyCounts(), items: [], offboarded: [], message: 'busy' };
+  }
+  const runId = opened.runId;
   const startedAt = Date.now();
 
   // VeloExpense: the tenant's own key. Unreadable (the server's key changed) is an error run,
   // recorded like any other, so the screen says so instead of the sync going quiet.
-  const stored = await db.$transaction((tx) => directoryCredentials(queryRunnerOf(tx)));
-  const result: SyncAllResult =
-    stored.state === 'unreadable'
-      ? {
-          status: 'error',
-          scanned: 0,
-          updated: 0,
-          notFound: 0,
-          held: 0,
-          offboarded: [],
-          errors: 0,
-          unmappedTitles: [],
-          missingJobLevels: [],
-          message: stored.message,
-        }
-      : await syncAllFromDirectory(
-          db,
-          stored.state === 'ok' ? stored.credentials : null,
-          opts,
-        );
+  let result: SyncAllResult;
+  try {
+    const stored = await db.$transaction((tx) => directoryCredentials(queryRunnerOf(tx)));
+    result =
+      stored.state === 'unreadable'
+        ? { status: 'error', counts: emptyCounts(), items: [], offboarded: [], message: stored.message }
+        : await syncAllFromDirectory(db, stored.state === 'ok' ? stored.credentials : null, {
+            ...opts,
+            onProgress: () => db.$transaction((tx) => heartbeatRun(tx, runId)),
+          });
+  } catch (e) {
+    await db.$transaction((tx) =>
+      finishRun(tx, runId, { status: 'ERROR', message: e instanceof Error ? e.message : String(e) }),
+    );
+    throw e;
+  }
   const durationMs = Date.now() - startedAt;
+  const { counts } = result;
 
   console.log(
     `[directory.sync] ${result.status}` +
       `  trigger=${trigger}` +
-      `  scanned=${result.scanned}` +
-      `  updated=${result.updated}` +
-      `  notFound=${result.notFound}` +
-      `  held=${result.held}` +
+      `  scanned=${counts.scanned}` +
+      `  updated=${counts.updated}` +
+      `  notFound=${counts.notFound}` +
+      `  linked=${counts.linked}` +
+      `  conflicts=${counts.conflicts}` +
+      `  held=${counts.held}` +
       `  offboarded=${result.offboarded.length}` +
-      `  errors=${result.errors}` +
+      `  errors=${counts.errors}` +
       `  took=${durationMs}ms` +
       (result.message ? `  message="${result.message}"` : ''),
   );
 
+  await db.$transaction((tx) =>
+    recordRunItems(
+      tx,
+      runId,
+      result.items.map((item) => ({
+        kind: 'GOOGLE_DIRECTORY' as const,
+        outcome: item.outcome,
+        userId: item.userId,
+        externalRef: item.googleId || null,
+        fields: item.fields,
+        message: [item.email, item.message].filter(Boolean).join(' — '),
+      })),
+    ),
+  );
+
   if (result.status === 'disabled') {
-    return result; // No-op; no audit, no retry.
+    await db.$transaction((tx) =>
+      finishRun(tx, runId, { status: 'DISABLED', message: result.message ?? null }),
+    );
+    return result; // No audit, no retry.
   }
 
-  // Roll up cards + open reports for anyone the sync just offboarded (or a
-  // prior run missed): terminated/deactivated users who still hold un-rolled
-  // non-closed cards, or open reports with a manager to move them to.
-  // Idempotent — `rolledUpFromUserId` guards cards from a second roll-up.
-  const rollup = await rollUpOffboardedUsers();
+  // Roll up open reports for anyone the sync just offboarded (or a prior run missed):
+  // terminated/deactivated users who still hold open reports with a manager to move them to.
+  const rollup = result.status === 'completed' ? await rollUpOffboardedUsers() : null;
+
+  await db.$transaction((tx) =>
+    finishRun(tx, runId, {
+      status: result.status === 'completed' ? 'COMPLETED' : 'ERROR',
+      counts: { ...counts, offboarded: result.offboarded.length, durationMs, ...(rollup ? { offboardRollup: rollup } : {}) },
+      message: result.message ?? null,
+    }),
+  );
 
   // One summary audit row per run.
   await withAudit(
@@ -138,21 +179,29 @@ export async function handleDirectorySync(
       details: {
         status: result.status,
         trigger,
-        scanned: result.scanned,
-        updated: result.updated,
-        notFound: result.notFound,
-        held: result.held,
+        runId,
+        scanned: counts.scanned,
+        active: counts.active,
+        deleted: counts.deleted,
+        updated: counts.updated,
+        notFound: counts.notFound,
+        linked: counts.linked,
+        relinked: counts.relinked,
+        conflicts: counts.conflicts,
+        skipped: counts.skipped,
+        held: counts.held,
         offboarded: result.offboarded,
-        errors: result.errors,
+        errors: counts.errors,
+        managersUnresolved: counts.managersUnresolved,
+        unmappedTitles: counts.unmappedTitles,
+        missingJobLevels: counts.missingJobLevels,
         durationMs,
-        offboardRollup: rollup,
-        unmappedTitles: result.unmappedTitles,
-        missingJobLevels: result.missingJobLevels,
+        ...(rollup ? { offboardRollup: rollup } : {}),
         ...(result.message ? { message: result.message } : {}),
       },
     },
     // VeloExpense: the screen's copy of the run, on the audit row's transaction.
-    async (tx) => recordDirectorySync(queryRunnerOf(tx), trigger, result, new Date(startedAt)),
+    async (tx) => recordDirectorySync(queryRunnerOf(tx), trigger, result, new Date(startedAt), runId),
   );
 
   // VeloExpense: the seat count changed (see the header).
@@ -161,7 +210,7 @@ export async function handleDirectorySync(
     if (organizationId) await pushSeatCount(organizationId);
   }
 
-  // Initialization / config error — let BullMQ retry.
+  // Listing failed — surface it as a failed job.
   if (result.status === 'error') {
     throw new Error(`directory sync failed: ${result.message ?? 'unknown'}`);
   }
