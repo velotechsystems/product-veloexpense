@@ -5,8 +5,9 @@ import { signIn, switchTo } from './support/actors';
 import { pickCombobox } from './support/combobox';
 import { PHONE_PROJECTS } from './support/phone-projects';
 import { expectAnyRowEventually, expectAnyRowGone, rowFor } from './support/rows';
-import { assertProject } from './support/tap-targets';
+import { assertProject, HIT_FLOOR_PX } from './support/tap-targets';
 import { closeTestDb, testDb } from './support/test-db';
+import { trpcQueryOk } from './support/trpc';
 import {
   addExpense,
   createReport,
@@ -30,9 +31,11 @@ import {
  *   · the line numbers ExpenseOS cites in its comments are ExpenseOS's files, not these.
  *
  * The primary flows of `/expenses/[reportId]`, on a phone — read, see the receipt, submit,
- * respond to a return, and (P18) add an expense and fill it in — plus the live-resize check
- * that the editor survives a window crossing `lg`. This is also the file that replaces the
- * P06 ticket's done-criterion 1, which was unsatisfiable as written.
+ * respond to a return, (P18) add an expense and fill it in, (P13) set the expense's tax,
+ * code it across a split allocation and name its attendees, and (P16) read how a
+ * mixed-currency total adds up — plus the live-resize check that the editor survives a
+ * window crossing `lg`. This is also the file that replaces the P06 ticket's
+ * done-criterion 1, which was unsatisfiable as written.
  *
  * ─── WHY THIS FILE EXISTS AT ALL ─────────────────────────────────────────────────────────
  *
@@ -71,8 +74,9 @@ import {
  * through its LIST ROW, and below `lg` that row is inside the collapsed expenses disclosure, so
  * the acknowledgement resolves nothing there; and the fixture attaches a receipt, which the
  * receipt pane does differently on a phone. The phone add flow is driven by
- * `addExpenseOnPhone` in this file instead, and it is the flow under test, not fixture. The tax
- * panel, the cost allocation and the attendees are still `hidden lg:contents` below `lg`.
+ * `addExpenseOnPhone` in this file instead, and it is the flow under test, not fixture. Since
+ * P13 the tax panel, the cost allocation and the attendees have one editable face at every
+ * width too, with no notice left on the pane; flows 6 to 8 drive each of them on a phone.
  *
  * So the fixture is built on a SIBLING PAGE in the same browser context, sized 1280,
  * and the phone `page` never leaves phone metrics. Same cookies (`signIn` clears and sets
@@ -153,6 +157,26 @@ const DESKTOP = { width: 1280, height: 900 } as const;
 const CATEGORY = /Office Supplies/;
 
 /**
+ * The category the attendee flow codes a line to.
+ *
+ * VeloExpense: ExpenseOS turns `requiresAttendees` on for its seeded Golf Expense category,
+ * shared with `expense-policy-refusals.spec.ts`. VeloExpense's seed has no such category and
+ * no such spec, and flipping the flag on a starter category (Meals) would put an attendees
+ * block into every other spec that codes a meal. So the flow creates its OWN category in the
+ * demo tenant, idempotently (`ensureAttendeeCategory`), that nothing else in `e2e/` uses.
+ * The line still stays at 150.00, as ExpenseOS's does.
+ */
+const ATTENDEE_CATEGORY_CODE = 'e2eHospitality';
+const ATTENDEE_CATEGORY_LABEL = 'E2E Hospitality';
+const ATTENDEE_CATEGORY = /E2E Hospitality/;
+
+/** The vendor `seedReport` below gives its first expense, the one a page opens on arrival. */
+const SEEDED_VENDOR = 'Bay Street Depot 1';
+
+/** The 44px floor a coarse pointer gets on every editing control P13 un-cloaked. */
+const TAP_FLOOR_PX = 44;
+
+/**
  * The width the live-resize test starts and ends at: above `lg` (1024), so the page is in its
  * desktop tree, and BELOW `xl` (1280) on purpose. `ResizablePanels` swaps between two element
  * trees at `(min-width: 80rem)` (`packages/design-system/src/components/ui/resizable-panels.tsx`),
@@ -167,12 +191,12 @@ const CALLER = 'expense-workbench.mobile.spec.ts';
 /**
  * Copy read from the catalog rather than pinned, the pattern `analytics.mobile.spec.ts` uses
  * locally for the same reason: a copy edit does not turn into a false alarm, and a RENAMED key
- * throws with its name. Kept local because this phase's diff is two spec files;
- * `e2e/support/catalog.ts` has no expenses-workbench accessor to reuse.
+ * throws with its name. Kept local: `e2e/support/catalog.ts` has no expenses-workbench
+ * accessor to reuse.
  *
- * Only the notice copy is read this way. Every locator in this file is an EN literal (the
- * file's convention, see the EN-only note in the header): an accessible name is what the
- * locator matches, and pinning it is what keeps a rename from silently retargeting one.
+ * Only catalog copy the P16 flow asserts on is read this way. Every locator in this file is an
+ * EN literal (the file's convention, see the EN-only note in the header): an accessible name is
+ * what the locator matches, and pinning it is what keeps a rename from silently retargeting one.
  */
 function catalogText(namespace: string, path: string): string {
   const json = JSON.parse(
@@ -660,10 +684,308 @@ async function reportTotal(summary: Locator): Promise<number> {
   return Number.parseFloat(text.replace(/[^0-9.]/g, ''));
 }
 
+/**
+ * Every labelled name the desktop suite addresses unscoped and strict on this page, counted the
+ * way `expectOneVisibleField` counts: P18's five (Vendor, Date, Location, Currency, Amount), the
+ * three tax names P13 un-cloaked, and the allocation's Percent.
+ *
+ * `amounts` is the number of saved lines on the selected expense: `Amount` is one field per
+ * saved line, so an expense with two lines legitimately has two, and that is asserted as a
+ * count rather than forced through `expectOneVisibleField`.
+ *
+ * CALL IT ONLY WITH ONE ALLOCATION ROW ON SCREEN. "Remove allocation" is an `aria-label`, and
+ * `getByLabel('Location')` is a case-insensitive SUBSTRING match over every element's label,
+ * so from the second row on it matches the Location field plus one remove button per row.
+ * That collision exists at 1280 too and predates P13; the allocation flow below counts these
+ * names before it adds a row, and counts `Percent` per row afterwards instead.
+ */
+async function expectWorkbenchHazards(
+  p: Page,
+  width: string,
+  { amounts = 1 }: { amounts?: number } = {},
+): Promise<void> {
+  await expectOneVisibleField(p.getByLabel('Vendor'), 'getByLabel("Vendor")', width);
+  await expectOneVisibleField(
+    p.getByLabel('Date', { exact: true }),
+    'getByLabel("Date", { exact: true })',
+    width,
+  );
+  await expectOneVisibleField(p.getByLabel('Location'), 'getByLabel("Location")', width);
+  await expectOneVisibleField(p.getByLabel('Currency'), 'getByLabel("Currency")', width);
+  const amount = p.getByLabel('Amount', { exact: true });
+  if (amounts === 1) {
+    await expectOneVisibleField(amount, 'getByLabel("Amount", { exact: true })', width);
+  } else {
+    await expect(
+      amount,
+      `getByLabel("Amount", { exact: true }) should match one field per saved line (${amounts}) ` +
+        `at ${width}; any other count is a twin or a dropped label`,
+    ).toHaveCount(amounts, { timeout: 30_000 });
+    for (let i = 0; i < amounts; i += 1) await expect(amount.nth(i)).toBeVisible();
+  }
+  await expectOneVisibleField(p.getByLabel('GST/HST'), 'getByLabel("GST/HST")', width);
+  await expectOneVisibleField(p.getByLabel('QST'), 'getByLabel("QST")', width);
+  await expectOneVisibleField(p.getByLabel('PST'), 'getByLabel("PST")', width);
+  await expectOneVisibleField(p.getByLabel('Percent'), 'getByLabel("Percent")', width);
+}
+
+/**
+ * Open the seeded report on the phone and wait for its one expense's editor.
+ *
+ * With a single expense the page selects it on arrival, so its Vendor reading the seeded value
+ * is the signal that the editor below it — tax, allocation, lines, attendees — is the right one.
+ */
+async function openSeededOnPhone(page: Page, id: string): Promise<void> {
+  await openOnPhone(page, id);
+  await expect(
+    page.getByLabel('Vendor'),
+    "the seeded expense's editor should be open on arrival",
+  ).toHaveValue(SEEDED_VENDOR, { timeout: 30_000 });
+}
+
+/** The same report on the 1280 sibling page, with the seeded expense's editor open. */
+async function openSeededOnDesktop(desk: Page, id: string): Promise<void> {
+  await desk.goto(reportUrl(id));
+  await expect(
+    desk.getByLabel('Vendor'),
+    "the seeded expense's editor should be open on arrival at 1280",
+  ).toHaveValue(SEEDED_VENDOR, { timeout: 30_000 });
+  await desk.waitForLoadState('networkidle');
+}
+
+/** The id of the one expense `seedReport(…, 1)` put on the report. */
+async function seededExpenseId(reportId: string): Promise<string> {
+  const db = await testDb(CALLER);
+  // VeloExpense: SQL on the admin pool, in place of `db.expense.findFirst`.
+  const expense = (
+    await db.query(`SELECT id FROM expense WHERE report_id = $1 ORDER BY created_at LIMIT 1`, [
+      reportId,
+    ])
+  ).rows[0] as { id: string } | undefined;
+  expect(expense, `seedReport left no expense on report ${reportId}`).toBeTruthy();
+  return expense?.id ?? '';
+}
+
+/**
+ * The control's rendered box is at least `TAP_FLOOR_PX` tall, and wide too when `both`.
+ *
+ * Measured, not read off a class: the tap-target census in `tap-targets.mobile.spec.ts` finds
+ * its subjects by `pointer-coarse:min-h-11` / `min-w-11`, and the inputs here are floored with
+ * `pointer-coarse:h-11` (or the combobox's `[&_input]:h-11`), which that census never reads.
+ * The phone projects emulate a touch device, so `(pointer: coarse)` is what applies here.
+ */
+async function expectTapBox(control: Locator, what: string, both = false): Promise<void> {
+  await control.scrollIntoViewIfNeeded();
+  const box = await control.boundingBox();
+  expect(box, `${what} has no box to measure`).not.toBeNull();
+  const height = Math.round(box?.height ?? 0);
+  expect(
+    height,
+    `${what} renders ${height}px tall at a coarse pointer; P13 floors it at ${TAP_FLOOR_PX}px ` +
+      'with a `pointer-coarse:` utility (_workbench/parts.tsx).',
+  ).toBeGreaterThanOrEqual(TAP_FLOOR_PX);
+  if (both) {
+    const width = Math.round(box?.width ?? 0);
+    expect(
+      width,
+      `${what} renders ${width}px wide at a coarse pointer; it is a 14px glyph whose 44px comes ` +
+        'from `pointer-coarse:min-w-11` alone.',
+    ).toBeGreaterThanOrEqual(TAP_FLOOR_PX);
+  }
+}
+
+/**
+ * Press `control`, and wait until `landed` holds.
+ *
+ * For a press that is NOT idempotent and does not detach its control — removing one row of
+ * several, or picking a directory result — so neither `pressAndSettle` nor `pressAndReveal`
+ * fits. The one re-press happens only when `untouched` still holds after 6 seconds, which the
+ * caller defines as "nothing on the page changed", the one state in which the first press
+ * certainly did nothing. The final wait is on `landed`: a DATABASE read wherever the press
+ * writes, and the page's own row count where it deliberately writes nothing.
+ */
+async function pressUntil(
+  control: Locator,
+  what: string,
+  landed: () => Promise<boolean>,
+  untouched: () => Promise<boolean>,
+): Promise<void> {
+  await expect(control, `"${what}" should be pressable`).toBeEnabled({ timeout: 30_000 });
+  await control.click();
+  const done = await settlesWithin(landed, (ok) => ok, 6_000);
+  if (!done && (await untouched()) && (await control.isEnabled())) await control.click();
+  await expect
+    .poll(landed, {
+      timeout: 20_000,
+      message: `pressing "${what}" should have reached the server; it was acknowledged by nothing`,
+    })
+    .toBe(true);
+}
+
+/** The cost-allocation card: the direct parent of its own "Add allocation" button. */
+function allocationCard(p: Page): Locator {
+  return p.getByRole('button', { name: 'Add allocation', exact: true }).locator('xpath=..');
+}
+
+/**
+ * QA's Percent invariant: one `Percent` per rendered allocation row, never two, never none.
+ *
+ *   1. the page-wide count equals the count inside the allocation card, so no `Percent` exists
+ *      outside it;
+ *   2. that count equals the card's `Business unit` count, one per row, so a hidden twin (2×)
+ *      or a dropped label (0) both fail;
+ *   3. it equals `rows`, which the caller derives from what it did or from the database;
+ *   4. every match is visible.
+ *
+ * "Count equals rows" rather than a fixed 1, because a legitimately split expense has two.
+ */
+async function expectOnePercentPerRow(p: Page, rows: number, where: string): Promise<void> {
+  const card = allocationCard(p);
+  const all = p.getByLabel('Percent');
+  await expect(all, `${where}: one "Percent" per allocation row (${rows})`).toHaveCount(rows, {
+    timeout: 30_000,
+  });
+  await expect(
+    card.getByLabel('Percent'),
+    `${where}: every "Percent" on the page should be inside the allocation card`,
+  ).toHaveCount(rows);
+  // VeloExpense: the kit Combobox is a button that keeps its placeholder as `data-placeholder`.
+  await expect(
+    card.locator('[data-placeholder="Business unit"]'),
+    `${where}: one business-unit picker per row, so one row per "Percent"`,
+  ).toHaveCount(rows);
+  for (let i = 0; i < rows; i += 1) {
+    await expect(all.nth(i), `${where}: "Percent" ${i + 1} should be visible`).toBeVisible();
+  }
+}
+
+/**
+ * Pick the FIRST option a combobox offers, once no other listbox is open.
+ *
+ * The allocation flow does not hard-code a business unit or a department: the E2E database may
+ * run either business-unit source, and the NetSuite one lists NetSuite paths. ⚠️ ASSUMPTION:
+ * any offered option is a valid pick for this employee. `/./` would also match an option of a
+ * listbox still closing from the previous pick, so the wait for none comes first.
+ */
+async function pickFirstOption(page: Page, control: Locator): Promise<void> {
+  await expect(page.getByRole('option'), 'no listbox should be open before a pick').toHaveCount(0, {
+    timeout: 10_000,
+  });
+  await pickCombobox(page, control, /./);
+}
+
+/**
+ * The slice of `expenses.report` the P16 flow reads as its oracle. Local, like
+ * `expense-tax-fx.spec.ts`'s own `Rollup`, and deliberately NOT shared with it: extracting
+ * that file's `rollupOf` would pull its pre-existing red ("AP pins the rate") into this
+ * file's tier.
+ */
+interface ReportOracle {
+  status: string;
+  rollup: {
+    homeCurrency: string;
+    homeTotalMinor: string;
+    recoverableTotalMinor: string;
+    multiCurrency: boolean;
+    byCurrency: {
+      code: string;
+      grossMinor: string;
+      convertedMinor: string | null;
+      rate: string | null;
+    }[];
+    missingRates: string[];
+  };
+}
+
+/** The server's answer, read as whoever the context is signed in as. */
+async function reportOracle(page: Page, reportId: string): Promise<ReportOracle> {
+  return trpcQueryOk<ReportOracle>(page, 'expenses.report', { reportId });
+}
+
+/**
+ * A money figure on screen, in integer minor units: every digit, in order, and nothing else.
+ *
+ * Exact rather than parsed as a float, so a sum compared against it is compared in cents.
+ * Correct ONLY for a two-decimal currency printed by `formatMinor` in EN — two fraction digits,
+ * `,` as a grouping separator, no other digit anywhere in the node. The P16 flow asserts that
+ * every currency it reads is CAD or USD before it calls this.
+ */
+async function minorOnScreen(figure: Locator): Promise<number> {
+  const text = (await figure.textContent()) ?? '';
+  return Number(text.replace(/[^0-9]/g, ''));
+}
+
+/**
+ * Open the phone summary's "Conversion details" disclosure, leave it open, and return the
+ * region it controls.
+ *
+ * `openExpenseList`'s rules, for its reasons, on a different control: idempotent on the
+ * control's OWN `aria-expanded` (a second blind press would CLOSE it, which is why
+ * `pressAndReveal` does not fit), the region found through `aria-controls` rather than by
+ * a guessed id, and the one retry only while the control still reads `"false"`.
+ *
+ * Addressed by attribute rather than `#id`: the id is React's `useId()`, and its format is
+ * React's business — an attribute selector matches whatever characters it uses.
+ *
+ * Scoped to the summary, because "Conversion details" is a name nothing else on the page
+ * should carry, and an unscoped match would pass on a build that moved it out of the body.
+ */
+async function openConversionDetails(summary: Locator): Promise<Locator> {
+  const toggle = summary.getByRole('button', { name: 'Conversion details', exact: true });
+  await expect(
+    toggle,
+    'the "Conversion details" disclosure is not in the phone summary. It renders only on a ' +
+      '`rollup.multiCurrency` report, inside `ReportSummary` in ExpenseReportWorkbench.tsx — ' +
+      'either the fixture is single-currency or the toggle moved.',
+  ).toBeEnabled({ timeout: 30_000 });
+
+  const regionId = await toggle.getAttribute('aria-controls');
+  expect(
+    regionId,
+    'the "Conversion details" toggle has no `aria-controls`, so nothing says which region it ' +
+      'opens — a screen-reader defect in its own right, and there is no region to wait for.',
+  ).toBeTruthy();
+  const region = summary.locator(`[id="${regionId}"]`);
+  await expect(
+    region,
+    '`aria-controls` names an id that is not inside the summary. The region is meant to stay ' +
+      'MOUNTED under `hidden` while closed, so the reference always resolves.',
+  ).toHaveCount(1);
+
+  if ((await toggle.getAttribute('aria-expanded')) === 'true') return region;
+
+  await toggle.click();
+  const opened = await region.waitFor({ state: 'visible', timeout: 6_000 }).then(
+    () => true,
+    () => false,
+  );
+  if (!opened && (await toggle.getAttribute('aria-expanded')) === 'false') {
+    await toggle.click();
+  }
+
+  await expect(
+    toggle,
+    'pressing "Conversion details" did not expand it — `aria-expanded` is still "false". ' +
+      'The press was acknowledged by nothing.',
+  ).toHaveAttribute('aria-expanded', 'true', { timeout: 20_000 });
+  await expect(
+    region,
+    'the disclosure reports itself expanded and the region it controls is still not visible. ' +
+      '`aria-expanded` and the `hidden` class on the region are two reads of one ' +
+      '`detailsOpen` state and must agree.',
+  ).toBeVisible({ timeout: 20_000 });
+  return region;
+}
+
+/** One animation frame, so a layout read after a disclosure opens sees the opened layout. */
+async function nextFrame(page: Page): Promise<void> {
+  await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())));
+}
+
 test.describe('the expense workbench, on a phone', () => {
   test('read the report and its totals', async ({ page }) => {
     /**
-     * FLOW 1 of 5. The one that carries the overflow measurement and the top-bar ration,
+     * FLOW 1 of 8. The one that carries the overflow measurement and the top-bar ration,
      * because both are claims about a report with real data ON SCREEN — an empty report
      * cannot overflow anything and publishes a shorter row.
      */
@@ -725,7 +1047,7 @@ test.describe('the expense workbench, on a phone', () => {
 
   test('see the receipt', async ({ page }) => {
     /**
-     * FLOW 2 of 5. Below `lg` the receipt pane is not a pane — it is a bottom sheet opened
+     * FLOW 2 of 8. Below `lg` the receipt pane is not a pane — it is a bottom sheet opened
      * from the paperclip on the expense row, which is a relocation into a shipped component
      * (`DrawerContent side="bottom"`, as `FilterSheet` and `SortSheet` already use) rather
      * than a new one.
@@ -797,7 +1119,7 @@ test.describe('the expense workbench, on a phone', () => {
 
   test('submit a report', async ({ page }) => {
     /**
-     * FLOW 3 of 5, and the one the whole task is for. Before Phase 3 there was no Submit
+     * FLOW 3 of 8, and the one the whole task is for. Before Phase 3 there was no Submit
      * control on this route below `lg` at all: the chrome was published into a top-bar slot
      * rationed to one icon-only control, so a submitter on a phone could read the report and
      * do nothing about it.
@@ -846,7 +1168,7 @@ test.describe('the expense workbench, on a phone', () => {
 
   test('respond to a returned report', async ({ page }) => {
     /**
-     * FLOW 4 of 5. A returned report comes back to the submitter EDITABLE — that is the whole
+     * FLOW 4 of 8. A returned report comes back to the submitter EDITABLE — that is the whole
      * difference from a rejection, and it is the transition most likely to break under a
      * change to the status guard, because from the approver's side both look like "no".
      *
@@ -931,7 +1253,7 @@ test.describe('the expense workbench, on a phone', () => {
 
   test('add an expense and fill it in', async ({ page }) => {
     /**
-     * FLOW 5 of 5 (P18). A submitter on a draft taps "Add expense", lands on the new
+     * FLOW 5 of 8 (P18). A submitter on a draft taps "Add expense", lands on the new
      * expense's editor, sets the date, vendor, currency and location, adds a line, types its
      * amount, and sees the report total rise. Before P18 every one of those controls was
      * `hidden lg:contents` below `lg`, and "Add expense" with them.
@@ -1140,18 +1462,13 @@ test.describe('the expense workbench, on a phone', () => {
     await expect(currencyField, 'Currency should survive a reload').toContainText(/USD/);
     await expect(amountField, 'the line amount should survive a reload').toHaveValue(/^25(\.00)?$/);
 
-    // ── The notice names only what is still read-only here. ─────────────────────────────
-    const notice = page.getByTestId('section-limited-notice');
-    await expect(notice, 'the editor renders exactly one section notice').toHaveCount(1);
-    await expect(notice).toBeVisible();
+    // ── No notice: nothing on this pane is read-only on a phone any more (P13). ─────────
     await expect(
-      notice,
-      'the notice should say what is still read-only on a phone (cost allocation, tax and ' +
-        'attendees), in the catalog copy, and no longer that the expense fields need a desktop',
-    ).toHaveText(
-      `${catalogText('expenses', 'workbench.sectionLimitedTitle')} ` +
-        catalogText('expenses', 'workbench.sectionLimitedBody'),
-    );
+      page.getByTestId('section-limited-notice'),
+      'the editor rendered a section notice. P13 gave the cost allocation, the tax and the ' +
+        'attendees an editor at every width, so a notice would call editable regions ' +
+        'read-only. Its call site and catalog keys were deleted; something brought one back.',
+    ).toHaveCount(0);
 
     await expectNoHorizontalOverflow(page, 'the new expense with its fields and a line filled');
 
@@ -1165,27 +1482,724 @@ test.describe('the expense workbench, on a phone', () => {
       await desk.goto(reportUrl(id));
       await selectExpense(desk, vendor);
       const at = `${DESKTOP.width}px`;
-      await expectOneVisibleField(desk.getByLabel('Vendor'), 'getByLabel("Vendor")', at);
-      await expectOneVisibleField(
-        desk.getByLabel('Date', { exact: true }),
-        'getByLabel("Date", { exact: true })',
-        at,
-      );
-      await expectOneVisibleField(desk.getByLabel('Location'), 'getByLabel("Location")', at);
-      await expectOneVisibleField(desk.getByLabel('Currency'), 'getByLabel("Currency")', at);
-      await expectOneVisibleField(
-        desk.getByLabel('Amount', { exact: true }),
-        'getByLabel("Amount", { exact: true })',
-        at,
-      );
+      // P18's five, plus GST/HST, QST, PST and Percent (P13). One allocation row here.
+      await expectWorkbenchHazards(desk, at);
+      await expect(
+        desk.getByTestId('section-limited-notice'),
+        `the editor rendered a section notice at ${at}`,
+      ).toHaveCount(0);
     });
   });
 
-  test('a half-typed vendor survives a live resize across lg', async ({ page }) => {
+  test('set the expense tax on a phone', async ({ page }) => {
+    /**
+     * FLOW 6 of 8 (P13). A submitter on a draft sets the expense's GST/HST on a phone, sees a
+     * figure the server refuses come back with the reason beside it, and finds the saved
+     * figure after a reload. Before P13 the three tax inputs were `hidden lg:contents` below
+     * `lg` and a phone saw the figures as prose only.
+     */
+    const title = reportTag('phone tax');
+    await signIn(page, 'employee');
+    // One receipted CAD expense of 100.00 (one Office Supplies line), built at 1280.
+    const id = await seedReport(page, title, 1);
+    const expenseId = await seededExpenseId(id);
+    await openSeededOnPhone(page, id);
+    const width = `${page.viewportSize()?.width ?? '?'}px`;
+
+    // ── The labelled-field hazard, at phone width. One allocation row on this expense. ────
+    await expectWorkbenchHazards(page, width);
+    await expect(page.getByTestId('section-limited-notice')).toHaveCount(0);
+
+    // ── Each tax input is a 44px target on a coarse pointer. ─────────────────────────────
+    const gst = page.getByLabel('GST/HST');
+    await expectTapBox(gst, 'the GST/HST input');
+    await expectTapBox(page.getByLabel('QST'), 'the QST input');
+    await expectTapBox(page.getByLabel('PST'), 'the PST input');
+
+    // ── Save: the figure commits on BLUR, as a manual override. ──────────────────────────
+    const db = await testDb(CALLER);
+    const taxOnServer = async () => {
+      // VeloExpense: SQL on the admin pool, in place of `db.expense.findUnique`.
+      const e = (
+        await db.query(
+          `SELECT tax_gst_hst_minor::text AS gst, tax_source FROM expense WHERE id = $1`,
+          [expenseId],
+        )
+      ).rows[0] as { gst: string | null; tax_source: string } | undefined;
+      return e ? { gst: String(e.gst), source: e.tax_source } : null;
+    };
+    await gst.fill('5.00');
+    await gst.blur();
+    await expect
+      .poll(taxOnServer, {
+        timeout: 30_000,
+        message: 'GST/HST 5.00 typed on the phone should be saved as a manual 500',
+      })
+      .toEqual({ gst: '500', source: 'MANUAL' });
+
+    // ── A figure the server refuses: the reason is visible, the field reverts. ───────────
+    /**
+     * Paid tax is bounded by the gross (`expenseTaxUpdate`), so 5,000.00 of GST on a 100.00
+     * expense is refused. The reader has to be able to SEE why, at this width, beside the
+     * field it is about: `toBeInViewport` after the scroll, not only `toBeVisible`.
+     */
+    await gst.fill('5000.00');
+    await gst.blur();
+    const taxCard = page
+      .locator('div.rounded-md.border')
+      .filter({ has: page.getByText('Taxes', { exact: true }) })
+      .filter({ has: gst })
+      .last();
+    const refusal = taxCard.getByRole('alert');
+    await expect(
+      refusal,
+      'the server refused 5,000.00 of GST on a 100.00 expense; the tax panel should say why ' +
+        'under the fields, at this width',
+    ).toBeVisible({ timeout: 30_000 });
+    await refusal.scrollIntoViewIfNeeded();
+    await expect(refusal, 'the refusal should be on screen, not only in the DOM').toBeInViewport();
+    await expect(gst, 'the refused figure should give way to the saved one').toHaveValue(
+      /^5(\.00)?$/,
+      { timeout: 20_000 },
+    );
+    expect(await taxOnServer(), 'the refused figure must not have reached the server').toEqual({
+      gst: '500',
+      source: 'MANUAL',
+    });
+
+    // ── And the saved figure survives a reload. ──────────────────────────────────────────
+    await openSeededOnPhone(page, id);
+    await expect(gst, 'GST/HST should survive a reload').toHaveValue(/^5(\.00)?$/, {
+      timeout: 20_000,
+    });
+    await expectNoHorizontalOverflow(page, 'the tax panel, edited');
+
+    // ── The same hazard counts at 1280. ──────────────────────────────────────────────────
+    await onDesktop(page, async (desk) => {
+      await openSeededOnDesktop(desk, id);
+      await expectWorkbenchHazards(desk, `${DESKTOP.width}px`);
+    });
+  });
+
+  test('code the expense across two allocations on a phone', async ({ page }) => {
+    /**
+     * FLOW 7 of 8 (P13). A submitter splits the expense 60/40 across two fully coded allocation
+     * rows on a phone, reloads, then takes the split back to one row. Before P13 the rows and
+     * "Add allocation" were `hidden lg:contents` below `lg`, and a phone was shown the saved
+     * coding as prose.
+     *
+     * VeloExpense: NO CLASS. ExpenseOS seeds a NetSuite class per project here because its
+     * editor saves only rows with a business unit, a department AND a class. VeloExpense has
+     * no classes (`dimensionOptions` sends none, w2-03; `allocationSet` takes none), so the
+     * picker is not drawn and a row is complete with a business unit and a department.
+     */
+    const title = reportTag('phone allocation');
+    const db = await testDb(CALLER);
+
+    await signIn(page, 'employee');
+    const id = await seedReport(page, title, 1);
+    const expenseId = await seededExpenseId(id);
+    await openSeededOnPhone(page, id);
+    const width = `${page.viewportSize()?.width ?? '?'}px`;
+
+    // ── Before the second row: the hazard counts, while `Location` is still countable. ────
+    /**
+     * Order matters. From the second allocation row on, `getByLabel('Location')` also matches
+     * each "Remove allocation" button (see `expectWorkbenchHazards`), so the names are
+     * counted here, on one row, and only `Percent` is counted per row after.
+     */
+    await expectWorkbenchHazards(page, width);
+    // VeloExpense: SQL on the admin pool, in place of `db.expenseAllocation.count`.
+    const savedCount = async () =>
+      Number(
+        (
+          await db.query(`SELECT count(*)::int AS n FROM expense_allocation WHERE expense_id = $1`, [
+            expenseId,
+          ])
+        ).rows[0].n,
+      );
+    const savedAtStart = await savedCount();
+    // The editor seeds one 100% row when nothing is saved; coding defaults may have saved one.
+    await expectOnePercentPerRow(page, Math.max(1, savedAtStart), 'on arrival');
+    expect(savedAtStart, 'this flow expects to start from at most one saved row').toBeLessThan(2);
+
+    // ── "Add allocation": local state, no write. ─────────────────────────────────────────
+    const card = allocationCard(page);
+    const addAllocation = page.getByRole('button', { name: 'Add allocation', exact: true });
+    const percents = card.getByLabel('Percent');
+    // VeloExpense: the kit Combobox is a button that keeps its placeholder as `data-placeholder`.
+    const businessUnits = card.locator('[data-placeholder="Business unit"]');
+    const departments = card.locator('[data-placeholder="Department"]');
+    await pressAndReveal(addAllocation, businessUnits.nth(1), 'Add allocation');
+    await expectOnePercentPerRow(page, 2, 'after "Add allocation"');
+
+    // ── 60/40, each committed on blur, then every dimension picked. ──────────────────────
+    await percents.nth(0).fill('60');
+    await percents.nth(0).blur();
+    await percents.nth(1).fill('40');
+    await percents.nth(1).blur();
+    for (const row of [0, 1]) {
+      await pickFirstOption(page, businessUnits.nth(row));
+      await pickFirstOption(page, departments.nth(row));
+      await expect(page.getByRole('option')).toHaveCount(0, { timeout: 10_000 });
+    }
+
+    // VeloExpense: SQL on the admin pool, in place of `db.expenseAllocation.findMany`; no
+    // NetSuite business unit and no class, so coded is a business unit and a department.
+    const savedRows = async () =>
+      (
+        (
+          await db.query(
+            `SELECT percent_bp, business_unit_id, department_id FROM expense_allocation
+              WHERE expense_id = $1 ORDER BY percent_bp DESC`,
+            [expenseId],
+          )
+        ).rows as {
+          percent_bp: number;
+          business_unit_id: string | null;
+          department_id: string | null;
+        }[]
+      ).map((a) => ({
+        percentBp: a.percent_bp,
+        coded: Boolean(a.business_unit_id && a.department_id),
+      }));
+    await expect
+      .poll(savedRows, {
+        timeout: 30_000,
+        message:
+          'the 60/40 split should be saved once both rows are fully coded and sum to 100. ' +
+          'Nothing saved means a pick or a blur never committed; the editor writes only a ' +
+          'complete, balanced set (_workbench/parts.tsx, `AllocationEditor`).',
+      })
+      .toEqual([
+        { percentBp: 6000, coded: true },
+        { percentBp: 4000, coded: true },
+      ]);
+
+    // ── Tap size: every allocation control is a 44px target on a coarse pointer. ─────────
+    for (const row of [0, 1]) {
+      await expectTapBox(percents.nth(row), `the Percent input on row ${row + 1}`);
+      await expectTapBox(businessUnits.nth(row), `the Business unit picker on row ${row + 1}`);
+      await expectTapBox(departments.nth(row), `the Department picker on row ${row + 1}`);
+    }
+    const removes = card.getByRole('button', { name: 'Remove allocation', exact: true });
+    await expect(removes, 'two rows carry two remove buttons').toHaveCount(2);
+    for (const row of [0, 1]) {
+      await expectTapBox(removes.nth(row), `"Remove allocation" on row ${row + 1}`, true);
+    }
+    await expectTapBox(addAllocation, '"Add allocation"');
+
+    // ── Overflow: the rows, and the portalled listbox outside `main`. ────────────────────
+    await expectNoHorizontalOverflow(page, 'two allocation rows, both coded');
+    /**
+     * The combobox's listbox is portalled to the body, outside `main`, so
+     * `expectNoHorizontalOverflow` cannot see it. The document's own scroll width can.
+     */
+    // VeloExpense: the Department list, row 2's last picker (no Class here).
+    await departments.nth(1).click();
+    await expect(page.getByRole('option').first(), 'the Department list should open').toBeVisible({
+      timeout: 10_000,
+    });
+    const documentOver = await page.evaluate(
+      () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+    );
+    expect(
+      documentOver,
+      `with the Department list open the document scrolls sideways by ${documentOver}px`,
+    ).toBeLessThanOrEqual(1);
+    await page.keyboard.press('Escape');
+    await expect(page.getByRole('option')).toHaveCount(0, { timeout: 10_000 });
+
+    // ── Phone geometry: each row is a stacked card, percent above its business unit. ─────
+    const percentTop = (await percents.nth(0).boundingBox())?.y ?? 0;
+    const businessUnitTop = (await businessUnits.nth(0).boundingBox())?.y ?? 0;
+    expect(
+      percentTop,
+      'below `lg` the row should stack: the percent on its own line above the business unit',
+    ).toBeLessThan(businessUnitTop);
+
+    // ── Reload: the split is what the server holds. ──────────────────────────────────────
+    await openSeededOnPhone(page, id);
+    await expect(percents.nth(0), 'row 1 should read 60 after a reload').toHaveValue('60', {
+      timeout: 20_000,
+    });
+    await expect(percents.nth(1), 'row 2 should read 40 after a reload').toHaveValue('40');
+    await expectOnePercentPerRow(page, 2, 'after a reload');
+
+    // ── Remove a row: the UI drops it at once, the server keeps the balanced pair. ───────
+    /**
+     * 60 alone does not make 100, so removing row 2 writes NOTHING, by design: the editor
+     * persists only a balanced set. The page shows one row while the server still holds two
+     * until the remaining row is set to 100. Asserted rather than left to surprise a reader.
+     */
+    await pressUntil(
+      removes.nth(1),
+      'Remove allocation',
+      async () => (await percents.count()) === 1,
+      async () => (await percents.count()) === 2,
+    );
+    await expectOnePercentPerRow(page, 1, 'after removing row 2');
+    await page.waitForLoadState('networkidle');
+    expect(
+      await savedCount(),
+      'removing a row from a 60/40 split leaves 60, which is not balanced, so nothing is saved',
+    ).toBe(2);
+    await percents.nth(0).fill('100');
+    await percents.nth(0).blur();
+    await expect
+      .poll(savedRows, {
+        timeout: 30_000,
+        message: 'one row at 100 is balanced and complete, so it should replace the pair',
+      })
+      .toEqual([{ percentBp: 10000, coded: true }]);
+
+    // ── At 1280: the hazard counts, the invariant, and the restored one-line row. ────────
+    await onDesktop(page, async (desk) => {
+      await openSeededOnDesktop(desk, id);
+      const at = `${DESKTOP.width}px`;
+      // One saved row now, so `Location` is countable again.
+      await expectWorkbenchHazards(desk, at);
+      await expectOnePercentPerRow(desk, 1, `at ${at}`);
+
+      /**
+       * From `lg` up the row is the pre-P13 one-line row: the percent and the pickers
+       * (VeloExpense: two, no Class) share one top, and the percent keeps its `w-20` (80px).
+       */
+      const deskCard = allocationCard(desk);
+      const boxes = await Promise.all(
+        [
+          deskCard.getByLabel('Percent'),
+          deskCard.locator('[data-placeholder="Business unit"]'),
+          deskCard.locator('[data-placeholder="Department"]'),
+        ].map((l) => l.boundingBox()),
+      );
+      const tops = boxes.map((b) => Math.round(b?.y ?? -1));
+      expect(
+        Math.max(...tops) - Math.min(...tops),
+        `at ${at} the allocation row should be one line; the tops were ${tops.join(', ')}`,
+      ).toBeLessThanOrEqual(2);
+      const percentWidth = Math.round(boxes[0]?.width ?? 0);
+      expect(
+        Math.abs(percentWidth - 80),
+        `at ${at} the percent should keep its 80px (\`w-20\`); it is ${percentWidth}px`,
+      ).toBeLessThanOrEqual(2);
+    });
+  });
+
+  test('name an attendee on a phone', async ({ page }) => {
+    /**
+     * FLOW 8 of 8 (P13). A submitter adds a golf line on a phone, which makes the expense require
+     * attendees and names the submitter as the first attendee, removes that prefilled row, then
+     * names an external guest, picks a colleague from the directory, and removes the guest again. Before P13 the attendees block was `hidden lg:contents` below
+     * `lg`, so a phone could create a line that needed attendees and not name them.
+     */
+    const title = reportTag('phone attendees');
+    const db = await testDb(CALLER);
+    // VeloExpense: a category of its own, created once and left on. See the constant.
+    await db.query(
+      `INSERT INTO expense_category (organization_id, code, label, requires_attendees)
+       SELECT o.id, $1, jsonb_build_object('en', $2::text, 'fr-CA', $2::text), true
+         FROM organization o WHERE o.slug = 'demo'
+       ON CONFLICT (organization_id, code)
+         DO UPDATE SET requires_attendees = true, active = true`,
+      [ATTENDEE_CATEGORY_CODE, ATTENDEE_CATEGORY_LABEL],
+    );
+
+    await signIn(page, 'employee');
+    const id = await seedReport(page, title, 1);
+    const expenseId = await seededExpenseId(id);
+    await openSeededOnPhone(page, id);
+    const width = `${page.viewportSize()?.width ?? '?'}px`;
+
+    // ── Add a golf line on the phone. ────────────────────────────────────────────────────
+    /**
+     * The seeded Office Supplies line is a saved row with the same category placeholder, so
+     * the new draft's picker is the SECOND one, which does not exist until the press lands.
+     */
+    // VeloExpense: the kit Combobox keeps its placeholder as `data-placeholder`.
+    const categories = page.locator('[data-placeholder="Select a category"]');
+    await expect(categories, 'the seeded line is the only category picker').toHaveCount(1, {
+      timeout: 30_000,
+    });
+    await pressAndReveal(
+      page.getByRole('button', { name: 'Add line', exact: true }),
+      categories.nth(1),
+      'Add line',
+    );
+    await pickCombobox(page, categories.nth(1), ATTENDEE_CATEGORY);
+    // Lines render in creation order, so the new one is second. 150.00, under the 200.00 rule.
+    const amounts = page.getByLabel('Amount', { exact: true });
+    await expect(amounts, 'two saved lines, two amounts').toHaveCount(2, { timeout: 30_000 });
+    await amounts.nth(1).fill('150.00');
+    await amounts.nth(1).blur();
+    await expect
+      .poll(
+        async () =>
+          // VeloExpense: SQL on the admin pool, in place of `db.expenseLineItem.findMany`.
+          (
+            (
+              await db.query(
+                `SELECT amount_minor::text AS a FROM expense_line_item
+                  WHERE expense_id = $1 ORDER BY created_at`,
+                [expenseId],
+              )
+            ).rows as { a: string }[]
+          ).map((l) => l.a),
+        { timeout: 30_000, message: 'the golf line should be saved at 150.00' },
+      )
+      .toEqual(['10000', '15000']);
+
+    // ── The attendees block renders from the SAVED line, so wait for it by condition. ────
+    const heading = page.getByText('Attendees', { exact: true });
+    await expect(
+      heading,
+      'a saved golf line should make the expense require attendees, and the attendees block ' +
+        'should render on a phone',
+    ).toBeVisible({ timeout: 30_000 });
+    const block = heading.locator('xpath=..');
+    await expectWorkbenchHazards(page, width, { amounts: 2 });
+
+    const attendeesOnServer = async () =>
+      // VeloExpense: SQL on the admin pool, in place of `db.expenseAttendee.findMany`.
+      (
+        (
+          await db.query(
+            `SELECT name, company, is_external FROM expense_attendee
+              WHERE expense_id = $1 ORDER BY name`,
+            [expenseId],
+          )
+        ).rows as { name: string; company: string | null; is_external: boolean }[]
+      ).map((a) => `${a.name}|${a.company ?? ''}|${a.is_external ? 'external' : 'internal'}`);
+
+    // ── The prefill: the golf line named the claimant; remove them before the guest. ─────
+    /**
+     * The golf line is this expense's first line in a category that requires attendees, so the
+     * server named the claimant — Demo Employee, the seeded `employee` (VeloExpense; ExpenseOS's
+     * is QA Employee) — in the same write, and the block mounted with that row (#588). It is
+     * removed here so the steps below start from the empty roster they were written against.
+     */
+    await expect
+      .poll(attendeesOnServer, {
+        timeout: 30_000,
+        message: 'the golf line should have named the claimant as the first attendee',
+      })
+      .toEqual(['Demo Employee||internal']);
+    await expect(
+      block.getByText('Demo Employee', { exact: true }),
+      'the prefilled claimant should be shown on the phone',
+    ).toBeVisible({ timeout: 30_000 });
+    await pressUntil(
+      block.getByRole('button', { name: 'Remove attendee', exact: true }),
+      'Remove attendee (claimant)',
+      async () => (await attendeesOnServer()).length === 0,
+      async () =>
+        (await block.getByRole('button', { name: 'Remove attendee', exact: true }).count()) === 1,
+    );
+
+    // ── An external guest: name and company, each committed on blur. ─────────────────────
+    const name = block.getByPlaceholder('Name', { exact: true });
+    const company = block.getByPlaceholder('Company', { exact: true });
+    await pressAndReveal(
+      block.getByRole('button', { name: 'Add external', exact: true }),
+      name,
+      'Add external',
+    );
+    await name.fill('Dana Whitfield');
+    await name.blur();
+    /**
+     * Wait for the name's save to land before typing the company. Each blur sends the whole
+     * roster, and the server writes it as delete-then-create; two saves milliseconds apart
+     * both commit, and the guest is stored twice. A person is never that fast; Playwright is.
+     */
+    await expect
+      .poll(attendeesOnServer, {
+        timeout: 30_000,
+        message: 'the external guest should be saved by name before the company is typed',
+      })
+      .toEqual(['Dana Whitfield||external']);
+    await company.fill('Northbridge');
+    await company.blur();
+    await expect
+      .poll(attendeesOnServer, {
+        timeout: 30_000,
+        message: 'the external guest typed on the phone should be saved with their company',
+      })
+      .toEqual(['Dana Whitfield|Northbridge|external']);
+
+    // ── A colleague from the directory: it matches on email, after a 250ms debounce. ─────
+    const search = block.getByPlaceholder('Search employees');
+    // VeloExpense: the demo tenant's manager, Demo Manager <manager@demo.test>.
+    await search.fill('manager@demo');
+    const result = block.getByRole('button', { name: /manager@demo\.test/ });
+    await expect(result, 'the directory should offer Demo Manager by email').toBeVisible({
+      timeout: 20_000,
+    });
+
+    // ── Tap size, with a guest row, the directory open and the result on screen. ─────────
+    await expectTapBox(search, 'the attendee search input');
+    await expectTapBox(name, "the guest's Name input");
+    await expectTapBox(company, "the guest's Company input");
+    await expectTapBox(result, 'the directory result');
+    await expectTapBox(
+      block.getByRole('button', { name: 'Add external', exact: true }),
+      '"Add external"',
+    );
+    await expectNoHorizontalOverflow(page, 'the attendees block, with the directory open');
+
+    const hasColleague = async () => (await attendeesOnServer()).includes('Demo Manager||internal');
+    await pressUntil(result, 'Demo Manager (directory result)', hasColleague, async () =>
+      result.isVisible(),
+    );
+    const removes = block.getByRole('button', { name: 'Remove attendee', exact: true });
+    await expect(removes, 'a guest and a colleague, two remove buttons').toHaveCount(2);
+    for (const i of [0, 1]) await expectTapBox(removes.nth(i), `"Remove attendee" ${i + 1}`, true);
+    await expectNoHorizontalOverflow(page, 'the attendees block, with two attendees');
+
+    // ── Remove the guest: rows render in the order they were added, so the guest is first. ──
+    await pressUntil(
+      removes.first(),
+      'Remove attendee',
+      async () => (await attendeesOnServer()).join() === 'Demo Manager||internal',
+      async () => (await removes.count()) === 2,
+    );
+
+    // ── Reload: the colleague is still named. ────────────────────────────────────────────
+    await openSeededOnPhone(page, id);
+    await expect(
+      page.getByText('Attendees', { exact: true }).locator('xpath=..').getByText('Demo Manager', {
+        exact: true,
+      }),
+      'the colleague should still be named after a reload',
+    ).toBeVisible({ timeout: 30_000 });
+
+    // ── At 1280: two saved lines, so two amounts; every other name once. ─────────────────
+    await onDesktop(page, async (desk) => {
+      await openSeededOnDesktop(desk, id);
+      await expectWorkbenchHazards(desk, `${DESKTOP.width}px`, { amounts: 2 });
+    });
+  });
+
+  test('read how a mixed-currency total adds up', async ({ page }) => {
+    /**
+     * P16. On a CAD report holding a USD expense, a phone reader can see what each currency
+     * contributed, open "Conversion details", and check that the converted figures add up to
+     * the total to the cent. Then an FX-override holder opens the same report once it is
+     * submitted, and is told in words where the override is, while its control stays cloaked.
+     *
+     * THE ORACLE IS THE SERVER, NEVER ARITHMETIC. Every figure on screen is compared with
+     * `expenses.report`'s roll-up, and the sum is compared with `homeTotalMinor`. Gross × rate
+     * is never asserted: the roll-up converts each EXPENSE and sums the results, so per-expense
+     * rounding makes "gross × rate = converted" false in general.
+     */
+    const title = reportTag('phone fx');
+    await signIn(page, 'employee');
+    // One CAD and one USD expense, built at 1280 as every fixture here is (see the header).
+    const id = await onDesktop(page, async (desk) => {
+      const reportId = await createReport(desk, title);
+      await addExpense(desk, { vendor: 'Bay Street Depot', amount: '50.00', category: CATEGORY });
+      await addExpense(desk, {
+        vendor: 'Buffalo Office Mart',
+        amount: '100.00',
+        category: CATEGORY,
+        currency: /^USD/,
+      });
+      return reportId;
+    });
+
+    // ── The oracle, once the USD expense is converted on the server. ─────────────────────
+    await expect
+      .poll(
+        async () =>
+          (await reportOracle(page, id)).rollup.byCurrency.find((c) => c.code === 'USD')
+            ?.convertedMinor ?? null,
+        {
+          timeout: 30_000,
+          message:
+            'the USD expense never got a converted amount on the server. Either the line did ' +
+            'not save, or the seeded USD to CAD rate is missing (packages/db/prisma/seed.ts, ' +
+            'SEED_FX_RATES).',
+        },
+      )
+      .not.toBeNull();
+    const { rollup } = await reportOracle(page, id);
+    expect(rollup.homeCurrency, 'the fixture report should be in CAD').toBe('CAD');
+    expect(rollup.multiCurrency, 'a CAD report with a USD expense is mixed-currency').toBe(true);
+    expect(rollup.missingRates, 'both currencies have a rate to CAD').toEqual([]);
+    // `minorOnScreen` reads every digit as a cent, which is only right for two-decimal
+    // currencies. Pinned here so a fixture change cannot quietly break that.
+    expect(
+      rollup.byCurrency.map((c) => c.code).sort(),
+      'the fixture should hold exactly a CAD and a USD expense',
+    ).toEqual(['CAD', 'USD']);
+
+    await openOnPhone(page, id);
+    const summary = page.getByTestId('report-summary');
+
+    // ── The composition is RENDERED, and it tells the truth. ─────────────────────────────
+    /**
+     * Read BEFORE the disclosure opens. While it is closed its region is `display: none`, so
+     * `getByRole('listitem')` sees only the composition rows, and the count below is also
+     * the proof that the reconciliation's rows are not exposed until asked for.
+     */
+    const toggle = summary.getByRole('button', { name: 'Conversion details', exact: true });
+    await expect(toggle, 'the disclosure should start closed').toHaveAttribute(
+      'aria-expanded',
+      'false',
+      { timeout: 30_000 },
+    );
+    const composition = summary.getByRole('listitem');
+    await expect(
+      composition,
+      'the composition should show one row per currency, without a tap',
+    ).toHaveCount(rollup.byCurrency.length);
+    for (const c of rollup.byCurrency) {
+      const row = composition.filter({ hasText: new RegExp(`^${c.code}\\s`) });
+      await expect(row, `the ${c.code} composition row`).toHaveCount(1);
+      await expect
+        .poll(() => minorOnScreen(row.locator('span').first()), {
+          message: `the ${c.code} row should show its gross, ${c.grossMinor} minor units`,
+        })
+        .toBe(Number(c.grossMinor));
+      /**
+       * The right-hand note. The home row says nothing: there is nothing to convert, and
+       * printing "No rate" beside the report's own currency was the false statement P16
+       * fixed. A converted row names its one rate, or says it was converted at several.
+       */
+      const note =
+        c.code === rollup.homeCurrency
+          ? ''
+          : c.rate
+            ? catalogText('expenses', 'workbench.fxRate').replace('{rate}', c.rate)
+            : catalogText('expenses', 'workbench.fxRatesVary');
+      await expect(
+        row.locator('span').last(),
+        c.code === rollup.homeCurrency
+          ? `the ${c.code} row is the report's own currency and should carry no rate note`
+          : `the ${c.code} row should say what it was converted at`,
+      ).toHaveText(note);
+    }
+
+    // ── The trigger is a full tap target. ────────────────────────────────────────────────
+    const box = await toggle.boundingBox();
+    expect(box, 'the "Conversion details" toggle has no box').not.toBeNull();
+    expect(
+      box?.height ?? 0,
+      `the "Conversion details" toggle is under the ${HIT_FLOOR_PX}px tap floor`,
+    ).toBeGreaterThanOrEqual(HIT_FLOOR_PX);
+
+    // ── Open it, and the figures add up. ─────────────────────────────────────────────────
+    const details = await openConversionDetails(summary);
+    const converted = details.getByRole('listitem');
+    await expect(
+      converted,
+      'the reconciliation should list one converted row per currency',
+    ).toHaveCount(rollup.byCurrency.length);
+    let shownSum = 0;
+    for (const c of rollup.byCurrency) {
+      // The code is the row's own first cell, so it is matched exactly, not as a prefix.
+      const row = converted.filter({ has: page.getByText(c.code, { exact: true }) });
+      await expect(row, `the ${c.code} converted row`).toHaveCount(1);
+      const figure = row.locator('span').last();
+      await expect
+        .poll(() => minorOnScreen(figure), {
+          message: `the ${c.code} row should show ${c.convertedMinor} CAD minor units`,
+        })
+        .toBe(Number(c.convertedMinor));
+      shownSum += await minorOnScreen(figure);
+    }
+    await expect(
+      details.getByText(catalogText('expenses', 'workbench.fxNotIncluded')),
+      'no currency is missing a rate, so nothing should be flagged as left out',
+    ).toHaveCount(0);
+
+    const sumRow = details.getByTestId('report-summary-sum');
+    await expect(sumRow).toContainText(catalogText('expenses', 'workbench.fxReportTotal'));
+    const shownTotal = await minorOnScreen(sumRow.locator('span').last());
+    expect(
+      shownSum,
+      'the converted rows on screen should add up to the "Report total" row, to the cent',
+    ).toBe(shownTotal);
+    expect(shownTotal, "the total should be the server's homeTotalMinor").toBe(
+      Number(rollup.homeTotalMinor),
+    );
+    expect(
+      await minorOnScreen(summary.locator('p').first()),
+      'the headline total and the reconciliation total should be the same figure',
+    ).toBe(shownTotal);
+
+    // The recoverable line follows the server: there when it is not zero, absent when it is.
+    await expect(details.getByText(catalogText('expenses', 'workbench.fxRecoverable'))).toHaveCount(
+      BigInt(rollup.recoverableTotalMinor) === 0n ? 0 : 1,
+    );
+
+    // ── The opened disclosure fits, and the top bar still holds its ration. ──────────────
+    await nextFrame(page);
+    await expectNoHorizontalOverflow(page, 'the phone summary with "Conversion details" open');
+    await expectTopBarRationHeld(page);
+
+    // ── The holder stage: submitted, then opened by someone who may override the rate. ───
+    /**
+     * `expenseAdmin` is the seeded holder of `expense.report.fxOverride` (it spreads all of
+     * `P.expense`, packages/rbac/src/systemRoles.ts). It can open somebody else's report
+     * because it also holds `expense.report.readAll`, which `canViewReport` lets straight in.
+     */
+    await onDesktop(page, async (desk) => {
+      await desk.goto(reportUrl(id));
+      await pressAndSettle(desk, 'Submit report');
+      await expectAnyRowEventually(desk, `/expenses`, title, /Submitted/i);
+    });
+    await switchTo(page, 'expenseAdmin');
+    await openOnPhone(page, id);
+    await expect(summary).toContainText('Submitted');
+
+    /**
+     * MOUNTED and HIDDEN, asserted separately. A CSS locator rather than a role one, because
+     * `getByRole` skips hidden nodes: `toBeHidden()` on it would pass on a page that never
+     * mounted the control at all. The count of one says the shared predicate offered it to
+     * this holder; `toBeHidden()` says the `hidden lg:contents` cloak kept it off a phone.
+     */
+    const override = page.locator('button').filter({ hasText: /^FX override/ });
+    await expect(
+      override,
+      'the FX override control should be mounted for a holder on a SUBMITTED mixed-currency ' +
+        'report. Zero means `isFxOverrideOffered` answered false for this actor.',
+    ).toHaveCount(1, { timeout: 30_000 });
+    await expect(
+      override,
+      'the FX override control is visible on a phone. Its `hidden lg:contents` wrapper in the ' +
+        'expense-list header is what keeps it desktop-only.',
+    ).toBeHidden();
+
+    const holderDetails = await openConversionDetails(summary);
+    await expect(
+      holderDetails.getByText(catalogText('expenses', 'workbench.fxOverridePhoneNote'), {
+        exact: true,
+      }),
+      'a holder should be told, in words, that the override is on a larger screen',
+    ).toBeVisible();
+    await expect(
+      holderDetails.getByRole('button'),
+      'the region names the override; it must not hold a second control for it',
+    ).toHaveCount(0);
+    await expect(holderDetails.getByRole('link')).toHaveCount(0);
+
+    await nextFrame(page);
+    await expectNoHorizontalOverflow(page, "a holder's phone summary with the details open");
+    // No `expectTopBarRationHeld` here: it also demands a Submit button in the phone bar, and
+    // a SUBMITTED report gives this actor none.
+  });
+
+  test('a half-typed vendor and tax figure survive a live resize across lg', async ({ page }) => {
     /**
      * P18's no-unmount property, observed. The expense fields have ONE face at every width,
      * with no `useIsBelowLg` branch around them, so a window dragged across 1024 keeps
      * what is half typed in them. A remount would reset Vendor to its saved value.
+     *
+     * P13 gave the tax panel the same one face, so a second cycle holds a half-typed GST/HST
+     * figure across the same resize. ONE UNBLURRED FIELD PER CYCLE: Playwright's `fill` on a
+     * second field blurs the first, and a blur commits, so the vendor cycle finishes before
+     * the tax figure is typed. `7.50` is a figure that is valid on its own, so the commit
+     * that typing it causes later is harmless rather than a null written through `7.`.
      *
      * Driven on the desktop sibling page, because it is the page that can start above `lg`.
      * The widths stay below 1280: see `BELOW_XL`.
@@ -1238,6 +2252,44 @@ test.describe('the expense workbench, on a phone', () => {
         vendorField,
         `the half-typed Vendor was lost on the way back to ${BELOW_XL.width}px`,
       ).toHaveValue('Half typ');
+
+      // ── Cycle 2: a half-typed tax figure (P13). Typing it blurs Vendor, which commits. ──
+      const expenseId = await seededExpenseId(id);
+      const db = await testDb(CALLER);
+      const gstField = desk.getByLabel('GST/HST');
+      await gstField.fill('7.50');
+      for (const size of [{ width: 900, height: 900 }, { width: 390, height: 664 }, BELOW_XL]) {
+        await desk.setViewportSize(size);
+        if (size.width < 1024) {
+          await expect(
+            summary,
+            `at ${size.width}px the page should be in its phone tree`,
+          ).toBeVisible({ timeout: 10_000 });
+        } else {
+          await expect(
+            summary,
+            `back at ${size.width}px the page should be in its desktop tree again`,
+          ).toHaveCount(0, { timeout: 10_000 });
+        }
+        await expect(
+          gstField,
+          `the half-typed GST/HST was lost at ${size.width}px. The tax panel remounted: ` +
+            'something now renders it under a width-dependent branch.',
+        ).toHaveValue('7.50');
+      }
+      /**
+       * Unsaved, which is what makes the cycle mean anything: had a resize blurred the field,
+       * the figure would have been committed as a manual override and the value check above
+       * would be reading the server's copy rather than the input's own state.
+       */
+      // VeloExpense: SQL on the admin pool, in place of `db.expense.findUnique`.
+      const saved = (
+        await db.query(`SELECT tax_source FROM expense WHERE id = $1`, [expenseId])
+      ).rows[0] as { tax_source: string } | undefined;
+      expect(
+        saved?.tax_source,
+        'the half-typed GST/HST reached the server during the resize, so the field was blurred',
+      ).not.toBe('MANUAL');
     });
   });
 });

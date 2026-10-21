@@ -58,6 +58,7 @@ import {
   type ReactNode,
   useCallback,
   useEffect,
+  useId,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -615,28 +616,79 @@ function PhoneActionBar({ actions, openPanel, onOpenPanel, renderPanel }: Action
 }
 
 /**
+ * Whether this page offers the FX override: a holder of `expense.report.fxOverride`,
+ * on a mixed-currency report, while a decision is pending (the server refuses it
+ * outside SUBMITTED, because the override restates the total the approver signs).
+ *
+ * RENDER-ONLY. One predicate drives both the cloaked control's mount and the phone's
+ * plain sentence that names it, so the two can never disagree. It is pure and
+ * synchronous, and its result is never passed to a mutation — the server re-derives
+ * every term of it when the override is saved; this only decides what is drawn.
+ * Exported for its truth-table test, as `_workbench/parts.tsx` exports its helpers.
+ */
+export function isFxOverrideOffered(
+  canFxOverride: boolean,
+  report: Pick<ReportDetail, 'status'> & { rollup: Pick<ReportDetail['rollup'], 'multiCurrency'> },
+): boolean {
+  return canFxOverride && report.status === 'SUBMITTED' && report.rollup.multiCurrency;
+}
+
+/**
  * The report's totals, in the body, below `lg`.
  *
  * A RE-PRESENTATION of data already on the client — the same
  * `trpc.expenses.report.useQuery` result the rest of the page reads. No new
  * procedure, no changed procedure, nothing promoted.
  *
- * THE BY-CURRENCY COMPOSITION IS RENDERED, NOT DISCLOSED, and that is the whole
- * point of the block. In the TopBar the composition sits inline beside the
- * total and the reconciliation sits in a `group-hover` panel — and `hover` does
- * not exist on a touch device, so on a phone the two numbers an approver most
- * needs were unreachable rather than merely inconvenient. This lists them.
+ * WHAT IS RENDERED AND WHAT IS DISCLOSED. In the TopBar the composition sits
+ * inline beside the total and the reconciliation sits in a `group-hover` panel
+ * — and `hover` does not exist on a touch device, so on a phone both were
+ * unreachable rather than merely inconvenient. Here:
+ *
+ *   · RENDERED, no tap: the total, the status, and — on a mixed-currency report —
+ *     the by-currency composition (each currency's gross and the rate it was
+ *     converted at). That is what an approver reads first, so it is never behind
+ *     a control.
+ *   · DISCLOSED, behind one closed-by-default "Conversion details" button, and
+ *     only on a mixed-currency report: the reconciliation — each currency's
+ *     converted amount in the report currency, a "Report total" row they add up
+ *     to, recoverable VAT / ITC when it is not zero, and the missing-rate line.
+ *     Gated on `rollup.multiCurrency` (operator decision, 2026-10-14), not on the
+ *     TopBar's wider `hasFxDetail`, so a single-currency report's recoverable
+ *     VAT / ITC stays hover-only on a phone — a recorded gap, not an oversight.
+ *
+ * The disclosure is local state and opening it sends nothing: every figure is
+ * already on the query result. Its region stays MOUNTED under `hidden`, as the
+ * expense-list disclosure does, so `aria-controls` always resolves. The rows are
+ * deliberately not shared with the TopBar panel — that panel is budgeted to the
+ * pixel by ADR-0002 and uses different markup, so sharing would move desktop.
  *
  * What it deliberately does NOT carry: a `<Field>`, an `<input>`, or an
  * `aria-label` matching any of the field names the E2E suite addresses
  * unscoped — `getByLabel` has no visibility filter, so a second labelled
  * "Vendor" anywhere on this page breaks every spec that adds an expense, at a
- * width where none of the phone work is supposed to be visible.
+ * width where none of the phone work is supposed to be visible. The toggle's
+ * name never contains "FX override" for the same reason: desktop specs press
+ * that button by name, unscoped.
+ *
+ * THE FX OVERRIDE is not reachable here: its control keeps its desktop-only cloak in
+ * the expense-list header, and this block holds no second mount of it.
+ * `fxOverrideOffered` — `isFxOverrideOffered`'s result, the same boolean that mounts
+ * the cloaked control — only adds one plain sentence at the end of the open region
+ * telling a holder where the override is. Text, never a button or a link.
  */
-function ReportSummary({ report }: { report: ReportDetail }) {
+function ReportSummary({
+  report,
+  fxOverrideOffered,
+}: {
+  report: ReportDetail;
+  fxOverrideOffered: boolean;
+}) {
   const t = useTranslations('expenses');
   const locale = useLocale();
   const rollup = report.rollup;
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const detailsId = useId();
   return (
     <section
       aria-label={t('workbench.summaryLabel')}
@@ -664,25 +716,155 @@ function ReportSummary({ report }: { report: ReportDetail }) {
             {t('workbench.fxByCurrency')}
           </p>
           <ul className="mt-1 flex flex-col gap-0.5">
-            {rollup.byCurrency.map((c) => (
-              <li
-                key={c.code}
-                className="flex items-baseline justify-between gap-2 text-sm tabular-nums"
-              >
-                {/* A currency with no rate is flagged rather than dropped: a total
-                    that is not the whole total has to say so where it is read. */}
-                <span className={c.convertedMinor === null ? 'text-warning' : 'text-foreground'}>
-                  {c.code} {formatMinor(Number(c.grossMinor), { code: c.code, symbol: '' }, locale)}
-                </span>
-                <span className="shrink-0 text-muted-foreground text-xs">
-                  {c.rate ? t('workbench.fxRate', { rate: c.rate }) : t('workbench.fxNoRate')}
-                </span>
-              </li>
-            ))}
+            {rollup.byCurrency.map((c) => {
+              /**
+               * The right-hand text, by predicate and IN THIS ORDER. `rate` is `null` in
+               * three different cases (packages/money/src/reportRollup.ts): the report's own
+               * currency, a currency converted at several snapshotted rates, and a currency
+               * with no rate at all. Only the last is "No rate", so it is tested first — a
+               * missing group's `rate` is null too. The home row says nothing: there is
+               * nothing to convert. Keyed on `rollup.homeCurrency`, never a literal, so a
+               * USD report with CAD lines reads the same way.
+               */
+              const missing = c.convertedMinor === null;
+              const note = missing ? (
+                <>
+                  <IconAlertTriangle size={12} aria-hidden="true" className="shrink-0" />
+                  {t('workbench.fxNoRate')}
+                </>
+              ) : c.code === rollup.homeCurrency ? null : c.rate ? (
+                t('workbench.fxRate', { rate: c.rate })
+              ) : (
+                t('workbench.fxRatesVary')
+              );
+              return (
+                <li
+                  key={c.code}
+                  className="flex items-baseline justify-between gap-2 text-sm tabular-nums"
+                >
+                  {/* A currency with no rate is flagged rather than dropped: a total
+                      that is not the whole total has to say so where it is read — in
+                      words and an icon, never in the warning colour alone. */}
+                  <span className={missing ? 'text-warning' : 'text-foreground'}>
+                    {c.code}{' '}
+                    {formatMinor(Number(c.grossMinor), { code: c.code, symbol: '' }, locale)}
+                  </span>
+                  <span
+                    className={cn(
+                      'shrink-0 text-xs',
+                      missing
+                        ? 'inline-flex items-center gap-1 text-warning'
+                        : 'text-muted-foreground',
+                    )}
+                  >
+                    {note}
+                  </span>
+                </li>
+              );
+            })}
           </ul>
+          {/* The label is a constant and the state is `aria-expanded`'s, so the visible
+              text is the whole accessible name (WCAG 2.5.3). `h-12` clears 44px with no
+              hit slop, as the expense-list toggle does. */}
+          <button
+            type="button"
+            aria-expanded={detailsOpen}
+            aria-controls={detailsId}
+            onClick={() => setDetailsOpen((open) => !open)}
+            className="mt-1 flex h-12 w-full items-center justify-between gap-2 text-left text-foreground text-sm"
+          >
+            <span className="min-w-0">{t('workbench.fxDetailsToggle')}</span>
+            <IconChevronDown
+              size={16}
+              aria-hidden="true"
+              className={cn(
+                'shrink-0 transition-transform motion-reduce:transition-none',
+                detailsOpen && 'rotate-180',
+              )}
+            />
+          </button>
+          {/* `hidden` rather than unmounted, so the button's `aria-controls` always
+              points at something. */}
+          <div id={detailsId} className={cn(!detailsOpen && 'hidden')}>
+            <SummaryReconciliation report={report} />
+            {fxOverrideOffered && (
+              <p className="mt-1.5 text-muted-foreground text-xs">
+                {t('workbench.fxOverridePhoneNote')}
+              </p>
+            )}
+          </div>
         </div>
       )}
     </section>
+  );
+}
+
+/**
+ * The reconciliation behind `ReportSummary`'s "Conversion details" disclosure.
+ *
+ * Each currency's CONVERTED amount, in the report currency — the gross and rate are
+ * already in the composition above, so they are not repeated. Then the "Report total"
+ * row, which is `rollup.homeTotalMinor` rather than a client-side sum: the roll-up
+ * builds that figure from exactly the non-null `convertedMinor` values
+ * (packages/money/src/reportRollup.ts), so the rows above it add up to it by
+ * construction. A currency with no rate is not in that sum, so its row says
+ * "Not included" — in words and an icon, never in the warning colour alone, and never
+ * a bare "—", which a screen reader cannot say — and the missing-rate line under the
+ * total says the total is not the whole report.
+ */
+function SummaryReconciliation({ report }: { report: ReportDetail }) {
+  const t = useTranslations('expenses');
+  const locale = useLocale();
+  const rollup = report.rollup;
+  return (
+    <div className="border-border border-t pt-2 pb-1">
+      <h3 className="font-medium text-muted-foreground text-xs uppercase tracking-wide">
+        {t('workbench.fxConvertedTo', { home: rollup.homeCurrency })}
+      </h3>
+      <ul className="mt-1 flex flex-col gap-0.5">
+        {rollup.byCurrency.map((c) => (
+          <li
+            key={c.code}
+            className="flex items-baseline justify-between gap-2 text-sm tabular-nums"
+          >
+            <span className="min-w-0 text-foreground">{c.code}</span>
+            {c.convertedMinor === null ? (
+              <span className="inline-flex shrink-0 items-center gap-1 text-warning text-xs">
+                <IconAlertTriangle size={12} aria-hidden="true" className="shrink-0" />
+                {t('workbench.fxNotIncluded')}
+              </span>
+            ) : (
+              <span className="shrink-0 text-foreground">
+                {formatMinor(Number(c.convertedMinor), report.currency, locale)}
+              </span>
+            )}
+          </li>
+        ))}
+      </ul>
+      <div
+        data-testid="report-summary-sum"
+        className="mt-1.5 flex items-baseline justify-between gap-2 border-border border-t pt-1.5 font-medium text-foreground text-sm tabular-nums"
+      >
+        <span>{t('workbench.fxReportTotal')}</span>
+        <span className="shrink-0">
+          {formatMinor(Number(rollup.homeTotalMinor), report.currency, locale)}
+        </span>
+      </div>
+      {BigInt(rollup.recoverableTotalMinor) !== 0n && (
+        <div className="mt-1 flex items-baseline justify-between gap-2 text-xs tabular-nums">
+          <span className="min-w-0 text-muted-foreground">{t('workbench.fxRecoverable')}</span>
+          <span className="shrink-0 text-foreground">
+            {formatMinor(Number(rollup.recoverableTotalMinor), report.currency, locale)}
+          </span>
+        </div>
+      )}
+      {rollup.missingRates.length > 0 && (
+        <div className="mt-1.5 flex items-start gap-1.5 text-warning text-xs">
+          <IconAlertTriangle size={12} aria-hidden="true" className="mt-0.5 shrink-0" />
+          <span>{t('workbench.fxMissingRate', { count: rollup.missingRates.length })}</span>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -2454,7 +2636,10 @@ export function ExpenseReportWorkbench({
        */}
       {isBelowLg && (
         <div className="flex shrink-0 flex-col gap-3 pb-3 lg:hidden">
-          <ReportSummary report={report} />
+          <ReportSummary
+            report={report}
+            fxOverrideOffered={isFxOverrideOffered(canFxOverride, report)}
+          />
           <PhoneActionBar
             actions={actions}
             openPanel={decideMode}
@@ -2913,7 +3098,7 @@ export function ExpenseReportWorkbench({
               </h3>
               {/* Only while a decision is pending — the server refuses it otherwise,
                   because the override restates the total the approver signs. */}
-              {canFxOverride && report.status === 'SUBMITTED' && report.rollup.multiCurrency && (
+              {isFxOverrideOffered(canFxOverride, report) && (
                 /* Half of PLACEMENT 5 — the FX override. Cloaked rather than branched, for
                    the same state reason as the editors: the popover holds a typed rate.
                    `contents` rather than `block` because this header is a flex row with
@@ -3017,18 +3202,9 @@ export function ExpenseReportWorkbench({
               )}
             </div>
             {/*
-             * NO NOTICE HERE ANY MORE, and that is the whole of the change.
-             *
-             * This card used to carry the fifth of five `SectionNotice` placements, naming
-             * the bulk-actions + FX-override pair cloaked below it. The five together read
-             * as five copies of one sentence down a single 664px scroll — the register the
-             * component's own header already called "the outer edge of what it tolerates".
-             * The notice is now shown exactly once, at the top of the selected expense's
-             * editor, where it speaks for every region this route suppresses on a phone.
-             *
-             * The cloaks themselves are untouched. What each width RENDERS is exactly what
-             * it rendered before; only the number of times the reader is told about it
-             * changed.
+             * NO NOTICE AT THIS CARD. It used to carry one of five `SectionNotice`
+             * placements, naming the bulk-actions + FX-override pair cloaked below it; this
+             * route renders no `SectionNotice` at all now.
              *
              * What does NOT move: the two RECEIPT controls beside "Add expense" stay in the
              * header at every width. Attaching a document is the phone capture path, and the

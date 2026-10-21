@@ -221,6 +221,27 @@ describe('a refused tax edit', () => {
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
 
+  it('puts the refusal beside a field a phone can reach', async () => {
+    /**
+     * The tax inputs used to sit in a `hidden lg:contents` cloak, so nothing below `lg`
+     * could produce a refusal. They now render at every width on a draft, so a phone can,
+     * and neither the alert nor the field it refuses may have an ancestor that hides it at
+     * some width. jsdom applies no CSS: this pins the classes, not what is painted.
+     */
+    const user = userEvent.setup();
+    h.refuse = OVER_TAXED;
+    show('en');
+    const gst = gstField('en');
+    await user.clear(gst);
+    await user.type(gst, '5000.00');
+    await user.tab();
+
+    for (const el of [screen.getByRole('alert'), gst]) {
+      expect(el.closest('[class*="lg:contents"],[class*="lg:hidden"]')).toBeNull();
+      expect(el.closest('.hidden')).toBeNull();
+    }
+  });
+
   it('falls back to the English sentence for a refusal the catalog has no key for', async () => {
     // An older guard, or a key not yet written: the message is still better than nothing.
     const user = userEvent.setup();

@@ -382,13 +382,14 @@ const COARSE_MIN_H = 'pointer-coarse:min-h-11';
 const COARSE_MIN_W = 'pointer-coarse:min-w-11';
 
 /**
- * The P18 controls the `/expenses/[reportId]` block finds by name. EN only, like `SHELL_BELL`
- * below; they match the `expenses.drawer.addExpense`, `expenses.drawer.addLine` and
- * `expenses.actions.delete` catalog keys.
+ * The P18 and P13 controls the `/expenses/[reportId]` block finds by name. EN only, like
+ * `SHELL_BELL` below; they match the `expenses.drawer.addExpense`, `expenses.drawer.addLine`,
+ * `expenses.actions.delete` and `expenses.allocation.add` catalog keys.
  */
 const ADD_EXPENSE = 'Add expense';
 const ADD_LINE = 'Add line';
 const LINE_DELETE = 'Delete';
+const ADD_ALLOCATION = 'Add allocation';
 
 /* VeloExpense: ExpenseOS's `SHELL_BELL = 'Notifications'` is not here — its only callers are the
  * `/notifications` and auth-page lanes this port leaves out, and VeloExpense's top bar has no
@@ -2223,6 +2224,53 @@ test.describe('tap targets, coarse pointer', () => {
           `"${ADD_LINE}" (the report "${REPORT_TITLE}" should carry one hotel line).`,
       ).toBeGreaterThanOrEqual(1);
       expectDeclaredBoxFloors(lineDelete);
+
+      /* ── CENSUS D: "Add allocation", which P13 brought back to the phone. ─────────────── */
+      /**
+       * P13 took the cost allocation's `hidden lg:contents` cloak off, so "Add allocation"
+       * renders at every width on a draft, floored at 44px tall on a coarse pointer. It is
+       * DISABLED until `dimensionOptions` loads, so it is waited on as ENABLED before the
+       * census, or the census would hold it as a disabled candidate and the lane would read
+       * hollow for a timing reason.
+       *
+       * NOT PRESSED, by this file's rule (see the census B/C header): a press is local state
+       * and writes nothing, but it would leave a blank row on the shared seeded report's
+       * screen for whatever reads it next. The remove buttons, the inputs and the attendee
+       * controls are measured by the phone flows in `expense-workbench.mobile.spec.ts`, on
+       * reports those flows own; this seeded report has no attendee category.
+       */
+      const addAllocationControl = page.getByRole('button', { name: ADD_ALLOCATION, exact: true });
+      await expect(
+        addAllocationControl,
+        `no enabled "${ADD_ALLOCATION}" control in the expense editor at a phone width. P13 ` +
+          "took the cost allocation's `hidden lg:contents` cloak off in _workbench/parts.tsx, " +
+          'so it renders at every width on a draft, enabled once `expenses.dimensionOptions` ' +
+          'has loaded. Either the cloak came back, the editor has no expense selected, or the ' +
+          'options query never answered.',
+      ).toBeEnabled({ timeout: 30_000 });
+      await addAllocationControl.evaluate((el) => el.scrollIntoView({ block: 'center' }));
+      await settleFrame();
+      const censusD = await censusOf(page);
+
+      const addAllocation = censusD.candidates.filter(
+        (c) => !c.disabled && c.name === ADD_ALLOCATION,
+      );
+      expect(
+        addAllocation.length,
+        `the "${ADD_ALLOCATION}" lane went HOLLOW: the control was enabled, scrolled to the ` +
+          'centre of the viewport, and the census holds no enabled candidate by that name. ' +
+          'Check the off-viewport and clipped counts. Point the lane at the new subject rather ' +
+          'than deleting the guard.',
+      ).toBeGreaterThanOrEqual(1);
+      for (const c of addAllocation) {
+        expect(
+          c.classes.includes(COARSE_MIN_H),
+          `${describeCandidate(c)} should declare \`${COARSE_MIN_H}\`: it is a \`size="sm"\` ` +
+            '36px button, so its 44px has to be a real box (_workbench/parts.tsx, the "Add ' +
+            'allocation" button in `AllocationEditor`).',
+        ).toBe(true);
+      }
+      expectDeclaredBoxFloors(addAllocation);
     });
   });
 });

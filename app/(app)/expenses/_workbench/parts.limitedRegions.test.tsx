@@ -1,15 +1,16 @@
 import '@testing-library/jest-dom/vitest';
 import { cleanup, render, screen, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 // VeloExpense: ExpenseOS's catalogue locale — what next-intl reports on every ported screen
 // (i18n/request.ts) — named rather than spelled, for check-i18n's IL-1 scan.
 import { DEFAULT_LOCALE as CATALOG_LOCALE } from '@expenseos/i18n';
 
 /**
- * The `limited` suppression inside `ExpenseEditor` — the ONE `SectionNotice`, directly
- * above the cost allocation, and the two regions that still render BOTH faces (cost
- * allocation and tax). The core fields and the line block have one face since P18; see the
- * last two `describe` blocks.
+ * The one-face rule inside `ExpenseEditor`, which replaced the `limited` suppression. No
+ * region renders two faces any more, and no `SectionNotice` is left on the pane: the core
+ * fields and the line block have one face since P18, and the expense-level tax, the
+ * attendees and the cost allocation since P13; see the last five `describe` blocks.
  *
  * ─── READ THIS BEFORE ADDING A CASE HERE ─────────────────────────────────────────────────
  *
@@ -23,23 +24,18 @@ import { DEFAULT_LOCALE as CATALOG_LOCALE } from '@expenseos/i18n';
  *
  * The three claims worth pinning, and the failure each one catches:
  *
- *   1. **Always both, on a draft; the editable face alone never appears without its
- *      read-only twin.** Catches a future edit that "tidies up" the duplication by
- *      restoring the `editable ?` ternary, which would leave a phone reader with three
- *      60px comboboxes instead of the figures.
- *   1b. **Exactly one notice, after the editable fields and before the first region it
- *      names.** This file used to pin three (four with attendees), one beside each
- *      suppressed region. On a 664px screen that read as four copies of one sentence, so
- *      the operator asked for it once. It sat at the top of the pane until P18 gave the
- *      core fields a phone editor; the operator then moved it (2026-10-13) to just above
- *      the cost allocation, so it no longer sits over fields a phone reader can edit. The
- *      count and the POSITION are both pinned, and a second one anywhere is the regression
- *      this replaced.
- *   2. **`hidden lg:contents`, never `lg:block`.** ADR-0005 D3 measured `block` moving 4 of
- *      154 rectangles. These regions are flex children of `ExpenseEditor`'s
- *      `flex flex-col gap-3 p-3`, so a `block` wrapper becomes the flex item and every
- *      `flex-1`, `min-h-0` and `gap` inside it resolves against the wrapper. `contents`
- *      generates no box, so the desktop layout is untouched.
+ *   1. **One face per condition.** A draft renders the editable controls at every width
+ *      and no read-only twin; a submitted report renders the read-only face and no
+ *      control. `editable` still means "the server will accept a mutation", never a width.
+ *   1b. **No notice.** The pane carried one `SectionNotice` (five, before that) naming
+ *      the regions suppressed below `lg`. P13 gave the last of them an editor at every
+ *      width, so there is nothing left for it to name, and its catalog keys are gone. Its
+ *      count is pinned at zero: a notice coming back would say "read-only here" about
+ *      regions a phone reader can edit.
+ *   2. **No width cloak.** Nothing in `ExpenseEditor` carries `lg:contents` or `lg:block`
+ *      any more. If one ever comes back, ADR-0005 D3 still binds: `block` moved 4 of 154
+ *      rectangles, because these regions are flex children of `ExpenseEditor`'s
+ *      `flex flex-col gap-3 p-3`; `contents` generates no box.
  *   3. **One labelled control per name, still.** Playwright's label engine has NO
  *      visibility filter, so a CSS-hidden twin of a labelled field IS a strict match —
  *      `getByRole` would have skipped it, `getByLabel` does not. A second labelled
@@ -166,6 +162,30 @@ const DIMENSIONS = {
   classes: [{ id: 'cls-1', name: 'Internal' }],
 };
 
+/** Two saved allocation rows, 60/40, fully coded against `DIMENSIONS`. */
+const ALLOCATIONS = [
+  {
+    id: 'alloc-1',
+    percentBp: 6000,
+    businessUnitId: 'bu-1',
+    departmentId: 'dep-1',
+    classId: 'cls-1',
+    businessUnit: { id: 'bu-1', label: { en: 'Atlantic' } },
+    department: { id: 'dep-1', label: { en: 'Engineering' } },
+    class: { id: 'cls-1', name: 'Internal' },
+  },
+  {
+    id: 'alloc-2',
+    percentBp: 4000,
+    businessUnitId: 'bu-1',
+    departmentId: 'dep-1',
+    classId: 'cls-1',
+    businessUnit: { id: 'bu-1', label: { en: 'Atlantic' } },
+    department: { id: 'dep-1', label: { en: 'Engineering' } },
+    class: { id: 'cls-1', name: 'Internal' },
+  },
+];
+
 function renderEditor(over: Record<string, unknown> = {}, props: Record<string, unknown> = {}) {
   return render(
     <ExpenseEditor
@@ -183,156 +203,72 @@ function renderEditor(over: Record<string, unknown> = {}, props: Record<string, 
 }
 
 const notices = () => screen.queryAllByTestId('section-limited-notice');
-/** Every element carrying a `lg:contents` cloak, as class strings. */
-const cloaks = (root: HTMLElement) =>
-  [...root.querySelectorAll('[class*="lg:contents"]')].map((el) => el.className);
 
 beforeEach(() => {
   h.calls = {};
   h.queries = { dimensionOptions: DIMENSIONS };
 });
 
-describe('the one `limited` notice', () => {
-  it('says it once on a draft report, whatever the expense contains', () => {
+describe('no `limited` notice', () => {
+  it('renders no section notice on a draft, with or without attendees', () => {
     /**
-     * ONE, not one per region. Cost allocation, expense tax and (with a category that
-     * needs them) attendees are all suppressed below `lg` and all named by this single
-     * notice; the count must not move when the expense grows a region.
+     * Zero, whatever the expense contains. The notice named cost allocation, tax and
+     * attendees; each now has an editor at every width (P13), so a notice would say
+     * "read-only here" about regions a phone reader can edit.
      */
     renderEditor();
-    expect(notices()).toHaveLength(1);
+    expect(notices()).toHaveLength(0);
 
     cleanup();
     renderEditor({
-      lineItems: [
-        line({
-          category: {
-            id: 'cat-meals',
-            label: 'Travel - Meals',
-            icon: null,
-            isMileage: false,
-            requiresAttendees: true,
-          },
-        }),
-      ],
+      allocations: ALLOCATIONS,
+      lineItems: [line({ category: { ...line().category, requiresAttendees: true } })],
     });
-    expect(notices()).toHaveLength(1);
+    expect(screen.getByText('drawer.attendees')).toBeInTheDocument();
+    expect(notices()).toHaveLength(0);
   });
 
-  it('puts it after the editable fields, before the first region it names', () => {
-    /**
-     * Position, not just presence. On a draft the core fields have one editable face at
-     * every width (P18), so the notice must not sit above them reading as "these are
-     * read-only". It names cost allocation, tax and attendees, and the allocation card is
-     * the first of those in the pane, so the notice sits between the editable Vendor
-     * field and the allocation heading (operator ruling, 2026-10-13).
-     *
-     * `compareDocumentPosition` rather than an index into `children`, because the siblings
-     * around it change with the fixture (the violations block appears only when there are
-     * violations) and the claim is about ORDER, not about slot.
-     */
-    renderEditor();
-    const [notice] = notices();
-    const vendor = screen.getByLabelText('workbench.vendor');
-    const allocation = screen.getByText('allocation.heading');
-    expect(vendor.compareDocumentPosition(notice)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
-    expect(notice.compareDocumentPosition(allocation)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
-  });
-
-  it('leaves none of them behind in the regions that used to carry one', () => {
-    /**
-     * The four that were removed sat INSIDE the cost-allocation card, the tax panel, the
-     * line-items block and the attendees block. Asserting the count alone would pass if
-     * one were removed and another added, so this asserts the shape as well: the only
-     * notice in the tree is a child of the pane's own column, not of any cloaked region's
-     * container.
-     */
-    const { container } = renderEditor({
-      lineItems: [
-        line({
-          category: {
-            id: 'cat-meals',
-            label: 'Travel - Meals',
-            icon: null,
-            isMileage: false,
-            requiresAttendees: true,
-          },
-        }),
-      ],
-    });
-    const [notice] = notices();
-    // Nothing between the notice and the pane column: no card, no panel, no heading block.
-    expect(notice.parentElement).toBe(container.querySelector('.flex.flex-col.gap-3.p-3'));
-    for (const card of container.querySelectorAll('.rounded-md.border.border-border.p-3')) {
-      expect(card.querySelector('[data-testid="section-limited-notice"]')).toBeNull();
-    }
-  });
-
-  it('says nothing on a submitted report, because this viewport suppressed nothing there', () => {
+  it('a submitted report has no notice and no editing control in any panel', () => {
     /**
      * `editable === false` still means exactly what it meant: the server will not accept a
-     * mutation on this report. The editing controls are absent at EVERY width, so a notice
-     * reading "changing them is a desktop task" would be blaming the screen for a refusal
-     * the status made. Nothing is cloaked either — there is nothing to cloak.
+     * mutation on this report. Not one editing control exists, at any width — which is the
+     * claim SEC-1 rests on: nothing here is a client-side permission, and the server
+     * re-derives the same predicate from `EDITABLE_REPORT_STATUSES` on every write.
      */
-    renderEditor({}, { editable: false });
+    renderEditor(
+      {
+        allocations: ALLOCATIONS,
+        lineItems: [line({ category: { ...line().category, requiresAttendees: true } })],
+      },
+      { editable: false },
+    );
     expect(notices()).toHaveLength(0);
-    // Not one editing control exists, at any width — which is the claim that matters, and
-    // the one SEC-1 rests on: nothing here is a client-side permission, and the server
-    // re-derives the same predicate from `EDITABLE_REPORT_STATUSES` on every write.
     expect(screen.queryByLabelText('workbench.vendor')).toBeNull();
+    expect(screen.queryAllByLabelText('allocation.percent')).toHaveLength(0);
     expect(screen.queryAllByLabelText(/^line\.gst/)).toHaveLength(0);
+    expect(screen.queryByPlaceholderText('attendee.searchPlaceholder')).toBeNull();
     expect(screen.queryByRole('button', { name: 'drawer.addLine' })).toBeNull();
-  });
-
-  it('re-offers nothing in a smaller form — no input, no combobox, no `Field` in a notice', () => {
-    // "What is suppressed is suppressed." A notice that grew a control would be the
-    // three-60px-comboboxes outcome the ruling exists to prevent.
-    renderEditor();
-    for (const notice of notices()) {
-      expect(notice.querySelector('input,select,textarea,label,[role="combobox"]')).toBeNull();
-    }
   });
 });
 
-describe('the always-both regions', () => {
-  it('keeps both faces in the DOM on a draft report, for the regions still suppressed', () => {
+describe('the width cloak', () => {
+  it('is gone from a draft, with every panel rendered', () => {
     /**
-     * The whole point of CSS selection: at no width is either face unmounted, so dragging
-     * a desktop window across 1024px cannot discard a half-typed value. jsdom sees both,
-     * which is exactly what this asserts.
-     *
-     * The core fields (date, vendor, currency, location) are NOT asserted here any more:
-     * P18 took them out of suppression, so they have one face at every width — see
-     * "a draft has one set of core fields and no read-only twin" below.
+     * The cost allocation was the last region cloaked with `hidden lg:contents`. Run on the
+     * fixture that renders all three detail panels at once (two allocation rows, a line
+     * that requires attendees), because a clean result on a fixture that never renders
+     * one of them would prove nothing. Tokens from `classList`, not substrings, so a
+     * legitimate `lg:flex` or `lg:flex-row` is not a hit.
      */
-    renderEditor();
-
-    // Editable face. A regex, because `Field` labels by WRAPPING and `MoneyInput` puts the
-    // currency symbol inside that wrapper — so the tax fields' accessible name is
-    // "line.gst $", not "line.gst". Worth knowing: it means no `getByLabel('GST/HST')` in
-    // the browser suite could have matched them exactly either.
-    expect(screen.getAllByLabelText(/^line\.gst/)).toHaveLength(1);
-    // Read-only face, as prose rather than as fields.
-    expect(screen.getByText('line.gst:')).toBeInTheDocument();
-    // The line rows are NOT asserted here any more: P18 brought the line block back, so a
-    // draft has the editable row alone — see "the line block" below.
-  });
-
-  it('cloaks with `hidden lg:contents` and never with `lg:block`', () => {
-    /**
-     * ADR-0005 D3, and `DesktopOnlyNotice`'s header carries the argument in full. `block`
-     * inserts a box between these regions and `ExpenseEditor`'s `flex flex-col gap-3`
-     * parent; `contents` generates no box at all, so the desktop layout is byte-identical.
-     */
-    const { container } = renderEditor();
-    const found = cloaks(container);
-    expect(found.length).toBeGreaterThan(0);
-    for (const className of found) expect(className).toContain('hidden lg:contents');
-    expect(container.querySelector('[class*="lg:block"]')).toBeNull();
-
-    // And the notices are the other half of the pair.
-    for (const notice of notices()) expect(notice.className).toContain('lg:hidden');
+    const { container } = renderEditor({
+      allocations: ALLOCATIONS,
+      lineItems: [line({ category: { ...line().category, requiresAttendees: true } })],
+    });
+    expect(screen.getAllByLabelText('allocation.percent')).toHaveLength(2);
+    expect(screen.getByText('drawer.attendees')).toBeInTheDocument();
+    const tokens = [...container.querySelectorAll('*')].flatMap((el) => [...el.classList]);
+    expect(tokens.filter((c) => c === 'lg:contents' || c === 'lg:block')).toEqual([]);
+    expect(notices()).toHaveLength(0);
   });
 });
 
@@ -362,55 +298,27 @@ describe('the labelled-field audit', () => {
 });
 
 /**
- * The cost-allocation read-only twin — the operator round's first request.
+ * The cost allocation's read-only list — `AllocationLinesReadOnly` — which renders on a
+ * submitted report only (P13).
  *
- * What a phone was shown before this was the allocation card's HEAD and nothing else: a
- * heading, a "% / 100 %" total, and — when a row was half-coded — a warning saying the
- * coding was required. So the reader was told there was a problem with the allocation
- * and never shown the allocation. That is the one shape of suppression the ruling
- * rejects: the notice's promise is "these values are current and can be read here", not
- * "something is unavailable".
- *
- * Same limits as every other case in this file: the mechanism is CSS, jsdom applies no
- * CSS, so what is asserted is the DOM and the class on it. `lg:hidden` on the twin and
- * `hidden lg:contents` on the editor is the pair that means "this face below `lg`, that
- * one above".
+ * It was the operator round's first request, as the phone's face of a draft: before it, a
+ * phone was shown the card's HEAD alone — a heading, a "% / 100 %" total and, when a row
+ * was half-coded, a warning — so the reader was told there was a problem with the coding
+ * and never shown the coding. P13 made the rows editable at every width, so a draft has
+ * the rows themselves and this list went back to being the `!editable` arm's alone. Its
+ * money column and its contract (no labelled control) are unchanged.
  */
-describe('the cost-allocation twin', () => {
-  const allocations = [
-    {
-      id: 'alloc-1',
-      percentBp: 6000,
-      businessUnitId: 'bu-1',
-      departmentId: 'dep-1',
-      classId: 'cls-1',
-      businessUnit: { id: 'bu-1', label: { en: 'Atlantic' } },
-      department: { id: 'dep-1', label: { en: 'Engineering' } },
-      class: { id: 'cls-1', name: 'Internal' },
-    },
-    {
-      id: 'alloc-2',
-      percentBp: 4000,
-      businessUnitId: 'bu-1',
-      departmentId: 'dep-1',
-      classId: 'cls-1',
-      businessUnit: { id: 'bu-1', label: { en: 'Atlantic' } },
-      department: { id: 'dep-1', label: { en: 'Engineering' } },
-      class: { id: 'cls-1', name: 'Internal' },
-    },
-  ];
-
-  /** The twin's row carrying a given dimension string. */
+describe('the cost-allocation read-only list', () => {
+  /** The list's row carrying a given dimension string. */
   const rowFor = (dims: string) => screen.getAllByText(dims)[0].closest('li') as HTMLElement;
 
   it('renders a line per allocation, with its share, its money and its dimensions', () => {
     /**
-     * The money column is the half the `!editable` arm never had. "60 %" alone is not
-     * what a reader is checking — "60 % of what" is — and every other figure on this
-     * pane is already money. It is derived from the expense's own total by the same
-     * basis-point arithmetic the server allocates with, never stored.
+     * "60 %" alone is not what a reader is checking — "60 % of what" is — and every other
+     * figure on this pane is already money. It is derived from the expense's own total by
+     * the same basis-point arithmetic the server allocates with, never stored.
      */
-    renderEditor({ allocations });
+    renderEditor({ allocations: ALLOCATIONS }, { editable: false });
 
     const first = rowFor('Atlantic · Engineering · Internal');
     expect(first.textContent).toContain('60%');
@@ -429,11 +337,14 @@ describe('the cost-allocation twin', () => {
      * largest share first — so what the reader sees is what posts. (VeloExpense: ExpenseOS's
      * poster; VeloExpense's ledger post does not split by allocation.)
      */
-    const third = (id: string, percentBp: number) => ({ ...allocations[0], id, percentBp });
-    renderEditor({
-      amountMinor: '10001',
-      allocations: [third('a', 3333), third('b', 3333), third('c', 3334)],
-    });
+    const third = (id: string, percentBp: number) => ({ ...ALLOCATIONS[0], id, percentBp });
+    renderEditor(
+      {
+        amountMinor: '10001',
+        allocations: [third('a', 3333), third('b', 3333), third('c', 3334)],
+      },
+      { editable: false },
+    );
 
     const rows = screen
       .getAllByText('Atlantic · Engineering · Internal')
@@ -443,64 +354,43 @@ describe('the cost-allocation twin', () => {
     expect(rows[2]).toContain('33.35');
   });
 
-  it('shows it below `lg` and hands the width above it to the editor', () => {
+  it('says an uncoded expense is uncoded on a submitted report, and a draft offers the blank row', () => {
     /**
-     * `lg:hidden` on the twin, `hidden lg:contents` on the row set — the same pair as
-     * the field grid and the tax panel, and BOTH stay in the DOM so a desktop window
-     * dragged across 1024px never unmounts a half-typed percentage.
+     * Submitted: the sentence is the only face, and the same one the approver gets.
+     * Draft: the sentence is gone and the editor's blank 100 % row is there instead, at
+     * every width. That row is the control that fixes the condition, which a sentence
+     * cannot; the head's total and the `showRequired` warning still say what is wrong.
      */
-    renderEditor({ allocations });
-
-    const twin = rowFor('Atlantic · Engineering · Internal').closest('ul') as HTMLElement;
-    expect(twin.className).toContain('lg:hidden');
-    // And the editable face is still there, cloaked rather than replaced.
-    expect(screen.getAllByLabelText('allocation.percent')).toHaveLength(2);
-    expect(
-      (
-        screen
-          .getAllByLabelText('allocation.percent')[0]
-          .closest('[class*="lg:contents"]') as HTMLElement | null
-      )?.className,
-    ).toContain('hidden lg:contents');
-  });
-
-  it('says an uncoded expense is uncoded, rather than showing an empty box', () => {
-    /**
-     * The default fixture has no allocations at all, which is exactly the state that
-     * blocks a submit downstream. The head's "100 % / 100 %" is the EDITOR's own row
-     * total and says nothing about coding; this line is what tells the reader what is
-     * actually wrong, and it is the same sentence the approver gets on a submitted
-     * report.
-     */
-    renderEditor();
+    renderEditor({}, { editable: false });
     const none = screen.getByText('allocation.none');
-    expect(none.className).toContain('lg:hidden');
+    expect(none.className).not.toContain('lg:hidden');
+
+    cleanup();
+    renderEditor();
+    expect(screen.queryByText('allocation.none')).toBeNull();
+    const [percent] = screen.getAllByLabelText('allocation.percent');
+    expect(percent).toHaveValue('100');
   });
 
-  it('is the same markup on a submitted report, with no cloak on it', () => {
-    /**
-     * One piece of markup serving two conditions, as `ExpenseFieldsReadOnly` and
-     * `TaxFiguresReadOnly` already do. On a submitted report it is the only face there
-     * is, so it carries no `lg:hidden` and nothing is cloaked beside it.
-     */
-    renderEditor({ allocations }, { editable: false });
+  it('is the one face on a submitted report, with no cloak on it', () => {
+    renderEditor({ allocations: ALLOCATIONS }, { editable: false });
 
-    const twin = rowFor('Atlantic · Engineering · Internal').closest('ul') as HTMLElement;
-    expect(twin.className).not.toContain('lg:hidden');
+    const list = rowFor('Atlantic · Engineering · Internal').closest('ul') as HTMLElement;
+    expect(list.className).not.toContain('lg:hidden');
     expect(screen.queryAllByLabelText('allocation.percent')).toHaveLength(0);
   });
 
   it('carries no `Field`, no input and no restricted `aria-label`', () => {
     /**
-     * `Percent` is the name at risk here: on a draft report the twin renders at the same
-     * time as the `allocation.percent`-labelled input the cloak merely hides, and
-     * Playwright's label engine has no visibility filter. One labelled control, still.
+     * `Percent` is the name at risk: Playwright's label engine has no visibility filter,
+     * so a labelled control in this list would be a second strict match for the editor's
+     * `allocation.percent` input wherever the two ever shared a page.
      */
-    renderEditor({ allocations });
+    renderEditor({ allocations: ALLOCATIONS }, { editable: false });
 
-    const twin = rowFor('Atlantic · Engineering · Internal').closest('ul') as HTMLElement;
+    const list = rowFor('Atlantic · Engineering · Internal').closest('ul') as HTMLElement;
     expect(
-      twin.querySelector('input,select,textarea,label,[aria-label],[role="combobox"]'),
+      list.querySelector('input,select,textarea,label,[aria-label],[role="combobox"]'),
     ).toBeNull();
   });
 });
@@ -647,5 +537,423 @@ describe('the line block', () => {
     // and `className` lands on it, so the bare half floors it directly.
     const category = screen.getByText('Travel - Meals').closest('[role="combobox"]');
     expect(category).toHaveClass('pointer-coarse:h-11');
+  });
+});
+
+/**
+ * The expense-level tax panel on a phone (P13).
+ *
+ * It left suppression the way the core fields did in P18: on a draft report the three
+ * `MoneyInput`s render at every width and `TaxFiguresReadOnly` does not render at all. On a
+ * submitted report the prose is the only face. Same limits as every other case here —
+ * jsdom applies no CSS, so what is asserted is the DOM and the classes on it.
+ */
+describe('the tax panel', () => {
+  const TAX = [/^line\.gst/, /^line\.qst/, /^workbench\.pst/];
+  const PROSE = ['line.gst:', 'line.qst:', 'workbench.pst:'];
+  /** A size floor that would also apply to a mouse: `h-11`, `min-h-11` or `min-w-11` bare. */
+  const BARE_FLOOR = /^(h|min-h|min-w)-11$/;
+
+  /** No ancestor that hides it at any width: neither half of a cloak pair, nor bare `hidden`. */
+  const uncloaked = (el: HTMLElement) => {
+    expect(el.closest('[class*="lg:contents"],[class*="lg:hidden"]')).toBeNull();
+    expect(el.closest('.hidden')).toBeNull();
+  };
+  const taxCard = () =>
+    screen.getByText('workbench.taxHeading').closest('.rounded-md') as HTMLElement;
+
+  it('a draft has the three tax inputs and no tax prose', () => {
+    renderEditor();
+
+    for (const label of TAX) {
+      const fields = screen.getAllByLabelText(label);
+      expect(fields).toHaveLength(1);
+      uncloaked(fields[0]);
+    }
+    // The prose twin is gone from a draft, not merely hidden.
+    for (const text of PROSE) expect(screen.queryByText(text)).toBeNull();
+  });
+
+  it('floors each tax input at 44px on a coarse pointer, and only on a coarse pointer', () => {
+    /**
+     * `MoneyInput` forwards `className` to its `Input`, whose plain branch puts it on the
+     * `<input>` itself, so the bare half of `TAP_FIELD` lands where the finger does.
+     *
+     * The prefix is half the claim. An unprefixed `h-11` would grow the fields on a
+     * desktop too, so no element in the card may carry a bare size floor.
+     */
+    renderEditor();
+
+    for (const label of TAX) {
+      const field = screen.getByLabelText(label);
+      expect(field.tagName).toBe('INPUT');
+      expect(field).toHaveClass('pointer-coarse:h-11');
+    }
+    for (const el of [taxCard(), ...taxCard().querySelectorAll('*')]) {
+      const bare = [...el.classList].filter((c) => BARE_FLOOR.test(c));
+      expect(bare).toEqual([]);
+    }
+  });
+
+  it('keeps the two-then-three column grid', () => {
+    // Two columns below `sm`, three from `sm` up — the frontend's arithmetic for 360.
+    renderEditor();
+    const grid = screen.getByLabelText(/^line\.gst/).closest('.grid') as HTMLElement;
+    expect(grid).toHaveClass('grid-cols-2', 'sm:grid-cols-3');
+  });
+
+  it('a submitted report has the prose alone, uncloaked, and no tax input', () => {
+    renderEditor({}, { editable: false });
+
+    for (const text of PROSE) uncloaked(screen.getByText(text));
+    for (const label of TAX) expect(screen.queryAllByLabelText(label)).toHaveLength(0);
+  });
+});
+
+/**
+ * The attendees on a phone (P13).
+ *
+ * They left suppression with ONE face, like the tax panel: the `hidden lg:contents` cloak
+ * is gone, so `AttendeesEditor` renders at every width on a draft whose line category
+ * requires attendees, and not at all on a submitted report (the `editable &&
+ * requiresAttendees` guard). The row stacks below `lg` and comes back to one line from
+ * `lg` up. Same limits as every other case here — jsdom applies no CSS, so what is asserted
+ * is the DOM and the classes on it, never the layout they produce.
+ */
+describe('the attendees', () => {
+  /** A size floor that would also apply to a mouse: `h-11`, `min-h-11` or `min-w-11` bare. */
+  const BARE_FLOOR = /^(h|min-h|min-w)-11$/;
+  const PLACEHOLDERS = ['attendee.name', 'attendee.company', 'attendee.searchPlaceholder'];
+
+  /** One external attendee (name + company inputs) and one internal one (text only). */
+  const withAttendees = (props: Record<string, unknown> = {}) =>
+    renderEditor(
+      {
+        attendees: [
+          { id: 'a1', name: 'Bob Vendor', company: 'Acme', isExternal: true },
+          { id: 'a2', name: 'Ada Lovelace', company: null, isExternal: false },
+        ],
+        lineItems: [
+          line({
+            category: {
+              id: 'cat-meals',
+              label: 'Travel - Meals',
+              icon: null,
+              isMileage: false,
+              requiresAttendees: true,
+            },
+          }),
+        ],
+      },
+      props,
+    );
+
+  /** No ancestor that hides it at any width: neither half of a cloak pair, nor bare `hidden`. */
+  const uncloaked = (el: HTMLElement) => {
+    expect(el.closest('[class*="lg:contents"],[class*="lg:hidden"]')).toBeNull();
+    expect(el.closest('.hidden')).toBeNull();
+  };
+  /** The block under the `drawer.attendees` heading. */
+  const block = () => screen.getByText('drawer.attendees').parentElement as HTMLElement;
+  /** The saved external attendee's row: the name `<input>`'s parent (the input is itself `.rounded-md`). */
+  const externalRow = () => screen.getByDisplayValue('Bob Vendor').parentElement as HTMLElement;
+
+  it('a draft has the editor uncloaked: the fields, the search and both buttons', () => {
+    withAttendees();
+
+    for (const el of [
+      screen.getByDisplayValue('Bob Vendor'),
+      screen.getByDisplayValue('Acme'),
+      screen.getByPlaceholderText('attendee.searchPlaceholder'),
+      screen.getByRole('button', { name: 'attendee.addExternal' }),
+      ...screen.getAllByRole('button', { name: 'attendee.remove' }),
+    ]) {
+      uncloaked(el);
+    }
+    expect(block().querySelector('[class*="lg:contents"]')).toBeNull();
+  });
+
+  it('a submitted report has no attendee editor at all', () => {
+    // The guard, not CSS: `editable === false` is the server refusing the write.
+    withAttendees({ editable: false });
+
+    expect(screen.queryByText('drawer.attendees')).toBeNull();
+    for (const text of PLACEHOLDERS) expect(screen.queryByPlaceholderText(text)).toBeNull();
+    expect(screen.queryByRole('button', { name: 'attendee.addExternal' })).toBeNull();
+    expect(screen.queryAllByRole('button', { name: 'attendee.remove' })).toHaveLength(0);
+  });
+
+  it('keeps the Name, Company and search placeholders and the "Add external" name', () => {
+    // Accessible-name work is out of this phase: these are the names E2E and a screen
+    // reader already use, unchanged.
+    withAttendees();
+
+    for (const text of PLACEHOLDERS) expect(screen.getAllByPlaceholderText(text)).toHaveLength(1);
+    expect(screen.getByRole('button', { name: 'attendee.addExternal' })).toBeInTheDocument();
+  });
+
+  it('stacks the row below `lg` and restores the one-line row from `lg` up', () => {
+    /**
+     * Each stacking class has its `lg:` reset beside it, so 1280 is the pre-P13 row:
+     * `lg:flex-nowrap` undoes the wrap, `lg:flex-1` (`flex: 1 1 0%`) undoes
+     * `basis-full`'s 100% basis, and `lg:ml-0` undoes the button's `ml-auto`. A bare
+     * `flex-1` beside `basis-full` would leave the outcome to stylesheet order, so it is
+     * banned too.
+     */
+    withAttendees();
+
+    expect(externalRow()).toHaveClass('flex', 'flex-wrap', 'items-center', 'lg:flex-nowrap');
+    for (const input of [
+      screen.getByDisplayValue('Bob Vendor'),
+      screen.getByDisplayValue('Acme'),
+    ]) {
+      expect(input).toHaveClass('min-w-0', 'basis-full', 'lg:flex-1');
+      expect(input).not.toHaveClass('flex-1');
+    }
+    const remove = within(externalRow()).getByRole('button', { name: 'attendee.remove' });
+    expect(remove).toHaveClass('ml-auto', 'lg:ml-0', 'flex', 'items-center', 'justify-center');
+  });
+
+  it('floors every control at 44px on a coarse pointer, and only on a coarse pointer', async () => {
+    /**
+     * The fields are plain `Input`s, so the bare half of `TAP_FIELD` lands on the
+     * `<input>` itself. The directory results only render once a search returns, so the
+     * case types one in.
+     *
+     * The prefix is half the claim: an unprefixed floor would grow the controls on a
+     * desktop too, so no element in the block may carry one.
+     */
+    const user = userEvent.setup();
+    h.queries.attendeeDirectory = [{ id: 'u-1', name: 'Grace Hopper', email: 'grace@e.inc' }];
+    withAttendees();
+
+    const search = screen.getByPlaceholderText('attendee.searchPlaceholder');
+    for (const field of [
+      screen.getByDisplayValue('Bob Vendor'),
+      screen.getByDisplayValue('Acme'),
+      search,
+    ]) {
+      expect(field.tagName).toBe('INPUT');
+      expect(field).toHaveClass('pointer-coarse:h-11');
+    }
+    for (const button of [
+      ...screen.getAllByRole('button', { name: 'attendee.remove' }),
+      screen.getByRole('button', { name: 'attendee.addExternal' }),
+    ]) {
+      expect(button).toHaveClass('pointer-coarse:min-h-11', 'pointer-coarse:min-w-11');
+    }
+
+    await user.type(search, 'grace');
+    const hit = (await screen.findByText('Grace Hopper')).closest('button') as HTMLElement;
+    expect(hit).toHaveClass('pointer-coarse:min-h-11');
+
+    for (const el of [block(), ...block().querySelectorAll('*')]) {
+      const bare = [...el.classList].filter((c) => BARE_FLOOR.test(c));
+      expect(bare).toEqual([]);
+    }
+  });
+});
+
+/**
+ * The cost allocation on a phone (P13).
+ *
+ * It left suppression with ONE face, like the tax panel and the attendees: on a draft the
+ * rows and "Add allocation" render at every width and `AllocationLinesReadOnly` does not
+ * render at all. Below `lg` each row is a two-track grid card; from `lg` up the `lg:` half
+ * gives back the pre-P13 one-line row. Same limits as every other case here — jsdom applies
+ * no CSS, so what is asserted is the DOM and the classes on it, never the layout.
+ */
+describe('the cost allocation on a draft', () => {
+  /** A size floor that would also apply to a mouse: `h-11`, `min-h-11` or `min-w-11` bare. */
+  const BARE_FLOOR = /^(h|min-h|min-w)-11$/;
+  const PICKERS = ['allocation.businessUnit', 'allocation.department', 'allocation.class'];
+
+  /** No ancestor that hides it at any width: neither half of a cloak pair, nor bare `hidden`. */
+  const uncloaked = (el: HTMLElement) => {
+    expect(el.closest('[class*="lg:contents"],[class*="lg:hidden"]')).toBeNull();
+    expect(el.closest('.hidden')).toBeNull();
+  };
+  const card = () => screen.getByText('allocation.heading').closest('.rounded-md') as HTMLElement;
+  const percents = () => screen.getAllByLabelText('allocation.percent');
+  /** Row `i`: the element that holds its percent wrapper, its three pickers and its remove. */
+  const row = (i: number) => percents()[i].parentElement?.parentElement as HTMLElement;
+  /**
+   * VeloExpense: the kit's Combobox is a `<button role="combobox">` that keeps its
+   * placeholder in `data-placeholder` whatever it shows (an ExpenseOS Base UI input is found
+   * by its placeholder), so the pickers are found by that attribute.
+   */
+  const pickersIn = (root: ParentNode, placeholder: string) => [
+    ...root.querySelectorAll<HTMLElement>(`[role="combobox"][data-placeholder="${placeholder}"]`),
+  ];
+  /** Row `i`'s wrapper around the picker with this placeholder (the ring wrapper). */
+  const picker = (i: number, placeholder: string) => {
+    const [trigger] = pickersIn(row(i), placeholder);
+    return [...row(i).children].find((c) => c.contains(trigger)) as HTMLElement;
+  };
+  const classes = (el: HTMLElement) => [...el.classList].sort();
+  const isAt = (token: string) => token.startsWith('lg:');
+
+  it('a draft has one percent field per row and no read-only list', () => {
+    renderEditor({ allocations: ALLOCATIONS });
+
+    expect(percents()).toHaveLength(2);
+    for (const placeholder of PICKERS) {
+      expect(pickersIn(document, placeholder)).toHaveLength(2);
+    }
+    for (const el of [
+      ...percents(),
+      ...screen.getAllByRole('button', { name: 'allocation.remove' }),
+      screen.getByRole('button', { name: 'allocation.add' }),
+    ]) {
+      uncloaked(el);
+    }
+    // The list is gone from a draft, not merely hidden: it is the only thing that writes
+    // the dimensions as one joined string, and the only `<ul>` in the card.
+    expect(screen.queryByText('Atlantic · Engineering · Internal')).toBeNull();
+    expect(card().querySelector('ul')).toBeNull();
+
+    cleanup();
+    renderEditor({ allocations: [ALLOCATIONS[0]] });
+    expect(percents()).toHaveLength(1);
+  });
+
+  it('stacks two rows as cards, class sharing its line with the remove button', () => {
+    renderEditor({ allocations: ALLOCATIONS });
+
+    for (const i of [0, 1]) {
+      expect(classes(row(i))).toEqual(
+        [
+          'grid',
+          'grid-cols-[minmax(0,1fr)_auto]',
+          'gap-1.5',
+          'rounded-md',
+          'border',
+          'border-border',
+          'p-2',
+          'lg:flex',
+          'lg:items-center',
+          'lg:rounded-none',
+          'lg:border-0',
+          'lg:p-0',
+        ].sort(),
+      );
+      expect(percents()[i].parentElement).toHaveClass('relative', 'col-span-2', 'w-20', 'shrink-0');
+      for (const placeholder of ['allocation.businessUnit', 'allocation.department']) {
+        expect(classes(picker(i, placeholder))).toEqual(
+          ['col-span-2', 'min-w-0', 'rounded', 'lg:col-span-1', 'lg:flex-1'].sort(),
+        );
+      }
+      // With a remove button, class takes column 1 and the button the `auto` track.
+      expect(classes(picker(i, 'allocation.class'))).toEqual(
+        ['min-w-0', 'rounded', 'lg:flex-1'].sort(),
+      );
+      // DOM order is visual order: remove is the row's last child.
+      const remove = within(row(i)).getByRole('button', { name: 'allocation.remove' });
+      expect(row(i).lastElementChild).toBe(remove);
+    }
+  });
+
+  it('gives a single row no remove button, so class spans both tracks', () => {
+    renderEditor();
+
+    expect(percents()).toHaveLength(1);
+    expect(screen.queryAllByRole('button', { name: 'allocation.remove' })).toHaveLength(0);
+    expect(classes(picker(0, 'allocation.class'))).toEqual(
+      ['col-span-2', 'min-w-0', 'rounded', 'lg:flex-1'].sort(),
+    );
+    expect(row(0)).toHaveClass('grid', 'lg:flex', 'lg:items-center');
+  });
+
+  it('restores the pre-P13 class set behind `lg:`', () => {
+    /**
+     * The pre-P13 classes, read from `origin/main` before this change. From `lg` up each
+     * must still apply, bare or `lg:`-prefixed, and every bare class that is NEW must be
+     * either reset by an `lg:` sibling or inert there (grid-only, or a colour on a zero
+     * border). The remove button's `flex items-center justify-center` is the one accepted
+     * difference at `lg`: it centres the glyph in the button's own box and moves no other
+     * control. `pointer-coarse:` floors are outside the fine-pointer contract.
+     */
+    const PRE_P13 = {
+      row: ['flex', 'items-center', 'gap-1.5'],
+      percent: ['relative', 'w-20', 'shrink-0'],
+      picker: ['min-w-0', 'flex-1', 'rounded'],
+      remove: [
+        'shrink-0',
+        'text-muted-foreground',
+        'hover:text-destructive',
+        'disabled:opacity-50',
+      ],
+    };
+    /** A new bare class → the `lg:` class that resets it, or `null` when inert at `lg`. */
+    const AT_LG: Record<string, string | null> = {
+      grid: 'lg:flex',
+      'grid-cols-[minmax(0,1fr)_auto]': null,
+      'rounded-md': 'lg:rounded-none',
+      border: 'lg:border-0',
+      'border-border': null,
+      'p-2': 'lg:p-0',
+      'col-span-2': null,
+    };
+    const REMOVE_BOX = ['flex', 'items-center', 'justify-center'];
+
+    renderEditor({ allocations: ALLOCATIONS });
+    const remove = within(row(0)).getByRole('button', { name: 'allocation.remove' });
+    const subjects: [HTMLElement, string[], string[]][] = [
+      [row(0), PRE_P13.row, []],
+      [percents()[0].parentElement as HTMLElement, PRE_P13.percent, []],
+      ...PICKERS.map(
+        (p) => [picker(0, p), PRE_P13.picker, []] as [HTMLElement, string[], string[]],
+      ),
+      [remove, PRE_P13.remove, REMOVE_BOX],
+    ];
+    for (const [el, before, accepted] of subjects) {
+      const now = [...el.classList].filter((c) => !c.startsWith('pointer-coarse:'));
+      for (const c of before) {
+        expect({ c, kept: now.includes(c) || now.includes(`lg:${c}`) }).toEqual({ c, kept: true });
+      }
+      for (const c of now.filter((x) => !isAt(x) && !before.includes(x) && !accepted.includes(x))) {
+        expect({ c, known: c in AT_LG }).toEqual({ c, known: true });
+        const reset = AT_LG[c];
+        if (reset) expect({ c, reset: now.includes(reset) }).toEqual({ c, reset: true });
+      }
+    }
+    // And nothing that would wrap the restored row.
+    expect(row(0)).not.toHaveClass('flex-wrap', 'lg:flex-wrap');
+  });
+
+  it('floors every control at 44px on a coarse pointer, and only on a coarse pointer', () => {
+    /**
+     * The percent is a plain `Input`, so `pointer-coarse:h-11` lands on the `<input>`.
+     * VeloExpense: the pickers are the kit's `Combobox`, a `<button role="combobox">` that
+     * takes `className` itself, so `TAP_FIELD`'s bare half floors it directly (ExpenseOS's
+     * Base UI input is reached by the descendant half instead).
+     */
+    renderEditor({ allocations: ALLOCATIONS });
+
+    for (const percent of percents()) expect(percent).toHaveClass('pointer-coarse:h-11');
+    for (const placeholder of PICKERS) {
+      const triggers = pickersIn(document, placeholder);
+      expect(triggers).toHaveLength(2);
+      for (const trigger of triggers) {
+        expect(trigger.tagName).toBe('BUTTON');
+        expect(trigger).toHaveClass('pointer-coarse:h-11');
+      }
+    }
+    for (const button of [
+      ...screen.getAllByRole('button', { name: 'allocation.remove' }),
+      screen.getByRole('button', { name: 'allocation.add' }),
+    ]) {
+      expect(button).toHaveClass('pointer-coarse:min-h-11', 'pointer-coarse:min-w-11');
+    }
+    for (const el of [card(), ...card().querySelectorAll('*')]) {
+      const bare = [...el.classList].filter((c) => BARE_FLOOR.test(c));
+      expect(bare).toEqual([]);
+    }
+  });
+
+  it('keeps the coding warning visible at every width', () => {
+    // A started, incomplete row: the sentence that explains the submit blocker.
+    renderEditor({ allocations: [{ ...ALLOCATIONS[0], percentBp: 10000, classId: null }] });
+    uncloaked(screen.getByText('allocation.required'));
   });
 });
