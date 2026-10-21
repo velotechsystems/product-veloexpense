@@ -259,14 +259,44 @@ describe('<ExpenseReportsList>', () => {
 });
 
 describe('<NewReportDialog>', () => {
-  it('creates a report with the entered title + chosen currency', () => {
+  /**
+   * The dialog opens on the filer's resolved currency (`expenses.defaultCurrency`), not a
+   * literal. USD is the stubbed default on purpose: the old hard-coded value was CAD, so a
+   * CAD expectation would pass without the default ever being read.
+   */
+  const bothCurrencies = {
+    data: [
+      { id: 'c1', code: 'CAD', symbol: '$', label: { en: 'Canadian Dollar' } },
+      { id: 'c2', code: 'USD', symbol: '$', label: { en: 'US Dollar' } },
+    ],
+  };
+  // VeloExpense: the kit's Combobox is a button that shows the picked label as its text
+  // (test-utils/kitCombobox.ts), so a pick is read back as the trigger's text.
+  const currencyField = () => screen.getByRole('combobox');
+  const shown = () => currencyField().textContent ?? '';
+  const createButton = () => screen.getByRole('button', { name: 'createDialog.create' });
+  const typeTitle = (title: string) =>
+    fireEvent.change(screen.getByPlaceholderText('createDialog.reportTitlePlaceholder'), {
+      target: { value: title },
+    });
+  const pick = async (user: ReturnType<typeof userEvent.setup>, label: string) => {
+    await user.click(currencyField());
+    await user.click(await screen.findByRole('option', { name: label }));
+  };
+
+  it('creates a report with the entered title + chosen currency', async () => {
+    /**
+     * Was "currency defaults to CAD". The CAD literal is gone; what this pins now is that
+     * an explicit pick is what gets sent — CAD picked over a USD default, so the payload
+     * cannot match by accident.
+     */
+    const user = userEvent.setup();
     const onCreated = vi.fn();
     const calls: unknown[] = [];
     h.trpc = createTrpcMock({
       queries: {
-        'expenses.currencies': {
-          data: [{ id: 'c1', code: 'CAD', symbol: '$', label: { en: 'Canadian Dollar' } }],
-        },
+        'expenses.currencies': bothCurrencies,
+        'expenses.defaultCurrency': { data: { code: 'USD' } },
       },
       mutations: {
         'expenses.create': {
@@ -279,19 +309,129 @@ describe('<NewReportDialog>', () => {
     render(<NewReportDialog onClose={vi.fn()} onCreated={onCreated} />);
 
     expect(screen.getByText('createDialog.title')).toBeInTheDocument();
-    const createBtn = screen.getByRole('button', { name: 'createDialog.create' });
-    expect(createBtn).toBeDisabled(); // title is empty
+    expect(createButton()).toBeDisabled(); // title is empty
 
-    fireEvent.change(screen.getByPlaceholderText('createDialog.reportTitlePlaceholder'), {
-      target: { value: 'Trip to SF' },
-    });
-    expect(createBtn).toBeEnabled();
-    fireEvent.click(createBtn);
+    typeTitle('Trip to SF');
+    expect(createButton()).toBeEnabled();
+    await pick(user, 'CAD · Canadian Dollar');
+    expect(shown()).toContain('CAD · Canadian Dollar');
+    await user.click(createButton());
 
-    // Currency defaults to CAD; the title is passed through trimmed.
+    // The picked currency is sent; the title is passed through trimmed.
     expect(calls).toEqual([{ title: 'Trip to SF', currency: 'CAD' }]);
     expect(onCreated).toHaveBeenCalledWith('new1');
   });
+
+  it('opens on the filer’s home currency, not CAD', () => {
+    const calls: unknown[] = [];
+    h.trpc = createTrpcMock({
+      queries: {
+        'expenses.currencies': bothCurrencies,
+        'expenses.defaultCurrency': { data: { code: 'USD' } },
+      },
+      mutations: {
+        'expenses.create': { onCall: (a) => calls.push(a), outcome: 'success', data: { id: 'n' } },
+      },
+    });
+    render(<NewReportDialog onClose={vi.fn()} onCreated={vi.fn()} />);
+
+    // What is sent is what is shown.
+    expect(shown()).toContain('USD · US Dollar');
+    typeTitle('Trip');
+    fireEvent.click(createButton());
+
+    expect(calls).toEqual([{ title: 'Trip', currency: 'USD' }]);
+  });
+
+  it('does not invent a currency while the default is loading', () => {
+    h.trpc = createTrpcMock({
+      queries: {
+        'expenses.currencies': bothCurrencies,
+        'expenses.defaultCurrency': { isLoading: true },
+      },
+      mutations: { 'expenses.create': { outcome: 'success', data: { id: 'n' } } },
+    });
+    render(<NewReportDialog onClose={vi.fn()} onCreated={vi.fn()} />);
+
+    typeTitle('Trip');
+
+    // Nothing is chosen yet, so there is nothing to file the report in.
+    expect(createButton()).toBeDisabled();
+    expect(shown()).not.toMatch(/CAD|USD/);
+    // Loading is announced as loading, not as "you must choose" — that note would be a
+    // false alarm a moment before the default lands.
+    expect(currencyField().closest('[aria-busy="true"]')).not.toBeNull();
+    expect(screen.queryByText('createDialog.currencyNeeded')).not.toBeInTheDocument();
+  });
+
+  it('keeps a currency the person picked when the default arrives late', async () => {
+    /** The seed-once-then-clobber race: a default that lands after a pick must not win. */
+    const user = userEvent.setup();
+    const calls: unknown[] = [];
+    const mutations = {
+      'expenses.create': {
+        onCall: (a: unknown) => calls.push(a),
+        outcome: 'success' as const,
+        data: { id: 'n' },
+      },
+    };
+    h.trpc = createTrpcMock({
+      queries: {
+        'expenses.currencies': bothCurrencies,
+        'expenses.defaultCurrency': { isLoading: true },
+      },
+      mutations,
+    });
+    const { rerender } = render(<NewReportDialog onClose={vi.fn()} onCreated={vi.fn()} />);
+    await pick(user, 'USD · US Dollar');
+
+    h.trpc = createTrpcMock({
+      queries: {
+        'expenses.currencies': bothCurrencies,
+        'expenses.defaultCurrency': { data: { code: 'CAD' } },
+      },
+      mutations,
+    });
+    rerender(<NewReportDialog onClose={vi.fn()} onCreated={vi.fn()} />);
+
+    expect(shown()).toContain('USD · US Dollar');
+    typeTitle('Trip');
+    await user.click(createButton());
+    expect(calls).toEqual([{ title: 'Trip', currency: 'USD' }]);
+  });
+
+  it('asks for a currency when the default could not be loaded, and a pick unblocks it', async () => {
+    const user = userEvent.setup();
+    const calls: unknown[] = [];
+    h.trpc = createTrpcMock({
+      queries: {
+        'expenses.currencies': bothCurrencies,
+        'expenses.defaultCurrency': { isError: true, error: { message: 'INTERNAL' } },
+      },
+      mutations: {
+        'expenses.create': { onCall: (a) => calls.push(a), outcome: 'success', data: { id: 'n' } },
+      },
+    });
+    render(<NewReportDialog onClose={vi.fn()} onCreated={vi.fn()} />);
+    typeTitle('Trip');
+
+    expect(createButton()).toBeDisabled();
+    // VeloExpense: the kit's Combobox takes no `aria-describedby`, so the note is beside
+    // the field rather than linked to it.
+    expect(screen.getByText('createDialog.currencyNeeded')).toBeInTheDocument();
+    expect(currencyField().closest('[aria-busy="true"]')).toBeNull();
+
+    // The way out is the picker itself.
+    await pick(user, 'CAD · Canadian Dollar');
+    expect(screen.queryByText('createDialog.currencyNeeded')).not.toBeInTheDocument();
+    expect(createButton()).toBeEnabled();
+    await user.click(createButton());
+    expect(calls).toEqual([{ title: 'Trip', currency: 'CAD' }]);
+  });
+
+  // Not ported: "does not fall back to the default when the person clears the picker".
+  // The kit's Combobox here is not `clearable`, so the person cannot clear it; the null
+  // path is reached only when the default fails to load (the case above).
 
   /**
    * A refusal the person can SEE.
@@ -310,6 +450,7 @@ describe('<NewReportDialog>', () => {
     'expenses.currencies': {
       data: [{ id: 'c1', code: 'CAD', symbol: '$', label: { en: 'Canadian Dollar' } }],
     },
+    'expenses.defaultCurrency': { data: { code: 'CAD' } },
   };
 
   it('refuses a title over the server’s limit, and says so, without calling create', () => {
@@ -1284,6 +1425,7 @@ describe('starting a report from the list', () => {
         'expenses.currencies': {
           data: [{ id: 'c1', code: 'CAD', symbol: '$', label: { en: 'Canadian Dollar' } }],
         },
+        'expenses.defaultCurrency': { data: { code: 'CAD' } },
       },
       mutations: { 'expenses.create': { outcome: 'success', data: { id: 'new1' } } },
     });
@@ -1301,7 +1443,11 @@ describe('starting a report from the list', () => {
     const user = userEvent.setup();
     const onCall = vi.fn();
     h.trpc = createTrpcMock({
-      queries: { 'expenses.list': { data: [] }, 'expenses.currencies': { data: [] } },
+      queries: {
+        'expenses.list': { data: [] },
+        'expenses.currencies': { data: [] },
+        'expenses.defaultCurrency': { data: { code: 'CAD' } },
+      },
       mutations: { 'expenses.create': { onCall, outcome: 'success', data: { id: 'x' } } },
     });
     renderList();
@@ -1320,6 +1466,7 @@ describe('starting a report from the list', () => {
       queries: {
         'expenses.list': { data: [] },
         'expenses.currencies': { isLoading: true, data: undefined },
+        'expenses.defaultCurrency': { isLoading: true, data: undefined },
       },
       mutations: { 'expenses.create': { outcome: 'success', data: { id: 'x' } } },
     });
@@ -1335,6 +1482,7 @@ describe('starting a report from the list', () => {
         'expenses.currencies': {
           data: [{ id: 'c1', code: 'CAD', symbol: '$', label: { en: 'Canadian Dollar' } }],
         },
+        'expenses.defaultCurrency': { data: { code: 'CAD' } },
       },
       mutations: { 'expenses.create': { outcome: 'success', data: { id: 'x' } } },
     });

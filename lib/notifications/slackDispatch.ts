@@ -31,6 +31,7 @@ import { renderMessage } from '@/lib/notifications/service';
 import { originForTenant } from '@/lib/notifications/email';
 import { ctaFor } from '@/lib/notifications/digest';
 import { subjectPath } from '@/lib/notifications/catalog';
+import { approverNote } from '@/lib/notifications/approverNote';
 import { tenantDbOf } from '@/lib/db/prisma-pg-bridge';
 import { withTenantDb, type TenantDb } from '@/lib/db/prisma';
 import { ORG } from '@/lib/tenant/sql';
@@ -240,10 +241,27 @@ export async function prepareSlack(
       // What this is about. A bot DM has no subject line, so without it the
       // message alone can read as being about nothing in particular.
       subjectContext(cat, row.subject_type),
+      [],
+      slackNote(cat, row),
     ),
     threadId: thread?.id ?? null,
     threadTs: thread?.slackThreadTs ?? null,
   };
+}
+
+/**
+ * The approver's note for the Slack message, with its label (ExpenseOS 67db2e33, #578).
+ * The label is the reader's catalog's, with ExpenseOS's English fallback.
+ */
+function slackNote(
+  cat: Catalog,
+  row: { event_type: string; payload: unknown },
+): { label: string; text: string } | null {
+  const text = approverNote({ type: row.event_type, payload: row.payload });
+  if (!text) return null;
+  const email = (cat.notifications as { email?: Record<string, string> } | undefined)?.email;
+  const label = email?.approverNote;
+  return { label: typeof label === 'string' && label.trim() ? label : 'Note from the approver:', text };
 }
 
 /** Event types that can reach an approver. ExpenseOS's `ACTIONABLE_TYPES` is `SUBMITTED |
@@ -350,12 +368,24 @@ export function slackBlocks(
   approver: boolean,
   context?: string | null,
   details: SubjectDetail[] = [],
+  /** The approver's note on a return or rejection, quoted under the message. */
+  note: { label: string; text: string } | null = null,
 ): unknown[] {
   const blocks: unknown[] = [];
   if (context) {
     blocks.push({ type: 'context', elements: [{ type: 'mrkdwn', text: context }] });
   }
   blocks.push({ type: 'section', text: { type: 'mrkdwn', text: message } });
+  if (note) {
+    const quoted = slackText(note.text)
+      .split('\n')
+      .map((line) => `>${line}`)
+      .join('\n');
+    blocks.push({
+      type: 'section',
+      text: { type: 'mrkdwn', text: `*${slackText(note.label)}*\n${quoted}` },
+    });
+  }
   blocks.push(...detailSections(details));
   if (link) {
     blocks.push({

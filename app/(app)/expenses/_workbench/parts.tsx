@@ -657,7 +657,27 @@ export function ExpenseEditor({
     receiptState(extraction) === 'extracted' ? (extraction?.confidence ?? null) : null;
   const [explanation, setExplanation] = useState(expense.explanation ?? '');
   const explanationMissing = hasWarning && !explanation.trim();
-  const updateExpense = trpc.expenses.updateExpense.useMutation({ onSuccess: onChange });
+  /**
+   * A refused date says why, and the field goes back to the saved one.
+   *
+   * Moving the date reprices the expense's mileage lines, and a date with no mileage rate in
+   * force is refused whole. Without this the refusal was silent and the field went on
+   * showing a date that was never saved.
+   */
+  const [dateError, setDateError] = useState<string | null>(null);
+  const [dateFieldKey, setDateFieldKey] = useState(0);
+  const updateExpense = trpc.expenses.updateExpense.useMutation({
+    onSuccess: (_data, vars) => {
+      if (vars?.date !== undefined) setDateError(null);
+      onChange();
+    },
+    onError: (e, vars) => {
+      if (vars?.date === undefined) return;
+      setDateError(e.message);
+      // Remount from the saved value: the input is uncontrolled.
+      setDateFieldKey((k) => k + 1);
+    },
+  });
   const deleteExpense = trpc.expenses.deleteExpense.useMutation({ onSuccess: onChange });
   const currencies = trpc.expenses.currencies.useQuery(undefined, { enabled: editable });
   const currencyItems = (currencies.data ?? []).map((c) => ({ value: c.id, label: c.code }));
@@ -785,15 +805,33 @@ export function ExpenseEditor({
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
             <Field label={t('line.date')}>
               <Input
+                key={dateFieldKey}
                 type="date"
                 className={TAP_FIELD}
                 // VeloExpense: an undated expense opens with the field empty.
                 defaultValue={expense.date ? new Date(expense.date).toISOString().slice(0, 10) : ''}
+                // A date picked from the calendar never focuses the input — `Input`'s
+                // suffix button opens it with `showPicker()` — so it never blurs, and the
+                // pick arrives as `change` alone. Commit that here. While the input HAS
+                // focus the change is a typed segment (`0002-…`), left to `onBlur`.
+                // (ExpenseOS 67db2e33, #578.) VeloExpense: the kit's `Input` has no suffix
+                // button, but a date set without focus (a browser's own picker, autofill)
+                // takes the same path, so the rule is kept as ExpenseOS has it.
+                onChange={(e) =>
+                  e.currentTarget !== document.activeElement &&
+                  e.currentTarget.value &&
+                  updateExpense.mutate({ expenseId: expense.id, date: e.currentTarget.value })
+                }
                 onBlur={(e) =>
                   e.currentTarget.value &&
                   updateExpense.mutate({ expenseId: expense.id, date: e.currentTarget.value })
                 }
               />
+              {dateError && (
+                <p role="alert" className="mt-1 text-destructive text-xs">
+                  {dateError}
+                </p>
+              )}
             </Field>
             <div className="col-span-2">
               <Field label={t('workbench.vendor')}>
@@ -2825,18 +2863,26 @@ function LineItemRow({
    * error because it looks like it worked.
    */
   const [saveError, setSaveError] = useState<string | null>(null);
+  /** This row's `lineItemUpdate` calls that have not settled yet. */
+  const writesInFlight = useRef(0);
   const update = trpc.expenses.lineItemUpdate.useMutation({
     onSuccess: () => {
       setSaveError(null);
       onChange();
     },
     onError: (e) => setSaveError(e.message),
-    // Release the route hold once the write has landed either way. On success the
-    // next refetch carries what was just saved, so a re-sync is now agreement
-    // rather than a clobber; on failure the guard must not stick and freeze the row
-    // against every future server update.
+    // Release the route hold once the LAST write has landed, either way. A route edit
+    // fires several writes — the stops, the measured legs, the measured distance — and
+    // releasing on the first to settle let a refetch re-sync the row onto a server copy
+    // that predated the later ones, putting the old From back on screen and then, via
+    // the measurement, back on the server. On failure the guard must not stick and
+    // freeze the row against every future server update.
+    onMutate: () => {
+      writesInFlight.current += 1;
+    },
     onSettled: () => {
-      routePending.current = false;
+      writesInFlight.current = Math.max(0, writesInFlight.current - 1);
+      if (writesInFlight.current === 0) routePending.current = false;
     },
   });
   const remove = trpc.expenses.lineItemRemove.useMutation({ onSuccess: onChange });
@@ -2925,7 +2971,7 @@ function LineItemRow({
   const numFocused = useRef(false);
   const routePending = useRef(false);
   useEffect(() => {
-    if (numFocused.current || routePending.current) return;
+    if (numFocused.current || routePending.current || writesInFlight.current > 0) return;
     setCategory(line.categoryId);
     setAmount(minorToInput(line.amountMinor, currencyCode));
     setKm(line.mileageDistance ?? '');

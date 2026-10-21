@@ -6,6 +6,7 @@
   "viewAll": "Voir tout",
   "loadMore": "Afficher plus",
   "endOfList": "C'est tout.",
+  "approverNote": "Note de l’approbateur",
   "unreadOne": "1 non lue",
   "unreadMany": "{count} non lues",
   "event": {
@@ -168,6 +169,7 @@
   "email": {
     "greeting": "Bonjour {name}!",
     "hereIsTheInformation": "Voici les renseignements :",
+    "approverNote": "Note de l’approbateur :",
     "youCan": "Vous pouvez :",
     "replyToDiscuss": "Ou répondez à ce courriel pour lancer une discussion.",
     "signOff": "Merci,",

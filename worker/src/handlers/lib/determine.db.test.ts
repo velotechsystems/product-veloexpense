@@ -32,7 +32,23 @@ const h = vi.hoisted(() => ({
   fetchCleanDocument: vi.fn(),
   prepareExtraction: vi.fn(),
   recordExtractionUsage: vi.fn(),
+  /** D5: make `writeAudit` throw AFTER it has written its row, to prove the rollback. */
+  auditFails: false,
 }));
+
+// The real audit writer, except that D5 can make it throw once it has written. Only the
+// exported `writeAudit` is replaced: `withAudit` calls the module-local function, so the
+// `extractionSkipped` row is untouched. (ExpenseOS 67db2e33, #588.)
+vi.mock('@expenseos/audit', async (orig) => {
+  const actual = (await orig()) as typeof import('@expenseos/audit');
+  return {
+    ...actual,
+    writeAudit: async (...args: Parameters<typeof actual.writeAudit>) => {
+      await actual.writeAudit(...args);
+      if (h.auditFails) throw new Error('audit write failed (test)');
+    },
+  };
+});
 
 vi.mock('@/auth', () => ({ auth: vi.fn(async () => null) }));
 vi.mock('@/lib/tenant/request', () => ({ hostTenantSlug: async () => null }));
@@ -77,15 +93,23 @@ describe.skipIf(!process.env.DATABASE_URL)('determination writes under the repor
   let categoryId: string;
   let categories: any[];
 
+  // ── The claimant as the first attendee (ExpenseOS 67db2e33, #588) ─────────────────
+  // Own fixtures: never `categories[0]`.
+  const tag = 'determine-claimant';
+  let claimOwnerId: string;
+  let requiringId: string;
+
   /** A DRAFT report with one blank expense and one already-CLEAN document on it. */
-  async function fixture(): Promise<{ reportId: string; expenseId: string; receiptId: string }> {
+  async function fixture(
+    owner: string = ownerId,
+  ): Promise<{ reportId: string; expenseId: string; receiptId: string }> {
     // VeloExpense: made through the ported procedure, as the other worker suites do.
-    const report = await th.makeCaller(RW, ownerId).create({
+    const report = await th.makeCaller(RW, owner).create({
       title: `determine lock ${Date.now()}-${Math.random()}`,
       currency: 'CAD',
     });
     const expense = await db.expense.create({
-      data: { reportId: report.id, ownerId, currencyId, date: new Date(), amountMinor: 0n },
+      data: { reportId: report.id, ownerId: owner, currencyId, date: new Date(), amountMinor: 0n },
       select: { id: true },
     });
     const receipt = await db.receipt.create({
@@ -95,7 +119,7 @@ describe.skipIf(!process.env.DATABASE_URL)('determination writes under the repor
         filename: 'bill.jpg',
         contentType: 'image/jpeg',
         sizeBytes: 1024,
-        uploadedById: ownerId,
+        uploadedById: owner,
         kind: 'OTHER',
         // VeloExpense: only a receipt whose object is verified in storage is a document.
         status: 'STORED',
@@ -134,6 +158,29 @@ describe.skipIf(!process.env.DATABASE_URL)('determination writes under the repor
     determinations: await db.expenseDetermination.count({ where: { expenseId } }),
   });
 
+  const attendeesOf = (expenseId: string) =>
+    db.expenseAttendee.findMany({
+      where: { expenseId },
+      select: { id: true, name: true, company: true, isExternal: true },
+    });
+
+  /** The system `REPORT_EDITED` rows on one expense — the claimant's audit trail.
+   *  VeloExpense: `audit_entry`, under the registry's name for `report.update`. */
+  const claimantAuditRows = async (expenseId: string) =>
+    (
+      await th.admin.query(
+        `SELECT actor_id, actor_name, entity_type, entity_id, details FROM audit_entry
+          WHERE action = 'REPORT_EDITED' AND entity_id = $1 ORDER BY sequence`,
+        [expenseId],
+      )
+    ).rows.map((r: any) => ({
+      actorId: r.actor_id,
+      actorName: r.actor_name,
+      entityType: r.entity_type,
+      entityId: r.entity_id,
+      details: r.details,
+    }));
+
   beforeAll(async () => {
     th = await createTenantHarness({ slug: 'determine', name: 'Determine' });
     db = th.db;
@@ -165,6 +212,30 @@ describe.skipIf(!process.env.DATABASE_URL)('determination writes under the repor
     });
     categoryId = categories[0].id;
 
+    claimOwnerId = (
+      await th.admin.query(
+        `INSERT INTO app_user (organization_id, email, display_name, first_name, last_name, role_id)
+         VALUES ($1, $2, 'Determine Claimant', 'Determine', 'Claimant', '019e3000-0000-7000-8000-000000000004')
+         RETURNING id`,
+        [th.orgId, `${tag}-owner@test.invalid`],
+      )
+    ).rows[0].id as string;
+    const requiring = await db.expenseCategory.create({
+      data: { label: { en: `${tag} requiring` }, requiresAttendees: true },
+      select: {
+        id: true,
+        label: true,
+        itcGstHstRate: true,
+        itcQstRate: true,
+        pstRecoverable: true,
+        acceptsTip: true,
+        isMileage: true,
+      },
+    });
+    requiringId = requiring.id;
+    // Appended, so `categories[0]` — what the existing cases code to — is unchanged.
+    categories.push(requiring);
+
     h.fetchCleanDocument.mockResolvedValue({ data: new Uint8Array([1]), mimeType: 'image/jpeg' });
     h.prepareExtraction.mockResolvedValue({ data: new Uint8Array([1]), mimeType: 'image/jpeg' });
   });
@@ -175,7 +246,7 @@ describe.skipIf(!process.env.DATABASE_URL)('determination writes under the repor
   });
 
   /** The model's answer: one $130.00 dinner with $13.00 GST on it. */
-  function determination(receiptId: string) {
+  function determination(receiptId: string, cat: string = categoryId) {
     return {
       model: 'db-test',
       confidence: 0.9,
@@ -193,9 +264,9 @@ describe.skipIf(!process.env.DATABASE_URL)('determination writes under the repor
         taxQst: null,
         taxPst: null,
         lineItems: [
-          { description: 'Dinner', amount: 130, quantity: 1, categoryCode: categoryId, tip: null },
+          { description: 'Dinner', amount: 130, quantity: 1, categoryCode: cat, tip: null },
         ],
-        derivedCategoryCode: categoryId,
+        derivedCategoryCode: cat,
         fxRate: null,
         fxToCurrency: null,
         unresolved: null,
@@ -271,7 +342,9 @@ describe.skipIf(!process.env.DATABASE_URL)('determination writes under the repor
      * submit commits, and leaves the filed figures alone.
      */
     const { reportId, expenseId, receiptId } = await fixture();
-    h.determineExpense.mockResolvedValue(determination(receiptId));
+    // Coded to a category that requires attendees, so the claimant rule is also on trial:
+    // a determination thrown away adds no attendee either (D4).
+    h.determineExpense.mockResolvedValue(determination(receiptId, requiringId));
     const before = await stateOf(expenseId, reportId);
 
     let release!: () => void;
@@ -314,6 +387,117 @@ describe.skipIf(!process.env.DATABASE_URL)('determination writes under the repor
     expect(audit).toMatchObject({
       actor_name: 'system:expense.determineExpense',
       details: { reportId, reportStatus: 'SUBMITTED' },
+    });
+    // D4: no attendee on the filed report, and the skip is the only audit line.
+    expect(await attendeesOf(expenseId)).toEqual([]);
+    expect(await claimantAuditRows(expenseId)).toEqual([]);
+  });
+
+  describe('the claimant as the first attendee (ExpenseOS 67db2e33, #588)', () => {
+    it('D1: an applied rebuild into a requiring category adds the owner and one system row', async () => {
+      const { expenseId, receiptId } = await fixture(claimOwnerId);
+      h.determineExpense.mockResolvedValue(determination(receiptId, requiringId));
+
+      expect(await determineAndRebuild(expenseId, categories as never)).toEqual({
+        status: 'rebuilt',
+      });
+
+      const attendees = await attendeesOf(expenseId);
+      expect(attendees).toEqual([
+        { id: expect.any(String), name: 'Determine Claimant', company: null, isExternal: false },
+      ]);
+      // No `receiptId`/`receiptIds` key: the joint pass reads a document SET.
+      expect(await claimantAuditRows(expenseId)).toEqual([
+        {
+          actorId: null,
+          actorName: 'system:expense.determineExpense',
+          entityType: 'Expense',
+          entityId: expenseId,
+          details: {
+            claimantAttendeeAdded: true,
+            claimantAttendeeId: attendees[0].id,
+            expenseId,
+            source: 'expense.determineExpense',
+          },
+        },
+      ]);
+    });
+
+    it('D2: a line set the person owns (keepLineItems) is not rebuilt, so nobody is added', async () => {
+      const { expenseId, receiptId } = await fixture(claimOwnerId);
+      await db.expenseLineItem.create({
+        data: { expenseId, categoryId: requiringId, amountMinor: 4200n, kind: 'STANDARD' },
+      });
+      // The human edited the lines after an earlier pass: the rebuild must leave them.
+      await db.expenseDetermination.create({
+        data: {
+          expenseId,
+          receiptIds: [receiptId],
+          proposed: {},
+          overrides: { lineItems: 'edited by hand' },
+        },
+      });
+      h.determineExpense.mockResolvedValue(determination(receiptId, requiringId));
+
+      expect(await determineAndRebuild(expenseId, categories as never)).toEqual({
+        status: 'rebuilt',
+      });
+
+      const lines = await db.expenseLineItem.findMany({
+        where: { expenseId },
+        select: { categoryId: true, amountMinor: true },
+      });
+      expect(lines).toEqual([{ categoryId: requiringId, amountMinor: 4200n }]);
+      expect(await attendeesOf(expenseId)).toEqual([]);
+      expect(await claimantAuditRows(expenseId)).toEqual([]);
+    });
+
+    it('D3: a rebuild of lines that were already requiring adds nobody after the claimant was removed', async () => {
+      const { expenseId, receiptId } = await fixture(claimOwnerId);
+      // Already requiring, list empty — the owner removed themselves earlier.
+      await db.expenseLineItem.create({
+        data: { expenseId, categoryId: requiringId, amountMinor: 5000n, kind: 'STANDARD' },
+      });
+      h.determineExpense.mockResolvedValue(determination(receiptId, requiringId));
+
+      expect(await determineAndRebuild(expenseId, categories as never)).toEqual({
+        status: 'rebuilt',
+      });
+
+      // Rebuilt (the wipe ran) — and the "before" read was taken ahead of it.
+      const lines = await db.expenseLineItem.findMany({
+        where: { expenseId },
+        select: { amountMinor: true },
+      });
+      expect(lines.map((l: { amountMinor: bigint }) => l.amountMinor)).toEqual([13_000n]);
+      expect(await attendeesOf(expenseId)).toEqual([]);
+      expect(await claimantAuditRows(expenseId)).toEqual([]);
+    });
+
+    it('D5: an audit failure rolls back the attendee and the determination; a retry succeeds once', async () => {
+      const { reportId, expenseId, receiptId } = await fixture(claimOwnerId);
+      h.determineExpense.mockResolvedValue(determination(receiptId, requiringId));
+      const before = await stateOf(expenseId, reportId);
+
+      h.auditFails = true;
+      try {
+        await expect(determineAndRebuild(expenseId, categories as never)).rejects.toThrow(
+          'audit write failed (test)',
+        );
+      } finally {
+        h.auditFails = false;
+      }
+      expect(await attendeesOf(expenseId)).toEqual([]);
+      // Nothing of the pass survived: no lines, no money, no `supersedeDetermination` row.
+      expect(await stateOf(expenseId, reportId)).toEqual(before);
+      expect(before.determinations).toBe(0);
+      expect(await claimantAuditRows(expenseId)).toEqual([]);
+
+      expect(await determineAndRebuild(expenseId, categories as never)).toEqual({
+        status: 'rebuilt',
+      });
+      expect(await attendeesOf(expenseId)).toHaveLength(1);
+      expect(await claimantAuditRows(expenseId)).toHaveLength(1);
     });
   });
 });

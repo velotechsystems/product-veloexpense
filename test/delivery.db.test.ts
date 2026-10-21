@@ -518,6 +518,28 @@ describe('composition', () => {
     }
   });
 
+  it("quotes the approver's note on a return, escaped, under the message", async () => {
+    // ExpenseOS 67db2e33 (#578): "returned for edits" says something must change, not what.
+    // The note rides on the RETURNED event's payload; the email quotes it.
+    await submitted(50000, 'Lisbon');
+    await admin.query(
+      `UPDATE activity SET event_type = 'RETURNED', payload = payload || $1::jsonb`,
+      [JSON.stringify({ note: 'Attach the <b>folio</b>.\nAnd the parking stub.' })],
+    );
+    await drainOutbox();
+    expect(mail.sent[0].text).toContain('Note from the approver:\nAttach the <b>folio</b>.\nAnd the parking stub.');
+    expect(mail.sent[0].html).toContain('<blockquote');
+    expect(mail.sent[0].html).toContain('Attach the &lt;b&gt;folio&lt;/b&gt;.<br>And the parking stub.');
+  });
+
+  it('quotes no note on an event that is not a return or a rejection', async () => {
+    await submitted(50000, 'Porto');
+    await admin.query(`UPDATE activity SET payload = payload || '{"note":"Not an approver note"}'::jsonb`);
+    await drainOutbox();
+    expect(mail.sent[0].text).not.toContain('Note from the approver');
+    expect(mail.sent[0].text).not.toContain('Not an approver note');
+  });
+
   it('escapes the wording into the HTML part', async () => {
     await withOrg(orgId, (tx) =>
       tx.query(

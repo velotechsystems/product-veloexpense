@@ -130,7 +130,8 @@
     "currencyPlaceholder": "Choisir une devise",
     "create": "Créer le rapport",
     "titleTooLong": "Le titre ne doit pas dépasser {max} caractères.",
-    "createFailed": "Impossible de créer le rapport. Veuillez réessayer."
+    "createFailed": "Impossible de créer le rapport. Veuillez réessayer.",
+    "currencyNeeded": "Choisissez une devise pour ce rapport. Elle ne pourra pas être modifiée après la création."
   },
   "stats": {
     "drafts": "Brouillons",

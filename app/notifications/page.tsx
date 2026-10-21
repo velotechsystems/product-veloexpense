@@ -142,6 +142,16 @@ export default async function NotificationsPage({
                           row.body
                         )}
                       </p>
+                      {/* ExpenseOS 67db2e33 (#578): what the approver said on a return or
+                          rejection, in full — it is in the report's thread too. */}
+                      {row.approverNote && (
+                        <span className="mt-1.5 block border-border border-l-2 pl-2 text-foreground/90 text-xs leading-relaxed">
+                          <span className="block font-medium text-muted-foreground">
+                            {t('notifications.approver.note')}
+                          </span>
+                          <span className="block whitespace-pre-line">{row.approverNote}</span>
+                        </span>
+                      )}
                       <p className="mt-0.5 text-xs text-muted-foreground">
                         {/* VX4-7 part 3. Was `{row.eventType}` — the RAW enum
                             member, on a screen every employee reads. Part 2a

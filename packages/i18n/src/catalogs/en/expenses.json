@@ -130,7 +130,8 @@
     "currencyPlaceholder": "Select a currency",
     "create": "Create report",
     "titleTooLong": "Title must be {max} characters or fewer.",
-    "createFailed": "Could not create the report. Please try again."
+    "createFailed": "Could not create the report. Please try again.",
+    "currencyNeeded": "Choose a currency for this report. It can't be changed after you create it."
   },
   "stats": {
     "drafts": "Drafts",

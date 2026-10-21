@@ -43,6 +43,18 @@ import { SUPPORTED_LOCALES } from '@expenseos/i18n/locales';
  *     on a phone for a reason no one can find. `dispositionFor` requires the character after
  *     the prefix to be `/` or nothing at all.
  *
+ * P17 (2026-10-15): THE MATCH IS NOW SEGMENT BY SEGMENT, AND "LONGEST" MEANS MOST SEGMENTS.
+ * A key segment written as one `[name]` pair is a placeholder and matches any one real
+ * segment, so `/expenses/[reportId]` answers for every `/expenses/<uuid>`. Precedence: more
+ * segments wins; on a tie, a fixed word beats a placeholder at the first position where the
+ * two keys differ; a string comparison settles the one tie left (keys that differ only in
+ * placeholder name, which `mobileReadiness.test.ts` refuses in this table). For keys with no
+ * placeholder this is exactly the rule above, since a longer matching prefix always has more
+ * segments, so both bullets still hold; the segment boundary is now whole-segment equality.
+ * `/expenses/all` beats `/expenses/[reportId]` by the fixed-word rule although it is the
+ * shorter string. The cases are in `mobileReadiness.test.ts`, `placeholder segments and
+ * ruled precedence (P17)`.
+ *
  * ─── UNLISTED RESOLVES `limited`, NOT `ready` ────────────────────────────────────────────
  *
  * The default is the honest one. `ready` would be a claim — "this page has been looked at on
@@ -452,6 +464,16 @@ export const DEFAULT_DISPOSITION: Disposition = 'limited';
  * no way to demote the child alone — so the retraction would take P05's measured ruling with
  * it. P06 owns the promotion; do not take it early.
  *
+ * P17 (2026-10-15): THE STRUCTURAL REASON ABOVE IS RETIRED; THE WORD IS NOT. P17 taught
+ * `dispositionFor` placeholder segments, so `/expenses/[reportId]` now answers for every real
+ * report url and this row no longer reaches the workbench. It answers for `/expenses` itself:
+ * every deeper address is claimed by the report key or by a sibling's own key, and
+ * `mobileReadiness.test.ts` refuses a static page answered by the placeholder (the FR-6
+ * sibling guard). A `ready` here would therefore no longer be asserted over the workbench.
+ * The row stays `limited` until it is re-ruled on its own evidence; P17 changed no
+ * disposition word. Below, `/expenses/all` and `/expenses/approvals` also beat the report key,
+ * by the fixed-word rule (see THE MATCH).
+ *
  * `/expenses/all` KEEPS ITS `desktop`, and the longest-prefix rule is the whole reason the
  * new general key cannot swallow it. `/expenses/approvals` gets a key of its own rather than
  * inheriting one, because a ruling and an inherited answer are not the same claim — the same
@@ -726,6 +748,10 @@ export const MOBILE_READINESS: DispositionTable = Object.freeze({
    * string both halves of the parity gate admit: the Page-readiness row in
    * `docs/design/pwa.md` names the route that way.
    *
+   * [HISTORY: "THIS KEY IS INERT…", "THE TWO ROWS AGREE…" and "Teaching the matcher…"
+   * below describe the table BEFORE P17. They are kept as the record of why the row is
+   * `limited`; the P17 (2026-10-15) amendment at the end of this note says what changed.]
+   *
    * THIS KEY IS INERT AT RUNTIME, AND THAT IS PRECISELY WHY THE VALUE IS `limited`.
    * `dispositionFor` matches literal path text and no real URL contains a `[`, so no
    * `/expenses/<uuid>` ever reaches this row. What answers for those URLs is `/expenses`
@@ -747,6 +773,15 @@ export const MOBILE_READINESS: DispositionTable = Object.freeze({
    * Teaching the matcher dynamic segments is P17 (lane A): an ADR-0005 D2 change with
    * eleven tasks' blast radius. Do not do it from a page task. Until it lands, this key
    * records a ruling and changes no lookup's answer.
+   *
+   * P17 (2026-10-15): THIS KEY NOW ANSWERS FOR EVERY REPORT. `dispositionFor` matches segment
+   * by segment and `[reportId]` matches any one real segment, so `/expenses/<uuid>` resolves
+   * to `{ disposition: 'limited', prefix: '/expenses/[reportId]' }` rather than through
+   * `/expenses`. The key is no longer inert, and KEEP THEM IN STEP is retired: the two rows
+   * are independent rulings, and `mobileReadiness.test.ts` pins that (`rules /expenses and
+   * /expenses/[reportId] independently …`). No disposition word changed. Promoting or demoting
+   * this row is now a ruling about the workbench alone, made with its Page-readiness row in
+   * one commit like any other.
    */
   '/expenses/[reportId]': 'limited',
   // P07's two. Grouped rather than merged above because they are the first `ready` rows that
@@ -780,6 +815,11 @@ export const MOBILE_READINESS: DispositionTable = Object.freeze({
    * the parent reached this route by longest prefix without P07 having examined it, and this
    * key is the ruling that replaces the inherited word with a measured one.
    *
+   * P17 (2026-10-15): `/expenses/[reportId]` has left that list. Since P17 it moves an answer
+   * too: every real report url's `prefix` moved from `/expenses` to `/expenses/[reportId]`,
+   * while its disposition stayed `limited`. "Every other `limited` row … is inert" above is
+   * true only of the table as P08 found it.
+   *
    * IT STILL RENDERS NOTHING DIFFERENTLY, and the two facts are not in tension. No consumer
    * distinguishes `ready` from `limited`: `DesktopOnlyNotice` branches on `desktop`,
    * `Sidebar`'s `phoneHiddenRoutes` filters on `desktop`, and the phone suite's only
@@ -808,6 +848,12 @@ export interface DispositionMatch {
    * reader's "Continue anyway" against the MATCHED PREFIX, so continuing past
    * `/admin/roles` also covers `/admin/roles/anything` — one decision about one feature,
    * rather than the same notice again on the next click.
+   *
+   * P17 (2026-10-15): for a placeholder match the value is the key as written, e.g.
+   * `/expenses/[reportId]` for `/expenses/0199c7b4-…` (ADR-0005 D5), never the concrete
+   * address. It may contain `[name]` segments, so treat it as an opaque token naming the
+   * ruling, never as a path: no caller may test `pathname.startsWith(prefix)`. The callers
+   * today compare it for equality only.
    */
   prefix: string | null;
 }
@@ -835,6 +881,16 @@ export function normalizePath(path: string): string {
 }
 
 /**
+ * Is this KEY segment a placeholder? Exactly one bracket pair around a non-empty name that
+ * does not start with `.`: `[reportId]` is one; `[...x]`, `[[...x]]`, `[[x]]` and `[]` are
+ * not, and are compared as literal text (the test file refuses them in the shipped table).
+ * Applied to key segments only: an address segment is always data.
+ */
+function isPlaceholder(segment: string): boolean {
+  return /^\[(?!\.)[^[\]]+\]$/.test(segment);
+}
+
+/**
  * Resolve one path against the table.
  *
  * `table` IS INJECTABLE, AND THAT IS A REQUIREMENT RATHER THAN A STYLE PREFERENCE. The
@@ -848,16 +904,48 @@ export function dispositionFor(
   path: string,
   table: DispositionTable = MOBILE_READINESS,
 ): DispositionMatch {
+  // Segments of a NORMALIZED path; `/` has none. Never empty strings: `normalizePath` drops them.
+  const segs = (p: string): string[] => (p === '/' ? [] : p.slice(1).split('/'));
+  /**
+   * Does key `a` outrank key `b`? Both already match the target. The ruled precedence:
+   *   1. more segments wins (so `/` — zero segments — loses to every other key);
+   *   2. on equal count, at the first position where exactly one of them is a placeholder,
+   *      the FIXED word wins — so `/expenses/all` beats `/expenses/[reportId]` although it is
+   *      13 characters to 20;
+   *   3. otherwise the two differ only in placeholder names (or are the same string), a shape
+   *      the test file refuses in the shipped table; code-unit order (`a < b`) decides, so the
+   *      answer never depends on the order the keys were written in.
+   */
+  const outranks = (a: string, aSegs: string[], b: string, bSegs: string[]): boolean => {
+    if (aSegs.length !== bSegs.length) return aSegs.length > bSegs.length;
+    for (let i = 0; i < aSegs.length; i++) {
+      const aHole = isPlaceholder(aSegs[i] as string);
+      if (aHole !== isPlaceholder(bSegs[i] as string)) return !aHole;
+    }
+    return a < b;
+  };
+
   const target = normalizePath(path);
+  const targetSegs = segs(target);
   let best: string | null = null;
+  let bestSegs: string[] = [];
 
   for (const rawKey of Object.keys(table)) {
     const key = normalizePath(rawKey);
-    // Exact, or a prefix that ends on a segment boundary. `/travel` must not claim
-    // `/travel-agency`; a bare `startsWith` does, and does it silently.
-    const matches = target === key || (key === '/' ? true : target.startsWith(`${key}/`));
+    const keySegs = segs(key);
+    // Segment by segment from the root: every key segment is a placeholder (matching exactly
+    // one address segment, whatever it says) or equals the address segment at that position.
+    // A key never matches more segments than the address has, so a placeholder never matches
+    // zero segments, and whole-segment equality is what stops `/travel` claiming
+    // `/travel-agency` — the bug a bare `startsWith` ships silently.
+    const matches =
+      keySegs.length <= targetSegs.length &&
+      keySegs.every((seg, i) => isPlaceholder(seg) || seg === targetSegs[i]);
     if (!matches) continue;
-    if (best === null || key.length > best.length) best = key;
+    if (best === null || outranks(key, keySegs, best, bestSegs)) {
+      best = key;
+      bestSegs = keySegs;
+    }
   }
 
   if (best === null) return { disposition: DEFAULT_DISPOSITION, prefix: null };

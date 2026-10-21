@@ -83,6 +83,13 @@ vi.mock('@expenseos/db', () => ({
     homeCurrency: 'USD',
     homeAmountMinor: null,
   }),
+  // The claimant-as-first-attendee helpers (packages/db/src/ownerAttendee.ts). Nobody is
+  // added here; the rule and its audit row are pinned by prefill.db.test.ts.
+  lockClaimantSnapshot: async (_tx: unknown, expenseId: string) => ({
+    expenseId,
+    hadRequiringLine: false,
+  }),
+  ensureClaimantAttendee: async () => null,
 }));
 vi.mock('./lib/extract-core', () => ({
   runDocumentExtraction: h.runDocumentExtraction,
@@ -93,7 +100,10 @@ vi.mock('./lib/extract-core', () => ({
 // the hash chain, which has its own tests.
 vi.mock('@expenseos/audit', () => ({
   withAudit: h.withAudit,
-  auditActions: { report: { extractionSkipped: 'report.extraction.skipped' } },
+  writeAudit: async () => {},
+  auditActions: {
+    report: { extractionSkipped: 'report.extraction.skipped', update: 'report.update' },
+  },
 }));
 vi.mock('@expenseos/jobs', () => ({ enqueue: h.enqueue }));
 vi.mock('@expenseos/money', () => ({

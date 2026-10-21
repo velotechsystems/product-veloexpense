@@ -1,5 +1,5 @@
 import '@testing-library/jest-dom/vitest';
-import { cleanup, render, screen, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 // VeloExpense: ExpenseOS's combobox is an <input placeholder>; the kit's is a button.
@@ -61,7 +61,11 @@ vi.mock('@/lib/trpc/client', () => {
       isFetching: false,
       error: null,
     }),
-    useMutation: (opts?: { onSuccess?: () => void }) => ({
+    // Both callback sites get `(result, vars)` / `(error, vars)`, as react-query passes them.
+    useMutation: (opts?: {
+      onSuccess?: (d: unknown, v: unknown) => void;
+      onError?: (e: Error, v: unknown) => void;
+    }) => ({
       isPending: false,
       mutate: (
         vars: unknown,
@@ -70,9 +74,11 @@ vi.mock('@/lib/trpc/client', () => {
         h.calls[name] ??= [];
         h.calls[name].push(vars);
         const msg = h.errors[name];
-        if (msg) perCall?.onError?.(new Error(msg));
-        else {
-          opts?.onSuccess?.();
+        if (msg) {
+          opts?.onError?.(new Error(msg), vars);
+          perCall?.onError?.(new Error(msg));
+        } else {
+          opts?.onSuccess?.(undefined, vars);
           perCall?.onSuccess?.();
         }
       },
@@ -352,6 +358,56 @@ describe('the expense header', () => {
     await user.clear(date);
     await user.tab();
     expect(sent('updateExpense').filter((c) => 'date' in c)).toHaveLength(0);
+  });
+
+  it('says why a date was refused, and puts the field back to the saved one', async () => {
+    // Moving the date reprices mileage, and a date with no rate in force is refused whole.
+    // The refusal used to be silent, with the unsaved date left showing in the field.
+    h.errors.updateExpense = 'No mileage rate in force for CA on this date.';
+    const user = userEvent.setup();
+    renderEditor();
+    const date = screen.getByDisplayValue('2026-08-01');
+    fireEvent.change(date, { target: { value: '2025-01-15' } });
+    await user.click(document.body);
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      'No mileage rate in force for CA on this date.',
+    );
+    expect(screen.getByDisplayValue('2026-08-01')).toBeInTheDocument();
+  });
+
+  it('saves a date chosen from the calendar, which never focuses the input', async () => {
+    /**
+     * The calendar icon is `Input`'s own suffix button: it calls `showPicker()` and takes
+     * the click itself, so the `<input>` is never focused and never blurs. A date picked
+     * from the popup fired `change` and nothing else, the save hung off `onBlur`, and the
+     * expense stayed on the day it was created — today, for a "+" expense.
+     *
+     * VeloExpense: the kit's `Input` has no suffix button, so the case drives what it
+     * leads to directly — a `change` on the date field while it does not have focus.
+     */
+    const user = userEvent.setup();
+    renderEditor();
+    const date = screen.getByDisplayValue('2026-08-01');
+    expect(date).not.toHaveFocus();
+    fireEvent.change(date, { target: { value: '2026-07-15' } });
+    await user.click(document.body);
+    expect(sent('updateExpense')).toContainEqual({ expenseId: 'exp-1', date: '2026-07-15' });
+  });
+
+  it('saves a typed date once, on blur, not on every segment', async () => {
+    // Typing fires `change` per completed segment (`0002-…`, `0020-…`); only the
+    // finished value may be written.
+    const user = userEvent.setup();
+    renderEditor();
+    const date = screen.getByDisplayValue('2026-08-01');
+    date.focus();
+    fireEvent.change(date, { target: { value: '0002-07-15' } });
+    fireEvent.change(date, { target: { value: '2026-07-15' } });
+    expect(sent('updateExpense').filter((c) => 'date' in c)).toHaveLength(0);
+    await user.tab();
+    expect(sent('updateExpense').filter((c) => 'date' in c)).toEqual([
+      { expenseId: 'exp-1', date: '2026-07-15' },
+    ]);
   });
 
   it('changes the currency from the picker', async () => {
@@ -911,5 +967,56 @@ describe('line items', () => {
       ],
     });
     expect(screen.getByText('drawer.attendees')).toBeInTheDocument();
+  });
+
+  it('mounts the attendees with the prefilled claimant when the requirement first arrives', () => {
+    /**
+     * The server names the expense owner as the first attendee in the same write that gives
+     * the expense its first line in a category requiring attendees, so the claimant arrives in
+     * the SAME `expenses.report` refetch as that line. The attendees editor seeds its rows once,
+     * on mount, and it mounts only when the requirement flips on — so the refetch that brings
+     * the line must mount it with the claimant already in it, not leave an empty list that
+     * waits for a second refetch nobody sends. (ExpenseOS 67db2e33, #588.)
+     */
+    const props = {
+      violations: [],
+      currencySymbol: '$',
+      editable: true,
+      categoryItems: CATEGORIES,
+      locale: CATALOG_LOCALE,
+      onChange: vi.fn(),
+      entityRecovers: true,
+    };
+    const { rerender } = render(<ExpenseEditor expense={expense() as never} {...props} />);
+    expect(screen.queryByText('drawer.attendees')).not.toBeInTheDocument();
+
+    rerender(
+      <ExpenseEditor
+        expense={
+          expense({
+            lineItems: [
+              line({
+                category: {
+                  id: 'cat-meals',
+                  label: 'Travel - Meals',
+                  icon: null,
+                  isMileage: false,
+                  requiresAttendees: true,
+                },
+              }),
+            ],
+            attendees: [{ id: 'att-1', name: 'Ada Lovelace', company: null, isExternal: false }],
+          }) as never
+        }
+        {...props}
+      />,
+    );
+
+    expect(screen.getByText('drawer.attendees')).toBeInTheDocument();
+    const row = screen.getByText('Ada Lovelace').parentElement as HTMLElement;
+    expect(within(row).getByText('attendee.internal')).toBeInTheDocument();
+    expect(within(row).getByRole('button', { name: 'attendee.remove' })).toBeInTheDocument();
+    // An internal attendee is display-only: no free-text name field to retype the claimant.
+    expect(screen.queryByPlaceholderText('attendee.name')).not.toBeInTheDocument();
   });
 });

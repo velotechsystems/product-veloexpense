@@ -286,6 +286,14 @@ describe('permission gates', () => {
     }
   });
 
+  it('refuses the default-currency lookup without createOwn', async () => {
+    // It exists to pre-fill a new report, so it carries the permission to file one —
+    // reading and editing reports are not enough. (ExpenseOS 67db2e33, #581.)
+    const db = makeDb();
+    const c = await callerFor(db, [...READ, ...UPDATE]);
+    await expect(c.defaultCurrency()).rejects.toMatchObject({ code: 'FORBIDDEN' });
+  });
+
   it('separates deleting a draft report from editing it', async () => {
     // Deleting a whole report is its own permission — a stronger act than editing.
     const db = makeDb();

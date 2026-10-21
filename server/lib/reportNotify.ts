@@ -125,7 +125,8 @@ export async function notifyReportDecision(
         subjectId: res.subjectId,
         type: res.status,
         actorId,
-        extra: { note: note ?? '' },
+        // ExpenseOS 67db2e33 (#578): trimmed, so a reason of spaces quotes nothing.
+        extra: { note: note?.trim() ?? '' },
       });
       const submitterId = await submitterOf(db, res.subjectId);
       if (submitterId && submitterId !== actorId) {
@@ -174,15 +175,37 @@ export async function notifyReportSubmitted(
   });
 }
 
-/** Notify the submitter that their report was returned for edits.
- *  VeloExpense: with the approver's note. */
+/**
+ * Tell the submitter their report came back for edits — and, when the approver said why,
+ * put that in the report's comment thread.
+ *
+ * The note used to reach the submitter only on the RETURNED event, so the report's own
+ * thread never showed what to change. It is posted as a COMMENT, recorded after the
+ * RETURNED event so the thread reads "returned by …" and then the reason. It is NOT fanned
+ * out on its own: the RETURNED notification already reaches the submitter, and the same
+ * return told twice is two messages for one event.
+ *
+ * Ported from ExpenseOS 67db2e33 (#578). VeloExpense: awaited, each half under its own
+ * savepoint (`bestEffort`), so a failed comment never undoes the return or its notice.
+ */
 export async function notifyReportReturned(
   db: PrismaClient,
   reportId: string,
   actorId: string,
   note: string | null = null,
 ): Promise<void> {
-  await notifySubmitterEvent(db, reportId, actorId, 'RETURNED', { note: note ?? '' });
+  const body = note?.trim() ?? '';
+  await notifySubmitterEvent(db, reportId, actorId, 'RETURNED', { note: body });
+  if (body) {
+    await bestEffort(db, 'return note', async () => {
+      await recordActivity(db, {
+        subjectId: reportId,
+        type: 'COMMENT',
+        actorId,
+        extra: { body, via: 'app' },
+      });
+    });
+  }
 }
 
 /** On recall (submitter withdrew a submitted report), tell the approvers whose

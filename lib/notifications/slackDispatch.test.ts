@@ -254,6 +254,21 @@ describe('the Slack message', () => {
     });
   });
 
+  it("quotes the approver's note under the message, escaped, a line at a time", () => {
+    // ExpenseOS 67db2e33 (#578).
+    const blocks = slackBlocks('msg', null, 'View', false, null, [], {
+      label: 'Note from the approver:',
+      text: 'Attach the <folio>.\nAnd the stub.',
+    });
+    expect(blocks[1]).toEqual({
+      type: 'section',
+      text: {
+        type: 'mrkdwn',
+        text: '*Note from the approver:*\n>Attach the &lt;folio&gt;.\n>And the stub.',
+      },
+    });
+  });
+
   it('escapes what Slack would read as markup, and nothing else', () => {
     // VeloExpense: applied to the template body, which interpolates text people type.
     expect(slackText('<https://example.test|Approve> & "quotes"')).toBe(

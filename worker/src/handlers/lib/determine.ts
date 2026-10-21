@@ -29,9 +29,11 @@ import {
   currentDetermination,
   EXPENSE_FX_SELECT,
   ExpenseTaxSource,
+  ensureClaimantAttendee,
   fxColumns,
   fxParamsFrom,
   glAccountIdsForCategories,
+  lockClaimantSnapshot,
   type OverrideMap,
   overridesForPrompt,
   type Prisma,
@@ -50,7 +52,7 @@ import { allocateRecoverable } from '@expenseos/tax';
 import { db } from '@/lib/db/prisma';
 import { anthropicForExtraction } from './anthropic';
 import { fetchCleanDocument, message, prepareExtraction, recordExtractionUsage } from './extract-core';
-import { allocate, type CategoryRow, labelEn } from './prefill';
+import { allocate, auditClaimantAttendee, type CategoryRow, labelEn } from './prefill';
 import { isReportEditable, lockReportStatus } from './report-editable';
 
 /** Minor-unit helper bound to one currency's ISO-4217 exponent. */
@@ -509,11 +511,17 @@ async function applyDetermination(params: {
       });
     }
 
+    let claimantAttendeeId: string | null = null;
     if (lineRows) {
+      // The claimant rule's "before", read under the report lock taken above and BEFORE
+      // the wipe — after it, every rebuild would look like a first requiring line. A line
+      // set the person owns (`keepLineItems`) is not rebuilt, so it never gets here.
+      const snapshot = await lockClaimantSnapshot(tx, expense.id);
       await tx.expenseLineItem.deleteMany({ where: { expenseId: expense.id } });
       for (const row of lineRows) {
         await tx.expenseLineItem.create({ data: row });
       }
+      claimantAttendeeId = await ensureClaimantAttendee(tx, snapshot);
     }
 
     await tx.expense.update({
@@ -548,6 +556,14 @@ async function applyDetermination(params: {
     // is no longer the only thing standing between a decided report and this pass,
     // because the expense-level writes above now share this lock.
     await recomputeReportTotal(tx, expense.reportId);
+    // Last: `writeAudit` takes the global audit-chain lock, held from here to commit.
+    if (claimantAttendeeId) {
+      await auditClaimantAttendee(tx, {
+        jobName: 'expense.determineExpense',
+        expenseId: expense.id,
+        claimantAttendeeId,
+      });
+    }
     return { applied: true as const };
   });
 }
