@@ -8,35 +8,33 @@
  * VeloExpense: `DirectoryUser` only. ExpenseOS's `RefreshResult`, `AddUserResult` and
  * `DirectoryLookup` belong to its on-login refresh and its add-by-email, which VeloExpense
  * does not port (d84: the sync updates people VeloExpense already has, and nothing else).
+ *
+ * ExpenseOS 67db2e33 (#582, directory sync v2): `googleId` and `deleted` are new, and
+ * department, business unit, legal entity, employee id and home currency are gone — Google
+ * no longer writes them.
  */
 export interface DirectoryUser {
+  /** The Directory user id — the same value as the OIDC `sub` Google sign-in reports. Stored
+   *  as the person's `google` external id and matched before email. */
+  googleId: string;
   /** Primary email, lowercased. */
   email: string;
   firstName: string | null;
   lastName: string | null;
   avatarUrl: string | null;
-  department: string | null;
-  /** organizations[].name — the REGIONAL unit (EBlock Ontario, EB Flint), not the company. */
-  businessUnit: string | null;
-  /** organizations[].costCenter — the legal entity, which is what HR's payroll company is. */
-  entity: string | null;
   /** organizations[].title — free-text employee title. Resolved to a JobLevel
    *  on apply (see titleToJobLevelCode); job level drives `managerChain`
    *  approver selection, so an unmapped title leaves the ladder incomplete. */
   title: string | null;
   /** ISO-3166-1 alpha-2 from addresses[].countryCode. */
   country: string | null;
-  /** Not exposed by Directory; always null. App-level inference layer
-   *  can default from `country` later. */
-  homeCurrency: null;
-  /** externalIds[?type=organization].value — typically the HR employee
-   *  number (e.g., Concur ID). */
-  employeeId: string | null;
   employeeStatus: 'ACTIVE' | 'ON_LEAVE' | 'DEACTIVATED' | 'TERMINATED';
-  /** Set when archived; null otherwise. */
+  /** When the account was archived or deleted; null otherwise. */
   terminationDate: Date | null;
   /** relations[?type=manager].value, lowercased. */
   managerEmail: string | null;
+  /** The account was deleted in Google (listed only with `showDeleted`). */
+  deleted: boolean;
 }
 
 /**
@@ -45,6 +43,8 @@ export interface DirectoryUser {
  * `fetch` (see ./client.ts) and does not take the dependency, so the shape is stated here.
  */
 export interface GoogleUser {
+  /** #582: the Directory user id. */
+  id?: string | null;
   primaryEmail?: string | null;
   name?: { givenName?: string | null; familyName?: string | null } | null;
   thumbnailPhotoUrl?: string | null;

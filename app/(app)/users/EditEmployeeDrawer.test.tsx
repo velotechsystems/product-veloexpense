@@ -72,14 +72,16 @@ vi.mock('@expenseos/design-system', async (importOriginal) => {
     Select: ({
       value,
       onValueChange,
+      disabled,
       children,
     }: {
       value: string;
       onValueChange: (v: string) => void;
+      disabled?: boolean;
       children: ReactNode;
     }) => (
       <Ctx.Provider value={{ value, onValueChange }}>
-        <div data-testid="select" data-value={value}>
+        <div data-testid="select" data-value={value} data-disabled={disabled ? 'true' : 'false'}>
           {children}
         </div>
       </Ctx.Provider>
@@ -115,15 +117,18 @@ vi.mock('@/components/pickers/EntityPickers', () => ({
     initialItem,
     excludeValues,
     onValueChange,
+    disabled,
   }: {
     id?: string;
     value: string | null;
     initialItem?: { value: string; label: string } | null;
     excludeValues?: readonly string[];
     onValueChange: (v: string | null, item: { value: string; label: string } | null) => void;
+    disabled?: boolean;
   }) => (
     <div
       data-testid="manager-picker"
+      data-disabled={disabled ? 'true' : 'false'}
       data-id={id}
       data-value={value ?? ''}
       data-seed={initialItem?.label ?? ''}
@@ -615,5 +620,73 @@ describe('the manager picker', () => {
     expect(screen.getByText('people.edit.title')).toBeInTheDocument();
     // The unsaved pick is still on screen.
     expect(picker()).toHaveAttribute('data-value', 'u-3');
+  });
+});
+
+// ── Google-managed people ─────────────────────────────────────────────────────
+// eos batch 4 — ported from ExpenseOS's EditEmployeeDrawer.test.tsx (67db2e33, #582).
+// VeloExpense: status is NOT locked — Directory only moves a person out here (d85), so an
+// administrator still sets leave — and so it stays in the patch.
+
+describe('a person whose profile comes from Google', () => {
+  /**
+   * With directory sync on, Google owns name, country and manager for anybody linked to a
+   * Google account. An edit here would be undone by the next sync, so the fields are
+   * read-only and left out of the patch entirely — the server refuses a change to them
+   * either way.
+   */
+  const googlePerson = () => person({ externalIds: { google: 'g-1' } });
+  const withSync = (enabled: boolean, onCall?: (input: unknown) => void) =>
+    setTrpc({
+      queries: { 'users.directorySync': { data: { enabled } } },
+      ...(onCall ? { mutations: { 'users.update': { onCall } } } : {}),
+    });
+
+  it('locks the Google-owned fields and says why', () => {
+    withSync(true);
+    show(googlePerson());
+    expect(screen.getByTestId('people-directory-managed')).toHaveTextContent(
+      'people.edit.directoryManaged',
+    );
+    expect(screen.getByLabelText(/people\.edit\.firstName/)).toBeDisabled();
+    expect(screen.getByLabelText(/people\.edit\.lastName/)).toBeDisabled();
+    expect(screen.getByLabelText(/people\.edit\.country/)).toBeDisabled();
+    expect(screen.getByTestId('manager-picker')).toHaveAttribute('data-disabled', 'true');
+    // VeloExpense: status stays editable (d85).
+    const status = document
+      .querySelector('[data-trigger="ee-status"]')
+      ?.closest('[data-testid="select"]');
+    expect(status).toHaveAttribute('data-disabled', 'false');
+  });
+
+  it('leaves the Google-owned fields out of the patch, and still saves the rest', async () => {
+    const onCall = vi.fn();
+    const user = userEvent.setup();
+    withSync(true, onCall);
+    show(googlePerson());
+    await save(user);
+    const patch = onCall.mock.calls[0]?.[0].patch;
+    for (const key of ['firstName', 'lastName', 'country', 'managerId']) {
+      expect(patch).not.toHaveProperty(key);
+    }
+    expect(patch).toMatchObject({ legalEntityId: 'le-1', departmentId: 'd-1' });
+    expect(patch).toHaveProperty('employeeStatus');
+  });
+
+  it('keeps everything editable for a person with no Google account', () => {
+    withSync(true);
+    show(person());
+    expect(screen.queryByTestId('people-directory-managed')).not.toBeInTheDocument();
+    expect(screen.getByLabelText(/people\.edit\.firstName/)).toBeEnabled();
+  });
+
+  it('keeps everything editable while directory sync is off', async () => {
+    const onCall = vi.fn();
+    const user = userEvent.setup();
+    withSync(false, onCall);
+    show(googlePerson());
+    expect(screen.getByLabelText(/people\.edit\.firstName/)).toBeEnabled();
+    await save(user);
+    expect(onCall.mock.calls[0]?.[0].patch).toHaveProperty('firstName', 'Dana');
   });
 });

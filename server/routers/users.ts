@@ -46,6 +46,9 @@ import { pushSeatCountInBackground } from '@/lib/billing/seats';
 import { afterCommit, type TenantDb } from '@/lib/db/prisma';
 import { queryRunnerOf } from '@/lib/db/prisma-pg-bridge';
 import { type Context, protectedProcedure, router, withPermission } from '@/server/trpc';
+import { GOOGLE_SOURCE_CODE, isDirectoryDisabled } from '@expenseos/integrations-google';
+import { getDirectoryConnection } from '@/lib/directory/googleConnection';
+import { REFUSAL_KEYS, refusal } from '@/server/refusal';
 import { type DirectoryScope, resolveScopedIds } from '../lib/userScope';
 
 /** Trim a string to null when empty. */
@@ -710,7 +713,70 @@ function pushSeatsAfterCommit(ctx: { session: NonNullable<Context['session']> })
   void afterCommit(async () => pushSeatCountInBackground(organizationId));
 }
 
+/**
+ * The `users.update` patch keys Google Workspace owns (see `GOOGLE_OWNED_FIELDS` in
+ * integrations-google). Email and avatar are not editable here, so they are not listed.
+ *
+ * eos batch 4 — ported from ExpenseOS `users.ts` (67db2e33, #582). VeloExpense: employment
+ * status and termination date are NOT listed. Directory only ever moves a person out here
+ * (d85) and cannot express ON_LEAVE, so an administrator still sets leave, and a leaver's
+ * return is `users.reactivate`'s, not Google's.
+ */
+const GOOGLE_OWNED_PATCH_KEYS = ['firstName', 'lastName', 'jobLevelId', 'managerId', 'country'] as const;
+
+/**
+ * Whether this tenant's Google Workspace directory sync is on. VeloExpense: the tenant has
+ * connected its Workspace (`google_directory_connection`, 0076) and the platform switch is
+ * not off — ExpenseOS reads its integration settings (`loadDirectorySettings`).
+ */
+async function directorySyncOn(db: Context['db']): Promise<boolean> {
+  if (isDirectoryDisabled()) return false;
+  return (await getDirectoryConnection(queryRunnerOf(db))).connected;
+}
+
+/**
+ * The Google-owned fields this patch would actually CHANGE for a person whose values come
+ * from Google — linked to a Google account while directory sync is on. Empty when the
+ * person is not Google-managed, or when the patch only repeats what is stored (the drawer
+ * sends name on every save).
+ *
+ * Refused rather than written: the next directory sync would silently put Google's value
+ * back, and the edit would look as if it never happened.
+ */
+async function googleOwnedChanges(
+  db: Context['db'],
+  userId: string,
+  patch: Partial<Record<(typeof GOOGLE_OWNED_PATCH_KEYS)[number], unknown>>,
+): Promise<string[]> {
+  const touched = GOOGLE_OWNED_PATCH_KEYS.filter((k) => patch[k] !== undefined);
+  if (touched.length === 0) return [];
+  if (!(await directorySyncOn(db))) return [];
+  const current = await db.user.findFirst({
+    where: { id: userId },
+    select: {
+      firstName: true,
+      lastName: true,
+      jobLevelId: true,
+      managerId: true,
+      country: true,
+      externalIds: { where: { source: { code: GOOGLE_SOURCE_CODE } }, select: { id: true } },
+    },
+  });
+  if (!current || current.externalIds.length === 0) return [];
+  const norm = (v: unknown) => (v instanceof Date ? v.toISOString() : (v ?? null));
+  return touched.filter((k) => norm(current[k]) !== norm(patch[k]));
+}
+
 export const usersRouter = router({
+  /**
+   * Whether Google Workspace directory sync is on. The edit drawer locks the Google-owned
+   * fields of a Google-linked person while it is; `users.update` enforces the same rule.
+   * (eos batch 4 — ExpenseOS 67db2e33, #582.)
+   */
+  directorySync: withPermission(P.user.update).query(async ({ ctx }) => ({
+    enabled: await directorySyncOn(ctx.db),
+  })),
+
   // ── List the directory ─────────────────────────────────────────
   // Open to every authenticated user; the `scope` parameter narrows the
   // visible set server-side. 'all' requires P.user.readAll (admin);
@@ -1399,6 +1465,16 @@ export const usersRouter = router({
     .mutation(async ({ ctx, input }) => {
       if (input.patch.managerId === input.id) {
         throw new TRPCError({ code: 'BAD_REQUEST', message: 'Cannot set self as manager' });
+      }
+      // eos batch 4 (#582): Google owns these for a Google-linked person while sync is on.
+      const googleOwned = await googleOwnedChanges(ctx.db, input.id, input.patch);
+      if (googleOwned.length > 0) {
+        throw refusal(
+          'BAD_REQUEST',
+          REFUSAL_KEYS.peopleDirectoryManaged,
+          `${googleOwned.join(', ')}: owned by Google Workspace for this person; change them in Google.`,
+          { fields: googleOwned.join(', ') },
+        );
       }
       // VeloExpense: the person and the manager are read inside the tenant (RLS), so another
       // tenant's id is "not found" here rather than a foreign-key error from the write.

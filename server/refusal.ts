@@ -59,6 +59,9 @@ export const REFUSAL_KEYS = {
   /** VeloExpense: a new expense past the plan's yearly expense cap (lib/billing/caps.ts),
    *  refused by a ported procedure. `{ limit }`. */
   expenseLimitReached: 'refusals.billing.expenseLimitReached',
+  /** eos batch 4 (#582): an admin edit to a field Google Workspace owns, for a person linked
+   *  to Google while directory sync is on — the next sync would undo it. `{ fields }`. */
+  peopleDirectoryManaged: 'refusals.people.directoryManaged',
 } as const;
 
 export type RefusalKey = (typeof REFUSAL_KEYS)[keyof typeof REFUSAL_KEYS];

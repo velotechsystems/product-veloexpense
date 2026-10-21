@@ -471,13 +471,19 @@ async function seedReportingLine(orgId, opts = {}) {
     // employee → manager → admin → owner in the demo tenant. Three levels, so
     // manager_level 2 and 3 mean something, and every user except the top of the
     // chain has an approver.
+    //
+    // eos batch 4 (ExpenseOS 67db2e33, #582): CREATE-ONLY — a link is written only where
+    // the person has no manager yet. Re-asserting it on every seed made the seed a third
+    // writer of `manager_id`, next to the Google directory sync (which owns it) and the
+    // People drawer: a re-seed of the demo tenants would put back a manager somebody had
+    // changed.
     for (const [child, parent] of chain) {
       await client.query(
         `UPDATE app_user
             SET manager_id = (SELECT id FROM app_user
                                WHERE organization_id = $1 AND email = $3),
                 updated_at = now()
-          WHERE organization_id = $1 AND email = $2`,
+          WHERE organization_id = $1 AND email = $2 AND manager_id IS NULL`,
         [orgId, child, parent],
       );
     }

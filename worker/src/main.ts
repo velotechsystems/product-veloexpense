@@ -8,12 +8,14 @@ import {
   QUEUE_NAMES,
   type QueueName,
   enqueue,
+  removeStaleSchedulers,
   upsertRecurring,
 } from '@expenseos/jobs';
 import { type ConnectionOptions, type Job, Worker } from 'bullmq';
 import { handleApprovalSweep } from './handlers/approval-sweep';
 import { handleAuditPurge } from './handlers/audit-purge';
 import { handleDirectorySync } from './handlers/directory-sync';
+import { handleUserSyncRunPrune } from './handlers/user-sync-run-prune';
 import { handleDetermineExpense } from './handlers/determine-expense';
 import { handleExamplePing } from './handlers/example';
 import { handleExpenseReceiptChase } from './handlers/expense-receipt-chase';
@@ -72,10 +74,15 @@ const HANDLERS: { [N in JobName]?: (data: unknown, job: Job) => Promise<unknown>
       : fanOutToTenants('audit.purge', { trigger: 'cron' }),
   // w5-04: ExpenseOS's directory sync, as `audit.purge` — the schedule's run fans out per
   // tenant; each tenant's job (or an admin's "Sync now") runs as that tenant.
-  'integration.google.directorySync': (data) =>
+  'integration.google.directorySync': (data, job) =>
     (data as { organizationId?: string } | null)?.organizationId
-      ? inTenant(data, () => handleDirectorySync(data as never))
+      ? inTenant(data, () => handleDirectorySync(data as never, {}, job))
       : fanOutToTenants('integration.google.directorySync', { trigger: 'cron' }),
+  // eos batch 4 (#582): the run reports' prune, per tenant as `notification.prune` is.
+  'userSyncRun.prune': (data) =>
+    (data as { organizationId?: string } | null)?.organizationId
+      ? inTenant(data, () => handleUserSyncRunPrune(data as never))
+      : fanOutToTenants('userSyncRun.prune', { trigger: 'cron' }),
   // VeloExpense (w3-06): as the tenant whose address the email was sent to (d47).
   'email.ingestReceipts': (data) => inTenant(data, () => handleIngestReceiptEmail(data as never)),
   // w5-01: a reply to a notification email, as a comment.
@@ -96,11 +103,13 @@ interface RecurringJob {
   jobId: string;
   pattern: string;
   tz?: string;
+  /** Overrides the queue's retry policy for this schedule only (eos batch 4, #582). */
+  attempts?: number;
 }
 
 /**
  * VeloExpense: ExpenseOS's receipt chase, approval sweep, (w5-07) notification prune and
- * audit purge, and (w5-04) directory sync, so far. Every other ExpenseOS
+ * audit purge, (w5-04) directory sync and (eos batch 4) the sync run reports' prune, so far. Every other ExpenseOS
  * schedule here runs a job VeloExpense does not route through this worker — its notification,
  * ledger and compliance passes are the `/api/internal/*` routes EventBridge Scheduler calls
  * (infrastructure/cdk config.ts `schedules`).
@@ -140,12 +149,23 @@ const RECURRING_JOBS: RecurringJob[] = [
     pattern: '30 3 * * *',
     tz: 'UTC',
   },
-  // w5-04: ExpenseOS's directory sync, at ExpenseOS's time.
+  // w5-04: ExpenseOS's directory sync, at ExpenseOS's time (67db2e33, #582: 02:30 UTC).
   {
     name: 'integration.google.directorySync',
     data: { trigger: 'cron' },
     jobId: 'directory-sync-daily',
-    pattern: '0 3 * * *', // every day at 03:00 UTC
+    pattern: '30 2 * * *',
+    tz: 'UTC',
+    // One attempt: the job is a full directory pass that records its own outcome. A retry
+    // would re-run all of it, and a configuration error does not heal in an hour.
+    attempts: 1,
+  },
+  // eos batch 4 (#582): the run reports' prune, at ExpenseOS's time.
+  {
+    name: 'userSyncRun.prune',
+    data: { trigger: 'cron' },
+    jobId: 'user-sync-run-prune-daily',
+    pattern: '45 2 * * *',
     tz: 'UTC',
   },
 ];
@@ -154,14 +174,21 @@ async function registerRecurringJobs(): Promise<void> {
   for (const rj of RECURRING_JOBS) {
     // upsertJobScheduler keys on jobId alone, so editing a pattern/tz updates
     // the existing schedule in place instead of orphaning it (see upsertRecurring).
-    // biome-ignore lint/suspicious/noExplicitAny: typed JobMap requires the call site to know its name+data pair.
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- VeloExpense: the same suppression, for ESLint.
-    await upsertRecurring(rj.jobId, rj.name as any, rj.data as any, {
-      pattern: rj.pattern,
-      tz: rj.tz,
-    });
+    // `never` casts: the typed JobMap wants the call site to know its name+data pair, and
+    // this loop only knows the entry was declared with a matching pair.
+    await upsertRecurring(
+      rj.jobId,
+      rj.name as never,
+      rj.data as never,
+      { pattern: rj.pattern, tz: rj.tz },
+      rj.attempts === undefined ? {} : { attempts: rj.attempts },
+    );
     console.log(`[worker] recurring  ${rj.name}  pattern="${rj.pattern}"  tz=${rj.tz ?? 'UTC'}`);
   }
+  // Schedulers persist in Redis: one dropped or renamed here would keep firing for ever.
+  // (eos batch 4 — ExpenseOS 67db2e33, #582.)
+  const removed = await removeStaleSchedulers(new Set(RECURRING_JOBS.map((rj) => rj.jobId)));
+  for (const id of removed) console.log(`[worker] removed stale schedule  ${id}`);
 }
 
 function startWorkerFor(queueName: QueueName): Worker {

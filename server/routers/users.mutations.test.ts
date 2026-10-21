@@ -56,6 +56,11 @@ vi.mock('@/lib/billing/caps', async (importOriginal) => ({
   assertSeatAvailable,
 }));
 vi.mock('@/lib/billing/seats', () => ({ pushSeatCountInBackground }));
+// eos batch 4 (#582): whether directory sync is on is the tenant's connection here
+// (ExpenseOS mocks its `loadDirectorySettings`).
+const getDirectoryConnection = stubFn(async () => ({ connected: false }) as { connected: boolean });
+vi.mock('@/lib/directory/googleConnection', () => ({ getDirectoryConnection }));
+vi.mock('@/lib/db/prisma-pg-bridge', () => ({ queryRunnerOf: () => ({}) }));
 
 /**
  * `withAudit` is stubbed to invoke its callback with the same stub as `tx`, and to
@@ -125,6 +130,7 @@ async function callerFor(db: unknown, permissions: readonly string[], userId = U
 beforeEach(() => {
   vi.clearAllMocks();
   auditCalls.length = 0;
+  getDirectoryConnection.mockResolvedValue({ connected: false });
 });
 
 describe('permission gates', () => {
@@ -779,5 +785,122 @@ describe('VeloExpense: seats and the last admin', () => {
     db.user.findFirst.mockResolvedValue({ deletedAt: new Date() });
     const caller = await callerFor(db, [P.user.setOnLeave]);
     await expect(caller.setOnLeave({ id: U('1'), onLeave: false })).rejects.toThrow(/Reactivate/);
+  });
+});
+
+// eos batch 4 — ported from ExpenseOS's users.mutations.test.ts (67db2e33, #582). VeloExpense:
+// "sync on" is the tenant's connection; the person is read with `findFirst` (so the stub
+// answers by what is selected); status and termination date are not Google-owned here (d85).
+describe('update — fields Google Workspace owns', () => {
+  /**
+   * With directory sync on, a person linked to a Google account takes their name, country,
+   * manager and job level from Google. An admin edit to one of them would be put back by
+   * the next sync, so it is refused with a sentence that says where to make the change.
+   */
+  const stored = (over: Record<string, unknown> = {}) => ({
+    firstName: 'Ada',
+    lastName: 'Lovelace',
+    jobLevelId: null,
+    managerId: null,
+    country: 'CA',
+    externalIds: [{ id: 'x1' }],
+    ...over,
+  });
+  /** The person as the Google check reads them, and as the update's own read does. */
+  const dbWith = (person: unknown) => {
+    const db = makeDb();
+    db.user.findFirst.mockImplementation(async (args: unknown) =>
+      (args as { select?: { externalIds?: unknown } }).select?.externalIds
+        ? person
+        : { id: U('1'), roleId: U('2'), deletedAt: null, businessUnitId: null },
+    );
+    return db;
+  };
+
+  it('refuses a change to a Google-owned field, naming it', async () => {
+    getDirectoryConnection.mockResolvedValue({ connected: true });
+    const db = dbWith(stored());
+    const caller = await callerFor(db, [P.user.update]);
+    const err = await caller
+      .update({ id: U('1'), patch: { firstName: 'Augusta', departmentId: null } })
+      .catch((e) => e);
+    expect(err.code).toBe('BAD_REQUEST');
+    const { refusalData } = await import('@/server/refusal');
+    expect(refusalData(err)).toEqual({
+      key: 'refusals.people.directoryManaged',
+      params: { fields: 'firstName' },
+    });
+    expect(db.user.update).not.toHaveBeenCalled();
+  });
+
+  it('lets a patch through that only repeats what Google already gave', async () => {
+    // The drawer sends name on every save; repeating it is not a change.
+    getDirectoryConnection.mockResolvedValue({ connected: true });
+    const db = dbWith(stored());
+    const caller = await callerFor(db, [P.user.update]);
+    await caller.update({ id: U('1'), patch: { firstName: 'Ada', country: 'CA', departmentId: null } });
+    expect(db.user.update).toHaveBeenCalledOnce();
+  });
+
+  it('VeloExpense: lets status through — Directory only moves a person out (d85)', async () => {
+    getDirectoryConnection.mockResolvedValue({ connected: true });
+    const db = dbWith(stored());
+    const caller = await callerFor(db, [P.user.update]);
+    await caller.update({ id: U('1'), patch: { employeeStatus: 'ON_LEAVE' } });
+    expect(db.user.update).toHaveBeenCalledOnce();
+  });
+
+  it('allows the change for a person with no Google account', async () => {
+    getDirectoryConnection.mockResolvedValue({ connected: true });
+    const db = dbWith(stored({ externalIds: [] }));
+    const caller = await callerFor(db, [P.user.update]);
+    await caller.update({ id: U('1'), patch: { country: 'US' } });
+    expect(db.user.update).toHaveBeenCalledOnce();
+  });
+
+  it('allows the change while directory sync is off', async () => {
+    const db = dbWith(stored());
+    const caller = await callerFor(db, [P.user.update]);
+    await caller.update({ id: U('1'), patch: { lastName: 'King' } });
+    expect(db.user.update).toHaveBeenCalledOnce();
+  });
+
+  it('does not consult Google for a patch that touches no Google-owned field', async () => {
+    const db = makeDb();
+    const caller = await callerFor(db, [P.user.update]);
+    await caller.update({ id: U('1'), patch: { departmentId: null } });
+    expect(getDirectoryConnection).not.toHaveBeenCalled();
+  });
+
+  it('treats a vanished person as nothing to protect', async () => {
+    getDirectoryConnection.mockResolvedValue({ connected: true });
+    const db = dbWith(null);
+    const caller = await callerFor(db, [P.user.update]);
+    await caller.update({ id: U('1'), patch: { country: 'US' } });
+    expect(db.user.update).toHaveBeenCalledOnce();
+  });
+});
+
+describe('directorySync', () => {
+  it('reports whether Google directory sync is on', async () => {
+    getDirectoryConnection.mockResolvedValue({ connected: true });
+    const caller = await callerFor(makeDb(), [P.user.update]);
+    await expect(caller.directorySync()).resolves.toEqual({ enabled: true });
+  });
+
+  it('VeloExpense: is off, whatever the tenant connected, when the platform switch is off', async () => {
+    getDirectoryConnection.mockResolvedValue({ connected: true });
+    process.env.GOOGLE_DIRECTORY_DISABLED = 'true';
+    try {
+      const caller = await callerFor(makeDb(), [P.user.update]);
+      await expect(caller.directorySync()).resolves.toEqual({ enabled: false });
+    } finally {
+      delete process.env.GOOGLE_DIRECTORY_DISABLED;
+    }
+  });
+
+  it('is gated on user.update', async () => {
+    const caller = await callerFor(makeDb(), []);
+    await expect(caller.directorySync()).rejects.toMatchObject({ code: 'FORBIDDEN' });
   });
 });

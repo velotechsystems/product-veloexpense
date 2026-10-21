@@ -2,7 +2,7 @@ import { type ConnectionOptions, type JobsOptions, Queue } from 'bullmq';
 import { v7 as uuidv7 } from 'uuid';
 import { getJobsConnection } from './connection';
 import { JOB_QUEUES, type JobMap, type JobName } from './jobs';
-import { QUEUE_CONFIG, type QueueName } from './queues';
+import { QUEUE_CONFIG, QUEUE_NAMES, type QueueName } from './queues';
 
 /**
  * Lazily cached BullMQ Queue per queue name. Each Queue holds its own
@@ -81,6 +81,13 @@ export async function upsertRecurring<N extends JobName>(
   name: N,
   payload: JobMap[N],
   repeat: { pattern: string; tz?: string },
+  /**
+   * Per-schedule override of the queue's retry policy. A nightly reconcile that already
+   * retries its own transient calls must not be re-run whole by BullMQ: five attempts of
+   * a full directory pass is five full directory passes.
+   * (eos batch 4 — ExpenseOS 67db2e33, #582.)
+   */
+  opts: { attempts?: number } = {},
 ): Promise<void> {
   const queueName = JOB_QUEUES[name];
   const config = QUEUE_CONFIG[queueName];
@@ -92,7 +99,7 @@ export async function upsertRecurring<N extends JobName>(
       name,
       data: payload,
       opts: {
-        attempts: config.defaultAttempts,
+        attempts: opts.attempts ?? config.defaultAttempts,
         backoff:
           config.backoffMs > 0 ? { type: 'exponential', delay: config.backoffMs } : undefined,
         removeOnComplete: { age: 24 * 60 * 60, count: 1000 },
@@ -100,4 +107,28 @@ export async function upsertRecurring<N extends JobName>(
       },
     },
   );
+}
+
+/**
+ * Remove every scheduler whose id is not in `keep`, across all queues. Returns the
+ * removed ids as `queue:id`.
+ *
+ * Schedulers live in Redis, not in code: deleting or renaming an entry in the worker's
+ * schedule list leaves the old one firing for ever. Moving a job to a new time under a new
+ * id would run it at BOTH times. Reconciling against the declared list on every boot makes
+ * the code the only source of truth for what runs when.
+ * (eos batch 4 — ExpenseOS 67db2e33, #582.)
+ */
+export async function removeStaleSchedulers(keep: ReadonlySet<string>): Promise<string[]> {
+  const removed: string[] = [];
+  for (const queueName of QUEUE_NAMES) {
+    const queue = getQueue(queueName);
+    const schedulers = await queue.getJobSchedulers(0, -1);
+    for (const scheduler of schedulers) {
+      if (keep.has(scheduler.key)) continue;
+      await queue.removeJobScheduler(scheduler.key);
+      removed.push(`${queueName}:${scheduler.key}`);
+    }
+  }
+  return removed;
 }

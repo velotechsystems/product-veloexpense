@@ -4,195 +4,324 @@ import type { TenantDb } from '@/lib/db/prisma';
 import type { DirectoryUser } from './types';
 
 /**
- * Apply a mapped Directory user to the database. Shared by the
- * on-login `refreshUserFromDirectory` and the background
- * `syncAllFromDirectory` so both paths produce identical writes.
- * (VeloExpense: only the background sync is ported.)
+ * w5-04 — ported from ExpenseOS `packages/integrations-google/src/apply.ts` (1e682dd6), and
+ * brought to ExpenseOS 67db2e33 (#582, directory sync v2): match by the `google` external id
+ * before email, write exactly the fields Google owns (a blank in Google clears ours), never
+ * touch department, business unit or legal entity, resolve managers in a second pass.
  *
- * Behavior:
- *   - Looks up the User by email.
- *   - Resolves the manager email to managerId — resolved, never created.
- *   - Writes Directory-canonical fields onto the User row. Null/empty
- *     values for the "skippable" fields (firstName, lastName, avatar,
- *     department, BU, entity, country) are NOT written
- *     so we don't blank out existing data Directory hasn't populated
- *     this run.
- *   - homeCurrency is never written — Directory doesn't supply it.
- *
- * Idempotent. Safe to call repeatedly with the same DirectoryUser.
- *
- * w5-04 — ported from ExpenseOS `packages/integrations-google/src/apply.ts` (1e682dd6).
  * VeloExpense, each marked below:
- *   · UPDATE ONLY (d84). ExpenseOS creates a placeholder user (Employee role, ACTIVE) for
- *     every Directory address it does not have. VeloExpense never does: a person joins a
- *     tenant by invitation and takes a paid seat, and a nightly job minting seats from a
- *     Workspace is the wrong place for that decision. A Directory user VeloExpense does not
- *     have is `not-found`, and nothing is written.
- *   · STATUS MOVES ONE WAY. ExpenseOS writes `employeeStatus` and `terminationDate` on every
- *     sync, nulls included. VeloExpense lets Directory OFFBOARD somebody — suspended →
- *     DEACTIVATED, archived → TERMINATED, with `deleted_at` stamped as `users.deactivate`
- *     does, because `deleted_at` is what sign-in, every request and the seat meter read
- *     (0071) — and never the reverse: an ACTIVE account in Directory does not reactivate
+ *   · NEVER CREATES (d84). ExpenseOS creates a person (employee role, no access) for every
+ *     Directory account nobody here matches. VeloExpense never does: a person joins a tenant by
+ *     invitation and takes a paid seat, and a nightly job minting seats from a Workspace is the
+ *     wrong place for that decision. An account nobody matches is `not-found`, and nothing is
+ *     written. ExpenseOS's `allowCreate` option is therefore gone.
+ *   · STATUS MOVES ONE WAY (d85). ExpenseOS's #582 makes employment status and termination
+ *     date Google-owned in both directions. VeloExpense lets Directory OFFBOARD somebody —
+ *     suspended → DEACTIVATED, archived or deleted → TERMINATED, with `deleted_at` stamped as
+ *     `users.deactivate` does, because `deleted_at` is what sign-in, every request and the
+ *     seat meter read (0071) — and never the reverse: an ACTIVE account does not reactivate
  *     anybody (that takes a seat back, which `users.reactivate` caps) and does not clear
- *     ON_LEAVE, which Directory cannot express at all (ExpenseOS's mapper never returns it,
- *     so its sync resets an on-leave person to ACTIVE every night).
+ *     ON_LEAVE, which Directory cannot express. So status and termination date are written
+ *     only on an offboarding, and Google's blank does not clear them.
  *   · NOT THE LAST ADMIN. A Directory offboarding of the tenant's last active System
- *     Administrator is HELD — reported, not written — as `users.deactivate` refuses it: a
- *     tenant nobody can administer cannot fix the sync that locked it out.
- *   · No pins. ExpenseOS's `applyPins` holds fields a reviewer adopted from NetSuite;
- *     VeloExpense has no NetSuite and no `UserSyncDiscrepancy`.
- *   · Email matches case-insensitively. ExpenseOS's email column is unique; VeloExpense's
- *     is unique per tenant as written (0001), so `Ada@x` and `ada@x` could both exist, and
- *     a match on both is refused rather than guessed.
- *   · Runs on the caller's transaction (`TenantDb`), one person per transaction, so an
- *     offboarding's status and `deleted_at` land together.
+ *     Administrator is HELD — reported, nothing written — as `users.deactivate` refuses it.
+ *   · Per tenant: the `google` external-id source is the tenant's own (`external_id_source` is
+ *     unique per tenant, 0072), job levels are the tenant's ladder (a recognised title with no
+ *     level here is reported as a missing level code), and every read runs on the caller's
+ *     tenant transaction.
+ *   · Email matches case-insensitively, and a match on two people (VeloExpense's email is
+ *     unique per tenant as written, 0001, so `Ada@x` and `ada@x` can both exist) is refused
+ *     rather than guessed.
+ *   · A country that is not two letters is left unchanged and reported: `app_user.country`
+ *     is held to ISO-2 by a CHECK (0055), and one bad value would otherwise fail the person.
  */
-export type ApplyResult =
-  | {
-      outcome: 'updated';
-      userId: string;
-      offboarded: boolean;
-      /** VeloExpense: the title mapped to a level code this tenant has no level for. */
-      missingLevelCode?: string;
-    }
-  /** VeloExpense: Directory has this person and VeloExpense does not. Nothing written. */
-  | { outcome: 'not-found' }
-  /** VeloExpense: Directory offboarded the tenant's last active admin. Nothing written. */
-  | { outcome: 'held'; userId: string; reason: 'last-admin' };
 
+/** The external-id source a person's Google Directory id is stored under. */
+export const GOOGLE_SOURCE_CODE = 'google';
+
+/** The fields Google owns, and the only ones this writes (VeloExpense: status one way). */
+export const GOOGLE_OWNED_FIELDS = [
+  'firstName',
+  'lastName',
+  'avatarUrl',
+  'jobLevelId',
+  'email',
+  'managerId',
+  'employeeStatus',
+  'terminationDate',
+  'country',
+] as const;
+export type GoogleOwnedField = (typeof GOOGLE_OWNED_FIELDS)[number];
+
+/** One field's change, as recorded in the run report. Dates as ISO strings. */
+export interface FieldChange {
+  from: string | null;
+  to: string | null;
+}
+
+export interface ApplyOptions {
+  /**
+   * Resolve and write the manager now. The nightly sync passes false and resolves every
+   * manager in a second pass once all people are matched — otherwise a manager listed later
+   * than their report is not found on the first night.
+   */
+  resolveManager?: boolean;
+  /** Fall back to an email match. False for a deleted account whose address is live again. */
+  allowEmailMatch?: boolean;
+  /**
+   * Google ids that are live in this run. A person found by email who is linked to a
+   * DIFFERENT Google id is re-linked only when that id is not live — the old account was
+   * deleted and the address re-issued. Two live accounts claiming one person is a conflict.
+   * Unknown means never re-link.
+   */
+  activeGoogleIds?: ReadonlySet<string>;
+  /** The `google` source id, when the caller already resolved it. */
+  googleSourceId?: string;
+  /** VeloExpense: injectable, so a test can fix the offboarding time. */
+  now?: Date;
+}
+
+/**
+ * VeloExpense: ExpenseOS's outcomes without `created` (d84), plus `not-found` (nobody here
+ * matches; nothing written) and `held` (Directory offboarded the tenant's last active admin;
+ * nothing written).
+ */
+export type ApplyOutcome = 'updated' | 'unchanged' | 'conflict' | 'skipped' | 'not-found' | 'held';
+
+export interface ApplyResult {
+  outcome: ApplyOutcome;
+  userId: string | null;
+  /** The `google` external id was written onto an existing person. */
+  linked: boolean;
+  /** …replacing a link to a Google account that no longer exists. */
+  relinked: boolean;
+  changes: Partial<Record<GoogleOwnedField, FieldChange>>;
+  /** Why a conflict/skip happened, or a note on a partial apply (email kept, …). */
+  message?: string;
+  /** Google named a manager nobody here has. Left unchanged. */
+  managerUnresolved?: boolean;
+  /** Google's title maps to no job level rule. Left unchanged. */
+  titleUnmapped?: boolean;
+  /** VeloExpense: the title mapped to a level code this tenant has no level for. Left unchanged. */
+  missingLevelCode?: string;
+  /** Google's new primary email belongs to another person here. Email left unchanged. */
+  emailConflict?: boolean;
+  /** VeloExpense: this apply offboarded the person (status + `deleted_at`, d85). */
+  offboarded?: boolean;
+}
+
+/** The tenant's `google` external-id source, created if the tenant has none yet. */
+export async function googleSourceIdOf(db: TenantDb): Promise<string> {
+  // VeloExpense: unique per tenant (0072) — find, else create, under the tenant's RLS.
+  const found = await db.externalIdSource.findFirst({
+    where: { code: GOOGLE_SOURCE_CODE },
+    select: { id: true },
+  });
+  if (found) return found.id;
+  const row = await db.externalIdSource.create({
+    data: {
+      code: GOOGLE_SOURCE_CODE,
+      label: { en: 'Google Workspace', 'fr-CA': 'Google Workspace' },
+    },
+    select: { id: true },
+  });
+  return row.id;
+}
+
+const iso = (d: Date | null): string | null => (d ? d.toISOString() : null);
 const LEAVER = new Set<DirectoryUser['employeeStatus']>(['DEACTIVATED', 'TERMINATED']);
+const ISO2 = /^[A-Z]{2}$/;
 
+const empty = (outcome: ApplyOutcome, userId: string | null, message?: string): ApplyResult => ({
+  outcome,
+  userId,
+  linked: false,
+  relinked: false,
+  changes: {},
+  ...(message ? { message } : {}),
+});
+
+/**
+ * Apply one Directory account to VeloExpense.
+ *
+ * MATCH: the person holding this account's `google` external id; else the person with this
+ * email (case-insensitive); else nobody — `not-found` (VeloExpense: never created, d84). A
+ * match by email is linked to the account. A person already linked to a different, still-live
+ * Google account is a CONFLICT and nothing is written.
+ *
+ * WRITE: exactly the fields Google owns. Blank in Google CLEARS ours — Google is the source
+ * of truth for them. What Google names but VeloExpense cannot resolve (a manager nobody here
+ * has, a title with no job level) is left unchanged and reported, because guessing would
+ * invent an org chart. Department, business unit and legal entity are never touched.
+ *
+ * Idempotent: a second call with the same account changes nothing and reports `unchanged`.
+ */
 export async function applyDirectoryUserToDb(
   db: TenantDb,
   mapped: DirectoryUser,
-  // VeloExpense: injectable, so a test can fix the offboarding time.
-  opts: { now?: Date } = {},
+  options: ApplyOptions = {},
 ): Promise<ApplyResult> {
-  if (!mapped.email) {
-    throw new Error('applyDirectoryUserToDb: DirectoryUser.email is required');
+  if (!mapped.email) throw new Error('applyDirectoryUserToDb: DirectoryUser.email is required');
+  if (!mapped.googleId) {
+    throw new Error('applyDirectoryUserToDb: DirectoryUser.googleId is required');
   }
+  const resolveManager = options.resolveManager ?? true;
+  const allowEmailMatch = options.allowEmailMatch ?? true;
+  const sourceId = options.googleSourceId ?? (await googleSourceIdOf(db));
 
-  // ── Find the User row by email (VeloExpense: never create) ────────
-  const matches = await db.user.findMany({
-    where: { email: { equals: mapped.email, mode: 'insensitive' } },
-    select: { id: true, roleId: true, employeeStatus: true, deletedAt: true },
-    take: 2,
+  // ── Match ─────────────────────────────────────────────────────────
+  let userId: string | null = null;
+  let linked = false;
+  let relinked = false;
+
+  const byLink = await db.userExternalId.findFirst({
+    where: { sourceId, sourceValue: mapped.googleId },
+    select: { userId: true },
   });
-  if (matches.length === 0) return { outcome: 'not-found' };
-  if (matches.length > 1) {
-    throw new Error('more than one person here has this email in different letter cases');
-  }
-  const existing = matches[0];
-  const userId = existing.id;
-
-  /**
-   * Resolve a Directory string to its lookup row by English label — and NEVER create one.
-   *
-   * It used to create on a miss. That is the same mistake the seed's department resolver
-   * made, and it cost 27 duplicate departments holding 358 users. Google is the worst place
-   * to make it from: its department names are bare leaves, 15 of them exist nowhere else
-   * (`IT`, `IT Testing`, `Technology Department IT`, `Web Development`, `Logistics
-   * Center`…), and every sign-in would mint one — quietly undoing the merge that removed
-   * them.
-   *
-   * A miss now returns `undefined`, which Prisma reads as "don't change", so the person
-   * keeps whatever ExpenseOS already had. Google's spelling is reported for correction at
-   * source instead of being taken as fact.
-   */
-  async function orgId(
-    kind: 'department' | 'businessUnit' | 'legalEntity',
-    value: string | null | undefined,
-  ): Promise<string | undefined> {
-    if (!value) return undefined;
-    const where = { label: { path: ['en'], equals: value } } as const;
-    if (kind === 'department') {
-      return (await db.department.findFirst({ where, select: { id: true } }))?.id;
-    }
-    if (kind === 'businessUnit') {
-      const byLabel = await db.businessUnit.findFirst({ where, select: { id: true } });
-      if (byLabel) return byLabel.id;
-      /**
-       * Then by external id, because Directory does not speak our labels.
-       *
-       * A business unit arrives as a BUILDING ("Logistic Centre - Edmonton") and a legal
-       * entity as ADP's payroll company name ("EDEALER INC.", or the Quebec entity truncated
-       * to "LES ENCHERES D'AUTOM" at twenty characters). Neither is what the row is called
-       * here, and neither is going to be: Google follows ADP, and ADP is the source of truth
-       * — so the translation belongs on this side, as data on the row it identifies, not as a
-       * correction pushed back at the system that is right.
-       */
-      const alias = await db.businessUnitExternalId.findFirst({
-        where: { sourceValue: value },
-        select: { businessUnitId: true },
-      });
-      return alias?.businessUnitId;
-    }
-    const byLabel = await db.legalEntity.findFirst({ where, select: { id: true } });
-    if (byLabel) return byLabel.id;
-    const alias = await db.legalEntityExternalId.findFirst({
-      where: { sourceValue: value },
-      select: { legalEntityId: true },
-    });
-    return alias?.legalEntityId;
-  }
-  // VeloExpense: in order, not `Promise.all` — they share one transaction's connection.
-  const departmentId = await orgId('department', mapped.department);
-  const businessUnitId = await orgId('businessUnit', mapped.businessUnit);
-  const legalEntityId = await orgId('legalEntity', mapped.entity);
-
-  // Employee title → job level. Unlike the org lookups above, an unrecognized
-  // title creates NOTHING: job level drives `managerChain` approver selection,
-  // so inventing a rung would hand someone approval authority. An unmapped
-  // title leaves the existing level untouched and is surfaced by the sync
-  // summary instead (see syncAllFromDirectory).
-  let jobLevelId: string | undefined;
-  const levelCode = titleToJobLevelCode(mapped.title);
-  if (levelCode) {
-    // VeloExpense: `code` is unique per tenant (0050), so `findFirst` under the tenant's RLS.
-    const level = await db.jobLevel.findFirst({
-      where: { code: levelCode },
-      select: { id: true },
-    });
-    jobLevelId = level?.id;
-  }
-  // VeloExpense: a tenant's ladder is its own, so a code it lacks is reported, not invented.
-  const missingLevelCode = levelCode && !jobLevelId ? levelCode : undefined;
-
-  // ── Resolve manager email → managerId ─────────────────────────────
-  let managerId: string | null | undefined;
-  if (mapped.managerEmail) {
-    /**
-     * Resolved, never created. This used to upsert a PLACEHOLDER user for whatever address
-     * Directory named — so an address that had just been merged away, or an alias left
-     * behind by somebody who has gone, came straight back as a new person. That is the
-     * double-import this has to stop.
-     */
-    const managers = await db.user.findMany({
-      where: { email: { equals: mapped.managerEmail, mode: 'insensitive' } },
-      select: { id: true },
+  if (byLink) {
+    userId = byLink.userId;
+  } else if (allowEmailMatch) {
+    // VeloExpense: one match only (see the header).
+    const byEmail = await db.user.findMany({
+      where: { email: { equals: mapped.email, mode: 'insensitive' } },
+      select: {
+        id: true,
+        externalIds: { where: { sourceId }, select: { id: true, sourceValue: true } },
+      },
       take: 2,
     });
-    // VeloExpense: one match only (see the header), and never the person themselves.
-    managerId = managers.length === 1 && managers[0].id !== userId ? managers[0].id : undefined;
-  } else {
-    // Directory returned NO manager relation. Google Workspace frequently
-    // leaves `relations[type=manager]` unpopulated, so absence is ambiguous —
-    // it does NOT reliably mean "this person has no manager". Treat it as
-    // "don't change" (undefined) rather than clearing the link, otherwise every
-    // sync (on-login + daily) would wipe manager assignments established by the
-    // seed / admin and break direct-reports + team queries. (Same philosophy as
-    // roles: sync never destroys locally-managed org data on absent signal.)
-    managerId = undefined;
+    if (byEmail.length > 1) {
+      return empty(
+        'conflict',
+        null,
+        `More than one person here has ${mapped.email} in different letter cases; refusing to guess.`,
+      );
+    }
+    const person = byEmail[0];
+    if (person) {
+      const other = person.externalIds.find((x) => x.sourceValue !== mapped.googleId);
+      if (other) {
+        const stillLive = options.activeGoogleIds
+          ? options.activeGoogleIds.has(other.sourceValue)
+          : true;
+        if (stillLive) {
+          return empty(
+            'conflict',
+            person.id,
+            `This person is linked to another Google account (${other.sourceValue}) that still exists; refusing to re-link them to ${mapped.googleId}.`,
+          );
+        }
+        await db.userExternalId.deleteMany({ where: { userId: person.id, sourceId } });
+        relinked = true;
+      }
+      userId = person.id;
+      await db.userExternalId.create({
+        data: { sourceId, sourceValue: mapped.googleId, userId },
+      });
+      linked = true;
+    }
   }
 
-  // ── Status (VeloExpense: one way — see the header) ────────────────
-  let employeeStatus: string | undefined;
-  let terminationDate: Date | null | undefined;
+  if (!userId) {
+    // VeloExpense: never create (d84).
+    return mapped.deleted
+      ? empty('skipped', null, 'Deleted in Google and never known here.')
+      : empty('not-found', null, 'Not a person here; people join by invitation.');
+  }
+
+  const result = await writeOwnedFields(db, userId, mapped, resolveManager, options.now);
+  if (result.held) {
+    return {
+      ...empty(
+        'held',
+        userId,
+        'Google offboarded the last active administrator here; held, not written.',
+      ),
+      linked,
+      relinked,
+    };
+  }
+  const changed = Object.keys(result.changes).length > 0;
+  return {
+    ...result,
+    outcome: changed || linked ? 'updated' : 'unchanged',
+    userId,
+    linked,
+    relinked,
+  };
+}
+
+type OwnedRow = {
+  email: string;
+  firstName: string | null;
+  lastName: string | null;
+  avatarUrl: string | null;
+  jobLevelId: string | null;
+  managerId: string | null;
+  employeeStatus: DirectoryUser['employeeStatus'];
+  terminationDate: Date | null;
+  country: string | null;
+};
+
+/** Compute and write the Google-owned fields that differ. */
+async function writeOwnedFields(
+  db: TenantDb,
+  userId: string,
+  mapped: DirectoryUser,
+  resolveManager: boolean,
+  now: Date | undefined,
+): Promise<
+  Pick<
+    ApplyResult,
+    | 'changes'
+    | 'message'
+    | 'managerUnresolved'
+    | 'titleUnmapped'
+    | 'missingLevelCode'
+    | 'emailConflict'
+    | 'offboarded'
+  > & { held?: true }
+> {
+  const row = await db.user.findUniqueOrThrow({
+    where: { id: userId },
+    select: {
+      email: true,
+      firstName: true,
+      lastName: true,
+      avatarUrl: true,
+      jobLevelId: true,
+      managerId: true,
+      employeeStatus: true,
+      terminationDate: true,
+      country: true,
+      roleId: true,
+      deletedAt: true,
+    },
+  });
+  const { roleId, deletedAt: currentDeletedAt, ...owned } = row;
+  const current = owned as OwnedRow;
+
+  const desired: Partial<OwnedRow> = {
+    firstName: mapped.firstName,
+    lastName: mapped.lastName,
+    avatarUrl: mapped.avatarUrl,
+  };
+  const notes: string[] = [];
+  let titleUnmapped = false;
+  let missingLevelCode: string | undefined;
+  let managerUnresolved = false;
+  let emailConflict = false;
+
+  // VeloExpense: ISO-2 only (see the header).
+  if (mapped.country === null || ISO2.test(mapped.country)) desired.country = mapped.country;
+  else notes.push(`Country "${mapped.country}" is not a two-letter code; left unchanged.`);
+
+  // ── Status (VeloExpense: one way, d85) ────────────────────────────
   let deletedAt: Date | undefined;
   let offboarded = false;
   if (LEAVER.has(mapped.employeeStatus)) {
-    if (existing.deletedAt === null) {
-      if (existing.roleId === SYSTEM_ROLE_IDS.admin) {
+    if (currentDeletedAt === null) {
+      if (roleId === SYSTEM_ROLE_IDS.admin) {
         const others = await db.user.count({
           where: {
             roleId: SYSTEM_ROLE_IDS.admin,
@@ -201,42 +330,123 @@ export async function applyDirectoryUserToDb(
             id: { not: userId },
           },
         });
-        if (others < 1) return { outcome: 'held', userId, reason: 'last-admin' };
+        if (others < 1) return { changes: {}, held: true };
       }
-      deletedAt = opts.now ?? new Date();
+      deletedAt = now ?? new Date();
       offboarded = true;
     }
-    employeeStatus = mapped.employeeStatus;
-    terminationDate = mapped.terminationDate ?? undefined;
+    desired.employeeStatus = mapped.employeeStatus;
+    if (mapped.terminationDate) desired.terminationDate = mapped.terminationDate;
   }
 
-  // ── Compose the write ────────────────────────────────────────────
-  // Prisma treats `undefined` as "don't change" and `null` as
-  // "set to null". Skippable fields use `?? undefined` so absent
-  // Directory data doesn't overwrite existing rows.
-  //
-  // Directory REMAINS authoritative for these. It is currently wrong for a lot of people —
-  // 101 carry a department that disagrees with the ledger and 98 carry a stale name — but
-  // the answer to that is to correct Directory, not to teach ExpenseOS to ignore it. Making
-  // the sync gap-fill only would hide the divergence instead of closing it, and the two
-  // systems would drift apart quietly from then on.
-  await db.user.update({
-    where: { id: userId },
-    data: {
-      firstName: mapped.firstName ?? undefined,
-      lastName: mapped.lastName ?? undefined,
-      avatarUrl: mapped.avatarUrl ?? undefined,
-      departmentId,
-      businessUnitId,
-      legalEntityId,
-      jobLevelId,
-      country: mapped.country ?? undefined,
-      employeeStatus,
-      terminationDate,
-      deletedAt,
-      managerId,
-    },
-  });
+  // Job level: no title clears it; a title with no level leaves it, because inventing or
+  // dropping a rung changes who approves this person's spend.
+  if (!mapped.title) {
+    desired.jobLevelId = null;
+  } else {
+    const code = titleToJobLevelCode(mapped.title);
+    // VeloExpense: `code` is unique per tenant (0050), so `findFirst` under the tenant's RLS.
+    const level = code
+      ? await db.jobLevel.findFirst({ where: { code }, select: { id: true } })
+      : null;
+    if (level) desired.jobLevelId = level.id;
+    else if (code) missingLevelCode = code;
+    else titleUnmapped = true;
+  }
 
-  return { outcome: 'updated', userId, offboarded, ...(missingLevelCode ? { missingLevelCode } : {}) };
+  // Email: Google's primary wins, unless another person here already holds it.
+  if (mapped.email !== current.email) {
+    const holder = await db.user.findFirst({
+      where: { email: { equals: mapped.email, mode: 'insensitive' }, id: { not: userId } },
+      select: { id: true },
+    });
+    if (holder) {
+      emailConflict = true;
+      notes.push(`Kept ${current.email}: ${mapped.email} belongs to another person here.`);
+    } else {
+      desired.email = mapped.email;
+    }
+  }
+
+  if (resolveManager) {
+    const manager = await resolveManagerId(db, userId, mapped.managerEmail);
+    if (manager.unresolved) managerUnresolved = true;
+    else desired.managerId = manager.managerId;
+  }
+
+  const changes: Partial<Record<GoogleOwnedField, FieldChange>> = {};
+  const data: Record<string, unknown> = {};
+  for (const [field, to] of Object.entries(desired) as [keyof OwnedRow, unknown][]) {
+    const from = current[field];
+    const same =
+      from instanceof Date || to instanceof Date
+        ? iso((from as Date | null) ?? null) === iso((to as Date | null) ?? null)
+        : (from ?? null) === (to ?? null);
+    if (same) continue;
+    data[field] = to;
+    changes[field as GoogleOwnedField] = {
+      from: from instanceof Date ? iso(from) : ((from as string | null) ?? null),
+      to: to instanceof Date ? iso(to) : ((to as string | null) ?? null),
+    };
+  }
+  if (deletedAt) data.deletedAt = deletedAt;
+  if (Object.keys(data).length > 0) {
+    await db.user.update({ where: { id: userId }, data });
+  }
+
+  if (managerUnresolved) notes.push(`Manager ${mapped.managerEmail} is not a person here.`);
+  if (titleUnmapped) notes.push(`Title "${mapped.title}" maps to no job level.`);
+  if (missingLevelCode) {
+    notes.push(`Title "${mapped.title}" maps to ${missingLevelCode}, which has no job level here.`);
+  }
+  return {
+    changes,
+    ...(notes.length ? { message: notes.join(' ') } : {}),
+    ...(managerUnresolved ? { managerUnresolved } : {}),
+    ...(titleUnmapped ? { titleUnmapped } : {}),
+    ...(missingLevelCode ? { missingLevelCode } : {}),
+    ...(emailConflict ? { emailConflict } : {}),
+    ...(offboarded ? { offboarded } : {}),
+  };
+}
+
+/**
+ * Resolve a Directory manager email to a person here. No manager in Google clears ours; a
+ * manager nobody here has is `unresolved` (left unchanged); somebody named as their own
+ * manager is ignored as unresolved rather than written as a one-person cycle.
+ * (VeloExpense: two people matching the address in different cases is unresolved too.)
+ */
+async function resolveManagerId(
+  db: TenantDb,
+  userId: string,
+  managerEmail: string | null,
+): Promise<{ managerId: string | null; unresolved: false } | { unresolved: true }> {
+  if (!managerEmail) return { managerId: null, unresolved: false };
+  const managers = await db.user.findMany({
+    where: { email: { equals: managerEmail, mode: 'insensitive' } },
+    select: { id: true },
+    take: 2,
+  });
+  if (managers.length !== 1 || managers[0].id === userId) return { unresolved: true };
+  return { managerId: managers[0].id, unresolved: false };
+}
+
+/**
+ * The nightly sync's second pass: write one person's manager once everybody is matched.
+ * Returns the change, if any, and whether the manager could not be resolved.
+ */
+export async function applyDirectoryManager(
+  db: TenantDb,
+  userId: string,
+  managerEmail: string | null,
+): Promise<{ change?: FieldChange; unresolved: boolean }> {
+  const resolved = await resolveManagerId(db, userId, managerEmail);
+  if (resolved.unresolved) return { unresolved: true };
+  const current = await db.user.findUniqueOrThrow({
+    where: { id: userId },
+    select: { managerId: true },
+  });
+  if ((current.managerId ?? null) === resolved.managerId) return { unresolved: false };
+  await db.user.update({ where: { id: userId }, data: { managerId: resolved.managerId } });
+  return { change: { from: current.managerId, to: resolved.managerId }, unresolved: false };
 }

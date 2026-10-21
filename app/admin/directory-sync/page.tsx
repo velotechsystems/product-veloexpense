@@ -4,8 +4,11 @@
  *
  * VeloExpense-built page, modelled on /admin/slack. ExpenseOS has no screen for its directory
  * sync — one Workspace, configured in the environment — so the CONTENT here is what its code
- * says: the read-only scope, the domain-wide delegation it needs, the daily 03:00 UTC run,
- * and the run summary its audit row carries (scanned, updated, errors, unmapped titles).
+ * says: the read-only scope, the domain-wide delegation it needs, the daily run (02:30 UTC
+ * since ExpenseOS 67db2e33, #582), and the run summary its audit row carries (scanned,
+ * updated, linked, conflicts, errors, unmapped titles). Batch 4 (#582) changed what the sync
+ * writes — Google's blank clears, department, business unit and legal entity are never
+ * written — and the page says so.
  * VeloExpense's own rules are stated where they apply: the sync never creates a person, and
  * only ever moves somebody out (d84).
  *
@@ -74,7 +77,7 @@ export default async function DirectorySyncPage({
         description={
           connection.connected
             ? 'Connected to Google Workspace · people are updated from your directory every night'
-            : 'Not connected · keep names, departments, managers and leavers up to date from Google Workspace'
+            : 'Not connected · keep names, managers, job levels and leavers up to date from Google Workspace'
         }
       />
 
@@ -129,12 +132,19 @@ export default async function DirectorySyncPage({
         <h2 className="text-lg leading-7 font-semibold">What the sync changes</h2>
         <ul className="list-disc pl-5 text-muted-foreground">
           <li>
-            For people already here, matched by email: name, photo, department, business unit,
-            legal entity, country, manager, and job level from their title. A value your
-            directory leaves blank, or that matches nothing here, changes nothing.
+            For people already here — matched by their Google account, or by email the first
+            time, which links them to it: name, photo, email address, country, manager, and job
+            level from their title. Google Workspace is the source of truth for these: a value
+            your directory leaves blank is cleared here too. A manager or title that matches
+            nothing here changes nothing, and is listed below.
           </li>
           <li>
-            Somebody suspended or archived in Google Workspace is deactivated here, as if an
+            Department, business unit and legal entity are yours: the sync never changes them.
+            For somebody linked to Google, name, country and manager can only be changed in
+            Google Workspace while the sync is connected.
+          </li>
+          <li>
+            Somebody suspended, archived or deleted in Google Workspace is deactivated here, as if an
             administrator had done it: they can no longer sign in, they stop taking a seat, and
             their open reports move to their manager. The last active administrator is never
             deactivated this way.
@@ -200,7 +210,7 @@ export default async function DirectorySyncPage({
           <p className="text-xs text-muted-foreground">
             The test signs in as the service account, acting as the administrator above, and
             reads one person from the directory. It changes nothing here. The sync runs every
-            night at 03:00 UTC.
+            night at 02:30 UTC.
           </p>
         </section>
       ) : null}
@@ -330,6 +340,21 @@ function LastSync({
             <dd>{summary.offboarded}</dd>
             <dt className="text-muted-foreground">Not here, left alone</dt>
             <dd>{summary.notFound}</dd>
+            {summary.linked !== undefined ? (
+              <>
+                <dt className="text-muted-foreground">Linked to their Google account</dt>
+                <dd>{summary.linked}</dd>
+              </>
+            ) : null}
+            {(summary.conflicts ?? 0) > 0 ? (
+              <>
+                <dt className="text-muted-foreground">Refused</dt>
+                <dd className="text-destructive">
+                  {summary.conflicts} — the address belongs to somebody linked to another Google
+                  account that still exists
+                </dd>
+              </>
+            ) : null}
             {summary.held > 0 ? (
               <>
                 <dt className="text-muted-foreground">Not deactivated</dt>

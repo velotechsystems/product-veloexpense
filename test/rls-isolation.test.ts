@@ -3055,6 +3055,107 @@ describe('RLS tenant isolation', () => {
     await admin.query('DELETE FROM mileage_balance_import');
   });
 
+  /* ── People-sync run reports (eos batch 4, #582, migration 0082) ────────────
+   *
+   * Two new tenant tables. The ordinary claim for each, then what the composite FKs add: a
+   * run cannot be started by another tenant's person, and an item cannot hang off another
+   * tenant's run or name another tenant's person. And the new unique rule on
+   * user_external_id: one id per person per source.
+   */
+  it("people-sync runs and their items are tenant-isolated, and cannot name another tenant's rows", async () => {
+    await admin.query('DELETE FROM user_sync_run');
+    const seed = async (org: string, ref: string) =>
+      withOrg(org, async (tx) => {
+        const user = (await tx.query('SELECT id FROM app_user LIMIT 1')).rows[0].id as string;
+        const run = (
+          await tx.query(
+            `INSERT INTO user_sync_run (organization_id, kind, trigger, actor_id)
+             VALUES ($1, 'GOOGLE_DIRECTORY', 'manual', $2) RETURNING id`,
+            [org, user],
+          )
+        ).rows[0].id as string;
+        await tx.query(
+          `INSERT INTO user_sync_run_item (organization_id, run_id, kind, user_id, external_ref, outcome)
+           VALUES ($1, $2, 'GOOGLE_DIRECTORY', $3, $4, 'UPDATED')`,
+          [org, run, user, ref],
+        );
+        return { run, user };
+      });
+    const a = await seed(orgA, 'g-a');
+    const b = await seed(orgB, 'g-b');
+
+    for (const [org, ref] of [
+      [orgA, 'g-a'],
+      [orgB, 'g-b'],
+    ] as const) {
+      const seen = await withOrg(org, async (tx) => ({
+        runs: (await tx.query('SELECT count(*)::int AS n FROM user_sync_run')).rows[0].n,
+        items: (await tx.query('SELECT external_ref FROM user_sync_run_item')).rows.map((r) => r.external_ref),
+      }));
+      expect(seen).toEqual({ runs: 1, items: [ref] });
+    }
+
+    await expect(
+      withOrg(orgB, (tx) =>
+        tx.query(`INSERT INTO user_sync_run (organization_id, kind, trigger) VALUES ($1, 'GOOGLE_DIRECTORY', 'cron')`, [orgA]),
+      ),
+    ).rejects.toThrow(/row-level security|violates/i);
+    await expect(
+      withOrg(orgB, (tx) =>
+        tx.query(
+          `INSERT INTO user_sync_run (organization_id, kind, trigger, actor_id) VALUES ($1, 'GOOGLE_DIRECTORY', 'cron', $2)`,
+          [orgB, a.user],
+        ),
+      ),
+    ).rejects.toThrow(/foreign key/i);
+    await expect(
+      withOrg(orgB, (tx) =>
+        tx.query(
+          `INSERT INTO user_sync_run_item (organization_id, run_id, kind, outcome) VALUES ($1, $2, 'GOOGLE_DIRECTORY', 'UPDATED')`,
+          [orgB, a.run],
+        ),
+      ),
+    ).rejects.toThrow(/foreign key/i);
+    await expect(
+      withOrg(orgB, (tx) =>
+        tx.query(
+          `INSERT INTO user_sync_run_item (organization_id, run_id, kind, user_id, outcome) VALUES ($1, $2, 'GOOGLE_DIRECTORY', $3, 'UPDATED')`,
+          [orgB, b.run, a.user],
+        ),
+      ),
+    ).rejects.toThrow(/foreign key/i);
+    // VeloExpense: no NetSuite (d80), so its kind is not a value here.
+    await expect(
+      withOrg(orgB, (tx) =>
+        tx.query(`INSERT INTO user_sync_run (organization_id, kind, trigger) VALUES ($1, 'NETSUITE_EMPLOYEES', 'cron')`, [orgB]),
+      ),
+    ).rejects.toThrow(/check constraint/i);
+
+    for (const table of ['user_sync_run', 'user_sync_run_item']) {
+      const viaPlatform = await withPlatformRead((tx) => tx.query(`SELECT count(*)::int AS n FROM ${table}`));
+      expect(viaPlatform.rows[0].n, table).toBe(0);
+      const blind = await withoutOrg((tx) => tx.query(`SELECT count(*)::int AS n FROM ${table}`));
+      expect(blind.rows[0].n, table).toBe(0);
+    }
+
+    // One id per person per source (ExpenseOS 20261014160000): a second `google` id for the
+    // same person is refused.
+    const src = await withOrg(orgA, async (tx) => {
+      const id = (
+        await tx.query(`INSERT INTO external_id_source (organization_id, code, label) VALUES ($1, 'rls-google', '{"en":"G"}') RETURNING id`, [orgA])
+      ).rows[0].id as string;
+      await tx.query(`INSERT INTO user_external_id (organization_id, source_id, source_value, user_id) VALUES ($1, $2, 'g-1', $3)`, [orgA, id, a.user]);
+      return id;
+    });
+    await expect(
+      withOrg(orgA, (tx) =>
+        tx.query(`INSERT INTO user_external_id (organization_id, source_id, source_value, user_id) VALUES ($1, $2, 'g-2', $3)`, [orgA, src, a.user]),
+      ),
+    ).rejects.toThrow(/user_external_id_user_source_key/);
+    await admin.query(`DELETE FROM external_id_source WHERE code = 'rls-google'`);
+    await admin.query('DELETE FROM user_sync_run');
+  });
+
   /* ── Per-diem rates (the Wave 1 port, migration 0053) ──────────────────────
    *
    * The ordinary claim, and the composite FKs: a rate cannot name another tenant's

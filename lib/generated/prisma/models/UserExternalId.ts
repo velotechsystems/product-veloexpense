@@ -235,6 +235,7 @@ export type UserExternalIdOrderByWithRelationInput = {
 export type UserExternalIdWhereUniqueInput = Prisma.AtLeast<{
   id?: string
   sourceId_sourceValue?: Prisma.UserExternalIdSourceIdSourceValueCompoundUniqueInput
+  userId_sourceId?: Prisma.UserExternalIdUserIdSourceIdCompoundUniqueInput
   AND?: Prisma.UserExternalIdWhereInput | Prisma.UserExternalIdWhereInput[]
   OR?: Prisma.UserExternalIdWhereInput[]
   NOT?: Prisma.UserExternalIdWhereInput | Prisma.UserExternalIdWhereInput[]
@@ -248,7 +249,7 @@ export type UserExternalIdWhereUniqueInput = Prisma.AtLeast<{
   updatedBy?: Prisma.UuidNullableFilter<"UserExternalId"> | string | null
   source?: Prisma.XOR<Prisma.ExternalIdSourceScalarRelationFilter, Prisma.ExternalIdSourceWhereInput>
   user?: Prisma.XOR<Prisma.UserScalarRelationFilter, Prisma.UserWhereInput>
-}, "id" | "sourceId_sourceValue">
+}, "id" | "sourceId_sourceValue" | "userId_sourceId">
 
 export type UserExternalIdOrderByWithAggregationInput = {
   id?: Prisma.SortOrder
@@ -372,6 +373,11 @@ export type UserExternalIdOrderByRelationAggregateInput = {
 export type UserExternalIdSourceIdSourceValueCompoundUniqueInput = {
   sourceId: string
   sourceValue: string
+}
+
+export type UserExternalIdUserIdSourceIdCompoundUniqueInput = {
+  userId: string
+  sourceId: string
 }
 
 export type UserExternalIdCountOrderByAggregateInput = {

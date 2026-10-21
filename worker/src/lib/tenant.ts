@@ -39,7 +39,9 @@ export async function fanOutToTenants<
     | 'approval.sweepExpired'
     | 'notification.prune'
     | 'audit.purge'
-    | 'integration.google.directorySync',
+    | 'integration.google.directorySync'
+    // eos batch 4 (#582).
+    | 'userSyncRun.prune',
 >(
   job: N,
   data: Omit<JobMap[N], 'organizationId'>,

@@ -25,6 +25,8 @@ const h = vi.hoisted(() => ({
   // even though every call carried three arguments.
   add: vi.fn(async (..._a: unknown[]) => ({})),
   upsertJobScheduler: vi.fn(async (..._a: unknown[]) => ({})),
+  getJobSchedulers: vi.fn(async (..._a: unknown[]) => [] as { key: string }[]),
+  removeJobScheduler: vi.fn(async (..._a: unknown[]) => true),
   ctor: vi.fn(),
   redis: vi.fn(),
 }));
@@ -33,8 +35,11 @@ vi.mock('bullmq', () => ({
   Queue: class {
     add = h.add;
     upsertJobScheduler = h.upsertJobScheduler;
+    removeJobScheduler = h.removeJobScheduler;
+    getJobSchedulers: (...a: unknown[]) => Promise<{ key: string }[]>;
     constructor(name: string, opts: unknown) {
       h.ctor(name, opts);
+      this.getJobSchedulers = (...a: unknown[]) => h.getJobSchedulers(name, ...a);
     }
   },
 }));
@@ -234,5 +239,50 @@ describe('getJobsConnection', () => {
     const b = getJobsConnection();
     expect(a).toBe(b);
     expect(h.redis).toHaveBeenCalledTimes(1);
+  });
+});
+
+// eos batch 4 — ExpenseOS 67db2e33 (#582): the per-schedule retry override and stale-scheduler removal.
+describe('upsertRecurring — retry override', () => {
+  it('lets one schedule override the queue retry policy', async () => {
+    const { upsertRecurring } = await load();
+    await upsertRecurring(
+      's1',
+      'integration.google.directorySync',
+      { trigger: 'cron' },
+      { pattern: '30 2 * * *' },
+      { attempts: 1 },
+    );
+    const job = h.upsertJobScheduler.mock.calls[0]?.[2] as { opts: { attempts: number } };
+    expect(job.opts.attempts).toBe(1);
+  });
+});
+describe('removeStaleSchedulers', () => {
+  it('removes only the schedulers the worker no longer declares, on every queue', async () => {
+    /**
+     * A renamed or deleted schedule otherwise keeps firing from Redis — moving a job to a
+     * new time under a new id would run it at both times.
+     */
+    h.getJobSchedulers.mockImplementation(async (queue: unknown) =>
+      queue === 'integrations'
+        ? [{ key: 'directory-sync-daily' }, { key: 'legacy-sync' }]
+        : queue === 'housekeeping'
+          ? [{ key: 'old-prune' }]
+          : [],
+    );
+    const { removeStaleSchedulers } = await load();
+    const removed = await removeStaleSchedulers(new Set(['directory-sync-daily']));
+    expect(removed.sort()).toEqual(['housekeeping:old-prune', 'integrations:legacy-sync']);
+    expect(h.removeJobScheduler.mock.calls.map((c) => c[0]).sort()).toEqual([
+      'legacy-sync',
+      'old-prune',
+    ]);
+  });
+
+  it('removes nothing when every scheduler is declared', async () => {
+    h.getJobSchedulers.mockImplementation(async () => [{ key: 'a' }]);
+    const { removeStaleSchedulers } = await load();
+    expect(await removeStaleSchedulers(new Set(['a']))).toEqual([]);
+    expect(h.removeJobScheduler).not.toHaveBeenCalled();
   });
 });

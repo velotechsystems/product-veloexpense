@@ -167,7 +167,8 @@
     "managerNone": "Aucun gestionnaire",
     "cancel": "Annuler",
     "save": "Enregistrer les modifications",
-    "saving": "Enregistrement…"
+    "saving": "Enregistrement…",
+    "directoryManaged": "Le nom, le pays et le gestionnaire de cette personne proviennent de Google Workspace et ne peuvent être modifiés que là."
   },
   "empty": {
     "title": "Aucun employé ne correspond à vos filtres",

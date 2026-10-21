@@ -167,7 +167,8 @@
     "managerNone": "No manager",
     "cancel": "Cancel",
     "save": "Save changes",
-    "saving": "Saving…"
+    "saving": "Saving…",
+    "directoryManaged": "Name, country and manager come from Google Workspace for this person and can only be changed there."
   },
   "empty": {
     "title": "No employees match your filters",

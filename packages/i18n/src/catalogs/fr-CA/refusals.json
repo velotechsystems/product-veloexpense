@@ -27,5 +27,8 @@
   },
   "billing": {
     "expenseLimitReached": "Le forfait de cette organisation permet {limit, number} dépenses par année, et ce nombre a été atteint au cours des douze derniers mois. Vos brouillons sont enregistrés — un administrateur peut changer de forfait dans les paramètres de facturation."
+  },
+  "people": {
+    "directoryManaged": "{fields} : ces champs proviennent de Google Workspace pour cette personne; une modification ici serait annulée par la prochaine synchronisation de l’annuaire. Modifiez-les plutôt dans Google."
   }
 }

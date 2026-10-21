@@ -89,6 +89,13 @@ function EditBody({
   const locale = useLocale() as Locale;
   const utils = trpc.useUtils();
   const facets = trpc.users.listFilterFacets.useQuery(undefined, { staleTime: 60_000 });
+  // eos batch 4 (ExpenseOS 67db2e33, #582): Google owns this person's name, country and
+  // manager while directory sync is on and they are linked to a Google account.
+  // VeloExpense: not status — Directory only moves a person out here (d85).
+  const directory = trpc.users.directorySync.useQuery(undefined, { staleTime: 60_000 });
+  const googleManaged =
+    directory.data?.enabled === true &&
+    Boolean((user.externalIds as Record<string, string> | null | undefined)?.google);
 
   const [firstName, setFirstName] = useState(user.firstName ?? '');
   const [lastName, setLastName] = useState(user.lastName ?? '');
@@ -148,17 +155,22 @@ function EditBody({
     update.mutate({
       id: user.id,
       patch: {
-        firstName: firstName.trim() || null,
-        lastName: lastName.trim() || null,
+        // Google-owned fields are left out entirely when Google manages this person.
+        ...(googleManaged
+          ? {}
+          : {
+              firstName: firstName.trim() || null,
+              lastName: lastName.trim() || null,
+              country: country.trim() ? country.trim().toUpperCase() : null,
+              ...(managerId !== initialManagerId ? { managerId } : {}),
+            }),
         employeeStatus: status,
         legalEntityId,
         businessUnitId,
         departmentId,
-        country: country.trim() ? country.trim().toUpperCase() : null,
         // A full replace: a row that was removed is simply absent from the map, which
         // is how the mapping is deleted rather than stored as a blank id.
         externalIds: mapFromEntries(externalIds),
-        ...(managerId !== initialManagerId ? { managerId } : {}),
       },
     });
   };
@@ -193,12 +205,18 @@ function EditBody({
             </AlertDescription>
           </Alert>
         )}
+        {googleManaged && (
+          <Alert data-testid="people-directory-managed">
+            <AlertDescription>{t('directoryManaged')}</AlertDescription>
+          </Alert>
+        )}
         {err && <p className="text-destructive text-sm">{err}</p>}
         <div className="grid grid-cols-2 gap-3">
           <FormField htmlFor="ee-fn" label={t('firstName')}>
             <Input
               id="ee-fn"
               value={firstName}
+              disabled={googleManaged}
               onChange={(e) => setFirstName(e.currentTarget.value)}
             />
           </FormField>
@@ -206,6 +224,7 @@ function EditBody({
             <Input
               id="ee-ln"
               value={lastName}
+              disabled={googleManaged}
               onChange={(e) => setLastName(e.currentTarget.value)}
             />
           </FormField>
@@ -261,6 +280,7 @@ function EditBody({
             initialItem={managerSeed}
             excludeValues={[user.id]}
             placeholder={t('managerNone')}
+            disabled={googleManaged}
           />
         </FormField>
         <div className="flex flex-col gap-1">
@@ -272,6 +292,7 @@ function EditBody({
             id="ee-country"
             maxLength={2}
             value={country}
+            disabled={googleManaged}
             placeholder={t('countryPlaceholder')}
             onChange={(e) => setCountry(e.currentTarget.value)}
           />

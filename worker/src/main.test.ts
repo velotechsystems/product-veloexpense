@@ -24,6 +24,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const h = vi.hoisted(() => ({
   upsertRecurring: vi.fn(),
+  removeStaleSchedulers: vi.fn(),
   enqueue: vi.fn(),
   workers: [] as Array<{
     name: string;
@@ -124,6 +125,7 @@ vi.mock('bullmq', () => ({
 vi.mock('@expenseos/jobs', () => ({
   getJobsConnection: () => ({}),
   upsertRecurring: (...args: unknown[]) => h.upsertRecurring(...args),
+  removeStaleSchedulers: (...args: unknown[]) => h.removeStaleSchedulers(...args),
   enqueue: (...args: unknown[]) => h.enqueue(...args),
   get JOB_QUEUES() {
     return h.jobQueues;
@@ -148,6 +150,7 @@ beforeEach(async () => {
   void JOB_QUEUES;
   void QUEUE_NAMES;
   h.upsertRecurring = vi.fn().mockResolvedValue(undefined);
+  h.removeStaleSchedulers = vi.fn().mockResolvedValue([]);
   h.enqueue = vi.fn().mockResolvedValue(undefined);
   h.installShutdown = vi.fn();
   h.handlers = {};
@@ -194,6 +197,8 @@ describe('what it starts', () => {
       'expense.receiptChase',
       { trigger: 'cron' },
       { pattern: '0 13 * * *', tz: 'UTC' },
+      // eos batch 4 (#582): the per-schedule retry override, none here.
+      {},
     );
   });
 
@@ -204,6 +209,7 @@ describe('what it starts', () => {
       'approval.sweepExpired',
       { trigger: 'cron' },
       { pattern: '0 * * * *', tz: 'UTC' },
+      {},
     );
   });
 
@@ -228,6 +234,34 @@ describe('what it starts', () => {
     // VeloExpense: ExpenseOS also asserts more than ten; VeloExpense registers two.
     expect(ids.length).toBeGreaterThan(0);
     expect(new Set(ids).size).toBe(ids.length);
+  });
+
+  // eos batch 4 — ported from ExpenseOS's main.test.ts (67db2e33, #582).
+  it('removes schedules it no longer declares, keeping every declared one', async () => {
+    // Redis outlives the code: a renamed schedule would otherwise fire at both times.
+    await boot();
+    expect(h.removeStaleSchedulers).toHaveBeenCalledOnce();
+    const keep = h.removeStaleSchedulers.mock.calls[0][0] as Set<string>;
+    const ids = h.upsertRecurring.mock.calls.map((c) => c[0] as string);
+    expect([...keep].sort()).toEqual([...ids].sort());
+  });
+
+  it('runs the directory sync at 02:30 UTC with a single attempt', async () => {
+    await boot();
+    const call = h.upsertRecurring.mock.calls.find((c) => c[0] === 'directory-sync-daily');
+    expect(call?.[3]).toEqual({ pattern: '30 2 * * *', tz: 'UTC' });
+    expect(call?.[4]).toEqual({ attempts: 1 });
+  });
+
+  it('VeloExpense: prunes the sync run reports daily at 02:45 UTC, with no tenant', async () => {
+    await boot();
+    expect(h.upsertRecurring).toHaveBeenCalledWith(
+      'user-sync-run-prune-daily',
+      'userSyncRun.prune',
+      { trigger: 'cron' },
+      { pattern: '45 2 * * *', tz: 'UTC' },
+      {},
+    );
   });
 
   it('gives every schedule an explicit timezone', async () => {

@@ -129,6 +129,20 @@ describe('getDirectoryClient', () => {
     expect(res).toEqual({ data: { users: [{ primaryEmail: 'a@example.test' }], nextPageToken: 'p2' } });
   });
 
+  it('lists the accounts deleted in Google when asked (#582)', async () => {
+    // VeloExpense: ExpenseOS 67db2e33's sync reads `showDeleted` through googleapis; this
+    // client builds the URL itself, so the parameter is pinned here.
+    const { fetch: f, calls } = stubFetch([TOKEN, { status: 200, body: { users: [] } }]);
+    await getDirectoryClient(CREDS, { fetch: f }).users.list({
+      customer: 'my_customer',
+      maxResults: 500,
+      projection: 'full',
+      orderBy: 'email',
+      showDeleted: 'true',
+    });
+    expect(new URL(calls[1].url).searchParams.get('showDeleted')).toBe('true');
+  });
+
   it('asks for one token per run, not one per page', async () => {
     const { fetch: f, calls } = stubFetch([
       TOKEN,

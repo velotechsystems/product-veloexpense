@@ -107,6 +107,10 @@ export const EXPORTED: Readonly<Record<string, ExportedTable>> = {
   // Concur and each person's distance, which the bands are priced from.
   mileage_balance_import: { file: 'mileage-balance-imports.csv' },
   mileage_opening_balance: { file: 'mileage-opening-balances.csv' },
+  // People-sync run reports (eos batch 4, 0082): what each Google directory sync did, run by
+  // run and person by person, for the 90 days they are kept.
+  user_sync_run: { file: 'user-sync-runs.csv' },
+  user_sync_run_item: { file: 'user-sync-run-items.csv' },
   // Per-diem rates (the Wave 1 port, 0053).
   per_diem_rate: { file: 'per-diem-rates.csv' },
   legal_entity: { file: 'legal-entities.csv' },
