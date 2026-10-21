@@ -48,6 +48,8 @@ export default async function PeoplePage() {
     // Live only, counted as the list it links to lists them (lib/invites/service.ts).
     canInvite ? await countLiveInvites(queryRunnerOf(tx as TenantDb)) : 0,
   ]);
+  // eos batch 3 (#589): carried-over mileage is shown to readers of the policy config.
+  const canReadPolicies = (rbac.permissions as readonly string[]).includes(P.config.policyRead);
   const hasReports = reportCount > 0;
 
   // Available scopes shown as chips:
@@ -77,6 +79,7 @@ export default async function PeoplePage() {
       vccActive={false}
       canInvite={canInvite}
       pendingInviteCount={pendingInviteCount}
+      canReadPolicies={canReadPolicies}
     />
   );
 }

@@ -33,6 +33,7 @@ import Link from 'next/link';
 import { useTranslations } from 'next-intl';
 import { ExternalIdsBlock, externalIdEntries } from '@/components/admin/ExternalIds';
 import { Link as LocaleLink } from '@/i18n/navigation';
+import { MileageYtdLines } from '@/components/MileageYtdLines';
 import { EMPLOYEE_STATUS_VARIANT } from '@/lib/employeeStatus';
 import { displayName, formatMinor } from '@/lib/format';
 import { trpc } from '@/lib/trpc/client';
@@ -68,6 +69,12 @@ interface UserDetailDrawerProps {
    * (scripts/check-vendor-neutral.mjs) — Wave 5's integration supplies it.
    */
   syncReviewPath?: string;
+  /**
+   * May the viewer read mileage policy (`config.policyRead`)? Gates the "Mileage this year"
+   * row: `mileageBalances.ytdForUser` answers somebody else's row only for that permission,
+   * so the query is only mounted for a viewer it would answer.
+   */
+  canReadPolicies?: boolean;
 }
 
 export function UserDetailDrawer({
@@ -77,6 +84,7 @@ export function UserDetailDrawer({
   onOpenUser,
   canSetAccess = false,
   syncReviewPath,
+  canReadPolicies = false,
 }: UserDetailDrawerProps) {
   const tStatus = useTranslations('people.status');
   const tCols = useTranslations('people.columns');
@@ -145,6 +153,7 @@ export function UserDetailDrawer({
               userQuery.data && setAccess.mutate({ id: userQuery.data.id, hasAccess })
             }
             onOpenUser={onOpenUser}
+            canReadPolicies={canReadPolicies}
           />
         )}
       </DrawerContent>
@@ -169,6 +178,7 @@ function DrawerContents({
   syncReviewPath,
   onSetAccess,
   settingAccess,
+  canReadPolicies = false,
 }: {
   user: UserDetail;
   directReports: DirectReport[];
@@ -183,6 +193,7 @@ function DrawerContents({
   onSetAccess: (hasAccess: boolean) => void;
   settingAccess: boolean;
   onOpenUser?: (id: string) => void;
+  canReadPolicies?: boolean;
 }) {
   const tSync = useTranslations('people.sync');
   const fullName = [user.firstName, user.lastName].filter(Boolean).join(' ') || user.email;
@@ -359,6 +370,12 @@ function DrawerContents({
               />
               <Field label={tDetail('country')} value={user.country ?? '—'} />
               <Field label={tDetail('homeCurrency')} value={user.homeCurrency ?? '—'} />
+              {canReadPolicies && (
+                <Field
+                  label={tDetail('mileageYtd')}
+                  value={<MileageYtd userId={user.id} locale={locale} />}
+                />
+              )}
             </Section>
 
             {/* ── People ↔ NetSuite ───────────────────────────────── */}
@@ -406,6 +423,27 @@ function DrawerContents({
       </DrawerBody>
     </>
   );
+}
+
+// ─── Mileage this year ───────────────────────────────────────────
+
+/**
+ * Where this person stands in their mileage bands this year, per country: the total so far
+ * (carry-over from Concur included), the band it is in, and how far to the next rate. It is
+ * what whoever answers "why was this line paid less" needs, without opening a report.
+ *
+ * A failed read says "unavailable", never "None": "None" states that the person has no
+ * mileage, which is the wrong thing to tell somebody looking into their pay. "None" itself
+ * comes from `MileageYtdLines`, with the rest of the row's sentences.
+ */
+function MileageYtd({ userId, locale }: { userId: string; locale: Locale }) {
+  const tDetail = useTranslations('people.detail');
+  const query = trpc.mileageBalances.ytdForUser.useQuery({ userId }, { staleTime: 30_000 });
+  if (query.isLoading) return <div className="h-3 w-24 animate-pulse rounded bg-muted" />;
+  if (query.isError) {
+    return <span className="text-muted-foreground">{tDetail('mileageYtdUnavailable')}</span>;
+  }
+  return <MileageYtdLines rows={query.data ?? []} locale={locale} />;
 }
 
 // ─── Activity: expense reports and delegations ───────────────────

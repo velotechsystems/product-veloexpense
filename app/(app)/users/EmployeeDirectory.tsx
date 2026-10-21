@@ -81,6 +81,8 @@ interface EmployeeDirectoryProps {
    * the invite form's server actions require (`asAdmin`). Gates Add user and the link.
    */
   canInvite?: boolean;
+  /** Whether the viewer holds P.config.policyRead (shows carried-over mileage). */
+  canReadPolicies?: boolean;
 }
 
 /**
@@ -236,6 +238,7 @@ export function EmployeeDirectory({
   syncReviewPath,
   pendingInviteCount = 0,
   canInvite = false,
+  canReadPolicies = false,
 }: EmployeeDirectoryProps) {
   const toolbarLabels = useToolbarLabels();
   const t = useTranslations('people');
@@ -990,6 +993,7 @@ export function EmployeeDirectory({
         vccActive={vccActive}
         canSetAccess={canSetRole}
         syncReviewPath={syncReviewPath}
+        canReadPolicies={canReadPolicies}
       />
 
       <SetRoleDrawer user={roleUser} onClose={() => setRoleUser(null)} />

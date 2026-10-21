@@ -1,10 +1,16 @@
-import { describe, expect, it } from 'vitest';
+/* eslint-disable @typescript-eslint/no-explicit-any -- VeloExpense: ExpenseOS's #589 cases read mock calls untyped; Biome allows it there. */
+import { describe, expect, it, vi } from 'vitest';
 import {
+  bandPosition,
   calendarYearBounds,
   computeMileageMinor,
   convertScaled,
   distanceToScaled,
+  type MileageDb,
   priceMileage,
+  unscale,
+  ytdBasis,
+  ytdDistanceScaled,
 } from './mileage';
 
 /** `[fromDistance, rate]` pairs → the scaled tier shape the engine takes. */
@@ -113,6 +119,55 @@ describe('banded pricing', () => {
   });
 });
 
+describe('band position (where a year-to-date total sits)', () => {
+  /** The ticket's two-band rule: one rate to 5,000, another after. */
+  const TWO = bands([0, 75], [5000, 73]);
+
+  it.each([
+    // [case, tiers, total, index, from, next, remaining]
+    ['A1 total 0 is the first band', TWO, '0', 0, '0', '5000', '5000'],
+    ['A2 inside the first band', TWO, '4210', 0, '0', '5000', '790'],
+    ['A3 one hundredth under the boundary', TWO, '4999.99', 0, '0', '5000', '0.01'],
+    ['A4 exactly on the boundary is the upper band', TWO, '5000', 1, '5000', null, null],
+    ['A5 middle band of three names the NEXT tier', CRA, '7000', 1, '5000', '10000', '3000'],
+    ['A6 past the last boundary', CRA, '12000', 2, '10000', null, null],
+    ['A7 a single tier (car allowance)', bands([0, 72]), '6100', 0, '0', null, null],
+  ] as const)('%s', (_, tiers, total, index, from, next, remaining) => {
+    expect(bandPosition(tiers, km(total))).toEqual({
+      index,
+      fromScaled: km(from),
+      nextScaled: next === null ? null : km(next),
+      remainingScaled: remaining === null ? null : km(remaining),
+    });
+  });
+
+  it('A8 has no band to name on a rule with no tiers', () => {
+    expect(bandPosition([], 0n)).toBeNull();
+    expect(bandPosition([], km('500'))).toBeNull();
+  });
+
+  it('A9 names the band pricing would price the next hundredth in', () => {
+    // The drawer must never name a band that pricing disagrees with.
+    const totals = ['0', '4999.99', '5000', '5000.01', '9999.99', '10000', '12000'];
+    for (const tiers of [TWO, CRA, bands([0, 72])]) {
+      for (const total of totals) {
+        const priced = priceMileage(tiers, km(total), 1n).segments[0].fromDistance;
+        expect(
+          bandPosition(tiers, km(total))?.fromScaled,
+          `${total} on ${tiers.length} tiers`,
+        ).toBe(km(priced));
+      }
+    }
+  });
+
+  it('formats a scaled distance as the two-decimal string segments carry', () => {
+    expect(unscale(0n)).toBe('0.00');
+    expect(unscale(5n)).toBe('0.05');
+    expect(unscale(km('5000'))).toBe('5000.00');
+    expect(unscale(km('4999.99'))).toBe('4999.99');
+  });
+});
+
 describe('calendar year bounds', () => {
   it('brackets the year containing the date, in UTC', () => {
     const { start, end } = calendarYearBounds(new Date('2026-07-31T23:00:00.000Z'));
@@ -123,5 +178,133 @@ describe('calendar year bounds', () => {
   it('puts 1 January inside the year that starts that day', () => {
     const { start } = calendarYearBounds(new Date('2026-01-01T00:00:00.000Z'));
     expect(start.toISOString()).toBe('2026-01-01T00:00:00.000Z');
+  });
+});
+
+describe('year-to-date basis (carried over + claimed here)', () => {
+  /** Just enough of Prisma.Decimal for the engine: `.mul(100).toFixed(0)`. */
+  const dec = (v: string) => ({
+    mul: (n: number) => ({ toFixed: () => String(Math.round(Number(v) * n)) }),
+  });
+  const balance = (distance: string, unit: 'KM' | 'MI', asOf: string) => ({
+    distance: dec(distance),
+    unit,
+    import: { asOf: new Date(`${asOf}T00:00:00.000Z`) },
+  });
+  const line = (
+    distance: string | null,
+    unit: 'KM' | 'MI' | null,
+    override: string | null = null,
+  ) => ({
+    mileageDistance: distance === null ? null : dec(distance),
+    mileageDistanceOverride: override === null ? null : dec(override),
+    mileageUnit: unit,
+  });
+
+  const fakeDb = (balances: unknown[], lines: unknown[]) => {
+    const db = {
+      mileageOpeningBalance: { findMany: vi.fn(async () => balances) },
+      expenseLineItem: { findMany: vi.fn(async () => lines) },
+    };
+    return db as typeof db & MileageDb;
+  };
+  const params = {
+    userId: 'u1',
+    country: 'CA',
+    on: new Date('2026-08-15T00:00:00.000Z'),
+    unit: 'KM' as const,
+  };
+
+  it('with no upload, counts the whole calendar year and carries nothing', async () => {
+    const db = fakeDb([], [line('100', 'KM'), line('50.5', 'KM')]);
+    const basis = await ytdBasis(db, params);
+    expect(basis).toEqual({ totalScaled: 150_50n, carriedScaled: 0n, carriedThrough: null });
+
+    const balanceWhere = (db.mileageOpeningBalance.findMany.mock.calls[0] as any)[0].where;
+    expect(balanceWhere).toEqual({
+      userId: 'u1',
+      country: 'CA',
+      import: { year: 2026, supersededAt: null },
+    });
+    const where = (db.expenseLineItem.findMany.mock.calls[0] as any)[0].where;
+    expect(where.id).toBeUndefined();
+    expect(where.expense.date).toEqual({
+      gte: new Date('2026-01-01T00:00:00.000Z'),
+      lt: new Date('2027-01-01T00:00:00.000Z'),
+    });
+    expect(where.expense.report).toEqual({ status: { not: 'REJECTED' } });
+    expect(where.mileageRate).toEqual({ country: 'CA' });
+  });
+
+  it('adds the carried-over balance and counts only lines dated after its period end', async () => {
+    const db = fakeDb([balance('4900', 'KM', '2026-06-30')], [line('200', 'KM')]);
+    const basis = await ytdBasis(db, params);
+    expect(basis.carriedScaled).toBe(4900_00n);
+    expect(basis.totalScaled).toBe(5100_00n);
+    expect(basis.carriedThrough?.toISOString()).toBe('2026-06-30T00:00:00.000Z');
+    const where = (db.expenseLineItem.findMany.mock.calls[0] as any)[0].where;
+    expect(where.expense.date).toEqual({
+      gt: new Date('2026-06-30T00:00:00.000Z'),
+      lt: new Date('2027-01-01T00:00:00.000Z'),
+    });
+  });
+
+  it('converts a balance and lines kept in the other unit into the rule unit', async () => {
+    // 100 mi → 160.93 km; 10 km line stays; 10 mi line → 16.09 km.
+    const db = fakeDb([balance('100', 'MI', '2026-03-31')], [line('10', 'KM'), line('10', 'MI')]);
+    const basis = await ytdBasis(db, params);
+    expect(basis.carriedScaled).toBe(convertScaled(100_00n, 'MI', 'KM'));
+    expect(basis.totalScaled).toBe(
+      convertScaled(100_00n, 'MI', 'KM') + 10_00n + convertScaled(10_00n, 'MI', 'KM'),
+    );
+
+    const inMiles = await ytdBasis(fakeDb([balance('160.93', 'KM', '2026-03-31')], []), {
+      ...params,
+      unit: 'MI',
+    });
+    expect(inMiles.carriedScaled).toBe(convertScaled(160_93n, 'KM', 'MI'));
+  });
+
+  it('sums balances from more than one upload in force and dates them by the latest', async () => {
+    const db = fakeDb(
+      [balance('1000', 'KM', '2026-05-31'), balance('500', 'KM', '2026-07-31')],
+      [],
+    );
+    const basis = await ytdBasis(db, params);
+    expect(basis.carriedScaled).toBe(1500_00n);
+    expect(basis.carriedThrough?.toISOString()).toBe('2026-07-31T00:00:00.000Z');
+
+    // Order does not matter: an earlier asOf after a later one keeps the later one.
+    const reversed = await ytdBasis(
+      fakeDb([balance('500', 'KM', '2026-07-31'), balance('1000', 'KM', '2026-05-31')], []),
+      params,
+    );
+    expect(reversed.carriedThrough?.toISOString()).toBe('2026-07-31T00:00:00.000Z');
+  });
+
+  it('prefers the override, skips a line with no distance and defaults a missing unit', async () => {
+    const db = fakeDb(
+      [],
+      [
+        line('100', 'KM', '80'),
+        line(null, 'KM'),
+        line('25', null),
+        { ...line('1', 'KM'), mileageDistance: null, mileageDistanceOverride: null },
+      ],
+    );
+    const basis = await ytdBasis(db, params);
+    expect(basis.totalScaled).toBe(105_00n);
+  });
+
+  it('leaves the line being repriced out of its own basis', async () => {
+    const db = fakeDb([], []);
+    await ytdBasis(db, { ...params, excludeLineItemId: 'line-1' });
+    const where = (db.expenseLineItem.findMany.mock.calls[0] as any)[0].where;
+    expect(where.id).toEqual({ not: 'line-1' });
+  });
+
+  it('ytdDistanceScaled is the total alone', async () => {
+    const db = fakeDb([balance('10', 'KM', '2026-01-31')], [line('5', 'KM')]);
+    expect(await ytdDistanceScaled(db, params)).toBe(15_00n);
   });
 });

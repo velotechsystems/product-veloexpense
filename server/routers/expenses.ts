@@ -109,7 +109,7 @@ import {
   distanceToScaled,
   priceMileage,
   resolveMileageRule,
-  ytdDistanceScaled,
+  ytdBasis,
 } from '@/server/lib/mileage';
 import { deriveRouteView } from '@/server/lib/mileageRouteView';
 import {
@@ -612,7 +612,7 @@ async function deriveExpenseTotals(
  *  gross (CALCULATED) or keeps the stored paid amounts (MANUAL/EXTRACTED), and
  *  the recoverable ITC re-allocates across the current line categories.
  *  Recompute after any line-item change so the derived totals never drift. */
-async function recomputeTotals(
+export async function recomputeTotals(
   db: import('@expenseos/db').PrismaClient,
   expenseId: string,
 ): Promise<void> {
@@ -739,17 +739,22 @@ async function computeLineFinancials(
   // what the bands and rates are denominated in.
   const enteredUnit = params.mileageUnit ?? rule.unit;
   const distanceScaled = convertScaled(typedScaled, enteredUnit, rule.unit);
-  const ytdScaled = await ytdDistanceScaled(db, {
+  const basis = await ytdBasis(db, {
     userId: expense.ownerId,
     country,
     on: expense.date,
     unit: rule.unit,
     excludeLineItemId: params.lineItemId,
   });
+  const ytdScaled = basis.totalScaled;
   const priced = priceMileage(rule.tiers, ytdScaled, distanceScaled);
 
   return {
     amountMinor: priced.amountMinor,
+    carried: {
+      distance: scaledToDecimalString(basis.carriedScaled),
+      through: basis.carriedThrough,
+    },
     mileage: {
       // Stored in the RULE's unit so the snapshot and the bands agree.
       mileageDistance: scaledToDecimalString(distanceScaled),
@@ -784,7 +789,7 @@ async function computeLineFinancials(
  * distance yet (a category just switched to mileage) is already zero and is left alone.
  * Returns how many lines were repriced. Ported from ExpenseOS 67db2e33 (#578).
  */
-async function repriceMileageLines(
+export async function repriceMileageLines(
   db: import('@expenseos/db').PrismaClient | Prisma.TransactionClient,
   expenseId: string,
 ): Promise<number> {
@@ -852,6 +857,9 @@ const CLEARED_MILEAGE: MileageColumns = {
 interface MileagePricing {
   amountMinor: bigint;
   mileage: MileageColumns;
+  /** Present on a priced mileage line: the part of the YTD basis carried over from another
+   *  system, and the date that carried-over period ends (null when none). */
+  carried?: { distance: string; through: Date | null };
 }
 
 const scaledToDecimalString = (v: bigint): string =>
@@ -3784,6 +3792,10 @@ export const expensesRouter = router({
           distance: fin.mileage.mileageDistance,
           /** Distance already claimed this year before this line, for the bands. */
           ytdBefore: fin.mileage.mileageYtdBefore,
+          /** The part of `ytdBefore` carried over from another system (Concur), and the
+           *  date that carried-over period ends — null when nothing was carried over. */
+          carriedOver: fin.carried?.distance ?? '0.00',
+          carriedThrough: fin.carried?.through ?? null,
         };
       } catch (e) {
         // Only the "cannot price this" refusals become a reason. Anything else — a

@@ -193,6 +193,9 @@ export const AUDIT_ACTIONS = [
      delete; VeloExpense does (MILEAGE_RATE_DELETED). */
   'MILEAGE_RATE_CHANGED',
   'MILEAGE_RATE_DELETED',
+  /* eos batch 3 (#589): a year-to-date mileage file committed (ExpenseOS's
+     `config.mileageBalanceImport.update`), one row per upload. */
+  'MILEAGE_BALANCES_IMPORTED',
   /* Per-diem rates — the Wave 1 port. ExpenseOS writes these without an audit row;
      VeloExpense audits each. */
   'PER_DIEM_RATE_CREATED',

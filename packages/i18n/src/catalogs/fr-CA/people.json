@@ -65,7 +65,24 @@
     "noDelegations": "Aucune délégation.",
     "delegatesTo": "Délègue à",
     "actsFor": "Agit pour",
-    "delegationEnded": "Terminée"
+    "delegationEnded": "Terminée",
+    "mileageYtd": "Kilométrage de l’année",
+    "mileageYtdUnavailable": "Indisponible",
+    "mileageYtdLines": {
+      "none": "Aucun",
+      "country": "{country} :",
+      "line": {
+        "first": "{total} sur {boundary} {unit} cette année · il reste {remaining} {unit} dans la première tranche",
+        "past": "Au-delà de {from} {unit} depuis le {date} · {band, select, 2 {le deuxième taux s’applique} 3 {le troisième taux s’applique} other {le taux de la tranche {band} s’applique}}",
+        "pastNoDate": "Au-delà de {from} {unit} · {band, select, 2 {le deuxième taux s’applique} 3 {le troisième taux s’applique} other {le taux de la tranche {band} s’applique}}",
+        "left": "il reste {remaining} {unit} avant le prochain taux",
+        "flat": "Taux fixe (allocation automobile) · {total} {unit}",
+        "single": "Taux unique · {total} {unit}",
+        "noRule": "{total} {unit} cette année · aucun taux en vigueur aujourd’hui",
+        "carried": "y compris {carried} {unit} reportés jusqu’au {date}",
+        "pending": "dont {pending} {unit} pas encore approuvés"
+      }
+    }
   },
   "selectAll": "Sélectionner toutes les lignes visibles",
   "groupBy": {

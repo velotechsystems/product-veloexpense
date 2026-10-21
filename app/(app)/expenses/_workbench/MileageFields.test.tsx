@@ -294,3 +294,48 @@ describe('the priced amount', () => {
     expect(screen.getByLabelText('line.amount')).toHaveTextContent('$21.00');
   });
 });
+
+/**
+ * Distance carried over from Concur. Without it, a traveller whose first ExpenseOS trip
+ * prices in the second band sees a lower rate and no reason for it.
+ */
+describe('mileage carried over from Concur', () => {
+  const PRICING = {
+    expenseId: '11111111-1111-1111-1111-111111111111',
+    categoryId: '22222222-2222-2222-2222-222222222222',
+    currency: { code: 'CAD', symbol: '$' },
+  };
+  const priced = (over: Record<string, unknown>) => {
+    h.available = false;
+    h.preview = {
+      ok: true,
+      amountMinor: '1795',
+      unit: 'KM',
+      distance: '25.66',
+      ytdBefore: '6200',
+      carriedOver: '0.00',
+      carriedThrough: null,
+      ...over,
+    } as never;
+    setup({ distance: '25.66', pricing: PRICING });
+  };
+
+  it('says how much of this year came from Concur, and through when', () => {
+    priced({ carriedOver: '6000.5', carriedThrough: new Date('2026-10-15T00:00:00.000Z') });
+    expect(
+      screen.getByText('line.mileageCarried:6,200,6,000.5,line.mileageUnitShort.KM,Oct 15, 2026'),
+    ).toBeInTheDocument();
+  });
+
+  it('names miles when the rule is in miles, and survives a missing date', () => {
+    priced({ unit: 'MI', carriedOver: '10', carriedThrough: null, ytdBefore: null });
+    expect(
+      screen.getByText('line.mileageCarried:0,10,line.mileageUnitShort.MI,—'),
+    ).toBeInTheDocument();
+  });
+
+  it('says nothing when nothing was carried over', () => {
+    priced({});
+    expect(screen.queryByText(/line\.mileageCarried/)).not.toBeInTheDocument();
+  });
+});

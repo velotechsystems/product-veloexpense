@@ -285,7 +285,12 @@
     "addRoute": "Add route",
     "routeSet": "{stops} stops",
     "distancePending": "Set the route below",
-    "amountNotANumber": "Not saved: that is not an amount."
+    "amountNotANumber": "Not saved: that is not an amount.",
+    "mileageCarried": "Already this year: {ytd} {unit} (incl. {carried} {unit} carried over from Concur through {date})",
+    "mileageUnitShort": {
+      "KM": "km",
+      "MI": "mi"
+    }
   },
   "extraction": {
     "infected": "Malware detected",

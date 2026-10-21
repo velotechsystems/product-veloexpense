@@ -188,6 +188,15 @@ export function MileageFields({
   const livePrice = preview.data?.ok && priceIsCurrent ? preview.data.amountMinor : null;
   const priceRefusal = preview.data?.ok === false && priceIsCurrent ? preview.data.reason : null;
   const shownAmount = savedIsCurrent ? (pricing?.saved?.amountMinor ?? null) : livePrice;
+  /**
+   * Distance carried over from Concur into this year's bands — shown only when there is
+   * some, because "incl. 0 km carried over" on every line would be noise. Without it the
+   * traveller sees a lower band rate than they expect and no reason for it.
+   */
+  const carried =
+    preview.data?.ok && priceIsCurrent && Number(preview.data.carriedOver) > 0
+      ? preview.data
+      : null;
   /** Between a changed distance and its price arriving. Neither figure is true yet. */
   const pricePending = shownAmount == null && priceable && !priceRefusal;
 
@@ -270,6 +279,25 @@ export function MileageFields({
           date."), surfaced while the form is still open rather than after it is
           submitted. */}
       {priceRefusal && <p className="w-full text-destructive text-xs">{priceRefusal}</p>}
+      {carried && (
+        <p className="w-full text-muted-foreground text-xs">
+          {t('line.mileageCarried', {
+            ytd: Number(carried.ytdBefore ?? 0).toLocaleString(locale, {
+              maximumFractionDigits: 2,
+            }),
+            carried: Number(carried.carriedOver).toLocaleString(locale, {
+              maximumFractionDigits: 2,
+            }),
+            unit: t(`line.mileageUnitShort.${carried.unit === 'MI' ? 'MI' : 'KM'}`),
+            date: carried.carriedThrough
+              ? new Date(carried.carriedThrough).toLocaleDateString(locale, {
+                  timeZone: 'UTC',
+                  dateStyle: 'medium',
+                })
+              : '—',
+          })}
+        </p>
+      )}
       {/* Nothing is said when lookup is off. The notice that used to sit here told
           the traveller about an integration they cannot install, next to a field
           that already works — the distance box is right there and typing in it is

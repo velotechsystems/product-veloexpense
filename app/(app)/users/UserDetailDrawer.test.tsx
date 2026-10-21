@@ -581,3 +581,174 @@ describe('People ↔ NetSuite section', () => {
     expect(screen.queryByTestId('people-sync-section')).not.toBeInTheDocument();
   });
 });
+
+describe('mileage this year', () => {
+  /**
+   * The sentences themselves are `MileageYtdLines`', proved against the real catalogs in
+   * its own test. Here the translator echoes `<namespace>.<key>:<values joined by ",">`, in
+   * the order `MileageYtdLines` passes them, so these cases prove the WIRING: the right
+   * query, gated on the right permission, and each of its outcomes reaching the row.
+   */
+  const KM = 'expenses.line.mileageUnitShort.KM';
+
+  const ytdRow = (over: Record<string, unknown> = {}) => ({
+    country: 'CA',
+    unit: 'KM',
+    carried: '0.00',
+    claimed: '4210.00',
+    pending: '0.00',
+    total: '4210.00',
+    carriedThrough: null,
+    rule: {
+      ruleId: 'rule-ca',
+      isCarAllowance: false,
+      tiers: [
+        { fromDistance: '0.00', rateMinor: '72' },
+        { fromDistance: '5000.00', rateMinor: '66' },
+      ],
+    },
+    bandIndex: 0,
+    bandFrom: '0.00',
+    nextBoundary: '5000.00',
+    remaining: '790.00',
+    crossedAt: null,
+    ...over,
+  });
+
+  /** Past the 5,000 boundary of a two-tier rule. */
+  const pastRow = (over: Record<string, unknown> = {}) =>
+    ytdRow({
+      claimed: '6100.00',
+      total: '6100.00',
+      bandIndex: 1,
+      bandFrom: '5000.00',
+      nextBoundary: null,
+      remaining: null,
+      crossedAt: new Date('2026-09-12T00:00:00.000Z'),
+      ...over,
+    });
+
+  const withYtd = (stub: Record<string, unknown>, onCall?: (...a: unknown[]) => void) =>
+    setTrpc({}, { queries: { 'mileageBalances.ytdForUser': { ...stub, onCall } } });
+
+  /** The row's value cell: its primary sentence, then its sub-lines in order. */
+  const rowLines = () => {
+    const dd = screen.getByText('people.detail.mileageYtd').nextElementSibling as HTMLElement;
+    return [...dd.querySelectorAll('li')].map((li) =>
+      [...li.children].map((el) => el.textContent ?? ''),
+    );
+  };
+
+  it('is not asked for, by either procedure, without permission to read policies', () => {
+    // `ytdForUser` refuses somebody else's row without `config.policyRead`: asking anyway
+    // would be a refused request on every drawer open.
+    const ytd = vi.fn();
+    const carried = vi.fn();
+    setTrpc(
+      {},
+      {
+        queries: {
+          'mileageBalances.ytdForUser': { data: [], onCall: ytd },
+          'mileageBalances.forUser': { data: [], onCall: carried },
+        },
+      },
+    );
+    show();
+    expect(ytd).not.toHaveBeenCalled();
+    expect(carried).not.toHaveBeenCalled();
+    expect(screen.queryByText('people.detail.mileageYtd')).not.toBeInTheDocument();
+  });
+
+  it('asks ytdForUser for this person, and no longer asks forUser', () => {
+    const ytd = vi.fn();
+    const carried = vi.fn();
+    setTrpc(
+      {},
+      {
+        queries: {
+          'mileageBalances.ytdForUser': { data: [], onCall: ytd },
+          'mileageBalances.forUser': { data: [], onCall: carried },
+        },
+      },
+    );
+    show({ canReadPolicies: true });
+    // No `year`: the server's current year, the one the label names.
+    expect(ytd.mock.calls[0]?.[0]).toEqual({ userId: 'u-1' });
+    expect(carried).not.toHaveBeenCalled();
+    expect(screen.getByText('people.detail.mileageYtd')).toBeInTheDocument();
+  });
+
+  it('shows a skeleton while loading, not None', () => {
+    withYtd({ isLoading: true });
+    show({ canReadPolicies: true });
+    const dd = screen.getByText('people.detail.mileageYtd').nextElementSibling as HTMLElement;
+    expect(dd.textContent).toBe('');
+    expect(dd.querySelector('.animate-pulse')).not.toBeNull();
+  });
+
+  it('says None for nobody, in the shared wording', () => {
+    withYtd({ data: [] });
+    show({ canReadPolicies: true });
+    expect(fieldValue('people.detail.mileageYtd')).toBe('people.detail.mileageYtdLines.none');
+  });
+
+  it('says unavailable when the read fails, never None', () => {
+    // "None" would tell whoever is looking into this person's pay that they have no
+    // mileage; all that is known is that the read failed.
+    withYtd({ isError: true, error: { message: 'boom' }, data: undefined });
+    show({ canReadPolicies: true });
+    expect(fieldValue('people.detail.mileageYtd')).toBe('people.detail.mileageYtdUnavailable');
+    expect(screen.queryByText('people.detail.mileageYtdLines.none')).not.toBeInTheDocument();
+  });
+
+  it('first band: the total against the boundary, and the distance left', () => {
+    withYtd({ data: [ytdRow()] });
+    show({ canReadPolicies: true });
+    expect(rowLines()).toEqual([
+      [`people.detail.mileageYtdLines.line.first:4,210,5,000,790,${KM}`],
+    ]);
+  });
+
+  it('second band: past the boundary, since the line that crossed it', () => {
+    withYtd({ data: [pastRow()] });
+    show({ canReadPolicies: true });
+    expect(rowLines()).toEqual([
+      [`people.detail.mileageYtdLines.line.past:5,000,${KM},2,Sep 12, 2026`],
+    ]);
+  });
+
+  it('second band without a date when the carry-over alone crossed it', () => {
+    withYtd({ data: [pastRow({ crossedAt: null })] });
+    show({ canReadPolicies: true });
+    expect(rowLines()).toEqual([[`people.detail.mileageYtdLines.line.pastNoDate:5,000,${KM},2`]]);
+  });
+
+  it('adds the carry-over from Concur as a sub-line, where the old row’s wording went', () => {
+    withYtd({
+      data: [
+        pastRow({
+          carried: '6123.50',
+          claimed: '0.00',
+          total: '6123.50',
+          carriedThrough: new Date('2026-10-15T00:00:00.000Z'),
+          crossedAt: null,
+        }),
+      ],
+    });
+    show({ canReadPolicies: true });
+    expect(rowLines()).toEqual([
+      [
+        `people.detail.mileageYtdLines.line.pastNoDate:5,000,${KM},2`,
+        `people.detail.mileageYtdLines.line.carried:6,123.5,${KM},Oct 15, 2026`,
+      ],
+    ]);
+  });
+
+  it('labels the row in both catalogs, and the failure too', () => {
+    // The translator above is an identity mock, so the wording is read off the catalogs.
+    expect(enPeople.detail.mileageYtd).toBe('Mileage this year');
+    expect(frPeople.detail.mileageYtd).toBe('Kilométrage de l’année');
+    expect(enPeople.detail.mileageYtdUnavailable).toBe('Unavailable');
+    expect(frPeople.detail.mileageYtdUnavailable).toBe('Indisponible');
+  });
+});

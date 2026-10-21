@@ -12,6 +12,7 @@ import { expenseApprovalsRouter } from './expenseApprovals';
 import { expenseCategoriesRouter } from './expenseCategories';
 import { expensesRouter } from './expenses';
 import { legalEntitiesRouter } from './legalEntities';
+import { mileageBalancesRouter } from './mileageBalances';
 import { mileageRouteRouter } from './mileageRoute';
 import { pickersRouter } from './pickers';
 import { policiesRouter } from './policies';
@@ -60,6 +61,8 @@ export const appRouter = router({
   mileageRoute: mileageRouteRouter,
   pickers: pickersRouter,
   policies: policiesRouter,
+  // eos batch 3 (#589, #596): year-to-date mileage carried over from Concur.
+  mileageBalances: mileageBalancesRouter,
   // f26: the caller's receipts email address (/preferences, the report list).
   receiptsEmail: receiptsEmailRouter,
   // w4-10c: ExpenseOS's Role Builder (d74).

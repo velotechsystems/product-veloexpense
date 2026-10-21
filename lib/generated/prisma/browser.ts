@@ -158,6 +158,18 @@ export type MileageRateTier = Prisma.MileageRateTierModel
  */
 export type MileageRateSubject = Prisma.MileageRateSubjectModel
 /**
+ * Model MileageBalanceImport
+ * One upload of a year-to-date mileage file from another system (Concur). Uploads are
+ * EVOLUTIONARY: the newest per (source, year) is in force and every earlier one is
+ * superseded, never deleted.
+ */
+export type MileageBalanceImport = Prisma.MileageBalanceImportModel
+/**
+ * Model MileageOpeningBalance
+ * One person's carried-over distance in one upload.
+ */
+export type MileageOpeningBalance = Prisma.MileageOpeningBalanceModel
+/**
  * Model PerDiemRate
  * 
  */

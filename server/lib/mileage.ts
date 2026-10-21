@@ -29,7 +29,7 @@ const KM_PER_MI = 1.609344;
 
 export type MileageDb = Pick<
   PrismaClient | Prisma.TransactionClient,
-  'mileageRate' | 'expenseLineItem'
+  'mileageRate' | 'expenseLineItem' | 'mileageOpeningBalance'
 >;
 
 /** Parse a "123.45" distance into hundredths of a unit, or null when malformed. */
@@ -132,9 +132,28 @@ export function calendarYearBounds(on: Date): { start: Date; end: Date } {
   return { start: new Date(Date.UTC(y, 0, 1)), end: new Date(Date.UTC(y + 1, 0, 1)) };
 }
 
+/** What a person's year-to-date mileage basis is made of. All distances ×100, in `unit`. */
+export interface YtdBasis {
+  /** The basis the bands are priced from: carried over + claimed in ExpenseOS. */
+  totalScaled: bigint;
+  /** Carried over from another system (the upload in force), 0 when there is none. */
+  carriedScaled: bigint;
+  /** The upload's period end: ExpenseOS mileage dated on or before it is covered by it. */
+  carriedThrough: Date | null;
+}
+
 /**
- * Distance this person has already claimed in `country` this calendar year,
- * returned in `unit` (×100).
+ * Distance this person has already claimed in `country` this calendar year, returned in
+ * `unit` (×100) with what it is made of.
+ *
+ * Two parts:
+ *
+ *   - CARRIED OVER: the distance another system (Concur) had already paid them this year,
+ *     from the upload in force (`MileageOpeningBalance`). People arrive part-way through a
+ *     year, and starting them at zero would pay the first-band rate again on kilometres
+ *     they already drove.
+ *   - CLAIMED HERE: ExpenseOS mileage lines this year — only those dated AFTER the upload's
+ *     period end when there is one, because the other system already counted that period.
  *
  * Counts every state except REJECTED: the tier is about distance actually driven,
  * and quoting a rate at entry time that changes on approval is worse than a
@@ -146,7 +165,7 @@ export function calendarYearBounds(on: Date): { start: Date; end: Date } {
  * `excludeLineItemId` drops the line being repriced so an edit doesn't count
  * itself.
  */
-export async function ytdDistanceScaled(
+export async function ytdBasis(
   db: MileageDb,
   params: {
     userId: string;
@@ -155,15 +174,36 @@ export async function ytdDistanceScaled(
     unit: MileageUnit;
     excludeLineItemId?: string;
   },
-): Promise<bigint> {
+): Promise<YtdBasis> {
   const { start, end } = calendarYearBounds(params.on);
+  const balances = await db.mileageOpeningBalance.findMany({
+    where: {
+      userId: params.userId,
+      country: params.country,
+      import: { year: start.getUTCFullYear(), supersededAt: null },
+    },
+    select: { distance: true, unit: true, import: { select: { asOf: true } } },
+  });
+  let carriedScaled = 0n;
+  let carriedThrough: Date | null = null;
+  for (const b of balances) {
+    // VeloExpense: the unit is text with a CHECK (KM | MI, 0081), typed `string`.
+    carriedScaled += convertScaled(
+      BigInt(b.distance.mul(100).toFixed(0)),
+      b.unit as MileageUnit,
+      params.unit,
+    );
+    if (!carriedThrough || b.import.asOf > carriedThrough) carriedThrough = b.import.asOf;
+  }
+
   const rows = await db.expenseLineItem.findMany({
     where: {
       ...(params.excludeLineItemId ? { id: { not: params.excludeLineItemId } } : {}),
       mileageDistance: { not: null },
       expense: {
         ownerId: params.userId,
-        date: { gte: start, lt: end },
+        // After the carried-over period, when there is one: that period is in the balance.
+        date: carriedThrough ? { gt: carriedThrough, lt: end } : { gte: start, lt: end },
         report: { status: { not: 'REJECTED' } },
       },
       // Only distance driven under a rule for the same country counts.
@@ -172,15 +212,23 @@ export async function ytdDistanceScaled(
     select: { mileageDistance: true, mileageDistanceOverride: true, mileageUnit: true },
   });
 
-  let total = 0n;
+  let claimed = 0n;
   for (const r of rows) {
     const d = r.mileageDistanceOverride ?? r.mileageDistance;
     if (!d) continue;
     const scaled = BigInt(d.mul(100).toFixed(0));
     // VeloExpense: the column is text with a CHECK (KM | MI, 0054), typed `string`.
-    total += convertScaled(scaled, (r.mileageUnit as MileageUnit | null) ?? params.unit, params.unit);
+    claimed += convertScaled(scaled, (r.mileageUnit as MileageUnit | null) ?? params.unit, params.unit);
   }
-  return total;
+  return { totalScaled: carriedScaled + claimed, carriedScaled, carriedThrough };
+}
+
+/** The year-to-date basis alone — see {@link ytdBasis}. */
+export async function ytdDistanceScaled(
+  db: MileageDb,
+  params: Parameters<typeof ytdBasis>[1],
+): Promise<bigint> {
+  return (await ytdBasis(db, params)).totalScaled;
 }
 
 // ── Banded pricing ─────────────────────────────────────────────────
@@ -199,7 +247,45 @@ export interface PricedMileage {
   segments: MileageSegment[];
 }
 
-const unscale = (v: bigint): string => `${v / SCALE}.${String(v % SCALE).padStart(2, '0')}`;
+/** A scaled distance (×100) as its `"N.NN"` string — the form segments and the wire carry. */
+export const unscale = (v: bigint): string => `${v / SCALE}.${String(v % SCALE).padStart(2, '0')}`;
+
+/** Where a year-to-date total sits in a rule's bands. All distances ×100, in the rule's unit. */
+export interface BandPosition {
+  /** Index into the tiers of the band the total is in. */
+  index: number;
+  /** That band's lower bound. */
+  fromScaled: bigint;
+  /** The next band's lower bound; null in the top band. */
+  nextScaled: bigint | null;
+  /** Distance left before the next band; null in the top band. */
+  remainingScaled: bigint | null;
+}
+
+/**
+ * The band `totalScaled` is in: the last tier whose lower bound it has reached.
+ *
+ * Inclusive, by the same rule {@link priceMileage} prices with — exactly on a boundary
+ * is already the upper band. `null` for a rule with no tiers, which breaks
+ * `ResolvedRule`'s "the first is always 0" and so has no band to name.
+ */
+export function bandPosition(
+  tiers: ResolvedRule['tiers'],
+  totalScaled: bigint,
+): BandPosition | null {
+  if (tiers.length === 0) return null;
+  let index = 0;
+  for (let i = 0; i < tiers.length; i += 1) {
+    if (tiers[i].fromScaled <= totalScaled) index = i;
+  }
+  const nextScaled = tiers[index + 1]?.fromScaled ?? null;
+  return {
+    index,
+    fromScaled: tiers[index].fromScaled,
+    nextScaled,
+    remainingScaled: nextScaled === null ? null : nextScaled - totalScaled,
+  };
+}
 
 /**
  * Price `distanceScaled` starting from `ytdScaled`, splitting at every band
