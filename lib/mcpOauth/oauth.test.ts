@@ -6,7 +6,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { authorizationServerMetadata, protectedResourceMetadata } from './metadata';
-import { oauthBaseUrl, resourceMetadataUrl } from './host';
+import { authorizeBaseUrl, isAuthorizeHost, oauthBaseUrl, resourceMetadataUrl } from './host';
 import { DEFAULT_OAUTH_SCOPES, OAUTH_SCOPES, grantableScopes } from './scopes';
 import { redirectWith, signTicket, validateAuthorize, verifyTicket } from './authorizeRequest';
 import { jwks, signingKey } from './keys';
@@ -15,11 +15,20 @@ import type { ClientRow } from './service';
 const BASE = 'https://mcp.veloexpense.test';
 
 describe('well-known discovery', () => {
-  it('authorization server metadata has the RFC 8414 fields, all on the base', () => {
+  const env = { ...process.env };
+  beforeEach(() => {
+    process.env.AUTH_URL = 'https://app.veloexpense.test';
+    process.env.AUTH_COOKIE_DOMAIN = 'veloexpense.test';
+    delete process.env.MCP_OAUTH_AUTHORIZE_URL;
+    delete process.env.MCP_OAUTH_ALLOWED_HOSTS;
+  });
+  afterEach(() => {
+    process.env = { ...env };
+  });
+  it('authorization server metadata has the RFC 8414 fields; every server endpoint is on the issuer', () => {
     const m = authorizationServerMetadata(BASE);
     expect(m).toMatchObject({
       issuer: BASE,
-      authorization_endpoint: `${BASE}/oauth/authorize`,
       token_endpoint: `${BASE}/oauth/token`,
       registration_endpoint: `${BASE}/oauth/register`,
       revocation_endpoint: `${BASE}/oauth/revoke`,
@@ -28,6 +37,50 @@ describe('well-known discovery', () => {
       grant_types_supported: ['authorization_code', 'refresh_token'],
       token_endpoint_auth_methods_supported: ['none'],
     });
+  });
+  it('mcp-authorize-host: the browser\'s authorization endpoint is the Cloudflare-fronted app host, the rest stay on mcp', () => {
+    // 23 Oct 2026: mcp.<apex> is DNS-only behind a security group that admits Cloudflare and
+    // Anthropic only, so a person's browser could not open the consent screen there.
+    const m = authorizationServerMetadata(BASE);
+    expect(m.authorization_endpoint).toBe('https://app.veloexpense.test/oauth/authorize');
+    expect(m.issuer).toBe(BASE);
+    expect(m.token_endpoint).toBe(`${BASE}/oauth/token`);
+    expect(m.registration_endpoint).toBe(`${BASE}/oauth/register`);
+    expect(protectedResourceMetadata(BASE).resource).toBe(`${BASE}/api/mcp`);
+  });
+  it('a single-host deployment (issuer = app origin) keeps everything on that host', () => {
+    expect(authorizationServerMetadata('https://app.veloexpense.test').authorization_endpoint).toBe(
+      'https://app.veloexpense.test/oauth/authorize',
+    );
+    process.env.AUTH_URL = 'https://dev.veloexpense.test';
+    delete process.env.AUTH_COOKIE_DOMAIN;
+    expect(authorizeBaseUrl('https://dev.veloexpense.test')).toBe('https://dev.veloexpense.test');
+  });
+  it('MCP_OAUTH_AUTHORIZE_URL overrides the browser host; one with a path or another scheme is ignored', () => {
+    process.env.MCP_OAUTH_AUTHORIZE_URL = 'https://signin.veloexpense.test/';
+    expect(authorizeBaseUrl(BASE)).toBe('https://signin.veloexpense.test');
+    process.env.MCP_OAUTH_AUTHORIZE_URL = 'https://signin.veloexpense.test/oauth?x=1';
+    expect(authorizeBaseUrl(BASE)).toBe('https://app.veloexpense.test');
+    process.env.MCP_OAUTH_AUTHORIZE_URL = 'javascript:alert(1)';
+    expect(authorizeBaseUrl(BASE)).toBe('https://app.veloexpense.test');
+  });
+  it('with no app origin at all, the authorization endpoint stays on the issuer', () => {
+    delete process.env.AUTH_URL;
+    delete process.env.APP_URL;
+    delete process.env.NEXTAUTH_URL;
+    expect(authorizeBaseUrl(BASE)).toBe(BASE);
+  });
+  it('mcp-authorize-host: the consent screen runs on the browser host and the issuer hosts, nowhere else', () => {
+    const at = (host: string) => isAuthorizeHost(new Headers({ host }));
+    expect(at('app.veloexpense.test')).toBe(true); // the browser host (AUTH_URL)
+    expect(at('mcp.veloexpense.test')).toBe(true); // an issuer host: a single-host client still works
+    expect(at('acme.veloexpense.test')).toBe(false); // a tenant subdomain
+    expect(at('evil.example')).toBe(false); // a forged Host
+    expect(isAuthorizeHost(new Headers({ host: 'app.veloexpense.test', 'x-forwarded-host': 'acme.veloexpense.test' }))).toBe(false);
+    expect(isAuthorizeHost(new Headers())).toBe(false);
+    process.env.MCP_OAUTH_AUTHORIZE_URL = 'https://signin.veloexpense.test';
+    expect(at('signin.veloexpense.test')).toBe(true);
+    expect(at('acme.veloexpense.test')).toBe(false);
   });
   it('code_challenge_methods_supported is S256 only', () => {
     expect(authorizationServerMetadata(BASE).code_challenge_methods_supported).toEqual(['S256']);
@@ -95,6 +148,16 @@ describe('scopes never exceed a personal key', () => {
 });
 
 describe('the authorization request', () => {
+  const FB = 'https://app.veloexpense.test';
+  const env = { ...process.env };
+  beforeEach(() => {
+    process.env.AUTH_URL = FB;
+    process.env.AUTH_COOKIE_DOMAIN = 'veloexpense.test';
+    delete process.env.MCP_OAUTH_ALLOWED_HOSTS;
+  });
+  afterEach(() => {
+    process.env = { ...env };
+  });
   const client: ClientRow = {
     id: 'row',
     clientId: '019e3000-0000-7000-8000-0000000000c1',
@@ -113,18 +176,34 @@ describe('the authorization request', () => {
     ...o,
   });
   it('accepts a complete request', () => {
-    expect(validateAuthorize(q(), client)).toMatchObject({ clientId: client.clientId, state: 's-1', codeChallenge: challenge });
+    expect(validateAuthorize(q(), client, FB)).toMatchObject({ clientId: client.clientId, state: 's-1', codeChallenge: challenge, issuer: FB });
   });
   it('an unknown client or an unregistered redirect is shown on the page, never redirected to', () => {
-    expect(validateAuthorize(q(), null)).toEqual({ kind: 'page', reason: 'unknown_client' });
-    expect(validateAuthorize(q({ redirect_uri: 'https://evil.example/cb' }), client)).toEqual({ kind: 'page', reason: 'bad_redirect' });
-    expect(validateAuthorize({}, client)).toEqual({ kind: 'page', reason: 'missing_params' });
+    expect(validateAuthorize(q(), null, FB)).toEqual({ kind: 'page', reason: 'unknown_client' });
+    expect(validateAuthorize(q({ redirect_uri: 'https://evil.example/cb' }), client, FB)).toEqual({ kind: 'page', reason: 'bad_redirect' });
+    expect(validateAuthorize({}, client, FB)).toEqual({ kind: 'page', reason: 'missing_params' });
   });
   it('requires state, response_type=code and PKCE S256 — plain is refused', () => {
-    expect(validateAuthorize(q({ state: '' }), client)).toMatchObject({ kind: 'redirect', error: 'invalid_request' });
-    expect(validateAuthorize(q({ response_type: 'token' }), client)).toMatchObject({ error: 'unsupported_response_type' });
-    expect(validateAuthorize(q({ code_challenge_method: 'plain' }), client)).toMatchObject({ error: 'invalid_request' });
-    expect(validateAuthorize(q({ code_challenge: '' }), client)).toMatchObject({ error: 'invalid_request' });
+    expect(validateAuthorize(q({ state: '' }), client, FB)).toMatchObject({ kind: 'redirect', error: 'invalid_request' });
+    expect(validateAuthorize(q({ response_type: 'token' }), client, FB)).toMatchObject({ error: 'unsupported_response_type' });
+    expect(validateAuthorize(q({ code_challenge_method: 'plain' }), client, FB)).toMatchObject({ error: 'invalid_request' });
+    expect(validateAuthorize(q({ code_challenge: '' }), client, FB)).toMatchObject({ error: 'invalid_request' });
+  });
+  it('mcp-authorize-host: the issuer comes from the RFC 8707 resource, so iss names the host the client discovered', () => {
+    expect(validateAuthorize(q({ resource: `${BASE}/api/mcp` }), client, FB)).toMatchObject({ issuer: BASE });
+    // No resource: the single-host case — the request's own base.
+    expect(validateAuthorize(q(), client, FB)).toMatchObject({ issuer: FB });
+  });
+  it('a resource that is not this server\'s MCP endpoint is refused with invalid_target (RFC 8707)', () => {
+    for (const resource of [
+      'https://evil.example/api/mcp',
+      'https://acme.veloexpense.test/api/mcp', // a tenant host is never an issuer
+      `${BASE}/api/other`,
+      `${BASE}/api/mcp?x=1`,
+      'not a url',
+    ]) {
+      expect(validateAuthorize(q({ resource }), client, FB), resource).toMatchObject({ kind: 'redirect', error: 'invalid_target' });
+    }
   });
   it('appends to a redirect URI that already has a query', () => {
     expect(redirectWith('https://c.example/cb?x=1', { code: 'a b', state: 's' })).toBe('https://c.example/cb?x=1&code=a+b&state=s');
@@ -143,8 +222,9 @@ describe('the consent ticket', () => {
     scopes: ['travel.travel_request'],
     userId: 'u',
     organizationId: 'o',
+    issuer: BASE,
   };
-  it('round-trips', () => {
+  it('round-trips, issuer included (the consent route names it as iss)', () => {
     expect(verifyTicket(signTicket(t))).toMatchObject(t);
   });
   it('a tampered ticket (another tenant, another redirect) does not verify — VeloCRM trusted posted fields', () => {

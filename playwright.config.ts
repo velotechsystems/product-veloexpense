@@ -118,6 +118,12 @@ const APP_ENV = {
     process.env.MCP_OAUTH_SIGNING_KEY ??
     (generateKeyPairSync('rsa', { modulusLength: 2048 }).privateKey.export({ type: 'pkcs8', format: 'pem' }) as string),
 
+  // mcp-authorize-host: a second host for the OAuth server, standing in for prod's DNS-only
+  // `mcp.veloexpense.ai`. e2e/mcp-oauth.spec.ts plays the connector against THIS host
+  // (discovery, registration, token, /api/mcp) while the person's browser opens the consent
+  // screen on BASE_URL — the app origin, where the session lives — exactly as prod splits them.
+  MCP_OAUTH_ALLOWED_HOSTS: `127.0.0.1:${PORT}`,
+
   // w6-04: a personal API key is rate-limited, and the guard counts that in Redis
   // (server/lib/rateLimit.ts, as ExpenseOS's). Passed through only when the shell has one,
   // as the key above: CI's job has no Redis service, so e2e/api-keys-mcp.spec.ts runs a

@@ -27,7 +27,7 @@ import { PageHeader, Screen } from '@/components/screen';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { pageTitle } from '@/lib/i18n/page-title';
-import { oauthBaseUrl } from '@/lib/mcpOauth/host';
+import { isAuthorizeHost, oauthBaseUrl } from '@/lib/mcpOauth/host';
 import { signingKey } from '@/lib/mcpOauth/keys';
 import { findClient } from '@/lib/mcpOauth/service';
 import { redirectWith, signTicket, validateAuthorize } from '@/lib/mcpOauth/authorizeRequest';
@@ -60,12 +60,15 @@ export default async function AuthorizePage({ searchParams }: { searchParams: Pr
   const q = await searchParams;
   // The consent route sends an expired or unverifiable ticket back here.
   if (q.expired === '1' && q.client_id === undefined) return <Problem reason="expired" />;
-  const base = oauthBaseUrl(await headers());
-  if (!base || !signingKey()) return <Problem reason="unavailable" />;
+  const h = await headers();
+  const base = oauthBaseUrl(h);
+  // VeloExpense (mcp-authorize-host): only on the browser host the metadata names (or an issuer
+  // host); never on a tenant subdomain or a host nobody configured.
+  if (!base || !signingKey() || !isAuthorizeHost(h)) return <Problem reason="unavailable" />;
 
   const clientId = typeof q.client_id === 'string' ? q.client_id : null;
   const client = await findClient(clientId);
-  const v = validateAuthorize(q, client);
+  const v = validateAuthorize(q, client, base);
   if ('kind' in v && v.kind === 'page') return <Problem reason={v.reason} />;
   if ('kind' in v && v.kind === 'redirect') {
     const state = typeof q.state === 'string' ? q.state : undefined;
@@ -74,6 +77,8 @@ export default async function AuthorizePage({ searchParams }: { searchParams: Pr
         error: v.error,
         error_description: v.description,
         ...(state ? { state } : {}),
+        // The request was refused before its issuer was settled (an unknown `resource`, say),
+        // so this names the host it arrived at.
         iss: base,
       }),
     );

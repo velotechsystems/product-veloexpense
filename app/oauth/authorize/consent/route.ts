@@ -9,7 +9,7 @@
  */
 import { headers } from 'next/headers';
 import { redirectWith, verifyTicket } from '@/lib/mcpOauth/authorizeRequest';
-import { oauthBaseUrl } from '@/lib/mcpOauth/host';
+import { isAuthorizeHost, oauthBaseUrl } from '@/lib/mcpOauth/host';
 import { consent, findClient } from '@/lib/mcpOauth/service';
 import { shellState } from '@/server/shell';
 
@@ -18,11 +18,17 @@ export const dynamic = 'force-dynamic';
 const seeOther = (location: string) => new Response(null, { status: 303, headers: { location, 'cache-control': 'no-store' } });
 
 export async function POST(request: Request) {
+  const h = await headers();
+  // VeloExpense (mcp-authorize-host): the consent screen's own hosts only (lib/mcpOauth/host.ts).
+  if (!isAuthorizeHost(h)) return seeOther('/oauth/authorize?expired=1');
   const form = await request.formData().catch(() => null);
   const ticket = verifyTicket(typeof form?.get('ticket') === 'string' ? (form!.get('ticket') as string) : null);
   // An expired or forged ticket names no redirect URI anyone has validated: back to the screen.
   if (!ticket) return seeOther('/oauth/authorize?expired=1');
-  const base = oauthBaseUrl(await headers());
+  // VeloExpense (mcp-authorize-host): `iss` is the issuer the request was for, carried in the
+  // signed ticket, not this request's host — the consent screen runs on the app host while the
+  // client discovered (and exchanges its code at) the connector host.
+  const base = ticket.issuer || oauthBaseUrl(h);
 
   const client = await findClient(ticket.clientId);
   if (!client || !client.redirectUris.includes(ticket.redirectUri)) return seeOther('/oauth/authorize?expired=1');

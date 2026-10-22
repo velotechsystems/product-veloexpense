@@ -7,13 +7,15 @@
  * OpenID Connect field and this is not an OpenID provider (it issues no ID tokens); the revocation
  * endpoint's auth method is stated.
  */
-import { resourceUrl } from './host';
+import { authorizeBaseUrl, resourceUrl } from './host';
 import { OAUTH_SCOPES } from './scopes';
 
 export function authorizationServerMetadata(base: string) {
   return {
     issuer: base,
-    authorization_endpoint: `${base}/oauth/authorize`,
+    // VeloExpense (mcp-authorize-host): the browser half runs on the Cloudflare-fronted app
+    // origin, the only one a person's browser can reach (lib/mcpOauth/host.ts says why).
+    authorization_endpoint: `${authorizeBaseUrl(base)}/oauth/authorize`,
     token_endpoint: `${base}/oauth/token`,
     jwks_uri: `${base}/oauth/jwks`,
     registration_endpoint: `${base}/oauth/register`,

@@ -40,6 +40,15 @@ In order. Each step says what proves it is done.
    Anthropic's authenticated MCP calls through the proxy (its `MCP-Subdomain-Spec-Issue.md`);
    a DNS-only `mcp.` host keeps the app proxied and the connector working. The ALB's
    `*.veloexpense.ai` certificate and listener rule already cover it.
+   **Who can reach `mcp.`:** only Anthropic's servers. The shared ALB's security group admits
+   Cloudflare's ranges plus Anthropic's outbound ranges on 443 (VeloCRM #309, its
+   `network-stack.ts`, list in `cdk.context.json` `velocrm:mcp:anthropicIpList`); a person's
+   browser going direct times out. That is why the **sign-in and consent screen is on
+   `app.veloexpense.ai`**: the discovery document's `authorization_endpoint` names the app
+   origin (`lib/mcpOauth/host.ts` `authorizeBaseUrl`, overridable with
+   `MCP_OAUTH_AUTHORIZE_URL`), while the issuer, token, registration, revocation and JWKS
+   endpoints and `/api/mcp` stay on `mcp.`. So a `curl` to `mcp.` from a laptop timing out is
+   expected; test the connector from claude.ai instead.
 4. **The four secrets a person creates** (`MANUAL_SECRETS`, security-stack.ts), under
    `veloexpense/prod/`:
    - `secret-encryption-key`: 32 random bytes, base64. Generated, never typed. **Never reuse
