@@ -37,7 +37,12 @@ describe('PKCE S256', () => {
   it('rejects the wrong verifier, and a tampered challenge', () => {
     const v = verifier();
     expect(verifyPkceS256(verifier(), challengeOf(v))).toBe(false);
-    expect(verifyPkceS256(v, `${challengeOf(v).slice(0, -1)}A`)).toBe(false);
+    // Flip the last character to one it is NOT. Always appending 'A' left the challenge
+    // unchanged whenever it already ended in 'A' (1 run in 64), and the test failed then.
+    const c = challengeOf(v);
+    const tampered = `${c.slice(0, -1)}${c.endsWith('A') ? 'B' : 'A'}`;
+    expect(tampered).not.toBe(c);
+    expect(verifyPkceS256(v, tampered)).toBe(false);
   });
   it('the challenge is base64url(SHA-256(verifier)), 43 characters', () => {
     expect(isS256Challenge(challengeOf(verifier()))).toBe(true);

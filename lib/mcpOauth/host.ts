@@ -65,6 +65,85 @@ export function oauthBaseUrl(headers: Pick<Headers, 'get'>): string | null {
   return origin;
 }
 
+/**
+ * Where a PERSON'S BROWSER opens the authorization endpoint (the sign-in and consent screen).
+ *
+ * VeloExpense (mcp-authorize-host): not the issuer's host. In prod the connector host
+ * `mcp.<apex>` is DNS-only (grey cloud) straight to the shared ALB, and that ALB's security
+ * group admits only Cloudflare and Anthropic — so Claude's SERVERS reach it, and a person's
+ * browser cannot (ERR_ADDRESS_UNREACHABLE, seen 23 Oct 2026 on the first real connect). The
+ * browser half of the flow therefore runs on the app's own, Cloudflare-fronted origin
+ * (`app.veloexpense.ai`), which is also where the person's session already lives (AUTH_URL;
+ * the session cookie is scoped to the apex, auth.ts). RFC 8414 lets `authorization_endpoint`
+ * sit on another host than the issuer; the token, registration, revocation and JWKS endpoints
+ * and the MCP resource stay on the issuer, so `iss`/`aud` are unchanged.
+ *
+ * `MCP_OAUTH_AUTHORIZE_URL` overrides it (an origin; anything with a path, query or another
+ * scheme is ignored). With neither, the issuer's own base — the single-host deployments (dev,
+ * the e2e's default origin) are unchanged.
+ */
+export function authorizeBaseUrl(issuerBase: string): string {
+  const fromEnv = originOf(process.env.MCP_OAUTH_AUTHORIZE_URL);
+  if (fromEnv) return fromEnv;
+  return originOf(appOrigin()) ?? issuerBase;
+}
+
+function originOf(raw: string | null | undefined): string | null {
+  const v = raw?.trim();
+  if (!v) return null;
+  try {
+    const u = new URL(v);
+    if (u.protocol !== 'https:' && u.protocol !== 'http:') return null;
+    if ((u.pathname !== '/' && u.pathname !== '') || u.search || u.hash || u.username || u.password) return null;
+    return u.origin;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * May the browser half of the flow (`/oauth/authorize`, its consent POST) run on this request's
+ * host? Yes on the configured browser host (`authorizeBaseUrl`) and on the issuer hosts
+ * (`allowedHosts`, so a single-host deployment is unchanged); no anywhere else — a tenant host
+ * (`acme.<apex>`) or a forged `Host`. The discovery document only ever names the browser host,
+ * so refusing the rest costs no client anything and keeps the consent screen at one address a
+ * person can learn to recognise.
+ */
+export function isAuthorizeHost(headers: Pick<Headers, 'get'>): boolean {
+  const raw = headers.get('x-forwarded-host') ?? headers.get('host');
+  const host = raw?.split(',')[0]?.trim().toLowerCase();
+  if (!host) return false;
+  if (allowedHosts().has(host)) return true;
+  const browser = originOf(process.env.MCP_OAUTH_AUTHORIZE_URL);
+  if (!browser) return false;
+  return new URL(browser).host.toLowerCase() === host;
+}
+
+/**
+ * The issuer an authorization request is FOR, from its RFC 8707 `resource` parameter.
+ *
+ * The consent screen now runs on the app host, but the code it issues is exchanged at the
+ * issuer the client discovered — and the redirect back carries that issuer as `iss` (RFC 9207),
+ * which a client may check against the metadata it read. The request's own host no longer says
+ * which issuer that was; the `resource` it asks for does (Claude sends it: the MCP URL it was
+ * given). So: a `resource` naming our MCP path on an allowlisted host → that host's origin;
+ * no `resource` → `null` (the caller falls back to the request's own base, the single-host
+ * case); a `resource` that is not ours → `'invalid'` (RFC 8707 `invalid_target`).
+ */
+export function issuerForResource(resource: string | undefined): string | null | 'invalid' {
+  if (resource === undefined) return null;
+  try {
+    const u = new URL(resource);
+    if (u.protocol !== 'https:' && u.protocol !== 'http:') return 'invalid';
+    if (u.search || u.hash || u.username || u.password) return 'invalid';
+    if (u.pathname !== MCP_RESOURCE_PATH) return 'invalid';
+    if (!allowedHosts().has(u.host.toLowerCase())) return 'invalid';
+    return u.origin;
+  } catch {
+    return 'invalid';
+  }
+}
+
 /** The canonical resource URI (RFC 8707) at a base: what an access token's `aud` names. */
 export function resourceUrl(base: string): string {
   return `${base}${MCP_RESOURCE_PATH}`;

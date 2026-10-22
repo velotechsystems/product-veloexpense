@@ -21,6 +21,16 @@ test.use({ storageState: { cookies: [], origins: [] } });
 
 const REDIRECT = 'http://127.0.0.1:9/oauth/callback';
 
+/**
+ * mcp-authorize-host: the connector's host. In prod that is `mcp.veloexpense.ai`, DNS-only and
+ * reachable by Anthropic's servers but not by a person's browser; the consent screen is on the
+ * app origin instead. Here `127.0.0.1:<port>` plays the connector host (playwright.config.ts puts
+ * it on MCP_OAUTH_ALLOWED_HOSTS) and `localhost:<port>` — the baseURL, where the session lives —
+ * plays the app origin. Every server-to-server call below goes to the connector host; only the
+ * browser uses the app origin.
+ */
+const mcpHost = (baseURL: string) => baseURL.replace('//localhost:', '//127.0.0.1:');
+
 async function anon(baseURL: string): Promise<APIRequestContext> {
   return playwrightRequest.newContext({ baseURL, storageState: { cookies: [], origins: [] } });
 }
@@ -42,19 +52,25 @@ test('a Claude connector registers, is allowed by the person, calls tools, refre
   page,
   baseURL,
 }) => {
-  const api = await anon(baseURL!);
+  const MCP = mcpHost(baseURL!);
+  const api = await anon(MCP);
 
   // 1. The connector's first call has no token: 401, and where to find the authorization server.
   const first = await api.post('/api/mcp', { data: LIST });
   expect(first.status()).toBe(401);
   const challenge = first.headers()['www-authenticate'] ?? '';
-  expect(challenge).toContain(`resource_metadata="${baseURL}/.well-known/oauth-protected-resource/api/mcp"`);
+  expect(challenge).toContain(`resource_metadata="${MCP}/.well-known/oauth-protected-resource/api/mcp"`);
 
-  // 2. Discovery (RFC 9728, then RFC 8414), on the host it was asked at.
+  // 2. Discovery (RFC 9728, then RFC 8414), on the host it was asked at — except the
+  // authorization endpoint, which a browser opens, on the app origin.
   const resource = await (await api.get('/.well-known/oauth-protected-resource/api/mcp')).json();
-  expect(resource.resource).toBe(`${baseURL}/api/mcp`);
+  expect(resource.resource).toBe(`${MCP}/api/mcp`);
+  expect(resource.authorization_servers).toEqual([MCP]);
   const meta = await (await api.get('/.well-known/oauth-authorization-server')).json();
-  expect(meta.issuer).toBe(baseURL);
+  expect(meta.issuer).toBe(MCP);
+  expect(meta.token_endpoint).toBe(`${MCP}/oauth/token`);
+  expect(meta.registration_endpoint).toBe(`${MCP}/oauth/register`);
+  expect(meta.authorization_endpoint).toBe(`${baseURL}/oauth/authorize`);
   expect(meta.code_challenge_methods_supported).toEqual(['S256']);
 
   // 3. Dynamic Client Registration — anonymous, as Claude does it.
@@ -64,8 +80,10 @@ test('a Claude connector registers, is allowed by the person, calls tools, refre
   expect(clientId).toMatch(/^[0-9a-f-]{36}$/);
 
   // 4. The consent screen. Signed out, it sends the person to sign in with the request intact.
+  // The browser opens the authorization endpoint the metadata named (the app origin), with the
+  // resource the connector was given — as Claude does.
   const p = pkce();
-  const authorize = `/oauth/authorize?${new URLSearchParams({
+  const authorize = `${meta.authorization_endpoint}?${new URLSearchParams({
     response_type: 'code',
     client_id: clientId,
     redirect_uri: REDIRECT,
@@ -73,6 +91,7 @@ test('a Claude connector registers, is allowed by the person, calls tools, refre
     code_challenge: p.challenge,
     code_challenge_method: 'S256',
     scope: 'expense_management.expense_report travel.travel_request admin.security.api_key',
+    resource: `${MCP}/api/mcp`,
   })}`;
   await page.goto(authorize);
   await expect(page).toHaveURL(/\/login\?callbackUrl=%2Foauth%2Fauthorize/);
@@ -94,7 +113,8 @@ test('a Claude connector registers, is allowed by the person, calls tools, refre
   await page.getByRole('button', { name: 'Allow' }).click();
   const back = new URL((await landed).url());
   expect(back.searchParams.get('state')).toBe('st-1');
-  expect(back.searchParams.get('iss')).toBe(baseURL);
+  // `iss` is the issuer the connector discovered, not the host the consent screen ran on.
+  expect(back.searchParams.get('iss')).toBe(MCP);
   const code = back.searchParams.get('code')!;
   expect(code).toBeTruthy();
 
@@ -187,6 +207,62 @@ test('Deny sends the person back to the client with access_denied, and nothing i
   expect(back.searchParams.get('error')).toBe('access_denied');
   expect(back.searchParams.get('state')).toBe('st-d');
   expect(back.searchParams.get('code')).toBeNull();
+  await api.dispose();
+});
+
+test('a resource that is not this server\'s MCP endpoint goes back to the client as invalid_target', async ({ baseURL }) => {
+  const api = await anon(mcpHost(baseURL!));
+  const { client_id: clientId } = await (
+    await api.post('/oauth/register', { data: { client_name: 'Wrong target', redirect_uris: [REDIRECT] } })
+  ).json();
+  // Refused before anyone signs in, so no browser is needed: read the redirect itself. (A browser
+  // would follow it to the client's loopback callback, whose port Chromium refuses to open.)
+  const app = await anon(baseURL!);
+  const res = await app.get(
+    `/oauth/authorize?${new URLSearchParams({
+      response_type: 'code',
+      client_id: clientId,
+      redirect_uri: REDIRECT,
+      state: 'st-t',
+      code_challenge: pkce().challenge,
+      code_challenge_method: 'S256',
+      resource: 'https://evil.example/api/mcp',
+    })}`,
+    { maxRedirects: 0 },
+  );
+  expect([303, 307, 308]).toContain(res.status());
+  const back = new URL(res.headers()['location']!);
+  expect(`${back.origin}${back.pathname}`).toBe(REDIRECT);
+  expect(back.searchParams.get('error')).toBe('invalid_target');
+  expect(back.searchParams.get('state')).toBe('st-t');
+  expect(back.searchParams.get('code')).toBeNull();
+  await app.dispose();
+  await api.dispose();
+});
+
+test('the consent screen is refused on a host the metadata does not name (a tenant subdomain)', async ({ baseURL }) => {
+  const api = await anon(mcpHost(baseURL!));
+  const { client_id: clientId } = await (
+    await api.post('/oauth/register', { data: { client_name: 'Wrong host', redirect_uris: [REDIRECT] } })
+  ).json();
+  const app = await anon(baseURL!);
+  const res = await app.get(
+    `/oauth/authorize?${new URLSearchParams({
+      response_type: 'code',
+      client_id: clientId,
+      redirect_uri: REDIRECT,
+      state: 'st-h',
+      code_challenge: pkce().challenge,
+      code_challenge_method: 'S256',
+    })}`,
+    { maxRedirects: 0, headers: { 'x-forwarded-host': 'acme.velo.test' } },
+  );
+  // Not sent anywhere: the page says the service is unavailable, and no code exists.
+  expect(res.status()).toBe(200);
+  const html = await res.text();
+  expect(html).toContain('data-reason="unavailable"');
+  expect(html).not.toContain('name="ticket"');
+  await app.dispose();
   await api.dispose();
 });
 

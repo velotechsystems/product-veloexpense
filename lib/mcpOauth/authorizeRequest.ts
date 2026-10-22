@@ -22,6 +22,7 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import { isS256Challenge } from './tokens';
 import { grantableScopes } from './scopes';
+import { issuerForResource } from './host';
 import type { ClientRow } from './service';
 
 export interface AuthorizeParams {
@@ -30,6 +31,12 @@ export interface AuthorizeParams {
   readonly state: string;
   readonly codeChallenge: string;
   readonly scopes: string[];
+  /**
+   * The issuer this request is for (lib/mcpOauth/host.ts `issuerForResource`): what the
+   * redirect back names as `iss`. VeloExpense (mcp-authorize-host): the consent screen runs on
+   * the app host while the issuer is the connector host, so it is carried, not re-derived.
+   */
+  readonly issuer: string;
 }
 
 /** Errors that may go back to the client's redirect URI (it has been validated). */
@@ -43,7 +50,15 @@ const one = (q: Query, k: string): string | undefined => {
   return typeof v === 'string' ? v : undefined;
 };
 
-export function validateAuthorize(q: Query, client: ClientRow | null): AuthorizeParams | RedirectableError | PageError {
+/**
+ * `fallbackIssuer` is the request's own base (`oauthBaseUrl`): the issuer when the request names
+ * no `resource`, as in a single-host deployment.
+ */
+export function validateAuthorize(
+  q: Query,
+  client: ClientRow | null,
+  fallbackIssuer: string,
+): AuthorizeParams | RedirectableError | PageError {
   const clientId = one(q, 'client_id');
   const redirectUri = one(q, 'redirect_uri');
   if (!clientId || !redirectUri) return { kind: 'page', reason: 'missing_params' };
@@ -62,7 +77,19 @@ export function validateAuthorize(q: Query, client: ClientRow | null): Authorize
   if (one(q, 'code_challenge_method') !== 'S256') {
     return { kind: 'redirect', error: 'invalid_request', description: 'code_challenge_method must be S256' };
   }
-  return { clientId, redirectUri, state, codeChallenge, scopes: grantableScopes(one(q, 'scope')) };
+  // RFC 8707: a `resource` that is not this server's MCP endpoint is refused, not ignored.
+  const issuer = issuerForResource(one(q, 'resource'));
+  if (issuer === 'invalid') {
+    return { kind: 'redirect', error: 'invalid_target', description: 'resource is not this server\'s MCP endpoint' };
+  }
+  return {
+    clientId,
+    redirectUri,
+    state,
+    codeChallenge,
+    scopes: grantableScopes(one(q, 'scope')),
+    issuer: issuer ?? fallbackIssuer,
+  };
 }
 
 /** The client's redirect URI with parameters appended (RFC 6749 §4.1.2; RFC 9207's `iss`). */
