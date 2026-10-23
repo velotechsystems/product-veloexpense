@@ -178,6 +178,15 @@ describe('VeloExpense: what the table refuses is a 4xx', () => {
     );
   });
 
+  it('f69: refuses an end before the start on an UPDATE too', async () => {
+    const c = boss();
+    const r = await c.policies.policyRule.create(rule());
+    expect(
+      await codeOf(c.policies.policyRule.update({ id: r.id, patch: rule({ effectiveTo: new Date('2025-01-01T00:00:00Z') }) })),
+    ).toBe('BAD_REQUEST');
+    await c.policies.policyRule.delete({ id: r.id });
+  });
+
   it('keeps a job level a rule is scoped to from being deleted out from under it', async () => {
     const c = boss();
     const level = await c.appSettings.jobLevels.create({ code: 'PR1', track: 'MANAGER', label: { en: 'Lead' } });

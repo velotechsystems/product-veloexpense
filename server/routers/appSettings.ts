@@ -33,6 +33,7 @@ import {
   labelSchema,
   syncEntityAliases,
 } from './adminLookup';
+import { databaseErrorText } from '@/lib/db/databaseErrorText';
 
 // ── Shared helpers ────────────────────────────────────────────────
 // labelSchema (strict { en, 'fr-CA' }) is imported from adminLookup so JobLevel
@@ -61,7 +62,7 @@ function databaseRefusal(cause: unknown): TRPCError | null {
   if (err?.code === 'P2002') {
     return new TRPCError({ code: 'CONFLICT', message: 'That code is already in use.', cause });
   }
-  if (err?.name === 'DriverAdapterError' && err.message?.includes('"fiscal_year_dates"')) {
+  if (databaseErrorText(cause).includes('"fiscal_year_dates"')) {
     return new TRPCError({ code: 'BAD_REQUEST', message: 'endDate must be after startDate', cause });
   }
   return null;

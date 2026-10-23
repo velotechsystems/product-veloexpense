@@ -147,6 +147,16 @@ describe('VeloExpense: what the table refuses is a 4xx', () => {
     expect((await admin.query('SELECT count(*)::int AS n FROM per_diem_rate WHERE organization_id = $1', [A])).rows[0].n).toBe(0);
   });
 
+  it('f69: refuses the same on an UPDATE', async () => {
+    const c = boss();
+    const r = await c.policies.perDiemRate.create(rate());
+    expect(
+      await codeOf(c.policies.perDiemRate.update({ id: r.id, patch: { effectiveTo: new Date('2025-01-01T00:00:00Z') } })),
+    ).toBe('BAD_REQUEST');
+    expect(await codeOf(c.policies.perDiemRate.update({ id: r.id, patch: { amountMinor: -1 } }))).toBe('BAD_REQUEST');
+    await c.policies.perDiemRate.delete({ id: r.id });
+  });
+
   it('keeps a job level a rate is scoped to from being deleted out from under it', async () => {
     const c = boss();
     const level = await c.appSettings.jobLevels.create({ code: 'VP1', track: 'EXECUTIVE', label: { en: 'VP' } });
