@@ -26,6 +26,7 @@ import { auditActions, withAudit } from '@expenseos/audit';
 import { Prisma, type PrismaClient, rollUpOnOffboard } from '@expenseos/db';
 import { permissions as P, SYSTEM_ROLE_IDS } from '@expenseos/rbac';
 import { businessUnitUsable } from '@/lib/businessUnits/usable';
+import { isCountryCode } from '@/lib/countries';
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 import { canViewUser } from '@/server/lib/canViewUser';
@@ -1474,6 +1475,16 @@ export const usersRouter = router({
           REFUSAL_KEYS.peopleDirectoryManaged,
           `${googleOwned.join(', ')}: owned by Google Workspace for this person; change them in Google.`,
           { fields: googleOwned.join(', ') },
+        );
+      }
+      // f75: an assigned ISO-3166-1 alpha-2 code, not just any two letters ("XX"). The
+      // column's CHECK only holds the shape; mileage pricing reads the country.
+      if (input.patch.country != null && !isCountryCode(input.patch.country)) {
+        throw refusal(
+          'BAD_REQUEST',
+          REFUSAL_KEYS.peopleCountryUnknown,
+          `${input.patch.country}: not an ISO-3166-1 alpha-2 country code.`,
+          { country: input.patch.country },
         );
       }
       // VeloExpense: the person and the manager are read inside the tenant (RLS), so another

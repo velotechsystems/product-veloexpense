@@ -45,6 +45,7 @@ import { PREDICATE_OPS } from '@expenseos/predicate';
 import { permissions as P } from '@expenseos/rbac';
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
+import { isCountryCode } from '@/lib/countries';
 import { Prisma, type TenantDb } from '@/lib/db/prisma';
 // VeloExpense: ExpenseOS's `Currency.symbol`, from the platform (shared with the expenses router).
 import { currencySymbol } from '@/server/lib/currencySymbol';
@@ -337,7 +338,9 @@ const mileageRuleInput = z.object({
   country: z
     .string()
     .length(2)
-    .regex(/^[A-Z]{2}$/, 'ISO-3166-1 alpha-2 (uppercase)'),
+    .regex(/^[A-Z]{2}$/, 'ISO-3166-1 alpha-2 (uppercase)')
+    // f75: an assigned code, not just two capitals ("XX").
+    .refine(isCountryCode, 'Not an ISO-3166-1 alpha-2 country code'),
   unit: z.enum(MileageUnit),
   effectiveFrom: z.coerce.date(),
   /** Where this rule's mileage posts; null falls back to the category's account. */

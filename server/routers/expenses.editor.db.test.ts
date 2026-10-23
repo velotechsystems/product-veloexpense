@@ -584,7 +584,7 @@ describe.skipIf(!process.env.DATABASE_URL)('expenses report-editor (integration)
    * truncates the tenant.
    */
   describe('mileagePreview', () => {
-    /** Distinct from mileageRule.db.test.ts's 'ZZ', which it wholesale deletes. */
+    /** Distinct from mileageRule.db.test.ts's country ('AQ' since f75), which it wholesale deletes. */
     const COUNTRY = 'QZ';
     let previewExpenseId: string;
     let previewReportId: string;

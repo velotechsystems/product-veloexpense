@@ -236,6 +236,25 @@ describe('update', () => {
     const caller = await callerFor(db, [P.user.update]);
     await expect(caller.update({ id: U('1'), patch: { country: 'CAN' } })).rejects.toThrow();
   });
+
+  // f75: two letters is not enough — the code must be an assigned ISO-3166-1 alpha-2 code.
+  it.each(['XX', 'ZZ', 'ca'])('refuses %s as a country, naming it, and writes nothing', async (country) => {
+    const db = makeDb();
+    const caller = await callerFor(db, [P.user.update]);
+    const err = await caller.update({ id: U('1'), patch: { country } }).catch((e) => e);
+    expect(err.code).toBe('BAD_REQUEST');
+    const { refusalData } = await import('@/server/refusal');
+    expect(refusalData(err)).toEqual({ key: 'refusals.people.countryUnknown', params: { country } });
+    expect(db.user.update).not.toHaveBeenCalled();
+  });
+
+  it('accepts an assigned code and clearing the country', async () => {
+    const db = makeDb();
+    const caller = await callerFor(db, [P.user.update]);
+    await caller.update({ id: U('1'), patch: { country: 'GB' } });
+    await caller.update({ id: U('1'), patch: { country: null } });
+    expect(db.user.update).toHaveBeenCalledTimes(2);
+  });
 });
 
 describe('setRole', () => {

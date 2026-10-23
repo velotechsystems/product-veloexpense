@@ -62,6 +62,9 @@ export const REFUSAL_KEYS = {
   /** eos batch 4 (#582): an admin edit to a field Google Workspace owns, for a person linked
    *  to Google while directory sync is on — the next sync would undo it. `{ fields }`. */
   peopleDirectoryManaged: 'refusals.people.directoryManaged',
+  /** f75: a person's country that is not an assigned ISO-3166-1 alpha-2 code (e.g. "XX").
+   *  BAD_REQUEST. `{ country }`. */
+  peopleCountryUnknown: 'refusals.people.countryUnknown',
   /** A point dropped on a mileage route where Google has no road and no address to turn it
    *  into a place. The drop is undone. Takes no ICU arguments. */
   mileageNoRoadNear: 'refusals.mileage.noRoadNear',

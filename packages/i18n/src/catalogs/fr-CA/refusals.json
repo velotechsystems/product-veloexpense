@@ -29,7 +29,8 @@
     "expenseLimitReached": "Le forfait de cette organisation permet {limit, number} dépenses par année, et ce nombre a été atteint au cours des douze derniers mois. Vos brouillons sont enregistrés — un administrateur peut changer de forfait dans les paramètres de facturation."
   },
   "people": {
-    "directoryManaged": "{fields} : ces champs proviennent de Google Workspace pour cette personne; une modification ici serait annulée par la prochaine synchronisation de l’annuaire. Modifiez-les plutôt dans Google."
+    "directoryManaged": "{fields} : ces champs proviennent de Google Workspace pour cette personne; une modification ici serait annulée par la prochaine synchronisation de l’annuaire. Modifiez-les plutôt dans Google.",
+    "countryUnknown": "« {country} » n’est pas un code de pays. Utilisez un code ISO à deux lettres, comme CA ou US."
   },
   "mileage": {
     "noRoadNear": "Aucune route ni adresse n’a été trouvée près de ce point; l’itinéraire est donc resté tel quel. Déposez le point plus près d’une route.",
