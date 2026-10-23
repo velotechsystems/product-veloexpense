@@ -53,6 +53,7 @@ import { LINE_FIELDS, REPORT_FIELDS } from '@/server/policy/facts';
 import { RULE_KIND_CODES, RULE_KINDS } from '@/server/policy/kinds';
 import { REFUSAL_KEYS, refusal } from '@/server/refusal';
 import { router, withPermission } from '@/server/trpc';
+import { databaseErrorText } from '@/lib/db/databaseErrorText';
 
 // ── Common shapes ────────────────────────────────────────────────────
 
@@ -129,9 +130,8 @@ function auditablePatch(patch: z.infer<typeof expensePolicyPatch>): Record<strin
  */
 function expensePolicyRefusal(cause: unknown): TRPCError | null {
   const err = cause as { code?: string; message?: string } | null;
-  const hiddenRow =
-    err?.message?.includes('row-level security policy') &&
-    err.message.includes('expense_category_policy');
+  const text = databaseErrorText(cause);
+  const hiddenRow = text.includes('row-level security policy') && text.includes('expense_category_policy');
   if (err?.code === 'P2003' || err?.code === 'P2002' || hiddenRow) {
     return new TRPCError({
       code: 'BAD_REQUEST',
@@ -139,7 +139,7 @@ function expensePolicyRefusal(cause: unknown): TRPCError | null {
       cause,
     });
   }
-  if (err?.message?.includes('expense_category_policy_limits_nonnegative')) {
+  if (text.includes('expense_category_policy_limits_nonnegative')) {
     return new TRPCError({ code: 'BAD_REQUEST', message: 'A limit cannot be negative.', cause });
   }
   return null;
@@ -304,7 +304,7 @@ function perDiemRefusal(cause: unknown): TRPCError | null {
       cause,
     });
   }
-  const check = err?.message?.match(/violates check constraint "(per_diem_rate_\w+)"/)?.[1];
+  const check = databaseErrorText(cause).match(/violates check constraint "(per_diem_rate_\w+)"/)?.[1];
   if (check) {
     const why: Record<string, string> = {
       per_diem_rate_country_iso: 'Use a two-letter country code (e.g. CA).',
@@ -551,7 +551,7 @@ function policyRuleRefusal(cause: unknown): TRPCError | null {
       cause,
     });
   }
-  if (err?.message?.includes('policy_rule_effective_range')) {
+  if (databaseErrorText(cause).includes('policy_rule_effective_range')) {
     return new TRPCError({ code: 'BAD_REQUEST', message: 'A rule cannot end before it starts.', cause });
   }
   return null;
