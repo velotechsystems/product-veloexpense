@@ -54,6 +54,9 @@ import { INBOUND_OBJECT_PREFIX, inboundMailBucketName, inboundMailTopicName } fr
 import {
   ANTHROPIC_API_KEY_SECRET,
   MCP_OAUTH_SIGNING_KEY_SECRET,
+  GOOGLE_PLACES_KEY_SECRET,
+  GOOGLE_MAPS_BROWSER_KEY_SECRET,
+  SERPAPI_KEY_SECRET,
   PLATFORM_INBOUND_TOKEN_SECRET,
 } from './security-stack';
 import { hostsOf, type VeloExpenseConfig } from './config';
@@ -115,6 +118,15 @@ export class ComputeStack extends Stack {
     // Made by a person (MANUAL_SECRETS), mcp-oauth: the key that signs MCP access tokens for
     // Claude connectors (ported from VeloCRM). Web only: the worker never sees an MCP request.
     const mcpOauthSigningKey = byName('McpOauthSigningKey', `${config.secretPrefix}/${MCP_OAUTH_SIGNING_KEY_SECRET}`);
+    // f78 / f62: Google Maps and SerpApi keys, each only where config.ts `externalKeys` turns it
+    // on. The web task reads them (server/platform/googleMaps.ts, serpapi.ts); the worker
+    // makes no Maps or SerpApi call, so it gets none. GOOGLE_MAPS_BROWSER_KEY is the
+    // referrer-restricted browser key and must not be the server key (mapsKeyBoundary).
+    const externalKeys = [
+      { on: config.externalKeys.googlePlaces, cid: 'GooglePlacesKey', secret: GOOGLE_PLACES_KEY_SECRET, env: 'GOOGLE_PLACES_API_KEY' },
+      { on: config.externalKeys.googleMapsBrowser, cid: 'GoogleMapsBrowserKey', secret: GOOGLE_MAPS_BROWSER_KEY_SECRET, env: 'GOOGLE_MAPS_BROWSER_KEY' },
+      { on: config.externalKeys.serpapi, cid: 'SerpApiKey', secret: SERPAPI_KEY_SECRET, env: 'SERPAPI_API_KEY' },
+    ].filter((k) => k.on);
 
     /** Partial-ARN wildcard for a secret imported by NAME (its ARN ends in a random suffix). */
     const nameArn = (name: string) =>
@@ -155,6 +167,8 @@ export class ComputeStack extends Stack {
       nameArn(`${config.secretPrefix}/${MCP_OAUTH_SIGNING_KEY_SECRET}`),
       // Platform provisioning, where it is on (config.ts `platformProvisioning`).
       ...(config.platformProvisioning ? [nameArn(`${config.secretPrefix}/${PLATFORM_INBOUND_TOKEN_SECRET}`)] : []),
+      // f78 / f62: only the keys this stage switches on.
+      ...externalKeys.map((k) => nameArn(`${config.secretPrefix}/${k.secret}`)),
     ]);
     // The worker: the queue's URL; and, with receipt reading (w3-02a), veloapp's login —
     // the same RLS-bound role the web app uses — and the Anthropic key. And the mail relay:
@@ -322,6 +336,13 @@ export class ComputeStack extends Stack {
               ),
             }
           : {}),
+        // f78 / f62: Google Maps and SerpApi, only where switched on.
+        ...Object.fromEntries(
+          externalKeys.map((k) => [
+            k.env,
+            ecs.Secret.fromSecretsManager(byName(k.cid, `${config.secretPrefix}/${k.secret}`)),
+          ]),
+        ),
       },
       logging: ecs.LogDrivers.awsLogs({ logGroup: logGroup('WebLogs', 'web'), streamPrefix: 'web' }),
       healthCheck: {

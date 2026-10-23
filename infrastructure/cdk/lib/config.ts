@@ -151,9 +151,31 @@ export interface VeloExpenseConfig {
    * secret a person creates before the deploy (MANUAL_SECRETS). Off, the route answers 503.
    */
   platformProvisioning: boolean;
+  /**
+   * f78 / f62: third-party keys the web task reads from Secrets Manager, each one only where
+   * it is switched on here. Off, the web task gets no variable and no permission for it, so a
+   * key nobody has created never blocks a deploy or a task start — the app falls back as it
+   * does with no key (mileage lookup off, travel search "unavailable"). Turn one on only after
+   * a person has created `<secretPrefix>/<name>` (docs/runbooks/production.md, "Maps and travel
+   * search keys"). Not MANUAL_SECRETS: no stage needs them to start.
+   *   googlePlaces       → GOOGLE_PLACES_API_KEY    from `google-places-key`       (server key)
+   *   googleMapsBrowser  → GOOGLE_MAPS_BROWSER_KEY  from `google-maps-browser-key` (browser key)
+   *   serpapi            → SERPAPI_API_KEY          from `serpapi-key`
+   */
+  externalKeys: ExternalKeys;
 
   tags: Record<string, string>;
 }
+
+/** f78: which third-party keys a stage passes to the web task (see `externalKeys`). */
+export interface ExternalKeys {
+  googlePlaces: boolean;
+  googleMapsBrowser: boolean;
+  serpapi: boolean;
+}
+
+/** All off: the default for every stage until a person creates the key. */
+export const NO_EXTERNAL_KEYS: ExternalKeys = { googlePlaces: false, googleMapsBrowser: false, serpapi: false };
 
 /** VeloExpense's band on the shared listener — mirrors product-velocrm's LISTENER_PRIORITY_BANDS. */
 export const LISTENER_PRIORITY_BAND = { from: 100, to: 199 } as const;
@@ -209,6 +231,8 @@ const STAGES: Record<Stage, Omit<VeloExpenseConfig, 'resourcePrefix' | 'secretPr
     // Dev keeps self-serve signup (18 Oct 2026); the platform does not provision here yet.
     selfServeSignup: true,
     platformProvisioning: false,
+    // f78: no Google or SerpApi key exists yet (d88). Flip one on after creating its secret.
+    externalKeys: NO_EXTERNAL_KEYS,
     inboundEmail: {
       domain: 'mail.dev.veloexpense.ai',
       webhookUrl: 'https://dev.veloexpense.ai/api/email/inbound',
@@ -268,6 +292,8 @@ const STAGES: Record<Stage, Omit<VeloExpenseConfig, 'resourcePrefix' | 'secretPr
     // `/api/platform/provision`, which needs `veloexpense/prod/platform-inbound-token`.
     selfServeSignup: false,
     platformProvisioning: true,
+    // f78: no Google or SerpApi key exists yet (d88). Flip one on after creating its secret.
+    externalKeys: NO_EXTERNAL_KEYS,
   },
 };
 
@@ -287,13 +313,17 @@ export function browserOriginsOf(config: VeloExpenseConfig): string[] {
   ];
 }
 
-export function buildConfig(stage: Stage, overrides: { albCertificateArn?: string } = {}): VeloExpenseConfig {
+export function buildConfig(
+  stage: Stage,
+  overrides: { albCertificateArn?: string; externalKeys?: Partial<ExternalKeys> } = {},
+): VeloExpenseConfig {
   const base = STAGES[stage];
   if (!base) throw new Error(`Unknown VeloExpense stage "${stage}". Known: ${Object.keys(STAGES).join(', ')}`);
 
   const config: VeloExpenseConfig = {
     ...base,
     albCertificateArn: overrides.albCertificateArn || base.albCertificateArn,
+    externalKeys: { ...base.externalKeys, ...overrides.externalKeys },
     resourcePrefix: `veloexpense-${stage}`,
     secretPrefix: `veloexpense/${stage}`,
     tags: { Product: 'veloexpense', Environment: stage, SharedStage: base.sharedStage, ManagedBy: 'cdk' },
