@@ -761,6 +761,42 @@ describe.skipIf(!process.env.DATABASE_URL)('mileage opening balances (integratio
       await db.mileageBalanceImport.deleteMany({ where: { id: result.id } });
     });
   });
+
+  // f77: two commits for the same source and year at the same moment. Without the advisory
+  // lock both read "nothing in force" (or the same upload), both write, and two uploads end up
+  // in force. With it the second waits, then supersedes the first.
+  describe('two commits at once (f77)', () => {
+    const RACE_YEAR = 2025;
+    const raceCommit = (filename: string) =>
+      admin.commit({
+        source: 'concur',
+        year: RACE_YEAR,
+        asOf: '2025-12-31',
+        filename,
+        rows: [row(names().A, u.A, '1200', null)],
+      });
+
+    afterAll(async () => {
+      await db.mileageBalanceImport
+        .updateMany({ where: { source: 'concur', year: RACE_YEAR }, data: { supersededById: null } })
+        .catch(() => {});
+      await db.mileageBalanceImport.deleteMany({ where: { source: 'concur', year: RACE_YEAR } }).catch(() => {});
+    });
+
+    it('leaves exactly one upload in force, the other superseded by it', async () => {
+      for (let round = 0; round < 5; round++) {
+        await Promise.all([raceCommit(`race-a-${round}.xlsx`), raceCommit(`race-b-${round}.xlsx`)]);
+        const rows = await db.mileageBalanceImport.findMany({
+          where: { source: 'concur', year: RACE_YEAR },
+          select: { id: true, supersededAt: true, supersededById: true },
+        });
+        const live = rows.filter((r: any) => r.supersededAt === null);
+        expect(live).toHaveLength(1);
+        // Every other upload of the year is superseded, and the chain ends at the live one.
+        expect(rows.filter((r: any) => r.supersededAt !== null).every((r: any) => r.supersededById)).toBe(true);
+      }
+    });
+  });
 });
 
 /**

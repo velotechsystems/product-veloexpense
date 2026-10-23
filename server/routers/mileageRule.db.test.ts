@@ -30,8 +30,9 @@ vi.mock('@/auth', () => ({ auth: vi.fn(async () => null) }));
 vi.mock('@/lib/tenant/request', () => ({ hostTenantSlug: async () => null }));
 
 const PERMS = [P.config.policyRead, P.config.mileageUpdate] as const;
-/** A country no seed uses, so fixtures can't collide with real rules. */
-const COUNTRY = 'ZZ';
+/** A country no seed uses, so fixtures can't collide with real rules. f75: an assigned code
+ *  now (Antarctica) — mileage rules refuse an unassigned one such as the old 'ZZ'. */
+const COUNTRY = 'AQ';
 
 describe.skipIf(!process.env.DATABASE_URL)('mileage rules (integration)', () => {
   let h: TenantHarness;

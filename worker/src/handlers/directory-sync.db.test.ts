@@ -283,7 +283,7 @@ describe('#582: a blank in Google clears the fields it owns (w5-04 left them)', 
     const r = await sync(A, [{ primaryEmail: 'ada@example.test', addresses: [{ primary: true, countryCode: 'CAN' }] }]);
     expect((await person(ada)).country).toBe('CA');
     expect(r.counts.errors).toBe(0);
-    expect(r.items[0].message).toContain('"CAN" is not a two-letter code');
+    expect(r.items[0].message).toContain('"CAN" is not a country code');
   });
 });
 

@@ -1,5 +1,6 @@
 import { SYSTEM_ROLE_IDS } from '@expenseos/rbac';
 import { titleToJobLevelCode } from '@expenseos/db';
+import { isCountryCode } from '@/lib/countries';
 import type { TenantDb } from '@/lib/db/prisma';
 import type { DirectoryUser } from './types';
 
@@ -32,8 +33,9 @@ import type { DirectoryUser } from './types';
  *   · Email matches case-insensitively, and a match on two people (VeloExpense's email is
  *     unique per tenant as written, 0001, so `Ada@x` and `ada@x` can both exist) is refused
  *     rather than guessed.
- *   · A country that is not two letters is left unchanged and reported: `app_user.country`
- *     is held to ISO-2 by a CHECK (0055), and one bad value would otherwise fail the person.
+ *   · A country that is not an assigned ISO-3166-1 alpha-2 code is left unchanged and reported
+ *     (f75: the same `isCountryCode` as `users.update`): `app_user.country` is held to two
+ *     letters by a CHECK (0055), and one bad value would otherwise fail the person.
  */
 
 /** The external-id source a person's Google Directory id is stored under. */
@@ -130,7 +132,6 @@ export async function googleSourceIdOf(db: TenantDb): Promise<string> {
 
 const iso = (d: Date | null): string | null => (d ? d.toISOString() : null);
 const LEAVER = new Set<DirectoryUser['employeeStatus']>(['DEACTIVATED', 'TERMINATED']);
-const ISO2 = /^[A-Z]{2}$/;
 
 const empty = (outcome: ApplyOutcome, userId: string | null, message?: string): ApplyResult => ({
   outcome,
@@ -313,8 +314,8 @@ async function writeOwnedFields(
   let emailConflict = false;
 
   // VeloExpense: ISO-2 only (see the header).
-  if (mapped.country === null || ISO2.test(mapped.country)) desired.country = mapped.country;
-  else notes.push(`Country "${mapped.country}" is not a two-letter code; left unchanged.`);
+  if (mapped.country === null || isCountryCode(mapped.country)) desired.country = mapped.country;
+  else notes.push(`Country "${mapped.country}" is not a country code; left unchanged.`);
 
   // ── Status (VeloExpense: one way, d85) ────────────────────────────
   let deletedAt: Date | undefined;

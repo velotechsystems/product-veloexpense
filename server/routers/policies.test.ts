@@ -699,6 +699,15 @@ describe('mileageRate.create', () => {
     }
   });
 
+  it('requires an assigned country code, not just two capitals (f75)', async () => {
+    const c = await caller(makeDb());
+    for (const country of ['XX', 'ZZ', 'UK']) {
+      await expect(c.mileageRate.create(rule({ country }) as never), country).rejects.toThrow(
+        /ISO-3166-1 alpha-2 country code/,
+      );
+    }
+  });
+
   it('requires at least one band and caps them', async () => {
     const c = await caller(makeDb());
     await expect(c.mileageRate.create(rule({ tiers: [] }) as never)).rejects.toThrow();

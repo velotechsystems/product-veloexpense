@@ -268,6 +268,17 @@ export const COUNTRY_CODES = [
 
 export type CountryCode = (typeof COUNTRY_CODES)[number];
 
+const COUNTRY_SET: ReadonlySet<string> = new Set(COUNTRY_CODES);
+
+/**
+ * f75: is this an assigned ISO-3166-1 alpha-2 code, exactly as stored (uppercase)? The one
+ * check every writer of a person's country uses — `users.update`, the Google directory sync
+ * and mileage rules — so "XX" is refused everywhere rather than only by the picker.
+ */
+export function isCountryCode(value: unknown): value is CountryCode {
+  return typeof value === 'string' && COUNTRY_SET.has(value);
+}
+
 /** One `Intl.DisplayNames` per locale — constructing it is not free and these
  *  lists are rendered per keystroke while filtering. */
 const nameCache = new Map<string, Intl.DisplayNames>();

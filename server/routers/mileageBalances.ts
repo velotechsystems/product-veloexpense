@@ -464,6 +464,18 @@ export const mileageBalancesRouter = router({
         }
         seen.add(r.userId);
       }
+      // f77: one commit at a time per tenant, source and year. Two admins committing the same
+      // year at once would otherwise both read the same upload in force (or none), and both
+      // uploads would stay in force: a partial unique index cannot help, because the new row
+      // is written before the old one is superseded. This transaction-scoped advisory lock
+      // is held until the request's tenant transaction ends; the second commit waits, then
+      // reads the first one's upload as the one in force and supersedes it (or is refused
+      // as older). Keyed on the tenant too, so different tenants never wait on each other.
+      await ctx.db.$executeRaw`
+        SELECT pg_advisory_xact_lock(hashtextextended(
+          'mileage_balance_import:' || current_setting('app.current_org', true) || ':' || ${input.source} || ':' || ${String(input.year)},
+          0
+        ))`;
       const current = await inForce(ctx.db, input.source, input.year);
       if (current && input.asOf < current.asOf) {
         throw new TRPCError({

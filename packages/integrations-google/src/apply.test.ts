@@ -559,7 +559,7 @@ describe('applyDirectoryUserToDb — the fields Google owns', () => {
     const f = fakeDb({ users: [synced({ country: 'CA' })], links: [['u-ada', 'g-ada']] });
     const out = await applyDirectoryUserToDb(f.db, mapped({ country: 'CAN' }));
     expect(f.user('u-ada')?.country).toBe('CA');
-    expect(out.message).toBe('Country "CAN" is not a two-letter code; left unchanged.');
+    expect(out.message).toBe('Country "CAN" is not a country code; left unchanged.');
   });
 
   it('never writes department, business unit or legal entity', async () => {
