@@ -120,3 +120,45 @@ are additive (new tables, new nullable columns). Read them before rolling back a
   in email name the tenant's own address. The receipts bucket accepts uploads from
   `https://*.veloexpense.ai`.
 - No receipts by email (see the top).
+
+## 5. Maps and travel search keys (f78, f62)
+
+Off in every stage until the keys exist (d88). Off, mileage uses the no-map fallback and
+travel search answers "unavailable". Each key is its own secret and its own switch in
+`infrastructure/cdk/lib/config.ts` `externalKeys`; the web task gets a key only where its
+switch is on, so a missing secret never blocks a deploy. The worker makes no Maps or SerpApi
+call and gets none of them.
+
+| Switch | Secret (`veloexpense/<stage>/…`) | Variable | What reads it |
+|---|---|---|---|
+| `googlePlaces` | `google-places-key` | `GOOGLE_PLACES_API_KEY` | `server/platform/googleMaps.ts` (server) |
+| `googleMapsBrowser` | `google-maps-browser-key` | `GOOGLE_MAPS_BROWSER_KEY` | the route map, via `mileageRoute.mapConfig` |
+| `serpapi` | `serpapi-key` | `SERPAPI_API_KEY` | `server/platform/serpapi.ts` (travel options) |
+
+**Google Cloud** (name the project as you like):
+
+1. Enable **Places API (New)**, **Routes API**, **Geocoding API**, **Roads API** (the server
+   calls `places:autocomplete`, place details, `computeRoutes`, geocode and `nearestRoads`) and
+   **Maps JavaScript API** (the map; it loads the `geometry` library).
+2. **Server key:** Application restrictions *None* (it is called from AWS, not a browser);
+   API restrictions: Places API (New), Routes API, Geocoding API, Roads API only.
+3. **Browser key, a different key:** Application restrictions *Websites*, referrers
+   `https://app.veloexpense.ai/*` and `https://*.veloexpense.ai/*` (prod), `https://dev.veloexpense.ai/*`
+   (dev); API restrictions: Maps JavaScript API only. The app refuses to serve it if it equals the
+   server key (`mapsKeyBoundary`).
+
+**SerpApi:** the account's private API key (serpapi.com → Your account → API key).
+
+**Create the secrets** — not runnable as-is: paste each key in place of `PASTE_…`:
+
+```
+aws secretsmanager create-secret --region ca-central-1 --name veloexpense/prod/google-places-key --kms-key-id alias/veloexpense-prod/master --secret-string 'PASTE_SERVER_KEY'
+aws secretsmanager create-secret --region ca-central-1 --name veloexpense/prod/google-maps-browser-key --kms-key-id alias/veloexpense-prod/master --secret-string 'PASTE_BROWSER_KEY'
+aws secretsmanager create-secret --region ca-central-1 --name veloexpense/prod/serpapi-key --kms-key-id alias/veloexpense-prod/master --secret-string 'PASTE_SERPAPI_KEY'
+```
+
+For dev, use `veloexpense/dev/…` and `alias/veloexpense-dev/master`.
+
+**Switch on:** set the matching `externalKeys` flags to `true` for that stage in `config.ts`,
+merge, and release. Turn `googlePlaces` and `googleMapsBrowser` on together: the map needs both.
+`GOOGLE_MAPS_REGION` (an optional country bias) is not wired; with it unset there is no bias.

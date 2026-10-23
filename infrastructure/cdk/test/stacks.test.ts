@@ -9,19 +9,19 @@ import { App } from 'aws-cdk-lib';
 import { Template } from 'aws-cdk-lib/assertions';
 import { describe, expect, it } from 'vitest';
 import { CacheStack } from '../lib/cache-stack';
-import { buildConfig, type Stage } from '../lib/config';
+import { buildConfig, type ExternalKeys, type Stage } from '../lib/config';
 import { ComputeStack } from '../lib/compute-stack';
 import { DataStack } from '../lib/data-stack';
 import { MailStack } from '../lib/mail-stack';
 import { NetworkStack } from '../lib/network-stack';
-import { SecurityStack } from '../lib/security-stack';
+import { MANUAL_SECRETS, SecurityStack } from '../lib/security-stack';
 import { StorageStack } from '../lib/storage-stack';
 
 const CERT = 'arn:aws:acm:ca-central-1:535079144866:certificate/11111111-2222-3333-4444-555555555555';
 
-function synth(stage: Stage = 'dev') {
+function synth(stage: Stage = 'dev', externalKeys?: Partial<ExternalKeys>) {
   const app = new App();
-  const config = buildConfig(stage, { albCertificateArn: CERT });
+  const config = buildConfig(stage, { albCertificateArn: CERT, externalKeys });
   const env = { account: config.accountId, region: config.region };
   const security = new SecurityStack(app, 'Sec', { env, config });
   const network = new NetworkStack(app, 'Net', { env, config });
@@ -606,5 +606,67 @@ describe('tenant creation per stage', () => {
     expect(env).not.toContain('SIGNUP_ENABLED');
     expect(secrets).toContain('PLATFORM_INBOUND_TOKEN');
     expect(JSON.stringify(p.compute.toJSON())).toContain('veloexpense/prod/platform-inbound-token');
+  });
+});
+
+// ── f78 / f62: Google Maps and SerpApi keys, off per stage until the keys exist ──
+describe('third-party keys (f78, f62)', () => {
+  const KEYS = [
+    { flag: 'googlePlaces', env: 'GOOGLE_PLACES_API_KEY', secret: 'google-places-key' },
+    { flag: 'googleMapsBrowser', env: 'GOOGLE_MAPS_BROWSER_KEY', secret: 'google-maps-browser-key' },
+    { flag: 'serpapi', env: 'SERPAPI_API_KEY', secret: 'serpapi-key' },
+  ] as const;
+  const containerSecrets = (tpl: Template, suffix: string) => {
+    const [[, td]] = resources(tpl, 'AWS::ECS::TaskDefinition').filter(([, t]) =>
+      String((t.Properties as { Family?: string }).Family).endsWith(suffix),
+    );
+    const [c] = (td.Properties as { ContainerDefinitions: Array<{ Secrets?: Array<{ Name: string }> }> }).ContainerDefinitions;
+    return (c.Secrets ?? []).map((x) => x.Name);
+  };
+  const execPolicyText = (tpl: Template, role: string) =>
+    json(
+      resources(tpl, 'AWS::IAM::Policy').filter(([, p]) =>
+        json((p.Properties as { Roles?: unknown }).Roles).includes(role),
+      ),
+    );
+
+  for (const stage of ['dev', 'prod'] as const) {
+    it(`${stage}: every key is off by default — no variable, no grant, not a manual secret`, () => {
+      const t = stage === 'dev' ? s : synth('prod');
+      expect(t.config.externalKeys).toEqual({ googlePlaces: false, googleMapsBrowser: false, serpapi: false });
+      const web = containerSecrets(t.compute, '-web');
+      const text = json(t.compute.toJSON());
+      for (const k of KEYS) {
+        expect(web).not.toContain(k.env);
+        expect(text).not.toContain(`veloexpense/${stage}/${k.secret}`);
+      }
+      for (const k of KEYS) expect(MANUAL_SECRETS as readonly string[]).not.toContain(k.secret);
+    });
+  }
+
+  for (const k of KEYS) {
+    it(`${k.flag} on: ${k.env} reaches the web task, and only the web exec role may read ${k.secret}`, () => {
+      const on = synth('prod', { [k.flag]: true });
+      expect(containerSecrets(on.compute, '-web')).toContain(k.env);
+      expect(containerSecrets(on.compute, '-worker')).not.toContain(k.env);
+      const others = KEYS.filter((o) => o !== k);
+      for (const o of others) expect(containerSecrets(on.compute, '-web')).not.toContain(o.env);
+      const webPolicy = execPolicyText(on.compute, 'WebExecutionRole');
+      expect(webPolicy).toContain(`veloexpense/prod/${k.secret}-??????`);
+      for (const o of others) expect(webPolicy).not.toContain(`veloexpense/prod/${o.secret}`);
+      const workerPolicy = execPolicyText(on.compute, 'WorkerExecutionRole');
+      expect(workerPolicy).not.toContain(k.secret);
+      // Never the fake model's switch, whatever is on.
+      expect(json(on.compute.toJSON())).not.toContain('ASSISTANT_FAKE_ANTHROPIC_URL');
+    });
+  }
+
+  it('all on: the three keys together, the browser key distinct from the server key', () => {
+    const on = synth('dev', { googlePlaces: true, googleMapsBrowser: true, serpapi: true });
+    const web = containerSecrets(on.compute, '-web');
+    for (const k of KEYS) expect(web).toContain(k.env);
+    const text = json(on.compute.toJSON());
+    expect(text).toContain('veloexpense/dev/google-places-key');
+    expect(text).toContain('veloexpense/dev/google-maps-browser-key');
   });
 });

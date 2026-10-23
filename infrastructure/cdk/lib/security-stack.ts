@@ -77,6 +77,14 @@ export const PLATFORM_INBOUND_TOKEN_SECRET = 'platform-inbound-token';
 /** mcp-oauth: the MCP access-token signing key's name under `secretPrefix` (MANUAL_SECRETS). */
 export const MCP_OAUTH_SIGNING_KEY_SECRET = 'mcp-oauth-signing-key';
 
+/**
+ * f78 / f62: third-party keys, each made by a person and passed to the web task only where
+ * config.ts `externalKeys` switches it on. Not MANUAL_SECRETS: no stage needs them to start.
+ */
+export const GOOGLE_PLACES_KEY_SECRET = 'google-places-key';
+export const GOOGLE_MAPS_BROWSER_KEY_SECRET = 'google-maps-browser-key';
+export const SERPAPI_KEY_SECRET = 'serpapi-key';
+
 /** The Anthropic key's name under `secretPrefix` (MANUAL_SECRETS). */
 export const ANTHROPIC_API_KEY_SECRET = 'anthropic-api-key';
 
