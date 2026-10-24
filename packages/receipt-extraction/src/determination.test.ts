@@ -85,7 +85,9 @@ describe('buildDeterminationParams', () => {
   it('forces the structured tool call', () => {
     const p = params();
     expect(p.tool_choice).toEqual({ type: 'tool', name: 'record_determination' });
-    expect(p.tools?.[0].name).toBe('record_determination');
+    // toMatchObject, not .name: newer SDKs widen tools[] to ToolUnion, whose
+    // server-tool members have no `name` in their type.
+    expect(p.tools?.[0]).toMatchObject({ name: 'record_determination' });
   });
 
   it('injects prior human corrections as authoritative', () => {
